@@ -11,18 +11,36 @@
 use super::gui_paint::{ButtonArt, GuiStyle, HostRows};
 use super::in_game_shell;
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::connection::DIALOG;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::ui::shell::connection::{CONNECTION_ROWS, ConnectionControl, PAINT_ORDER};
 use crate::ui::shell::paging;
 
 /// 0xEA can be drawn: it needs the same art as every active-game page.
-pub(crate) fn connection_shell_drawable(state: &AppState) -> bool {
-    state.frontend.screen == crate::app::GameScreen::InGame
-        && state.match_state.network_wait.dialog_open()
-        && state.frontend.skirmish_shell_chrome.is_some()
-        && crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+pub(crate) fn connection_shell_drawable(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    frontend.screen == crate::app::GameScreen::InGame
+        && match_state.network_wait.dialog_open()
+        && frontend.skirmish_shell_chrome.is_some()
+        && crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)
             .is_some_and(|atlas| atlas.in_game_shell.panel_tile.is_some())
-        && in_game_shell::current_in_game_shell_layout(state).is_some()
+        && in_game_shell::current_in_game_shell_layout(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        )
+        .is_some()
 }
 
 pub(crate) fn render_connection_shell(
@@ -30,7 +48,14 @@ pub(crate) fn render_connection_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::input::connection::sync(state).expect("active 0xEA geometry");
+    crate::app::input::connection::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    )
+    .expect("active 0xEA geometry");
     in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let page = state.match_state.network_wait.page().expect("open 0xEA");
@@ -55,7 +80,9 @@ pub(crate) fn render_connection_shell(
                 ConnectionControl::Player(slot) => Some(page.rows.get(first + slot)?.name.clone()),
                 ConnectionControl::Countdown => Some(match &page.countdown {
                     Some(countdown) => countdown.clone(),
-                    None => state.csf_label("GUI:TimeRemaining", "Time Remaining:"),
+                    None => state
+                        .process_assets
+                        .csf_label("GUI:TimeRemaining", "Time Remaining:"),
                 }),
                 _ => None,
             }

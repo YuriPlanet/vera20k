@@ -40,7 +40,10 @@ pub(crate) fn render_saved_game_loading(
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
-    let frame = (state.render_width(), state.render_height());
+    let frame = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     let restored = state
         .renderer
         .shell_surface_presenter
@@ -67,8 +70,12 @@ pub(crate) fn render_saved_game_loading(
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
     let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
-    let side =
-        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let side = in_match.then(|| {
+        crate::app::presentation::sidebar_render::current_sidebar_theme(
+            &state.frontend,
+            &state.match_state,
+        )
+    });
     let (width, height) = (frame.0 as i32, frame.1 as i32);
     // F0 is CE's box: its body over a Cancel it keeps hidden.
     let area = match in_match {
@@ -76,9 +83,13 @@ pub(crate) fn render_saved_game_loading(
         false => menu_area(width, height),
     };
     let layout = message_box_parts(1, area);
-    let body = state.csf_label("TXT_LOADING", "Mission is loading. Please wait...");
-    let shell_box =
-        crate::ui::shell::modal::ShellBox::new(crate::ui::shell::descriptor::DialogResourceId(0xF0), body);
+    let body = state
+        .process_assets
+        .csf_label("TXT_LOADING", "Mission is loading. Please wait...");
+    let shell_box = crate::ui::shell::modal::ShellBox::new(
+        crate::ui::shell::descriptor::DialogResourceId(0xF0),
+        body,
+    );
     // Its widgets, which only this paint keeps.
     let ui = &mut state.frontend.loading_box;
     if ui.root_in(shell_box.dialog).is_none() {
@@ -86,16 +97,34 @@ pub(crate) fn render_saved_game_loading(
     }
     crate::ui::shell::menu_page::sync_box(ui, &shell_box, &layout);
     // A zoomed match's text is drawn in the window (`window_ui`).
-    let raster = crate::app::presentation::window_ui::shell_raster(state, false)
-        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+    let raster = crate::app::presentation::window_ui::shell_raster(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+        false,
+    )
+    .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
     let frame_raster = state.renderer.bit_font.set_raster(raster);
     let look = super::BoxLook::new(
         atlas.mode_two_dialog_background(side),
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
     let tree = super::controller_tree(&state.frontend.loading_box, shell_box.dialog);
-    let modal =
-        super::paint_shell_box(state, Some(atlas), tree, &shell_box, &layout, |_| false, look);
+    let modal = super::paint_shell_box(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        Some(atlas),
+        tree,
+        &shell_box,
+        &layout,
+        |_| false,
+        look,
+    );
     let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,

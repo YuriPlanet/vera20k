@@ -462,6 +462,15 @@ impl Gui {
         self.top_pointer().pressed
     }
 
+    /// Whether the last press landed on an `Edit`. The host asks the platform's
+    /// input method to show for that edit: an edit takes the keyboard only when
+    /// the player taps it, not because a page gave it the focus when it opened.
+    pub fn pressed_edit(&self) -> bool {
+        self.top_pointer()
+            .last_down
+            .is_some_and(|node| self.tree.kind(node) == Ok(NodeKind::Edit))
+    }
+
     pub fn hovered(&self) -> Option<NodeId> {
         self.top_pointer().hovered
     }
@@ -1522,6 +1531,24 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_press_on_an_edit_is_reported_for_the_hosts_input_method() {
+        let mut g = Gui::new(16);
+        let root = g.create(NodeKind::Dialog, None).unwrap();
+        let edit = g.create(NodeKind::Edit, Some(root)).unwrap();
+        let button = g.create(NodeKind::Button, Some(root)).unwrap();
+        g.set(edit, Prop::Rect, Value::Rect(Rect::new(0, 0, 40, 10))).unwrap();
+        g.set(button, Prop::Rect, Value::Rect(Rect::new(0, 10, 40, 10))).unwrap();
+        g.push_dialog(root, DialogKind::Page).unwrap();
+        assert!(!g.pressed_edit(), "nothing was pressed yet");
+        down(&mut g, 5);
+        assert!(g.pressed_edit(), "the press landed on the edit");
+        assert_eq!(g.focus(), Some(edit), "and gave it the keyboard focus");
+        g.input(InputEvent::PointerMove { x: 5, y: 15 }, 0);
+        g.input(InputEvent::PointerDown { x: 5, y: 15, button: MouseButton::Left }, 0);
+        assert!(!g.pressed_edit(), "a press on a button is not an edit press");
     }
 
     #[test]

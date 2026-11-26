@@ -1129,10 +1129,8 @@ fn firepower_stages(
         open_topped: firer
             .filter(|firer| firer.passenger_role().in_open_transport())
             .map(|_| f32_bits(multipliers.open_topped_damage_multiplier)),
-        #[cfg(feature = "phobos")]
-        ae_firepower: firer.map_or(1.0, |firer| firer.phobos_stat_multipliers().firepower),
-        #[cfg(not(feature = "phobos"))]
-        ae_firepower: 1.0,
+        // Phobos' AttachEffect product with the Wasm module modifiers.
+        ae_firepower: firer.map_or(1.0, |firer| firer.effect_firepower_multiplier()),
     }
 }
 
@@ -1435,7 +1433,8 @@ pub(crate) fn snapshot_get_rof(
                 .map_or(crate::util::native_x87::NativeF64Bits::ONE, |house| {
                     house.rof_bias()
                 }),
-            ae_rof: firer.map_or(1.0, |entity| entity.phobos_rof_multiplier()),
+            // With the Wasm module `ROFMultiplier` modifiers composed on.
+            ae_rof: firer.map_or(1.0, |entity| entity.effect_rof_multiplier()),
             // None describes the unpatched kernel, so a game without Ares
             // keeps the stock building-ammo shortcut and no FMUL.
             attached_rof: rules.ares().then(|| {
@@ -2243,7 +2242,8 @@ pub(super) fn emit_admitted_fire(
                 .link_to_owner_fire_slot(system);
         }
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.fire_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.fire_particle_system.bind(system, note);
         }
     }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
@@ -2259,7 +2259,8 @@ pub(super) fn emit_admitted_fire(
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.spark_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.spark_particle_system.bind(system, note);
         }
     }
     // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
@@ -2308,7 +2309,8 @@ pub(super) fn emit_admitted_fire(
                 )
             });
         if !detached && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.railgun_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.railgun_particle_system.bind(system, note);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,
@@ -2548,6 +2550,65 @@ pub(super) fn emit_admitted_fire(
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
     }
+    // Wasm module `Fire` on the shooter and `AttackedBy` on the target
+    // object (RFC 0001 appendix 4.3): after the shot completes, for a FireAt
+    // that launched its bullet.
+    let fire = world
+        .trigger_runtime
+        .module_listens(vera20k_wasm_ext::triggers::EVENT_FIRE);
+    let attacked = world
+        .trigger_runtime
+        .module_listens(vera20k_wasm_ext::triggers::EVENT_ATTACKED_BY);
+    if fire || attacked {
+        use crate::sim::ext_modules::ModuleEvent;
+        let target = match snap.target {
+            TargetKind::Entity(id) => id,
+            _ => 0,
+        };
+        if fire {
+            let weapon_type = rules.weapon(selected.weapon_id);
+            let weapon = rules
+                .weapon_index(selected.weapon_id)
+                .map_or(-1, |index| index as i32);
+            // A weapon, warhead or projectile binding reaches every shooter
+            // using it.
+            let warhead = weapon_type
+                .and_then(|weapon| weapon.warhead.as_deref())
+                .and_then(|warhead| rules.warhead_index(warhead))
+                .map_or(-1, |index| index as i32);
+            let projectile_type = weapon_type
+                .and_then(|weapon| weapon.projectile.as_deref())
+                .and_then(|projectile| rules.projectile_index(projectile))
+                .map_or(-1, |index| index as i32);
+            world.raise_module_event(
+                rules,
+                effects,
+                ModuleEvent {
+                    other: target,
+                    projectile: bullet_id,
+                    cell: Some((target_rx, target_ry)),
+                    value: i64::from(selected.index),
+                    id: weapon,
+                    weapon,
+                    warhead,
+                    projectile_type,
+                    ..ModuleEvent::new(vera20k_wasm_ext::triggers::EVENT_FIRE, snap.stable_id)
+                },
+            );
+        }
+        if attacked && target != 0 {
+            world.raise_module_event(
+                rules,
+                effects,
+                ModuleEvent {
+                    other: snap.stable_id,
+                    projectile: bullet_id,
+                    value: i64::from(selected.index),
+                    ..ModuleEvent::new(vera20k_wasm_ext::triggers::EVENT_ATTACKED_BY, target)
+                },
+            );
+        }
+    }
     Some(bullet_id)
 }
 
@@ -2716,13 +2777,11 @@ fn commit_fire_bookkeeping(
     // `SpawnManagerClass::SetTarget` only queues a target that differs from the
     // live one; the manager's own AI pass promotes it.
     for &(parent_id, target) in &spawn_target_updates {
-        if let Some(manager) = world
-            .substrate
-            .entities
-            .get_mut(parent_id)
-            .and_then(|e| e.spawn_manager.as_mut())
-        {
-            manager.set_target(Some(target));
+        if let Some(parent) = world.substrate.entities.get_mut(parent_id) {
+            let note = parent.note_names();
+            if let Some(manager) = parent.spawn_manager.as_mut() {
+                manager.queue_target(Some(target), note);
+            }
         }
     }
     // Drain weapons: `0x0070FD70` installs the reciprocal
@@ -3786,10 +3845,7 @@ pub(crate) fn estimated_damage_on(
             occupied: None,
             bunkered: None,
             open_topped: None,
-            #[cfg(feature = "phobos")]
-            ae_firepower: attacker.phobos_stat_multipliers().firepower,
-            #[cfg(not(feature = "phobos"))]
-            ae_firepower: 1.0,
+            ae_firepower: attacker.effect_firepower_multiplier(),
         },
         divisors: damage::DefenceDivisors {
             house_type_armor: NativeF32Bits::from_bits(house_type_armor.to_bits()),
@@ -3803,7 +3859,10 @@ pub(crate) fn estimated_damage_on(
             // false: no timer or HitAnim). A target carrying one is estimated
             // without it, and every target-scan estimate on it skips those
             // Scenario draws, shifting the stream.
-            ae_armor: target.phobos_armor_multiplier(),
+            ae_armor: target.with_module_modifiers(
+                crate::sim::ext_modules::modifiers::Stat::Armor,
+                target.phobos_armor_multiplier(),
+            ),
             rank_armor,
         },
         warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {

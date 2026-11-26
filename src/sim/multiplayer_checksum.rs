@@ -251,6 +251,11 @@ impl Simulation {
         }
         self.trigger_runtime
             .fold_match_checksum(self.session.binary_frame() as i32, &mut checksum);
+        // Wasm extension modules (RFC 0001 section 15.1, item 7); none in
+        // stock play, so the stock checksum is unchanged.
+        for digest in self.ext_modules.checksum_digests() {
+            checksum.fold_value(digest);
+        }
         Ok(MultiplayerChecksumFrame {
             value: checksum.value(),
             ..frame
@@ -910,7 +915,7 @@ mod tests {
             Simulation::reveal_particle(&mut sim.substrate, id);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "particles", 0);
-        let rng = sim.scenario_rng.clone();
+        let rng = (*sim.scenario_rng).clone();
         let mut reference = rng.clone();
 
         let frame = sim.compute_retail_multiplayer_checksum().unwrap();
@@ -928,7 +933,7 @@ mod tests {
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         // The loader reseeds Scenario; continue the saved stream.
-        restored.scenario_rng = rng;
+        *restored.scenario_rng = rng;
         assert_eq!(restored.compute_retail_multiplayer_checksum(), Ok(frame));
     }
 

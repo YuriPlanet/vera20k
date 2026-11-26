@@ -347,6 +347,12 @@ impl Simulation {
         })
     }
 
+    /// Every stored spotlight's id, ascending: what
+    /// [`Self::building_spotlight`] answers.
+    pub fn spotlight_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.substrate.spotlights.iter().map(|(&id, _)| id)
+    }
+
     pub(super) fn spotlight_alive(&self, id: u64) -> Option<bool> {
         self.substrate.spotlights.get(id).map(|l| l.alive)
     }
@@ -441,13 +447,9 @@ impl Simulation {
         };
         self.substrate.spotlights.objects.insert(id, light);
         self.substrate.spotlights.order.push(id);
-        self.substrate
-            .entities
-            .get_mut(parent_id)
-            .unwrap()
-            .building
-            .building_light
-            .attach(id);
+        let parent = self.substrate.entities.get_mut(parent_id).unwrap();
+        let note = parent.note_names();
+        parent.building.building_light.attach(id, note);
         // BuildingLightClass::GetLayer @ 0x004369F0 returns Air (3).
         Self::submit_object_display(&mut self.substrate, id, DisplayLayer::AIR);
         // BuildingLightClass::Unlimbo @ 0x00437050 registers it with Logic;

@@ -8,11 +8,18 @@ use super::{
     healer_object_action_with, infantry_attack_action_with, ivan_cannot_bomb, move_click_command,
     object_click_payload, object_guard_command,
 };
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::dispatch::selected_stable_ids_in_order;
 use crate::app::input::entity_pick::HoverTargetKindWithId;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::types::{HoverTargetKind, OrderMode};
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -491,7 +498,11 @@ pub(super) fn restore_selection_dispatch_order(queued: &mut [CommandEnvelope], s
 /// the first entry of the selection array — and it speaks the line for the
 /// mission *it* resolved, not an order-wide line. If that first object resolved
 /// no order (its action mapped to a cursor-only code) nothing is spoken.
-fn emit_resolved_order_voice(state: &mut AppState, speaker_id: u64, queued: &[CommandEnvelope]) {
+fn emit_resolved_order_voice(
+    match_state: &mut MatchState,
+    speaker_id: u64,
+    queued: &[CommandEnvelope],
+) {
     let Some(envelope) = queued
         .iter()
         .find(|env| command_actor_id(&env.payload) == Some(speaker_id))
@@ -513,7 +524,7 @@ fn emit_resolved_order_voice(state: &mut AppState, speaker_id: u64, queued: &[Co
         } => Some(TargetKind::Cell(*target_rx, *target_ry)),
         _ => None,
     };
-    emit_entity_order_voice(state, speaker_id, voice_field, target);
+    emit_entity_order_voice(match_state, speaker_id, voice_field, target);
 }
 
 /// Play one entity's voice line for the given `Voice*` INI key.
@@ -522,39 +533,39 @@ fn emit_resolved_order_voice(state: &mut AppState, speaker_id: u64, queued: &[Co
 /// entity; retail speaks the object that resolved the order, so order resolution
 /// needs to name the speaker explicitly.
 fn emit_entity_order_voice(
-    state: &mut AppState,
+    match_state: &mut MatchState,
     speaker_id: u64,
     voice_field: &str,
     target: Option<TargetKind>,
 ) {
     if voice_field == "VoiceDeploy" {
-        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+        if let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) = crate::app::match_runtime::sound_dispatch::deploy_order_voice_event(
                 &mut runtime.simulation,
                 &runtime.resources.rules,
                 speaker_id,
-                state.match_state.input.selection_voice_enabled,
+                match_state.input.selection_voice_enabled,
             )
         {
-            state.match_state.match_audio.sound_events.push(event);
+            match_state.match_audio.sound_events.push(event);
         }
         return;
     }
     if voice_field == "VoiceSpecialAttack" {
-        if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+        if let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command)
             && let Some(event) =
                 crate::app::match_runtime::sound_dispatch::default_order_voice_event(
                     &mut runtime.simulation,
                     &runtime.resources.rules,
                     speaker_id,
-                    state.match_state.input.selection_voice_enabled,
+                    match_state.input.selection_voice_enabled,
                 )
         {
-            state.match_state.match_audio.sound_events.push(event);
+            match_state.match_audio.sound_events.push(event);
         }
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let Some(id) = runtime.simulation.order_voice_request(
@@ -562,7 +573,7 @@ fn emit_entity_order_voice(
         speaker_id,
         voice_field,
         target,
-        state.match_state.input.selection_voice_enabled,
+        match_state.input.selection_voice_enabled,
     ) else {
         return;
     };
@@ -578,7 +589,7 @@ fn emit_entity_order_voice(
             sound_id: runtime.resources.rules.sound_name(id),
         }
     };
-    state.match_state.match_audio.sound_events.push(event);
+    match_state.match_audio.sound_events.push(event);
 }
 
 /// Commit a resolved context dispatch: one voice line, the queue, then its timer.
@@ -594,14 +605,21 @@ fn emit_entity_order_voice(
 /// Friendly click-selection and an empty selection never enter this boundary.
 /// Evidence: tools/procedural_drawing_oracle/action_lines.
 pub(super) fn finish_order(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     mut queued: Vec<CommandEnvelope>,
     speaker_id: Option<u64>,
     rally_announce: bool,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let planning = state.match_state.input.planning.active();
-    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+    let planning = match_state.input.planning.active();
+    if let Some(runtime) = match_state.sim_runtime.runtime() {
         let proposed = !queued.is_empty();
         let sim = &runtime.simulation;
         retain_context_orders(sim, &runtime.resources.rules, &mut queued);
@@ -617,16 +635,12 @@ pub(super) fn finish_order(
             return true;
         }
     }
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
+    let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
     let mut selected = selected_stable_ids_in_order(
         sim,
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     if let Some(sim) = sim {
         let control = sim.control_projection();
@@ -634,33 +648,39 @@ pub(super) fn finish_order(
     }
     restore_selection_dispatch_order(&mut queued, &selected);
     let admitted = if planning {
-        crate::app::input::planning_mode::queue_orders(state, &selected, queued, clicked_cell)
+        crate::app::input::planning_mode::queue_orders(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            &selected,
+            queued,
+            clicked_cell,
+        )
     } else {
         // The local acknowledgement reads the resolved input order before
         // encoding. Only the native record enters the gameplay queue.
-        let (encoded, feedback): (Vec<_>, Vec<_>) = if let Some(sim) = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation)
-        {
-            queued
-                .into_iter()
-                .filter_map(|envelope| {
-                    crate::app::input::commands::encode_ordinary_local_command(
-                        sim,
-                        envelope.clone(),
-                    )
-                    .map(|encoded| (encoded, envelope))
-                })
-                .unzip()
-        } else {
-            (queued.clone(), queued)
-        };
+        let (encoded, feedback): (Vec<_>, Vec<_>) =
+            if let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) {
+                queued
+                    .into_iter()
+                    .filter_map(|envelope| {
+                        crate::app::input::commands::encode_ordinary_local_command(
+                            sim,
+                            envelope.clone(),
+                        )
+                        .map(|encoded| (encoded, envelope))
+                    })
+                    .unzip()
+            } else {
+                (queued.clone(), queued)
+            };
         let mut accepted = true;
         if !encoded.is_empty() {
-            if let Some(sim) = state
-                .match_state
+            if let Some(sim) = match_state
                 .sim_runtime
                 .write_sim(SimWrite::Command)
                 .map(|rt| &mut rt.simulation)
@@ -669,12 +689,21 @@ pub(super) fn finish_order(
             }
             if accepted {
                 if let Some(speaker_id) = speaker_id {
-                    emit_resolved_order_voice(state, speaker_id, &feedback);
+                    emit_resolved_order_voice(match_state, speaker_id, &feedback);
                 }
             }
         }
         if !accepted {
-            super::super::messages::post_command_backpressure(state);
+            super::super::messages::post_command_backpressure(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
+            );
         }
         accepted
     };
@@ -686,21 +715,19 @@ pub(super) fn finish_order(
     // admitted, so it does not announce.
     if admitted && rally_announce {
         crate::app::input::dispatch::push_local_eva(
-            state,
+            &mut match_state.match_audio,
             crate::app::match_runtime::eva_producers::EVA_NEW_RALLY_POINT_ESTABLISHED,
         );
     }
     //4ABF94's admitted planning route joins the same70D150 suffix at
     //4ABFAE;4ABF8E's refusal exits4AC294 without restarting this timer.
     if admitted
-        && let Some(frame) = state
-            .match_state
+        && let Some(frame) = match_state
             .sim_runtime
             .runtime()
             .map(|rt| rt.simulation.session().binary_frame())
     {
-        state
-            .match_state
+        match_state
             .match_presentation
             .target_lines
             .start_timer(frame);

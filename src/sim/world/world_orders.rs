@@ -2696,7 +2696,7 @@ mod repair_notification_tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "notification", 0);
         let restore = || {
             crate::sim::snapshot::GameSnapshot::load(&bytes)

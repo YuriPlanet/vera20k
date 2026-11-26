@@ -107,6 +107,7 @@ impl SpawnOwner {
     /// Install a fixture's owner.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_for_test(&mut self, owner: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.owner = owner;
     }
 }
@@ -199,6 +200,7 @@ impl SpawnSlot {
         timer: CdTimer,
         is_missile_spawn: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             spawn,
             state,
@@ -210,6 +212,7 @@ impl SpawnSlot {
     /// Install a fixture's child.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_spawn_for_test(&mut self, spawn: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.spawn = spawn;
     }
 
@@ -338,6 +341,7 @@ impl SpawnManagerState {
     /// A fixture's idle pool of `slots` with zero rates and timers.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(spawn_type: InternedId, slots: Vec<SpawnSlot>) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             spawn_type,
             missile_family: None,
@@ -369,12 +373,14 @@ impl SpawnManagerState {
     /// Install a fixture's current target.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_target_for_test(&mut self, current_target: Option<TargetKind>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.current_target = current_target;
     }
 
     /// Install a fixture's queued target.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_queued_target_for_test(&mut self, queued_target: Option<TargetKind>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.queued_target = queued_target;
     }
 
@@ -387,6 +393,7 @@ impl SpawnManagerState {
     /// A fixture's slots.
     #[cfg(any(test, feature = "test-support"))]
     pub fn slots_mut_for_test(&mut self) -> &mut Vec<SpawnSlot> {
+        crate::sim::game_entity::NameNote::fixture();
         &mut self.slots
     }
 
@@ -450,10 +457,20 @@ impl SpawnManagerState {
     /// `SpawnManagerClass::SetTarget` (`0x006B7B90`): a target that differs
     /// from the live one is queued, never written straight through. The next AI
     /// pass promotes it.
-    pub fn set_target(&mut self, target: Option<TargetKind>) {
+    pub(crate) fn queue_target(
+        &mut self,
+        target: Option<TargetKind>,
+        _: crate::sim::game_entity::NameNote,
+    ) {
         if target != self.current_target {
             self.queued_target = target;
         }
+    }
+
+    /// [`Self::queue_target`] for a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target(&mut self, target: Option<TargetKind>) {
+        self.queue_target(target, crate::sim::game_entity::NameNote::fixture());
     }
 
     /// Promote the queued target, as every state branch does before reading
@@ -1190,7 +1207,12 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get_mut(self.owner_id)
-            .and_then(|owner| owner.spawn_manager.as_mut())
+            .and_then(|owner| {
+                // A slot's child and the targets are names the
+                // pointer-expiry index reads.
+                let _ = owner.note_names();
+                owner.spawn_manager.as_mut()
+            })
             .expect("a spawn manager keeps its owner for the call")
     }
 
@@ -1571,6 +1593,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn adopt(&mut self, child: u64) {
         if let Some(entity) = self.sim.substrate.entities.get_mut(child) {
+            // The SpawnOwner is a name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.seldom.spawn_owner_id.owner = Some(self.owner_id);
         }
     }

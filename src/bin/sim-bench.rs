@@ -100,18 +100,26 @@
 //! up to date after every frame, as the client's simulation host does for
 //! drawing (docs/sim-thread.md), and counts it in the frame's time.
 //!
-//! Idle objects sleep as in a real match (`sim::world::idle_sleep`):
-//! `--no-sleep` runs every turn, which must give the same hashes, and
-//! `--sleep-check` runs every turn sleeping would skip and stops if one
-//! changed anything. The summary prints how many visits were counted.
+//! Idle objects sleep as in a real match (`sim::world::idle_sleep`), and
+//! steady objects' AI visits are counted (`sim::world::steady_ai`):
+//! `--no-sleep` runs every turn and visit, which must give the same hashes,
+//! and `--sleep-check` runs every turn and visit either would skip and stops
+//! if one changed anything. The summary prints how many were counted.
 //!
 //! The simulation batches its path searches and target scans as a real
-//! match does; `--serial-paths` searches and `--serial-scans` scans in native
-//! order instead. The `path_batch` line sums the batch's passes over the
+//! match does, and with the scans spreads the patrol scans over their period
+//! and updates each team on its own turns; `--serial-paths` searches in
+//! native order instead, and `--serial-scans` scans in native order, has
+//! every patrolling team scan on the same frame and updates every team every
+//! frame. Each object's turn draws from its own random stream as in a real
+//! match (`sim::world::turn_streams`); `--shared-stream` draws every turn
+//! from the Scenario stream in Logic order, as gamemd does.
+//! The `path_batch` line sums the batch's passes over the
 //! measured frames ([`PathBatchStats`]): registrations waiting and answered,
-//! the ones the cap or a re-path budget left for a later pass, and the
-//! cells the searches expanded, with the code-2 re-paths' share at each
-//! urgency.
+//! the ones the cap, a re-path budget or the urgency-2 limit left for a later
+//! pass (`capped` counts the limit's), and the cells the searches expanded,
+//! with the most one pass and one search expanded (`peak_steps`,
+//! `peak_search`) and the code-2 re-paths' share at each urgency.
 //!
 //! `--threads N` gives the worker pool N threads instead of one per CPU
 //! thread; no result depends on it. The `measured` line gives the mean, p50,
@@ -204,6 +212,7 @@ struct Args {
     csv: Option<PathBuf>,
     serial_paths: bool,
     serial_scans: bool,
+    shared_stream: bool,
     no_sleep: bool,
     sleep_check: bool,
     frame_profile: bool,
@@ -255,6 +264,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         csv: None,
         serial_paths: false,
         serial_scans: false,
+        shared_stream: false,
         no_sleep: false,
         sleep_check: false,
         frame_profile: false,
@@ -325,6 +335,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
+            "--shared-stream" => args.shared_stream = true,
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
@@ -825,7 +836,12 @@ struct PathTotals {
     /// Passes that left any registration for a later one.
     left_out_passes: u64,
     peak_left_out: u32,
+    /// Urgency-2 re-paths stopped at their limit.
+    capped: u64,
     steps: u64,
+    /// The most cells one pass's searches expanded, and one search.
+    peak_steps: u64,
+    peak_search: u64,
     urgency2_steps: u64,
     urgency1_steps: u64,
     peak_pass_ms: f64,
@@ -839,7 +855,10 @@ impl PathTotals {
         self.left_out += u64::from(pass.left_out);
         self.left_out_passes += u64::from(pass.left_out > 0);
         self.peak_left_out = self.peak_left_out.max(pass.left_out);
+        self.capped += u64::from(pass.capped);
         self.steps += pass.steps;
+        self.peak_steps = self.peak_steps.max(pass.steps);
+        self.peak_search = self.peak_search.max(pass.largest_search);
         self.urgency2_steps += pass.urgency2_steps;
         self.urgency1_steps += pass.urgency1_steps;
         self.peak_pass_ms = self.peak_pass_ms.max(pass.last_ms);
@@ -1073,7 +1092,7 @@ fn main() -> Result<(), String> {
                  [--ticks 300 (match: 1800, skirmish: 9000, battle: 3000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
-                 [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
+                 [--shared-stream] [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
                  [--client-timing] [--threads N] [--battle-units 20000 (battle)] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
@@ -1135,6 +1154,10 @@ fn main() -> Result<(), String> {
     }
     // As a real match's handoff does (`app::loading::transitions`).
     scenario.runtime.simulation.present_effect_anims();
+    scenario
+        .runtime
+        .simulation
+        .separate_turn_streams(!args.shared_stream);
     scenario
         .runtime
         .simulation
@@ -1254,15 +1277,18 @@ fn main() -> Result<(), String> {
     if paths.passes > 0 {
         println!(
             "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
-             peak_left_out={} steps={} urgency2_steps={} urgency1_steps={} \
-             peak_pass_ms={:.2}",
+             peak_left_out={} capped={} steps={} peak_steps={} peak_search={} \
+             urgency2_steps={} urgency1_steps={} peak_pass_ms={:.2}",
             paths.passes,
             paths.waiting,
             paths.answered,
             paths.left_out,
             paths.left_out_passes,
             paths.peak_left_out,
+            paths.capped,
             paths.steps,
+            paths.peak_steps,
+            paths.peak_search,
             paths.urgency2_steps,
             paths.urgency1_steps,
             paths.peak_pass_ms,
@@ -1282,7 +1308,8 @@ fn main() -> Result<(), String> {
     let final_hash = runtime.simulation.state_hash();
     println!("final_hash={final_hash:016x}");
     let (asleep, counted) = runtime.simulation.idle_sleep_counts();
-    println!("idle_sleep asleep_now={asleep} visits_counted={counted}");
+    let steady = runtime.simulation.steady_ai_visits();
+    println!("idle_sleep asleep_now={asleep} visits_counted={counted} steady_ai_visits={steady}");
     if let Plan::Battle(battle) = &plan {
         println!(
             "battle fewest_mobile={} lost={} objects_made={}",

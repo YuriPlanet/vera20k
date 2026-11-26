@@ -83,8 +83,8 @@ fn fixture(case: &Value) -> Simulation {
         .set_bridge_flags_0x1180(case["dummy_flags"].as_u64().unwrap() as u32);
     grid.shared_cell_dummy().stamp_coord(1234, -2345);
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(grid);
-    sim.overlay_grid = Some(overlays);
+    *sim.resolved_terrain = Some(grid);
+    *sim.overlay_grid = Some(overlays);
     if let Some(objects) = case["objects"].as_array() {
         for kind in objects {
             let name = kind.as_str().unwrap();
@@ -441,8 +441,8 @@ fn flight_sim(terrain_name: &str, center: i32) -> Simulation {
     grid.test_set_native_allocated_cells(&allocated);
     grid.test_set_dummy_cell_level_slope(0, 0);
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(grid);
-    sim.overlay_grid = Some(OverlayGrid::new(size, size));
+    *sim.resolved_terrain = Some(grid);
+    *sim.overlay_grid = Some(OverlayGrid::new(size, size));
     sim
 }
 

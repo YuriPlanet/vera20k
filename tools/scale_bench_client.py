@@ -28,8 +28,6 @@ ROOT = scale_bench.ROOT
 # battle scenario has them (`BATTLE_WARMUP`, `BATTLE_TICKS`).
 WARMUP_FRAMES = 300
 MEASURED_FRAMES = 2700
-# The picture the game draws: a 1080p window at the default zoom.
-SCREEN = (1920, 1080)
 # One human and 29 computer houses fill the map's 30 starts.
 COMPUTERS = 29
 # Seed and game speed of the launch. Speed 1 is the 45 frames a second the
@@ -74,8 +72,13 @@ def launch_folder(folder: Path, map_path: Path) -> Path:
     (folder / 'config.toml').write_text(
         f'[paths]\nra2_dir = {json.dumps(os.environ["RA2_DIR"])}\nsettings_dir = "."\n',
         encoding='utf-8', newline='\n')
-    (folder / 'VERA.INI').write_text(
-        f'[Video]\nScreenWidth={SCREEN[0]}\nScreenHeight={SCREEN[1]}\n', encoding='ascii', newline='\n')
+    # An empty profile, so every option is its default: with none, the game
+    # would import the retail folder's RA2MD.INI (`profile_file::import_legacy`).
+    # The picture is the hidden window's, 1024x768 at the default zoom: the
+    # window opens at VERA's launch size (`VERA_LAUNCH_WINDOW_SIZE`) and a match
+    # draws at its window's size. `[Video]` `ScreenWidth` and `ScreenHeight` do
+    # not size the window.
+    (folder / 'VERA.INI').write_bytes(b'')
     return folder
 
 

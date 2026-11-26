@@ -43,23 +43,22 @@ pub(super) fn diplomacy_row(sim: &crate::sim::world::Simulation, owner: &str) ->
 }
 
 pub(super) fn disguise_inputs(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> Result<Value> {
     use crate::app::presentation::instances;
     let Some(disguise) = entity.seldom.disguise.as_ref() else {
         return Ok(Value::Null);
     };
-    let runtime = state
-        .match_state
+    let runtime = match_state
         .sim_runtime
         .runtime()
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
         // The record the draw reads (`presentation::frame`).
-        let frame = state
-            .match_state
+        let frame = match_state
             .sim_runtime
             .frame()
             .context("presentation frame absent")?;
@@ -70,19 +69,24 @@ pub(super) fn disguise_inputs(
         let chosen = instances::drawn_model_id(
             entity,
             sim.interner(),
-            state.rules(),
+            crate::app::state::active_rules(frontend, match_state),
             sim.session().binary_frame(),
             observer,
         );
-        let voxel =
-            instances::drawn_type_uses_voxel(entity, &chosen, sim.interner(), state.rules());
+        let voxel = instances::drawn_type_uses_voxel(
+            entity,
+            &chosen,
+            sim.interner(),
+            crate::app::state::active_rules(frontend, match_state),
+        );
         observer.drawn_voxel = Some(voxel);
         let frame = (!voxel)
-            .then(|| instances::resolve_object_shp_frame(state, &chosen, entity, None))
+            .then(|| {
+                instances::resolve_object_shp_frame(frontend, match_state, &chosen, entity, None)
+            })
             .flatten();
         let terrain_pair = frame.is_some_and(|frame| {
-            state
-                .match_state
+            match_state
                 .match_presentation
                 .overlay_atlas
                 .as_ref()
@@ -244,14 +248,13 @@ pub(super) struct MapLaserObservation {
 }
 
 impl MapLaserObservation {
-    pub(super) fn capture(state: &AppState) -> Result<Self> {
-        let runtime = state
-            .match_state
+    pub(super) fn capture(match_state: &MatchState) -> Result<Self> {
+        let runtime = match_state
             .sim_runtime
             .runtime()
             .context("laser observation simulation absent")?;
         let sim = &runtime.simulation;
-        let presentation = &state.match_state.match_presentation;
+        let presentation = &match_state.match_presentation;
         let snapshot = Self {
             detail: presentation.detail.borrow().observation(),
             live: presentation
@@ -359,15 +362,14 @@ pub(super) struct MapElectricBoltObservation {
 }
 
 impl MapElectricBoltObservation {
-    pub(super) fn capture(state: &AppState) -> Result<Self> {
-        let runtime = state
-            .match_state
+    pub(super) fn capture(match_state: &MatchState) -> Result<Self> {
+        let runtime = match_state
             .sim_runtime
             .runtime()
             .context("electric observation simulation absent")?;
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
-        let presentation = &state.match_state.match_presentation;
+        let presentation = &match_state.match_presentation;
         let live: Vec<_> = presentation
             .electric_bolts
             .observations()
@@ -643,10 +645,14 @@ pub(super) struct MapFrameObservation {
 /// draw. This is not a GPU readback or proof that a fragment reached the target.
 /// In particular, a missing/out-of-view A sample remains null rather than
 /// claiming the shader's disabled/out-of-bounds neutral fallback was sampled.
-pub(super) fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
-    let presentation = &state.match_state.match_presentation;
-    let grid = state
-        .match_state
+pub(super) fn terrain_render_observation(
+    match_state: &MatchState,
+    gpu: &crate::render::gpu::GpuContext,
+    rx: u16,
+    ry: u16,
+) -> Value {
+    let presentation = &match_state.match_presentation;
+    let grid = match_state
         .sim_runtime
         .runtime()
         .and_then(|runtime| runtime.view().resolved_terrain());
@@ -676,14 +682,10 @@ pub(super) fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> 
             y + crate::map::terrain::TILE_HEIGHT / 2.0,
         ]
     });
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let a_source = (!state.match_state.sandbox_full_visibility)
+    let camera = [match_state.input.camera_x, match_state.input.camera_y];
+    let a_source = (!match_state.sandbox_full_visibility)
         .then_some(presentation.shroud_buffer.as_ref())
         .flatten();
-    let gpu = &state.renderer.gpu;
     let a_center = center.and_then(|point| {
         a_source?.read_world(
             &gpu.device,

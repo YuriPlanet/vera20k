@@ -70,8 +70,8 @@ fn response_world(frame: u32, attacker_at: (u16, u16)) -> Simulation {
 fn with_clear_map(sim: &mut Simulation) {
     let terrain = clear_terrain(8, 8);
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
-    sim.zone_grid = Some(ZoneGrid::build_with_terrain(&path_grid, &terrain, &[], 8, 8).into());
-    sim.resolved_terrain = Some(terrain);
+    *sim.zone_grid = Some(ZoneGrid::build_with_terrain(&path_grid, &terrain, &[], 8, 8).into());
+    *sim.resolved_terrain = Some(terrain);
     sim.session.set_map_width_for_test(8);
     sim.session.set_map_height_for_test(8);
     sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
@@ -103,7 +103,7 @@ fn response_defender(id: u64, type_name: &str, x: u16) -> GameEntity {
 
 /// The victim building (1) calls for help against the attacker (2).
 fn respond(sim: &mut Simulation, rules: &RuleSet) {
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     respond_to_base_attack(
         sim,
         rules,
@@ -364,7 +364,7 @@ fn gsi_04_05_zero_budget_still_suspends_low_priority_teams_before_scan_exit() {
         }],
         0,
     );
-    sim.scenario_rng = SimRng::new(0x0405);
+    *sim.scenario_rng = SimRng::new(0x0405);
     let rng_before = sim.scenario_rng.logical_state();
 
     respond(&mut sim, &rules);
@@ -412,7 +412,7 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
         .entities
         .insert(response_defender(4, "DEFENDER", 3));
     let seed = 0x504F_5349;
-    sim.scenario_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
     let mut expected_rng = SimRng::new(seed);
     let expected_missions = [
         response_mission(expected_rng.next_range_u32_inclusive(0, 99), false),
@@ -477,7 +477,7 @@ fn gsi_04_05_a_negative_budget_starts_the_cooldown_without_an_assignment() {
             .attack_target
             .set_for_test(Some(TargetKind::Entity(2)));
         sim.substrate.entities.insert(defender);
-        sim.scenario_rng = SimRng::new(0x0405);
+        *sim.scenario_rng = SimRng::new(0x0405);
         let rng_before = sim.scenario_rng.logical_state();
 
         respond(&mut sim, &rules);
@@ -532,7 +532,7 @@ fn gsi_04_05_the_scan_takes_the_victim_house_s_objects_through_ownership_changes
     sim.substrate.entities.change_owner(4, victim_house);
     sim.substrate.entities.change_owner(5, enemy);
     let seed = 0x504F_5349;
-    sim.scenario_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
     let mut expected_rng = SimRng::new(seed);
     for _ in 0..2 {
         expected_rng.next_range_u32_inclusive(0, 99);
@@ -589,7 +589,7 @@ fn gsi_04_05_a_defender_whose_weapon_zero_is_illegal_is_not_recruited() {
         .entities
         .insert(response_defender(4, "DEFENDER", 3));
     let seed = 0x504F_5349;
-    sim.scenario_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
     let mut expected_rng = SimRng::new(seed);
     expected_rng.next_range_u32_inclusive(0, 99);
 
@@ -764,8 +764,8 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
         .unwrap();
         let mut sim = response_world(41, (5, 5));
         let terrain = native::terrain(input);
-        sim.zone_grid = Some(native::zones(&terrain, row).into());
-        sim.resolved_terrain = Some(terrain);
+        *sim.zone_grid = Some(native::zones(&terrain, row).into());
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8),
         ));
@@ -781,7 +781,7 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
             .entities
             .insert(native::candidate(input, 3, "DEFENDER"));
         let seed = 0x708080;
-        sim.scenario_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
         let mut expected_rng = SimRng::new(seed);
         let reachable = row["output"]["reachable"].as_bool().unwrap();
         let recruits = reachable && (infantry || !victim_is_slave);
@@ -876,7 +876,7 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             cell.slope_type = supplied["slope"].as_u64().unwrap() as u8;
             cell.bridge_facts.raw_flags = supplied["flags"].as_u64().unwrap() as u32;
         }
-        sim.zone_grid = Some(native::zones(terrain, row).into());
+        *sim.zone_grid = Some(native::zones(terrain, row).into());
         sim.set_playfield_bounds_for_test(Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8),
         ));

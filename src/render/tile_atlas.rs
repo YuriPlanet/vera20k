@@ -55,9 +55,19 @@ pub struct TileAtlas {
     /// Tile key → UV rectangle + rendering metadata. Lookup-only: the
     /// terrain instance build reads it for every visible cell each draw.
     uv_map: LookupMap<TileKey, TileUV>,
+    /// VERA's HD art terrain (`render::hd_terrain`): each tile's UV origin
+    /// bits → its [`crate::render::hd_terrain::tile_hash`], its atlas pixel
+    /// origin and size.
+    hd_tiles: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
 }
 
 impl TileAtlas {
+    /// The HD art lookup of the tile at `uv_origin`: its hash, atlas pixel
+    /// origin and size.
+    pub(crate) fn hd_tile(&self, uv_origin: [f32; 2]) -> Option<(u64, [u32; 2], [u32; 2])> {
+        self.hd_tiles.get(&uv_origin.map(f32::to_bits)).copied()
+    }
+
     /// Look up UV and rendering data for a tile. Returns None if not in the atlas.
     pub fn get_uv(&self, key: TileKey) -> Option<TileUV> {
         self.uv_map.get(&key).copied()
@@ -92,6 +102,7 @@ pub fn build_atlas(
             depth_texture_view,
             zdepth_bind_group,
             uv_map: LookupMap::default(),
+            hd_tiles: HashMap::new(),
         };
     }
 
@@ -134,6 +145,7 @@ pub fn build_atlas(
         LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
+    let mut hd_tiles = HashMap::with_capacity(plan.placements.len());
 
     for placed in &plan.placements {
         let [px, py] = placed.origin;
@@ -147,6 +159,15 @@ pub fn build_atlas(
         }
         blit_tile(&mut rgba, atlas_width, px, py, tile);
         blit_depth(&mut depth_buf, atlas_width, px, py, tile);
+        let uv_origin = [px as f32 / aw, py as f32 / ah];
+        hd_tiles.insert(
+            uv_origin.map(f32::to_bits),
+            (
+                crate::render::hd_terrain::tile_hash(tile.width, tile.height, &tile.rgba),
+                [px, py],
+                [tile.width, tile.height],
+            ),
+        );
 
         uv_map.insert(
             key,
@@ -189,6 +210,7 @@ pub fn build_atlas(
         depth_texture_view,
         zdepth_bind_group,
         uv_map,
+        hd_tiles,
     }
 }
 

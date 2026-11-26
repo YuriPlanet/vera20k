@@ -19,7 +19,12 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+#[cfg(any(
+    windows,
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "android"
+))]
 pub use native::import::{ModImport, PreparedModImport};
 
 #[derive(Debug, Clone)]
@@ -193,7 +198,8 @@ mod native {
     }
 
     fn asset_directory(name: &str) -> bool {
-        ["ini", "resources", "maps", "mixfiles", "taunts"]
+        // `hd_art`: an HD art pack (`render::hd_art`), alone or in a mod.
+        ["ini", "resources", "maps", "mixfiles", "taunts", "hd_art"]
             .iter()
             .any(|asset| asset.eq_ignore_ascii_case(name))
     }
@@ -620,7 +626,12 @@ mod native {
         Ok(())
     }
 
-    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[cfg(any(
+        windows,
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "android"
+    ))]
     pub(super) mod import {
         use super::*;
 
@@ -840,6 +851,12 @@ mod native {
                     libc::RENAME_NOREPLACE,
                 )
             };
+            // Android: bionic has no exclusive rename. The folder sits in the
+            // app's private storage, which no other program writes, and the
+            // name was looked up under the import lock.
+            // SAFETY: both arguments are NUL-terminated and live for the call.
+            #[cfg(target_os = "android")]
+            let result = unsafe { libc::rename(from.as_ptr(), to.as_ptr()) };
             if result == 0 {
                 Ok(())
             } else {

@@ -17,12 +17,7 @@ const SAVED_ELAPSED_BUCKETS: u32 = 180;
 const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 
 /// Optional local replay of a player's save with their installed retail assets.
-#[cfg(not(any(
-    feature = "phobos",
-    feature = "npatch",
-    feature = "verax",
-    feature = "npbug"
-)))]
+#[cfg(not(any(feature = "phobos", feature = "verax", feature = "npbug")))]
 #[test]
 #[ignore = "requires VERA20K_VERIFY_PLAYER_SAVE and its matching RA2_DIR"]
 fn external_player_save_resumes_and_saves_again() {
@@ -707,8 +702,7 @@ fn assert_incoming_resources(
         "unrelated trigger hold survives missing video retirement"
     );
     assert!(
-        restored_session
-            .resume_scenario()
+        Vec::from(restored_session.resume_scenario())
             .contains(&crate::sim::trigger_runtime::TriggerEffect::ScenarioResume)
     );
     assert!(!restored_session.session().scenario_paused());

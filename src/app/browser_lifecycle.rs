@@ -10,23 +10,22 @@ use super::{App, AppState, Instant};
 impl App {
     /// Snapshot before the existing teardown clears clocks, map identity and
     /// network membership. Reading the score snapshot spends no Scenario RNG.
-    pub(super) fn browser_match_ended(state: &AppState, fallback: ExternalMatchResult) {
+    pub(super) fn browser_match_ended(
+        frontend: &crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        fallback: ExternalMatchResult,
+    ) {
         if !crate::web::match_running() {
             return;
         }
-        let sim = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation);
+        let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
         let outcome = sim.and_then(|sim| {
-            state
-                .match_state
+            match_state
                 .local_player_owner()
                 .and_then(|owner| sim.interner().get(owner))
                 .and_then(|owner| sim.ready_outcome_for_owner(owner))
         });
-        let result = Self::match_result(state)
+        let result = Self::match_result(frontend)
             .or_else(|| {
                 outcome.map(|outcome| match outcome.kind {
                     crate::sim::house_state::HouseOutcomeKind::Victory => ExternalMatchResult::Won,
@@ -34,27 +33,31 @@ impl App {
                 })
             })
             .unwrap_or(fallback);
-        let mut report = if state.frontend.external_launch {
-            Self::external_launch_report(Some(state), None, None)
+        let mut report = if frontend.external_launch {
+            Self::external_launch_report(
+                Some(frontend),
+                Some(&match_state.network_quality),
+                None,
+                None,
+            )
         } else {
             let mut report = ExternalLaunchReport::new(Some(result), None, None);
-            report.network_quality = state.match_state.network_quality.report();
+            report.network_quality = match_state.network_quality.report();
             report
         };
-        if !state.frontend.external_launch {
+        if !frontend.external_launch {
             report.frames = sim.map_or(0, |sim| sim.session().binary_frame());
             report.duration_seconds = f64::from(
-                state
-                    .match_state
+                match_state
                     .scenario_elapsed_clock
                     .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms()),
             );
         }
         let mut report = serde_json::to_value(report).expect("launch report serializes");
-        report["map"] = serde_json::to_value(&state.match_state.loaded_map_source)
-            .expect("map source serializes");
-        report["map_name"] = json!(state.match_state.map_basic.name);
-        report["local_house"] = json!(state.match_state.local_player_owner());
+        report["map"] =
+            serde_json::to_value(&match_state.loaded_map_source).expect("map source serializes");
+        report["map_name"] = json!(match_state.map_basic.name);
+        report["local_house"] = json!(match_state.local_player_owner());
         report["seed"] = json!(sim.map(|sim| sim.session().seed().to_string()));
         // Null means the native score owner did not finalize a score (e.g.
         // abort/co-op); never fabricate a winner bonus for those paths.
@@ -80,7 +83,7 @@ impl App {
             return false;
         }
         let deadline = crate::app::shell_wol::poll(state);
-        if crate::app::shell_wol::online_cleanup_pending(state)
+        if crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state)
             || state.match_state.lan_service.is_some()
         {
             event_loop.set_control_flow(ControlFlow::WaitUntil(
@@ -88,7 +91,12 @@ impl App {
             ));
             return true;
         }
-        let report = Self::external_launch_report(Some(state), None, None);
+        let report = Self::external_launch_report(
+            Some(&state.frontend),
+            Some(&state.match_state.network_quality),
+            None,
+            None,
+        );
         crate::web::spawn_finished(&report.json());
         event_loop.exit();
         true
@@ -112,11 +120,20 @@ impl App {
             .map(str::to_owned);
         crate::web::request_exit(error.as_deref());
         if let Some(state) = self.state.as_mut() {
-            Self::browser_match_ended(state, ExternalMatchResult::Quit);
+            Self::browser_match_ended(
+                &state.frontend,
+                &state.match_state,
+                ExternalMatchResult::Quit,
+            );
             // A direct window/error exit may bypass external-launch cleanup.
             // Deliver any retained report before the terminal notification.
             if state.frontend.external_launch {
-                let report = Self::external_launch_report(Some(state), error.as_deref(), None);
+                let report = Self::external_launch_report(
+                    Some(&state.frontend),
+                    Some(&state.match_state.network_quality),
+                    error.as_deref(),
+                    None,
+                );
                 crate::web::spawn_finished(&report.json());
             }
             state.audio.stop_theme();

@@ -98,7 +98,7 @@ fn mission_only_survives_snapshot_limbo_and_ordinary_type_reveal() {
         .unwrap();
     assert!(sim.substrate.entities.get(id).unwrap().is_mission_only());
     sim.conceal(id);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved = GameSnapshot::save(&sim, 0, 0, "deployment", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
@@ -213,7 +213,7 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap()
             .slope_type = slope;
-        sim.playfield_bounds = Some(bounds);
+        *sim.playfield_bounds = Some(bounds);
         sim.session.set_binary_frame_for_test(1000);
         let id = sim
             .construct_object_limbo_at_height(

@@ -1976,7 +1976,7 @@ impl Simulation {
             || self
                 .resolved_terrain
                 .as_ref()
-                .zip(self.playfield_bounds)
+                .zip(*self.playfield_bounds)
                 .is_some_and(|(terrain, bounds)| {
                     !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (i32::from(packed_cell.0), i32::from(packed_cell.1)),
@@ -3039,7 +3039,7 @@ impl Simulation {
             new_sid,
             rules,
         );
-        self.mission_spawned_entities = true;
+        *self.mission_spawned_entities = true;
         if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
@@ -3060,11 +3060,14 @@ impl Simulation {
             // regroup overwrites every own ground unit's NavCom, which the
             // external controller only observes a tick later. Every write
             // above this gate stays.
+            // VERA: so does a house whose `Forces` a Wasm module claimed
+            // (RFC 0001 6i, `sim::ext_modules::claims`).
             if gather
                 && !self
                     .houses
                     .get(&owner_id)
                     .is_some_and(|house| house.command_driven())
+                && !self.module_claims(owner_id, vera20k_wasm_ext::DOMAIN_FORCES)
             {
                 self.move_ground_forces_to_base(owner_id, rules, frame_effects);
             }

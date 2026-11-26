@@ -155,9 +155,9 @@ fn managed_ai_base_controls_reservation_and_production_together() {
 /// the stream the port must leave: `sim`'s, advanced by those draws.
 fn expect_draws(sim: &mut Simulation, draws: &[&Value], low: i32, high: i32) -> SimRng {
     if let Some(first) = draws.first() {
-        sim.scenario_rng = SimRng::answering(low, high, int(&first[4]) as i32);
+        *sim.scenario_rng = SimRng::answering(low, high, int(&first[4]) as i32);
     }
-    let mut expected = sim.scenario_rng.clone();
+    let mut expected = (*sim.scenario_rng).clone();
     for draw in draws {
         assert_eq!(
             [int(&draw[1]), int(&draw[2]), int(&draw[3])],
@@ -803,16 +803,22 @@ fn a_human_yard_places_nothing() {
 
 /// NPSE gives a naval producer its own vehicle choice: `0x4FBDAF -> 0xC2F130`
 /// reads `House+0x16130` while the producing building is `Naval=`, and
-/// `House+0x5650` otherwise. An ordinary build has no naval slot and keeps
-/// reading the war factory's pick.
+/// `House+0x5650` otherwise. A stock game has no naval slot and keeps reading
+/// the war factory's pick. `DisableParallelAIQueues=no` is the NPatch key that
+/// turns the `npatch_switch` on for this fixture.
 #[test]
 fn a_naval_producer_reads_its_own_vehicle_choice() {
     // `FactoryType::for_production_rtti`: 1 and 40 are the unit factory RTTIs.
     let unit_type_rtti = 40;
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[BuildingTypes]\n0=B\n[VehicleTypes]\n0=U\n1=SHIP\n[U]\n[SHIP]\nNaval=yes\n",
+        "[BuildingTypes]\n0=B\n[VehicleTypes]\n0=U\n1=SHIP\n[General]\n\
+         DisableParallelAIQueues=no\n[U]\n[SHIP]\nNaval=yes\n",
     ))
     .unwrap();
+    assert!(
+        rules.npatch(),
+        "the fixture's NPatch key turns the switch on"
+    );
     let mut sim = Simulation::with_seed(37);
     let owner = sim.interner.intern("AI");
     let mut house = HouseState::new(owner, 0, None, false, 1000, 10);
@@ -832,12 +838,8 @@ fn a_naval_producer_reads_its_own_vehicle_choice() {
         .map(|object| object.id.as_str());
     assert_eq!(
         naval,
-        Some(if crate::rules::NPATCH_ENABLED {
-            "SHIP"
-        } else {
-            "U"
-        }),
-        "only the NPatch build has a naval channel"
+        Some("SHIP"),
+        "the NPatch game's naval producer reads its own channel"
     );
 }
 
@@ -936,7 +938,7 @@ fn ares_retail_soviet_computer_draws_between_both_nod_plants() {
     sim.power_states
         .map_mut_for_test()
         .insert(owner, PowerState::default());
-    sim.scenario_rng = SimRng::answering(0, 1, 1);
+    *sim.scenario_rng = SimRng::answering(0, 1, 1);
     let mut expected = sim.scenario_rng.clone();
     expected.next_range_i32_inclusive(0, 1);
     let radar = rules.object("NARADR").expect("retail NARADR");

@@ -3,12 +3,19 @@
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
 };
 use crate::app::input::entity_pick::HoverObject;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::app::presentation::instances::in_view;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
@@ -479,9 +486,8 @@ fn health_strip_widened(
     let Some(viewer) = player else {
         return true;
     };
-    crate::app::presentation::instances::cell_shows_objects(
+    sim.fog().shows_objects_to(
         viewer,
-        sim.fog(),
         entity.position.rx(),
         entity.position.ry(),
         sim.session().game_options().fog_of_war,
@@ -607,7 +613,11 @@ impl BuildingBarGeometry {
 /// `[x, y, width, height]`.
 #[cfg(feature = "phobos")]
 pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] {
-    let length = (if infantry { UNIT_PIPS_INFANTRY } else { UNIT_PIPS_VEHICLE }) as f32;
+    let length = (if infantry {
+        UNIT_PIPS_INFANTRY
+    } else {
+        UNIT_PIPS_VEHICLE
+    }) as f32;
     let nudge = if infantry { 1.0 } else { 0.0 };
     [
         sx - length + nudge + 1.0,
@@ -750,7 +760,7 @@ pub(crate) fn control_group_status_labels(
     // A digit shows only on a Display member the admission passes, a selected
     // or hovered one, in Display order. The group members are few, so they
     // are put in that order rather than walking every Display member.
-    let order = frame.display_order(sim);
+    let order = frame.display_order();
     let mut labels: Vec<_> = slot_by_id
         .keys()
         .filter_map(|&stable_id| Some((order.position(stable_id)?, labelled(stable_id)?)))
@@ -1001,30 +1011,40 @@ pub(crate) fn build_control_group_status_render_instances(
     parents
 }
 
-/// AppState adapter for the production tactical UI build. `hovered_entity_id`
-/// is this draw's [`health_hover_target`] for `local_owner`.
+/// The client owners' adapter for the production tactical UI build.
+/// `hovered_entity_id` is this draw's [`health_hover_target`] for
+/// `local_owner`.
 pub(crate) fn build_control_group_status_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     local_owner: Option<&str>,
     hovered_entity_id: Option<u64>,
     sw: f32,
     sh: f32,
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
     let (Some(sim), Some(frame), Some(rules)) = (
-        state
-            .match_state
+        match_state
             .sim_runtime
             .presentation()
             .map(|runtime| &runtime.simulation),
-        state.match_state.sim_runtime.frame(),
-        state.rules(),
+        match_state.sim_runtime.frame(),
+        crate::app::state::active_rules(frontend, match_state),
     ) else {
         return BTreeMap::new();
     };
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
     let (tactical_x, tactical_y, tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_px(state);
-    let zoom = state.match_state.input.zoom_level;
+        crate::app::input::camera::tactical_viewport_px(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+        );
+    let zoom = match_state.input.zoom_level;
     let tactical_clip = [
         (tactical_x as f32 / zoom).round() as i32,
         (tactical_y as f32 / zoom).round() as i32,
@@ -1034,17 +1054,14 @@ pub(crate) fn build_control_group_status_instances(
     build_control_group_status_render_instances(
         sim,
         frame,
-        &frame.scene.control_groups,
+        frame.control_groups(),
         hovered_entity_id,
         local_owner_id,
-        state.match_state.sandbox_full_visibility,
-        &state.match_state.match_presentation.house_color_map,
+        match_state.sandbox_full_visibility,
+        &match_state.match_presentation.house_color_map,
         &rules.house_color_ramps,
-        &state.renderer.bit_font,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        &renderer.bit_font,
+        [match_state.input.camera_x, match_state.input.camera_y],
         sw,
         sh,
         tactical_clip,
@@ -1107,9 +1124,8 @@ pub(crate) fn build_building_status_render_instances(
         // building the player cannot see draws none: a timer over the shroud
         // would give away a silo scouting has not found. The lines were
         // captured with the frame, so this pass reads no simulation state.
-        let visible = crate::app::presentation::instances::cell_shows_objects(
+        let visible = sim.fog().shows_objects_to(
             current_house_id,
-            sim.fog(),
             entity.position.rx(),
             entity.position.ry(),
             sim.session().game_options().fog_of_war,
@@ -1125,12 +1141,12 @@ pub(crate) fn build_building_status_render_instances(
         // building like the Super lines. `allied` is true for the local house
         // as well as allies, so an enemy's row is never shown. Not restricted
         // to the selected building.
-        let info_lines: Vec<String> = if convenience_help && allied && visible && info_shift.is_some()
-        {
-            entity.hud.info_lines().collect()
-        } else {
-            Vec::new()
-        };
+        let info_lines: Vec<String> =
+            if convenience_help && allied && visible && info_shift.is_some() {
+                entity.hud.info_lines().collect()
+            } else {
+                Vec::new()
+            };
         // DrawExtraInfo needs the building selected, including when it is
         // also hovered.
         let label = (status_shift.is_some()
@@ -1197,12 +1213,7 @@ pub(crate) fn build_building_status_render_instances(
                     measure[1].wrapping_add(2) as f32 + camera[1],
                 ];
                 labels.push(status_text_instances(
-                    font,
-                    &text,
-                    origin,
-                    measure,
-                    camera,
-                    tint,
+                    font, &text, origin, measure, camera, tint,
                 ));
             }
         }
@@ -1227,12 +1238,7 @@ pub(crate) fn build_building_status_render_instances(
                     measure[1].wrapping_add(2) as f32 + camera[1],
                 ];
                 labels.push(status_text_instances(
-                    font,
-                    text,
-                    origin,
-                    measure,
-                    camera,
-                    tint,
+                    font, text, origin, measure, camera, tint,
                 ));
             }
         }
@@ -1292,12 +1298,7 @@ pub(crate) fn build_building_status_render_instances(
             measure[1].wrapping_add(2) as f32 + camera[1],
         ];
         labels.push(status_text_instances(
-            font,
-            &text,
-            origin,
-            clipped,
-            camera,
-            tint,
+            font, &text, origin, clipped, camera, tint,
         ));
     }
     labels
@@ -1390,22 +1391,27 @@ enum BuildingStatusText {
     Fake,
 }
 
-/// AppState supplies current resources and the existing tactical viewport;
+/// The client owners supply current resources and the existing tactical viewport;
 /// simulation owners supply primary identity and retained power, and the
 /// per-frame body plan supplies the current opportunities.
 pub(crate) fn build_building_status_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
-        state.match_state.sim_runtime.presentation(),
-        state.rules(),
-        state.process_assets.csf.as_ref(),
+        match_state.sim_runtime.presentation(),
+        crate::app::state::active_rules(frontend, match_state),
+        process_assets.csf.as_ref(),
     ) else {
         return BuildingStatusTextInstances::default();
     };
     let sim = &runtime.simulation;
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return BuildingStatusTextInstances::default();
     };
     // The local player comes from the world this frame draws, not from
@@ -1415,29 +1421,29 @@ pub(crate) fn build_building_status_instances(
     let Some(current_house) = sim.session().current_house() else {
         return BuildingStatusTextInstances::default();
     };
-    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let zoom = state.match_state.input.zoom_level;
+    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+    );
+    let zoom = match_state.input.zoom_level;
     build_building_status_render_instances(
         sim,
         frame,
         body_opportunities,
         current_house,
-        &state.match_state.match_presentation.house_color_map,
+        &match_state.match_presentation.house_color_map,
         &rules.house_color_ramps,
-        &state.renderer.bit_font,
+        &renderer.bit_font,
         csf,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        [match_state.input.camera_x, match_state.input.camera_y],
         zoom,
         [left as i32, top as i32, width as i32, height as i32],
         rules,
-        state
-            .match_state
-            .match_presentation
-            .superweapon_building_timers,
-        state.match_state.match_presentation.convenience_help,
+        match_state.match_presentation.superweapon_building_timers,
+        match_state.match_presentation.convenience_help,
     )
 }
 
@@ -2248,7 +2254,12 @@ pub(crate) fn techno_extras_for_parent(
                 shape.frame_count(),
             ))
         {
-            strip.power_off = prefix(shape, Mark::PowerOff, frame, if repairing { 18.0 } else { 0.0 });
+            strip.power_off = prefix(
+                shape,
+                Mark::PowerOff,
+                frame,
+                if repairing { 18.0 } else { 0.0 },
+            );
         }
     }
     if admitted_techno_observer(sim, entity, local_owner_id).is_none() {
@@ -2278,7 +2289,12 @@ pub(crate) fn techno_extras_for_parent(
                 point: (f32, f32)| {
         health_templates::mark(Mark::Rank, Some(HealthClass::of(entity.category())), frame)
             .and_then(|(frame, offset)| {
-                instance(shape, frame, health_templates::shifted(point, offset), 0.0006)
+                instance(
+                    shape,
+                    frame,
+                    health_templates::shifted(point, offset),
+                    0.0006,
+                )
             })
             .filter(|rank| viewport.contains(rank))
             .map(|mut rank| {
@@ -2440,7 +2456,11 @@ pub(crate) fn techno_extras_for_parent(
             false,
             Some((band, filled, num_pips)),
             start,
-            |pip| strip.fills.extend(instance(shape, pip.frame, pip.point, 0.0006)),
+            |pip| {
+                strip
+                    .fills
+                    .extend(instance(shape, pip.frame, pip.point, 0.0006))
+            },
         );
         if pip_zoom < 1.0 {
             keep_health_strip_screen_size(&mut strip, start, pip_zoom);
@@ -2533,7 +2553,11 @@ pub(crate) fn techno_extras_for_parent(
         false,
         Some((band, filled as i32, num_pips as i32)),
         anchor,
-        |pip| strip.fills.extend(instance(shape, pip.frame, pip.point, 0.0005)),
+        |pip| {
+            strip
+                .fills
+                .extend(instance(shape, pip.frame, pip.point, 0.0005))
+        },
     );
     //709B0F/6F6A8E: nonbuilding scale starts at health anchor(-15,+10),
     //with the Infantry-only+11 X. The shared draw owner retains each arm's
@@ -2574,7 +2598,12 @@ pub(crate) fn techno_extras_for_parent(
             // frame; its built-in template has each class's place.
             strip.self_heal = health_templates::mark(Mark::SelfHeal, Some(class), arm.frame())
                 .and_then(|(frame, offset)| {
-                    instance(shape, frame, health_templates::shifted((sx, sy), offset), 0.0004)
+                    instance(
+                        shape,
+                        frame,
+                        health_templates::shifted((sx, sy), offset),
+                        0.0004,
+                    )
                 })
                 .map(|mut instance| {
                     instance.draw_state =
@@ -2758,8 +2787,7 @@ fn scale_pip_rows(
     {
         let docked = manager.count_docked_spawns();
         pips.extend(
-            (0..object.spawns_number as usize)
-                .map(|slot| pip(slot, usize::from(slot < docked))),
+            (0..object.spawns_number as usize).map(|slot| pip(slot, usize::from(slot < docked))),
         );
     }
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
@@ -3000,7 +3028,14 @@ fn active_cursor_sequence<'a>(
         .match_presentation
         .software_cursor
         .as_ref()?;
-    let kind = current_cursor_feedback_kind(state, targets);
+    let kind = current_cursor_feedback_kind(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+        targets,
+    );
     state.match_state.input.note_shown_cursor(kind);
     let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
@@ -3011,15 +3046,27 @@ fn active_cursor_sequence<'a>(
 /// The cursor id the production draw shows now. Like a draw, it notes the
 /// shown cursor, so a held button over the sidebar keeps it.
 pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
-    active_cursor_sequence(state, &CursorTargets::read(state)).map(|(id, _)| id)
+    active_cursor_sequence(
+        state,
+        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+    )
+    .map(|(id, _)| id)
 }
 
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
 pub(crate) fn static_default_cursor(state: &AppState) -> bool {
-    state.use_software_cursor()
-        && active_cursor_sequence(state, &CursorTargets::read(state))
-            .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
+    crate::app::state::use_software_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) && active_cursor_sequence(
+        state,
+        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+    )
+    .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
 }
 
 /// The software cursor frame a draw shows. Its sprite and its texture come
@@ -3035,7 +3082,14 @@ pub(crate) fn build_software_cursor_instances(
     state: &AppState,
     targets: &CursorTargets,
 ) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
-    if !state.use_software_cursor() || !state.match_state.input.cursor_visibility.is_visible() {
+    if !crate::app::state::use_software_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) || !state.match_state.input.cursor_visibility.is_visible()
+    {
         return (Vec::new(), None);
     }
     let Some((id, sequence)) = active_cursor_sequence(state, targets) else {
@@ -3051,7 +3105,14 @@ pub(crate) fn build_software_cursor_instances(
         return (Vec::new(), None);
     };
     let (id, sequence, index) = if id == CursorId::Default
-        && crate::app::input::planning_mode::node_at_cursor(state).is_some()
+        && crate::app::input::planning_mode::node_at_cursor(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )
+        .is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
         let Some(cursor) = state
@@ -3073,7 +3134,14 @@ pub(crate) fn build_software_cursor_instances(
     let Some(frame) = sequence.frames.get(index) else {
         return (Vec::new(), None);
     };
-    if crate::app::input::hardware_cursor::takes_cursor(state, id, index) {
+    if crate::app::input::hardware_cursor::takes_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
+        id,
+        index,
+    ) {
         return (Vec::new(), None);
     }
     // Cursor rendering: the hotspot pixel must sit exactly at the OS cursor position.
@@ -3100,14 +3168,10 @@ pub(crate) fn build_software_cursor_instances(
 
 /// The texture of the frame a draw's cursor sprite was built from.
 pub(crate) fn software_cursor_texture(
-    state: &AppState,
+    presentation: &MatchPresentationState,
     draw: SoftwareCursorDraw,
 ) -> Option<&BatchTexture> {
-    let cursor = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
+    let cursor = presentation.software_cursor.as_ref()?;
     Some(&cursor.get(draw.id)?.frames.get(draw.frame)?.texture)
 }
 
@@ -3143,8 +3207,16 @@ mod tests {
     /// shows no pips.
     #[test]
     fn stock_ammo_pip_frame_tracks_the_ra2_strip() {
-        assert_eq!(super::ammo_pip_frame_for(true), 12, "RA2 conquer.mix green magazine");
-        assert_eq!(super::ammo_pip_frame_for(false), 13, "YR conqmd.mix green magazine");
+        assert_eq!(
+            super::ammo_pip_frame_for(true),
+            12,
+            "RA2 conquer.mix green magazine"
+        );
+        assert_eq!(
+            super::ammo_pip_frame_for(false),
+            13,
+            "YR conqmd.mix green magazine"
+        );
     }
 
     /// Convenience Help's reload row, formatted when drawn from the facts
@@ -3998,7 +4070,10 @@ mod tests {
             .spawn_object("E1", "Americans", 14, 14, 0, &rules)
             .unwrap();
         {
-            let b = sim.entities_mut_for_test().get_mut_for_test(building).unwrap();
+            let b = sim
+                .entities_mut_for_test()
+                .get_mut_for_test(building)
+                .unwrap();
             b.passenger_role_mut_for_test()
                 .set_occupants_for_test(vec![e1, e2], 0);
         }
@@ -4018,5 +4093,4 @@ mod tests {
 
         crate::util::ra2_launch::set(before);
     }
-
 }

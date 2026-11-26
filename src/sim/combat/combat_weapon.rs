@@ -750,7 +750,7 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
 
 /// Native `FCOMP Verses[armor], 0.0` (`0x006F3705` / `0x006F3738`): the
 /// double is compared for exact equality with zero.
-fn verses_is_zero(warhead: Option<&WarheadType>, armor: ArmorId) -> bool {
+pub(crate) fn verses_is_zero(warhead: Option<&WarheadType>, armor: ArmorId) -> bool {
     warhead.is_some_and(|warhead| {
         // Ares 3.0 hook10054360 retains numeric zero and secondary-first
         // ordering. Its independent fire/acquisition flags do not select slots.
@@ -1678,7 +1678,7 @@ mod tests {
                 5,
                 EntityCategory::Infantry,
             ));
-        world.interner = crate::sim::intern::test_interner();
+        *world.interner = crate::sim::intern::test_interner();
         let obj = rules.object("HOUSE").unwrap();
         let read = |world: &Simulation| {
             get_weapon_record(
@@ -2173,7 +2173,7 @@ mod tests {
                 EntityCategory::Infantry,
             ));
         // The fixture entities' names were interned by `test_default`.
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.substrate
             .entities
             .get_mut(1)

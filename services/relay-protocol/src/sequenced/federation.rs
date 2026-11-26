@@ -854,6 +854,7 @@ impl Federation {
         position: usize,
         payload: &[u8],
         ordering: &mut OrderingRoom,
+        now_ms: u64,
     ) -> Result<(), RelayError> {
         let count = usize::from(*payload.first().ok_or(RelayError::Malformed)?);
         if self.own != 0 || payload.len() != 1 + count * CHECKSUM_FORWARD_ENTRY {
@@ -867,7 +868,13 @@ impl Federation {
             return Err(RelayError::Malformed);
         }
         for entry in payload[1..].chunks_exact(CHECKSUM_FORWARD_ENTRY) {
-            ordering.record_checksum(entry[0], read_u32(entry, 1)?, read_u32(entry, 5)?, true);
+            ordering.record_checksum(
+                entry[0],
+                read_u32(entry, 1)?,
+                read_u32(entry, 5)?,
+                true,
+                now_ms,
+            );
         }
         Ok(())
     }
@@ -1148,7 +1155,7 @@ impl RelayServer {
             }
             CHECKSUM_KIND => {
                 if let Some(ordering) = room.ordering.as_mut() {
-                    federation.receive_checksums(position, payload, ordering)?;
+                    federation.receive_checksums(position, payload, ordering, now_ms)?;
                 }
                 Ok(Vec::new())
             }

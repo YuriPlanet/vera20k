@@ -248,6 +248,13 @@ pub(crate) struct RetailOptionsProfile {
     /// 0, off, by default; read as
     /// [`crate::rules::personal_rules::admitted_superweapon_limit`] admits it.
     pub(crate) superweapon_limit: u8,
+    /// `[VERA] WasmBudget=`: the Wasm mod module's operations per frame in
+    /// place of the mod's own (RFC 0001 15.4); 0, the mod's, by default.
+    pub(crate) wasm_budget: u32,
+    /// `[VERA] AutosaveMinutes=`: an offline match is saved every this many
+    /// minutes of play (`persistence::autosave`), 0 never. 0 by default;
+    /// read clamped to 0..=60.
+    pub(crate) autosave_minutes: u8,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
     /// enabled AI on the local player's own explicit team. Off by default, so
@@ -306,6 +313,11 @@ pub(crate) struct RetailOptionsProfile {
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
+    /// `[VERA] HdArt=`: HD art (`render::hd_switch`), the HD art over the
+    /// wheel-zoomed world, off by default; the Options list and the HD art key
+    /// (Page Up) set it. Client presentation only: the frame reads it live,
+    /// and the simulation never sees it.
+    pub(crate) hd_art_on: bool,
     /// `[VERA] TranslateChat=` and `TranslateMatches=`: the language other
     /// players' online chat is translated into (off by default) and whether
     /// a match's chat is too (on by default). Only the online lobby's Options
@@ -451,6 +463,8 @@ impl Default for RetailOptionsProfile {
             terrain_deformation: false,
             skirmish_cheats: false,
             superweapon_limit: 0,
+            wasm_budget: 0,
+            autosave_minutes: 0,
             solo_skirmish: false,
             commander_feedback: true,
             custom_end_game_banner: false,
@@ -460,6 +474,7 @@ impl Default for RetailOptionsProfile {
             ares: crate::util::ares_launch::AresSetting::Auto,
             kratos: crate::util::kratos_launch::KratosSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
+            hd_art_on: false,
             chat_translation: Default::default(),
             language: None,
             skipped_update: String::new(),
@@ -488,7 +503,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 45],
+    pub(crate) vera: [(&'static str, String); 48],
 }
 
 impl RetailOptionsLoad {
@@ -735,9 +750,14 @@ impl RetailOptionsProfile {
             self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
+            self.wasm_budget =
+                u32::try_from(vera.read_int("WasmBudget", self.wasm_budget as i32)).unwrap_or(0);
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
+            self.autosave_minutes = vera
+                .read_int("AutosaveMinutes", i32::from(self.autosave_minutes))
+                .clamp(0, 60) as u8;
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             self.custom_end_game_banner =
@@ -770,18 +790,17 @@ impl RetailOptionsProfile {
                 16,
             ));
             // Absent keeps the current value; an unknown one reads as Auto.
-            self.kratos =
-                crate::util::kratos_launch::KratosSetting::from_ini_text(&vera.read_string(
-                    "Kratos",
-                    self.kratos.ini_value(),
-                    16,
-                ));
+            self.kratos = crate::util::kratos_launch::KratosSetting::from_ini_text(
+                &vera.read_string("Kratos", self.kratos.ini_value(), 16),
+            );
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
                 crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
                     vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
                 );
+            // Absent keeps the current value.
+            self.hd_art_on = vera.read_bool("HdArt", self.hd_art_on);
             // `off`, or a tag this build does not offer, is off.
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.chat_translation.language =
@@ -903,6 +922,7 @@ impl RetailOptionsProfile {
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
+                ("AutosaveMinutes", self.autosave_minutes.to_string()),
                 (
                     "CommanderFeedback",
                     format_bool(self.commander_feedback).to_string(),
@@ -983,6 +1003,7 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("SuperweaponLimit", self.superweapon_limit.to_string()),
+                ("WasmBudget", self.wasm_budget.to_string()),
                 (
                     "SkirmishCheats",
                     format_bool(self.skirmish_cheats).to_string(),
@@ -998,6 +1019,7 @@ impl RetailOptionsProfile {
                     format_bool(self.show_string_keys).to_string(),
                 ),
                 ("ColorVisionMode", self.color_vision.ini_value().to_string()),
+                ("HdArt", format_bool(self.hd_art_on).to_string()),
             ],
         }
     }
@@ -2281,6 +2303,27 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 "ColorVisionMode={value} survives the profile writer"
             );
         }
+    }
+
+    /// HD art starts off (the original picture) and `HdArt=` survives the
+    /// profile writer.
+    #[test]
+    fn hd_art_reads_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(!load_snapshot(&startup, b"").retained_profile.hd_art_on);
+        let input = b"[VERA]\nHdArt=yes\nUnowned=keep\n";
+        let profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.hd_art_on);
+        let written = String::from_utf8(profile.transform_settings(input)).unwrap();
+        assert!(written.contains("Unowned=keep"), "{written}");
+        assert!(written.contains("HdArt=yes"), "{written}");
+        assert!(
+            load_snapshot(&startup, written.as_bytes())
+                .retained_profile
+                .hd_art_on
+        );
+        let off = b"[VERA]\nHdArt=no\n";
+        assert!(!load_snapshot(&startup, off).retained_profile.hd_art_on);
     }
 
     /// The three `CustomEndGame*=` switches start off and are independent:

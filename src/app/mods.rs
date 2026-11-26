@@ -71,6 +71,54 @@ impl ModSwitch {
     }
 }
 
+/// Android: the file in a mod's folder that carries its stable id, so a
+/// launcher shortcut keeps working when the folder is renamed. The activity
+/// and the Android crate read the same name (`VeraActivity`,
+/// `android/src/lib.rs`). A dot-file: Check Files and a mod's digest skip it
+/// ([`left_by_a_system`]).
+#[cfg(any(target_os = "android", test))]
+const MOD_ID_FILE: &str = ".vera20k-mod-id";
+
+/// Android: `dir`'s stable id, or `None` when it has none.
+#[cfg(any(target_os = "android", test))]
+pub(crate) fn mod_id(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(MOD_ID_FILE)).ok()?;
+    let id = text.trim();
+    (!id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())).then(|| id.to_owned())
+}
+
+/// Android: writes a stable id into `dir` when it has none, and returns it.
+#[cfg(any(target_os = "android", test))]
+pub(crate) fn ensure_mod_id(dir: &Path) -> Option<String> {
+    if let Some(id) = mod_id(dir) {
+        return Some(id);
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::{Hash, Hasher};
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+        .hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    dir.hash(&mut hasher);
+    let id = format!(
+        "{:016x}{:016x}",
+        hasher.finish(),
+        hasher.finish().rotate_left(17)
+    );
+    std::fs::write(dir.join(MOD_ID_FILE), &id).ok()?;
+    Some(id)
+}
+
+/// The entry a platform's launcher handed over: `mod:<folder>` picks that
+/// folder for this launch, anything else (including an empty string) picks
+/// nothing. Android shortcuts pass it as an intent extra (`docs/android.md`).
+pub fn launch_entry_switch(entry: &str) -> Option<ModSwitch> {
+    let folder = entry.strip_prefix("mod:")?.trim();
+    (!folder.is_empty()).then(|| ModSwitch::Use(folder.to_owned()))
+}
+
 /// Take `--mod <folder>` or `--no-mod` out of the process arguments, wherever
 /// it stands. The retail switch table matches by substring (`-CD`) and must
 /// never see a folder's name, and the other modes' parsers take exact lists.
@@ -137,6 +185,18 @@ pub(crate) struct Mods {
     pub(crate) page: Option<Vec<Listed>>,
     /// The page's Check Files, from its button to its last box.
     pub(crate) files_check: Option<crate::app::mod_files::PageCheck>,
+    /// Android: the page's name dialog while it is up (`App::open_name_dialog`).
+    #[cfg(target_os = "android")]
+    pub(crate) name_dialog: Option<NameDialog>,
+}
+
+/// Android: what the Mods page's name dialog names: a new mod, or this folder
+/// under a new name.
+#[cfg(target_os = "android")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NameDialog {
+    New,
+    Rename(String),
 }
 
 impl Mods {
@@ -152,7 +212,11 @@ impl Mods {
         base: &IniRootConfig,
         setting: AresSetting,
         kratos: crate::util::kratos_launch::KratosSetting,
-    ) -> (ResourceConfig, AresSetting, crate::util::kratos_launch::KratosSetting) {
+    ) -> (
+        ResourceConfig,
+        AresSetting,
+        crate::util::kratos_launch::KratosSetting,
+    ) {
         match resources_for(self.active.as_ref(), base, setting, kratos) {
             Ok(selected) => selected,
             Err(error) => {
@@ -252,36 +316,7 @@ pub(crate) fn name_and_version(dir: &Path, folder: &str) -> (String, String) {
     )
 }
 
-/// `1`, `1.2` or `1.2.3` as three numbers, absent ones 0; anything else,
-/// such as a later scheme this build does not know, is `None`.
-fn version_parts(text: &str) -> Option<[u32; 3]> {
-    let mut parts = [0; 3];
-    let mut given = text.trim().split('.');
-    for part in &mut parts {
-        match given.next() {
-            Some(digits) if digits.len() <= 9 && !digits.is_empty() => {
-                *part = digits
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit())
-                    .then(|| digits.parse().ok())
-                    .flatten()?;
-            }
-            Some(_) => return None,
-            None => break,
-        }
-    }
-    given.next().is_none().then_some(parts)
-}
-
-/// Whether this build, `current`, can play a mod that needs `needs`. A build
-/// whose own version does not read as three numbers refuses nothing.
-fn version_serves(current: &str, needs: &str) -> bool {
-    match (version_parts(current), version_parts(needs)) {
-        (Some(current), Some(needs)) => current >= needs,
-        (None, _) => true,
-        (Some(_), None) => false,
-    }
-}
+use crate::util::version::version_serves;
 
 /// The folder in `mods_dir` that `name` names, whatever its case: its own
 /// spelling and its path. A name that is not one plain folder name (empty, a
@@ -728,17 +763,21 @@ fn on_leaving(error_card: bool) -> Verdict {
 /// Loading is over ([`after_loading`]); `external_launch` is `-SPAWN` or a
 /// replay. A mod that did not load stays on record, and the player is told
 /// what to do.
-pub(crate) fn finish_start(state: &mut AppState, external_launch: bool) {
-    let mods = &state.frontend.mods;
+pub(crate) fn finish_start(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    external_launch: bool,
+) {
+    let mods = &frontend.mods;
     let Some(active) = mods.active.as_ref().filter(|_| mods.record.is_some()) else {
         return;
     };
-    let error_card = state.frontend.main_menu_shell_error.is_some();
+    let error_card = frontend.main_menu_shell_error.is_some();
     let straight_to_match =
-        external_launch || state.frontend.screen != crate::ui::game_screen::GameScreen::MainMenu;
-    let rules_loaded = state.process_assets.has_native_rules();
+        external_launch || frontend.screen != crate::ui::game_screen::GameScreen::MainMenu;
+    let rules_loaded = process_assets.has_native_rules();
     match after_loading(error_card, rules_loaded, straight_to_match) {
-        Verdict::Passed => started(state),
+        Verdict::Passed => started(frontend),
         Verdict::Open => {}
         Verdict::Failed => {
             log::warn!(
@@ -747,25 +786,25 @@ pub(crate) fn finish_start(state: &mut AppState, external_launch: bool) {
             );
             // The error card says it for itself (`App::render_shell_error`).
             if !error_card {
-                state.frontend.mods.notice = Some(start_failed_text(&active.title));
+                frontend.mods.notice = Some(start_failed_text(&active.title));
             }
             // Let go of the file and leave its name in it.
-            state.frontend.mods.record = None;
+            frontend.mods.record = None;
         }
     }
 }
 
 /// The start with a mod has passed: its record goes.
-fn started(state: &mut AppState) {
-    if let Some(record) = state.frontend.mods.record.take() {
+fn started(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if let Some(record) = frontend.mods.record.take() {
         record.clear();
     }
 }
 
 /// The game is left in the ordinary way ([`on_leaving`]).
-pub(crate) fn left(state: &mut AppState) {
-    if on_leaving(state.frontend.main_menu_shell_error.is_some()) == Verdict::Passed {
-        started(state);
+pub(crate) fn left(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if on_leaving(frontend.main_menu_shell_error.is_some()) == Verdict::Passed {
+        started(frontend);
     }
 }
 
@@ -783,7 +822,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if mods.record.is_none() && mods.notice.is_none() && mods.rules_file_notice.is_none() {
         return None;
     }
-    if !state.main_menu_at_rest() {
+    if !crate::app::state::main_menu_at_rest(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         state.frontend.mods.menu_rest_since = None;
         return None;
     }
@@ -792,14 +837,21 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if now < due {
         return Some(due);
     }
-    started(state);
+    started(&mut state.frontend);
     let mods = &mut state.frontend.mods;
     let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
         (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
         (first, second) => first.or(second),
     };
     if let Some(text) = text {
-        crate::app::App::open_shell_notice(state, text);
+        crate::app::App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            text,
+        );
     }
     None
 }
@@ -828,6 +880,37 @@ pub(crate) fn prepare_folder(mods_dir: &Path) {
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mod_id_is_made_once_and_survives_a_rename() {
+        let root = std::env::temp_dir().join(format!("vera20k-mod-id-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("Old Name");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(mod_id(&dir), None);
+        let id = ensure_mod_id(&dir).expect("an id");
+        assert_eq!(ensure_mod_id(&dir).as_deref(), Some(id.as_str()));
+        let renamed = root.join("New Name");
+        std::fs::rename(&dir, &renamed).unwrap();
+        assert_eq!(mod_id(&renamed).as_deref(), Some(id.as_str()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_launcher_entry_picks_a_mod_folder_and_nothing_else() {
+        assert_eq!(
+            launch_entry_switch("mod:Winter War"),
+            Some(ModSwitch::Use("Winter War".into()))
+        );
+        assert_eq!(
+            launch_entry_switch("mod:  spaced  "),
+            Some(ModSwitch::Use("spaced".into()))
+        );
+        assert_eq!(launch_entry_switch("mod:"), None);
+        assert_eq!(launch_entry_switch(""), None);
+        assert_eq!(launch_entry_switch("profile:work"), None);
+        assert_eq!(launch_entry_switch("Winter War"), None);
+    }
 
     fn os(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()

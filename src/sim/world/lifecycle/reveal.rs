@@ -33,8 +33,8 @@ impl Simulation {
         // `commit_frame_tail` and aborted at tick 24540, so the run could not
         // finish rather than the policy being wrong.
         if self.lifecycle_test_events.len() >= LIFECYCLE_TEST_EVENT_WINDOW {
-            self.lifecycle_test_events
-                .drain(..self.lifecycle_test_events.len() - LIFECYCLE_TEST_EVENT_WINDOW + 1);
+            let excess = self.lifecycle_test_events.len() - LIFECYCLE_TEST_EVENT_WINDOW + 1;
+            self.lifecycle_test_events.drain(..excess);
         }
     }
 

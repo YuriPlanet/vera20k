@@ -792,10 +792,11 @@ pub(crate) mod tests {
         let building_id = 9;
         insert_garrison_building(&mut sim, building_id);
         let before = &row["rng_full_before"];
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-        sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
+        *sim.mapgen_rng =
+            SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
                 for &id in ids.iter().rev() {
@@ -1330,9 +1331,9 @@ pub(crate) mod tests {
                 );
                 occupants.push(id);
             }
-            sim.scenario_rng = SimRng::new(seed);
-            sim.main_rng = SimRng::new(seed);
-            sim.mapgen_rng = SimRng::new(seed);
+            *sim.scenario_rng = SimRng::new(seed);
+            *sim.main_rng = SimRng::new(seed);
+            *sim.mapgen_rng = SimRng::new(seed);
             let warhead = sim.interner.intern(&rules.bridge_warheads.c4_name);
             // Building Update440345's lethal C4 receiver bypasses the health
             // threshold which would eject occupants on an earlier nonfatal hit.

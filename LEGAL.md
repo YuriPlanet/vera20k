@@ -125,7 +125,7 @@ Parts of the Kratos support are ported from
 GPLv3 work, which the LGPLv3 allows; keep the credit and
 [its license](LICENSES/KratosPP.txt) when you share it.
 
-This product includes software developed by the Kratos PP author.
+This product includes software developed by the Kratos Authors.
 
 ## Game files
 

@@ -15,10 +15,20 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   Grants and ordering certificates are signed by `relay_grant.mjs` in the
   lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
   `--pacing on|off|continuous` (`run.sh`: `PACING=on|off|continuous`). Results go to `OUT/results.json`.
-* `SLOW=K` makes source K a slow PC: the spawn-only switches
+* `SLOW=K` makes source K a slow PC. The spawn-only switches
   `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS` (`run.sh`:
   `SLOW_DRAW_MS`, `SLOW_TICK_MS`) add that many milliseconds to each drawn
-  picture and to each simulation tick, the tick's inside its reported cost.
+  picture and to each simulation tick throughout, the tick's inside its
+  reported cost. The switch `VERA20K_SPAWN_SLOW_PLAN` (`run.sh`:
+  `SLOW_PLAN`), which may be set as well (tick delays add up), is
+  `second:draw_ms:tick_ms[:unreported_ms]` points, comma separated, from the
+  match's start; that many milliseconds go on each frame pass (drawn or not,
+  so hidden windows pay it too) and each simulation tick (inside its
+  reported cost), and the optional last on each tick outside that cost (a
+  PC whose ticks look quick but run slowly, as 1e9fac21's did), linear
+  between points and held after the last. `0:0:20` is a PC whose
+  simulation is slow throughout; `0:0:0,300:0:3:12` one that slows as the
+  match grows. Catching up runs the same ticks, so it slows too.
   `SPEED=0` plays at 60 frames a second. Each client's `External launch result`
   line carries its `network_quality` (catch-up seconds, largest backlog,
   slowdowns).
@@ -53,6 +63,13 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   `SIM_THREAD=1|always`, or one value per source (`always,0`), turns on its
   pages' simulation worker (`set_simulation_thread`, docs/sim-thread.md
   "The browser"); it is off by default.
+* `BROWSERS=1` (browser mode) makes only those sources pages and starts the
+  others as desktop clients: a mixed room. The desktop build must match the
+  package's features (`--no-default-features --features wasm-net`, set with
+  `VERA20K_BIN`), or the relay refuses the start (`AgreementMismatch`).
+  `MOD=FOLDER` (any mode) copies a mod folder into every player's `Mods` and
+  plays it; pages import it (`import_mod_file`, `set_mod`). The pages'
+  summary goes to `OUT/browsers.log`.
 
 Clients never show a window: `run.sh` sets `VERA20K_SPAWN_HIDDEN_WINDOW=1`,
 which (for `-SPAWN` launches only) creates the window invisible, keeps the

@@ -337,7 +337,7 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     // Retail's save reader deliberately reinitializes Scenario RNG. Align the
     // control run to that documented load contract before comparing continuation.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let loaded_sound = restored.substrate.entities.get(id).unwrap().move_sound;
     assert!(!loaded_sound.is_active());
     assert_eq!(loaded_sound.countdown(), 0);
@@ -443,7 +443,7 @@ fn placement_is_rechecked_on_turn_completion() {
 #[test]
 fn move_order_during_turn_prevents_conversion_at_the_old_site() {
     let (mut sim, rules, id) = fixture("AMCV", 64, 5, 4);
-    sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
+    *sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
         64, 64,
     )));
     tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
@@ -512,7 +512,7 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
 #[test]
 fn conversion_receipt_rebuilds_navigation_in_the_conversion_frame() {
     let (mut sim, rules, id) = fixture("AMCV", 64, 5, 4);
-    sim.resolved_terrain = Some(crate::sim::deploy_tests::mcv_deploy_terrain_with(|_| {}));
+    *sim.resolved_terrain = Some(crate::sim::deploy_tests::mcv_deploy_terrain_with(|_| {}));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     assert!(sim.path_grid.as_ref().unwrap().is_walkable(19, 21));
     let accepted = tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
@@ -1765,4 +1765,41 @@ fn retail_dustbowl_a_computer_without_its_yard_sells_off_and_hunts() {
             .all(|pair| (106..=112).contains(&(pair[1] - pair[0])))
     );
     eprintln!("Strategy ticks {ticks:?}; the yard lost at {lost}, sold off at {sold_at}");
+}
+
+/// RFC 0001 6i: once a Wasm module claims the house's `Production`, an MCV
+/// the house AI sent to Hunt queues Guard, and a refused deploy falls back
+/// to Guard rather than Hunt; the MCV deploys only by the module's order.
+#[test]
+fn a_production_claim_takes_the_mcv_off_the_house_ai_hunt() {
+    let (mut sim, rules, id) = house_fixture(false, BUILDABLE);
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    let guard = MissionId::from_known(MissionType::Guard);
+    sim.substrate.mission_assign_exact(id, hunt, 0).unwrap();
+    let queued = |sim: &Simulation| sim.substrate.entities.get(id).unwrap().mission.queued();
+    assert_eq!(queued(&sim), MissionId::NONE);
+
+    assert_eq!(
+        sim.claim_for_test("Americans", vera20k_wasm_ext::DOMAIN_FORCES as u8, &rules),
+        vera20k_wasm_ext::Status::Ok
+    );
+    assert_eq!(queued(&sim), MissionId::NONE, "Forces leaves the MCV be");
+    let all = vera20k_wasm_ext::DOMAIN_ALL as u8;
+    assert_eq!(
+        sim.claim_for_test("Americans", all, &rules),
+        vera20k_wasm_ext::Status::Ok
+    );
+    assert_eq!(queued(&sim), guard);
+
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(MissionType::Unload), 0)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .mission
+        .set_handler_state(1);
+    finish_initial_attempt(&mut sim, id, &rules);
+    assert_eq!(queued(&sim), guard);
 }

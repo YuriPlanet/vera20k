@@ -17,8 +17,13 @@
 //!   loading screen, an in-game modal or the battlefield, or a score page.
 //!   An in-game modal or a result without its retail page is a status card.
 
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
-use crate::app::{App, AppState, GameScreen};
+use crate::app::{App, GameScreen};
 use crate::ui::pause_menu::InGameMenuState;
 
 /// A page drawn over the current screen, top first.
@@ -114,16 +119,25 @@ struct Layers {
 }
 
 impl Layers {
-    fn of(state: &AppState) -> Self {
-        let frontend = &state.frontend;
+    fn of(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Self {
+        let frontend = frontend;
         Self {
-            house_outcome_wait: App::house_outcome_wait_pending(state),
-            shell_transition: crate::app::frontend::shell_transition::blocks_shell_input(state),
+            house_outcome_wait: App::house_outcome_wait_pending(&match_state.sim_runtime),
+            shell_transition: crate::app::frontend::shell_transition::blocks_shell_input(frontend),
             shell_error: frontend.screen == GameScreen::MainMenu
                 && frontend.main_menu_shell_error.is_some(),
-            network_failure: crate::app::match_runtime::network_failure::pending(state),
+            network_failure: crate::app::match_runtime::network_failure::pending(
+                &frontend.screen,
+                match_state,
+            ),
             network_wait: frontend.screen == GameScreen::InGame
-                && state.match_state.network_wait.dialog_open(),
+                && match_state.network_wait.dialog_open(),
             keyboard: frontend.keyboard_dialog.is_some(),
             shell_message_box: frontend.screen == GameScreen::MainMenu
                 && frontend.shell_message_box.is_some(),
@@ -133,17 +147,21 @@ impl Layers {
                 GameScreen::InGame => Screen::InGame,
                 GameScreen::MissionResult { .. } => Screen::MissionResult,
             },
-            route_page: route_page(state),
+            route_page: route_page(frontend),
             fullscreen_movie: frontend.fullscreen_movie.is_some(),
             credits_roll: frontend.credits_roll.is_some(),
-            launcher_options: App::native_launcher_options_active(state),
-            in_game_menu: state.match_state.match_presentation.in_game_menu,
+            launcher_options: App::native_launcher_options_active(frontend),
+            in_game_menu: match_state.match_presentation.in_game_menu,
             in_game_shell: crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                state,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             ),
-            coop_score: crate::app::input::coop_score::active(state),
-            campaign_score: App::campaign_score_shell_active(state),
-            score: App::score_shell_active(state),
+            coop_score: crate::app::input::coop_score::active(frontend),
+            campaign_score: App::campaign_score_shell_active(frontend),
+            score: App::score_shell_active(frontend),
         }
     }
 
@@ -229,8 +247,7 @@ impl Layers {
 /// The page the shell route shows on the main-menu screen once its model is
 /// built, else the main menu, which also stands in for a page not built.
 /// Overlays (a movie, the credits, Options) are left to [`Layers`].
-pub(crate) fn route_page(state: &AppState) -> ScreenPage {
-    let frontend = &state.frontend;
+pub(crate) fn route_page(frontend: &FrontendState) -> ScreenPage {
     if frontend.screen != GameScreen::MainMenu {
         return ScreenPage::MainMenu;
     }
@@ -253,19 +270,37 @@ pub(crate) fn route_page(state: &AppState) -> ScreenPage {
 }
 
 /// What render draws: the top modal page, and the screen's page under it.
-pub(crate) fn presented(state: &AppState) -> (Option<ModalPage>, ScreenPage) {
-    let layers = Layers::of(state);
+pub(crate) fn presented(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> (Option<ModalPage>, ScreenPage) {
+    let layers = Layers::of(platform, renderer, frontend, match_state, persistence);
     (layers.page(), layers.screen_page())
 }
 
 /// The modal page drawn over the current screen.
-pub(crate) fn modal_page(state: &AppState) -> Option<ModalPage> {
-    Layers::of(state).page()
+pub(crate) fn modal_page(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<ModalPage> {
+    Layers::of(platform, renderer, frontend, match_state, persistence).page()
 }
 
 /// The layer that takes a window input event now.
-pub(crate) fn input_layer(state: &AppState) -> InputLayer {
-    Layers::of(state).input()
+pub(crate) fn input_layer(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> InputLayer {
+    Layers::of(platform, renderer, frontend, match_state, persistence).input()
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

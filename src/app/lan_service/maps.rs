@@ -49,7 +49,7 @@ struct Key {
 
 impl Key {
     fn selected(
-        state: &AppState,
+        session: &crate::app::match_runtime::session::MatchSession,
         scope: SessionScope,
         generated: Option<GeneratedMapManifest>,
     ) -> Result<Self> {
@@ -57,9 +57,7 @@ impl Key {
             scope.epoch != [0; 16] && scope.revision > 0,
             "map transfer has no admitted options scope"
         );
-        let launch = state
-            .match_state
-            .session
+        let launch = session
             .network_setup()
             .ok_or_else(|| anyhow!("map transfer has no setup"))?;
         let file = launch
@@ -67,9 +65,7 @@ impl Key {
             .as_deref()
             .ok_or_else(|| anyhow!("map transfer has no selection"))?;
         crate::map::source::validate_network_map_name(file)?;
-        let metadata = state
-            .match_state
-            .session
+        let metadata = session
             .network_map_metadata()
             .ok_or_else(|| anyhow!("map transfer has no metadata"))?;
         // `Transfers::selected` checks the manifest against the selection
@@ -105,7 +101,7 @@ impl Key {
         Ok(Self {
             scope,
             identity,
-            host: state.match_state.session.host(),
+            host: session.host(),
             effective: metadata.effective_digest.clone(),
             generated,
             assets,
@@ -405,16 +401,18 @@ impl Transfers {
 
     fn selected(
         &mut self,
-        state: &mut AppState,
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        session: &mut crate::app::match_runtime::session::MatchSession,
         scope: SessionScope,
         generated: Option<GeneratedMapManifest>,
     ) -> Result<()> {
-        let key = Key::selected(state, scope, generated)?;
+        let key = Key::selected(session, scope, generated)?;
         if self.key.as_ref() == Some(&key) {
             return Ok(());
         }
         shared::accept_generated_manifest(
-            state,
+            &mut frontend.multiplayer_shell_runtime,
+            session,
             self.key.as_ref().and_then(|key| key.generated.as_ref()),
             key.generated.as_ref(),
         )?;
@@ -429,7 +427,11 @@ impl Transfers {
         self.host_bytes.clear();
         self.peers.clear();
         if !key.host {
-            setup::set_network_map_progress(state, Some((0, key.assets[0].total as u32)));
+            setup::set_network_map_progress(
+                &mut frontend.network_setup_protocol,
+                session,
+                Some((0, key.assets[0].total as u32)),
+            );
         }
         self.key = Some(key);
         Ok(())
@@ -456,7 +458,13 @@ impl Transfers {
         let key = self.key.as_ref().expect("selected LAN asset");
         let asset = key.assets[self.resource].clone();
         let host = key.host;
-        let local = shared::local_transfer_source(state, asset.resource)?;
+        let local = shared::local_transfer_source(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &state.match_state.session,
+            &state.process_assets,
+            asset.resource,
+        )?;
         if let Some(source) = &local {
             ensure!(
                 source.physical_identity() == Some((asset.total, asset.digest.as_str())),
@@ -506,7 +514,8 @@ impl Transfers {
             self.deadline = Some(Instant::now() + TRANSFER_TIMEOUT);
             if !key.host {
                 setup::set_network_map_progress(
-                    state,
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
                     Some((0, key.assets[self.resource].total as u32)),
                 );
             }
@@ -521,7 +530,14 @@ impl Transfers {
         // A downloaded seed can change selected-mode/RMG rules. Recompute
         // through ProcessAssets before K1/Ready acknowledges the host identity.
         super::verify_setup_agreement(state)?;
-        setup::accept_network_map_source(state, source, key.effective.clone())?;
+        setup::accept_network_map_source(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            source,
+            key.effective.clone(),
+        )?;
         self.deadline = None;
         self.flow = if key.host {
             Flow::Serving
@@ -543,8 +559,14 @@ impl Transfers {
             (Flow::AwaitRead(expected), IoValue::Bytes(bytes)) if *expected == resource => {
                 let key = self.key.as_ref().expect("selected LAN asset");
                 if resource == TransferResource::Preview {
-                    let source = shared::local_transfer_source(state, resource)?
-                        .ok_or_else(|| anyhow!("generated preview disappeared"))?;
+                    let source = shared::local_transfer_source(
+                        state.platform.game_config.as_ref(),
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        &state.process_assets,
+                        resource,
+                    )?
+                    .ok_or_else(|| anyhow!("generated preview disappeared"))?;
                     let asset = key.asset(resource).expect("preview manifest");
                     ensure!(
                         source.physical_identity() == Some((asset.total, asset.digest.as_str())),
@@ -562,7 +584,11 @@ impl Transfers {
                 if *expected == resource =>
             {
                 shared::accept_transfer_asset(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    &state.process_assets,
                     loaded,
                     resource,
                     self.key.as_ref().and_then(|key| key.generated.as_ref()),
@@ -581,7 +607,11 @@ impl Transfers {
             }
             (Flow::AwaitInstall(expected), IoValue::Installed(loaded)) if *expected == resource => {
                 shared::accept_transfer_asset(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    &state.process_assets,
                     loaded,
                     resource,
                     self.key.as_ref().and_then(|key| key.generated.as_ref()),
@@ -644,21 +674,23 @@ impl Transfers {
                     download.bytes.len(),
                     &[],
                 )?;
-                if queue(state, endpoint, packet)? {
+                if queue(&mut state.match_state, endpoint, packet)? {
                     download.requested = true;
                 }
             }
         }
         if key.host {
-            self.pump_host(state)?;
+            self.pump_host(&mut state.match_state)?;
         }
         Ok(())
     }
 
-    fn pump_host(&mut self, state: &mut AppState) -> Result<()> {
+    fn pump_host(
+        &mut self,
+        match_state: &mut crate::app::match_runtime::state::MatchState,
+    ) -> Result<()> {
         self.peers.retain(|peer| {
-            state
-                .match_state
+            match_state
                 .session
                 .network_endpoint_source(peer.endpoint)
                 .is_some()
@@ -667,8 +699,7 @@ impl Transfers {
             return Ok(());
         }
         for _ in 0..MAX_PUMP_PACKETS {
-            if state
-                .match_state
+            if match_state
                 .lan_service
                 .as_ref()
                 .is_none_or(|service| service.pending_setup.len() >= MAX_QUEUED_ASSET_PACKETS)
@@ -696,7 +727,7 @@ impl Transfers {
                 window.next,
                 &bytes[window.next..end],
             )?;
-            if !queue(state, peer.endpoint, packet)? {
+            if !queue(match_state, peer.endpoint, packet)? {
                 break;
             }
             window.next = end;
@@ -710,7 +741,9 @@ impl Transfers {
 
     fn receive(
         &mut self,
-        state: &mut AppState,
+        game_config: Option<&crate::util::config::GameConfig>,
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
         source: SocketAddrV4,
         packet: Packet<'_>,
     ) -> Result<()> {
@@ -728,14 +761,12 @@ impl Transfers {
                 matches!(packet.kind, PacketKind::Request),
                 "guest supplied LAN map bytes"
             );
-            let admitted = state
-                .match_state
+            let admitted = match_state
                 .session
                 .network_endpoint_source(source)
                 .ok_or_else(|| anyhow!("LAN asset request is not admitted"))?;
             ensure!(
-                state
-                    .match_state
+                match_state
                     .session
                     .network_setup()
                     .is_some_and(|setup| admitted != setup.local_player_index),
@@ -783,8 +814,7 @@ impl Transfers {
             return Ok(());
         }
         ensure!(
-            state
-                .match_state
+            match_state
                 .lan_service
                 .as_ref()
                 .and_then(|service| service.admitted_host.as_ref())
@@ -803,17 +833,15 @@ impl Transfers {
         }
         let complete = download.receive(packet.offset, packet.bytes)?;
         setup::set_network_map_progress(
-            state,
+            &mut frontend.network_setup_protocol,
+            &match_state.session,
             Some((
                 download.completed_bytes() as u32,
                 download.asset.total as u32,
             )),
         );
         if complete {
-            let directory = state
-                .platform
-                .game_config
-                .as_ref()
+            let directory = game_config
                 .ok_or_else(|| anyhow!("settings directory missing"))?
                 .paths
                 .settings_dir()
@@ -838,14 +866,21 @@ impl Transfers {
         self.worker = None;
         self.host_bytes.clear();
         self.peers.clear();
-        setup::set_network_map_progress(state, None);
+        setup::set_network_map_progress(
+            &mut state.frontend.network_setup_protocol,
+            &state.match_state.session,
+            None,
+        );
         setup::fail_go_handoff(state);
     }
 }
 
-fn queue(state: &mut AppState, endpoint: SocketAddrV4, bytes: Vec<u8>) -> Result<bool> {
-    state
-        .match_state
+fn queue(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    endpoint: SocketAddrV4,
+    bytes: Vec<u8>,
+) -> Result<bool> {
+    match_state
         .lan_service
         .as_mut()
         .ok_or_else(|| anyhow!("no LAN service"))?
@@ -865,7 +900,12 @@ pub(super) fn received_options(
             .ok_or_else(|| anyhow!("no LAN service"))?
             .maps,
     );
-    let result = maps.selected(state, scope, generated);
+    let result = maps.selected(
+        &mut state.frontend,
+        &mut state.match_state.session,
+        scope,
+        generated,
+    );
     if result.is_err() {
         maps.fail(state);
     }
@@ -877,11 +917,18 @@ pub(super) fn received_options(
     result
 }
 
-pub(super) fn clear_campaign_transfer(state: &mut AppState) {
-    if let Some(service) = &mut state.match_state.lan_service {
+pub(super) fn clear_campaign_transfer(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    if let Some(service) = &mut match_state.lan_service {
         service.maps.cancel();
     }
-    setup::set_network_map_progress(state, None);
+    setup::set_network_map_progress(
+        &mut frontend.network_setup_protocol,
+        &match_state.session,
+        None,
+    );
 }
 
 pub(super) fn poll(state: &mut AppState) {
@@ -910,7 +957,11 @@ pub(super) fn poll(state: &mut AppState) {
         let Some(scope) = scope.filter(|scope| scope.revision > 0) else {
             if maps.key.is_some() || maps.worker.is_some() {
                 maps.cancel();
-                setup::set_network_map_progress(state, None);
+                setup::set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    None,
+                );
             }
             return Ok(());
         };
@@ -919,19 +970,36 @@ pub(super) fn poll(state: &mut AppState) {
         {
             if maps.key.is_some() || maps.worker.is_some() {
                 maps.cancel();
-                setup::set_network_map_progress(state, None);
+                setup::set_network_map_progress(
+                    &mut state.frontend.network_setup_protocol,
+                    &state.match_state.session,
+                    None,
+                );
             }
             return Ok(());
         }
         if state.match_state.session.host()
             && maps.key.as_ref().is_none_or(|key| key.scope != scope)
         {
-            let generated = shared::host_generated_manifest(state)?;
-            maps.selected(state, scope, generated)?;
+            let generated = shared::host_generated_manifest(
+                state.platform.game_config.as_ref(),
+                &state.frontend.multiplayer_shell_runtime,
+                &state.match_state.session,
+            )?;
+            maps.selected(
+                &mut state.frontend,
+                &mut state.match_state.session,
+                scope,
+                generated,
+            )?;
         }
         if maps.key.as_ref().is_some_and(|key| key.scope != scope) {
             maps.cancel();
-            setup::set_network_map_progress(state, None);
+            setup::set_network_map_progress(
+                &mut state.frontend.network_setup_protocol,
+                &state.match_state.session,
+                None,
+            );
         }
         maps.pump(state)
     })();
@@ -944,10 +1012,15 @@ pub(super) fn poll(state: &mut AppState) {
     }
 }
 
-pub(super) fn receive(state: &mut AppState, source: SocketAddrV4, bytes: &[u8]) -> Result<()> {
+pub(super) fn receive(
+    game_config: Option<&crate::util::config::GameConfig>,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    source: SocketAddrV4,
+    bytes: &[u8],
+) -> Result<()> {
     let packet = Packet::decode(bytes)?;
-    let scope = state
-        .match_state
+    let scope = match_state
         .lan_service
         .as_ref()
         .and_then(super::LanService::setup_scope);
@@ -955,16 +1028,15 @@ pub(super) fn receive(state: &mut AppState, source: SocketAddrV4, bytes: &[u8]) 
         return Ok(());
     }
     let mut maps = std::mem::take(
-        &mut state
-            .match_state
+        &mut match_state
             .lan_service
             .as_mut()
             .ok_or_else(|| anyhow!("no LAN service"))?
             .maps,
     );
-    let result = maps.receive(state, source, packet);
+    let result = maps.receive(game_config, frontend, match_state, source, packet);
     // As in `received_options`: a closed visit takes its transfer state along.
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+    if let Some(service) = match_state.lan_service.as_mut() {
         service.maps = maps;
     }
     result

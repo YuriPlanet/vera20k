@@ -45,9 +45,10 @@ fn coord(value: &Value) -> DriveCoord {
 }
 
 fn install_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, native: &Value, boundary: &str) {
@@ -217,7 +218,7 @@ impl Fixture {
             sim.house_alliances_mut_for_test()
                 .insert("SECOND".into(), ["AMERICANS".into()].into_iter().collect());
         }
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(999));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(999));
         let building = sim
             .spawn_object("GAPOWR", "Americans", 10, 10, 0, &rules)
             .unwrap();
@@ -237,7 +238,7 @@ impl Fixture {
         sim.set_building_anim_slot(building, 3, true, false, 0, &rules)
             .unwrap();
         sim.set_building_damage_state(building, true, &rules);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1));
         let mut engineers = Vec::new();
         for (index, command) in route["commands"].as_array().unwrap().iter().enumerate() {
             let id = sim
@@ -251,8 +252,8 @@ impl Fixture {
                 sim.engineer_building_action(id, building, &rules),
                 Some(EngineerBuildingAction::Repair(true))
             );
-            assert!(sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &Command::CaptureBuilding {
                     engineer_id: id,
@@ -261,7 +262,7 @@ impl Fixture {
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default()
-            ));
+            )).is_ok());
             // The native command witness follows Event4C6CB0 with the
             // ordinary Mission5B3570 Commence receiver before its snapshot.
             sim.substrate.mission_commence_exact(id, 0).unwrap();

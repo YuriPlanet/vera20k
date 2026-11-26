@@ -108,8 +108,8 @@ fn building(sim: &mut Simulation, rules: &RuleSet, kind: &str, cell: (u16, u16))
 
 fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> bool {
     let sw_type_id = sim.interner.intern(sw);
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Russians",
         &Command::LaunchSuperWeapon {
             sw_type_id,
@@ -119,7 +119,7 @@ fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> 
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 fn mission(sim: &Simulation, id: u64) -> Option<MissionType> {

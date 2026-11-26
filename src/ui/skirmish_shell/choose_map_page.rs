@@ -318,6 +318,14 @@ pub fn pointer(
     x: i32,
     y: i32,
 ) -> ChooserInput {
+    // Android: the search `Edit` carries an empty rect on purpose (the host
+    // paints the line), so a press never reaches it and never arms the
+    // keyboard; a tap inside the painted box arms this dialog here.
+    #[cfg(target_os = "android")]
+    if matches!(at, Pointer::Down) && layout.map_search.contains(x, y) {
+        crate::util::android_ime::arm(DIALOG.0);
+        crate::util::android_ime::request_show();
+    }
     if sync_page(controller, modal, layout).is_none() {
         return ChooserInput::default();
     }

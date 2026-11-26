@@ -261,13 +261,12 @@ fn commit_route(
     intermediates: &[CellCoord],
     target: RouteTarget,
 ) -> Result<Option<NavTargetRef>, String> {
-    let navigation = &mut entities
-        .get_mut(id)
-        .ok_or("retired burrowing Unit")?
-        .navigation;
+    let entity = entities.get_mut(id).ok_or("retired burrowing Unit")?;
+    let note = entity.note_names();
+    let navigation = &mut entity.navigation;
     for &coord in intermediates {
         let (x, y) = cells.coord(cells.lookup(coord));
-        navigation.append_nav_queue(NavTargetRef::cell(x as u16, y as u16));
+        navigation.append_nav_queue(NavTargetRef::cell(x as u16, y as u16), note);
     }
     let target = match target {
         RouteTarget::Original(target) => target,
@@ -276,7 +275,7 @@ fn commit_route(
             NavTargetRef::cell(x as u16, y as u16)
         }
     };
-    navigation.append_nav_queue(target);
+    navigation.append_nav_queue(target, note);
     Ok(navigation.pop_nav_queue_front())
 }
 
@@ -332,13 +331,14 @@ impl Simulation {
             .is_some_and(|loco| loco.active_kind() == LocomotorKind::Drive);
         if moving && drive {
             //741F73..741FB6 preserves the loop flag and every existing post.
-            let navigation = &mut self
+            let entity = self
                 .substrate
                 .entities
                 .get_mut(id)
-                .ok_or("retired burrowing Unit")?
-                .navigation;
-            navigation.prepend_nav_list(requested);
+                .ok_or("retired burrowing Unit")?;
+            let note = entity.note_names();
+            let navigation = &mut entity.navigation;
+            navigation.prepend_nav_list(requested, note);
             navigation.clear_nav_queue();
             let cells = NativeCellQuery::canonical(
                 self.resolved_terrain

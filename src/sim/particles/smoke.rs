@@ -16,6 +16,7 @@ use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 use glam::IVec3;
 
@@ -68,7 +69,11 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     // that the store takes back, and the system is found again after it.
     let mut index = 0;
     let count = loop {
-        let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
+        let Some((sys, rng)) = sim
+            .substrate
+            .particle_systems
+            .system_and_rng_mut(id, &mut sim.scenario_rng)
+        else {
             return;
         };
         if let Some(coords) = followed.take() {
@@ -79,7 +84,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             if pt.behaves_like != ParticleBehavesLike::Smoke {
                 break;
             }
-            super::system_ai::tick_smoke_particle(p, pt, frame, &mut sim.scenario_rng);
+            super::system_ai::tick_smoke_particle(p, pt, frame, rng);
             index += 1;
         }
         let Some(mut p) = sys.particles.get(index).cloned() else {
@@ -219,7 +224,12 @@ pub(super) fn owner_in_tube(sim: &Simulation, owner: Option<u64>) -> bool {
 }
 
 /// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.
-pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng: &mut SimRng) {
+pub(super) fn tick_particle(
+    p: &mut Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut Forked<SimRng>,
+) {
     if frame & 1 != 0 {
         if (rng.next_u32() as i32).wrapping_abs() & 3 == 0 {
             let axis = (rng.next_u32() as i32).wrapping_abs() & 1;

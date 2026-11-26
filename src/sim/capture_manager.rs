@@ -219,6 +219,7 @@ impl CaptureManagerState {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -239,6 +240,7 @@ impl CaptureManagerState {
     /// A manager holding these `(victim, original owner)` nodes in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_nodes_for_test(nodes: &[(u64, InternedId)]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(3, false);
         state.nodes = nodes
             .iter()
@@ -954,13 +956,19 @@ impl Simulation {
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
         self.announce_controlled_building(target_id, controller_owner, rules);
-        self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
-        if let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(controller_id)
-            .and_then(|controller| controller.capture_manager.as_mut())
-        {
+        self.change_owner_by_mind_control(
+            target_id,
+            controller_owner,
+            rules,
+            registry,
+            frame_effects,
+        );
+        let controller = self.substrate.entities.get_mut(controller_id);
+        // A node's victim is a name the pointer-expiry index reads.
+        if let Some(manager) = controller.and_then(|controller| {
+            let _ = controller.note_names();
+            controller.capture_manager.as_mut()
+        }) {
             manager.nodes.push(ControlNode {
                 victim: target_id,
                 original_owner,
@@ -1041,7 +1049,7 @@ impl Simulation {
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
-        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         if let Some(object) = self.substrate.entities.get_mut(id) {
             object.seldom.mind_control.permanent = true;
         }
@@ -1083,7 +1091,7 @@ impl Simulation {
         if let Some(controller) = object.seldom.mind_control.controller {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
-        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
             object.seldom.mind_control.permanent = true;
             crate::sim::mission::authority::queue_entity_mission_deferred(
@@ -1126,7 +1134,7 @@ impl Simulation {
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
-        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        self.change_owner_by_mind_control(id, house, rules, registry, frame_effects);
         let old_ring = self.substrate.entities.get_mut(id).and_then(|object| {
             object.seldom.mind_control.permanent = permanent;
             object.seldom.mind_control.ring_anim.take()
@@ -1467,7 +1475,13 @@ impl Simulation {
             }
             // 0x004720D5..0x004720DA: ChangeOwner(original house, 1).
             self.announce_controlled_building(victim_id, original_owner, rules);
-            self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
+            self.change_owner_by_mind_control(
+                victim_id,
+                original_owner,
+                rules,
+                registry,
+                frame_effects,
+            );
             // DecideUnitFate runs while `+0x2C0` still names the controller.
             self.decide_unit_fate(controller_id, victim_id, rules, frame_effects);
             if let Some(victim) = self.substrate.entities.get_mut(victim_id) {

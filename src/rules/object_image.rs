@@ -163,6 +163,11 @@ pub(crate) struct ObjectImageState {
     anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
     anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
+    /// Phobos `[General] ArtImageSwap=true`: the own ART section's `Image=`
+    /// names this TechnoType's visual files. It replaces only the file name;
+    /// the section's flags still come from the type's own ART section.
+    #[serde(default)]
+    image_swap: Option<String>,
     #[serde(default)]
     pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
@@ -183,6 +188,7 @@ impl ObjectImageState {
             anim_bounds_loads: None,
             anim_theater_bounds_loads: None,
             voxel_load: None,
+            image_swap: None,
             model_slots: Default::default(),
         }
     }
@@ -205,6 +211,7 @@ impl ObjectImageState {
 
     pub(crate) fn read_input(&mut self, input: &IniSection) {
         self.image = input.read_string("Image", &self.image, 25);
+        self.image_swap = None;
         self.alternate_arctic_art =
             input.read_bool("AlternateArcticArt", self.alternate_arctic_art);
     }
@@ -225,6 +232,28 @@ impl ObjectImageState {
             );
             self.voxel = art.read_bool("Voxel", self.voxel);
         }
+    }
+
+    /// Phobos `[General] ArtImageSwap=true`: read the own ART section's
+    /// `Image=` as the TechnoType's visual file name. Phobos reads no other
+    /// key from the named section, so the retained flags stay those this
+    /// section already read. Native art `Image=` remains building-only
+    /// (`0x0045F945`); this path runs only while the Phobos key is on.
+    pub(crate) fn apply_phobos_art_image_swap(&mut self, fixed_art: &IniFile) {
+        let Some(section) = fixed_art.section(&self.image) else {
+            return;
+        };
+        if let Some(image) = section.read_name("Image", 0x40) {
+            // The visual name still feeds ObjectTypeClass's 25-byte ImageFile;
+            // keep the same 24-character ceiling a rules `Image=` gets.
+            self.image_swap = Some(image.chars().take(24).collect());
+        }
+    }
+
+    /// The name this object's SHP or VXL files load from: the Phobos
+    /// ArtImageSwap name when on, otherwise the retained rules `Image=`.
+    pub(crate) fn visual_image(&self) -> &str {
+        self.image_swap.as_deref().unwrap_or(&self.image)
     }
 
     pub(crate) fn load_for_read(
@@ -289,7 +318,7 @@ impl ObjectImageState {
     /// A miss replaces the previous shape with null.
     pub(crate) fn load_plain_shp(&mut self) {
         self.shp_loads = vec![ObjectImageLoad {
-            image: self.image.clone(),
+            image: self.visual_image().to_owned(),
             theater: false,
             new_theater: false,
             generic_retry: false,
@@ -360,7 +389,7 @@ impl ObjectImageState {
 
     fn shp_request(&self, generic_retry: bool) -> ObjectImageLoad {
         ObjectImageLoad {
-            image: self.image.clone(),
+            image: self.visual_image().to_owned(),
             theater: self.theater,
             new_theater: self.new_theater,
             generic_retry,
@@ -388,7 +417,7 @@ impl ObjectImageState {
 
     /// LoadVoxel5F8110 formats the entry ImageFile independently of Voxel.
     pub(crate) fn load_voxel(&mut self) {
-        self.voxel_load = Some(self.image.clone());
+        self.voxel_load = Some(self.visual_image().to_owned());
     }
 
     /// ObjectLoad5F9856..5F985C clears the saved resource pointer/ownership.
@@ -398,6 +427,7 @@ impl ObjectImageState {
 
     pub(crate) fn replace_image(&mut self, input: &IniSection, default: &str) {
         self.image = input.read_string("Image", default, 25);
+        self.image_swap = None;
     }
 
     pub(crate) fn read_anim_theater_flags(&mut self, own_art: &IniSection) {
@@ -431,6 +461,10 @@ impl ObjectImageState {
                 .voxel_load
                 .as_deref()
                 .is_some_and(|name| !valid_name(name))
+            || self
+                .image_swap
+                .as_deref()
+                .is_some_and(|name| !valid_name(name))
         {
             return Err(crate::rules::error::RulesError::InvalidSavedState(
                 "invalid retained ObjectType image name",
@@ -462,5 +496,27 @@ impl ObjectImageState {
     }
     pub(crate) fn voxel_load(&self) -> Option<&str> {
         self.voxel_load.as_deref()
+    }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+mod tests {
+    use super::*;
+
+    /// Phobos `[General] ArtImageSwap=true` names the visual from the own
+    /// ART `Image=`, while the image that names other ART reads and the
+    /// retained `Voxel=` flag stay on the own section.
+    #[test]
+    fn phobos_art_image_swap_renames_visual_only() {
+        let art = IniFile::from_str("[SAPCX]\nImage=SAPC\nVoxel=yes\nRemapable=yes\n");
+        let section = art.section("SAPCX").expect("own ART section");
+        let mut image = ObjectImageState::new("SAPCX");
+        image.read_art(Some(section));
+        image.apply_phobos_art_image_swap(&art);
+        assert_eq!(image.image(), "SAPCX");
+        assert_eq!(image.visual_image(), "SAPC");
+        assert!(image.voxel());
+        image.load_voxel();
+        assert_eq!(image.voxel_load(), Some("SAPC"));
     }
 }

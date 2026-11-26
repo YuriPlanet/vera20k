@@ -8,14 +8,20 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_bootstrap::PreparedCampaignStart;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::map::campaign_manifest::{CampaignManifest, CampaignStage};
 use crate::map::houses::HouseRoster;
 use crate::map::source::{LoadedMapIni, LoadedMapSource, is_logical_name, valid_source_sha256};
 use crate::sim::campaign_carry_over::StageCarryOver;
 use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
 use crate::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishHumanSlot};
+use crate::util::config::GameConfig;
 use crate::util::file_system;
 
 const CAMPAIGNS: &str = "campaigns";
@@ -210,24 +216,20 @@ pub(super) struct CampaignSeries {
     manifest: CampaignManifest,
 }
 
-fn campaign_roots(state: &AppState) -> Vec<PathBuf> {
-    state
-        .platform
-        .game_config
-        .as_ref()
-        .map_or_else(Vec::new, |config| {
-            crate::map::source::game_folders(&config.paths.ra2_dir)
-                .into_iter()
-                .rev()
-                .map(|root| root.join(CAMPAIGNS))
-                .collect()
-        })
+fn campaign_roots(game_config: Option<&GameConfig>) -> Vec<PathBuf> {
+    game_config.map_or_else(Vec::new, |config| {
+        crate::map::source::game_folders(&config.paths.ra2_dir)
+            .into_iter()
+            .rev()
+            .map(|root| root.join(CAMPAIGNS))
+            .collect()
+    })
 }
 
-pub(super) fn discover(state: &AppState) -> Vec<CampaignSeries> {
+pub(super) fn discover(game_config: Option<&GameConfig>) -> Vec<CampaignSeries> {
     let mut series = Vec::new();
     let mut seen = BTreeSet::new();
-    for root in campaign_roots(state) {
+    for root in campaign_roots(game_config) {
         let Ok(entries) = file_system::read_dir(&root) else {
             continue;
         };
@@ -275,9 +277,12 @@ fn confined_manifest(root: &Path, series: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn find_manifest(state: &AppState, id: &str) -> Result<(PathBuf, CampaignManifest)> {
+fn find_manifest(
+    game_config: Option<&GameConfig>,
+    id: &str,
+) -> Result<(PathBuf, CampaignManifest)> {
     ensure!(is_logical_name(id), "invalid campaign series");
-    for root in campaign_roots(state) {
+    for root in campaign_roots(game_config) {
         let Ok(entries) = file_system::read_dir(&root) else {
             continue;
         };
@@ -298,9 +303,12 @@ fn find_manifest(state: &AppState, id: &str) -> Result<(PathBuf, CampaignManifes
     anyhow::bail!("campaign series {id} is unavailable")
 }
 
-fn checked_manifest(state: &AppState, room: &CampaignRoom) -> Result<(PathBuf, CampaignManifest)> {
+fn checked_manifest(
+    game_config: Option<&GameConfig>,
+    room: &CampaignRoom,
+) -> Result<(PathBuf, CampaignManifest)> {
     room.validate()?;
-    let (path, manifest) = find_manifest(state, &room.series)?;
+    let (path, manifest) = find_manifest(game_config, &room.series)?;
     ensure!(
         manifest.digest == room.manifest_sha256,
         "campaign manifest differs from the host"
@@ -308,8 +316,11 @@ fn checked_manifest(state: &AppState, room: &CampaignRoom) -> Result<(PathBuf, C
     Ok((path, manifest))
 }
 
-pub(crate) fn load_manifest(state: &AppState, room: &CampaignRoom) -> Result<CampaignManifest> {
-    checked_manifest(state, room).map(|(_, manifest)| manifest)
+pub(crate) fn load_manifest(
+    game_config: Option<&GameConfig>,
+    room: &CampaignRoom,
+) -> Result<CampaignManifest> {
+    checked_manifest(game_config, room).map(|(_, manifest)| manifest)
 }
 
 struct CampaignMap {
@@ -319,7 +330,12 @@ struct CampaignMap {
     effective_digest: String,
 }
 
-fn stage_map(state: &AppState, manifest_path: &Path, stage: &CampaignStage) -> Result<CampaignMap> {
+fn stage_map(
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    manifest_path: &Path,
+    stage: &CampaignStage,
+) -> Result<CampaignMap> {
     let series = manifest_path
         .parent()
         .context("campaign manifest has no series directory")?;
@@ -330,13 +346,8 @@ fn stage_map(state: &AppState, manifest_path: &Path, stage: &CampaignStage) -> R
         .and_then(|name| name.to_str())
         .filter(|name| is_logical_name(name))
         .context("campaign map has no logical name")?;
-    let config = state
-        .platform
-        .game_config
-        .as_ref()
-        .context("campaign has no game configuration")?;
-    let assets = state
-        .process_assets
+    let config = game_config.context("campaign has no game configuration")?;
+    let assets = process_assets
         .manager()
         .context("campaign has no game assets")?;
     let loaded = crate::map::source::load_network_map_ini(
@@ -380,10 +391,11 @@ fn stage_player_limit(stage: &CampaignStage) -> u8 {
 }
 
 fn verified_map(
-    state: &AppState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
     room: &CampaignRoom,
 ) -> Result<(CampaignManifest, usize, CampaignMap)> {
-    let (path, manifest) = checked_manifest(state, room)?;
+    let (path, manifest) = checked_manifest(game_config, room)?;
     let index = manifest
         .stage_index(&room.stage)
         .context("unknown campaign stage")?;
@@ -392,7 +404,7 @@ fn verified_map(
         room.player_limit == stage_player_limit(stage),
         "campaign room player limit differs from its stage"
     );
-    let map = stage_map(state, &path, stage)?;
+    let map = stage_map(game_config, process_assets, &path, stage)?;
     ensure!(
         map.loaded
             .source
@@ -407,21 +419,26 @@ fn verified_map(
     Ok((manifest, index, map))
 }
 
-pub(crate) fn verify_current(state: &AppState, room: &CampaignRoom) -> Result<()> {
-    verified_map(state, room).map(|_| ())
+pub(crate) fn verify_current(
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
+    room: &CampaignRoom,
+) -> Result<()> {
+    verified_map(game_config, process_assets, room).map(|_| ())
 }
 
 pub(crate) fn prepare_current(
-    state: &AppState,
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
     room: &CampaignRoom,
 ) -> Result<PreparedCampaignStart> {
-    let (manifest, index, map) = verified_map(state, room)?;
+    let (manifest, index, map) = verified_map(game_config, process_assets, room)?;
     let map_name = format!(
         "{CAMPAIGNS}/{}/{}",
         room.series,
         manifest.stages[index].map.replace('\\', "/")
     );
-    let session = &state.match_state.session;
     let launch = session
         .network_setup()
         .context("campaign requires a network setup")?;
@@ -450,23 +467,27 @@ pub(crate) fn prepare_current(
     })
 }
 
-pub(crate) fn prepared_start(state: &AppState) -> Result<Option<PreparedCampaignStart>> {
-    state
-        .match_state
-        .session
+pub(crate) fn prepared_start(
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+) -> Result<Option<PreparedCampaignStart>> {
+    session
         .campaign_room()
-        .map(|room| prepare_current(state, room))
+        .map(|room| prepare_current(game_config, session, process_assets, room))
         .transpose()
 }
 
 fn selected_room(
-    state: &AppState,
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
     series: &str,
     id: &str,
     previous: Option<&CampaignRoom>,
     carry_over: StageCarryOver,
 ) -> Result<CampaignRoom> {
-    let (path, manifest) = find_manifest(state, series)?;
+    let (path, manifest) = find_manifest(game_config, series)?;
     if let Some(previous) = previous {
         ensure!(
             previous.manifest_sha256 == manifest.digest,
@@ -474,13 +495,12 @@ fn selected_room(
         );
     }
     let stage = manifest.stage(id).context("unknown campaign stage")?;
-    let map = stage_map(state, &path, stage)?;
+    let map = stage_map(game_config, process_assets, &path, stage)?;
     let (_, map_sha256) = map
         .loaded
         .source
         .physical_identity()
         .context("campaign map has no digest")?;
-    let session = &state.match_state.session;
     let (playing_sources, difficulty, attempt) = if let Some(previous) = previous {
         (
             previous.playing_sources.clone(),
@@ -514,26 +534,34 @@ fn selected_room(
 }
 
 pub(crate) fn prepare_stage(
-    state: &AppState,
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
     id: &str,
     carry_over: StageCarryOver,
 ) -> Result<CampaignRoom> {
-    let previous = state
-        .match_state
-        .session
-        .campaign_room()
-        .context("no active campaign room")?;
-    selected_room(state, &previous.series, id, Some(previous), carry_over)
+    let previous = session.campaign_room().context("no active campaign room")?;
+    selected_room(
+        game_config,
+        session,
+        process_assets,
+        &previous.series,
+        id,
+        Some(previous),
+        carry_over,
+    )
 }
 
 /// Publication rebinds names against the current admitted participants after
 /// joins or leaves. Source IDs are assigned from this canonical projection.
-pub(crate) fn publication(state: &AppState) -> Result<Option<CampaignRoom>> {
-    let session = &state.match_state.session;
+pub(crate) fn publication(
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+) -> Result<Option<CampaignRoom>> {
     let Some(room) = session.campaign_room() else {
         return Ok(None);
     };
-    let manifest = load_manifest(state, room)?;
+    let manifest = load_manifest(game_config, room)?;
     let stage = manifest
         .stage(&room.stage)
         .context("unknown campaign stage")?;
@@ -555,15 +583,21 @@ pub(crate) fn local_map_verified(
     )
 }
 
-pub(crate) fn report_local_files(state: &mut AppState, verified: bool) -> Result<()> {
-    let session = &mut state.match_state.session;
+pub(crate) fn report_local_files(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    verified: bool,
+) -> Result<()> {
+    let session = &mut match_state.session;
     let local = session
         .network_setup()
         .context("campaign has no network setup")?
         .local_player_index;
     let status = u8::from(verified);
     session.set_network_map_status(local, status)?;
-    if let Some(protocol) = &mut state.frontend.network_setup_protocol {
+    if let Some(protocol) = &mut frontend.network_setup_protocol {
         protocol.accept_eligible = verified;
         if !session.host() && !protocol.external {
             protocol
@@ -575,19 +609,27 @@ pub(crate) fn report_local_files(state: &mut AppState, verified: bool) -> Result
         }
     }
     if !verified {
-        super::chat_notice(state, "VERA:CampaignRoomUnavailable", &[]);
+        super::chat_notice(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            "VERA:CampaignRoomUnavailable",
+            &[],
+        );
     }
     Ok(())
 }
 
 pub(crate) fn online_map_metadata(
-    state: &AppState,
+    game_config: Option<&GameConfig>,
+    process_assets: &ProcessAssets,
     room: &CampaignRoom,
 ) -> Result<(
     String,
     crate::app::match_runtime::session::NetworkMapMetadata,
 )> {
-    let (manifest, index, map) = verified_map(state, room)?;
+    let (manifest, index, map) = verified_map(game_config, process_assets, room)?;
     let stage = &manifest.stages[index];
     let (bytes, _) = map
         .loaded
@@ -613,63 +655,81 @@ pub(crate) fn online_agreement(room: &CampaignRoom) -> (&str, &str) {
     (&room.map_sha256, &room.effective_map_digest)
 }
 
-pub(super) fn speed_and_options(state: &AppState) -> Result<i32> {
-    state
-        .match_state
-        .session
+pub(super) fn speed_and_options(session: &MatchSession) -> Result<i32> {
+    session
         .network_setup()
         .map(|launch| launch.options.game_speed)
         .context("campaign has no setup")
 }
 
-fn committed_room(state: &mut AppState, room: Option<CampaignRoom>) -> Result<()> {
-    let speed = speed_and_options(state)?;
+fn committed_room(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    room: Option<CampaignRoom>,
+) -> Result<()> {
+    let speed = speed_and_options(&match_state.session)?;
     let campaign = room.is_some();
-    state
-        .match_state
-        .session
-        .accept_campaign_room(room, speed)?;
-    super::invalidate_network_agreement(state)?;
+    match_state.session.accept_campaign_room(room, speed)?;
+    super::invalidate_network_agreement(
+        &mut frontend.network_setup_protocol,
+        &mut match_state.session,
+    )?;
     if campaign {
-        report_local_files(state, true)?;
+        report_local_files(renderer, frontend, match_state, process_assets, true)?;
     }
-    super::actions::queue(state, super::NetworkSetupRequest::PublishOptions);
+    super::actions::queue(
+        &mut frontend.network_setup_protocol,
+        super::NetworkSetupRequest::PublishOptions,
+    );
     Ok(())
 }
 
-pub(super) fn set_difficulty(state: &mut AppState, difficulty: i32) -> Result<()> {
-    let mut room = state
-        .match_state
+pub(super) fn set_difficulty(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    difficulty: i32,
+) -> Result<()> {
+    let mut room = match_state
         .session
         .campaign_room()
         .context("no selected campaign")?
         .clone();
     if room.difficulty != difficulty {
         room.difficulty = difficulty;
-        committed_room(state, Some(room))?;
+        committed_room(renderer, frontend, match_state, process_assets, Some(room))?;
     }
     Ok(())
 }
 
 pub(crate) fn resume_after_wol_result<'a>(
-    state: &mut AppState,
+    game_config: Option<&GameConfig>,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
     room: CampaignRoom,
     reopened_players: impl ExactSizeIterator<Item = &'a str> + Clone,
 ) -> Result<()> {
-    verify_current(state, &room)?;
+    verify_current(game_config, process_assets, &room)?;
     let auto_start = same_players(&room, reopened_players)
-        && state
-            .match_state
-            .session
-            .network_setup()
-            .is_some_and(|launch| {
-                same_players(&room, launch.humans.iter().map(|human| human.name.as_str()))
-            });
+        && match_state.session.network_setup().is_some_and(|launch| {
+            same_players(&room, launch.humans.iter().map(|human| human.name.as_str()))
+        });
     // Keep the selected stage and carry-over in the reopened room even
     // when a missing player means the host must start it again manually.
-    committed_room(state, Some(room))?;
+    committed_room(renderer, frontend, match_state, process_assets, Some(room))?;
     if auto_start {
-        super::actions::request_campaign_start(state)?;
+        super::actions::request_campaign_start(
+            game_config,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+        )?;
     }
     Ok(())
 }
@@ -695,30 +755,28 @@ fn selected_series<'a>(
     })
 }
 
-pub(super) fn visible_stage(state: &AppState) -> Option<&CampaignStage> {
-    let room = state.match_state.session.campaign_room()?;
-    let entries = &state
-        .frontend
-        .network_setup_protocol
-        .as_ref()?
-        .campaign_catalog;
+pub(super) fn visible_stage<'a>(
+    protocol: Option<&'a NetworkSetupProtocol>,
+    session: &MatchSession,
+) -> Option<&'a CampaignStage> {
+    let room = session.campaign_room()?;
+    let entries = &protocol?.campaign_catalog;
     selected_series(entries, room)?.manifest.stage(&room.stage)
 }
 
-pub(super) fn stage_label(state: &AppState) -> Option<String> {
-    let room = state.match_state.session.campaign_room()?;
-    Some(visible_stage(state).map_or_else(
+pub(super) fn stage_label(
+    protocol: Option<&NetworkSetupProtocol>,
+    session: &MatchSession,
+) -> Option<String> {
+    let room = session.campaign_room()?;
+    Some(visible_stage(protocol, session).map_or_else(
         || room.stage.clone(),
         |stage| stage.title(&crate::i18n::selected_language()).to_owned(),
     ))
 }
 
-pub(super) fn difficulty(state: &AppState) -> Option<i32> {
-    state
-        .match_state
-        .session
-        .campaign_room()
-        .map(|room| room.difficulty)
+pub(super) fn difficulty(session: &MatchSession) -> Option<i32> {
+    session.campaign_room().map(|room| room.difficulty)
 }
 
 fn choice(value: i32, text: String) -> crate::ui::multiplayer_setup::SetupChoice {
@@ -812,19 +870,20 @@ pub(super) fn setup_selectors(
 }
 
 pub(super) fn role_choices(
-    state: &AppState,
+    protocol: Option<&NetworkSetupProtocol>,
+    session: &MatchSession,
     name: &str,
 ) -> (
     Vec<crate::ui::multiplayer_setup::SetupChoice>,
     Option<usize>,
 ) {
-    let room = state.match_state.session.campaign_room();
+    let room = session.campaign_room();
     let assigned = room.and_then(|room| {
         room.playing_sources
             .iter()
             .find(|seat| seat.player.eq_ignore_ascii_case(name))
     });
-    stage_role_choices(visible_stage(state), assigned)
+    stage_role_choices(visible_stage(protocol, session), assigned)
 }
 
 fn stage_role_choices(
@@ -869,23 +928,40 @@ fn stage_role_choices(
     (choices, Some(index))
 }
 
-pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) -> Result<()> {
+pub(super) fn select(
+    game_config: Option<&GameConfig>,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    control: u16,
+    row: u8,
+    value: i32,
+) -> Result<()> {
     use crate::ui::multiplayer_setup::{CAMPAIGN_SERIES, CAMPAIGN_STAGE};
 
     ensure!(
-        state.match_state.session.host(),
+        match_state.session.host(),
         "only the host assigns campaign roles"
     );
     if control == CAMPAIGN_SERIES && value == 0 {
-        return committed_room(state, None);
+        return committed_room(renderer, frontend, match_state, process_assets, None);
     }
-    if super::dialog(state).wol() && !crate::app::shell_wol::lobby_campaign_rooms(state) {
-        super::chat_notice(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
+    if super::dialog(frontend, match_state).wol()
+        && !crate::app::shell_wol::lobby_campaign_rooms(frontend.wol.as_ref())
+    {
+        super::chat_notice(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            "VERA:CampaignRoomOnlineUnsupported",
+            &[],
+        );
         return Ok(());
     }
     let next = (|| -> Result<Option<CampaignRoom>> {
-        let entries = &state
-            .frontend
+        let entries = &frontend
             .network_setup_protocol
             .as_ref()
             .context("no setup")?
@@ -899,10 +975,18 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
                 .stages
                 .first()
                 .context("campaign has no stages")?;
-            return selected_room(state, &entry.id, &first.id, None, Default::default()).map(Some);
+            return selected_room(
+                game_config,
+                &match_state.session,
+                process_assets,
+                &entry.id,
+                &first.id,
+                None,
+                Default::default(),
+            )
+            .map(Some);
         }
-        let room = state
-            .match_state
+        let room = match_state
             .session
             .campaign_room()
             .context("no selected campaign")?;
@@ -910,16 +994,23 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
         let index = usize::try_from(value)?;
         if control == CAMPAIGN_STAGE {
             let stage = entry.manifest.stages.get(index).context("unknown stage")?;
-            return selected_room(state, &entry.id, &stage.id, Some(room), Default::default())
-                .map(Some);
+            return selected_room(
+                game_config,
+                &match_state.session,
+                process_assets,
+                &entry.id,
+                &stage.id,
+                Some(room),
+                Default::default(),
+            )
+            .map(Some);
         }
         let mut room = room.clone();
         let stage = entry
             .manifest
             .stage(&room.stage)
             .context("unknown campaign stage")?;
-        let roster = state
-            .match_state
+        let roster = match_state
             .session
             .network_setup()
             .context("no admitted campaign setup")?;
@@ -946,10 +1037,17 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
         Ok(Some(room))
     })();
     match next {
-        Ok(room) => committed_room(state, room),
+        Ok(room) => committed_room(renderer, frontend, match_state, process_assets, room),
         Err(error) => {
             log::warn!("Campaign setup edit refused: {error:#}");
-            super::chat_notice(state, "VERA:CampaignRoomUnavailable", &[]);
+            super::chat_notice(
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                "VERA:CampaignRoomUnavailable",
+                &[],
+            );
             Ok(())
         }
     }

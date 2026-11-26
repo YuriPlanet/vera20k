@@ -10,7 +10,10 @@
 //! in-match `0xCF`; what native shows behind it after B5 closes is not
 //! captured.
 
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -47,7 +50,13 @@ pub(crate) fn open(state: &mut AppState) {
         })
         .unwrap_or(true);
     App::enter_in_game_menu_state(
-        state,
+        &mut state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
         if finished {
             InGameMenuState::Closed
         } else {
@@ -57,8 +66,11 @@ pub(crate) fn open(state: &mut AppState) {
 }
 
 /// `0x120` centred over the frame the battlefield draws into.
-pub(crate) fn layout(state: &AppState) -> BoxParts {
-    let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+pub(crate) fn layout(renderer: &RendererState, screen: &GameScreen) -> BoxParts {
+    let (w, h) = (
+        renderer.render_width(screen) as i32,
+        renderer.render_height(screen) as i32,
+    );
     message_box_parts(2, RectPx::new(0, 0, w, h))
 }
 
@@ -91,35 +103,41 @@ fn rect_of(layout: &BoxParts, id: u16) -> Option<RectPx> {
 
 /// The box's nodes on its layout before it paints: input syncs them only
 /// on a pointer message.
-pub(crate) fn sync(state: &mut AppState) {
-    if state.match_state.match_presentation.in_game_menu != InGameMenuState::Surrender {
+pub(crate) fn sync(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &mut MatchPresentationState,
+) {
+    if presentation.in_game_menu != InGameMenuState::Surrender {
         return;
     }
-    let layout = layout(state);
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let layout = layout(renderer, screen);
+    let ui = &mut presentation.dialog_ui;
     let rect = |id| rect_of(&layout, id);
     super::dialog_page::sync_dialog(ui, DIALOG, nodes, rect, super::dialog_page::no_sync);
 }
 
 /// The box's widgets under its live dialog.
-pub(crate) fn root(state: &AppState) -> Option<vera20k_gui::NodeId> {
-    state
-        .match_state
-        .match_presentation
-        .dialog_ui
-        .root_in(DIALOG)
+pub(crate) fn root(presentation: &MatchPresentationState) -> Option<vera20k_gui::NodeId> {
+    presentation.dialog_ui.root_in(DIALOG)
 }
 
 /// One pointer message on the box (`down`: `None` moves).
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let layout = layout(state);
+    let layout = layout(&state.renderer, &state.frontend.screen);
     let (x, y) = state.match_state.input.cursor_px();
     let event = super::dialog_page::event_at(x, y, down);
     let ui = &mut state.match_state.match_presentation.dialog_ui;
     let rect = |id| rect_of(&layout, id);
     let events =
         super::dialog_page::route(ui, DIALOG, nodes, rect, super::dialog_page::no_sync, event);
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         match event {
             PageEvent::Activated(0x5AE) => activate(state, SurrenderButton::Ok),
             PageEvent::Activated(2) => activate(state, SurrenderButton::Cancel),
@@ -130,11 +148,8 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
 }
 
 /// Whether `button` shows pushed.
-pub(crate) fn pressed(state: &AppState, button: SurrenderButton) -> bool {
-    super::dialog_page::pressed(
-        &state.match_state.match_presentation.dialog_ui,
-        button as u16,
-    )
+pub(crate) fn pressed(presentation: &MatchPresentationState, button: SurrenderButton) -> bool {
+    super::dialog_page::pressed(&presentation.dialog_ui, button as u16)
 }
 
 /// Enter (IDOK) and Escape (IDCANCEL) both give result 1.

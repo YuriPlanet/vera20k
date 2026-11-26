@@ -408,7 +408,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
         // After the actor interns its owner, whom the arrival's sight
         // border resolves.
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         actor

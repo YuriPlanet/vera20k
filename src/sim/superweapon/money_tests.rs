@@ -94,8 +94,8 @@ fn fire(
     cell: (u16, u16),
 ) -> bool {
     let owner = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner,
         &Command::LaunchSuperWeapon {
             sw_type_id: id,
@@ -105,7 +105,7 @@ fn fire(
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 #[test]
@@ -487,8 +487,8 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
         for _ in 0..3 {
             sim.sound_events.clear_for_test();
             admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             superweapon::tick_house_superweapon_instances(
                 &mut sim,
                 &rules,

@@ -57,7 +57,7 @@ fn scene() -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::with_seed(0x5E1F_4EA1);
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));
     sim.intern_rule_type_ids(&rules);

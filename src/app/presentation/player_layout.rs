@@ -9,17 +9,21 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::state::PlatformState;
 use crate::rules::ini_parser::IniFile;
 use crate::ui::match_layout::{FILE_NAME, MatchLayoutFile};
 
 /// The player's file in the VERA20k folder, whatever capitals its name has;
 /// `None` in a capture run or without a settings folder.
-fn path(state: &AppState) -> Option<std::path::PathBuf> {
-    if state.platform.capture_client_size.is_some() {
+fn path(platform: &PlatformState) -> Option<std::path::PathBuf> {
+    if platform.capture_client_size.is_some() {
         return None;
     }
-    let dir = state.platform.game_config.as_ref()?.paths.settings_dir();
+    let dir = platform.game_config.as_ref()?.paths.settings_dir();
     Some(
         crate::util::case_insensitive_path::find(dir, FILE_NAME)
             .unwrap_or_else(|| dir.join(FILE_NAME.to_ascii_lowercase())),
@@ -27,19 +31,19 @@ fn path(state: &AppState) -> Option<std::path::PathBuf> {
 }
 
 /// The player's file as it is on disk; empty when there is none.
-fn read(state: &AppState) -> Vec<u8> {
-    path(state)
+fn read(platform: &PlatformState) -> Vec<u8> {
+    path(platform)
         .and_then(|path| crate::util::file_system::read(path).ok())
         .unwrap_or_default()
 }
 
 /// Write the player's file as the match holds it; with nothing left in it,
 /// as after a Reset, remove the file. A capture run writes none.
-pub(crate) fn write(state: &AppState) {
-    let Some(path) = path(state) else {
+pub(crate) fn write(platform: &PlatformState, presentation: &MatchPresentationState) {
+    let Some(path) = path(platform) else {
         return;
     };
-    let text = &state.match_state.match_presentation.player_layout_text;
+    let text = &presentation.player_layout_text;
     if text.iter().all(u8::is_ascii_whitespace) {
         match crate::util::file_system::remove_file(&path) {
             Ok(()) => log::info!("Interface layout reset: removed {}", path.display()),
@@ -66,20 +70,32 @@ pub(crate) fn write(state: &AppState) {
 
 /// A new match's layouts: the mod's file as the loader parsed it, and the
 /// player's own from the VERA20k folder.
-pub(crate) fn install(state: &mut AppState, mod_file: Option<IniFile>) {
-    let player = read(state);
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn install(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    mod_file: Option<IniFile>,
+) {
+    let player = read(platform);
+    let presentation = &mut match_state.match_presentation;
     presentation.mod_layout_ini = mod_file;
     presentation.player_layout_text = player;
     presentation.layout_edit = None;
-    rebuild(state, true);
+    rebuild(platform, frontend, match_state, persistence, true);
 }
 
 /// Read the two layers again into the layouts the match uses, and lay the
 /// local side's sidebar out by them. `log` lists every refused line, as a new
 /// match does once.
-pub(crate) fn rebuild(state: &mut AppState, log: bool) {
-    let presentation = &state.match_state.match_presentation;
+pub(crate) fn rebuild(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    log: bool,
+) {
+    let presentation = &match_state.match_presentation;
     // `LoadFromStraw` drops a last line that has no line break.
     let mut text = presentation.player_layout_text.clone();
     let player = (!text.is_empty())
@@ -105,8 +121,13 @@ pub(crate) fn rebuild(state: &mut AppState, log: bool) {
             log::warn!("{FILE_NAME} {problem}");
         }
     }
-    state.match_state.match_presentation.match_layouts = layouts;
-    state.match_state.match_presentation.sidebar_layout_spec =
-        crate::app::presentation::sidebar_render::sidebar_layout_spec(state);
-    crate::app::presentation::sidebar_render::refresh_added_parts(state);
+    match_state.match_presentation.match_layouts = layouts;
+    match_state.match_presentation.sidebar_layout_spec =
+        crate::app::presentation::sidebar_render::sidebar_layout_spec(
+            platform,
+            frontend,
+            match_state,
+            persistence,
+        );
+    crate::app::presentation::sidebar_render::refresh_added_parts(platform, frontend, match_state);
 }

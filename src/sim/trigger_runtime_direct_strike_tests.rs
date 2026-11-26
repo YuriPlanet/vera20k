@@ -240,7 +240,7 @@ fn direct_strikes_reject_missing_safe_prerequisites() {
     for kind in [96, 109] {
         assert!(!run(&mut sim, &rules, kind));
     }
-    sim.resolved_terrain = terrain;
+    *sim.resolved_terrain = terrain;
     waypoint(&mut sim, (40, 40));
     let missing = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     assert!(!run(&mut sim, &missing, 96));

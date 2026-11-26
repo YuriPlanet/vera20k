@@ -60,9 +60,15 @@ fn map_houses_blueprint_round_trips_difficulty_without_recording_local_source() 
     );
 }
 
+// Unoptimized, this body's frames hold about 2.1 MiB of whole copies of the
+// rules, the snapshot and the simulation, more than libtest's 2 MiB thread.
 #[test]
 #[ignore = "slow; real campaign maps, player-save restoration and independent replay construction"]
 fn map_house_campaign_manifest_loads_carry_and_replays_each_frame() {
+    crate::test_fixture::on_game_stack(map_house_campaign_loads_carry_and_replays_each_frame);
+}
+
+fn map_house_campaign_loads_carry_and_replays_each_frame() {
     use crate::headless_scenario::{check_campaign_stage, load_campaign_stage};
     use crate::map::campaign_manifest::{CampaignManifest, ManifestError};
     use crate::sim::control_authority::ControlScope;
@@ -344,6 +350,7 @@ impl AuthoredReplay {
         sim.batch_path_searches();
         sim.batch_target_scans();
         sim.present_effect_anims();
+        sim.separate_turn_streams(true);
         sim.sleep_idle_objects_in_match();
         if let Some(record) = &options.campaign_carry_over {
             sim.restore_campaign_carry_over(record, &scene.runtime.resources.rules);

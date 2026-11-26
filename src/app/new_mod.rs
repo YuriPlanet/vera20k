@@ -143,7 +143,7 @@ pub(crate) fn make(
 
 /// `name` when it can be one folder's name on every system, else
 /// [`FALLBACK_NAME`].
-fn plain_name(name: &str) -> &str {
+pub(crate) fn plain_name(name: &str) -> &str {
     let name = name.trim();
     let plain = !name.is_empty()
         && !name.starts_with('.')

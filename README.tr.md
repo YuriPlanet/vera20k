@@ -92,8 +92,18 @@ VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. *
 ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
 tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
 
+Kendi modlarınızı, haritalarınızı, müziklerinizi ve daha fazlasını ekleyebilirsiniz. Bunlar VERA20K
+klasörüne konur: Windows'ta kurulum klasörü, macOS'te `~/Library/Application Support/VERA20k`,
+Linux'ta `~/.local/share/VERA20k`.
+
+- **Modlar:** **Options → Mods** içinde **Add Mod** indirdiğiniz bir modu kurar, **New Mod** ise kendi modunuzu başlatır. Her mod `Mods` içinde kendi klasörünü alır.
+- **Haritalar:** `.map`, `.mpr` veya `.yrm` dosyalarını `Maps` klasörüne koyarak çatışma modunda oynayabilirsiniz. Çevrim içi indirdiğiniz haritalar da oraya kaydedilir.
+- **Müzik:** WAV veya AUD dosyalarını `musics` klasörüne koyun ve oraya `[Music]` altında `enable=yes` yazan bir `music.ini` ekleyin. Şarkılarınız maçlarda oyunun müziğiyle birlikte çalar; `ExclusiveMode=yes` ile yalnızca sizinkiler çalar.
+- **HD grafik:** bir [HD grafik paketi](docs/hd-art.md) mod gibi kurulur ve seçilir. Ardından **Options** içinde **HD art** seçeneğini açın.
+- **Diller:** bir `vera20k.<language>.ini` dosyası yeni bir dil ekler veya oyunun metinlerini değiştirir. [Çeviri kılavuzuna](src/i18n/README.md) bakın.
+
 Lobi ayarları, modlar ve haritalar maç kurallarını değiştirebilir. Modlar ve haritalar, INI
-dosyaları aracılığıyla VERA20K'nin desteklediği [Ares](docs/ares.md) ve [Phobos](docs/phobos.md)
+dosyaları aracılığıyla VERA20K'nin desteklediği [Ares](docs/ares.md), [Phobos](docs/phobos.md) ve [Kratos](docs/kratos.md)
 özelliklerini etkinleştirebilir. Bir mod, `ares.mix` dosyasını içeriyorsa Ares'i de etkinleştirir.
 Bazı Phobos özellikleri için hâlâ `--features phobos` seçeneğiyle derlenmiş bir sürüm gerekir.
 

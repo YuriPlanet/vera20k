@@ -69,6 +69,11 @@ pub(crate) struct AirMembershipAuthority(());
 /// ([`EntityStore::write_held_anim`]).
 pub(super) struct AnimHolderAuthority(());
 
+/// Only this module can read and forget an entity's name note
+/// ([`GameEntity::take_names_unread`]), so no note is lost before the
+/// pointer-expiry index takes it ([`EntityStore::take_unread_names`]).
+pub(crate) struct UnreadNamesAuthority(());
+
 /// What a write to a shared store panics with.
 const SHARED_WRITE: &str = "write to a shared entity store: while shared it is the frozen base its forks read; write through a fork, or unshare it first";
 
@@ -110,9 +115,10 @@ pub struct EntityStore {
     /// through the store, so an entity missing from a log has not changed,
     /// but for the mission AI counter and a building's tint sample, which
     /// change every frame and no reader derives from
-    /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]).
-    /// A fork's start as a clone's do and note nothing; its commit notes its
-    /// hand-outs in the store's.
+    /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]),
+    /// and the name note the pointer-expiry index alone reads and forgets
+    /// ([`Self::take_unread_names`]). A fork's start as a clone's do and note
+    /// nothing; its commit notes its hand-outs in the store's.
     touched: TouchLogs<{ TouchReader::COUNT }>,
     /// Which entities may draw differently since the presentation last took
     /// the log ([`Self::take_looks`]): stored, or given a new owner, type or
@@ -161,15 +167,15 @@ struct Columns {
     /// [`EntityStore::insert`], which copies it). Kept and rebuilt as
     /// `owners` is.
     categories: Vec<EntityCategory>,
-    /// VERA-only: each slot's sleep mark and quiet flag ([`SleepCell`]),
+    /// VERA-only: each slot's sleep mark and turn marks ([`SleepCell`]),
     /// beside the boxed entities so the live object pass passes a sleeping
-    /// object without loading it, and a quiet one's turn skips steps without
-    /// reading their state. Every route to a `&mut GameEntity` settles and
-    /// clears both first ([`EntityStore::wake_slot`]), so a sleeping or quiet
-    /// entity is one nothing has written since its last turn. Kept through
-    /// compaction as `owners` is; a load starts every object awake and not
-    /// quiet. Never saved or hashed: the save form and the state hash read a
-    /// sleeping object as settled.
+    /// object without loading it, and a quiet or steady one's turn skips
+    /// steps without reading their state. Every route to a `&mut GameEntity`
+    /// settles and clears them first ([`EntityStore::wake_slot`]), so a
+    /// sleeping, quiet or steady entity is one nothing has written since its
+    /// last turn. Kept through compaction as `owners` is; a load starts every
+    /// object awake and unmarked. Never saved or hashed: the save form and
+    /// the state hash read a sleeping object as settled.
     sleep: Vec<SleepCell>,
     /// VERA-only: the stored ids of each owner's objects of each category,
     /// ascending ([`EntityStore::owned_ids`]), for walks that want one
@@ -214,8 +220,8 @@ struct Columns {
     /// VERA-only: `(Anim, holder)` for each Anim a stored entity may hold in
     /// a field [`GameEntity::held_anims`] names, so an Anim's expiry
     /// (`Simulation::notify_anim_pointer_expired`, through
-    /// [`EntityStore::take_anim_holders`]) visits those entities instead of
-    /// re-reading every entity handed out since the last expiry. A superset;
+    /// [`EntityStore::take_anim_holders`]) visits those entities without
+    /// refreshing the pointer-expiry index. A superset;
     /// the entities' fields are the truth. [`EntityStore::insert`] and
     /// [`EntityStore::write_held_anim`], the only route to storing an Anim in
     /// one of those fields, add pairs; the expiry takes an Anim's pairs, its
@@ -241,10 +247,10 @@ struct SleepCell {
     /// The frame after the last turn that left the object fit to sleep,
     /// while awake; 0 for none ([`EntityStore::fit_to_sleep`]).
     fit_until: u32,
-    /// The object is quiet (`world::quiet_units`): its last turn left every
-    /// state its quiet turn skips off, and nothing has been handed it for
-    /// writing since. Every mutable hand-out clears it, asleep or awake.
-    quiet: bool,
+    /// What the object's last turn left it as ([`QUIET`], [`STEADY`]), with
+    /// nothing handed it for writing since. Every mutable hand-out clears
+    /// them, asleep or awake.
+    marks: u8,
     /// The last pass ([`EntityStore::begin_pass`]) that wrote the slot's
     /// entity or this cell. Not part of the mark: waking keeps it.
     written: u16,
@@ -252,6 +258,14 @@ struct SleepCell {
 
 // The stamp sits in what was padding: a cell stays a quarter of a line.
 const _: () = assert!(std::mem::size_of::<SleepCell>() == 16);
+
+/// A [`SleepCell`] mark: the object is quiet (`world::quiet_units`), its
+/// last turn having left every state its quiet turn skips off.
+const QUIET: u8 = 1;
+/// A [`SleepCell`] mark: the object is steady (`world::steady_ai`), its last
+/// turn having left every step of its AI visit off but its counter, its
+/// timers and its stage clock.
+const STEADY: u8 = 2;
 
 /// What a shared store or a fork reads through.
 #[derive(Debug)]
@@ -342,7 +356,8 @@ enum ForkWrite {
 pub(crate) enum TouchReader {
     /// The movement pass's kept blocker plane.
     BlockerPlane = 0,
-    /// The pointer-expiry broadcast's listener index.
+    /// The pointer-expiry broadcast's listener index, which re-reads only
+    /// the noted entities among those logged ([`EntityStore::take_unread_names`]).
     ExpiryListeners = 1,
 }
 
@@ -409,6 +424,45 @@ impl EntityStore {
         let broad = self.cols.categories[slot] != EntityCategory::Structure;
         self.touched
             .note_kind(stable_id, broad, self.cols.slot_of.len());
+    }
+
+    /// The entities the pointer-expiry index must re-read (sim-scale;
+    /// results unchanged): of those handed out since it last asked, the
+    /// removed ones and the stored ones noted since
+    /// ([`GameEntity::note_names`]), or every one when the log cannot say
+    /// which. A field that names an object takes an id only through a writer
+    /// that takes that note, so an entity left out names at most what the
+    /// index last read of it. Not a hand-out and no lookup for a caller:
+    /// forgetting the transient note neither wakes an object nor notes it in
+    /// the logs or the lookup counts.
+    ///
+    /// The note is the entity's own: a fork's write notes the fork's copy
+    /// (a copy starts noted), which [`Self::commit_writes`] moves in and logs
+    /// as a hand-out, so this store's next take reads it once. A shared
+    /// store or a fork forgets no note, its entities being its base's: it
+    /// gives its log as it is.
+    pub(crate) fn take_unread_names(&mut self) -> Touched {
+        let logged = self.touched.take(TouchReader::ExpiryListeners as usize);
+        if self.view.is_some() || self.set_aside.is_some() {
+            return logged;
+        }
+        let cols = &mut self.cols;
+        match logged {
+            Touched::All => {
+                for entity in cols.entities.iter_mut().filter_map(entity_mut) {
+                    entity.take_names_unread(UnreadNamesAuthority(()));
+                }
+                Touched::All
+            }
+            Touched::Ids(mut ids) => {
+                ids.retain(|id| match cols.slot_of.get(id) {
+                    Some(&slot) => entity_mut(&mut cols.entities[slot as usize])
+                        .is_some_and(|entity| entity.take_names_unread(UnreadNamesAuthority(()))),
+                    None => true,
+                });
+                Touched::Ids(ids)
+            }
+        }
     }
 
     /// Take the look log, leaving it empty.
@@ -529,7 +583,27 @@ impl EntityStore {
     /// has been handed it for writing since (`world::quiet_units`).
     #[inline]
     pub(crate) fn is_quiet(&self, stable_id: u64) -> bool {
-        self.cell(stable_id).is_some_and(|cell| cell.quiet)
+        self.cell(stable_id)
+            .is_some_and(|cell| cell.marks & QUIET != 0)
+    }
+
+    /// Ask the processor to start loading `stable_id`'s record, if it is
+    /// stored and awake (a sleeper's visit reads its sleep cell alone): for
+    /// the live object pass, a few slots before the object's turn
+    /// (`util::prefetch`). Sim-scale, results unchanged: it reads no entity,
+    /// counts as no lookup and leaves the focus alone.
+    #[inline]
+    pub(crate) fn warm(&self, stable_id: u64) {
+        let cols = self.columns();
+        let Some(&slot) = cols.slot_of.get(&stable_id) else {
+            return;
+        };
+        if cols.sleep[slot as usize].wake_at != 0 {
+            return;
+        }
+        if let Some(entity) = cols.entities[slot as usize].as_deref() {
+            crate::util::prefetch::prefetch(entity);
+        }
     }
 
     /// `stable_id`'s entity and whether it is quiet, in one lookup.
@@ -537,20 +611,35 @@ impl EntityStore {
         if let Some(view) = self.view.as_deref() {
             let slot = self.slot_in(&view.base.slot_of, stable_id)?;
             let focused = stable_id == self.focus.0;
-            let quiet = view.cell(stable_id, focused, slot).quiet;
+            let quiet = view.cell(stable_id, focused, slot).marks & QUIET != 0;
             return Some((view.entity(stable_id, focused, slot)?, quiet));
         }
         let slot = self.slot_in(&self.cols.slot_of, stable_id)? as usize;
         Some((
             self.cols.entities[slot].as_deref()?,
-            self.cols.sleep[slot].quiet,
+            self.cols.sleep[slot].marks & QUIET != 0,
         ))
     }
 
     /// Mark `stable_id` quiet until its next mutable hand-out.
     pub(crate) fn set_quiet(&mut self, stable_id: u64) {
         if let Some(cell) = self.cell_mut(stable_id) {
-            cell.quiet = true;
+            cell.marks |= QUIET;
+        }
+    }
+
+    /// Whether `stable_id` is steady: its last turn left it so, and nothing
+    /// has been handed it for writing since (`world::steady_ai`).
+    #[inline]
+    pub(crate) fn is_steady(&self, stable_id: u64) -> bool {
+        self.cell(stable_id)
+            .is_some_and(|cell| cell.marks & STEADY != 0)
+    }
+
+    /// Mark `stable_id` steady until its next mutable hand-out.
+    pub(crate) fn set_steady(&mut self, stable_id: u64) {
+        if let Some(cell) = self.cell_mut(stable_id) {
+            cell.marks |= STEADY;
         }
     }
 
@@ -593,7 +682,7 @@ impl EntityStore {
         Some(cell)
     }
 
-    /// Clear `slot`'s sleep mark and quiet flag and give its entity the
+    /// Clear `slot`'s sleep mark and turn marks and give its entity the
     /// visits it is owed, before anything writes it; stamp it with the pass.
     #[inline]
     fn wake_slot(&mut self, slot: usize) {
@@ -601,7 +690,7 @@ impl EntityStore {
         let cell = &mut self.cols.sleep[slot];
         cell.written = pass;
         if cell.wake_at == 0 {
-            cell.quiet = false;
+            cell.marks = 0;
             return;
         }
         let owed = cell.owed;
@@ -618,7 +707,7 @@ impl EntityStore {
         }
     }
 
-    /// A new slot's cell: awake, not quiet, written this pass.
+    /// A new slot's cell: awake, unmarked, written this pass.
     fn fresh_cell(&self) -> SleepCell {
         SleepCell {
             written: self.pass,
@@ -752,9 +841,12 @@ impl EntityStore {
 
     /// Insert an entity, replacing one of the same id (rare — stable_ids are
     /// monotonic). Returns its stable_id.
-    pub fn insert(&mut self, entity: GameEntity) -> u64 {
+    pub fn insert(&mut self, mut entity: GameEntity) -> u64 {
         self.own_columns();
         let id = entity.stable_id();
+        // The pointer-expiry index reads a stored entity whole, whatever
+        // was written to it outside the store.
+        let _ = entity.note_names();
         self.touched.note(id, self.len());
         self.looks.note(id, self.len());
         let category = entity.category();
@@ -1080,10 +1172,14 @@ impl EntityStore {
         entity_mut(&mut self.cols.entities[slot as usize])
     }
 
-    /// Edit one actor when a fixture holds the store directly.
+    /// Edit one actor when a fixture holds the store directly. A fixture's
+    /// setters may store any id, so the entity is noted for the
+    /// pointer-expiry index too ([`GameEntity::note_names`]).
     #[cfg(any(test, feature = "test-support"))]
     pub fn get_mut_for_test(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
-        self.get_mut(stable_id)
+        let entity = self.get_mut(stable_id)?;
+        let _ = entity.note_names();
+        Some(entity)
     }
 
     /// `get_mut` for an entity `admit` accepts, which it reads first: one it
@@ -1359,6 +1455,25 @@ impl EntityStore {
         self.stored()
     }
 
+    /// [`Self::iter_sorted`] from the first id not below `after`, reached
+    /// without walking those before it.
+    pub(crate) fn iter_sorted_from(&self, after: u64) -> impl Iterator<Item = (u64, &GameEntity)> {
+        self.check_attached();
+        let cols = self.columns();
+        let overlay = self.written_overlay();
+        let start = cols.ids.partition_point(|&id| id < after);
+        cols.ids[start..]
+            .iter()
+            .zip(&cols.entities[start..])
+            .filter_map(move |(&id, entity)| {
+                let entity = entity.as_deref()?;
+                Some((
+                    id,
+                    overlay.map_or(entity, |overlay| overlay.entity_of(id, entity)),
+                ))
+            })
+    }
+
     /// Iterate all entity values in deterministic stable_id order (immutable).
     pub fn values_sorted(&self) -> impl ExactSizeIterator<Item = &GameEntity> {
         self.stored().map(|(_, entity)| entity)
@@ -1476,6 +1591,8 @@ impl EntityStore {
         self.touched.note(holder, self.cols.slot_of.len());
         self.wake_slot(slot as usize);
         let entity = entity_mut(&mut self.cols.entities[slot as usize])?;
+        // A held Anim is one of the names the pointer-expiry index reads.
+        let _ = entity.note_names();
         let written = write(entity, AnimHolderAuthority(()));
         self.cols
             .anim_holders
@@ -2005,8 +2122,8 @@ impl View {
     fn wake(&mut self, id: u64, focused: bool, slot: u32) {
         let cell = self.cell(id, focused, slot);
         if cell.wake_at == 0 {
-            if cell.quiet {
-                self.cell_mut(id, focused, slot).quiet = false;
+            if cell.marks != 0 {
+                self.cell_mut(id, focused, slot).marks = 0;
             }
             return;
         }
@@ -2351,6 +2468,28 @@ mod tests {
         assert!(store.get_mut_if(7, |_| false).is_none());
         assert_eq!(store.hand_outs(), handed_out);
         assert_eq!(store.get(7).unwrap().mission.ai_counter(), 2);
+    }
+
+    /// Warming a record is no lookup, no hand-out and no wake, whether the id
+    /// is stored, asleep or absent, and the focused id stays focused.
+    #[test]
+    fn warming_a_record_reads_and_wakes_nothing() {
+        let mut store = EntityStore::new();
+        for id in [3, 5] {
+            store.insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
+        }
+        store.sleep_until(5, 100, 0);
+        store.focus(3);
+        let (lookups, handed_out) = (store.lookups(), store.hand_outs());
+        for id in [3, 5, 9] {
+            store.warm(id);
+        }
+        assert_eq!(store.lookups(), lookups);
+        assert_eq!(store.hand_outs(), handed_out);
+        assert_eq!(store.sleeps_until(5), Some((100, 0)));
+        let by_index = store.lookups().1;
+        assert!(store.get(3).is_some());
+        assert_eq!(store.lookups().1, by_index, "3 is still the focused id");
     }
 
     /// The entry walk skips removed slots and unkept categories, and only an
@@ -3090,7 +3229,7 @@ mod tests {
                     cell.owed,
                     cell.note.into(),
                     cell.fit_until,
-                    cell.quiet.into(),
+                    cell.marks.into(),
                 ];
                 Some((slot, serde_json::to_string(entity).unwrap(), marks))
             })
@@ -3267,9 +3406,9 @@ mod tests {
     }
 
     /// A fork's hand-out of a sleeping object wakes it and settles the visits
-    /// it is owed in the fork's copy alone, and one of a quiet object clears
-    /// the mark there alone; a reset returns the fork to its base, ready for
-    /// the next turn.
+    /// it is owed in the fork's copy alone, and one of a quiet and steady
+    /// object clears both marks there alone; a reset returns the fork to its
+    /// base, ready for the next turn.
     #[test]
     fn a_fork_wakes_and_settles_in_its_own_copy_until_reset() {
         let mut base = store_of([1, 2]);
@@ -3277,22 +3416,26 @@ mod tests {
         base.owe_visit(1);
         base.owe_visit(1);
         base.set_quiet(2);
+        base.set_steady(2);
         base.share();
         let marks = |store: &EntityStore| {
             (
                 store.sleeps_until(1),
                 store.owed_visits(1),
                 store.get(1).unwrap().mission.ai_counter(),
-                store.is_quiet(2),
+                (store.is_quiet(2), store.is_steady(2)),
             )
         };
         let asleep = marks(&base);
-        assert_eq!((asleep.0, asleep.1, asleep.3), (Some((90, 3)), 2, true));
+        assert_eq!(
+            (asleep.0, asleep.1, asleep.3),
+            (Some((90, 3)), 2, (true, true))
+        );
         let mut fork = base.fork();
         fork.focus(1);
         fork.get_mut(1);
         fork.get_mut(2);
-        assert_eq!(marks(&fork), (None, 0, asleep.2 + 2, false));
+        assert_eq!(marks(&fork), (None, 0, asleep.2 + 2, (false, false)));
         assert_eq!(marks(&base), asleep);
         fork.reset_fork();
         assert_eq!(marks(&fork), asleep);

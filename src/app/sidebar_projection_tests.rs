@@ -333,14 +333,17 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
         let mut projection = SidebarProjectionState::default();
         projection.model.reconcile_fixture(owner, &candidates, 1, false);
         for kind in ["GAPOWR", "GAPILL"] {
-            assert!(production::enqueue_by_type(
-                &mut sim,
-                rules,
-                "Americans",
-                kind,
-                &mut crate::sim::world::FrameEffects::default(),
-                false
-            ));
+            assert!(
+                production::enqueue_by_type(
+                    &mut sim,
+                    rules,
+                    "Americans",
+                    kind,
+                    &mut crate::sim::world::FrameEffects::default(),
+                    false
+                )
+                .is_ok()
+            );
         }
         for output in sim.take_lifecycle_outputs_for_test() {
             projection.model.apply_lifecycle_output(&output, Some(owner), ares_way);
@@ -1286,14 +1289,17 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         projection.model.reconcile_fixture(owner, &candidates, 12, false);
         let drawn = view(&sim, &options, &projection, SidebarTab::Building, 1200.0);
         projection.replace_view(Some(drawn));
-        assert!(crate::sim::production::enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "GAPOWR",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            crate::sim::production::enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                "GAPOWR",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         for output in sim.take_lifecycle_outputs_for_test() {
             projection.model.apply_lifecycle_output(&output, Some(owner), ares_way);
         }
@@ -1352,14 +1358,17 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                 .unwrap()
                 .enabled
         );
-        assert!(crate::sim::production::enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "GAPOWR",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            crate::sim::production::enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                "GAPOWR",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         for _ in 0..4096 {
             let frame = sim
                 .advance_app_frame(
@@ -1544,7 +1553,8 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
                         source,
                         &mut crate::sim::world::FrameEffects::default(),
                         false,
-                    ),
+                    )
+                    .is_ok(),
                     "{control}"
                 );
             }
@@ -2192,14 +2202,17 @@ fn the_count_badge_asks_the_primary_factory_not_the_cameo_link() {
     projection.model.reconcile_fixture(owner, &candidates, 12, false);
     let drawn = view(&sim, &options, &projection, SidebarTab::Infantry, 1200.0);
     projection.replace_view(Some(drawn));
-    assert!(crate::sim::production::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        crate::sim::production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     // No lifecycle output reaches the projection: the E1 cameo has no link.
     projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
     let items = &projection.view().unwrap().items;

@@ -1,12 +1,17 @@
 //! Read-only BC/BD control projection. Native5EB060 builds Player entries;
 //!5EA180/5E9E70 gate their siblings. MatchSession is the sole setup authority.
 
-use crate::app::AppState;
 use crate::app::frontend::skirmish_shell_render::{
     combo_item_label, flag_pcx_for_side_item_data, side_item_data_for_country,
 };
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
-use crate::app::shell_wol::lobby::player_badge;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
+use crate::app::shell_wol::lobby::{WolLobbyGlobals, player_badge};
+use crate::render::gpu::GpuContext;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
@@ -15,10 +20,15 @@ use crate::ui::skirmish_shell::{
 };
 use vera20k_gui::shell::trackbar::TrackbarRange;
 
-fn label(state: &AppState, key: &str) -> String {
-    state.csf_label(key, key)
+fn label(process_assets: &ProcessAssets, key: &str) -> String {
+    process_assets.csf_label(key, key)
 }
-pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
+pub(crate) fn choice(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    item: SkirmishComboItem,
+) -> SetupChoice {
     let value = match item {
         SkirmishComboItem::Country(SkirmishCountryChoice::Random) => -2,
         SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => {
@@ -36,7 +46,7 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     };
     SetupChoice {
         value,
-        text: combo_item_label(state, item),
+        text: combo_item_label(frontend, match_state, process_assets, item),
         swatch: if let SkirmishComboItem::Color(index) = item {
             Some(index)
         } else {
@@ -47,8 +57,18 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
 }
 
 /// A team's letter as the Team list shows it.
-pub(super) fn team_letter(state: &AppState, team: u8) -> String {
-    combo_item_label(state, SkirmishComboItem::Team(i32::from(team)))
+pub(super) fn team_letter(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    team: u8,
+) -> String {
+    combo_item_label(
+        frontend,
+        match_state,
+        process_assets,
+        SkirmishComboItem::Team(i32::from(team)),
+    )
 }
 
 /// A row of VERA's room list: a seat or spectator row, a header over the
@@ -68,47 +88,49 @@ const TEAM_BOX_ROWS: usize = 5;
 /// VERA's online room: the help under the pointer on the name or badge of
 /// a player with a badge, as the lobby's player list gives it
 /// ([`crate::app::shell_wol::lobby::badge_help`]).
-pub(crate) fn player_help(state: &AppState, view: &SetupView, control: u16) -> Option<String> {
+pub(crate) fn player_help(
+    lobby_globals: &WolLobbyGlobals,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+    view: &SetupView,
+    control: u16,
+) -> Option<String> {
     let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
         return None;
     };
     let badge = view.row_icons.get(row)?.as_ref()?.badge?;
     let row = view.combo(control)?.row;
-    let launch = state.match_state.session.network_setup()?;
+    let launch = session.network_setup()?;
     let human = launch
         .humans
         .iter()
         .find(|human| human.raw_slot_index == Some(row))?;
-    crate::app::shell_wol::lobby::badge_help(state, &human.name, badge)
+    crate::app::shell_wol::lobby::badge_help(lobby_globals, process_assets, &human.name, badge)
 }
 
 /// Whether the local player could press Accept (`SetupView::accept_enabled`).
-pub(super) fn accept_enabled(state: &AppState) -> bool {
-    let session = &state.match_state.session;
-    state
-        .frontend
+pub(super) fn accept_enabled(frontend: &FrontendState, session: &MatchSession) -> bool {
+    frontend
         .network_setup_protocol
         .as_ref()
         .is_some_and(|protocol| protocol.accept_eligible)
         && session
             .network_setup()
             .is_some_and(|launch| !session.network_player_ready(launch.local_player_index))
-        && crate::app::shell_wol::local_choices_agreed(state)
+        && crate::app::shell_wol::local_choices_agreed(frontend.wol.as_ref(), session)
 }
 
 /// The room's map in the scenario catalog, when this player shows its own
 /// copy of it. A guest shows its own copy only when it verified the map, and
 /// on WOL only from a mixfile (0x005E74E0); otherwise its preview is the
 /// host's Preview.bin.
-pub(super) fn local_map_index(state: &AppState) -> Option<usize> {
-    let session = &state.match_state.session;
-    let protocol = state.frontend.network_setup_protocol.as_ref()?;
+pub(super) fn local_map_index(frontend: &FrontendState, session: &MatchSession) -> Option<usize> {
+    let protocol = frontend.network_setup_protocol.as_ref()?;
     if !session.host() && !protocol.local_preview() {
         return None;
     }
     let file = session.network_setup()?.selected_map_file.as_deref()?;
-    state
-        .frontend
+    frontend
         .scenario_catalog
         .shell_maps()
         .iter()
@@ -158,35 +180,40 @@ impl RoomListing {
 /// Whether the host of a VERA room has the team bar's Room size: its Max
 /// players, people who play and watch together. Quick Match's matchbot game
 /// has none.
-pub(crate) fn room_size_shown(state: &AppState) -> bool {
-    let session = &state.match_state.session;
-    session.host() && session.network_people_limit().is_some() && !super::quick_match(state)
+pub(crate) fn room_size_shown(
+    protocol: Option<&NetworkSetupProtocol>,
+    session: &MatchSession,
+) -> bool {
+    session.host() && session.network_people_limit().is_some() && !super::quick_match(protocol)
 }
 
-pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
-    let session = &state.match_state.session;
+/// The rows the room list shows: the session's player rows, the number the
+/// seat allocator hands out from. The list and the allocator read one owner,
+/// so a player is never seated in a row the list does not show.
+fn visible_rows(session: &MatchSession) -> usize {
+    usize::from(session.network_player_row_limit())
+}
+
+pub(crate) fn room_listing(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<RoomListing> {
+    let session = &match_state.session;
     let launch = session.network_setup()?;
-    mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
+    mode_by_id(&frontend.skirmish_modes, launch.mode.id)?;
     let capacity = session
         .network_setup_capacity()?
         .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
         as usize;
     let observer_row = session.network_observer_row().map(usize::from);
-    let row_limit = session.network_row_limit()?;
-    let visible_limit = if observer_row == Some(0) && (capacity as i32) < row_limit {
-        capacity + 1
-    } else {
-        capacity
-    };
     // VERA's rooms list their seats, the map's players, whether taken or
     // Open, then the spectators. A seat the host removed (Closed) stays
     // hidden until the host's Add slot row, after the seats, opens it.
     let several = session.network_several_observers() && observer_row.is_some();
-    let visible_limit = if several {
-        usize::from(session.network_player_row_limit())
-    } else {
-        visible_limit
-    };
+    // The rows the room seats: the session owns that number, so the list and
+    // the seat allocator never disagree about a row.
+    let visible_limit = visible_rows(session);
     let add_slot = (several && session.host())
         .then(|| {
             (0..visible_limit.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT) as u8)
@@ -229,8 +256,8 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         places: Vec::new(),
         roster_scroll: (0, 0),
     };
-    let dialog = super::dialog(state);
-    let ui = state.frontend.multiplayer_setup.as_ref();
+    let dialog = super::dialog(frontend, match_state);
+    let ui = frontend.multiplayer_setup.as_ref();
     if dialog.modern {
         let items: Vec<RosterItem> = (0..row_count)
             .map(|position| match listing.row_at(position) {
@@ -241,14 +268,19 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         // A room with teams, or with the host's Room size, keeps its team
         // bar under the roster.
         let frame = crate::app::input::multiplayer_setup::roster_frame(
-            state,
+            gpu,
+            frontend,
+            match_state,
             grouped,
-            room_size_shown(state),
+            room_size_shown(
+                frontend.network_setup_protocol.as_ref(),
+                &match_state.session,
+            ),
         );
         let scroll = roster_scroll(&items, frame);
         // Its scrollbar node keeps the place (none before the room's dialog
         // is built), shown within the places the roster has now.
-        let controller = &state.frontend.shell_controller;
+        let controller = &frontend.shell_controller;
         let top = match controller.prop(dialog.page().dialog, ROSTER_SCROLL, vera20k_gui::Prop::Top)
         {
             Some(vera20k_gui::Value::Int(top)) => usize::try_from(*top).unwrap_or(0),
@@ -269,22 +301,29 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     Some(listing)
 }
 
-pub(crate) fn view(state: &AppState) -> Option<SetupView> {
-    let session = &state.match_state.session;
+pub(crate) fn view(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Option<SetupView> {
+    let session = &match_state.session;
     let launch = session.network_setup()?;
-    let protocol = state.frontend.network_setup_protocol.as_ref()?;
-    let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
+    let protocol = frontend.network_setup_protocol.as_ref()?;
+    let mode = mode_by_id(&frontend.skirmish_modes, launch.mode.id)?;
     let host = session.host();
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
     let room = session.network_room();
-    let dialog = super::dialog(state);
+    let dialog = super::dialog(frontend, match_state);
     let campaign = session.campaign_room().is_some();
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
     let clan_room = dialog.wol() && room.clan;
-    let map_index = (!campaign).then(|| local_map_index(state)).flatten();
-    let listing = room_listing(state)?;
+    let map_index = (!campaign)
+        .then(|| local_map_index(frontend, &match_state.session))
+        .flatten();
+    let listing = room_listing(&renderer.gpu, frontend, match_state)?;
     let RoomListing {
         capacity,
         observer_row,
@@ -297,12 +336,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         ..
     } = listing;
     let cooperative = !campaign && mode.class.uses_cooperative_setup();
-    let coop = cooperative.then(|| {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_setup_view()
-    });
+    let coop = cooperative.then(|| frontend.multiplayer_shell_runtime.cooperative_setup_view());
     let seats = 0..visible_limit.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT) as u8;
     let removed = |row: &u8| session.network_vacancy(*row) == Some(NetworkVacancy::Closed);
     let may_remove = seats.filter(|row| !removed(row)).count() > super::team_menus::KEPT_SEATS;
@@ -316,7 +350,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // The local player's Join and Watch on the headers: a seated player
     // joins another team, a guest watching takes a free seat on any, or
     // with none free joins the queue for the next.
-    let starting = super::start_phase(state).in_progress();
+    let starting = super::start_phase(frontend.network_setup_protocol.as_ref()).in_progress();
     let placed = local.raw_slot_index.is_some();
     let seated = placed && !local.is_observer();
     let seat_free = !session.network_no_open_player_row();
@@ -335,7 +369,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     } else {
         dialog.rows_per_page()
     };
-    let stock_mode_label = label(state, &mode.ui_name_key);
+    let stock_mode_label = label(process_assets, &mode.ui_name_key);
     let mut combos = super::campaign_room::setup_selectors(
         &protocol.campaign_catalog,
         session.campaign_room(),
@@ -374,7 +408,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     SetupGroup::Team(team) => (
                         crate::i18n::tr_fill(
                             "VERA:TeamGroup",
-                            &[("letter", &team_letter(state, team))],
+                            &[(
+                                "letter",
+                                &team_letter(frontend, match_state, process_assets, team),
+                            )],
                         ),
                         joins(LaunchTeam::Team(team)).then(join),
                     ),
@@ -436,9 +473,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         selected: Some(0),
                         choices: vec![
                             item(0, crate::i18n::tr("VERA:AddAi")),
-                            item(4, label(state, "GUI:AIEasy")),
-                            item(5, label(state, "GUI:AINormal")),
-                            item(6, label(state, "GUI:AIHard")),
+                            item(4, label(process_assets, "GUI:AIEasy")),
+                            item(5, label(process_assets, "GUI:AINormal")),
+                            item(6, label(process_assets, "GUI:AIHard")),
                         ],
                         list_w: 0,
                     });
@@ -506,7 +543,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             })
             .unwrap_or_else(|| {
                 label(
-                    state,
+                    process_assets,
                     match slot_value {
                         2 => "GUI:Open",
                         3 => "GUI:Closed",
@@ -538,7 +575,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 players.push(item(
                     if adding { 2 } else { slot_value },
                     if adding {
-                        label(state, "GUI:Open")
+                        label(process_assets, "GUI:Open")
                     } else {
                         slot_label.clone()
                     },
@@ -546,11 +583,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             }
             if host && seat && (ai_allowed || ai.is_some()) {
                 for (value, key) in ai_choices {
-                    players.push(item(value, label(state, key)));
+                    players.push(item(value, label(process_assets, key)));
                 }
             }
             if host && ai.is_some() {
-                players.push(item(2, label(state, "GUI:Open")));
+                players.push(item(2, label(process_assets, "GUI:Open")));
             }
             if host && human.is_some() && !is_local {
                 // VERA's host seats a spectator, or moves a player to the
@@ -590,7 +627,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 if !observer_only {
                     players.push(SetupChoice {
                         value: 2,
-                        text: label(state, "GUI:Open"),
+                        text: label(process_assets, "GUI:Open"),
                         swatch: None,
                         greyed: false,
                     });
@@ -598,14 +635,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 if observer_row == Some(usize::from(row)) {
                     players.push(SetupChoice {
                         value: 7,
-                        text: label(state, "GUI:OpenObserver"),
+                        text: label(process_assets, "GUI:OpenObserver"),
                         swatch: None,
                         greyed: false,
                     });
                 }
                 players.push(SetupChoice {
                     value: 3,
-                    text: label(state, "GUI:Closed"),
+                    text: label(process_assets, "GUI:Closed"),
                     swatch: None,
                     greyed: false,
                 });
@@ -614,7 +651,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     for (value, key) in ai_choices {
                         players.push(SetupChoice {
                             value,
-                            text: label(state, key),
+                            text: label(process_assets, key),
                             swatch: None,
                             greyed: false,
                         });
@@ -634,7 +671,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         });
         if campaign {
             if let Some((_, human)) = human.filter(|(_, human)| !human.is_observer()) {
-                let (choices, selected) = super::campaign_room::role_choices(state, &human.name);
+                let (choices, selected) = super::campaign_room::role_choices(
+                    frontend.network_setup_protocol.as_ref(),
+                    &match_state.session,
+                    &human.name,
+                );
                 combos.push(SetupCombo {
                     id: SetupColumn::Country.control(visible_row),
                     row,
@@ -648,9 +689,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             continue;
         }
         // VERA's room bans leave their countries off the list.
-        let banned = super::bans::banned_countries(state, launch.options.bans);
-        let mut countries: Vec<_> = state
-            .rules()
+        let banned = super::bans::banned_countries(frontend, match_state, launch.options.bans);
+        let mut countries: Vec<_> = crate::app::state::active_rules(frontend, match_state)
             .map(skirmish_shell::country_choices)
             .unwrap_or_default()
             .into_iter()
@@ -658,7 +698,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 !matches!(item, SkirmishComboItem::Country(SkirmishCountryChoice::Country(country))
                     if banned.contains(country))
             })
-            .map(|item| choice(state, item))
+            .map(|item| choice(frontend, match_state, process_assets, item))
             .collect();
         if let Some(player_countries) = coop.as_ref().and_then(|coop| coop.player_countries) {
             //5C23B0 rebuilds country entries in the campaign's authored order.
@@ -666,19 +706,20 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             if player_countries.len() > 1 {
                 allowed.push(SetupChoice {
                     value: -2,
-                    text: label(state, "GUI:Random"),
+                    text: label(process_assets, "GUI:Random"),
                     swatch: None,
                     greyed: false,
                 });
             }
-            for country in state
-                .frontend
+            for country in frontend
                 .multiplayer_shell_runtime
                 .cooperative_player_countries()
                 .unwrap_or_default()
             {
                 allowed.push(choice(
-                    state,
+                    frontend,
+                    match_state,
+                    process_assets,
                     SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)),
                 ));
             }
@@ -696,7 +737,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         if observer || switching && session.network_free_row(true).is_some() {
             countries.push(SetupChoice {
                 value: -3,
-                text: label(state, "GUI:Observer"),
+                text: label(process_assets, "GUI:Observer"),
                 swatch: None,
                 greyed: false,
             });
@@ -720,7 +761,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     .filter(|ai| ai.raw_slot_index != row && !ai.color_random)
                     .map(|ai| usize::from(ai.color_index)),
             );
-        let lobby_colors = state.lobby_colors();
+        let lobby_colors = crate::app::state::lobby_colors(frontend, match_state);
         let color_claims = color_claims.filter(|_| {
             launch.humans.len() + launch.opponents.len() <= lobby_colors.lobby_color_count()
         });
@@ -730,7 +771,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             color_claims,
         )
         .into_iter()
-        .map(|item| choice(state, item))
+        .map(|item| choice(frontend, match_state, process_assets, item))
         .collect::<Vec<_>>();
         // VERA shared control: when the mode policy allows shared start
         // positions, a player may pick a start another player holds to join
@@ -756,7 +797,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         let starts = skirmish_shell::available_start_choices(Some(start), start_claims, capacity)
             .into_iter()
             .map(|item| {
-                let mut choice = choice(state, item);
+                let mut choice = choice(frontend, match_state, process_assets, item);
                 if shares
                     && let SkirmishComboItem::Start(held @ LaunchStartPosition::Position(_)) = item
                     && human_starts.contains(&held)
@@ -779,7 +820,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         };
         let team_items = team_items
             .into_iter()
-            .map(|item| choice(state, item))
+            .map(|item| choice(frontend, match_state, process_assets, item))
             .collect::<Vec<_>>();
         for (column, value, choices) in [
             (SetupColumn::Country, country, countries),
@@ -805,7 +846,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         if visible && !bare {
             let flag = match u16::try_from(country)
                 .ok()
-                .and_then(|index| state.process_assets.country_flag_surface(index))
+                .and_then(|index| process_assets.country_flag_surface(index))
             {
                 Some(flag) => Some(flag),
                 None => flag_pcx_for_side_item_data(country).map(str::to_owned),
@@ -830,12 +871,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 // lobby's player list does.
                 badge: human
                     .filter(|_| dialog.modern && dialog.wol())
-                    .and_then(|(_, human)| player_badge(state, &human.name)),
+                    .and_then(|(_, human)| player_badge(&frontend.wol_lobby_globals, &human.name)),
                 local: is_local,
             });
         }
     }
-    let bounds = state.frontend.skirmish_shell_state.trackbar_bounds;
+    let bounds = frontend.skirmish_shell_state.trackbar_bounds;
     let options = &launch.options;
     let trackbars = vec![
         SetupTrackbar {
@@ -862,7 +903,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         },
         SetupTrackbar {
             id: DIFFICULTY,
-            value: super::campaign_room::difficulty(state)
+            value: super::campaign_room::difficulty(&match_state.session)
                 .unwrap_or_else(|| coop.as_ref().map_or(0, |coop| coop.difficulty)),
             range: TrackbarRange::new(0, 2, 1),
             enabled: host,
@@ -884,7 +925,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .map_or(crate::ui::room_limits::PLAYERS.max, i32::from),
             range: crate::ui::room_limits::PLAYERS,
             enabled: host,
-            visible: dialog.modern && room_size_shown(state),
+            visible: dialog.modern
+                && room_size_shown(
+                    frontend.network_setup_protocol.as_ref(),
+                    &match_state.session,
+                ),
         },
         // The Superweapon Limit, in VERA's Game Options: 1 is Off.
         SetupTrackbar {
@@ -941,11 +986,15 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         })
         .collect();
     combos.extend(super::team_menus::combos(
-        state, grouped, ai_allowed, starting,
+        frontend,
+        match_state,
+        grouped,
+        ai_allowed,
+        starting,
     ));
     // VERA's roster opens each list as wide as its widest text needs.
     if dialog.modern {
-        let font = &state.renderer.bit_font;
+        let font = &renderer.bit_font;
         for combo in &mut combos {
             combo.list_w = roster_list_width(&combo.choices, |text| font.text_width(text));
         }
@@ -964,7 +1013,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // and Bases checked and disabled in a tournament or clan room.
         short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
         team_header: !no_team_lists,
-        accept_enabled: accept_enabled(state),
+        accept_enabled: accept_enabled(frontend, &match_state.session),
         start_requested: protocol.start_requested
             && !session.network_player_ready(launch.local_player_index),
         combos,
@@ -994,22 +1043,27 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         ],
         row_icons,
         headers,
-        lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
+        lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(frontend.wol.as_ref()),
         drag_rows,
         mode_label: if launch.selected_map_file.is_none() {
-            label(state, "GUI:None")
+            label(process_assets, "GUI:None")
         } else {
             stock_mode_label
         },
-        map_label: super::campaign_room::stage_label(state).unwrap_or_else(|| {
-            super::map_display_name(state).map_or_else(|| label(state, "GUI:None"), str::to_owned)
+        map_label: super::campaign_room::stage_label(
+            frontend.network_setup_protocol.as_ref(),
+            &match_state.session,
+        )
+        .unwrap_or_else(|| {
+            super::map_display_name(&frontend.scenario_catalog, &match_state.session)
+                .map_or_else(|| label(process_assets, "GUI:None"), str::to_owned)
         }),
         selected_map_index: map_index,
         cooperative,
         cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(
             |(campaign, stage)| {
                 label(
-                    state,
+                    process_assets,
                     &format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1),
                 )
             },
@@ -1165,6 +1219,42 @@ mod tests {
             .unwrap();
         session.set_network_spectators(true).unwrap();
         session
+    }
+
+    /// A WOL tournament room whose host watches lists the row native gives
+    /// the host's observer row: `0x005EC4A3..0x005EC4EF` adds one row when
+    /// the room's capacity is under its row limit (a WOL limit under six
+    /// counts one more). The list reads the session's player rows, so it
+    /// shows the row the room seats and no other.
+    #[test]
+    fn a_wol_tournament_room_where_the_host_watches_lists_its_extra_row() {
+        use crate::app::match_runtime::session::NetworkRoom;
+        let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
+            serde_json::from_value(profile["launch"].clone()).unwrap();
+        launch.opponents.clear();
+        launch.ai_player_count = 0;
+        launch.local_player_index = 0;
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
+        // The host watches from row 0 (`open_host_setup`).
+        session
+            .accept_network_setup(launch, true, Some(0), false)
+            .unwrap();
+        session.set_network_room(NetworkRoom {
+            tournament: true,
+            clan: false,
+        });
+        session
+            .select_network_map(mode, "EIGHT.MAP".into(), 8)
+            .unwrap();
+        // A tournament room holds two rows (`0x005EC408`, `0x005E6440`).
+        assert_eq!(session.network_setup_capacity(), Some(2));
+        assert_eq!(visible_rows(&session), 3);
     }
 
     /// In a mode with teams and Teams Off, every seated player lists in one

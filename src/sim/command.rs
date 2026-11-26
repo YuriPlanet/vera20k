@@ -1553,6 +1553,54 @@ impl TryFrom<&[u8]> for CommandRecord {
     }
 }
 
+/// Who sent a command the receiver
+/// ([`crate::sim::world::Simulation::apply_command_with_overlays`]) executes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandSender {
+    /// A player's command (or a module write acting as a player's click):
+    /// the network source of its DoList entry, if it has one.
+    Player(Option<i8>),
+    /// A Wasm module's order for a house no player controls (RFC 0001 6g),
+    /// accepted as that house's own sender whatever the control grants.
+    HouseOrder,
+}
+
+/// Why the command receiver refused a command: the VERA-only reason a Wasm
+/// module's `OrderRefused` carries (`RefuseReason`, RFC 0001 appendix 8.3
+/// enum 26; the discriminants are its values). gamemd's receiver
+/// (`EventClass::Execute @ 0x004C6CB0`) refuses silently; the reason changes
+/// nothing the receiver does. `IgnoresOrders` and `CannotAfford` have no
+/// refusal here yet (no unit keeps `IgnoreOrders`, and no receiver refuses
+/// for credits: a short wallet stalls a build instead).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandRefusal {
+    Other = 0,
+    /// The acting object is gone, dead or in limbo.
+    Gone = 1,
+    /// The target object is gone, dead or in limbo.
+    IllegalTarget = 3,
+    /// No factory may build the type, or the house lacks its prerequisites
+    /// or the superweapon.
+    Prerequisite = 4,
+    /// The factory queue is full, the type is at its build limit, or a
+    /// building factory is busy.
+    QueueFull = 6,
+    /// The building cannot be placed there, or the product cannot leave its
+    /// factory.
+    CannotPlace = 7,
+    /// No finished product waits, or the superweapon is not charged.
+    NotReady = 8,
+    /// A module's `CommandAllowed` or `ProductionQueued` refused it.
+    Vetoed = 9,
+}
+
+impl CommandRefusal {
+    /// `Ok` when the receiver applied the command, else this refusal.
+    pub(crate) fn unless(self, applied: bool) -> Result<(), Self> {
+        if applied { Ok(()) } else { Err(self) }
+    }
+}
+
 /// One gameplay command payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {

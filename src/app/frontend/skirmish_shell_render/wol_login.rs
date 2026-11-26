@@ -9,7 +9,11 @@ use vera20k_gui::NodeKind;
 
 use super::gui_paint::{self, ButtonArt, EditFace, GuiStyle, HostRows};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
@@ -28,23 +32,37 @@ use crate::ui::wol_login::{
 /// `0x10F`'s widgets and the statics whose text the page keeps; gamemd's
 /// page adds the combo's NewEdit, VERA online's has its form in its place.
 pub(crate) fn paint_wol_login_children(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     login: &WolLoginState,
     layout: &WolLoginLayout,
 ) -> HudPaint {
-    let ui = &state.frontend.shell_controller;
+    let ui = &frontend.shell_controller;
     let (gui, Some(root), Some(atlas)) = (
         ui.gui(),
         ui.root_in(DIALOG),
-        state.frontend.skirmish_shell_chrome.as_ref(),
+        frontend.skirmish_shell_chrome.as_ref(),
     ) else {
         return HudPaint::default();
     };
     let scale = layout.page.scale;
     if let Some(choice) = layout.entry_choice() {
-        return paint_entry_choice(state, ui, atlas, &choice, scale);
+        return paint_entry_choice(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            ui,
+            atlas,
+            &choice,
+            scale,
+        );
     }
-    let label = |key: &str| state.csf_text(key);
+    let label = |key: &str| process_assets.csf_text(key);
     let text_of = |id: i32| {
         let id = u16::try_from(id).ok()?;
         let at = |ids: [u16; 2]| ids.iter().position(|other| *other == id);
@@ -56,7 +74,7 @@ pub(crate) fn paint_wol_login_children(
             return Some(label(form.fields.get(index)?.label));
         }
         if let Some(index) = at(COUNTS_TEXT) {
-            let (key, count) = state.frontend.login_info.counts().nth(index)?;
+            let (key, count) = frontend.login_info.counts().nth(index)?;
             return Some(crate::i18n::fill(&label(key), &[("count", &count)]));
         }
         match id {
@@ -83,7 +101,18 @@ pub(crate) fn paint_wol_login_children(
     if layout.policy == LoginPolicy::Account && login.form.is_some() {
         // VERA online: the welcome, the sign-in form and the counts, straight
         // over the art.
-        return gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
+        return gui_paint::paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            root,
+            scale,
+            &[],
+            style,
+        );
     }
     // The panel holds every control but the combo's NewEdit.
     let children = gui.tree().children(root).unwrap_or_default();
@@ -91,7 +120,18 @@ pub(crate) fn paint_wol_login_children(
         .iter()
         .find(|node| gui.tree().kind(**node) == Ok(NodeKind::Panel));
     let mut paint = panel.map_or_else(HudPaint::default, |panel| {
-        gui_paint::paint_gui_styled(state, gui, *panel, scale, &[], style)
+        gui_paint::paint_gui_styled(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            gui,
+            *panel,
+            scale,
+            &[],
+            style,
+        )
     });
     // The combo's NewEdit has no frame of its own: its caret and text paint
     // in the face's text area, its window. ComboDrop's edit-child geometry
@@ -102,7 +142,20 @@ pub(crate) fn paint_wol_login_children(
             edit_face_of: Some(&face),
             ..style
         };
-        gui_paint::paint_gui_into(&mut paint, state, Some(atlas), gui, node, scale, &[], style);
+        gui_paint::paint_gui_into(
+            &mut paint,
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            Some(atlas),
+            gui,
+            node,
+            scale,
+            &[],
+            style,
+        );
     }
     paint
 }
@@ -115,14 +168,18 @@ pub(crate) fn paint_wol_login_children(
 /// keyboard focus; the gui's nodes own the press, hover and focus. All of it
 /// paints in the popup lanes.
 fn paint_entry_choice(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     ui: &DialogController,
     atlas: &SkirmishShellChromeAtlas,
     choice: &WolEntryChoiceLayout,
     scale: ShellScale,
 ) -> HudPaint {
     let mut paint = HudPaint::default();
-    let label = |key: &str| state.csf_text(key);
+    let label = |key: &str| process_assets.csf_text(key);
     let background = atlas
         .ra2_dialog_background
         .or_else(|| atlas.mode_two_dialog_background(None));
@@ -156,12 +213,14 @@ fn paint_entry_choice(
     let text_of = |id: i32| match u16::try_from(id).ok()? {
         CHOICE_HEADING => Some(label("VERA:OnlineWelcome")),
         CHOICE_COUNT => {
-            let count = state
-                .frontend
+            let count = frontend
                 .login_info
                 .players_online()
                 .map_or_else(|| "—".to_owned(), |count| count.to_string());
-            Some(crate::i18n::fill(&label("VERA:PlayersOnline"), &[("count", &count)]))
+            Some(crate::i18n::fill(
+                &label("VERA:PlayersOnline"),
+                &[("count", &count)],
+            ))
         }
         _ => None,
     };
@@ -178,8 +237,21 @@ fn paint_entry_choice(
         shadowed_texts: true,
         ..Default::default()
     };
-    let widgets = gui_paint::paint_gui_styled(state, gui, chooser, scale, &[], style);
-    paint.draw(Material::Popup, |out, _| out.extend(widgets.lane(Material::Controls).copied()));
+    let widgets = gui_paint::paint_gui_styled(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        gui,
+        chooser,
+        scale,
+        &[],
+        style,
+    );
+    paint.draw(Material::Popup, |out, _| {
+        out.extend(widgets.lane(Material::Controls).copied())
+    });
     paint.popup_texts.extend(widgets.texts);
     paint
 }
@@ -187,17 +259,19 @@ fn paint_entry_choice(
 /// VERA online's popups on Red Alert 2's box art, as the online Create Game
 /// box: a caption and edit per field, OK and Cancel, and the status line.
 pub(crate) fn paint_wol_account_form(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     form: &WolAccountForm,
     layout: &WolAccountFormLayout,
     scale: ShellScale,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let ui = &state.frontend.shell_controller;
-    let (Some(atlas), Some(root)) = (
-        state.frontend.skirmish_shell_chrome.as_ref(),
-        ui.root_in(POPUP),
-    ) else {
+    let ui = &frontend.shell_controller;
+    let (Some(atlas), Some(root)) = (frontend.skirmish_shell_chrome.as_ref(), ui.root_in(POPUP))
+    else {
         return paint;
     };
     let style = GuiStyle::popup();
@@ -215,11 +289,11 @@ pub(crate) fn paint_wol_account_form(
     let text_of = |id: i32| {
         let id = u16::try_from(id).ok()?;
         match id {
-            FORM_OK => Some(state.csf_text("GUI:OK")),
-            FORM_CANCEL => Some(state.csf_text("GUI:Cancel")),
+            FORM_OK => Some(process_assets.csf_text("GUI:OK")),
+            FORM_CANCEL => Some(process_assets.csf_text("GUI:Cancel")),
             FORM_STATUS => Some(form.status.clone()),
             _ => Some(
-                state.csf_text(
+                process_assets.csf_text(
                     form.fields
                         .get(usize::from(id.checked_sub(FIRST_CAPTION)?))?
                         .label,
@@ -234,8 +308,21 @@ pub(crate) fn paint_wol_account_form(
         enabled_of: Some(&enabled_of),
         ..style
     };
-    let widgets = gui_paint::paint_gui_styled(state, ui.gui(), root, scale, &[], style);
-    paint.controls.extend(widgets.lane(Material::Controls).copied());
+    let widgets = gui_paint::paint_gui_styled(
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        ui.gui(),
+        root,
+        scale,
+        &[],
+        style,
+    );
+    paint
+        .controls
+        .extend(widgets.lane(Material::Controls).copied());
     paint.texts = widgets.texts;
     paint
 }

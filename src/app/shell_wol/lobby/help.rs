@@ -2,48 +2,66 @@
 //! `0x00780E30`), player badges and locale names.
 
 use super::WolLobby;
-use crate::app::AppState;
 use crate::ui::wol_lobby::*;
 
 use super::{cooperative_campaign, lobby};
+use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::scenario_catalog::ScenarioCatalog;
+use crate::app::shell_wol::WolVisit;
+use crate::app::shell_wol::lobby::WolLobbyGlobals;
 
 /// The status help of what the pointer is over: the table's key, or a
 /// list's `0x4E9` answer (`0x00780E30` for a game, `0x00781090` for a user).
-pub(crate) fn status_help(state: &AppState) -> String {
-    let Some(lobby) = lobby(state) else {
+pub(crate) fn status_help(
+    frontend: &FrontendState,
+    input: &MatchInputState,
+    process_assets: &ProcessAssets,
+) -> String {
+    let Some(lobby) = lobby(frontend.wol.as_ref()) else {
         return String::new();
     };
     let ui = &lobby.ui;
     if let Some(popup) = ui.popup.as_ref() {
         return (popup.create.is_some().then(|| ui.hovered()).flatten())
             .and_then(create_tooltip_key)
-            .map(|key| state.csf_text(key))
+            .map(|key| process_assets.csf_text(key))
             .unwrap_or_default();
     }
-    if let Some(help) = super::player_card::status_help(state) {
+    if let Some(help) = super::player_card::status_help(frontend, process_assets) {
         return help;
     }
     // VERA: a list's row under the pointer gives its own help, also as the
     // list refills under a resting pointer.
-    let (x, y) = state.match_state.input.cursor_px();
+    let (x, y) = input.cursor_px();
     let row = |list| ui.row_at(list, x, y);
     match ui.hovered() {
         Some(GAMES) => match row(GAMES).and_then(|row| ui.game_rows.get(row)) {
-            Some(row) if ui.is_modern() => modern_game_help(state, lobby, row).unwrap_or_default(),
-            Some(row) => game_help(state, row),
-            _ => state.csf_text("STT:LobbyListGames"),
+            Some(row) if ui.is_modern() => modern_game_help(
+                &frontend.multiplayer_shell_runtime,
+                process_assets,
+                lobby,
+                row,
+            )
+            .unwrap_or_default(),
+            Some(row) => game_help(frontend, process_assets, row),
+            _ => process_assets.csf_text("STT:LobbyListGames"),
         },
-        Some(VIEW) if ui.is_modern() => state.csf_text(ui.view_help_key()),
+        Some(VIEW) if ui.is_modern() => process_assets.csf_text(ui.view_help_key()),
         Some(PLAYERS) => match row(PLAYERS).and_then(|row| ui.player_rows.get(row)) {
-            None => state.csf_text("STT:LobbyListUsers"),
-            Some(row) if ui.is_modern() => modern_user_help(state, row),
+            None => process_assets.csf_text("STT:LobbyListUsers"),
+            Some(row) if ui.is_modern() => {
+                modern_user_help(&frontend.wol_lobby_globals, process_assets, row)
+            }
             Some(row) => {
                 let member = lobby.members.iter().find(|member| member.name == row.name);
-                user_help(state, &row.name, member)
+                user_help(frontend, process_assets, &row.name, member)
             }
         },
         Some(control) => tooltip_key(control, ui.page_spec())
-            .map(|key| state.csf_text(key))
+            .map(|key| process_assets.csf_text(key))
             .unwrap_or_default(),
         None => String::new(),
     }
@@ -53,7 +71,12 @@ pub(crate) fn status_help(state: &AppState) -> String {
 /// its sides' seats, spectators, AI and how full it is, on the status line's
 /// one line. The team numbers retain their original slots, including gaps.
 /// Room spectators have seats; a running match's viewers connect separately.
-fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Option<String> {
+fn modern_game_help(
+    runtime: &MultiplayerShellRuntime,
+    process_assets: &ProcessAssets,
+    lobby: &WolLobby,
+    row: &WolGameRow,
+) -> Option<String> {
     let (summary, capacity, campaign) = if row.watch {
         let watch = lobby.matches.get(row.record)?;
         (
@@ -66,14 +89,9 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Opt
         )
     } else {
         let room = lobby.games.get(row.record)?;
-        let campaign = cooperative_campaign(state, room)
-            .and_then(|campaign| {
-                state
-                    .frontend
-                    .multiplayer_shell_runtime
-                    .cooperative_campaign_name(campaign)
-            })
-            .map(|key| state.csf_text(key));
+        let campaign = cooperative_campaign(runtime, room)
+            .and_then(|campaign| runtime.cooperative_campaign_name(campaign))
+            .map(|key| process_assets.csf_text(key));
         (
             room.summary.as_ref(),
             crate::i18n::tr_fill(
@@ -118,20 +136,22 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Opt
 
 /// VERA's help for a modern player row ([`badge_help`]); the name alone
 /// without a badge.
-fn modern_user_help(state: &AppState, row: &WolPlayerRow) -> String {
+fn modern_user_help(
+    lobby_globals: &WolLobbyGlobals,
+    process_assets: &ProcessAssets,
+    row: &WolPlayerRow,
+) -> String {
     row.score_icons
         .iter()
         .find(|(_, x)| *x == PLAYER_BADGE_X)
-        .and_then(|(file, _)| badge_help(state, &row.name, file))
+        .and_then(|(file, _)| badge_help(lobby_globals, process_assets, &row.name, file))
         .unwrap_or_else(|| row.name.clone())
 }
 
 /// VERA: the badge `name`'s high-score record gives, which the modern player
 /// list, the player card and VERA's online room show.
-pub(crate) fn player_badge(state: &AppState, name: &str) -> Option<&'static str> {
-    state
-        .frontend
-        .wol_lobby_globals
+pub(crate) fn player_badge(lobby_globals: &WolLobbyGlobals, name: &str) -> Option<&'static str> {
+    lobby_globals
         .high_scores
         .get(&name.to_ascii_lowercase())
         .map(|record| crate::ui::wol_lobby::badge(record.points))
@@ -140,12 +160,17 @@ pub(crate) fn player_badge(state: &AppState, name: &str) -> Option<&'static str>
 /// VERA's help for a player with the `badge` PCX, in the modern player list
 /// and VERA's online room: the name, then the badge's name and the season's
 /// rank and OS as the player card shows them, or Unranked.
-pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<String> {
-    let badge = state.csf_text(badge_name_key(badge)?);
-    let ladder = &state.frontend.wol_lobby_globals.ladder;
+pub(crate) fn badge_help(
+    lobby_globals: &WolLobbyGlobals,
+    process_assets: &ProcessAssets,
+    name: &str,
+    badge: &str,
+) -> Option<String> {
+    let badge = process_assets.csf_text(badge_name_key(badge)?);
+    let ladder = &lobby_globals.ladder;
     Some(match ladder.get(&name.to_ascii_lowercase()) {
         Some(record) => crate::i18n::fill(
-            &state.csf_text("VERA:PlayerHelp"),
+            &process_assets.csf_text("VERA:PlayerHelp"),
             &[
                 ("name", &name),
                 ("badge", &badge),
@@ -154,7 +179,7 @@ pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<St
             ],
         ),
         None => crate::i18n::fill(
-            &state.csf_text("VERA:PlayerHelpUnranked"),
+            &process_assets.csf_text("VERA:PlayerHelpUnranked"),
             &[("name", &name), ("badge", &badge)],
         ),
     })
@@ -169,19 +194,24 @@ pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<St
 /// RESIDUAL: the lobby's locale queue `0xB765F8` (filled at `0x007A73C8`
 /// and `0x007A6495`) is not ported; only the user's own locale request and
 /// VERA's player card fill the locale table.
-fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String {
-    if state.frontend.wol.is_none() {
+fn user_help(
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
+    name: &str,
+    member: Option<&WolMember>,
+) -> String {
+    if frontend.wol.is_none() {
         return String::new();
     }
     let key = name.to_ascii_lowercase();
     let mut help = format!("{name} : ");
-    match state.frontend.wol_lobby_globals.ladder.get(&key) {
+    match frontend.wol_lobby_globals.ladder.get(&key) {
         Some(record) => {
-            help.push_str(&state.csf_text("TXT_RANK"));
+            help.push_str(&process_assets.csf_text("TXT_RANK"));
             help.push(' ');
             help.push_str(&record.rank.to_string());
         }
-        None => help.push_str(&state.csf_text("TXT_UNRANKED")),
+        None => help.push_str(&process_assets.csf_text("TXT_UNRANKED")),
     }
     if let Some(member) = member {
         let clan = if member.clan_name.is_empty() {
@@ -194,7 +224,7 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
             help.push_str(clan);
         }
     }
-    if let Some(locale) = locale_name(state, name) {
+    if let Some(locale) = locale_name(frontend.wol.as_ref(), process_assets, name) {
         help.push_str(" : ");
         help.push_str(&locale);
     }
@@ -203,28 +233,34 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
 
 /// `WOL:Locale%02d` of the user's known nonzero locale, by the ASCII-lowered
 /// name, while the WOLAPI object exists (`0x00780A90`'s locale part).
-pub(in crate::app::shell_wol) fn locale_name(state: &AppState, name: &str) -> Option<String> {
-    let visit = state.frontend.wol.as_ref().filter(|visit| visit.api)?;
+pub(in crate::app::shell_wol) fn locale_name(
+    wol: Option<&WolVisit>,
+    process_assets: &ProcessAssets,
+    name: &str,
+) -> Option<String> {
+    let visit = wol.filter(|visit| visit.api)?;
     let locale = *visit
         .locales
         .get(&name.to_ascii_lowercase())
         .filter(|locale| **locale != 0)?;
-    Some(state.csf_text(&format!("WOL:Locale{locale:02}")))
+    Some(process_assets.csf_text(&format!("WOL:Locale{locale:02}")))
 }
 
 /// `0x00780D90`: `TXT_RANDOM_MAP_DESCRIPTION` for `RandMap.Sed`, else the
 /// description (`+0x00`) of the first scenario record (`[0xA8B8CC]`)
 /// whose file name (`+0x58`) equals `scenario` without case; empty when
 /// none does.
-pub(super) fn scenario_description(state: &AppState, scenario: &str) -> String {
+pub(super) fn scenario_description(
+    scenario_catalog: &ScenarioCatalog,
+    process_assets: &ProcessAssets,
+    scenario: &str,
+) -> String {
     use crate::util::native_string::crt_strcmpi;
     use std::cmp::Ordering;
     if crt_strcmpi(scenario, crate::map::skirmish_scenarios::RANDMAP_SED) == Ordering::Equal {
-        return state.csf_text(crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY);
+        return process_assets.csf_text(crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY);
     }
-    state
-        .frontend
-        .scenario_catalog
+    scenario_catalog
         .records()
         .iter()
         .find(|record| crt_strcmpi(&record.file_name, scenario) == Ordering::Equal)
@@ -235,7 +271,7 @@ pub(super) fn scenario_description(state: &AppState, scenario: &str) -> String {
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
 /// ping, then `", "` and the map when exInfo names a scenario `0x00780D90`
 /// knows. Used by the classic lobby.
-fn game_help(state: &AppState, row: &WolGameRow) -> String {
+fn game_help(frontend: &FrontendState, process_assets: &ProcessAssets, row: &WolGameRow) -> String {
     let host: String = row
         .name
         .split('\'')
@@ -245,20 +281,23 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
         .take(10)
         .collect();
     let ping = if row.ping == -1 {
-        state.csf_text("TXT_UNKNOWN_PING")
+        process_assets.csf_text("TXT_UNKNOWN_PING")
     } else {
         crate::assets::csf_file::format_csf(
-            &state.csf_text("MSG:PingInfo"),
+            &process_assets.csf_text("MSG:PingInfo"),
             &[crate::assets::csf_file::CsfArg::Int(i64::from(row.ping))],
         )
     };
-    let mut help = format!("{}, {ping}", user_help(state, &host, None));
-    let channel = lobby(state).and_then(|lobby| lobby.games.get(row.record));
+    let mut help = format!(
+        "{}, {ping}",
+        user_help(frontend, process_assets, &host, None)
+    );
+    let channel = lobby(frontend.wol.as_ref()).and_then(|lobby| lobby.games.get(row.record));
     let scenario = channel
         .map(|channel| channel.ex_info().scenario)
         .unwrap_or_default();
     if !scenario.is_empty() {
-        let name = scenario_description(state, &scenario);
+        let name = scenario_description(&frontend.scenario_catalog, process_assets, &scenario);
         if !name.is_empty() {
             help.push_str(", ");
             help.push_str(&name);

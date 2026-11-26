@@ -48,7 +48,9 @@ Thumbs.db
 !/docs/save-compatibility.md
 !/docs/capabilities.md
 !/docs/rfcs/
+!/docs/hd-art.md
 !/docs/wasm.md
+!/docs/aarch64-linux.md
 !/docs/sim-thread.md
 !/docs/scale-benchmark.md
 !/docs/ares.md
@@ -106,6 +108,9 @@ Thumbs.db
 !/docs/ini-roots.md
 !/docs/personal-rules.md
 !/docs/modding.md
+!/docs/wasm-modules.md
+!/docs/wasm-modules-tutorial.zh-CN.md
+!/docs/wasm-modules-tutorial-ts.zh-CN.md
 !/docs/map-format.md
 !/docs/terrain-deformation.md
 !/docs/ts-ice.md
@@ -134,6 +139,7 @@ Thumbs.db
 !/docs/formation-line.md
 !/docs/ferry.md
 !/docs/auto-repair.md
+!/docs/autosave.md
 !/docs/level-bridge-decks.md
 !/docs/minimap-beacons.md
 !/docs/primary-rotation.md

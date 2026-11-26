@@ -186,6 +186,9 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
+        // Wasm module `Birth` (RFC 0001 appendix 4.3) after 6E4200's
+        // Grand_Opening.
+        self.raise_module_birth(rules, frame_effects, created, None);
         true
     }
 
@@ -1308,7 +1311,7 @@ impl Simulation {
                 self.session.set_vein_growth(value.unwrap_or(0));
             }
             110 => {
-                effects.extend(self.session.pause_scenario(value.unwrap_or(0)));
+                effects.extend(Vec::from(self.session.pause_scenario(value.unwrap_or(0))));
                 // ScenarioPause684060 pauses elapsed time and Vox inline,
                 // before a following result action or House's Vox poll.
                 frame_effects.consume_prefix_effects(effects);

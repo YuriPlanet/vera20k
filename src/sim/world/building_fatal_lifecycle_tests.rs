@@ -205,7 +205,7 @@ impl Fixture {
             rules.smudge_types = crate::rules::smudge_type::SmudgeTypeRegistry::default();
             assert_eq!(rules.smudge_types.iter_with_id().count(), 0);
         }
-        sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(33, 33));
+        *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(33, 33));
         let mut sound_text = String::from("[SoundList]\n");
         for sound in corpus["selected_sounds"].as_array().unwrap() {
             sound_text.push_str(&format!(
@@ -251,7 +251,7 @@ impl Fixture {
                 .register(HouseState::new(house, 0, None, true, 5000, 10));
         }
         sim.session.set_current_house_for_test(Some(houses[0]));
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: 0,
             off_100: 0,
@@ -260,7 +260,7 @@ impl Fixture {
         });
         assert!(sim.rebuild_dynamic_navigation(&rules));
         // Both native routes retain the real full-constructor ID1.
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             int(&prior["id"]).wrapping_sub(1) as u32,
         ));
         // Reuse the held-object constructor/reveal boundary, then restore
@@ -335,7 +335,7 @@ impl Fixture {
             .iter()
             .find(|anim| anim["pointer"].as_u64() == Some(slot_pointer))
             .unwrap();
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             int(&prior_anim["native_id"]).wrapping_sub(1) as u32,
         ));
         sim.set_building_damage_state(building, true, &rules);
@@ -402,7 +402,7 @@ impl Fixture {
                 .last_fire_frame
                 .set_for_test(i64::from(int(&attacker["last_fire_frame"])));
         }
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &prior["unique_id_cursor"],
         )
             as u32));
@@ -421,11 +421,11 @@ impl Fixture {
                 .map_mut_for_test()
                 .insert(*house, serde_json::from_value(power).unwrap());
         }
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["mapgen"].as_str().unwrap());
         Self {
             sim,
@@ -1391,8 +1391,8 @@ impl Fixture {
             save_codec::serialize(grid).unwrap()
         );
         assert_eq!(
-            restored.substrate.pending_delete,
-            self.sim.substrate.pending_delete
+            *restored.substrate.pending_delete,
+            *self.sim.substrate.pending_delete
         );
         assert_eq!(
             restored.native_unique_ids.as_ref().unwrap().current_raw(),
@@ -1645,10 +1645,8 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             if frame["after_objects"]["alive"] == 0 {
                 break;
             }
-            fixture
-                .sim
-                .session
-                .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
+            let session = &mut *fixture.sim.session;
+            session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
                 &fixture.rules,
                 &mut crate::sim::world::FrameEffects::default(),

@@ -354,7 +354,7 @@ fn production_fresh_head_and_raw_history_match_original_walk_producer() {
             c.level = 2;
             c.slope_type = 1;
         }
-        sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(
+        *sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(
             sim.resolved_terrain.as_ref().unwrap(),
         )));
         let owner = {
@@ -438,7 +438,7 @@ pub(in crate::sim::world) fn ready_repair_fixture(
     u64,
 ) {
     let (mut sim, rules, registry) = fixture();
-    sim.mapgen_rng = Simulation::with_seed(0).mapgen_rng;
+    *sim.mapgen_rng = Simulation::with_seed(0).mapgen_rng.into_inner();
     player_house(&mut sim);
     let hut = sim
         .spawn_object("CABHUT", "Soviets", 16, 15, 0, &rules)
@@ -944,7 +944,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         replay.resolve_type_handles(&rules);
         assert!(replay.path_grid.is_none());
         assert!(replay.zone_grid.as_ref().unwrap().is_native_load_pending());
-        replay.rebuild_caches_after_load(map_terrain, sim.terrain_speed_config.clone(), &rules);
+        replay.rebuild_caches_after_load(map_terrain, (*sim.terrain_speed_config).clone(), &rules);
         replay
             .restore_map_authority_after_snapshot_load(&rules, &registry, None)
             .unwrap();
@@ -952,7 +952,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         assert!(replay.zone_grid.is_some());
         // Scenario reload applies native Seed(0); compare both continuations
         // under that established load rule, not uninterrupted RNG preservation.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let mut retired = false;
         for _ in 0..240 {
             repair_frame(&mut sim, &rules, &registry);
@@ -1226,7 +1226,7 @@ fn hut_queries_pending_uninit_and_active_tube_exit_before_other_gates() {
         row["output"]["dummy"]
     );
     let terrain = sim.resolved_terrain.as_ref().unwrap();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
         33,
         33,
         terrain.cells().to_vec(),
@@ -1276,8 +1276,8 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             path_runtime.set_path_blocked_for_test(true);
             path_runtime.set_retries_left_for_test(256);
             let grid = sim.path_grid_snapshot();
-            assert!(sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &Command::Move {
                     entity_id: rocketeer,
@@ -1287,7 +1287,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default()
-            ));
+            )).is_ok());
             drop(grid);
             let mut expected_runtime =
                 crate::sim::components::FootPathRuntime::at_frame(sim.session.binary_frame());
@@ -1592,14 +1592,14 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         .jumpjet_runtime()
         .unwrap()
         .clone();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::Stop { entity_id: id },
         &rules,
         Some(&registry),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     let state = sim
         .substrate
         .entities

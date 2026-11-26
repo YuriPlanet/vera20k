@@ -75,7 +75,7 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 50_000, 10));
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(16, 16, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(16, 16, |x, y| {
         test_terrain_cell(x, y)
     }));
     sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
@@ -101,8 +101,8 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
         .insert(sw_type_id, instance);
     // ClickFire admits the Super and calls Launch; the cases' own effects
     // are each caller's to check.
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id,
@@ -112,7 +112,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
         rules,
         None,
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     assert!(
         !sim.super_weapons[&owner][&sw_type_id].is_ready,
         "actual command consumes readiness"
@@ -122,14 +122,17 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
 fn held_infantry_survives_launch(name: &str) {
     let (mut sim, rules) = fixture();
     let owner = sim.interner.intern("Americans");
-    assert!(production::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let held = sim
         .production
         .factories()
@@ -896,7 +899,7 @@ fn command_uses_packed_aliases_and_stamps_missing_cells(name: &str, object_type:
         .test_set_native_allocated_cells(&allocated);
     for mapless in [false, true] {
         if mapless {
-            sim.resolved_terrain = None;
+            *sim.resolved_terrain = None;
         }
         launch_command(&mut sim, &rules, name, 5, 5);
         let object = sim.substrate.entities.get(victim).unwrap();
@@ -966,7 +969,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     anchor.overlay_data = 6;
     let state =
         BridgeRuntimeState::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap(), true, 1);
-    sim.bridge_state = Some(state);
+    *sim.bridge_state = Some(state);
     // Older deck recipient is visited only after the newer Infantry's callback.
     let tank = sim
         .construct_object_limbo_at_height(

@@ -187,7 +187,7 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
     position(&mut engineer, coord(&input["requester"]));
     sim.substrate.entities.insert(building);
     sim.substrate.entities.insert(engineer);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let accepted = sim.apply_command(
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
@@ -266,7 +266,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
                 ));
             }
         }
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         sim.set_next_stable_object_id_for_test(200);
         let before = super::super::nav_target_coordinate(
             NavTargetRef::object(2),

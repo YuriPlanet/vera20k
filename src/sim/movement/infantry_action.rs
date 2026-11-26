@@ -535,11 +535,13 @@ impl Simulation {
         // InfantryClass::AI @0x0051BAB0, retail gamemd.exe instructions:
         //51BE3E..51BE52 latches Team+82 from the retained playfield byte+3D5.
         // A fresh bounds query would discard ordinary movement's hysteresis.
+        // A team that holds the latch already is only read (`util::forked`).
         if self
             .substrate
             .entities
             .get(id)
             .is_some_and(|actor| actor.in_playfield())
+            && self.team_script_vm.member_team_leaving_map(id) == Some(false)
         {
             self.team_script_vm.mark_member_team_leaving_map(id);
         }

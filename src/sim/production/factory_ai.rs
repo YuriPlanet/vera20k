@@ -113,6 +113,12 @@ pub(crate) fn factory_ai(
         abandon_stopped_factory(sim, rules, building, owner, effects);
         return;
     }
+    // VERA: a Wasm module that claimed `Production` starts the house's
+    // production itself, through orders (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+        return;
+    }
     start_factory(sim, rules, building, owner, factory_rtti, effects);
 }
 
@@ -182,6 +188,9 @@ fn exit_finished_object(
                 owner,
                 object,
             );
+            // Wasm module `Birth` (RFC 0001 appendix 4.3), the factory as
+            // producer.
+            sim.raise_module_birth(rules, effects, product, Some(building));
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
             sim.production
@@ -281,18 +290,17 @@ fn start_factory(
     // #359 C335A0 reads AIBuildLimit; legacy ext173 C2D15A/C2CF67 uses
     // BuildLimit when EnableAIBuildLimitation is set. Both constraints apply
     // when a ruleset explicitly combines the compatibility keys.
-    if crate::rules::NPATCH_ENABLED
+    if rules.npatch()
         && (ai_build_limit_blocks(sim, rules, owner, object, object.aibuild_limit)
             || rules.general.enable_ai_build_limitation
                 && ai_build_limit_blocks(sim, rules, owner, object, object.build_limit))
     {
-        clear_aibuild_limit_choice(sim, owner, object);
+        clear_aibuild_limit_choice(sim, owner, object, rules.npatch());
         return;
     }
     // NPSE 2.0 Factory_AI C2F07C..C2F11F reserves the fetched type's
     // class before naval admission, allocation and construction. The House
     // owner retains failed-start/expired reservations until a native release.
-    #[cfg(feature = "npatch")]
     if rules.general.disable_parallel_ai_queues
         && !sim.houses.get_mut(&owner).is_some_and(|house| {
             house
@@ -303,6 +311,12 @@ fn start_factory(
         return;
     }
     if object.category == ObjectCategory::Vehicle && object.naval != factory_naval {
+        return;
+    }
+    // VERA: a Wasm module `ProductionQueued` decision may refuse the start
+    // before the FactoryClass constructor (RFC 0001 6f,
+    // `sim::ext_modules::decide`).
+    if !sim.module_allows_production(rules, owner, object) {
         return;
     }
     let type_id = sim.interner.intern(&object.id);
@@ -396,7 +410,8 @@ fn parallel_start_allowed(
         AiFactorySlot::Infantry => choice_product(sim, rules, owner, UnitChoiceKind::Infantry),
         AiFactorySlot::Aircraft => choice_product(sim, rules, owner, UnitChoiceKind::Aircraft),
         AiFactorySlot::Vehicle | AiFactorySlot::Navy => {
-            let Some(kind) = UnitChoiceKind::of(ObjectCategory::Vehicle, naval) else {
+            let Some(kind) = UnitChoiceKind::of(ObjectCategory::Vehicle, naval, rules.npatch())
+            else {
                 return true;
             };
             choice_product(sim, rules, owner, kind)
@@ -468,11 +483,16 @@ fn ai_build_limit_blocks(
 /// its plan node stays unsatisfied, so `choose_building` returns the same
 /// type: that is the manual's warning (`AI克隆生产`) that a building at its
 /// limit leaves the computer unable to build anything, not a recovery.
-fn clear_aibuild_limit_choice(sim: &mut Simulation, owner: InternedId, object: &ObjectType) {
+fn clear_aibuild_limit_choice(
+    sim: &mut Simulation,
+    owner: InternedId,
+    object: &ObjectType,
+    npatch: bool,
+) {
     let Some(house) = sim.houses.get_mut(&owner) else {
         return;
     };
-    match UnitChoiceKind::of(object.category, object.naval) {
+    match UnitChoiceKind::of(object.category, object.naval, npatch) {
         Some(kind) => house.ai_unit_choices_mut().clear(kind),
         None => house.ai_production_mut().clear_building_choice(),
     }

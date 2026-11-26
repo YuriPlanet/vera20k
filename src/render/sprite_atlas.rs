@@ -680,6 +680,11 @@ pub struct SpriteAtlas {
     /// health/frame and camera. Growth publishes it with the atlas transaction;
     /// map/theater/rules reload drops the atlas and its bounds together.
     building_type_bounds: HashMap<String, [i32; 4]>,
+    /// Upper-case names of every building animation (ActiveAnim, IdleAnim,
+    /// their variants, SHP turrets), bib and infantry type registered so
+    /// far: VERA's HD art (`render::hd_art`) redraws their frames as
+    /// well as building bodies'.
+    hd_images: HashSet<String>,
     /// Keys with nothing to draw: the SHP is missing or fails to decode, or
     /// the frame is empty. Remembered so a refresh never renders them again.
     unrenderable: HashSet<ShpSpriteKey>,
@@ -764,6 +769,7 @@ impl SpriteAtlas {
             active_anim_frame_counts: HashMap::new(),
             object_shp_frame_counts: HashMap::new(),
             building_type_bounds: HashMap::new(),
+            hd_images: HashSet::new(),
             unrenderable: HashSet::new(),
             covered_objects: HashMap::new(),
             covered_anim_remaps: HashSet::new(),
@@ -817,6 +823,30 @@ impl SpriteAtlas {
     /// A known empty image/rectangle remains `Some`, including its origin.
     pub(crate) fn building_type_bounds(&self, type_id: &str) -> Option<[i32; 4]> {
         self.building_type_bounds.get(type_id).copied()
+    }
+
+    /// VERA's HD art (`render::hd_art`): every resident frame with its
+    /// entry. Buildings, their animations and bibs, infantry, and every
+    /// other SHP the atlas holds (explosions, fire, smoke, projectiles); a
+    /// frame the pack has no art for simply stays native.
+    pub(crate) fn building_frames(&self) -> impl Iterator<Item = (&ShpSpriteKey, &ShpSpriteEntry)> {
+        self.entries.iter()
+    }
+
+    /// The RGBA bytes (256 entries) of every palette row, in row order:
+    /// `ShpSpriteEntry::source_palette` minus one indexes it.
+    pub(crate) fn palette_rows(&self) -> &[Vec<u8>] {
+        &self.palettes.colors
+    }
+
+    /// A cheap change signal for consumers that derive data from the
+    /// entries: grows whenever a refresh adds pages, entries or rows.
+    pub(crate) fn generation(&self) -> (usize, usize, usize) {
+        (
+            self.pages.len(),
+            self.entries.len(),
+            self.palettes.colors.len(),
+        )
     }
 
     /// Exact frame lookup; an absent frame is not substituted or wrapped.
@@ -2470,6 +2500,9 @@ pub(crate) fn prepare_sprite_atlas(
     // effects, so a building on the map at load gets the same frames as one
     // that appears later, and the effect keeps the presentation count.
     let mut building_anim_counts: HashMap<String, (u16, u16)> = HashMap::new();
+    let mut hd_images = previous_atlas
+        .map(|atlas| atlas.hd_images.clone())
+        .unwrap_or_default();
     if let Some(art_reg) = art {
         for (type_id, house_color) in &new_objects {
             let rules_image: String = rules
@@ -2547,6 +2580,7 @@ pub(crate) fn prepare_sprite_atlas(
                         source.found_name.clone(),
                     );
                     object_shp_frame_counts.insert(name.clone(), count);
+                    hd_images.insert(name.clone());
                     for frame in 0..count {
                         needed.insert(ShpSpriteKey {
                             palette_context: building_art_palette_context(entry),
@@ -2560,7 +2594,18 @@ pub(crate) fn prepare_sprite_atlas(
             }
         }
     }
+    for (type_id, _) in &new_objects {
+        if rules
+            .and_then(|rules| rules.object(type_id))
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Infantry
+            })
+        {
+            hd_images.insert(type_id.to_ascii_uppercase());
+        }
+    }
     for (anim_type, (count, _)) in building_anim_counts {
+        hd_images.insert(anim_type.clone());
         active_anim_frame_counts.entry(anim_type).or_insert(count);
     }
 
@@ -2833,7 +2878,7 @@ pub(crate) fn prepare_sprite_atlas(
     let mut parachutes: Vec<&str> = Vec::new();
     if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
         parachutes.extend(rules.general.parachute_shp.as_deref());
-        if crate::rules::NPATCH_ENABLED {
+        if rules.npatch() {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
         }
     }
@@ -3216,6 +3261,7 @@ pub(crate) fn prepare_sprite_atlas(
             active_anim_frame_counts,
             object_shp_frame_counts,
             building_type_bounds,
+            hd_images,
             shp_files,
             projectile_files,
             new_objects,
@@ -3431,6 +3477,7 @@ pub(crate) struct ShpAtlasUpload {
     active_anim_frame_counts: HashMap<String, u16>,
     object_shp_frame_counts: HashMap<String, u16>,
     building_type_bounds: HashMap<String, [i32; 4]>,
+    hd_images: HashSet<String>,
     shp_files: HashMap<(ShpImageKind, String), String>,
     projectile_files: HashMap<String, (String, u16)>,
     new_objects: HashSet<(String, HouseColorIndex)>,
@@ -3510,6 +3557,7 @@ impl ShpAtlasUpload {
             active_anim_frame_counts,
             object_shp_frame_counts,
             building_type_bounds,
+            hd_images,
             shp_files,
             projectile_files,
             new_objects,
@@ -3524,6 +3572,7 @@ impl ShpAtlasUpload {
         atlas.active_anim_frame_counts = active_anim_frame_counts;
         atlas.object_shp_frame_counts = object_shp_frame_counts;
         atlas.building_type_bounds = building_type_bounds;
+        atlas.hd_images = hd_images;
         atlas.shp_files = shp_files;
         atlas.projectile_files = projectile_files;
         for (type_id, color) in new_objects {

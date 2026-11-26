@@ -10,6 +10,7 @@
 use crate::util::time::Instant;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::app::process_assets::ProcessAssets;
 use crate::map::houses::{HouseColorMap, HouseRoster};
 use crate::map::overlay::TerrainObject;
 use crate::map::terrain::TerrainGrid;
@@ -29,16 +30,16 @@ pub(crate) struct MatchPresentationState {
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     /// A `RefCell`: the unit visitor writes it while the Display-order
-    /// visitors share `&AppState` (`build_world_instances`).
+    /// visitors share the match (`build_world_instances`).
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,
     /// The original voxel image caches and UseBuffer flag every voxel draw
     /// replays: which style and barrel pitch each type's stored images hold.
     /// A `RefCell`: the unit, debris, building and bullet visitors, all alive
-    /// at once over `&AppState`, render through it in Display order.
+    /// at once over the shared match, render through it in Display order.
     pub(crate) voxel_images: std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
     /// The skip table of the building bodies the view's left edge cuts in
     /// this picture, and the frames it decoded for them. A `RefCell`: the
-    /// building and fogged-object visitors fill it over `&AppState`.
+    /// building and fogged-object visitors fill it over the shared match.
     pub(crate) zshape_skips: std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     pub(crate) tile_atlas: Option<TileAtlas>,
     /// BUILDNGZ.SHA z-shape bound at group 2 of the Z-writing building draw.
@@ -144,9 +145,8 @@ pub(crate) struct MatchPresentationState {
     /// process-lived and off at start; the FPSCounter command flips it
     /// ([`super::ares_tactical_text`]).
     pub(crate) ares_fps_counter: bool,
-    /// The water and ore sparkles' per-cell PixelFX and clock. A `RefCell`:
-    /// the sparkle draw steps it beside the world it reads through `&AppState`.
-    pub(crate) pixel_fx: std::cell::RefCell<crate::render::pixel_fx_sparkles::PixelFxCells>,
+    /// The water and ore sparkles' per-cell PixelFX and clock.
+    pub(crate) pixel_fx: crate::render::pixel_fx_sparkles::PixelFxCells,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
     /// (`match_runtime::super_selection`): hidden anims, by id.
     pub(crate) hidden_super_anims: std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
@@ -222,7 +222,7 @@ pub(crate) struct MatchPresentationState {
     #[cfg(feature = "phobos")]
     pub(crate) show_power_plant_enhancer_range: bool,
     /// Phobos placement preview SHP cache for the current placing type. A
-    /// `RefCell`: the placement-preview draw fills it over `&AppState`.
+    /// `RefCell`: the placement-preview draw fills it over the shared match.
     #[cfg(feature = "phobos")]
     pub(crate) placement_preview_art:
         std::cell::RefCell<super::placement_preview::PlacementPreviewArt>,
@@ -481,12 +481,12 @@ pub(crate) struct StatusTexts {
 }
 
 impl StatusTexts {
-    pub(crate) fn resolve(state: &crate::app::AppState) -> Self {
+    pub(crate) fn resolve(process_assets: &ProcessAssets) -> Self {
         Self {
-            ready: state.csf_label("TXT_READY", "Ready"),
-            hold: state.csf_label("TXT_HOLD", "On Hold"),
-            charging: state.csf_label("TXT_CHARGING", "Charging"),
-            active: state.csf_label("TXT_FIRESTORM_ON", "Firestorm On"),
+            ready: process_assets.csf_label("TXT_READY", "Ready"),
+            hold: process_assets.csf_label("TXT_HOLD", "On Hold"),
+            charging: process_assets.csf_label("TXT_CHARGING", "Charging"),
+            active: process_assets.csf_label("TXT_FIRESTORM_ON", "Firestorm On"),
         }
     }
 }

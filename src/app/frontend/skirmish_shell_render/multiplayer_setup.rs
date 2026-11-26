@@ -20,12 +20,16 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
 use crate::render::hud_paint::Material;
 use crate::render::shell_text;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::geom::{RectPx, ShellAlign};
+use crate::ui::skirmish_shell::SkirmishShellState;
 use crate::util::time::Instant;
 use vera20k_gui::NodeId;
 
@@ -34,22 +38,47 @@ pub(crate) fn render_multiplayer_setup(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let Some(view) = crate::app::shell_network_setup::view(state) else {
-        crate::app::frontend::preview_zoom::close(state);
+    let Some(view) = crate::app::shell_network_setup::view(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) else {
+        crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         return Ok(());
     };
-    crate::app::input::multiplayer_setup::update_geometry(state);
-    crate::app::shell_network_setup::verify_sync(state);
-    let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
+    crate::app::input::multiplayer_setup::update_geometry(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
+    crate::app::shell_network_setup::verify_sync(
+        &state.renderer.gpu,
+        &mut state.frontend,
+        &state.match_state,
+    );
+    let layout = crate::app::input::multiplayer_setup::layout_of(
+        &state.renderer.gpu,
+        &state.frontend,
+        &state.match_state,
+        &view,
+    );
     let scale = layout.page.scale;
-    let (width, height) = (state.render_width(), state.render_height());
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     // The notice on its widgets before it paints.
     let notice_parts = (state.frontend.multiplayer_setup.as_ref())
         .and_then(|ui| ui.notice.as_ref())
         .map(|notice| super::shell_box::skirmish_parts(notice, (width as i32, height as i32)));
     {
         let frontend = &mut state.frontend;
-        let notice = frontend.multiplayer_setup.as_ref().and_then(|ui| ui.notice.as_ref());
+        let notice = frontend
+            .multiplayer_setup
+            .as_ref()
+            .and_then(|ui| ui.notice.as_ref());
         if let (Some(notice), Some(parts)) = (notice, notice_parts.as_ref()) {
             let controller = &mut frontend.shell_controller;
             if let Some(root) = controller.root_in(notice.dialog) {
@@ -59,7 +88,7 @@ pub(crate) fn render_multiplayer_setup(
     }
     let now = Instant::now();
     let exit = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
+        &state.frontend.shell_exit,
         ShellSlideKind::NetworkSetup(view.dialog),
     )
     .cloned();
@@ -67,14 +96,32 @@ pub(crate) fn render_multiplayer_setup(
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
-        ensure_map_preview_texture(state, index, layout.map_preview);
+        ensure_map_preview_texture(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence,
+            index,
+            layout.map_preview,
+        );
     } else if !view.dialog.host {
-        super::preview::ensure_received_preview_texture(state);
+        super::preview::ensure_received_preview_texture(&state.renderer, &mut state.frontend);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
-    let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
-    let heading = state.csf_label(view.page().title_key, view.page().title_key);
+    let zoom_layout = ensure_zoom_texture(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state.input,
+        &state.process_assets,
+        scale,
+        !sliding,
+    );
+    let heading = state
+        .process_assets
+        .csf_label(view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
         .multiplayer_setup
@@ -127,7 +174,11 @@ pub(crate) fn render_multiplayer_setup(
         ))
         .collect::<Vec<_>>()
     };
-    let look = crate::app::input::multiplayer_setup::room_look(state, &view);
+    let look = crate::app::input::multiplayer_setup::room_look(
+        &state.frontend,
+        &state.match_state.input,
+        &view,
+    );
     let ui = state
         .frontend
         .multiplayer_setup
@@ -202,7 +253,9 @@ pub(crate) fn render_multiplayer_setup(
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay {
-        smooth_art: state.smooth_online_menus(),
+        smooth_art: state
+            .persistence
+            .smooth_online_menus(state.frontend.native_shell_ui),
         ..Default::default()
     };
     let sized =
@@ -233,7 +286,15 @@ pub(crate) fn render_multiplayer_setup(
     // The room's widgets paint from its trees, in the order the room drew.
     let controller = &state.frontend.shell_controller;
     let page_root = controller.root_in(view.page().dialog);
-    let text_of = |id: i32| widget_text(state, &view, &layout, id);
+    let text_of = |id: i32| {
+        widget_text(
+            &state.frontend.skirmish_shell_state,
+            &state.process_assets,
+            &view,
+            &layout,
+            id,
+        )
+    };
     let room_style = GuiStyle {
         buttons: ButtonArt::Modal,
         text_of: Some(&text_of),
@@ -242,7 +303,7 @@ pub(crate) fn render_multiplayer_setup(
     // The room's own looks: its texts' and cells' colours, its boxes and
     // bands, and its pictures.
     let drag = row_drag(controller, &view);
-    let rgb_of = |id: i32| room_rgb(state, &view, &look, id);
+    let rgb_of = |id: i32| room_rgb(&state.frontend, &state.match_state, &view, &look, id);
     let frame_of = |id: i32| room_frame(&view, &look, drag, id);
     let picture_of = |id: i32| room_picture(&view, id);
     let frames = GuiStyle {
@@ -252,7 +313,11 @@ pub(crate) fn render_multiplayer_setup(
     let paint_ids = |root: Option<NodeId>, ids: &[u16], scale, style| {
         root.map(|root| {
             paint_gui_ids(
-                state,
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 controller.gui(),
                 root,
                 ids.iter().copied(),
@@ -267,8 +332,21 @@ pub(crate) fn render_multiplayer_setup(
         .filter(|nodes| page_root.is_some() && nodes.root == page_root)
         .unwrap_or_default();
     let paint_node = |node: Option<NodeId>, style| {
-        node.map(|node| paint_gui_styled(state, controller.gui(), node, scale, &[], style))
-            .unwrap_or_default()
+        node.map(|node| {
+            paint_gui_styled(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                controller.gui(),
+                node,
+                scale,
+                &[],
+                style,
+            )
+        })
+        .unwrap_or_default()
     };
     // The column labels and the roster's headers in the room's text, at
     // the roster's size over VERA's roster.
@@ -403,7 +481,9 @@ pub(crate) fn render_multiplayer_setup(
         ] {
             let combos = paint_ids(page_root, &ids, scale, style);
             controls.extend(combos.lane(Material::Controls).copied());
-            overlay.controls.extend(combos.lane(Material::Popup).copied());
+            overlay
+                .controls
+                .extend(combos.lane(Material::Popup).copied());
             texts.extend(combos.texts);
             overlay.texts.extend(combos.popup_texts);
         }
@@ -450,6 +530,7 @@ pub(crate) fn render_multiplayer_setup(
         let chat_edit = GuiStyle {
             focus_of: Some(&chat_focus),
             caret_of: Some(&chat_caret),
+            #[cfg(not(target_os = "android"))]
             ime_target: Some(crate::app::input::ime::ImeTarget::SetupChat),
             rgb: label_rgb,
             ..GuiStyle::default()
@@ -509,9 +590,16 @@ pub(crate) fn render_multiplayer_setup(
                     .and_then(|protocol| protocol.received_preview_bounds())
                     .or(received_bounds.as_ref())
                     .or(own_bounds.as_ref());
-                overlay.zoom = zoom_layout
-                    .as_ref()
-                    .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
+                overlay.zoom = zoom_layout.as_ref().map(|zoom_layout| {
+                    zoom_draws(
+                        &state.renderer,
+                        &state.frontend.screen,
+                        atlas,
+                        zoom_layout,
+                        bounds,
+                        scale,
+                    )
+                });
                 if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
@@ -520,7 +608,13 @@ pub(crate) fn render_multiplayer_setup(
                     // 6409D7..640A15 draws1-based numbers after STARTBUT, using
                     // the destination surface clip, not the thumbnail bounds.
                     let mut instances = Vec::new();
-                    push_start_marker_labels(&mut instances, state, &positions, scale, 0.00040);
+                    push_start_marker_labels(
+                        &mut instances,
+                        &state.renderer.bit_font,
+                        &positions,
+                        scale,
+                        0.00040,
+                    );
                     texts.push(shell_text::ShellTextDraw {
                         instances,
                         scissor: shell_text::ScissorRect {
@@ -575,7 +669,9 @@ pub(crate) fn render_multiplayer_setup(
                 ..GuiStyle::popup()
             };
             let widgets = paint_ids(controller.root_in(GAME_OPTIONS_BOX), &ids, scale, style);
-            overlay.controls.extend(widgets.lane(Material::Controls).copied());
+            overlay
+                .controls
+                .extend(widgets.lane(Material::Controls).copied());
             overlay.texts.extend(widgets.texts);
         }
         // VERA asks a guest before downloading a map it does not have, then
@@ -614,7 +710,7 @@ pub(crate) fn render_multiplayer_setup(
             let text_of = |id: i32| match u16::try_from(id).ok()? {
                 MAP_OFFER_BODY => Some(body.clone()),
                 MAP_OFFER_DOWNLOAD => Some(crate::i18n::tr(offer.button_key)),
-                MAP_OFFER_LEAVE => Some(state.csf_label("GUI:Leave", "Leave")),
+                MAP_OFFER_LEAVE => Some(state.process_assets.csf_label("GUI:Leave", "Leave")),
                 _ => None,
             };
             // Download greys while the map comes, but still takes a press.
@@ -640,9 +736,24 @@ pub(crate) fn render_multiplayer_setup(
             let scale = crate::ui::shell::geom::RETAIL_SCALE;
             let widgets = controller
                 .root_in(MAP_OFFER_BOX)
-                .map(|root| paint_gui_styled(state, controller.gui(), root, scale, &[], style))
+                .map(|root| {
+                    paint_gui_styled(
+                        &state.platform.ime,
+                        &state.renderer.bit_font,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        controller.gui(),
+                        root,
+                        scale,
+                        &[],
+                        style,
+                    )
+                })
                 .unwrap_or_default();
-            overlay.controls.extend(widgets.lane(Material::Controls).copied());
+            overlay
+                .controls
+                .extend(widgets.lane(Material::Controls).copied());
             overlay.texts.extend(widgets.texts);
         }
     }
@@ -662,7 +773,11 @@ pub(crate) fn render_multiplayer_setup(
         let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
         let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
         super::shell_box::push_skirmish_box(
-            state,
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
             Some(atlas),
             tree,
             notice,
@@ -674,24 +789,48 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
-    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
+    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(
+        &state.platform.ime,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
     // Start Game Now's 0x130 over the locked C2/C9; VERA's room waits a
     // moment so a quick check does not flash it.
-    let verify = crate::app::shell_network_setup::verify(state);
+    let verify =
+        crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref());
     if verify.is_some_and(|verify| !verify.shown(view.dialog.modern, now)) {
         state.platform.window.request_redraw();
     }
     if let Some(verify) = verify.filter(|verify| verify.shown(view.dialog.modern, now)) {
         let paint = super::paint_wol_verify(
-            state,
+            &state.platform.ime,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
             verify,
-            &crate::app::shell_network_setup::verify_layout(state),
+            &crate::app::shell_network_setup::verify_layout(
+                &state.renderer.gpu,
+                &state.frontend,
+                &state.match_state,
+            ),
         );
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);
+    }
+    // Android: VERA's send key beside the chat box. Only the LAN room needs
+    // it: the online room already has its native emote button in the chat row
+    // (`0x3ED`, WOL rooms only). It goes with the page's slide, like the LAN
+    // lobby's.
+    #[cfg(target_os = "android")]
+    if !leaving && !view.dialog.wol() {
+        let rect = super::room_chat_send_rect(layout.chat, layout.chat_log, layout.page.scale);
+        super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(
         state,
@@ -786,11 +925,20 @@ const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
 /// Join grey while it is closed and white under the pointer or while it is
 /// pressed, and a roster cell whose list opens white under the pointer and
 /// while its list is open.
-fn room_rgb(state: &AppState, view: &SetupView, look: &RoomLook, id: i32) -> Option<[f32; 3]> {
+fn room_rgb(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    view: &SetupView,
+    look: &RoomLook,
+    id: i32,
+) -> Option<[f32; 3]> {
     let id = u16::try_from(id).ok()?;
     if let Some(row) = painted_row(id, HEADER_CAPTION) {
         let header = view.headers[row].as_ref()?;
-        return team_caption_tint(state.rules(), &header.member_colors);
+        return team_caption_tint(
+            crate::app::state::active_rules(frontend, match_state),
+            &header.member_colors,
+        );
     }
     if let Some(row) = painted_row(id, JOIN_CAPTION) {
         let join = team_join(row);
@@ -867,7 +1015,8 @@ fn room_picture(view: &SetupView, id: i32) -> Option<Picture> {
 /// headers' captions and Joins, the team bar's captions, a cooperative
 /// map's description.
 fn widget_text(
-    state: &AppState,
+    skirmish_shell_state: &SkirmishShellState,
+    process_assets: &ProcessAssets,
     view: &SetupView,
     layout: &MultiplayerSetupLayout,
     id: i32,
@@ -889,7 +1038,7 @@ fn widget_text(
         COOPERATIVE_TEXT => return view.cooperative_description.clone(),
         id if (COLUMN_LABEL..ROSTER_PAGE_LINE).contains(&id) => {
             let (key, _) = column_label(view, layout, usize::from(id - COLUMN_LABEL))?;
-            return Some(state.csf_label(key, key));
+            return Some(process_assets.csf_label(key, key));
         }
         _ => {}
     }
@@ -912,7 +1061,7 @@ fn widget_text(
     if let Some(spec) = view.page().button(id) {
         let key = spec.csf_key;
         let label = view.dialog.button_label(id);
-        return Some(label.map_or_else(|| state.csf_label(key, key), crate::i18n::tr));
+        return Some(label.map_or_else(|| process_assets.csf_label(key, key), crate::i18n::tr));
     }
     let bar = view.trackbars.iter().find(|bar| bar.id == id)?;
     Some(match id {
@@ -920,9 +1069,7 @@ fn widget_text(
             let context = crate::ui::shell::game_speed::SpeedContext::Network;
             context.value_text(context.stored_speed(bar.value))
         }
-        CREDITS => state
-            .frontend
-            .skirmish_shell_state
+        CREDITS => skirmish_shell_state
             .trackbar_bounds
             .credits_from_visual_position(bar.value)
             .to_string(),

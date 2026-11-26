@@ -120,6 +120,8 @@ impl Simulation {
             return;
         };
         let e = substrate.entities.get_mut(owner).unwrap();
+        // The manager is a holding any expiry reaches (the pointer-expiry index).
+        let _ = e.note_names();
         e.seldom.airstrike.link = Some(owner);
         e.seldom.airstrike.manager = Some(Box::new(AirstrikeManager {
             settings,

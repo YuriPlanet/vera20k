@@ -17,7 +17,15 @@
 //! diverge that peer, and VERA keeps the flag in the lockstep sim.
 
 use super::dialog_page::InGameDialog;
-use crate::app::{App, AppState};
+use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::page::PageEvent;
 use crate::ui::shell::restate::{self, RestateControl};
@@ -26,18 +34,26 @@ use crate::ui::shell::restate::{self, RestateControl};
 /// scenario's file name, which a save carries. The section lookup is exact
 /// case, so a Cooperative launch must name its map as MISSIONMD spells it
 /// (`[C1A01MD.MAP]`); that spelling is unverified until Cooperative launches.
-fn scenario_file_name(state: &AppState) -> Option<String> {
-    let runtime = state.match_state.sim_runtime.runtime()?;
+fn scenario_file_name(sim_runtime: &SimHost) -> Option<String> {
+    let runtime = sim_runtime.runtime()?;
     Some(runtime.simulation.session().map_name().to_owned())
 }
 
 /// `0x0065F520`: read the briefing, then open 0x10C.
-pub(crate) fn open(state: &mut AppState) {
-    let Some(file_name) = scenario_file_name(state) else {
+pub(crate) fn open(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    let Some(file_name) = scenario_file_name(&match_state.sim_runtime) else {
         log::info!("Mission briefing: no scenario file name to read MISSIONMD under");
         return;
     };
-    let Some(assets) = state.process_assets.manager() else {
+    let Some(assets) = process_assets.manager() else {
         return;
     };
     let Ok(selected) =
@@ -47,9 +63,18 @@ pub(crate) fn open(state: &mut AppState) {
         return;
     };
     let key = crate::rules::campaign_loading::restate_briefing_key(&selected.ini, &file_name);
-    let text = state.csf_text(&key);
-    state.match_state.match_presentation.restate_text = text;
-    App::enter_in_game_menu_state(state, InGameMenuState::MissionBriefing);
+    let text = process_assets.csf_text(&key);
+    match_state.match_presentation.restate_text = text;
+    App::enter_in_game_menu_state(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        InGameMenuState::MissionBriefing,
+    );
 }
 
 /// 0x10C: title 0x694 and Return 0x423 in Diplomacy's right-panel places.
@@ -67,29 +92,75 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
 
 /// Makes 0x10C's nodes current without input (rects): its renderer's call
 /// every drawn frame before it paints from them.
-pub(crate) fn sync(state: &mut AppState) -> Option<restate::RestateLayout> {
-    let layout = super::dialog_page::layout(state, restate::restate_layout)?;
+pub(crate) fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<restate::RestateLayout> {
+    let layout = super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        restate::restate_layout,
+    )?;
     let rect = |id| layout.rect(id);
     // The briefing 0x6E7 into its node, copied only when it changes; the
     // text steps out of the state while the dialog's controller is borrowed.
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     let briefing = std::mem::take(&mut presentation.restate_text);
-    DIALOG.sync(state, restate::spec, rect, |gui, root| {
-        let content = RestateControl::Content.id();
-        crate::ui::shell::page::set_text(gui, root, content, vera20k_gui::Prop::Text, &briefing);
-    });
-    state.match_state.match_presentation.restate_text = briefing;
+    DIALOG.sync(
+        &mut match_state.match_presentation,
+        restate::spec,
+        rect,
+        |gui, root| {
+            let content = RestateControl::Content.id();
+            crate::ui::shell::page::set_text(
+                gui,
+                root,
+                content,
+                vera20k_gui::Prop::Text,
+                &briefing,
+            );
+        },
+    );
+    match_state.match_presentation.restate_text = briefing;
     Some(layout)
 }
 
 /// One pointer message on 0x10C (`down`: `None` moves).
-pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = super::dialog_page::layout(state, restate::restate_layout) else {
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let Some(layout) = super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        restate::restate_layout,
+    ) else {
         return;
     };
     let rect = |id| layout.rect(id);
     let events = DIALOG.route(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
         down,
         restate::spec,
         rect,
@@ -98,6 +169,15 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     if events.contains(&PageEvent::Activated(RestateControl::Return.id())) {
         // 0x0065F710 writes 0x423 to the result slot; State_Machine then
         // clears state 9 (0x0048C97A).
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+        App::enter_in_game_menu_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            InGameMenuState::Closed,
+        );
     }
 }

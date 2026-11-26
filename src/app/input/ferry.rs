@@ -26,12 +26,14 @@
 //! it, and it ends when its transport is lost, is stopped (the Stop key),
 //! gets a new ferry order, is found away from its route, or another match starts.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
     ordinary_cell_move_goal_with, preferred_local_owner_name, try_schedule_command,
 };
 use crate::app::input::dispatch::selected_stable_ids_in_order;
+use crate::app::input::state::MatchInputState;
 use crate::app::input::transport_orders::unload_command_with;
+use crate::app::match_runtime::state::MatchState;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -403,7 +405,7 @@ pub(crate) struct FerryState {
     boarders: Vec<Boarder>,
     /// [`selected_transports`] and [`armed_preview`] as last answered with
     /// the world home (`sim_host::home_answer`): the draw asks them through
-    /// `&AppState`, hence the cells.
+    /// a shared `&MatchState`, hence the cells.
     transports_seen: std::cell::RefCell<Vec<u64>>,
     preview_seen: std::cell::RefCell<Option<(Vec<Cell>, Cell, bool)>>,
 }
@@ -862,21 +864,22 @@ fn board_orders(
 }
 
 /// The selected transports a ferry order can take.
-fn selected_transports(state: &AppState) -> Vec<u64> {
+fn selected_transports(match_state: &MatchState) -> Vec<u64> {
     crate::app::match_runtime::sim_host::home_answer(
-        &state.match_state.sim_runtime,
-        &state.match_state.input.ferry.transports_seen,
-        || find_selected_transports(state),
+        &match_state.sim_runtime,
+        &match_state.input.ferry.transports_seen,
+        || find_selected_transports(match_state),
     )
 }
 
-fn find_selected_transports(state: &AppState) -> Vec<u64> {
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+fn find_selected_transports(match_state: &MatchState) -> Vec<u64> {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return Vec::new();
     };
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let Some(owner) = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))
+    let Some(owner) =
+        preferred_local_owner_name(match_state).and_then(|name| sim.interner().get(&name))
     else {
         return Vec::new();
     };
@@ -884,8 +887,8 @@ fn find_selected_transports(state: &AppState) -> Vec<u64> {
     selected_stable_ids_in_order(
         Some(sim),
         Some(rules),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     )
     .into_iter()
     .filter(|&id| ferry_transport(sim, &control, rules, id, owner).is_some())
@@ -894,19 +897,24 @@ fn find_selected_transports(state: &AppState) -> Vec<u64> {
 
 /// The Ferry key: arm the drop click when a transport is selected; a second
 /// press drops it again.
-pub(crate) fn hotkey_pressed(state: &mut AppState) {
-    if state.match_state.input.ferry.disarm() {
+pub(crate) fn hotkey_pressed(match_state: &mut MatchState) {
+    if match_state.input.ferry.disarm() {
         return;
     }
-    state.match_state.input.ferry.armed = !selected_transports(state).is_empty();
+    match_state.input.ferry.armed = !selected_transports(match_state).is_empty();
 }
 
 /// The Planning Mode key's edge while the drop click is armed: held, clicks
 /// add waypoints. Going down and coming up it gives Planning Mode's own
 /// sounds (`StartPlanningModeSound`, `EndPlanningModeSound`), as the key does
 /// there.
-pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyCode, down: bool) {
-    let ferry = &mut state.match_state.input.ferry;
+pub(crate) fn via_key_edge(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    physical: winit::keyboard::KeyCode,
+    down: bool,
+) {
+    let ferry = &mut match_state.input.ferry;
     let changed = if down {
         ferry.press_via_key(physical)
     } else {
@@ -915,7 +923,7 @@ pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyC
     if !changed {
         return;
     }
-    let sound = state.rules().and_then(|rules| {
+    let sound = crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
         if down {
             rules.general.start_planning_mode_sound.as_deref()
         } else {
@@ -924,8 +932,7 @@ pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyC
         .map(|name| rules.sound_name(name))
     });
     if let Some(sound_id) = sound {
-        state
-            .match_state
+        match_state
             .match_audio
             .sound_events
             .push(crate::audio::events::GameSoundEvent::UiSound { sound_id });
@@ -962,43 +969,43 @@ fn route_for(
 
 /// The armed left click: every selected transport ferries from where it
 /// stands to the clicked cell. Returns whether the click was taken.
-pub(crate) fn drop_click(state: &mut AppState) -> bool {
+pub(crate) fn drop_click(match_state: &mut MatchState) -> bool {
     // With the Planning Mode key held, the click is a waypoint and the drop
     // click stays armed.
-    if state.match_state.input.ferry.waypoint_click() {
+    if match_state.input.ferry.waypoint_click() {
         let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
+            match_state,
+            match_state.input.cursor_x,
+            match_state.input.cursor_y,
         );
         // A cell none of the selected transports can move to is not taken.
-        let accepted = armed_preview(state).is_some_and(|(_, _, accepted)| accepted);
-        let pending = &mut state.match_state.input.ferry.pending_via;
+        let accepted = armed_preview(match_state).is_some_and(|(_, _, accepted)| accepted);
+        let pending = &mut match_state.input.ferry.pending_via;
         if accepted && pending.len() < MAX_VIA {
             pending.push(clicked);
         }
         return true;
     }
-    let via = std::mem::take(&mut state.match_state.input.ferry.pending_via);
-    if !state.match_state.input.ferry.disarm() {
+    let via = std::mem::take(&mut match_state.input.ferry.pending_via);
+    if !match_state.input.ferry.disarm() {
         return false;
     }
-    let transports = selected_transports(state);
+    let transports = selected_transports(match_state);
     if transports.is_empty() {
         return false;
     }
     let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        match_state,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     let routes: Vec<FerryRoute> = {
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        let Some(runtime) = match_state.sim_runtime.runtime() else {
             return true;
         };
         let sim = &runtime.simulation;
         let Some(owner) =
-            preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))
+            preferred_local_owner_name(match_state).and_then(|name| sim.interner().get(&name))
         else {
             return true;
         };
@@ -1021,27 +1028,27 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
             .collect()
     };
     for route in routes {
-        state.match_state.input.ferry.add(route);
+        match_state.input.ferry.add(route);
     }
     true
 }
 
 /// The Stop key ends the selected transports' routes.
-pub(crate) fn stop_selected(state: &mut AppState, selected: &[u64]) {
-    state.match_state.input.ferry.end_for(selected);
+pub(crate) fn stop_selected(input: &mut MatchInputState, selected: &[u64]) {
+    input.ferry.end_for(selected);
 }
 
 /// Once per logic frame: every [`CHECK_INTERVAL`] frames look at the routes
 /// and send their orders.
-pub(crate) fn frame_pass(state: &mut AppState) {
-    if state.match_state.input.ferry.routes.is_empty() {
+pub(crate) fn frame_pass(match_state: &mut MatchState) {
+    if match_state.input.ferry.routes.is_empty() {
         return;
     }
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
-    let mut ferry = std::mem::take(&mut state.match_state.input.ferry);
-    let orders = match state.match_state.sim_runtime.runtime() {
+    let mut ferry = std::mem::take(&mut match_state.input.ferry);
+    let orders = match match_state.sim_runtime.runtime() {
         Some(runtime) => {
             let sim = &runtime.simulation;
             let now = sim.session().tick();
@@ -1054,10 +1061,10 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         }
         None => Vec::new(),
     };
-    state.match_state.input.ferry = ferry;
+    match_state.input.ferry = ferry;
     for order in orders {
         // An order the queue cannot take now is sent again by a later look.
-        let _ = try_schedule_command(state, &owner_name, order);
+        let _ = try_schedule_command(match_state, &owner_name, order);
     }
 }
 
@@ -1066,26 +1073,27 @@ pub(crate) fn frame_pass(state: &mut AppState) {
 /// taken: a route for at least one of them, or with the waypoint key held a
 /// cell at least one of them can move to. `None` while no click is armed or no transport
 /// is selected.
-fn armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
-    if !state.match_state.input.ferry.armed() {
+fn armed_preview(match_state: &MatchState) -> Option<(Vec<Cell>, Cell, bool)> {
+    if !match_state.input.ferry.armed() {
         return None;
     }
     crate::app::match_runtime::sim_host::home_answer(
-        &state.match_state.sim_runtime,
-        &state.match_state.input.ferry.preview_seen,
-        || find_armed_preview(state),
+        &match_state.sim_runtime,
+        &match_state.input.ferry.preview_seen,
+        || find_armed_preview(match_state),
     )
 }
 
-fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
-    let transports = selected_transports(state);
-    let runtime = state.match_state.sim_runtime.runtime()?;
+fn find_armed_preview(match_state: &MatchState) -> Option<(Vec<Cell>, Cell, bool)> {
+    let transports = selected_transports(match_state);
+    let runtime = match_state.sim_runtime.runtime()?;
     let sim = &runtime.simulation;
-    let owner = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))?;
+    let owner =
+        preferred_local_owner_name(match_state).and_then(|name| sim.interner().get(&name))?;
     let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        match_state,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     let pickups: Vec<Cell> = transports
         .iter()
@@ -1097,7 +1105,7 @@ fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     }
     // A waypoint click needs only a cell one of them can move to; the drop
     // click needs a whole route.
-    let waypoint_click = state.match_state.input.ferry.waypoint_click();
+    let waypoint_click = match_state.input.ferry.waypoint_click();
     let rules = &runtime.resources.rules;
     let control = sim.control_projection();
     let accepted = transports.iter().any(|&id| {
@@ -1121,8 +1129,8 @@ fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
 
 /// Whether the armed drop click would be taken where the cursor is; `None`
 /// while none is armed. The cursor shows a refusal.
-pub(crate) fn armed_click_accepted(state: &AppState) -> Option<bool> {
-    armed_preview(state).map(|(_, _, accepted)| accepted)
+pub(crate) fn armed_click_accepted(match_state: &MatchState) -> Option<bool> {
+    armed_preview(match_state).map(|(_, _, accepted)| accepted)
 }
 
 /// One circle of the ferry's marks: the corners of a closed line, in leptons
@@ -1138,10 +1146,9 @@ pub(crate) struct FerryRing {
 
 /// The routes that show their marks: only a selected transport's.
 /// Drawing reads the objects from the presentation frame.
-fn shown_routes(state: &AppState) -> Vec<&FerryRoute> {
-    let frame = state.match_state.sim_runtime.frame();
-    state
-        .match_state
+fn shown_routes(match_state: &MatchState) -> Vec<&FerryRoute> {
+    let frame = match_state.sim_runtime.frame();
+    match_state
         .input
         .ferry
         .routes
@@ -1168,8 +1175,8 @@ pub(crate) struct FerryPath {
 /// The waypoint paths to draw: one for each selected transport's route that
 /// has waypoints, and while the drop click is armed one from each selected
 /// transport through the waypoints clicked so far.
-pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
-    let mut paths: Vec<FerryPath> = shown_routes(state)
+pub(crate) fn waypoint_paths(match_state: &MatchState) -> Vec<FerryPath> {
+    let mut paths: Vec<FerryPath> = shown_routes(match_state)
         .into_iter()
         .filter(|route| !route.via.is_empty())
         .map(|route| FerryPath {
@@ -1180,12 +1187,12 @@ pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
             pending: false,
         })
         .collect();
-    let ferry = &state.match_state.input.ferry;
+    let ferry = &match_state.input.ferry;
     if ferry.armed
         && !ferry.pending_via.is_empty()
-        && let Some(frame) = state.match_state.sim_runtime.frame()
+        && let Some(frame) = match_state.sim_runtime.frame()
     {
-        for id in selected_transports(state) {
+        for id in selected_transports(match_state) {
             if let Some(entity) = frame.object(id) {
                 let pickup = (entity.position.rx(), entity.position.ry());
                 paths.push(FerryPath {
@@ -1204,14 +1211,14 @@ pub(crate) fn waypoint_paths(state: &AppState) -> Vec<FerryPath> {
 /// pick-up area and one around its drop zone; and, while a drop click is
 /// armed, the same circles for the selected transports and the cell under the
 /// cursor. The waypoints are [`waypoint_paths`].
-pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
+pub(crate) fn marks(match_state: &MatchState) -> Vec<FerryRing> {
     use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32};
-    let routes = shown_routes(state);
-    let preview = armed_preview(state);
+    let routes = shown_routes(match_state);
+    let preview = armed_preview(match_state);
     if routes.is_empty() && preview.is_none() {
         return Vec::new();
     }
-    let cells = state
+    let cells = match_state
         .sim_view()
         .and_then(|view| crate::app::match_runtime::sim_tick::tactical_cells(view.simulation()));
     let cell = LEPTONS_PER_CELL_I32 as f32;
@@ -1250,7 +1257,7 @@ pub(crate) fn marks(state: &AppState) -> Vec<FerryRing> {
         // With the waypoint key held the click adds a waypoint, not the drop:
         // no drop zone follows the cursor, and a cell no transport can move
         // to is the cursor's to refuse.
-        let waypoint_click = state.match_state.input.ferry.waypoint_click();
+        let waypoint_click = match_state.input.ferry.waypoint_click();
         for pickup in pickups {
             rings.push(ring(pickup, false, !accepted && !waypoint_click));
         }

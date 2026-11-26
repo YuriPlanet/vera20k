@@ -353,7 +353,7 @@ fn advance_ordinary_mover(
     entity_id: u64,
     grids: PassGrids<'_>,
     native_frame: u32,
-    interner: &mut crate::sim::intern::StringInterner,
+    interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     houses: &crate::sim::houses::Houses,
     effects: &mut MovementPassEffects,
@@ -880,17 +880,17 @@ pub(crate) fn tick_movement_with_grids(
     // This adapter owns only fixture assembly and result transfer. Runtime
     // state is moved, not mirrored; every entity reaches the production host.
     let mut sim = crate::sim::world::Simulation::new();
-    sim.substrate.entities = std::mem::take(entities);
-    sim.substrate.occupancy = std::mem::take(occupancy);
-    sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
-    sim.interner = std::mem::take(interner);
-    sim.scenario_rng = rng.clone();
+    *sim.substrate.entities = std::mem::take(entities);
+    *sim.substrate.occupancy = std::mem::take(occupancy);
+    *sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
+    *sim.interner = std::mem::take(interner);
+    *sim.scenario_rng = rng.clone();
     sim.session.set_tick_for_test(sim_tick);
     sim.session.set_binary_frame_for_test(native_frame);
     *sim.house_alliances_mut_for_test() = alliances.clone();
-    sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    sim.zone_grid = zone_grid.cloned().map(Into::into);
-    sim.resolved_terrain = resolved_terrain.cloned();
+    *sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
+    *sim.zone_grid = zone_grid.cloned().map(Into::into);
+    *sim.resolved_terrain = resolved_terrain.cloned();
     sim.set_playfield_bounds_for_test(playfield_bounds);
     sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());
     let order = live_order
@@ -903,11 +903,11 @@ pub(crate) fn tick_movement_with_grids(
                 .expect("fixture reached an unsupported production movement receiver"),
         );
     }
-    *entities = sim.substrate.entities;
-    *occupancy = sim.substrate.occupancy;
-    *raw_cell_occupation = sim.substrate.raw_cell_occupation;
-    *interner = sim.interner;
-    *rng = sim.scenario_rng;
+    *entities = sim.substrate.entities.into_inner();
+    *occupancy = sim.substrate.occupancy.into_inner();
+    *raw_cell_occupation = sim.substrate.raw_cell_occupation.into_inner();
+    *interner = sim.interner.into_inner();
+    *rng = sim.scenario_rng.into_inner();
     sound_events.extend(sim.sound_events.take_for_test());
     stats
 }
@@ -979,7 +979,7 @@ impl PendingMovementPass {
             entity_id,
             grids,
             sim.session.binary_frame(),
-            &mut sim.interner,
+            &sim.interner,
             rules,
             &sim.houses,
             &mut self.effects,
@@ -1015,7 +1015,7 @@ pub(crate) fn begin_movement(
     native_frame: u32,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     playfield_bounds: Option<PlayfieldBounds>,
-    interner: &mut crate::sim::intern::StringInterner,
+    interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     houses: &crate::sim::houses::Houses,
 ) -> PendingMovementPass {

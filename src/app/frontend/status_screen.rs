@@ -20,12 +20,17 @@ use winit::keyboard::PhysicalKey;
 use vera20k_gui::{DialogId, DialogKind, Gui, InputEvent, NodeKind, Prop, UiEvent, Value};
 
 use crate::app::frontend::shell_pass::{TexturedDraw, encode_sprite_pass};
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::precedence::{InputLayer, ModalPage, ScreenPage};
+use crate::app::input::state::MatchInputState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState, BUILD_STAMP};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::render::text_engine::fonts::{BASELINE, CAP_HEIGHT};
+use crate::ui::asset_import::AssetImport;
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::geom::RectPx;
 
@@ -47,7 +52,7 @@ enum Action {
 }
 
 impl Action {
-    fn label(self, state: &AppState) -> Cow<'_, str> {
+    fn label(self, process_assets: &ProcessAssets) -> Cow<'_, str> {
         let (key, fallback) = match self {
             // VERA's own words: these cards show before, or without, the
             // game's string table.
@@ -62,7 +67,7 @@ impl Action {
             Self::Abort => ("GUI:AbortMission", "Abort Mission"),
             Self::Leave => ("GUI:Leave", "Quit"),
         };
-        state.csf_label(key, fallback).into()
+        process_assets.csf_label(key, fallback).into()
     }
 
     /// Escape's button: the one that backs out of the card.
@@ -78,8 +83,26 @@ impl Action {
             // A startup failure must not write defaults over the retail profile.
             Self::Quit => event_loop.exit(),
             Self::BackToMenu => App::leave_mission_result_screen(state),
-            Self::Resume => App::enter_in_game_menu_state(state, InGameMenuState::Closed),
-            Self::Abort => App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm),
+            Self::Resume => App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::Closed,
+            ),
+            Self::Abort => App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::AbortConfirm,
+            ),
             Self::Leave => App::apply_in_game_modal_outcome(
                 state,
                 ModalOutcome::LeaveMatch { destruct: false },
@@ -129,8 +152,17 @@ impl Buttons {
     /// The card that takes input now: render draws the same card from the
     /// same decision (`input::precedence`).
     fn for_state(state: &AppState) -> Option<Self> {
-        match crate::app::input::precedence::input_layer(state) {
-            InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(state)),
+        match crate::app::input::precedence::input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ) {
+            InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(
+                &state.frontend.asset_import,
+                &state.process_assets,
+            )),
             InputLayer::Screen(ScreenPage::ResultCard) => Some(Self::BACK_TO_MENU),
             InputLayer::Screen(ScreenPage::InGameCard) => Some(
                 if state.match_state.match_presentation.in_game_menu
@@ -152,12 +184,11 @@ impl Buttons {
     /// The startup-failure card: the plain quit, or the import dialog's step
     /// while one is open. Without a loaded installation the import is the way
     /// out that does not need a file browser.
-    fn for_shell_error(state: &AppState) -> Self {
+    fn for_shell_error(asset_import: &AssetImport, process_assets: &ProcessAssets) -> Self {
         use crate::ui::asset_import::ImportStep;
-        match state.frontend.asset_import.step() {
+        match asset_import.step() {
             ImportStep::Closed
-                if crate::ui::asset_import::AVAILABLE
-                    && state.process_assets.manager().is_none() =>
+                if crate::ui::asset_import::AVAILABLE && process_assets.manager().is_none() =>
             {
                 Self([Some(Action::ImportAssets), Some(Action::Quit)])
             }
@@ -174,8 +205,11 @@ impl Buttons {
 
 /// The buttons the startup-failure card shows right now, for the render path
 /// that paints the same decision `handle_event` acts on.
-pub(crate) fn shell_error_buttons(state: &AppState) -> Buttons {
-    Buttons::for_shell_error(state)
+pub(crate) fn shell_error_buttons(
+    asset_import: &AssetImport,
+    process_assets: &ProcessAssets,
+) -> Buttons {
+    Buttons::for_shell_error(asset_import, process_assets)
 }
 
 /// The card's buttons as gui nodes, in click order: the gui runs hover, press
@@ -288,15 +322,15 @@ impl CardUi {
 /// The copy belongs to the platform thread that can read the chosen tree, so it
 /// reports through `util::import_status` and the card drains it here, on the
 /// frame it draws.
-fn apply_import_events(state: &mut AppState) {
+fn apply_import_events(asset_import: &mut AssetImport) {
     use crate::util::import_status::ImportEvent;
     for event in crate::util::import_status::drain() {
         match event {
-            ImportEvent::Started => state.frontend.asset_import.start_copy(None),
-            ImportEvent::Progress(bytes) => state.frontend.asset_import.advance_copy(bytes),
-            ImportEvent::Done(path) => state.frontend.asset_import.finish_copy(path),
-            ImportEvent::Failed(reason) => state.frontend.asset_import.fail(reason),
-            ImportEvent::Cancelled => state.frontend.asset_import.close(),
+            ImportEvent::Started => asset_import.start_copy(None),
+            ImportEvent::Progress(bytes) => asset_import.advance_copy(bytes),
+            ImportEvent::Done(path) => asset_import.finish_copy(path),
+            ImportEvent::Failed(reason) => asset_import.fail(reason),
+            ImportEvent::Cancelled => asset_import.close(),
         }
     }
 }
@@ -423,7 +457,14 @@ pub(crate) fn handle_event(
         WindowEvent::CursorMoved { position, .. } => {
             // Match input keeps source pixels even while a card covers a
             // zoomed match; the card maps back through `window_cursor_position`.
-            state.set_cursor_from_window(position.x as f32, position.y as f32);
+            crate::app::state::set_cursor_from_window(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state.input,
+                position.x as f32,
+                position.y as f32,
+            );
             None
         }
         WindowEvent::MouseInput {
@@ -431,7 +472,10 @@ pub(crate) fn handle_event(
             button: MouseButton::Left,
             ..
         } => {
-            let (x, y) = state.window_cursor_position();
+            let (x, y) = state
+                .match_state
+                .input
+                .window_cursor_position(state.renderer.tactical_zoom(&state.frontend.screen));
             let (x, y) = (x as i32, y as i32);
             Some(match pressed {
                 ElementState::Pressed => InputEvent::PointerDown {
@@ -465,7 +509,10 @@ pub(crate) fn handle_event(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
     );
-    let (x, y) = state.window_cursor_position();
+    let (x, y) = state
+        .match_state
+        .input
+        .window_cursor_position(state.renderer.tactical_zoom(&state.frontend.screen));
     let card = &mut state.frontend.status_card;
     card.sync(&buttons.actions(), &layout, (x as i32, y as i32));
     let activated = input.map_or_else(Vec::new, |input| card.input(input));
@@ -580,29 +627,30 @@ impl CardType {
 }
 
 pub(crate) fn render(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    input: &MatchInputState,
+    process_assets: &ProcessAssets,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     title: &str,
     detail: &str,
     buttons: Buttons,
 ) {
-    apply_import_events(state);
-    state.frontend.status_screen_drawn = true;
+    apply_import_events(&mut frontend.asset_import);
+    frontend.status_screen_drawn = true;
     // The heading and the buttons are set in capitals, as the Red Alert 2
     // front end sets its own; the message keeps its case to stay readable.
     let title = title.to_uppercase();
-    let layout = CardLayout::new(
-        state.renderer.gpu.config.width,
-        state.renderer.gpu.config.height,
-    );
+    let layout = CardLayout::new(renderer.gpu.config.width, renderer.gpu.config.height);
     let actions = buttons.actions();
     let labels: Vec<String> = actions
         .iter()
-        .map(|action| action.label(state).to_uppercase())
+        .map(|action| action.label(process_assets).to_uppercase())
         .collect();
-    let (cursor_x, cursor_y) = state.window_cursor_position();
-    let card = &mut state.frontend.status_card;
+    let (cursor_x, cursor_y) =
+        input.window_cursor_position(renderer.tactical_zoom(&frontend.screen));
+    let card = &mut frontend.status_card;
     card.sync(&actions, &layout, (cursor_x as i32, cursor_y as i32));
     let hovered = card.hovered();
     let button_rects = layout.button_rects(actions.len());
@@ -644,7 +692,6 @@ pub(crate) fn render(
         }
     }
 
-    let renderer = &state.renderer;
     let gpu = &renderer.gpu;
     let batch = &renderer.batch_renderer;
     let inner_w = (layout.width - layout.pad * 2) as f32;

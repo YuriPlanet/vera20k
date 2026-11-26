@@ -91,7 +91,7 @@ fn tube_at(sim: &mut Simulation, at: (i16, i16)) {
         path_steps: Vec::new(),
         source: TubeSource::ExplicitMap,
     };
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
         33,
         33,
         cells,
@@ -289,7 +289,7 @@ fn a_boundary_a_restricted_unit_or_an_unknown_speed_takes_the_full_body() {
         .find(|&target| {
             !crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell(&sim, target),
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &query,
             )
         })

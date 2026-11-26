@@ -14,8 +14,6 @@ use crate::net::live_commands::{
 };
 use crate::util::time::{Duration, Instant};
 
-use super::super::AppState;
-
 /// Fixed-width millisecond histogram: 0.25 ms buckets up to 256 ms, then one
 /// overflow bucket. A whole match fits in a few KiB.
 #[derive(Debug, Default)]
@@ -324,15 +322,18 @@ impl NetworkQualityStats {
 }
 
 /// Sample one match service pass of an online match in progress.
-pub(crate) fn observe_pass(state: &mut AppState) {
+pub(crate) fn observe_pass(
+    platform: &crate::app::PlatformState,
+    screen: &crate::ui::game_screen::GameScreen,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
     let now = Instant::now();
-    let in_game = state.frontend.screen == crate::app::GameScreen::InGame;
-    let sample = state
-        .match_state
+    let in_game = *screen == crate::app::GameScreen::InGame;
+    let sample = match_state
         .live_network
         .as_ref()
         .filter(|live| in_game && live.uses_sequenced_lockstep())
-        .zip(state.match_state.sim_runtime.runtime())
+        .zip(match_state.sim_runtime.runtime())
         .map(|(live, runtime)| {
             let frame = runtime.simulation.session().binary_frame();
             let reconnecting = live.recovery_status(
@@ -346,10 +347,10 @@ pub(crate) fn observe_pass(state: &mut AppState) {
                 reconnecting,
             )
         });
-    let pacing = state.platform.frame_pacer.online_pacing_status();
-    let deferrals = state.platform.frame_pacer.total_render_deferrals();
-    let focused = state.platform.window_active;
-    let stats = &mut state.match_state.network_quality;
+    let pacing = platform.frame_pacer.online_pacing_status();
+    let deferrals = platform.frame_pacer.total_render_deferrals();
+    let focused = platform.window_active;
+    let stats = &mut match_state.network_quality;
     let Some((backlog, slowed, delivery, reconnecting)) = sample else {
         stats.last_pass = None;
         return;
@@ -395,8 +396,7 @@ pub(crate) fn observe_pass(state: &mut AppState) {
 
 /// Close the record as the online match returns its transport: the report it
 /// closed, once, for the lobby's `finish`.
-pub(crate) fn close(state: &mut AppState) -> Option<NetworkQualityReport> {
-    let stats = &mut state.match_state.network_quality;
+pub(crate) fn close(stats: &mut NetworkQualityStats) -> Option<NetworkQualityReport> {
     if !stats.active || stats.closed.is_some() {
         return None;
     }

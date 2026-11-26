@@ -30,6 +30,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::timer::MissionTimer;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::forked::Forked;
 
 /// An infantryman's fear, stance, idle timer and failed-path answer.
 /// - Fear: this module's fear receiver raises and decays it.
@@ -687,13 +688,14 @@ enum IdleTurn {
 
 /// Single Infantry51CDB0 decision body. The world receiver applies its class
 /// action immediately, before a mission caller can spend its cadence draw.
-/// `ares` is the game's `RuleSet::ares_form`.
+/// `ares` is the game's `RuleSet::ares_form`. A refused turn draws nothing
+/// and leaves the stream unwritten.
 fn select_idle_action(
     entity: &mut GameEntity,
     object: &ObjectType,
     controlled_by_human: bool,
     frequency: f64,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
     ares: bool,
 ) -> Result<IdleTurn, String> {
@@ -860,7 +862,7 @@ pub(crate) fn tick_idle_actions(
     houses: &crate::sim::houses::Houses,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
 ) -> Vec<(u64, i32)> {
     let mut fidgets = Vec::new();
@@ -1112,9 +1114,9 @@ mod tests {
                 input["game_mode_nonzero"].as_bool().unwrap_or(true),
             ),
         );
-        sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31);
-        sim.mapgen_rng = SimRng::new(31);
+        *sim.scenario_rng = SimRng::new(31);
+        *sim.main_rng = SimRng::new(31);
+        *sim.mapgen_rng = SimRng::new(31);
         let owner = sim.interner.intern("FearOwner");
         let mut house = HouseState::new(
             owner,
@@ -1601,7 +1603,7 @@ mod tests {
                 .unwrap();
             actor.infantry.as_mut().unwrap().idle_action_timer =
                 crate::sim::mission::MissionTimer::armed(frame, 0);
-            sim.scenario_rng = SimRng::new(scenario_seed);
+            *sim.scenario_rng = SimRng::new(scenario_seed);
             sim.sound_events.clear_for_test();
             let before = sim.main_rng.clone();
             assert!(
@@ -1671,7 +1673,7 @@ mod tests {
             // an Options constructor/settings load is outside this receipt.
             // Reproduction: foot_missions.md's idle Options input proof.
             sim.session.game_options_mut_for_test().game_speed = 0;
-            sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
+            *sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
             assert_eq!(
                 native_rng_state(&sim.scenario_rng),
                 row["rng_before"]["scenario"],

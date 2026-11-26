@@ -94,8 +94,8 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> (InternedId, In
 
 fn fire(sim: &mut Simulation, rules: &RuleSet, owner: &str, cell: (u16, u16)) {
     let (_, sw) = charge(sim, rules, owner);
-    sim.apply_command_with_overlays(
-        None,
+    let _ = sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         owner,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -336,7 +336,7 @@ fn unit_delivery_pending_save_restores_deadline_payload_and_one_shot_completion(
     // empty arena before resuming its saved pending delivery.
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     restored.restore_after_snapshot_load().unwrap();
-    assert_eq!(restored.unit_deliveries, original.unit_deliveries);
+    assert_eq!(*restored.unit_deliveries, *original.unit_deliveries);
     restored.sound_events.clear_for_test();
     original.sound_events.clear_for_test();
     for frame in [19, 20, 21] {
@@ -386,7 +386,7 @@ fn unit_delivery_base_override_survives_save_and_capture_without_affecting_ordin
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
         .sim;
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     assert!(
         !restored
