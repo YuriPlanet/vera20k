@@ -166,11 +166,14 @@ macro_rules! notify_names {
 macro_rules! on_message {
     (shared_delivery: $f:path) => {
         #[unsafe(no_mangle)]
-        pub extern "C" fn on_message(sender: i64, ptr: i32, len: i32) {
+        /// # Safety
+        /// Only the engine may call this export with its current message bytes.
+        pub unsafe extern "C" fn on_message(sender: i64, ptr: i32, len: i32) {
             // SAFETY: the engine's own arguments: `len` bytes at `ptr` in the
             // delivery area, read only during this call.
             let data = unsafe { $crate::notify::message(ptr, len) };
-            $f($crate::House(sender), data)
+            let handler: for<'msg> fn($crate::House, &'msg [u8]) = $f;
+            handler($crate::House(sender), data)
         }
     };
     ($f:path) => {

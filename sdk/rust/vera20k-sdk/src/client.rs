@@ -42,8 +42,6 @@ use crate::{
     Cell, House, NO_HANDLE, NameKind, Order, Prop, Ref, Result, Status, Techno, check, sys,
 };
 
-pub use crate::sys::ClientEventRecord;
-
 /// What a client module usually needs.
 pub mod prelude {
     pub use super::{
@@ -655,7 +653,7 @@ impl Hotkey {
 
 /// A notification name some simulation module of this match declared,
 /// resolved once with `client_lookup(Notify, ..)`: compare with a `Notify`
-/// event's [`ClientEventRecord::id`].
+/// event's [`sys::ClientEventRecord::id`].
 pub struct NotifyName {
     name: &'static str,
     id: AtomicI32,
@@ -754,7 +752,7 @@ pub enum ClientEvent {
     Click = 0,
     /// A hoverable node: `value` 1 enter, 0 leave.
     Hover = 1,
-    /// A registered hotkey: [`ClientEventRecord::id`].
+    /// A registered hotkey: [`sys::ClientEventRecord::id`].
     Hotkey = 2,
     /// A dismissable node: a press outside it or Esc.
     Dismiss = 3,
@@ -770,18 +768,50 @@ pub enum ClientEvent {
     SimEvent = 7,
 }
 
-impl ClientEventRecord {
-    /// The records `client_on_events(ptr, count)` received.
+/// One client event and its payload, borrowed together for this callback.
+#[derive(Clone, Copy, Debug)]
+pub struct ClientEventRecord<'a> {
+    raw: &'a sys::ClientEventRecord,
+    payload: &'a [u8],
+}
+
+impl core::ops::Deref for ClientEventRecord<'_> {
+    type Target = sys::ClientEventRecord;
+
+    fn deref(&self) -> &Self::Target {
+        self.raw
+    }
+}
+
+impl<'a> ClientEventRecord<'a> {
+    /// The events delivered to `client_on_events(ptr, count)`.
     ///
     /// # Safety
-    /// `ptr` and `count` must be the arguments the engine passed to
-    /// `client_on_events`, and the slice must not outlive that call.
-    pub unsafe fn batch<'a>(ptr: i32, count: i32) -> &'a [ClientEventRecord] {
-        // SAFETY: the engine wrote `count` records at `ptr`, in the
-        // 8-byte aligned `vera.delivery` area.
-        unsafe {
-            core::slice::from_raw_parts(ptr as usize as *const ClientEventRecord, count as usize)
-        }
+    /// Use the engine's original arguments. The records must be aligned and
+    /// initialized, and both the records and their payloads must remain
+    /// readable and unchanged for the lifetime of the iterator and its items.
+    pub unsafe fn batch(ptr: i32, count: i32) -> impl Iterator<Item = Self> {
+        // SAFETY: the engine writes the records in its aligned delivery area.
+        let records = unsafe {
+            core::slice::from_raw_parts(
+                ptr as usize as *const sys::ClientEventRecord,
+                count as usize,
+            )
+        };
+        records.iter().map(|raw| {
+            let payload = if raw.data_len > 0 {
+                // SAFETY: these initialized bytes belong to this event for this callback.
+                unsafe {
+                    core::slice::from_raw_parts(
+                        raw.data as usize as *const u8,
+                        raw.data_len as usize,
+                    )
+                }
+            } else {
+                &[]
+            };
+            Self { raw, payload }
+        })
     }
 
     /// `Click`, `Hover`, `Dismiss`: the node.
@@ -802,26 +832,25 @@ impl ClientEventRecord {
 
     /// `Notify`: the notification's bytes; empty for other events.
     pub fn data(&self) -> &[u8] {
-        if self.data_len <= 0 {
-            return &[];
-        }
-        // SAFETY: the engine wrote `data_len` bytes at `data` in this
-        // batch's delivery area, valid while the record is.
-        unsafe {
-            core::slice::from_raw_parts(self.data as usize as *const u8, self.data_len as usize)
+        if self.kind == ClientEvent::Notify as i32 {
+            self.payload
+        } else {
+            &[]
         }
     }
 
     /// `SimEvent`: the forwarded `EventRecord` (`other` is 0 when this
     /// player cannot see it).
     pub fn sim_event(&self) -> Option<&crate::EventRecord> {
-        if self.kind != ClientEvent::SimEvent as i32
-            || self.data_len as usize != size_of::<crate::EventRecord>()
-        {
+        if self.kind != ClientEvent::SimEvent as i32 {
             return None;
         }
-        // SAFETY: an 8-byte aligned 120-byte record in the delivery area.
-        Some(unsafe { &*(self.data as usize as *const crate::EventRecord) })
+        // SAFETY: EventRecord contains only integers, accepting every bit pattern.
+        // The slice pattern requires exactly one aligned record with no spare bytes.
+        match unsafe { self.payload.align_to::<crate::EventRecord>() } {
+            ([], [event], []) => Some(event),
+            _ => None,
+        }
     }
 }
 
@@ -898,13 +927,16 @@ macro_rules! on_client_event {
         static __VERA_DELIVERY: [u8; 9] = $crate::client::CLIENT_DELIVERY_SECTION;
 
         #[unsafe(no_mangle)]
-        pub extern "C" fn client_on_events(ptr: i32, count: i32) {
+        /// # Safety
+        /// Only the engine may call this export with its current delivery records.
+        pub unsafe extern "C" fn client_on_events(ptr: i32, count: i32) {
             // SAFETY: these are the engine's own arguments, used only here.
             let records = unsafe { $crate::client::ClientEventRecord::batch(ptr, count) };
             for record in records {
                 $(
                     if record.kind == $kind as i32 {
-                        $handler(record);
+                        let handler: for<'event> fn(&$crate::client::ClientEventRecord<'event>) = $handler;
+                        handler(&record);
                         continue;
                     }
                 )*

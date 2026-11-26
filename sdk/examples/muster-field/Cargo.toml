@@ -21,3 +21,4 @@ strip = true
 
 [workspace]
 members = ["data", "ui"]
+default-members = [".", "ui"]
