@@ -1,45 +1,17 @@
-//! Desktop runtime: Wasmtime runs the rewritten module ([`crate::instrument`]).
-//!
-//! Its own fuel and NaN canonicalization are off: the rewrite meters
-//! operations, limits call depth and canonicalizes NaNs identically for every
-//! runtime, so this one and the browser's WebAssembly engine agree bit for
-//! bit. The rewrite also caps the memory's maximum at the module's limit.
+//! Desktop and WASI bindings for the rewritten module. Both runtimes use the
+//! same host imports, meter, memory accesses and saved globals.
 
-use std::sync::OnceLock;
-
-use wasmtime::{
-    Caller, Config, Engine, Extern, Instance, Linker, Memory, Module, Store, Trap, Val, ValType,
-};
+#[cfg_attr(target_os = "wasi", path = "native/wasi.rs")]
+#[cfg_attr(not(target_os = "wasi"), path = "native/desktop.rs")]
+mod backend;
+use backend::*;
 
 use crate::client_host::{self, for_each_client_import};
 use crate::host::{self, Ctx, Guest, for_each_import};
 use crate::instrument::METER;
 use crate::module::{Arg, Runtime, TrapKind, World};
 
-fn engine() -> &'static Engine {
-    static ENGINE: OnceLock<Engine> = OnceLock::new();
-    ENGINE.get_or_init(|| {
-        let mut config = Config::new();
-        // Both supported Macs are 64-bit little-endian. Interpret guest code so
-        // a notarized game can call it under the hardened runtime.
-        #[cfg(target_os = "macos")]
-        config.target("pulley64").expect("valid Pulley target");
-        config.consume_fuel(false);
-        config.cranelift_nan_canonicalization(false);
-        config.wasm_simd(false);
-        config.wasm_relaxed_simd(false);
-        config.wasm_multi_memory(false);
-        config.wasm_memory64(false);
-        config.wasm_tail_call(false);
-        // Threads and reference types are off in this feature set; the load
-        // checks enforce the full allowlist with wasmparser before compiling.
-        // Only reachable on a broken host configuration; the engine is the
-        // same for every module, so this is not module data.
-        Engine::new(&config).expect("the module engine configuration is valid")
-    })
-}
-
-pub struct Wasmtime {
+pub struct Embedded {
     store: Store<Ctx>,
     instance: Instance,
     memory: Option<Memory>,
@@ -108,9 +80,9 @@ fn linker(engine: &Engine, world: World) -> Linker<Ctx> {
                 .func_wrap(
                     import_module,
                     $name,
-                    |mut caller: Caller<'_, Ctx>, $($a: $t),*| -> wasmtime::Result<$r> {
+                    |mut caller: Caller<'_, Ctx>, $($a: $t),*| -> Result<$r, Error> {
                         $m::$f(&mut Cx(&mut caller), $($a),*)
-                            .map_err(|host::Stop| wasmtime::Error::msg("stopped by a host call"))
+                            .map_err(host_stop)
                     },
                 )
                 .expect("each import is defined once with a valid signature");
@@ -127,28 +99,12 @@ fn linker(engine: &Engine, world: World) -> Linker<Ctx> {
     linker
 }
 
-fn trap_kind(error: &wasmtime::Error) -> TrapKind {
-    match error.downcast_ref::<Trap>() {
-        Some(Trap::UnreachableCodeReached) => TrapKind::Unreachable,
-        Some(Trap::MemoryOutOfBounds | Trap::HeapMisaligned) => TrapKind::MemoryOutOfBounds,
-        Some(Trap::TableOutOfBounds) => TrapKind::TableOutOfBounds,
-        Some(Trap::IndirectCallToNull) => TrapKind::IndirectCallToNull,
-        Some(Trap::BadSignature) => TrapKind::BadSignature,
-        Some(Trap::IntegerOverflow) => TrapKind::IntegerOverflow,
-        Some(Trap::IntegerDivisionByZero) => TrapKind::IntegerDivisionByZero,
-        Some(Trap::BadConversionToInteger) => TrapKind::BadConversionToInteger,
-        Some(Trap::StackOverflow) => TrapKind::StackOverflow,
-        _ => TrapKind::Other,
-    }
-}
-
-impl Runtime for Wasmtime {
+impl Runtime for Embedded {
     fn instantiate(bytes: &[u8], ctx: Ctx, world: World) -> Result<Self, String> {
         let engine = engine();
         let module = Module::new(engine, bytes).map_err(|e| format!("{e:#}"))?;
         let mut store = Store::new(engine, ctx);
-        let instance = linker(engine, world)
-            .instantiate(&mut store, &module)
+        let instance = instantiate(&linker(engine, world), &mut store, &module)
             .map_err(|e| format!("{e:#}"))?;
         let memory = instance.get_memory(&mut store, "memory");
         Ok(Self {
@@ -216,8 +172,14 @@ impl Runtime for Wasmtime {
         match global.get(&mut self.store) {
             Val::I32(v) => u64::from(v as u32),
             Val::I64(v) => v as u64,
+            #[cfg(not(target_os = "wasi"))]
             Val::F32(bits) => u64::from(bits),
+            #[cfg(target_os = "wasi")]
+            Val::F32(value) => u64::from(value.to_bits()),
+            #[cfg(not(target_os = "wasi"))]
             Val::F64(bits) => bits,
+            #[cfg(target_os = "wasi")]
+            Val::F64(value) => value.to_bits(),
             // MVP globals hold only numbers; the load checks admit no other.
             _ => 0,
         }
@@ -231,9 +193,9 @@ impl Runtime for Wasmtime {
         let value = match global.ty(&self.store).content() {
             ValType::I32 => Val::I32(bits as u32 as i32),
             ValType::I64 => Val::I64(bits as i64),
-            ValType::F32 => Val::F32(bits as u32),
-            ValType::F64 => Val::F64(bits),
-            other => return Err(format!("global of type {other}")),
+            ValType::F32 => Val::from(f32::from_bits(bits as u32)),
+            ValType::F64 => Val::from(f64::from_bits(bits)),
+            other => return Err(format!("global of type {other:?}")),
         };
         global
             .set(&mut self.store, value)
