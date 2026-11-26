@@ -112,14 +112,16 @@ VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉ�
 ## สื่อ
 
 <p>
-  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="bottom" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K<br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30</a><br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="left" alt="Command &amp; Conquer Vietnam (YouTube)"></a>
+  ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K<br>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30</a><br>
+  <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a><br clear="all">
 </p>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="bottom" alt="HaoJun Yang"></a>&ensp;ช่อง <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> นำเสนอ VERA20K<br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 ใน VERA20K 0.41</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="left" alt="HaoJun Yang"></a>
+  ช่อง <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> นำเสนอ VERA20K<br>
+  <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 ใน VERA20K 0.41</a><br clear="all">
 </p>
 
 ## เครดิตและข้อกฎหมาย

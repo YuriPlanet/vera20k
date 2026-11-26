@@ -119,14 +119,16 @@ VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options**
 ## 媒体
 
 <p>
-  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="bottom" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 频道介绍了 VERA20K。<br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30：1 对 29 个冷酷 AI</a><br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="left" alt="Command &amp; Conquer Vietnam (YouTube)"></a>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 频道介绍了 VERA20K。<br>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30：1 对 29 个冷酷 AI</a><br>
+  <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a><br clear="all">
 </p>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="bottom" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> 频道介绍了 VERA20K。<br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩《红色警戒 2》</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="left" alt="HaoJun Yang"></a>
+  <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> 频道介绍了 VERA20K。<br>
+  <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩《红色警戒 2》</a><br clear="all">
 </p>
 
 ## 致谢与法律声明

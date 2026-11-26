@@ -125,14 +125,16 @@ Utbetalningar till medverkande:
 ## Media
 
 <p>
-  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="bottom" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.<br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30</a><br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="left" alt="Command &amp; Conquer Vietnam (YouTube)"></a>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.<br>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30</a><br>
+  <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a><br clear="all">
 </p>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="bottom" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> visar upp VERA20K.<br>
-  &emsp;&emsp;&emsp;&emsp;&ensp;<a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 i VERA20K 0.41</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="64" height="64" align="left" alt="HaoJun Yang"></a>
+  <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> visar upp VERA20K.<br>
+  <a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 i VERA20K 0.41</a><br clear="all">
 </p>
 
 ## Tack och juridisk information
