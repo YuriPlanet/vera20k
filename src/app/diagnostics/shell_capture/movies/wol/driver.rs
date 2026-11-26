@@ -1609,7 +1609,13 @@ impl WolCapture {
                 if self.target == WolTarget::ModernRoomOptions {
                     use crate::ui::multiplayer_setup::GAME_OPTIONS;
                     setup_button(state, GAME_OPTIONS)?;
-                    let crates = setup_view(state)?.checks[2];
+                    let crates = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?
+                    .checks[2];
                     ensure!(
                         state
                             .frontend
@@ -1632,7 +1638,14 @@ impl WolCapture {
                         ),
                     );
                     ensure!(
-                        setup_view(state)?.checks[2] != crates,
+                        setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .checks[2]
+                            != crates,
                         "Crates did not toggle in Game Options"
                     );
                     self.event(frame, "C2 Game Options: Crates toggled");
@@ -1663,14 +1676,25 @@ impl WolCapture {
                         ),
                     );
                     ensure!(
-                        setup_view(state)?.room_checks[no_france],
+                        setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .room_checks[no_france],
                         "No France did not toggle in Game Options"
                     );
                     let french =
                         crate::app::state::active_rules(&state.frontend, &state.match_state)
                             .and_then(|rules| rules.trigger_house_type_index("French"))
                             .map(|index| i32::from(index.0));
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     ensure!(
                         row_combo(&view, crate::ui::multiplayer_setup::SetupColumn::Country, 0)
                             .is_some_and(|(_, combo)| {
@@ -1751,7 +1775,12 @@ impl WolCapture {
                     );
                     // Online, Teams offers Balance and leaves the Team lists
                     // open: nothing balances the room by itself.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let team_list = row_combo(&view, SetupColumn::Team, 0)
                         .is_some_and(|(_, combo)| combo.enabled);
                     let balance = view.combo(TEAM_MENU).is_some_and(|menu| {
@@ -1816,7 +1845,12 @@ impl WolCapture {
                             })
                     };
                     let natasha = guest_row(state).context("Natasha")?;
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let (_, side) = row_combo(
                         &view,
                         SetupColumn::Country,
@@ -1850,7 +1884,12 @@ impl WolCapture {
                     );
                     // The host drags the guest's name onto Team A's box: the
                     // list the press opened closes, and the guest moves.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let layout = crate::app::input::multiplayer_setup::layout(
                         &state.renderer,
                         &state.frontend,
@@ -1941,7 +1980,12 @@ impl WolCapture {
                             value: 15,
                         },
                     );
-                    let wide = setup_view(state)?;
+                    let wide = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let letters: Vec<&str> = row_combo(&wide, SetupColumn::Team, 0)
                         .map(|(_, combo)| {
                             combo
@@ -1988,7 +2032,14 @@ impl WolCapture {
                     ensure!(
                         room_input::open_list(&state.frontend, &state.match_state)
                             .is_some_and(|(id, list)| id == color.id && list.popup.first > 0)
-                            && setup_view(state)?.first_row == wide.first_row,
+                            && setup_view(
+                                &state.renderer,
+                                &state.frontend,
+                                &state.match_state,
+                                &state.process_assets,
+                            )?
+                            .first_row
+                                == wide.first_row,
                         "the colour thumb drag failed to scroll just the list"
                     );
                     // Reach the end, then scroll farther with a fractional trackpad delta.
@@ -2002,7 +2053,14 @@ impl WolCapture {
                                 id == color.id
                                     && list.popup.first == popup.total - popup.visible_rows
                             }
-                        ) && setup_view(state)?.first_row == wide.first_row,
+                        ) && setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .first_row
+                            == wide.first_row,
                         "wheeling to the end of the colour list moved the roster or closed the list"
                     );
                     setup_click(state, face);
@@ -2010,7 +2068,12 @@ impl WolCapture {
                     for _ in 0..4 {
                         room_input::wheel(state, -100.0);
                     }
-                    let foot = setup_view(state)?;
+                    let foot = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     for _ in 0..4 {
                         room_input::wheel(state, 100.0);
                     }
@@ -2166,7 +2229,12 @@ impl WolCapture {
                     // The host adds an AI to Team B past the map's seats too,
                     // and Team Starts starts it on Team B's start, beside
                     // its people.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     let team_b = view
                         .headers
                         .iter()
@@ -2186,7 +2254,12 @@ impl WolCapture {
                     team_tool(state, TeamTool::Starts);
                     // People may still watch with an AI playing: the
                     // Spectators box stays, with its open seat.
-                    let watched = setup_view(state)?;
+                    let watched = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     ensure!(
                         watched.headers.iter().flatten().any(|header| {
                             header.group == crate::ui::multiplayer_setup::SetupGroup::Spectators
@@ -2253,7 +2326,12 @@ impl WolCapture {
                     self.event(frame, json!({"Host": "watches, plays and watches again"}));
                     // The watching host's orange and the random seats no
                     // longer vote. Boris supplies A's blue, Ivan B's red.
-                    let view = setup_view(state)?;
+                    let view = setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?;
                     for (team, color) in [(0, 2), (1, 1)] {
                         ensure!(
                             view.headers.iter().flatten().any(|header| header.group

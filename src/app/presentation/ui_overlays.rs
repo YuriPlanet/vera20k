@@ -2,7 +2,6 @@
 //!
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
@@ -3003,10 +3002,12 @@ fn scale_pip_rows(
     pips
 }
 
-/// Resolve the active cursor id and sequence for the current game state.
-/// Maps game-state intent → CursorId → loaded sequence via HashMap lookup.
-/// The id travels with the sequence because the animation phase is keyed on it —
-/// changing shape restarts the sequence at frame 0.
+/// Resolve the active cursor id for the current game state, noting it as the
+/// shown cursor. Maps game-state intent → CursorId → loaded sequence via
+/// HashMap lookup: `None` when no sequence is loaded for it. The caller reads
+/// that sequence with [`loaded_cursor_sequence`]; the id travels with the
+/// sequence because the animation phase is keyed on it — changing shape
+/// restarts the sequence at frame 0.
 ///
 /// This per-frame resolution stands in for MouseClass's stored shapes. In
 /// gamemd the hover cursor is the *default* one (`SetCursorFromAction`
@@ -3017,54 +3018,90 @@ fn scale_pip_rows(
 /// start `DefaultCursor` at row 0. Re-deriving the shape every frame shows the
 /// same row once its owner re-issues it; `GetDefaultCursor` (`0x0040D280`,
 /// slot +0xA0) has no display caller among the 47 `call [reg+0xA0]` sites.
-fn active_cursor_sequence<'a>(
-    state: &'a AppState,
+fn active_cursor_id(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
     targets: &CursorTargets,
-) -> Option<(CursorId, &'a SoftwareCursorSequence)> {
-    let cursor = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
+) -> Option<CursorId> {
+    match_state.match_presentation.software_cursor.as_ref()?;
     let kind = current_cursor_feedback_kind(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         targets,
     );
-    state.match_state.input.note_shown_cursor(kind);
+    match_state.input.note_shown_cursor(kind);
     let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
-    cursor.get(id).map(|sequence| (id, sequence))
+    loaded_cursor_sequence(&match_state.match_presentation, id).map(|_| id)
+}
+
+/// The loaded software cursor sequence for `id`.
+fn loaded_cursor_sequence(
+    presentation: &MatchPresentationState,
+    id: CursorId,
+) -> Option<&SoftwareCursorSequence> {
+    presentation.software_cursor.as_ref()?.get(id)
 }
 
 /// The cursor id the production draw shows now. Like a draw, it notes the
 /// shown cursor, so a held button over the sidebar keeps it.
-pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
-    active_cursor_sequence(
-        state,
-        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+pub(crate) fn shown_cursor_id(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<CursorId> {
+    let targets = CursorTargets::read(platform, frontend, match_state);
+    active_cursor_id(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        &targets,
     )
-    .map(|(id, _)| id)
 }
 
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
-pub(crate) fn static_default_cursor(state: &AppState) -> bool {
-    crate::app::state::use_software_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) && active_cursor_sequence(
-        state,
-        &CursorTargets::read(&state.platform, &state.frontend, &state.match_state),
+pub(crate) fn static_default_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    if !crate::app::state::use_software_cursor(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) {
+        return false;
+    }
+    let targets = CursorTargets::read(platform, frontend, match_state);
+    active_cursor_id(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        &targets,
     )
-    .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
+    .is_some_and(|id| {
+        id == CursorId::Default
+            && loaded_cursor_sequence(&match_state.match_presentation, id)
+                .is_some_and(|sequence| sequence.interval_ms == 0)
+    })
 }
 
 /// The software cursor frame a draw shows. Its sprite and its texture come
@@ -3077,48 +3114,53 @@ pub(crate) struct SoftwareCursorDraw {
 
 /// The draw's cursor sprite, for its cursor `targets`.
 pub(crate) fn build_software_cursor_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
     targets: &CursorTargets,
 ) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
     if !crate::app::state::use_software_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) || !state.match_state.input.cursor_visibility.is_visible()
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) || !match_state.input.cursor_visibility.is_visible()
     {
         return (Vec::new(), None);
     }
-    let Some((id, sequence)) = active_cursor_sequence(state, targets) else {
+    let Some(id) = active_cursor_id(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        targets,
+    ) else {
+        return (Vec::new(), None);
+    };
+    let Some(sequence) = loaded_cursor_sequence(&match_state.match_presentation, id) else {
         return (Vec::new(), None);
     };
     // Row 0 is still the shape shown over a node, so its phase steps:
     // leaving the node restarts the next cursor's animation.
-    let Some(animated) = state
-        .match_state
-        .input
-        .software_cursor_frame_index(id, sequence)
-    else {
+    let Some(animated) = match_state.input.software_cursor_frame_index(id, sequence) else {
         return (Vec::new(), None);
     };
     let (id, sequence, index) = if id == CursorId::Default
         && crate::app::input::planning_mode::node_at_cursor(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
         )
         .is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
-        let Some(cursor) = state
-            .match_state
-            .match_presentation
-            .software_cursor
-            .as_ref()
-        else {
+        let Some(cursor) = match_state.match_presentation.software_cursor.as_ref() else {
             return (Vec::new(), None);
         };
         let (small, frame) = cursor.planning_arrow();
@@ -3133,10 +3175,10 @@ pub(crate) fn build_software_cursor_instances(
         return (Vec::new(), None);
     };
     if crate::app::input::hardware_cursor::takes_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.input,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.input,
         id,
         index,
     ) {
@@ -3148,10 +3190,8 @@ pub(crate) fn build_software_cursor_instances(
     // Note: cursor_x/y are in screen space; camera offset is NOT applied (cursor is UI).
     let sprite = SpriteInstance {
         position: [
-            state.match_state.input.cursor_x + state.match_state.input.camera_x
-                - sequence.hotspot[0],
-            state.match_state.input.cursor_y + state.match_state.input.camera_y
-                - sequence.hotspot[1],
+            match_state.input.cursor_x + match_state.input.camera_x - sequence.hotspot[0],
+            match_state.input.cursor_y + match_state.input.camera_y - sequence.hotspot[1],
         ],
         size: [frame.width, frame.height],
         uv_origin: [0.0, 0.0],

@@ -743,9 +743,15 @@ impl TacticalCaptureSession {
                             })
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
-                    let shown = |state: &AppState| {
-                        crate::app::presentation::ui_overlays::shown_cursor_id(state)
-                            .map(|id| format!("{id:?}"))
+                    let shown = |state: &mut AppState| {
+                        crate::app::presentation::ui_overlays::shown_cursor_id(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.persistence,
+                        )
+                        .map(|id| format!("{id:?}"))
                     };
                     let press = shown(state);
                     move_cursor(state, to);

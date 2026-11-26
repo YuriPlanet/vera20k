@@ -1345,8 +1345,14 @@ impl App {
         // arming the 0xE2 first-paint owner.
         Self::drive_shell_exit(state);
         Self::maintain_main_menu_intro(&state.frontend, &state.process_assets, &mut state.audio);
-        let entry_completed =
-            crate::app::frontend::shell_transition::drive_shell_entry(state, Instant::now());
+        let entry_completed = crate::app::frontend::shell_transition::drive_shell_entry(
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            Instant::now(),
+        );
         if entry_completed == Some(crate::app::frontend::shell_transition::ShellSlideKind::MainMenu)
             && let Some(session) = shell_capture.as_deref_mut()
             && session.is_entry_sequence()
@@ -1942,9 +1948,16 @@ impl App {
         };
         let hidden_run_current_frame =
             match (hidden_run.as_deref_mut(), game_render_output.as_ref()) {
-                (Some(session), Some(render_output)) => {
-                    session.observe_after_render(state, render_output)?
-                }
+                (Some(session), Some(render_output)) => session.observe_after_render(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
+                    render_output,
+                )?,
                 (Some(_), None) | (None, _) => false,
             };
         if let Some(session) = shell_capture.as_deref_mut() {
@@ -2236,7 +2249,14 @@ impl App {
             runtime_pass.screen_shake_offset,
             picture_clock,
         );
-        let limits = crate::app::match_runtime::redraw_gate::draw_limits(state, status_step);
+        let limits = crate::app::match_runtime::redraw_gate::draw_limits(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+            status_step,
+        );
         state
             .platform
             .redraw_gate
@@ -2297,7 +2317,16 @@ impl App {
             } else {
                 hidden_run
                     .expect("hidden run exists when readback completes")
-                    .complete_after_readback(state, surface_format, &pixels)?
+                    .complete_after_readback(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        surface_format,
+                        &pixels,
+                    )?
             };
             if capture_terminal {
                 event_loop.exit();

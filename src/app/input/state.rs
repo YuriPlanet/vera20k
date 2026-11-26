@@ -203,17 +203,16 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
-    /// A `Cell` for the reason at `software_cursor_animation`: the draw that
-    /// chooses the cursor notes it there.
-    shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    shown_cursor: Option<crate::app::types::CursorFeedbackKind>,
     /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
-    /// `CursorFrame`). A `Cell` because the phase steps where the frame is
-    /// chosen, inside the shell and match draws (`shell_pass`,
-    /// `ui_overlays::build_software_cursor_instances`), and those hold the app
-    /// state by `&`: the sprite they build borrows the cursor's texture and
-    /// the rest of the frame's draw state from it until the frame is drawn.
-    /// Stepping it before the draw under `&mut` would choose the frame apart
-    /// from the targets and planning-node test that pick the sequence.
+    /// `CursorFrame`). The phase steps where the frame is chosen, inside the
+    /// shell and match draws (`shell_pass`,
+    /// `ui_overlays::build_software_cursor_instances`). A `Cell` because the
+    /// shell draw holds the app state by `&`: the sprite it builds borrows the
+    /// cursor's texture and the rest of the frame's draw state from it until
+    /// the frame is drawn. Stepping it before the draw under `&mut` would
+    /// choose the frame apart from the targets and planning-node test that
+    /// pick the sequence.
     software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
@@ -594,8 +593,11 @@ impl MatchInputState {
     }
 
     /// Record the cursor a drawn frame shows (`None` is the normal arrow).
-    pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
-        self.shown_cursor.set(kind);
+    pub(crate) fn note_shown_cursor(
+        &mut self,
+        kind: Option<crate::app::types::CursorFeedbackKind>,
+    ) {
+        self.shown_cursor = kind;
     }
 
     /// The index of the frame of `sequence` the software cursor draws for
@@ -628,7 +630,7 @@ impl MatchInputState {
     /// The cursor the last drawn frame showed, which stays where nothing
     /// writes one.
     pub(crate) fn shown_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
-        self.shown_cursor.get()
+        self.shown_cursor
     }
 
     /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
@@ -637,7 +639,7 @@ impl MatchInputState {
     /// nothing writes one and the last cursor stays.
     pub(crate) fn sidebar_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
         if self.tactical_mouse.left_held() {
-            self.shown_cursor.get()
+            self.shown_cursor
         } else {
             None
         }
@@ -659,7 +661,7 @@ impl MatchInputState {
         Some(if self.selection_state.is_band_box_active() {
             None
         } else {
-            self.shown_cursor.get()
+            self.shown_cursor
         })
     }
 

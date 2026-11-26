@@ -671,7 +671,16 @@ pub(crate) fn render_game(
         &state.persistence,
         &local_owner,
     );
-    let ui = build_instances::build_ui_instances(state, clock_ms as u32, &cursor_targets);
+    let ui = build_instances::build_ui_instances(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+        clock_ms as u32,
+        &cursor_targets,
+    );
     let after_ui = render_started.map(|_| Instant::now());
 
     // Phase 5: Build sidebar instances, once the smooth sidebar's copies

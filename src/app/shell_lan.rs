@@ -216,32 +216,35 @@ pub(crate) fn create_box_layout(gpu: &GpuContext) -> crate::ui::shell::modal::La
 impl App {
     /// MainMenu52E418 and setup-return5DC624/5DC964 construct a fresh BB.
     /// The retained preference owner supplies the edit; admission stays empty.
-    pub(crate) fn open_lan_lobby(state: &mut AppState) {
+    pub(crate) fn open_lan_lobby(
+        platform: &crate::app::PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        options_profile: &mut crate::app::persistence::options_profile::RetailOptionsProfile,
+    ) {
         crate::app::shell_main_menu::clear_typed_codes_for_network_session(
-            &mut state.frontend.main_menu_shell_state,
-            &mut state.persistence.options_profile,
+            &mut frontend.main_menu_shell_state,
+            options_profile,
         );
         if !Self::prepare_multiplayer_settings(
-            &mut state.frontend,
-            &mut state.match_state,
-            &mut state.process_assets,
+            frontend,
+            match_state,
+            process_assets,
             crate::app::match_runtime::session::SessionMode::Lan,
         ) {
             return;
         }
-        if !Self::ensure_skirmish_shell_chrome(
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
-        ) {
+        if !Self::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile)
+        {
             return;
         }
-        state
-            .match_state
+        match_state
             .session
             .enter_network(NetworkReturnContext::LanLobby);
-        let owner = &mut state.frontend.multiplayer_shell_runtime;
+        let owner = &mut frontend.multiplayer_shell_runtime;
         let local = owner.local_participant();
         // The name box shows the name as typed; the lobby row shows it as
         // every other player sees it.
@@ -250,17 +253,24 @@ impl App {
         runtime
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
-        state.frontend.lan = Some(runtime);
+        frontend.lan = Some(runtime);
         // Android routes a socket by the process's network when the socket is
         // made: bind the process to Wi-Fi before the visit opens its sockets,
         // and watch that network while the lobby is open.
         #[cfg(target_os = "android")]
         crate::util::lan_network::acquire();
-        crate::app::lan_service::open(state);
-        App::destroy_current_shell_dialog(&mut state.frontend);
+        crate::app::lan_service::open(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+        );
+        App::destroy_current_shell_dialog(frontend);
         let route = ShellRoute::LanLobby;
-        App::show_shell_page(&mut state.frontend, route, PAGE.dialog);
-        state.frontend.shell_first_paint_slide = None;
+        App::show_shell_page(frontend, route, PAGE.dialog);
+        frontend.shell_first_paint_slide = None;
     }
 
     /// Called only after BB's ordinary teardown slide finishes.
@@ -281,7 +291,15 @@ impl App {
     /// join it.
     pub(crate) fn reopen_lan_room(state: &mut AppState) {
         let rematch = state.match_state.session.take_network_room_return();
-        Self::open_lan_lobby(state);
+        Self::open_lan_lobby(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio.sfx_player,
+            &mut state.persistence.options_profile,
+        );
         if state.frontend.lan.is_none() {
             return;
         }
@@ -697,7 +715,14 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
     {
         // Without its sockets the room would be one nobody sees: try them
         // again, and say why when they are still taken.
-        crate::app::lan_service::open(state);
+        crate::app::lan_service::open(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+        );
         if crate::app::lan_service::unavailable(&state.platform, &state.match_state) {
             if let Some(runtime) = state.frontend.lan.as_mut() {
                 runtime.lobby.set_enabled(true);

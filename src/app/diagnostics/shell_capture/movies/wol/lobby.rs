@@ -314,7 +314,12 @@ impl WolCapture {
                     .iter()
                     .map(|human| (human.name.clone(), human.raw_slot_index))
                     .collect();
-                let view = setup_view(state)?;
+                let view = setup_view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )?;
                 let marked = view.row_icons.iter().flatten().any(|icon| icon.host);
                 ensure!(
                     rows.contains(&(PEER.to_owned(), None)) && !marked,
@@ -328,7 +333,13 @@ impl WolCapture {
                 let requests = setup_requests(&mut state.frontend.network_setup_protocol);
                 ensure!(
                     requests.contains(&NetworkSetupRequest::Ready(true))
-                        && !setup_view(state)?.enabled(setup_ui::ACCEPT),
+                        && !setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .enabled(setup_ui::ACCEPT),
                     "C9 Accept did not report readiness: {requests:?}"
                 );
                 self.event(frame, "C9 Accept");
