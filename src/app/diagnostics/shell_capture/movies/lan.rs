@@ -1190,7 +1190,11 @@ impl LanCapture {
                     }
                     target if target.guest() || target == LanTarget::Discovery => {
                         lobby::service_event(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
                             LanServiceEvent::Games(vec![LanGameRow {
                                 id: 1,
                                 name: self.human(true)?.name,
@@ -1202,7 +1206,11 @@ impl LanCapture {
                             .unwrap_or_default();
                         lobby_click(state, RectPx::new(rect.x + 8, rect.y + 26, 4, 4));
                         lobby::service_event(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
                             LanServiceEvent::Players {
                                 game_id: Some(1),
                                 players: vec![LanPlayerRow {
@@ -1261,7 +1269,11 @@ impl LanCapture {
                     LanTarget::JoinDenied | LanTarget::JoinDeniedReturn
                 ) {
                     lobby::service_event(
-                        state,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
                         LanServiceEvent::JoinDenied {
                             game_id: 1,
                             reason: 1,
@@ -1271,9 +1283,9 @@ impl LanCapture {
                     self.phase = LanPhase::JoinDenied;
                     return Ok(());
                 }
-                lobby::service_event(
-                    state,
-                    LanServiceEvent::JoinAccepted(LanJoinAcceptance {
+                let step = lobby::join_accepted(
+                    &mut state.frontend,
+                    LanJoinAcceptance {
                         game_id: 1,
                         local: self.human(false)?,
                         host: self.human(true)?,
@@ -1283,8 +1295,11 @@ impl LanCapture {
                                 .context("native packet7 observer row")?
                                 as u8,
                         ),
-                    }),
+                    },
                 );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
                 self.event(frame, "controlled type7 acceptance after real Join");
                 self.phase = LanPhase::Guest;
             }
