@@ -4,9 +4,11 @@
 // world's imports, no `start` section, the lifecycle exports, and a
 // well-formed `vera.delivery`. The engine tests run the built modules
 // (README "Tests").
-import { readdirSync, existsSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync, statSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { build } from "../bin/vera20k.js";
 
@@ -55,6 +57,23 @@ for (const dir of projects(examples)) {
   check(exports.includes("memory"), `${name}: no memory export`);
   const delivery = WebAssembly.Module.customSections(module, "vera.delivery");
   check(delivery.length === 1 && delivery[0].byteLength === 9, `${name}: vera.delivery`);
+}
+
+// A compiler run can succeed before the SDK rejects its metadata. A game or
+// file watcher opening the output must still see the previous complete module.
+const project = mkdtempSync(join(tmpdir(), "vera20k-sdk-output-test-"));
+try {
+  mkdirSync(join(project, "src"));
+  writeFileSync(join(project, "src/index.ts"), 'import { onScenarioStart } from "@vera20k/sdk"; onScenarioStart((): void => {});');
+  const output = await build(project);
+  const previous = readFileSync(output);
+  writeFileSync(join(project, "vera.json"), JSON.stringify({
+    vars: [{ name: "Gold", scope: "house", visibility: "unknown" }],
+  }));
+  await assert.rejects(build(project), /visibility must be/);
+  assert.deepEqual(readFileSync(output), previous);
+} finally {
+  rmSync(project, { recursive: true, force: true });
 }
 
 try {

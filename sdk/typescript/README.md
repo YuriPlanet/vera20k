@@ -86,7 +86,9 @@ E=$PWD/examples
 VERA20K_TEST_RULES_WASM=$E/minimal-rules/build/rules.wasm \
 VERA20K_TEST_DECIDE_WASM=$E/decide-damage/build/rules.wasm \
 VERA20K_TEST_TS_WASM=$E/minimal-rules/build/rules.wasm:$E/tutorial-bounty/build/rules.wasm:$E/decide-damage/build/rules.wasm \
-RA2_DIR=<retail install> cargo test -p vera20k-core --lib -- a_rust_built typescript_modules
+RA2_DIR=<retail install> cargo test -p vera20k-core --lib -- a_rust_built typescript_modules_restore_their_complete_state
 ```
 
-`typescript_modules_resume_from_a_save_exactly` is RFC open question 2's experiment. Each module plays 9,000 frames against a computer house, with a save and load at frame 4,500. The test passes when both runs end with equal full hashes and module digests, the module never stops, and its memory does not grow.
+`typescript_modules_restore_their_complete_state` compares the entire serialized module state immediately after a save/load and after another 30 frames. Both matches must keep the module running.
+
+RFC 0001 open question 2 is still open. With the same module paths, `cargo test -p vera20k-core --lib typescript_modules_resume_from_a_save_exactly -- --ignored` runs the separate 9,000-frame compiler experiment. It also requires bounded memory and identical whole-game saves. The original headless experiment produced different whole-game saves with both the TypeScript examples and the Rust control, despite matching module digests. Passing the short module regression does not establish whole-game equality.

@@ -19,7 +19,7 @@
 //        vera20k watch [project dir] [--out file] [--debug]
 //        vera20k generate [project dir]   (src/generated/ only, for tsc)
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, watch, symlinkSync, rmSync, cpSync, readdirSync, renameSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, watch, symlinkSync, rmSync, cpSync, readdirSync, renameSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -179,15 +179,16 @@ function sections(config, found, kind) {
 // ----------------------------------------------------------------- Build
 
 /** A `node_modules` holding only this SDK, so a project resolves `@vera20k/sdk` to the SDK of this command. */
+let sdkModules;
 function sdkPath() {
-  const root = join(tmpdir(), `vera20k-sdk-${process.pid}`);
+  if (sdkModules) return sdkModules;
+  const root = mkdtempSync(join(tmpdir(), "vera20k-sdk-"));
+  process.on("exit", () => rmSync(root, { recursive: true, force: true }));
   const link = join(root, "node_modules", "@vera20k", "sdk");
-  if (!existsSync(link)) {
-    mkdirSync(dirname(link), { recursive: true });
-    symlinkSync(SDK, link, "dir");
-    process.on("exit", () => rmSync(root, { recursive: true, force: true }));
-  }
-  return join(root, "node_modules");
+  mkdirSync(dirname(link), { recursive: true });
+  symlinkSync(SDK, link, process.platform === "win32" ? "junction" : "dir");
+  sdkModules = join(root, "node_modules");
+  return sdkModules;
 }
 
 /** Validates `vera.json` and writes `src/generated/` (what `tsc` needs before a first build). */
@@ -234,7 +235,11 @@ export async function build(dir, options = {}) {
     ...(options.debug ? ["--debug", "-O1"] : ["-O3", "--shrinkLevel", "2", "--converge"]),
   ];
   let stderr = "";
+  let wasm;
   const result = await asc.main(args, {
+    writeFile: (file, bytes, baseDir) => {
+      if (resolve(baseDir, file) === out) wasm = Buffer.from(bytes);
+    },
     stdout: { write: (s) => process.stdout.write(s) },
     stderr: { write: (s) => { stderr += s; process.stderr.write(s); } },
   });
@@ -248,7 +253,7 @@ export async function build(dir, options = {}) {
     if (keys.has(key)) fail(`named actions ${JSON.stringify(keys.get(key))} and ${JSON.stringify(name)} share dispatch key ${key}; rename one`);
     keys.set(key, name);
   }
-  const wasm = readFileSync(out);
+  if (!wasm) fail("compiler did not produce the requested module");
   // The engine refuses a module importing the other world's functions
   // (RFC 3): say which call did it here, at build time.
   const world2 = config.kind === "ui" ? "vera:client@1.0" : "vera:sim@1.0";
@@ -258,9 +263,16 @@ export async function build(dir, options = {}) {
       foreign.map((i) => `${i.module}.${i.name}`).join(", ") +
       (config.kind === "ui" ? " (use Client.get and the other @vera20k/sdk/client calls, not the simulation SDK's)" : ""));
   }
-  writeFileSync(out, Buffer.concat([wasm, ...sections(config, found, config.kind)]));
-  const size = readFileSync(out).length;
-  console.log(`${relative(process.cwd(), out) || out}: ${size} bytes` +
+  const complete = Buffer.concat([wasm, ...sections(config, found, config.kind)]);
+  const staging = mkdtempSync(join(dirname(out), ".vera20k-build-"));
+  try {
+    const staged = join(staging, "module.wasm");
+    writeFileSync(staged, complete);
+    renameSync(staged, out);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+  console.log(`${relative(process.cwd(), out) || out}: ${complete.length} bytes` +
     (found.actions.length ? `, actions ${found.actions.join(", ")}` : ""));
   return out;
 }
