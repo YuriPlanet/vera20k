@@ -2363,11 +2363,29 @@ impl LanCapture {
                 } else {
                     state.match_state.input.cursor_x = 720.;
                     state.match_state.input.cursor_y = 556.;
-                    ensure!(
-                        App::handle_choose_map_modal_mouse_down(state),
-                        "chooser Cancel press rejected"
+                    let (pressed, step) = App::handle_choose_map_modal_mouse_down(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
                     );
-                    App::handle_choose_map_modal_mouse_up(state);
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
+                    ensure!(pressed, "chooser Cancel press rejected");
+                    let step = App::handle_choose_map_modal_mouse_up(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                     self.phase = LanPhase::ChooserReturn;
                 }
             }
@@ -4034,14 +4052,35 @@ impl RandomMapInput {
 }
 
 /// A press and release at `point` through the chooser's (or `0x105`'s)
-/// production handlers, with the pointer moved there first.
+/// production handlers, with the pointer moved there first; each step they
+/// return is applied at the call, as the routing applies it.
 fn random_map_click(state: &mut AppState, point: (i32, i32), chooser: bool) {
     state.match_state.input.cursor_x = point.0 as f32;
     state.match_state.input.cursor_y = point.1 as f32;
     App::handle_skirmish_shell_mouse_move(state);
     if chooser {
-        App::handle_choose_map_modal_mouse_down(state);
-        App::handle_choose_map_modal_mouse_up(state);
+        let (_, step) = App::handle_choose_map_modal_mouse_down(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+        );
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
+        let step = App::handle_choose_map_modal_mouse_up(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+        );
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
     } else {
         App::handle_random_map_setup_mouse_down(
             &state.platform.window,
@@ -4051,7 +4090,17 @@ fn random_map_click(state: &mut AppState, point: (i32, i32), chooser: bool) {
             &state.process_assets,
             &mut state.audio.sfx_player,
         );
-        App::handle_random_map_setup_mouse_up(state);
+        let steps = App::handle_random_map_setup_mouse_up(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio.sfx_player,
+        );
+        for step in steps {
+            App::apply_step(state, step);
+        }
     }
 }
 

@@ -411,7 +411,14 @@ impl TacticalCaptureSession {
         }
 
         if self.preparing_random_map {
-            crate::app::App::poll_random_map_generation(state);
+            let (_, step) = crate::app::App::poll_random_map_generation(
+                &mut state.frontend,
+                &mut state.match_state.sim_runtime,
+                &mut state.process_assets,
+            );
+            if let Some(step) = step {
+                crate::app::App::apply_step(state, step);
+            }
             if state.frontend.random_map_generation.is_some() {
                 return Ok(());
             }

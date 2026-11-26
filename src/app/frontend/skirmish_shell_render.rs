@@ -397,10 +397,18 @@ fn render_skirmish_shell_with_atlas(
     // that clears "Working / Please Wait" is the one showing the finished map.
     // While a job is in flight the shell keeps asking for frames -- nothing else
     // is driving redraws, and without this the dialog would freeze on the first
-    // "working" frame until the player moved the mouse.
-    if crate::app::App::poll_random_map_generation(state)
-        || state.frontend.random_map_generation.is_some()
-    {
+    // "working" frame until the player moved the mouse. An OK that waited
+    // for the map begins its teardown slide here, before the frame lays
+    // anything out.
+    let (changed, step) = crate::app::App::poll_random_map_generation(
+        &mut state.frontend,
+        &mut state.match_state.sim_runtime,
+        &mut state.process_assets,
+    );
+    if let Some(step) = step {
+        crate::app::App::apply_step(state, step);
+    }
+    if changed || state.frontend.random_map_generation.is_some() {
         state.platform.window.request_redraw();
     }
     let layout =
