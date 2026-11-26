@@ -23,7 +23,7 @@
 // This file owns the lifecycle, the progress report and the rules stage
 // (`onRules`, marks `rules.*`); `bench.ts` the marks and the arena.
 import { Every, NO_HANDLE, Prop, Rules, Status, frame, get, lastStatus, log, onFrame, onRules, onScenarioStart } from "@vera20k/sdk";
-import { benchFail, findSides, mark, marked, parse } from "./bench";
+import { benchFail, contains, findSides, hash, mark, parse } from "./bench";
 import * as basics from "./basics";
 import * as triggers from "./triggers";
 import * as combat from "./combat";
@@ -98,6 +98,20 @@ const AREAS: StaticArray<StaticArray<string>> = [
   RULES_MARKS, basics.MARKS, triggers.MARKS, combat.MARKS, movement.MARKS, FINALE_MARKS,
 ];
 
+/** Each area's mark hashes, made once here so a report hashes no names. */
+const AREA_HASHES: StaticArray<StaticArray<i64>> = areaHashes();
+
+function areaHashes(): StaticArray<StaticArray<i64>> {
+  const out = new StaticArray<StaticArray<i64>>(AREAS.length);
+  for (let group = 0; group < AREAS.length; group++) {
+    const marks = AREAS[group];
+    const hashes = new StaticArray<i64>(marks.length);
+    for (let i = 0; i < marks.length; i++) hashes[i] = hash(marks[i]);
+    out[group] = hashes;
+  }
+  return out;
+}
+
 /** Every `MISSING_EVERY` frames until all are in, each missing mark. */
 const MISSING_EVERY: i32 = 1500;
 /** Most `BENCH-MISSING` lines a report writes. */
@@ -124,10 +138,11 @@ function report(now: i32): void {
   let areasMissing = 0;
   for (let group = 0; group < AREAS.length; group++) {
     const marks = AREAS[group];
+    const hashes = AREA_HASHES[group];
     for (let i = 0; i < marks.length; i++) {
       const name = marks[i];
       total++;
-      if (marked(name)) {
+      if (contains(unchecked(hashes[i]))) {
         reached++;
         continue;
       }

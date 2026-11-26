@@ -27,10 +27,12 @@ const MAX_MARKS: i32 = 1024;
 const MARKED = new StaticArray<i64>(MAX_MARKS);
 
 /** FNV-1a over the name's (ASCII) bytes, never 0. */
-function hash(name: string): i64 {
+export function hash(name: string): i64 {
   let h: u64 = 0xcbf29ce484222325;
+  const chars = changetype<usize>(name);
   for (let i = 0; i < name.length; i++) {
-    h ^= <u64>(name.charCodeAt(i) & 0xff);
+    // `i` is below the length: read the UTF-16 unit without a bounds check.
+    h ^= <u64>(load<u16>(chars + (<usize>i << 1)) & 0xff);
     h *= 0x100000001b3;
   }
   return <i64>(h | 1);
@@ -55,7 +57,8 @@ function insert(h: i64): bool {
   return false;
 }
 
-function contains(h: i64): bool {
+/** Whether hash `h` (`hash(name)`) is in the set. */
+export function contains(h: i64): bool {
   const first = firstSlot(h);
   for (let step = 0; step < MAX_MARKS; step++) {
     const v = unchecked(MARKED[(first + step) % MAX_MARKS]);
