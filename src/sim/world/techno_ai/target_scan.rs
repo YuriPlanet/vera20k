@@ -751,6 +751,23 @@ impl Simulation {
         });
         (error, no_damage, can_fire_at(self, rules, id, kind, weapon))
     }
+
+    /// RFC 0001 `TargetInRange` and `CanFireAtTarget` of `id` against
+    /// `target` (its TarCom), for the slot SelectWeapon (vt+0x2E4) picks:
+    /// CanFireAt's InRange (`0x006F77B0`), and whether GetFireError with
+    /// range (vt+0x3C0) answers Ok.
+    pub(crate) fn target_check(
+        &self,
+        rules: &RuleSet,
+        id: u64,
+        target: TargetKind,
+    ) -> (bool, bool) {
+        let weapon = select_weapon(self, rules, id, Some(target));
+        (
+            can_fire_at(self, rules, id, target, weapon),
+            fire_error_at(self, rules, id, Some(target), weapon, true) == FireError::Ok,
+        )
+    }
 }
 
 /// The production scan host.

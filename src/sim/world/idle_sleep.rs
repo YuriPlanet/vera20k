@@ -473,7 +473,10 @@ impl Simulation {
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
+        // A Wasm module's push or `MoveFrame` (`ext_modules::motion`) acts at
+        // the locomotor Process of a standing infantryman too.
         if self.extension_steps_unsorted(rules)
+            || self.module_motion_active()
             || self.session.uses_local_player_shroud()
             || !self.session.rule_policy().allows_idle_object_sleep()
         {

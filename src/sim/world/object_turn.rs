@@ -305,6 +305,20 @@ impl Simulation {
             self.process_drop_pod_locomotor(stable_id, rules, overlay_registry, &mut ctx.effects);
             return Ok(LocomotorProcess::admitted());
         }
+        // Wasm module movement (`ext_modules::motion`): a `Push` or a
+        // `MoveFrame` answer takes the frame of a ground mover whose
+        // locomotor has no step in flight, in place of its Process.
+        if self.module_motion_active()
+            && let Some(module) =
+                self.module_locomotor_frame(stable_id, rules, overlay_registry, &mut ctx.effects)?
+        {
+            return Ok(LocomotorProcess {
+                admitted: true,
+                bridge_state_changed: module.bridge_state_changed,
+                per_cell_ran: module.per_cell_ran,
+                ..LocomotorProcess::default()
+            });
+        }
         match kind {
             LocomotorKind::Drive
             | LocomotorKind::Ship

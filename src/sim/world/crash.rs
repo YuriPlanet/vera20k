@@ -624,6 +624,7 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             rules,
+            None,
         )
         .is_some_and(|detonation| {
             self.commit_logic_projectile_detonations(

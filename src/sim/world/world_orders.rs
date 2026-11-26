@@ -409,6 +409,15 @@ impl Simulation {
                 {
                     target.seldom.capture_infantry_type_index.record(index);
                 }
+                // Wasm module `ThievedBy` (stock 3) on the stolen vehicle,
+                // the thief as `other`, before the thief leaves.
+                self.raise_module_infiltration_event(
+                    rules,
+                    context.effects(),
+                    3,
+                    target_id,
+                    actor_id,
+                );
                 self.uninit_with_context(actor_id, context);
                 return Ok(VehicleCaptureOutcome {
                     consumed: true,
@@ -2513,6 +2522,15 @@ impl Simulation {
                 .map(|infantry| infantry.owner())
             {
                 self.infiltrate_building(building_id, owner, rules);
+                // Wasm module `SpiedBy` (stock 2) on the building, the spy
+                // as `other`, before the spy leaves (`ext_modules::events`).
+                self.raise_module_infiltration_event(
+                    rules,
+                    frame_effects,
+                    2,
+                    building_id,
+                    infantry_id,
+                );
             }
             true
         } else {

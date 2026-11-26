@@ -102,12 +102,16 @@ impl RocketHost for RocketProcessHost<'_> {
     }
     fn type_speed(&self) -> i32 {
         let owner = self.owner();
-        self.sim
+        let speed = self
+            .sim
             .interner
             .object_type(owner.type_ref(), self.rules)
             .map_or(0, |object| {
                 crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed)
-            })
+            });
+        // VERA: a Wasm module `SpeedMultiplier` scales the type speed
+        // (`ext_modules::modifiers`); none leaves the native value.
+        owner.module_scaled_speed(speed)
     }
     fn in_bounds(&self, cell: (i16, i16)) -> bool {
         self.sim.map_cell_in_bounds(cell)

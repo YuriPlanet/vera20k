@@ -1703,6 +1703,9 @@ impl Simulation {
                     )
                 )
         });
+        // Wasm module `IdleMission` (`ext_modules::unit_ai`).
+        let selection =
+            selection.and_then(|selection| self.module_idle_mission(rules, id, Some(selection)));
         if let Some(selection) = selection {
             let _ = self.mission_queue_exact(
                 id,

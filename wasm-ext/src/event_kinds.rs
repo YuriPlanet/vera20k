@@ -67,6 +67,10 @@ pub const DELIVERED_EVENTS: &[&str] = &[
     "ModuleEvent", "IniEntry", "IniKey",
     // RFC 0001 6i: an order refused at execution (1043)
     "OrderRefused",
+    // RFC 0001 0.0.22 (1044..1055): decision-only (4.5) and delivered (4.3)
+    "FireAllowed", "Retaliate", "DestinationSet", "CrushAllowed", "MissionChanged",
+    "HarvestCell", "DeployAllowed", "Deployed", "Promoted", "ExperienceGained", "Cloaked",
+    "Decloaked",
 ];
 
 /// An event kind's number by name, ASCII case-insensitive.

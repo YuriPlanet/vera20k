@@ -19,7 +19,7 @@
 //! | 1007 | `Heal` | the `Health` write `set` uses (no credit, clamped to Strength) at health + `value` |
 //! | 1008 | `CreateObject` | `construct_object_limbo_at_height`, `reveal_constructed_object_at_coord_with_overlay_context` (Unlimbo), `grand_opening` for buildings, `queue_entity_mission_deferred` |
 //! | 1009 | `SetMission` | the `Mission` write `set` uses: the MEGAMISSION event a player's order sends, through the command receiver (`EventClass::Execute` `0x004C71F6`); `cell`, else `other`, is the mission's target or destination |
-//! | 1010 | `Teleport` | `Simulation::foot_chrono_warp_to` (Foot4DF7F0 / Infantry522FE0) at the coordinate House50D6D0 computes (`chrono_warp_coord`); `Nearby` leaves a blocked landing to the Teleport's own nearby search, `Fail` asks Can_Enter_Cell first; ground Units and Infantry only |
+//! | 1010 | `Teleport` | `Simulation::foot_chrono_warp_to` (Foot4DF7F0 / Infantry522FE0) at the coordinate House50D6D0 computes (`chrono_warp_coord`); `Nearby` leaves a blocked landing to the Teleport's own nearby search, `Fail` asks Can_Enter_Cell first; ground Units and Infantry only; ends the object's `Push` |
 //! | 1011 | `ClearTarget` | `Simulation::assign_target_represented(None)` (Assign_Target `0x006FCDB0`) |
 //! | 1012 | `ClearDisguise` | `DisguiseRuntime::clear`, the class ClearDisguise (Unit `0x00746720`) |
 //! | 1013 | `ClearMindControl` | `Simulation::free_unit` on the controller (CaptureManagerClass::FreeUnit `0x00471FF0`) |
@@ -40,7 +40,9 @@
 //! | 1032 | `AddScore` | `Economy::add_score`, the kill and capture awards' writer |
 //! | 1033 | `Log` | the module log |
 //! | 1042 | `RaiseEvent` | `Simulation::raise_module_event` for an object event, `offer_module_event` to each global trigger for a global one (`ini_names`) |
-//! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`); a positive `value2` converts back through it after that many frames (`held::ActionHeld`) |
+//! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`); a positive `value2` converts back through it after that many frames (`held::ActionHeld`); ends the object's `Push` |
+//! | 1035 | `Push` | `Simulation::start_module_push`, the forced-motion owner `motion` keeps: `value` leptons toward (negative: away from) `cell` over `value2` frames, each frame a module step at the object's locomotor Process; Units and Infantry on Drive, Ship, Walk, Mech or Hover, not warping |
+//! | 1045 | `SetFacing` | `Simulation::module_set_facing`: the active locomotor's Do_Turn (ILocomotion `+0x4C`, `movement::locomotor_do_turn`) toward body facing `value` (0..255) |
 //!
 //! Every other atomic action answers `(0, Unsupported)` and `has_kind`
 //! reports 0:
@@ -49,10 +51,9 @@
 //!   turns, searches an exit cell and ejects the cargo head one per 14..16
 //!   frames. No native operation takes a named passenger out; `SetMission`
 //!   with `Unload` orders the mission.
-//! - `CreateProjectile`, `DetonateProjectile`, `RemoveProjectile`: no
-//!   projectile references yet.
-//! - `Push`: no forced-motion owner; the locomotors move objects only
-//!   toward their own destinations.
+//! - `CreateProjectile`, `DetonateProjectile`, `RemoveProjectile`: not
+//!   wired; projectile references are read (`ext_modules::projectiles`) and
+//!   a `Fire` decision's plan launches bullets, but no action does yet.
 //! - The team actions (`CreateTeamUnlimited`, `DisbandTeam`,
 //!   `AddTeamMember`, `RemoveTeamMember`): teams are numbered by the team
 //!   VM's own counter, not the shared creation counter, so a team has no
@@ -170,9 +171,11 @@ pub const SET_SCORE: i32 = 1031;
 pub const ADD_SCORE: i32 = 1032;
 pub const LOG: i32 = 1033;
 pub const CONVERT: i32 = 1034;
+pub const PUSH: i32 = 1035;
+pub const SET_FACING: i32 = 1045;
 pub const RAISE_EVENT: i32 = vera20k_wasm_ext::triggers::ACTION_RAISE_EVENT;
 
-const ATOMIC: [i32; 32] = [
+const ATOMIC: [i32; 34] = [
     FIRE_WEAPON,
     LAUNCH_SUPER_WEAPON,
     SPAWN_ANIM,
@@ -204,6 +207,8 @@ const ATOMIC: [i32; 32] = [
     ADD_SCORE,
     LOG,
     CONVERT,
+    PUSH,
+    SET_FACING,
     RAISE_EVENT,
 ];
 
@@ -777,6 +782,21 @@ impl Run<'_, '_, '_, '_> {
                 }
             }
             CONVERT => self.convert(target),
+            PUSH => {
+                let id = self.object(target)?;
+                let cell = self.map_cell(self.params.cell)?;
+                answer(
+                    self.sim
+                        .start_module_push(id, cell, self.params.value, self.params.value2),
+                )
+            }
+            SET_FACING => {
+                let id = self.object(target)?;
+                let Ok(facing) = u8::try_from(self.params.value) else {
+                    return invalid(format!("SetFacing facing {}", self.params.value));
+                };
+                answer(self.sim.module_set_facing(id, facing))
+            }
             FIRE_WEAPON => self.fire_weapon(target),
             ATTACH_ANIM => self.attach_anim(target),
             ALLOW_TYPE => {
@@ -906,6 +926,7 @@ impl Run<'_, '_, '_, '_> {
             .ext_modules
             .held
             .note_conversion(id, original, frames, frame);
+        self.sim.ext_modules.motions.end_push(id);
         Ok(0)
     }
 
@@ -1255,7 +1276,10 @@ impl Run<'_, '_, '_, '_> {
                 )
             });
         match warped {
-            Ok(true) => Ok(0),
+            Ok(true) => {
+                self.sim.ext_modules.motions.end_push(id);
+                Ok(0)
+            }
             Ok(false) => status(Status::Refused),
             Err(why) => {
                 log::info!(target: "ext_module", "Teleport of {id} refused: {why}");

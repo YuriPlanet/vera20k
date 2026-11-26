@@ -79,6 +79,7 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::{AnimId, AnimWorldCoord};
+use crate::sim::ext_modules::modifiers::Immunity::MindControl;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
@@ -474,8 +475,9 @@ impl CaptureVictimFacts {
     pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32, ares: bool) -> Self {
         // 3: `ImmuneToPsionics=` (`+0xD35`); 4: a Unit in a tank bunker
         // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (+0x2CC,
-        // 471CF0); 7: the Iron Curtain; 9: Selling or Construction.
-        let refused = target_obj.immune_to_psionics
+        // 471CF0); 7: the Iron Curtain; 9: Selling or Construction. A
+        // module's `ImmunityFlags` bit 0 replaces gate 3.
+        let refused = target.module_immune(MindControl, target_obj.immune_to_psionics)
             || (target.category() == EntityCategory::Unit
                 && target.bunker.link().installed_in().is_some())
             || target.seldom.mind_control.is_mind_controlled()
@@ -1015,7 +1017,7 @@ impl Simulation {
         let Some(object_type) = self.object_type(object.type_ref(), rules) else {
             return false;
         };
-        !object_type.immune_to_psionics
+        !object.module_immune(MindControl, object_type.immune_to_psionics)
             && !crate::sim::superweapon::invulnerability::is_invulnerable(
                 object.invulnerability.as_ref(),
                 self.session.binary_frame(),
@@ -1081,11 +1083,13 @@ impl Simulation {
         let Some(object_type) = self.object_type(object.type_ref(), rules) else {
             return false;
         };
-        if object_type.immune_to_psionics
-            || object_type
-                .promotion_abilities()
-                .is_some_and(|abilities| abilities.psionics_immune(object.veterancy.raw()))
-        {
+        if object.module_immune(
+            MindControl,
+            object_type.immune_to_psionics
+                || object_type
+                    .promotion_abilities()
+                    .is_some_and(|abilities| abilities.psionics_immune(object.veterancy.raw())),
+        ) {
             return false;
         }
         if let Some(controller) = object.seldom.mind_control.controller {
@@ -1603,6 +1607,12 @@ impl Simulation {
         let reason = self.capture_reason(controller_owner, health, strength, rules);
         // 0x004724E3: `RandomRanged(1, 100)` on the Scenario stream.
         let roll = self.scenario_rng.next_range_i32_inclusive(1, 100);
+        // A house whose `Forces` a Wasm module claims (RFC 0001 6i) keeps
+        // the unit's orders, as a human's does; the roll is still drawn so
+        // the Scenario stream does not move.
+        if self.module_claims(unit_owner, vera20k_wasm_ext::DOMAIN_FORCES) {
+            return;
+        }
         let Some(choice) = capture_decision(rules.mind_control.ai_capture_table(reason), roll)
         else {
             return;

@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.21, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.23, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -272,7 +272,7 @@ struct Order {            // 24 bytes followed by count unit handles (i64): inpu
 }
 struct ProjectileSpec {   // 48 bytes: variable data for CreateProjectile and one entry in a Fire shot plan
     type: i32,            // 0   Projectile type ID
-    weapon: i32,          // 4   Weapon ID supplying damage and warhead, -1 for none
+    weapon: i32,          // 4   Weapon ID supplying damage and warhead. -1: in a Fire plan the shot's own weapon and payload, in CreateProjectile none
     target: i64,          // 8   Object or cell reference. In a Fire plan, 0 takes this shot's target
                           //     In CreateProjectile, 0 takes the origin object's current Target (Refused if none)
     data: [u8; 16],       // 16  Initial module data (Data0 bytes 0..7, Data1 bytes 8..15), saved and hashed
@@ -283,9 +283,9 @@ struct ProjectileSpec {   // 48 bytes: variable data for CreateProjectile and on
 struct PathSpec {         // 32 bytes followed by point_count points: Launch result area
     kind: i32,            // 0   PathKind (8.3)
     point_count: i32,     // 4   Number of points following
-    speed: i64,           // 8   Fixed-point speed (16 fractional bits) in leptons per frame
-    param: [i64; 2],      // 16  Kind-specific parameters, e.g. spiral radius and period or parabolic apex height
-}                         //     Each point is three i64 values x, y, z in leptons, 24 bytes total
+    speed: i64,           // 8   Speed along the path, fixed point (16 fractional bits), leptons per frame. <= 0 takes the projectile's current speed
+    param: [i64; 2],      // 16  Kind parameters: parabola param[0] apex height, spiral param[0] radius and param[1] frames per turn (> 0)
+}                         //     Each point is three i64 values x, y, z in leptons, 24 bytes total. 1 to 16 points, exactly 1 for parabola and spiral
 struct ProjectileStep {   // 56 bytes: ProjectileFrame result area
     flags: i32,           // 0   Bit 0 detonate, bit 1 set velocity, bit 2 set position, bit 3 set module data
     reserved: i32,        // 4   0
@@ -294,6 +294,21 @@ struct ProjectileStep {   // 56 bytes: ProjectileFrame result area
     position: [i32; 3],   // 24  New x, y, z position in leptons
     reserved3: i32,       // 36  0
     data: [u8; 16],       // 40  New module data (Data0 bytes 0..7, Data1 bytes 8..15)
+}
+struct MissionStepResult { // 24 bytes: MissionStep result area. The first link receives the mission body's outcome
+    target: i64,          // 0   Target: object or cell reference, 0 for none
+    destination: i64,     // 8   Destination: object or cell reference, 0 for none
+    mission: i32,         // 16  Mission to queue (Mission), -1 for none
+    delay: i32,           // 20  Frames until the mission body runs again (>= 1)
+}
+struct MoveStep {         // 16 bytes: MoveFrame result area
+    flags: i32,           // 0   Bit 0 take the frame and move by displacement, bit 1 turn to facing, bit 2 stop native movement (null destination)
+    facing: i32,          // 4   Body facing 0..255 (as the Facing property)
+    displacement: [i32; 2], // 8 x, y in leptons, each clamped to 2,048 either way
+}
+struct PathCell {         // 8 bytes: one cell of a PathFound result area (up to 24)
+    x: i32,               // 0   Cell x
+    y: i32,               // 4   Cell y
 }
 ```
 
@@ -504,14 +519,14 @@ See [RFC 5](0001-wasm-extension-modules.md#5-execution-model), [RFC 6a](0001-was
 
 ### 4.1 Stock events 0..61
 
-Class `R` is delivered, `H` polls a House tag, and `L` polls a Logic tag. Fields `S`, `O` and `Hs` denote subject, other and house. “Persistent” means the event writes persistent state. H and L are global. R defaults to object binding, with exceptions in the table. All are `v1` except `later` events 0, 2, 3, 24, 31, 33, 51, 53, 54 and 59 and have no decision form.
+Class `R` is delivered, `H` polls a House tag, and `L` polls a Logic tag. Fields `S`, `O` and `Hs` denote subject, other and house. “Persistent” means the event writes persistent state. H and L are global. R defaults to object binding, with exceptions in the table. All are `v1` except `later` events 0, 24, 31, 33, 51, 53, 54 and 59 and have no decision form.
 
 | # | API name | Arguments | Class | Fields | Binding exceptions and notes |
 | --- | --- | --- | --- | --- | --- |
 | 0 | — | — | — | — | Private, never true |
 | 1 | `EnteredBy` | `value` house index (−1 for any) | R | S, O, retained Hs | Persistent |
-| 2 | `SpiedBy` | Ignored | R | S, O |  |
-| 3 | `ThievedBy` | `value` house index | R | S, Hs |  |
+| 2 | `SpiedBy` | Ignored | R | S, O | Raised on the infiltrated building, `other` the spy, for module triggers |
+| 3 | `ThievedBy` | `value` house index | R | S, O, Hs | Raised on the stolen vehicle, `other` the thief, `Hs` the thief's house, for module triggers |
 | 4 | `DiscoveredByPlayer` | Ignored | R | S, O |  |
 | 5 | `HouseDiscovered` | `value` house | H | Hs |  |
 | 6 | `AttackedByAnyHouse` | Ignored | R | S, O |  |
@@ -609,28 +624,28 @@ Available only with `rules.ares_form()`. Otherwise `trigger_create` returns 0 an
 
 Modifier events bind by target. For an object, bind that object. For a house, the event is global and sets `house`.
 
-These events fire at safe points. **Object + weapon** also permits binding to weapon, warhead or projectile types ([RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-and-actions)). The tier is for the delivered form. Of the decision forms only `TakeDamage` is `v1`. Those of `Fire`, `FatalDamage` and `TargetChanged` are `later`. 100037 and 100038 are reserved (`OnBehavior`, `OnBehaviorExpire`).
+These events fire at safe points. **Object + weapon** also permits binding to weapon, warhead or projectile types ([RFC 6a](0001-wasm-extension-modules.md#6a-triggers-events-filter-clauses-and-actions)). The tier is for the delivered form. Of the decision forms only `TakeDamage` is `v1`. Those of `Fire` and `FatalDamage` are `preview`, that of `TargetChanged` is `later`. 100037 and 100038 are reserved (`OnBehavior`, `OnBehaviorExpire`). Events 100044 and later share one numbering with 4.5.
 
 | # | Event | Fields | When raised | Binding | Decision point → result (— means no decision) | Tier |
 | --- | --- | --- | --- | --- | --- | --- |
 | 100000 | `TakeDamage` | `other` source (may be 0), `value` positive settled damage, after armor multipliers, immunities, falloff, the subject armor's Verses, the cap, the building minimum and Ares culling. Delivered records clamp it to health before the hit, decisions see it unclamped. `id` warhead, `x`, `y`, `z` subject position in leptons | After damage commits | Object | Before damage commits, only when this value is above 0 → final damage before the health clamp (clamped to 0..2^31−1). Zero damage and healing are not asked. | v1 |
 | 100001 | `HitByWarhead` | `id` warhead, `value` final damage, `other` source, `x`, `y`, `z` subject position in leptons | After damage is accepted, excluding immune hits | Object | — | later |
 | 100002 | `AttackedBy` | `other` attacker, `value` weapon slot (−1 for none), `projectile` (may be 0) | On target after firing step | Object | — | v1 |
-| 100003 | `FatalDamage` | `other` attacker (may be 0), `value` damage, `id` warhead, `x`, `y`, `z` subject position in leptons | After lethal damage commits, before death processing, which rechecks | Object | During death processing → death outcome: bits 0–31 death weapon ID plus 1 (0 for none), bit 32 spawn survivors, bit 33 leave wreck | v1 |
+| 100003 | `FatalDamage` | `other` attacker (may be 0), `value` damage, `id` warhead, `x`, `y`, `z` subject position in leptons | After lethal damage commits, before death processing, which rechecks. A death without a damage commit (crush, chrono erasure, crash, passengers and slaves dying inside, drops) raises it before the kill is recorded, `value` the health left and `id` −1. A sale is no death | Object | At the entry of the damage path's death arm, before any of its effects → death plan (bits in the table below). Deaths outside the damage path are not asked | v1 |
 | 100004 | `Killed` | `other` killer (may be 0), `id` lethal warhead (−1 for none), `x`, `y`, `z` death position in leptons | After recording kill | Object | — | v1 |
-| 100005 | `Fire` | `other` target (may be 0), `cell` target cell (always set), `value` weapon slot, `id` weapon, `projectile` (may be 0) | After shot completes | Object + weapon | Before firing → number of entries in shot plan. Result area contains a `ProjectileSpec` array ([RFC 9](0001-wasm-extension-modules.md#9-example-projectile-trajectories)). | v1 |
+| 100005 | `Fire` | `other` target (may be 0), `cell` target cell (always set), `value` weapon slot, `id` weapon, `projectile` (may be 0) | After shot completes | Object + weapon | Before firing, once the launch has a solution and the bullet payload is built → number of entries in the shot plan (0..16). Result area contains a `ProjectileSpec` array; the first link receives the native shot as one entry ([RFC 9](0001-wasm-extension-modules.md#9-example-projectile-trajectories)). | v1 |
 | 100006 | `SpawnFire` | `other` spawned aircraft, `value` weapon slot, `projectile`. Target in `cell` or the spawned aircraft's `Target` property | After spawned aircraft fires | Object | — | later |
 | 100007 | `HitTarget` | `other` target, `value` damage, `id` weapon, `projectile` | On shooter after damage commits | Object + weapon | — | later |
-| 100008 | `TargetChanged` | `other` new target (0 when cleared) | After setting or clearing target | Object | Before setting the target during the object's turn. Parallel speculative targeting raises no event → chosen target reference (0 for none). An unattackable target falls back to the native result. Use `find` for candidates. | later |
+| 100008 | `TargetChanged` | `other` new target object (0 when cleared or a cell), `cell` its cell (0 when cleared) | After the target setter changed the target, or a direct target write by the engine (not the initial target of a new object) | Object | Before setting the target during the object's turn. Parallel speculative targeting raises no event → chosen target reference (0 for none). An unattackable target falls back to the native result. Use `find` for candidates. | v1 |
 | 100009 | `ProjectileIncoming` | `projectile`, `other` firer (may be 0) | After projectile admission | Object | — | later |
-| 100010 | `Detonated` | `projectile` (already gone at delivery), `cell`, `other` source (may be 0), `id` warhead, `x`, `y`, `z` detonation position in leptons | After detonation | Object + weapon | — | later |
-| 100011 | `Birth` | `other` producer (may be 0), `value` production time (−1 for none) | After object placement (production, reinforcements, spawning) | Object | — | v1 |
+| 100010 | `Detonated` | On the source (`subject` and `other`, may be 0). `projectile` (already gone at delivery), `cell`, `id` warhead, `x`, `y`, `z` detonation position in leptons | After a fired projectile's whole detonation (cluster included). Death weapons, animation weapons and other detonations without a projectile raise none | Object + weapon | — | v1 |
+| 100011 | `Birth` | `other` producer or origin (may be 0), `value` production time (−1 for none) | After object placement (production, reinforcements, spawning, a deploy or undeploy, survivors, crew and pilots; `other` the building or vehicle they came from) | Object | — | v1 |
 | 100012 | `TransportEntered` | On passenger (`subject`). `other` transport or building, `value` occupied space, `value2` 1 garrison / 0 transport passenger | After entry completes | Object | — | v1 |
-| 100013 | `TransportExited` | As `TransportEntered` | After exit completes | Object | — | v1 |
+| 100013 | `TransportExited` | As `TransportEntered` (garrison: `value` occupants left inside) | After exit completes; a garrison occupant also when removed inside (before it is removed) | Object | — | v1 |
 | 100014 | `PassengerAdded` | On transport or building (`subject`). `other` passenger, `value` occupied space, `value2` garrison flag | As `TransportEntered` | Object | — | v1 |
 | 100015 | `PassengerRemoved` | As `PassengerAdded` | As `TransportExited` | Object | — | v1 |
 | 100016 | `Commanded` | On unit (`subject`). `value` command (`Command`), `other` target object (may be 0), `cell` target cell (may be 0), `value2` command serial shared by units receiving the same order from one click | After simulation executes player or AI command for bound object | Object | — | v1 |
-| 100017 | `Crushed` | `other` crusher, `x`, `y`, `z` position in leptons | After crushing | Object | — | later |
+| 100017 | `Crushed` | `other` crusher, `x`, `y`, `z` position in leptons | After the crush is decided, before the victim's kill is recorded | Object | — | v1 |
 | 100018 | `HouseTransfer` | `house` new house, `value` 1 for mind control | Before transfer, which rechecks | Object | — | later |
 | 100019 | `HouseTransferred` | `house` old house, `value` 1 for mind control | After transfer | Object | — | v1 |
 | 100020 | `ModifierStart` | `modifier`, `value` property ID, `other` source (may be 0) | After adding modifier | Modifier target | — | v1 |
@@ -640,7 +655,29 @@ These events fire at safe points. **Object + weapon** also permits binding to we
 | 100024 | `SuperWeaponLaunched` | `id` superweapon type, `house`, `cell` target | After superweapon launch | Global | — | v1 |
 | 100025 | `ProductionCancelled` | `house`, `id` type, `value` credits refunded | After player or AI cancels production queue entry | Type | — | later |
 | 100040 | `ModuleEvent` | `id` event ID (same as `EventDef.id`), `subject` (0 for a global event), `other`, `value`, `value2`, `house` from the `RaiseEvent` parameters ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)) | When `RaiseEvent` executes | Object when registered as an object event, otherwise global | — | v1 |
+| 100048 | `MissionChanged` | `value` new mission (`Mission`) | After the current mission changes. Deferred: the engine writes mission changes from many places without a frame's effects at hand, so there is no single raise point yet | Object | — | later |
+| 100051 | `Deployed` | `value` 1 deployed, 0 undeployed, `other` the object it became (0 when it stays itself) | After a deploy or undeploy completes (a unit into a building, a simple deployer, an infantryman) | Object | — | v1 |
+| 100052 | `Promoted` | `value` new rank (1 veteran, 2 elite) | After the rank sample stores a promotion | Object | — | v1 |
+| 100053 | `ExperienceGained` | `other` victim, `value` gain in hundredths of a rank (the `Experience` unit) | On each recipient after a kill's experience is awarded | Object | — | v1 |
+| 100054 | `Cloaked` | — | After cloaking completes | Object | — | v1 |
+| 100055 | `Decloaked` | — | After uncloaking completes | Object | — | v1 |
 | 100043 | `OrderRefused` | `subject` refused unit (0 for a house-level order), `house` house that issued the order, `value` command (`Command`), `value2` reason (`RefuseReason`), `other` and `cell` the order's target, `id` type for a house-level order (otherwise −1) ([RFC 6i](0001-wasm-extension-modules.md#6i-driving-a-house)) | After an order is refused in the execution step, once per unit, or once for a house-level order | Global | — | v1 |
+
+`FatalDamage`'s death plan (the decision form's result; `native` is the engine's own plan):
+
+| Bits | Meaning | Native value |
+| --- | --- | --- |
+| 0 | Explode: passengers die with the object and the death weapon may fire | `Explodes=`, the veteran ability or a suicide weapon; 0 for a low dropped bomb over water |
+| 1 | Fire the death weapon (needs bit 0) | 1; 0 under Ares `SuppressDeathWeapon` |
+| 2 | Throw debris | 1; 0 for a low dropped bomb over water |
+| 3 | Survivors: a building's survivors appear, a vehicle's passengers escape | 0 when the killing hit ignored defenses |
+| 4 | A vehicle's crew escapes | 0 when the killing hit forbids it |
+| 5 | Unit-lost announcement | 1; 0 under Ares `UnitLost.Suppress` |
+| 6 | Tiberium remains: up to 2 Riparius on the cell and each orthogonal neighbour. The engine has no wreck object; this is the death's one leftover | Ares `TiberiumRemains` (by default `TiberiumHeal=` with `TiberiumHealEnabled`); 0 without Ares |
+| 8–15 | An infantryman's `InfDeath` (0..255) | The killing warhead's |
+| 32–62 | Death weapon ID plus 1, fired instead of the type's own (at `DeathWeaponDamageModifier`); 0 for the type's own | 0 |
+
+Other bits must be 0. An answer with other bits, a negative answer or an unknown weapon ID keeps the previous link's result. Sinking, crashing, `DeathFrames=`, explosion animations and releasing slaves and mind-controlled units stay with the engine. A plan that drops debris, the passengers' deaths or the death weapon drops their random draws with them: a different outcome, still deterministic.
 
 ### 4.4 New polling events
 
@@ -664,9 +701,20 @@ Require a trigger with a decision handler. These events have no delivered form.
 | 100032 | `ProductionQueued` | `house`, `id` type, `subject` 0 | When player or AI adds the type to the production queue, excluding continued or forced requeues. On refusal for a computer house the engine makes it choose again | Type | 1 allow, 0 refuse. Refusal leaves the item out of the queue and spends no credits. | v1 |
 | 100033 | `Defeat` | `house` | When the engine's defeat check is about to defeat this house. `EndFor` and stock win/loss actions bypass the check. | Global | 1 defeat, 0 veto this check and ask again at the next check | v1 |
 | 100034 | `CommandAllowed` | `subject`, `value` command (`Command`), `other` target object, `cell` target cell | When simulation executes each player or AI command on a bound object. Cursor previews do not raise it. | Object | 1 allow, 0 refuse | preview |
-| 100035 | `Launch` | `projectile`, `subject` firer, `other` target, `cell` target cell | Once when each projectile of a bound type is fired | Object + weapon | Size of `PathSpec` in bytes (32 + 24 × point count). Result area contains one `PathSpec`. | later |
-| 100036 | `ProjectileFrame` | `projectile`, `value` elapsed flight frames | Each frame as the engine advances projectiles in engine order, after target resolution and the frame fuse, before computing the candidate position, once per bound projectile that moves this frame | Projectile type | Unused. Result area contains one `ProjectileStep`. `handled` of 0 uses native advancement. | later |
+| 100035 | `Launch` | `projectile`, `subject` firer (0 when gone), `other` target object, `cell` cell of the target coordinate | Once for each flying projectile when it is launched, after it enters the game: firing, shot plans, shrapnel, airburst, superweapons and trigger strikes. `Inviso=` projectiles are not asked | Object + weapon | Size of `PathSpec` in bytes (32 + 24 × point count). Result area contains one `PathSpec`. Unhandled, the projectile flies natively | preview |
+| 100036 | `ProjectileFrame` | `subject` and `projectile` the projectile, `value` elapsed flight frames | Each frame as the engine advances projectiles in engine order, after the animation wait, target resolution and the frame fuse, before computing the candidate position, once per bound projectile that moves this frame | Projectile type | Unused. Result area contains one `ProjectileStep`. `handled` of 0 follows the `Launch` path or native advancement | preview |
 | 100039 | `DamageIncoming` | `subject`, `other` source (may be 0), `id` warhead, `value` signed incoming damage, `value2` `previous` put through falloff, the Verses of the armor in the trigger's `EventDef.id` (−1 for the subject's) and the cap, with the sign of `previous`. With bit 0 of `EventDef.value` set, a positive value is first divided by the product of the subject's armor multipliers, truncating toward zero. `x`, `y`, `z` subject position in leptons | Techno receive-damage entry, after infantry prone, the parasite prefix and the engine's own shield, before death prevention, subject armor and the minimum of 1. Not asked for zero incoming damage, ignore-defenses hits, Psychedelic or Temporal warheads, or hits that immunity, Iron Curtain or allegiance would reject. Zero Verses against the subject's armor does not prevent the request. | Object | Incoming damage continuing into the native flow. It must be 0 or have the sign of `previous`, otherwise the previous result stands. Recompute `value2` from each link's own `previous`. A result of 0 suppresses the minimum of 1. | preview |
+| 100044 | `FireAllowed` | `subject` shooter, `other` target object (0 for a cell), `cell` target cell, `value` weapon slot, `id` weapon | When a fire routine's fire check allowed a shot, before it fires | Object | 1 allow, 0 veto (the shooter waits as if rearming) | preview |
+| 100045 | `Retaliate` | `subject` damaged object, `other` source, `id` warhead | After the engine decided whether to retaliate against a hit with a source | Object | 1 retaliate, 0 not; `native` the engine's answer. Retaliation still needs the source in reach | preview |
+| 100046 | `DestinationSet` | `subject`, `other` native destination object (0 for a cell), `cell` its cell, `value` native destination reference | When the destination setter receives a non-null destination | Object | Destination reference (object or cell), 0 for none. A gone object, an off-map cell or one the setter refuses keeps the native destination | preview |
+| 100047 | `CrushAllowed` | `subject` victim, `other` crusher | When a crusher entering a cell is about to crush an occupant. Cell entry tests (path queries) are not asked | Object | 1 allow, 0 spare (the victim stays in the cell) | preview |
+| 100049 | `HarvestCell` | `subject` harvester or slave manager, `cell` scanned cell, `value` its reference (0 for none) | When the ore scan answers | Object | Cell reference to harvest, 0 for none; an off-map cell keeps the native answer | preview |
+| 100050 | `DeployAllowed` | `subject` | Before a unit deploys into a building, a simple deployer starts deploying or an infantryman deploys | Object | 1 allow, 0 refuse (as a blocked deploy) | preview |
+| 100060 | `IdleMission` | `subject` | When an infantryman or vehicle goes idle, after the engine picks the mission to queue and before queuing it. Not asked when nothing is queued, nor for aircraft and buildings | Object | Mission to queue (`Mission`), 255 for none. `native` is the engine's pick | preview |
+| 100062 | `MissionStep` | `subject`, `value` the mission whose body ran (`Mission`), `other` target object (0 for a cell or none), `cell` target cell | Each time an infantryman's or vehicle's Guard, Sticky, Area Guard, Hunt or Attack mission body runs, after the body and its random draws, before its mission timer and queued mission are written. Aircraft and buildings are not asked | Object | Unused. Result area contains one `MissionStepResult`, arriving with the body's outcome: the target and destination it left, the mission it queues (−1 for none) and its delay. Each changed field is applied through the engine's own setters (the destination through `DestinationSet`); a gone object, an off-map cell, an unknown mission or a delay below 1 keeps the body's. What else the body did (firing, deploying, a mission queued by going idle) stands | preview |
+| 100063 | `MoveFrame` | `subject`, `x`, `y`, `z` its position, `value` 1 while its locomotor is moving, `other` and `cell` its navigation target (object or cell) | Each frame a vehicle or infantryman on a Drive, Ship, Walk, Mech or Hover locomotor reaches its locomotor's processing with no step in flight (a track or sub-cell step runs to its end first), after an active `Push`'s frame. Not asked for transported, warping or train objects, nor for other locomotors | Object | Unused. Result area contains one `MoveStep`, zero for the first link. Bit 0 takes the frame: the native processing does not run and the object moves by the displacement; a step into another cell checks that cell only (on the map, not from a bridge deck, the object's own cell entry test answering free), otherwise it stays. The engine keeps its height, moves its occupancy, ends its path queue and runs the cell arrival on a new cell. `handled` of 0, or no bit 0, leaves the frame to the locomotor | preview |
+| 100064 | `PathFound` | `subject`, `x`, `y`, `z` its position, `cell` the search goal's cell, `value` the native route's cell count (0 for none) | When a path search's route (or its failure) is adopted, after the search and before the route is copied, wherever the search ran (the path batch only computes it early). Not asked for a train extending its queued route or a route with a tube step | Object | Number of cells (0..24); result area contains that many `PathCell`s, the first link the native route's. 0 is no route (the native failure follows); otherwise the cells, each next to the one before and the first next to the object's cell, all on the map, replace the route, else the native route stands | preview |
+| 100065 | `ApproachPoint` | `subject`, `x`, `y`, `z` its position, `other` target object (0 for a cell target), `value2` the target's cell reference, `cell` the chosen cell, `value` its reference | When an object approaching a target out of range (Attack, Hunt, Area Guard, Rescue, Patrol and the engine's reach check) has chosen the cell to move to, after the search and its random draws, before it is set as the destination. Not asked when the approach ends without a chosen cell (target in range, a queued destination, dropping the target, no reachable cell) | Object | Cell reference to move to; a cell on the map replaces the chosen one, anything else (0 included) keeps the previous link's (the native cell for the first). The destination is then set as for the native cell | preview |
 
 ### 4.6 Client event kinds
 
@@ -912,13 +960,14 @@ Numbers are the identity and are appended only. 100041 is reserved (`ApplyEffect
 | 100032 | `AddScore` | `House` | `value` score | Adds to the score | none | v1 |
 | 100033 | `Log` | — | `text` | Writes one line to the in-game log | none | v1 |
 | 100034 | `Convert` | Object | `id` type, `value2` frames (0 for permanent, positive to revert on expiry) | Changes type using Ares conversion rules. Mutually exclusive with teleportation and forced motion | native | v1 |
-| 100035 | `Push` | Object | `cell` directional target, `value` force | Pushes or launches the object in addition to its movement. Mutually exclusive with conversion and teleportation | native | later |
+| 100035 | `Push` | Object | `cell` directional target, `value` distance in leptons (negative pushes away; at most 2,048; 0 ends the push), `value2` frames (1..255; 0 or less for one per 64 leptons) | Pushes a vehicle or infantryman on a Drive, Ship, Walk, Mech or Hover locomotor along the ground in addition to its movement: each frame, at its locomotor's processing with no step in flight, a share of the distance moves it as a `MoveFrame` step does; a refused step ends the push. A new push replaces the old one; teleporting, converting or leaving ends it. Saved and hashed while it runs. `Refused` for other objects and while warping. Not launched into the air | native | preview |
 | 100036 | `Module` | Any | `id` dispatch key, `text` argument text (optional) | Queues a module action for the module phase. The record's `target` is the trigger's target selection and `args` the string ID of the argument text. INI spelling is `Action=Wasm:name` or `Action=Wasm:name(target,text)` in named sections, action 100036 in maps (no arguments) | none | v1 |
 | 100037 | `CreateTeamUnlimited` | `House` | `id` TeamType | Starts and returns a team without checking Max, like script action 18 | native | later |
 | 100038 | `DisbandTeam` | — | `other` team | Destroys the team, records the AI trigger outcome and releases its members | none | later |
 | 100039 | `AddTeamMember` | Object | `other` team | Joins a team subject to admission checks | none | later |
 | 100040 | `RemoveTeamMember` | Object | — | Leaves the current team | none | later |
 | 100042 | `RaiseEvent` | Object (object event) or any (global event) | `id` event ID. `other`, `value`, `value2`, `house` are written to the record | Raises module event `ModuleEvent` ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). `Gone` if the target of an object event is not an existing object. An unregistered event ID is an invalid argument. INI spelling is `RaiseEvent(target,event name,value,value2)` | none | v1 |
+| 100045 | `SetFacing` | Object | `value` body facing 0..255 | Turns the body through the active locomotor (rotating at its rate where the locomotor does, snapping where it snaps). `Refused` without a locomotor | none | preview |
 
 ### 5.4 Client action kinds
 
@@ -1067,7 +1116,7 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `Team` | ref (team) | R | sim | later | Join and leave with team actions |
 | `Tag` | ref (tag) | W | sim | later | Writing an existing tag replaces the old tag ([RFC 7](0001-wasm-extension-modules.md#7-runtime-triggers-and-tags)) |
 | `DisguiseType`, `DisguiseOwner` | ref | R | own | v1 | Simulation reads the actual state. 0 if undisguised |
-| `Cloaked` | bool | R | own | later |  |
+| `Cloaked` | bool | R | own | v1 | Fully cloaked (cloaking and uncloaking read 0) |
 | `Moving` | bool | R | own | v1 |  |
 | `Facing` | int 0..255 | R | own | v1 | Body facing, in the same units as map unit facing and the `ForceFacing` script action |
 | `TurretFacing` | int 0..255 | R | own | v1 | Turret facing in `Facing` units. `Unsupported` without a turret |
@@ -1083,11 +1132,11 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `Engage` | enum `EngageResult` | R (viewpoint object, derived, high) | own | v1 | Whether the viewpoint object as shooter can strike it. The viewpoint must be an object, otherwise `Unsupported`. Reuses the engine's fire permission and damage checks |
 | `Selected` | bool | R | Client only | v1 (phase 2) | Local selection. `Unsupported` in the simulation |
 | `Relation` | enum `Relation` | R (viewpoint) | own | v1 | Relationship to the viewpoint house |
-| `NearbyEnemyCount` | int | R (derived, high) | own | later | Number of enemy objects within sight (`Sight`) |
-| `TargetInRange` | bool | R (derived, high) | own | later | Current target is within primary weapon range |
-| `CanFireAtTarget` | bool | R (derived, high) | own | later | Can fire at the current target now |
-| `DoorOpen` | bool | W | seen | later | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing changes the displayed state without starting production or dispatching a unit |
-| `Animating` | bool | W | seen | later | Whether the building's working animation is active. `Unsupported` for other objects. Writing changes the displayed state without starting production or dispatching a unit |
+| `NearbyEnemyCount` | int | R (derived, high) | own | v1 | Number of enemy objects within sight (`Sight`) |
+| `TargetInRange` | bool | R (derived, high) | own | v1 | Current target is within range of the weapon the object selects against it (the primary unless the target calls for the secondary) |
+| `CanFireAtTarget` | bool | R (derived, high) | own | v1 | Can fire at the current target now |
+| `DoorOpen` | bool | W | seen | v1 (writing later) | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing changes the displayed state without starting production or dispatching a unit |
+| `Animating` | bool | W | seen | v1 (writing later) | Whether the building's working animation is active. `Unsupported` for other objects. Writing changes the displayed state without starting production or dispatching a unit |
 | Modifiable properties | See 7.2 | | | | Modifiable |
 
 ### 7.2 Modifiable properties
@@ -1099,7 +1148,8 @@ Base values come from the type or a default. Modifiers determine the effective v
 | `ArmorMultiplier` | fixed | 1.0 | Add, multiply, override | Incoming damage multiplier | `ArmorMultiplier` (warhead filters such as `.AllowWarheads` and `.DisallowWarheads` apply only to Phobos effect types) | v1 |
 | `TargetArmor` | id (`Armor`) | Type's armor | Override | Armor used for target selection, threat scoring, weapon selection and fire permission. Does not affect damage settlement. | — | preview |
 | `FirepowerMultiplier` | fixed | 1.0 | Add, multiply, override | Firepower multiplier | `FirepowerMultiplier` | v1 |
-| `SpeedMultiplier` | fixed | 1.0 | Add, multiply, override | Speed multiplier | `SpeedMultiplier` | v1 |
+| `SpeedMultiplier` | fixed | 1.0 | Add, multiply, override | Speed multiplier. Flying, jumpjet and rocket movement, which read their type speed, scale it by the module modifiers alone | `SpeedMultiplier` | v1 |
+| `ROTMultiplier` | fixed | 1.0 | Add, multiply, override | Body turn rate (`ROT=` of the PrimaryFacing) of vehicles, ships and buildings. Applied when the object's modifiers change, so a turn in progress keeps its end frame. Not turrets, aircraft or jumpjets | — | preview |
 | `ROFMultiplier` | fixed | 1.0 | Add, multiply, override | Rate-of-fire multiplier | `ROFMultiplier`, `ROFMultiplier.ApplyOnCurrentTimer` | v1 |
 | `WeaponRangeMultiplier` | fixed | 1.0 | Add, multiply, override | Range | `WeaponRange.Multiplier` | v1 |
 | `WeaponRangeExtra` | lepton | 0 | Add, multiply, override | Range | `WeaponRange.ExtraRange` | v1 |
@@ -1119,7 +1169,7 @@ Base values come from the type or a default. Modifiers determine the effective v
 | `IgnoreOrders` | bool | 0 | Override | Ignores player orders | — | later |
 | `Targetable` | bool | 1 | Override | 0 prevents targeting | — | later |
 | `PenetratesForceShield` | bool | 0 | Override | Penetrates force shields | `PenetratesForceShield` | later |
-| `ImmunityFlags` | mask | Type's immunities | Override | Immunity bits: 0 mind control, 1 radiation, 2 poison, 3 psychic, 4 chrono, 5 EMP, 6 berserk | — (a zero multiplier with `ArmorMultiplier.AllowWarheads` covers some cases) | later |
+| `ImmunityFlags` | mask | Type's immunities (`ImmuneToPsionics=`, `ImmuneToRadiation=`, `ImmuneToPoison=`, `ImmuneToPsionicWeapons=`, `Warpable=no`; with Ares the rank abilities, `ImmuneToEMP=` and its default, and `ImmuneToBerserk=`; without Ares berserk follows `ImmuneToPsionics=`) | Override only, bits 0..6; other operations or bits return `Refused` | Immunity bits: 0 mind control, 1 radiation, 2 poison, 3 psychic, 4 chrono, 5 EMP, 6 berserk. The override replaces, bit by bit, the immunity each check computes, so it can also remove one: 0 capture by mind control, the Psychic Dominator, Ares permanent mind control and abduction ownership; 1, 2 and 3 the receive-damage gates of radiation, poison and psychic warheads, and 1 also radiation-field damage; 4 the Chrono Legionnaire's warp and the Chronosphere's `Warpable=` test; 5 Ares EMP; 6 the Psychedelic (berserk) gate and the fire check for gas | — (a zero multiplier with `ArmorMultiplier.AllowWarheads` covers some cases) | preview |
 | `TintColor` | int (RGB) | 0 | Override | Tint, client access `seen` | `Tint.Color` | later |
 | `TintIntensity` | fixed | 0 | Add | Tint, client access `seen` | `Tint.Intensity`, `Tint.Cumulative` | later |
 | `LaserTrailType` | id | −1 | Override | Laser trail, client access `seen` | `LaserTrail.Type` | later |
@@ -1162,7 +1212,7 @@ The handle returned by `modify` expires on removal or expiry. All properties are
 
 ### 7.4 Projectiles
 
-All are `later`.
+All are `preview`. A projectile reference is an object handle (kind 0) sharing the creation serial with units; `find` lists no projectiles.
 
 | Property | Value | Access | Client |
 | --- | --- | --- | --- |
@@ -1285,7 +1335,7 @@ Global rules reference (kind 4) for scenario and global state.
 | --- | --- | --- | --- | --- |
 | `Frame` | int | R | all | v1 |
 | `Difficulty` | enum `Difficulty` | R | all | v1 |
-| `GameMode` | string | R | all | later |
+| `GameMode` | string | R | all | v1 |
 | `PlayerCount` | int | R | all | v1 |
 | `MissionTimer` | frames | R | all | v1 (change with stock actions 23 through 27) |
 | `MissionTimerRunning` | bool | R | all | v1 |
@@ -1512,10 +1562,10 @@ Tables with a tier column follow that column. This section covers the rest. Each
 | Simulation imports | All 23 other than `send_notify` | `send_notify` with phase 2 |
 | Simulation exports | All other than `on_message` | `on_message` with phase 2 |
 | Stock and Ares actions | 1, 2, 4, 5, 7, 8, 10..12, 14, 16..18, 20..35, 41..48, 51, 53..73, 76..80, 82..90, 92..97, 100..110, 112, 114..118, 125, 127..129, 131..145, 148, 149 | The rest |
-| TechnoType properties | `Category`, `Strength`, `Cost`, `Soylent`, `Speed`, `ROT`, `Crushable`, `Selfhealing`, `Explodes`, `Power`, `Sight`, `Ammo`, `InitialAmmo`, `Storage`, `Passengers`, `SizeLimit`, `TechLevel` | The rest |
-| Weapon properties | `Damage`, `ROF`, `Burst`, `MinimumRange`, `Range` | The rest |
-| Warhead properties | `CellSpread`, `PercentAtMax`, `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath` | The rest |
+| TechnoType properties | `Name`, `Category`, `Buildable`, `Strength`, `Cost`, `Points`, `Soylent`, `Speed`, `ROT`, `Crushable`, `Selfhealing`, `Explodes`, `Power`, `Sight`, `Ammo`, `InitialAmmo`, `Storage`, `Passengers`, `SizeLimit`, `TechLevel` | The rest |
+| Weapon properties | `Name`, `Damage`, `ROF`, `Burst`, `MinimumRange`, `Range` | The rest |
+| Warhead properties | `Name`, `CellSpread`, `PercentAtMax`, `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath` | The rest |
 | Name kinds | `TechnoType`, `Weapon`, `Warhead`, `Projectile`, `Anim`, `VoxelAnim`, `ParticleSystem`, `SuperWeapon`, `Country`, `TeamType`, `Variable`, `ModuleAction`, `Property`, `ActionKind`, `String`, `ModuleEvent`. Phase 2: `Notify`, `Hotkey` | The rest. `Armor` previews with `TargetArmor` |
-| Search scopes | `Objects` (no projectiles), `Houses` (no area, type or owner filter), `Cells`, `Modifiers`, `SuperWeapons` | The rest |
+| Search scopes | `Objects` (no projectiles), `Houses` (no area, type or owner filter), `Cells`, `Types` (TechnoType, Weapon and Warhead, no area or owner filter), `Modifiers`, `SuperWeapons` | The rest |
 | Commands | All in 8.3 except the right column | `EjectBunker` |
 | Client node properties | All in 7.10 except the right column | Properties only of `Decoration`, `ItemProgress`, writing `Items` of a `CameoGrid` |

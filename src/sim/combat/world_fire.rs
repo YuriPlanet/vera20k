@@ -367,6 +367,20 @@ fn admit_attacker_fire<'r>(
             target_sub_y,
         )
     };
+    // Wasm module `FireAllowed` (veto) on a shot the class would fire: a
+    // refusal answers Rearm, as `DisableWeapons` does (`ext_modules::control`).
+    let code = if code == fire_error::FireError::Ok
+        && !world.module_allows_fire(
+            rules,
+            snap.stable_id,
+            snap.target,
+            weapon_index,
+            selected.as_ref().map(|weapon| weapon.weapon_id),
+        ) {
+        fire_error::FireError::Rearm
+    } else {
+        code
+    };
     match snap.category {
         // The table at `0x00737148`.
         EntityCategory::Unit => match code {
@@ -1813,6 +1827,9 @@ pub(super) fn emit_admitted_fire(
     let bullet_id = world.substrate.allocate_stable_id();
     let native_unique_id = world.next_native_runtime_id();
     fireat_estimate_debit(world, rules, snap.stable_id, tarcom, obj, weapon);
+    // A Wasm module's `Fire` plan, when one replaced the bullet
+    // (`super::fire_plan`): the bullets it launched.
+    let mut planned: Option<Vec<super::fire_plan::PlanBullet>> = None;
     let launched_weapon = {
         let impact_world_z_leptons =
             attack_world_z_leptons(snap.target, world, world.resolved_terrain.as_ref());
@@ -2104,12 +2121,7 @@ pub(super) fn emit_admitted_fire(
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
             // `BulletClass::Fire` (`0x006FF014`) at the launch source.
-            super::admit_techno_fired_bullet(
-                world,
-                rules,
-                weapon,
-                bullet_id,
-                super::FiredBullet {
+            let bullet = super::FiredBullet {
                     native_unique_id,
                     source_id: snap.stable_id,
                     target,
@@ -2131,9 +2143,27 @@ pub(super) fn emit_admitted_fire(
                         world,
                         entry_target.projectile_target(world),
                     ),
-                },
-            )
-            .then_some(weapon_id)
+                };
+            let shot = super::fire_plan::NativeShot {
+                shooter: snap.stable_id,
+                target: snap.target,
+                target_cell: (target_rx, target_ry),
+                slot: i64::from(selected.index),
+                weapon,
+                weapon_name: selected.weapon_id,
+                bullet_id,
+                bullet,
+            };
+            // Wasm module `Fire` decision (RFC 0001 section 9): a plan
+            // launches its bullets in place of this one.
+            match super::fire_plan::decide_fire_plan(world, rules, &shot) {
+                None => super::admit_techno_fired_bullet(world, rules, weapon, bullet_id, bullet)
+                    .then_some(weapon_id),
+                Some(plan) => {
+                    planned = Some(super::fire_plan::launch_fire_plan(world, rules, &shot, &plan));
+                    Some(weapon_id)
+                }
+            }
         } else {
             None
         }
@@ -2149,6 +2179,11 @@ pub(super) fn emit_admitted_fire(
     let Some(weapon_id) = launched_weapon else {
         fireat_tail(world, rules, snap, weapon, None, effects);
         return None;
+    };
+    // The bullet the rest of FireAt reads: a plan's first, if any.
+    let shot_bullet = match &planned {
+        None => Some(bullet_id),
+        Some(plan) => plan.first().map(|&(id, _)| id),
     };
 
     let sequence = world
@@ -2460,7 +2495,7 @@ pub(super) fn emit_admitted_fire(
         FireDisclosurePath::Shot,
     );
 
-    fireat_tail(world, rules, snap, weapon, Some(bullet_id), effects);
+    fireat_tail(world, rules, snap, weapon, shot_bullet, effects);
     // Concrete class FireAt suffixes follow the base tail, including
     // LimboLaunch. Ares reload / Infantry panic and Unit's firing counter /
     // Scalable work stay here for ordinary and direct mission FireAt callers.
@@ -2526,13 +2561,14 @@ pub(super) fn emit_admitted_fire(
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
             crate::sim::animation::commit_unit_firing_counter(entity, frames);
         }
-        if let Some(kind) = world
-            .projectiles
-            .get(bullet_id)
-            .and_then(|bullet| bullet.payload().projectile_type())
-            .and_then(|type_id| world.interner.projectile_type(type_id, rules))
+        if let Some(shot_bullet) = shot_bullet
+            && let Some(kind) = world
+                .projectiles
+                .get(shot_bullet)
+                .and_then(|bullet| bullet.payload().projectile_type())
+                .and_then(|type_id| world.interner.projectile_type(type_id, rules))
         {
-            world.projectiles.init_scalable(bullet_id, kind);
+            world.projectiles.init_scalable(shot_bullet, kind);
         }
     }
     // Fire741340's last step (74143E..741471): a DisguiseWhenStill= Unit
@@ -2585,7 +2621,8 @@ pub(super) fn emit_admitted_fire(
                 effects,
                 ModuleEvent {
                     other: target,
-                    projectile: bullet_id,
+                    // A plan's bullets have their own `AttackedBy`.
+                    projectile: if planned.is_some() { 0 } else { bullet_id },
                     cell: Some((target_rx, target_ry)),
                     value: i64::from(selected.index),
                     id: weapon,
@@ -2596,20 +2633,26 @@ pub(super) fn emit_admitted_fire(
                 },
             );
         }
-        if attacked && target != 0 {
-            world.raise_module_event(
-                rules,
-                effects,
-                ModuleEvent {
-                    other: snap.stable_id,
-                    projectile: bullet_id,
-                    value: i64::from(selected.index),
-                    ..ModuleEvent::new(vera20k_wasm_ext::triggers::EVENT_ATTACKED_BY, target)
-                },
-            );
+        let attacks = match &planned {
+            None => vec![(bullet_id, target)],
+            Some(plan) => plan.clone(),
+        };
+        for (projectile, target) in attacks {
+            if attacked && target != 0 {
+                world.raise_module_event(
+                    rules,
+                    effects,
+                    ModuleEvent {
+                        other: snap.stable_id,
+                        projectile,
+                        value: i64::from(selected.index),
+                        ..ModuleEvent::new(vera20k_wasm_ext::triggers::EVENT_ATTACKED_BY, target)
+                    },
+                );
+            }
         }
     }
-    Some(bullet_id)
+    Some(shot_bullet.unwrap_or(bullet_id))
 }
 
 /// `TechnoClass::FireAt 0x006FF749..0x006FF939`, which runs after a launched
@@ -2810,9 +2853,12 @@ fn commit_fire_bookkeeping(
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
             world.leave_team(drainer_id, true, rules, effects);
         }
+        let before = world.module_target_before(drainer_id);
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
             represented_assign_target(drainer, None, rules.ares_form());
         }
+        // Wasm module `TargetChanged` (`ext_modules::control`).
+        world.raise_module_target_changed(rules, effects, drainer_id, before);
     }
 }
 

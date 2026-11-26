@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.21，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.23，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -272,7 +272,7 @@ struct Order {            // 24 字节，后接 count 个单位句柄（i64）�
 }
 struct ProjectileSpec {   // 48 字节：CreateProjectile 的变长数据，也是 Fire 射击方案的一条
     type: i32,            // 0   抛射体类型 ID
-    weapon: i32,          // 4   提供伤害和弹头的武器 ID；-1 为没有
+    weapon: i32,          // 4   提供伤害和弹头的武器 ID；-1：Fire 方案中为这次射击的武器和负载，CreateProjectile 中为没有
     target: i64,          // 8   对象或格子引用；0：Fire 方案中为这次射击的目标，
                           //     CreateProjectile 中为起点对象当前的 Target（没有时为 Refused）
     data: [u8; 16],       // 16  初始模块数据（Data0 为第 0..7 字节，Data1 为第 8..15 字节），存档并计入哈希
@@ -283,9 +283,9 @@ struct ProjectileSpec {   // 48 字节：CreateProjectile 的变长数据，也�
 struct PathSpec {         // 32 字节，后接 point_count 个点：Launch 的结果区
     kind: i32,            // 0   PathKind（8.3）
     point_count: i32,     // 4   后面的点数
-    speed: i64,           // 8   速度：定点数（16 位小数），lepton 每帧
-    param: [i64; 2],      // 16  种类参数，如螺旋的半径和周期、抛物线的顶点高度
-}                         //     每个点为 x、y、z 三个 i64（lepton），共 24 字节
+    speed: i64,           // 8   沿路径的速度：定点数（16 位小数），lepton 每帧；≤ 0 为抛射体当前的速度
+    param: [i64; 2],      // 16  种类参数：抛物线 param[0] 为顶点高度，螺旋 param[0] 为半径、param[1] 为每圈帧数（> 0）
+}                         //     每个点为 x、y、z 三个 i64（lepton），共 24 字节；1 到 16 个，抛物线和螺旋恰好 1 个
 struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
     flags: i32,           // 0   位 0 引爆，位 1 设速度，位 2 设位置，位 3 设模块数据
     reserved: i32,        // 4   0
@@ -294,6 +294,21 @@ struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
     position: [i32; 3],   // 24  新位置 x、y、z（lepton）
     reserved3: i32,       // 36  0
     data: [u8; 16],       // 40  新的模块数据（Data0 为第 0..7 字节，Data1 为第 8..15 字节）
+}
+struct MissionStepResult { // 24 字节：MissionStep 的结果区；第一环收到任务主体的结果
+    target: i64,          // 0   目标：对象或格子引用；0 为没有
+    destination: i64,     // 8   目的地：对象或格子引用；0 为没有
+    mission: i32,         // 16  要排入的任务（Mission）；-1 为不排
+    delay: i32,           // 20  任务主体下次运行前的帧数（≥ 1）
+}
+struct MoveStep {         // 16 字节：MoveFrame 的结果区
+    flags: i32,           // 0   位 0 接管本帧并按 displacement 移动，位 1 转向 facing，位 2 停止原生移动（空目的地）
+    facing: i32,          // 4   车体朝向 0..255（同 Facing 属性）
+    displacement: [i32; 2], // 8 x、y（lepton），每轴钳制在 ±2,048
+}
+struct PathCell {         // 8 字节：PathFound 结果区中的一个格子（最多 24 个）
+    x: i32,               // 0   格子 x
+    y: i32,               // 4   格子 y
 }
 ```
 
@@ -504,14 +519,14 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 
 ### 4.1 原版事件 0..61
 
-类型 `R` 投递，`H` House 标签轮询，`L` Logic 标签轮询；字段 `S` subject，`O` other，`Hs` house；“持久”表示写入持久状态。H、L 均为全局绑定；R 默认绑定对象，例外见表。除 0、2、3、24、31、33、51、53、54、59 为 `later` 外都是 `v1`，不可决定。
+类型 `R` 投递，`H` House 标签轮询，`L` Logic 标签轮询；字段 `S` subject，`O` other，`Hs` house；“持久”表示写入持久状态。H、L 均为全局绑定；R 默认绑定对象，例外见表。除 0、24、31、33、51、53、54、59 为 `later` 外都是 `v1`，不可决定。
 
 | # | API 名称 | 参数 | 类型 | 字段 | 绑定例外及备注 |
 | --- | --- | --- | --- | --- | --- |
 | 0 | — | — | — | — | 不公开；永不成立 |
 | 1 | `EnteredBy` | `value` 所属方下标（−1 任意） | R | S、O、保留的 Hs | 持久 |
-| 2 | `SpiedBy` | 忽略 | R | S、O |  |
-| 3 | `ThievedBy` | `value` 所属方下标 | R | S、Hs |  |
+| 2 | `SpiedBy` | 忽略 | R | S、O | 在被渗透的建筑上引发，`other` 为间谍，只给模块触发器 |
+| 3 | `ThievedBy` | `value` 所属方下标 | R | S、O、Hs | 在被偷的载具上引发，`other` 为窃贼，`Hs` 为窃贼的所属方，只给模块触发器 |
 | 4 | `DiscoveredByPlayer` | 忽略 | R | S、O |  |
 | 5 | `HouseDiscovered` | `value` 所属方 | H | Hs |  |
 | 6 | `AttackedByAnyHouse` | 忽略 | R | S、O |  |
@@ -609,28 +624,28 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 
 修饰器事件按目标绑定：对象绑定该对象；所属方为全局事件，填 `house`。
 
-在安全点引发；`对象+武器` 也可绑定到武器、弹头或抛射体类型（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）。层级属于投递形式；决定形式只有 `TakeDamage` 为 `v1`，`Fire`、`FatalDamage`、`TargetChanged` 的为 `later`。100037、100038 保留（`OnBehavior`、`OnBehaviorExpire`）。
+在安全点引发；`对象+武器` 也可绑定到武器、弹头或抛射体类型（[RFC 6a](0001-wasm-extension-modules.zh-CN.md#6a-触发器事件筛选子句和动作)）。层级属于投递形式；决定形式只有 `TakeDamage` 为 `v1`，`Fire`、`FatalDamage` 的为 `preview`，`TargetChanged` 的为 `later`。100037、100038 保留（`OnBehavior`、`OnBehaviorExpire`）。100044 起与 4.5 共用一套编号。
 
 | # | 事件 | 字段 | 引发时机 | 绑定 | 决定时机 → 结果（— 为不可决定） | 层级 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 100000 | `TakeDamage` | `other` 来源（可为 0），`value` 结算后的正伤害：已经过护甲倍率、免疫、距离衰减、主体护甲的 Verses、上限、建筑最小值和 Ares 处决；投递时已按受击前生命截断，决定时尚未截断；`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 伤害提交后 | 对象 | 伤害提交前，且只在这个值大于 0 时 → 截断前的最终伤害（钳制到 0..2^31−1）；零伤害和治疗不询问 | v1 |
 | 100001 | `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源，`x`、`y`、`z` 主体位置（lepton） | 伤害被接收后；免疫的命中不算 | 对象 | — | later |
 | 100002 | `AttackedBy` | `other` 攻击者，`value` 武器槽位（−1 无），`projectile`（可为 0） | 开火步骤后，在目标上 | 对象 | — | v1 |
-| 100003 | `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 死亡流程中 → 死亡方式：位 0–31 为死亡武器 ID 加 1（0 无），位 32 产生幸存者，位 33 留下残骸 | v1 |
+| 100003 | `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查。没有伤害提交的死亡（碾压、超时空抹除、坠毁、乘客和奴隶在内部死亡、摔落）在记录击杀前引发，`value` 为剩余生命值，`id` 为 −1；出售不算死亡 | 对象 | 受伤流程的死亡分支入口，其中任何效果之前 → 死亡方案（下表的位）；不经受伤流程的死亡不询问 | v1 |
 | 100004 | `Killed` | `other` 击杀者（可为 0），`id` 致死弹头（无为 −1），`x`、`y`、`z` 死亡位置（lepton） | 击杀记录后 | 对象 | — | v1 |
-| 100005 | `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 射出前 → 射击方案条数；方案是结果区中的 `ProjectileSpec` 数组（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） | v1 |
+| 100005 | `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 射出前：发射有解、弹体负载已建好之后 → 射击方案条数（0..16）；方案是结果区中的 `ProjectileSpec` 数组，首环收到原生射击的一条（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） | v1 |
 | 100006 | `SpawnFire` | `other` 子机，`value` 武器槽位，`projectile`；目标在 `cell` 或子机的 `Target` 属性 | 子机射击后 | 对象 | — | later |
 | 100007 | `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 伤害提交后，在开火者上 | 对象+武器 | — | later |
-| 100008 | `TargetChanged` | `other` 新目标（清除时为 0） | 目标设定或清除后 | 对象 | 在对象的回合里设定目标前；并行的索敌预答不引发 → 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读 | later |
+| 100008 | `TargetChanged` | `other` 新目标对象（清除或格子目标为 0），`cell` 其格子（清除时为 0） | 目标设定函数改变了目标后，或引擎直接写目标后（新对象的初始目标除外） | 对象 | 在对象的回合里设定目标前；并行的索敌预答不引发 → 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读 | v1 |
 | 100009 | `ProjectileIncoming` | `projectile`，`other` 发射者（可为 0） | 抛射体被接纳后 | 对象 | — | later |
-| 100010 | `Detonated` | `projectile`（投递时读出为不存在），`cell`，`other` 来源（可为 0），`id` 弹头，`x`、`y`、`z` 引爆点（lepton） | 引爆后 | 对象+武器 | — | later |
-| 100011 | `Birth` | `other` 生产者（可为 0），`value` 生产时间（−1 无） | 对象放置后（生产、增援、生成） | 对象 | — | v1 |
+| 100010 | `Detonated` | 在来源上（`subject` 和 `other`，可为 0）。`projectile`（投递时读出为不存在），`cell`，`id` 弹头，`x`、`y`、`z` 引爆点（lepton） | 发射出的抛射体整个引爆（含集束）后；死亡武器、动画武器等没有抛射体的引爆不引发 | 对象+武器 | — | v1 |
+| 100011 | `Birth` | `other` 生产者或来源（可为 0），`value` 生产时间（−1 无） | 对象放置后（生产、增援、生成、部署或收起、幸存者、乘员和飞行员；`other` 为它们来自的建筑或载具） | 对象 | — | v1 |
 | 100012 | `TransportEntered` | 在乘客（`subject`）上；`other` 载具或建筑，`value` 已占空间，`value2` 1 驻军 / 0 载员 | 进入完成后 | 对象 | — | v1 |
-| 100013 | `TransportExited` | 同 `TransportEntered` | 离开完成后 | 对象 | — | v1 |
+| 100013 | `TransportExited` | 同 `TransportEntered`（进驻：`value` 为里面剩下的进驻者数） | 离开完成后；进驻者在内部被移除时也引发（移除前） | 对象 | — | v1 |
 | 100014 | `PassengerAdded` | 在载具或建筑（`subject`）上；`other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `TransportEntered` | 对象 | — | v1 |
 | 100015 | `PassengerRemoved` | 同 `PassengerAdded` | 同 `TransportExited` | 对象 | — | v1 |
 | 100016 | `Commanded` | 在单位（`subject`）上；`value` 指令（`Command`），`other` 目标对象（可为 0），`cell` 目标格子（可为 0），`value2` 指令序号（一次点击下给多个单位的同一条指令共用） | 模拟执行绑定对象的玩家或 AI 指令后 | 对象 | — | v1 |
-| 100017 | `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 碾压后 | 对象 | — | later |
+| 100017 | `Crushed` | `other` 碾压者，`x`、`y`、`z` 位置（lepton） | 确定碾压后、记录被碾者的击杀前 | 对象 | — | v1 |
 | 100018 | `HouseTransfer` | `house` 新所属方，`value` 1 为心控 | 转移前；转移重新检查 | 对象 | — | later |
 | 100019 | `HouseTransferred` | `house` 原所属方，`value` 1 为心控 | 转移后 | 对象 | — | v1 |
 | 100020 | `ModifierStart` | `modifier`，`value` 属性 ID，`other` 来源（可为 0） | 修饰器加入后 | 修饰器目标 | — | v1 |
@@ -640,7 +655,29 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100024 | `SuperWeaponLaunched` | `id` 超级武器类型，`house`，`cell` 目标 | 超级武器发射后 | 全局 | — | v1 |
 | 100025 | `ProductionCancelled` | `house`，`id` 类型，`value` 退还的金钱 | 玩家或 AI 取消生产队列中的条目后 | 类型 | — | later |
 | 100040 | `ModuleEvent` | `id` 事件 ID（`EventDef.id` 同此），`subject`（全局事件为 0），`other`、`value`、`value2`、`house` 取自 `RaiseEvent` 的参数（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)） | `RaiseEvent` 执行时 | 注册为对象事件时为对象，否则为全局 | — | v1 |
+| 100048 | `MissionChanged` | `value` 新任务（`Mission`） | 当前任务改变后。暂缓：引擎在许多地方改写任务，且手边没有本帧的效果，目前没有统一的引发点 | 对象 | — | later |
+| 100051 | `Deployed` | `value` 1 部署、0 收起，`other` 变成的对象（仍是自己为 0） | 部署或收起完成后（单位变建筑、简单部署单位、步兵） | 对象 | — | v1 |
+| 100052 | `Promoted` | `value` 新等级（1 老兵，2 精英） | 等级采样记下晋升后 | 对象 | — | v1 |
+| 100053 | `ExperienceGained` | `other` 被击杀者，`value` 获得的经验（百分之一等级，即 `Experience` 的单位） | 击杀经验发放后，每个获得者一次 | 对象 | — | v1 |
+| 100054 | `Cloaked` | — | 隐形完成后 | 对象 | — | v1 |
+| 100055 | `Decloaked` | — | 显形完成后 | 对象 | — | v1 |
 | 100043 | `OrderRefused` | `subject` 被拒绝的单位（所属方级指令为 0），`house` 发出指令的所属方，`value` 指令（`Command`），`value2` 原因（`RefuseReason`），`other`、`cell` 指令的目标，`id` 所属方级指令的类型（其他为 −1）（[RFC 6i](0001-wasm-extension-modules.zh-CN.md#6i-驱动所属方)） | 指令在执行步骤中被拒绝后，每个单位一次，所属方级指令一次 | 全局 | — | v1 |
+
+`FatalDamage` 的死亡方案（决定形式的结果，`native` 为引擎自己的方案）：
+
+| 位 | 含义 | 原生值 |
+| --- | --- | --- |
+| 0 | 爆炸：乘客随之死亡，并可发射死亡武器 | `Explodes=`、老兵能力或自杀武器；低空落水的炸弹为 0 |
+| 1 | 发射死亡武器（需位 0） | 1；Ares `SuppressDeathWeapon` 为 0 |
+| 2 | 抛出碎片 | 1；低空落水的炸弹为 0 |
+| 3 | 幸存者：建筑产生幸存者，载具的乘客逃出 | 致命一击无视防御时为 0 |
+| 4 | 载具乘员逃出 | 致命一击禁止时为 0 |
+| 5 | 单位损失播报 | 1；Ares `UnitLost.Suppress` 为 0 |
+| 6 | 泰矿残留：所在格及四个正交相邻格各留下至多 2 的 Riparius。引擎没有残骸对象，这是死亡唯一留下的东西 | Ares `TiberiumRemains`（默认为 `TiberiumHeal=` 且 `TiberiumHealEnabled`）；无 Ares 时为 0 |
+| 8–15 | 步兵的 `InfDeath`（0..255） | 致命弹头的值 |
+| 32–62 | 死亡武器 ID 加 1，代替类型自己的死亡武器（按 `DeathWeaponDamageModifier`）；0 为类型自己的 | 0 |
+
+其他位须为 0；有其他位、为负或武器 ID 不存在的回答保留上一环的结果。沉没、坠毁、`DeathFrames=`、爆炸动画以及释放奴隶和心控俘虏仍由引擎决定。方案去掉碎片、乘客死亡或死亡武器时，它们的随机数抽取随之不发生：结果不同，但仍确定。
 
 ### 4.4 新的轮询型事件
 
@@ -664,9 +701,20 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100032 | `ProductionQueued` | `house`，`id` 类型，`subject` 0 | 玩家或 AI 把类型加入生产队列时；续造和强制重排不询问；拒绝电脑所属方时引擎让它重选 | 类型 | 1 允许，0 拒绝：拒绝的条目不入队，不花钱 | v1 |
 | 100033 | `Defeat` | `house` | 引擎的判负检查即将判定该所属方失败时；`EndFor` 和原版的胜负动作不经过它 | 全局 | 1 判负，0 否决：本次不判负，下次检查再问 | v1 |
 | 100034 | `CommandAllowed` | `subject`，`value` 指令（`Command`），`other` 目标对象，`cell` 目标格子 | 模拟执行绑定对象的每条玩家或 AI 指令时；光标预览不引发 | 对象 | 1 允许，0 拒绝 | preview |
-| 100035 | `Launch` | `projectile`，`subject` 发射者，`other` 目标，`cell` 目标格子 | 绑定类型的每个抛射体射出时一次 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec` | later |
-| 100036 | `ProjectileFrame` | `projectile`，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在目标解析和帧数引信之后、计算候选位置之前，每个本帧要移动的绑定抛射体一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按原生推进 | later |
+| 100035 | `Launch` | `projectile`，`subject` 发射者（不存在时为 0），`other` 目标对象，`cell` 目标坐标所在的格子 | 每个会飞行的抛射体射出时一次，在它进入游戏之后：开火、射击方案、子弹分裂、空爆、超级武器和触发器打击；`Inviso=` 不询问 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec`；未处理时按原生弹道飞行 | preview |
+| 100036 | `ProjectileFrame` | `subject` 和 `projectile` 为抛射体，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在等待动画、目标解析和帧数引信之后、计算候选位置之前，每个本帧要移动的绑定抛射体一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按 `Launch` 的路径或原生推进 | preview |
 | 100039 | `DamageIncoming` | `subject`，`other` 来源（可为 0），`id` 弹头，`value` 入射伤害（有符号），`value2` 把 `previous` 按触发器 `EventDef.id` 的护甲（−1 为主体的护甲）经距离衰减、Verses 和上限算出的伤害，符号同 `previous`；`EventDef.value` 位 0 为 1 时，正值先按主体护甲倍率的乘积相除并向零取整；`x`、`y`、`z` 主体位置（lepton） | Techno 受伤入口：步兵卧倒、寄生前缀和引擎自己的护盾之后，阻止死亡、主体护甲和最小伤害 1 之前。入射为 0、无视防御、狂暴或超时空弹头，以及会被免疫、铁幕或敌我许可拒绝的命中不询问；主体护甲的 Verses 为 0 不影响询问 | 对象 | 继续进入原生流程的入射伤害：须为 0 或与 `previous` 同号，否则保留上一环；每一环按自己的 `previous` 重算 `value2`；变成 0 时不再施加最小伤害 1 | preview |
+| 100044 | `FireAllowed` | `subject` 射手，`other` 目标对象（格子为 0），`cell` 目标格，`value` 武器槽位，`id` 武器 | 开火流程的开火检查允许一发之后、开火之前 | 对象 | 1 允许，0 否决（射手像装填一样等待） | preview |
+| 100045 | `Retaliate` | `subject` 受伤对象，`other` 来源，`id` 弹头 | 引擎对有来源的命中决定是否反击之后 | 对象 | 1 反击，0 不反击；`native` 为引擎的答案。反击仍要求来源在可及范围内 | preview |
+| 100046 | `DestinationSet` | `subject`，`other` 原生目的地对象（格子为 0），`cell` 其格子，`value` 原生目的地引用 | 目的地设定函数收到非空目的地时 | 对象 | 目的地引用（对象或格子），0 为无；不存在的对象、地图外的格子或设定函数拒绝的目的地保留原生目的地 | preview |
+| 100047 | `CrushAllowed` | `subject` 被碾者，`other` 碾压者 | 碾压者进格、即将碾压某个占用者时；进格判定（寻路查询）不询问 | 对象 | 1 允许，0 放过（被碾者留在格子里） | preview |
+| 100049 | `HarvestCell` | `subject` 矿车或奴隶矿场，`cell` 扫描到的格子，`value` 其引用（无为 0） | 矿石扫描给出答案时 | 对象 | 要采的格子引用，0 为无；地图外的格子保留原生答案 | preview |
+| 100050 | `DeployAllowed` | `subject` | 单位部署成建筑、简单部署单位开始部署或步兵部署之前 | 对象 | 1 允许，0 拒绝（同部署受阻） | preview |
+| 100060 | `IdleMission` | `subject` | 步兵或车辆进入空闲、引擎选定要排入的任务之后、排入之前；不排任务时不询问；飞机和建筑不询问 | 对象 | 要排入的任务（`Mission`），255 不排；`native` 为引擎的选择 | preview |
+| 100062 | `MissionStep` | `subject`，`value` 运行的任务（`Mission`），`other` 目标对象（格子或没有时为 0），`cell` 目标格子 | 步兵或车辆的 Guard、Sticky、AreaGuard、Hunt、Attack 任务主体每次运行之后（主体和它的随机数抽取都已完成）、写任务计时器和排入任务之前；飞机和建筑不询问 | 对象 | 不使用。结果区中为一条 `MissionStepResult`，进来时是主体的结果：它留下的目标和目的地、它要排入的任务（−1 为不排）和它的延迟。改动的字段经引擎自己的设置器生效（目的地经 `DestinationSet`）；已消失的对象、地图外的格子、未知的任务或小于 1 的延迟保留主体的结果。主体做的其他事（开火、部署、进入空闲时排入的任务）照常 | preview |
+| 100063 | `MoveFrame` | `subject`，`x`、`y`、`z` 其位置，`value` 移动方式正在移动时为 1，`other`、`cell` 其导航目标（对象或格子） | 使用 Drive、Ship、Walk、Mech 或 Hover 移动方式的车辆或步兵每帧到达移动方式的处理、且没有进行中的一步时（轨道或子格一步先走完），在进行中的 `Push` 那一帧之后；被运载、正在传送、列车对象不询问，其他移动方式不询问 | 对象 | 不用；结果区为一个 `MoveStep`，首环全为 0。位 0 接管本帧：原生处理不运行，对象按位移移动；进入另一格时只检查那一格（在地图内、不是从桥面出发、对象自己的进入格子判定答空闲），否则留在原地。引擎保持离地高度、迁移占格、清空路径队列，进入新格子时执行到达格子的处理。`handled` 为 0 或没有位 0 时本帧交给移动方式 | preview |
+| 100064 | `PathFound` | `subject`，`x`、`y`、`z` 其位置，`cell` 寻路目标所在格子，`value` 原生路径的格子数（无路为 0） | 采用一次寻路的路径（或失败）时，寻路之后、复制路径之前，无论寻路在哪里运行（路径批处理只是提前算出）；列车延长已排路径、含管道一步的路径不询问 | 对象 | 格子数（0..24）；结果区为这么多个 `PathCell`，首环为原生路径的格子。0 为无路（随后走原生的失败处理）；否则这些格子（每格与前一格相邻、第一格与对象所在格相邻、都在地图内）替换路径，不满足时保留原生路径 | preview |
+| 100065 | `ApproachPoint` | `subject`，`x`、`y`、`z` 其位置，`other` 目标对象（格子目标为 0），`value2` 目标所在格子的引用，`cell` 选中的格子，`value` 其引用 | 接近射程外目标（Attack、Hunt、AreaGuard、Rescue、Patrol 和引擎的接近检查）的对象选定要去的格子时，搜索及其随机数之后、设为目的地之前；接近在没有选定格子时结束（目标已在射程内、取用排队的目的地、放弃目标、没有可达的格子）不询问 | 对象 | 要去的格子引用；地图内的格子替换选中的格子，其他值（包括 0）保留上一环的结果（首环为原生格子）。随后按原生格子的方式设为目的地 | preview |
 
 ### 4.6 客户端事件种类
 
@@ -912,13 +960,14 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | 100032 | `AddScore` | `House` | `value` 分数 | 增加分数 | none | v1 |
 | 100033 | `Log` | — | `text` | 写一行游戏内日志 | none | v1 |
 | 100034 | `Convert` | 对象 | `id` 类型，`value2` 帧数（0 永久；大于 0 时到期变回） | 改变类型，同 Ares 类型转换；与传送和运动互斥 | native | v1 |
-| 100035 | `Push` | 对象 | `cell` 方向目标，`value` 力度 | 被推动或抛起，叠加到移动上；与变形和传送互斥 | native | later |
+| 100035 | `Push` | 对象 | `cell` 方向目标，`value` 距离（lepton；负数为远离；至多 2,048；0 结束推动），`value2` 帧数（1..255；0 或负数为每 64 lepton 一帧） | 沿地面推动使用 Drive、Ship、Walk、Mech 或 Hover 移动方式的车辆或步兵，叠加到它自己的移动上：每帧在移动方式的处理处、没有进行中的一步时，按 `MoveFrame` 一步的方式移动一份距离；某一步被拒绝时推动结束。新的推动替换旧的；传送、变形或离开游戏时结束。进行中时存档并计入哈希。其他对象和正在传送时为 `Refused`；不抛起 | native | preview |
 | 100036 | `Module` | 不限 | `id` 分派键；`text` 参数文本（可省略） | 运行模块动作，在模块阶段排队；记录的 `target` 为触发器中的目标选择，`args` 为参数文本的字符串 ID；具名节写作 `Action=Wasm:name` 或 `Action=Wasm:name(目标,文本)`，地图写作动作 100036（不带参数） | none | v1 |
 | 100037 | `CreateTeamUnlimited` | `House` | `id` TeamType | 启动小队，不受 Max 限制（同脚本动作 18）；返回小队 | native | later |
 | 100038 | `DisbandTeam` | — | `other` 小队 | 销毁小队，记录 AI 触发器结果，释放成员 | none | later |
 | 100039 | `AddTeamMember` | 对象 | `other` 小队 | 加入小队，执行准入检查 | none | later |
 | 100040 | `RemoveTeamMember` | 对象 | — | 离开所在小队 | none | later |
 | 100042 | `RaiseEvent` | 对象（对象事件）或不限（全局事件） | `id` 事件 ID；`other`、`value`、`value2`、`house` 写入记录 | 引发模块事件 `ModuleEvent`（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；对象事件的目标不是存在的对象为 `Gone`；事件 ID 未注册为非法参数；INI 写作 `RaiseEvent(目标,事件名,value,value2)` | none | v1 |
+| 100045 | `SetFacing` | 对象 | `value` 车体朝向 0..255 | 通过当前移动方式转动车体（移动方式按转速转动的就转动，直接设定的就设定）；没有移动方式时为 `Refused` | none | preview |
 
 ### 5.4 客户端动作种类
 
@@ -1067,7 +1116,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `Team` | ref（小队） | R | sim | later | 加入和离开用小队动作 |
 | `Tag` | ref（标签） | W | sim | later | 写入已有标签，替换原标签（[RFC 7](0001-wasm-extension-modules.zh-CN.md#7-运行时的触发器和标签)） |
 | `DisguiseType`、`DisguiseOwner` | ref | R | own | v1 | 模拟读真实状态；无伪装为 0 |
-| `Cloaked` | bool | R | own | later |  |
+| `Cloaked` | bool | R | own | v1 | 完全隐形（隐形中、显形中读 0） |
 | `Moving` | bool | R | own | v1 |  |
 | `Facing` | int 0..255 | R | own | v1 | 车体朝向，刻度同地图单位的朝向和脚本动作 `ForceFacing` |
 | `TurretFacing` | int 0..255 | R | own | v1 | 炮塔朝向，刻度同 `Facing`；没有炮塔为 `Unsupported` |
@@ -1083,11 +1132,11 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `Engage` | enum `EngageResult` | R（视点为对象，派生·高） | own | v1 | 视点对象作为射手能否打击它；视点须是对象，否则为 `Unsupported`；复用引擎的开火许可和伤害判定 |
 | `Selected` | bool | R | 客户端专用 | v1（阶段 2） | 本地选择；模拟中为 `Unsupported` |
 | `Relation` | enum `Relation` | R（视点） | own | v1 | 与视点所属方的关系 |
-| `NearbyEnemyCount` | int | R（派生，高） | own | later | 视野（`Sight`）内的敌方对象数 |
-| `TargetInRange` | bool | R（派生，高） | own | later | 当前目标在主武器射程内 |
-| `CanFireAtTarget` | bool | R（派生，高） | own | later | 现在能向当前目标开火 |
-| `DoorOpen` | bool | W | seen | later | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
-| `Animating` | bool | W | seen | later | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `NearbyEnemyCount` | int | R（派生，高） | own | v1 | 视野（`Sight`）内的敌方对象数 |
+| `TargetInRange` | bool | R（派生，高） | own | v1 | 当前目标在对象对它选用的武器射程内（一般为主武器，目标需要时为副武器） |
+| `CanFireAtTarget` | bool | R（派生，高） | own | v1 | 现在能向当前目标开火 |
+| `DoorOpen` | bool | W | seen | v1（写入为 later） | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `Animating` | bool | W | seen | v1（写入为 later） | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 
 ### 7.2 可修饰属性
@@ -1099,7 +1148,8 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `ArmorMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 受伤倍率 | `ArmorMultiplier`（`.AllowWarheads`、`.DisallowWarheads` 等弹头过滤只在 Phobos 效果类型中可用） | v1 |
 | `TargetArmor` | id（`Armor`） | 类型的护甲 | 覆盖 | 选目标、威胁评分、选武器和开火许可使用的护甲；不改变伤害结算 | — | preview |
 | `FirepowerMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 火力倍率 | `FirepowerMultiplier` | v1 |
-| `SpeedMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 速度倍率 | `SpeedMultiplier` | v1 |
+| `SpeedMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 速度倍率；飞行、喷气背包和火箭移动读类型速度，只按模块修饰器缩放它 | `SpeedMultiplier` | v1 |
+| `ROTMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 车辆、船只和建筑车体的转向速度（主朝向的 `ROT=`）。在对象的修饰器变化时生效，正在进行的转向仍在原定的帧结束。不影响炮塔、飞机和喷气背包 | — | preview |
 | `ROFMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 射速倍率 | `ROFMultiplier`、`ROFMultiplier.ApplyOnCurrentTimer` | v1 |
 | `WeaponRangeMultiplier` | fixed | 1.0 | 加、乘、覆盖 | 射程 | `WeaponRange.Multiplier` | v1 |
 | `WeaponRangeExtra` | lepton | 0 | 加、乘、覆盖 | 射程 | `WeaponRange.ExtraRange` | v1 |
@@ -1119,7 +1169,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `IgnoreOrders` | bool | 0 | 覆盖 | 无视玩家指令 | — | later |
 | `Targetable` | bool | 1 | 覆盖 | 为 0 时不可被选为目标 | — | later |
 | `PenetratesForceShield` | bool | 0 | 覆盖 | 穿透力场护盾 | `PenetratesForceShield` | later |
-| `ImmunityFlags` | mask | 类型的免疫 | 覆盖 | 免疫位：0 心灵控制、1 辐射、2 毒素、3 心灵、4 超时空、5 EMP、6 狂暴 | —（`ArmorMultiplier.AllowWarheads` 倍率为 0 可覆盖一部分） | later |
+| `ImmunityFlags` | mask | 类型的免疫（`ImmuneToPsionics=`、`ImmuneToRadiation=`、`ImmuneToPoison=`、`ImmuneToPsionicWeapons=`、`Warpable=no`；有 Ares 时加上等级能力、`ImmuneToEMP=` 及其默认值和 `ImmuneToBerserk=`；无 Ares 时狂暴随 `ImmuneToPsionics=`） | 仅覆盖，位 0..6；其他操作或其他位返回 `Refused` | 免疫位：0 心灵控制、1 辐射、2 毒素、3 心灵、4 超时空、5 EMP、6 狂暴。覆盖逐位取代各处判定算出的免疫，因此也能去掉免疫：0 心灵控制的夺取、心灵控制器（超武）、Ares 永久心控和绑架后的所属方；1、2、3 辐射、毒素、心灵弹头的受伤判定，1 也包括辐射场伤害；4 超时空军团兵的抹除和超时空传送的 `Warpable=` 判定；5 Ares EMP；6 Psychedelic（狂暴）判定和毒气的开火判定 | —（`ArmorMultiplier.AllowWarheads` 倍率为 0 可覆盖一部分） | preview |
 | `TintColor` | int（RGB） | 0 | 覆盖 | 染色；客户端为 `seen` | `Tint.Color` | later |
 | `TintIntensity` | fixed | 0 | 加 | 染色；客户端为 `seen` | `Tint.Intensity`、`Tint.Cumulative` | later |
 | `LaserTrailType` | id | −1 | 覆盖 | 激光拖尾；客户端为 `seen` | `LaserTrail.Type` | later |
@@ -1162,7 +1212,7 @@ Phobos 键为 `—` 的属性随模块功能开启（[RFC 14](0001-wasm-extensio
 
 ### 7.4 抛射体
 
-全部 `later`。
+全部 `preview`。抛射体引用是对象句柄（种类 0），与单位共用创建序号；`find` 不列出抛射体。
 
 | 属性 | 值 | 读写 | 客户端 |
 | --- | --- | --- | --- |
@@ -1285,7 +1335,7 @@ Ares 和 Phobos 的键尚未分类。
 | --- | --- | --- | --- | --- |
 | `Frame` | int | R | all | v1 |
 | `Difficulty` | enum `Difficulty` | R | all | v1 |
-| `GameMode` | string | R | all | later |
+| `GameMode` | string | R | all | v1 |
 | `PlayerCount` | int | R | all | v1 |
 | `MissionTimer` | frames | R | all | v1（修改用原版动作 23 至 27） |
 | `MissionTimerRunning` | bool | R | all | v1 |
@@ -1512,10 +1562,10 @@ Ares 和 Phobos 的键尚未分类。
 | 模拟导入 | 除 `send_notify` 外的全部 23 个 | `send_notify` 随阶段 2 |
 | 模拟导出 | 除 `on_message` 外的全部 | `on_message` 随阶段 2 |
 | 原版和 Ares 动作 | 1、2、4、5、7、8、10..12、14、16..18、20..35、41..48、51、53..73、76..80、82..90、92..97、100..110、112、114..118、125、127..129、131..145、148、149 | 其余 |
-| TechnoType 属性 | `Category`、`Strength`、`Cost`、`Soylent`、`Speed`、`ROT`、`Crushable`、`Selfhealing`、`Explodes`、`Power`、`Sight`、`Ammo`、`InitialAmmo`、`Storage`、`Passengers`、`SizeLimit`、`TechLevel` | 其余 |
-| Weapon 属性 | `Damage`、`ROF`、`Burst`、`MinimumRange`、`Range` | 其余 |
-| Warhead 属性 | `CellSpread`、`PercentAtMax`、`Wall`、`Wood`、`Sparky`、`Fire`、`Conventional`、`Rocker`、`InfDeath` | 其余 |
+| TechnoType 属性 | `Name`、`Category`、`Buildable`、`Strength`、`Cost`、`Points`、`Soylent`、`Speed`、`ROT`、`Crushable`、`Selfhealing`、`Explodes`、`Power`、`Sight`、`Ammo`、`InitialAmmo`、`Storage`、`Passengers`、`SizeLimit`、`TechLevel` | 其余 |
+| Weapon 属性 | `Name`、`Damage`、`ROF`、`Burst`、`MinimumRange`、`Range` | 其余 |
+| Warhead 属性 | `Name`、`CellSpread`、`PercentAtMax`、`Wall`、`Wood`、`Sparky`、`Fire`、`Conventional`、`Rocker`、`InfDeath` | 其余 |
 | 名字种类 | `TechnoType`、`Weapon`、`Warhead`、`Projectile`、`Anim`、`VoxelAnim`、`ParticleSystem`、`SuperWeapon`、`Country`、`TeamType`、`Variable`、`ModuleAction`、`Property`、`ActionKind`、`String`、`ModuleEvent`；阶段 2：`Notify`、`Hotkey` | 其余；`Armor` 随 `TargetArmor` 预览 |
-| 搜索范围 | `Objects`（不含抛射体）、`Houses`（不按区域、类型、所属方筛选）、`Cells`、`Modifiers`、`SuperWeapons` | 其余 |
+| 搜索范围 | `Objects`（不含抛射体）、`Houses`（不按区域、类型、所属方筛选）、`Cells`、`Types`（TechnoType、Weapon 和 Warhead，不按区域、所属方筛选）、`Modifiers`、`SuperWeapons` | 其余 |
 | 指令 | 8.3 中除右列外的全部 | `EjectBunker` |
 | 客户端节点属性 | 7.10 中除右列外的全部 | 只属于 `Decoration` 的属性、`ItemProgress`、写 `CameoGrid` 的 `Items` |

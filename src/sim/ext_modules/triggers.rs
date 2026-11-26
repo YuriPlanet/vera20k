@@ -79,6 +79,9 @@ pub(crate) struct ModuleEvent {
     pub(crate) id: i32,
     /// Record the subject's position (`x`, `y`, `z`).
     pub(crate) at_subject: bool,
+    /// A position in leptons the record carries instead (`Detonated`'s
+    /// detonation point).
+    pub(crate) at: Option<[i32; 3]>,
     /// The house the record carries instead of the trigger's (array index).
     pub(crate) house: Option<u32>,
     /// A polling event's index in the trigger it is checked for: only that
@@ -108,6 +111,7 @@ impl ModuleEvent {
             value2: -1,
             id: -1,
             at_subject: false,
+            at: None,
             house: None,
             poll: None,
             weapon: -1,
@@ -812,7 +816,9 @@ impl Simulation {
         house: Option<u32>,
     ) -> EventRecord {
         let house = house.map_or(0, |index| house_ref(index as usize));
-        let [x, y, z] = if event.at_subject {
+        let [x, y, z] = if let Some(at) = event.at {
+            at
+        } else if event.at_subject {
             self.with_module_host(rules, source, |host| {
                 ["X", "Y", "Z"].map(|name| {
                     match property_id(name).map(|prop| host.read(event.subject as i64, prop)) {
