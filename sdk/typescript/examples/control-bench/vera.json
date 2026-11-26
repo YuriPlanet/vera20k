@@ -1,0 +1,10 @@
+{
+  "kind": "rules",
+  "entry": "src/index.ts",
+  "out": "build/rules.wasm",
+  "vars": [
+    { "name": "BenchWave", "scope": "global", "visibility": "public", "initial": 7 },
+    { "name": "BenchScore", "scope": "house", "visibility": "allies", "initial": 3 },
+    { "name": "BenchTag", "scope": "object", "visibility": "private", "initial": 5 }
+  ]
+}

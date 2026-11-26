@@ -44,8 +44,8 @@ name: Release
 # `toolchain: stable` in place of its @stable branch. Refresh the pins about
 # once a year, to releases that have been out for a few weeks.
 #
-# Each native runner instruments the shipping game and sim-bench, trains on retail
-# gameplay and uses its own merged Rust LLVM profile to rebuild the game before
+# Each native runner instruments the shipping game and sim-bench, trains on headless
+# retail gameplay and uses its own merged Rust LLVM profile to rebuild the game before
 # packaging (.github/release/pgo.py). Stable promotion keeps those exact bytes.
 #
 # Each installer holds the game program, its license (LICENSE-GPL), the
@@ -250,12 +250,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config desktop-file-utils mesa-vulkan-drivers xvfb xauth
+          sudo apt-get install -y libasound2-dev pkg-config desktop-file-utils
       - name: Install Inno Setup 7.1.0
         if: runner.os == 'Windows'
         shell: pwsh
         run: .github/release/windows/install-inno.ps1
-      - name: Fetch the Windows shader compiler for training and packaging
+      - name: Fetch the Windows shader compiler for packaging
         if: runner.os == 'Windows'
         shell: pwsh
         run: .github/release/windows/fetch-dxc.ps1 -Package dist

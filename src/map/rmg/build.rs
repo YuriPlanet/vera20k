@@ -823,6 +823,7 @@ mod tests {
             let options = RmgOptions {
                 urban_areas: true,
                 urban_presence: 60,
+                civilian_amount: 50,
                 num_players: 2,
                 water_amount: 0,
                 seed,

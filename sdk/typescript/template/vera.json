@@ -1,0 +1,6 @@
+{
+  "kind": "rules",
+  "entry": "src/index.ts",
+  "vars": [],
+  "notify": []
+}

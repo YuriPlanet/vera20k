@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@vera20k/sdk": ["../index.ts"],
+      "@vera20k/sdk/*": ["../*"]
+    }
+  },
+  "include": ["*/src/**/*.ts", "*/*/src/**/*.ts"]
+}
