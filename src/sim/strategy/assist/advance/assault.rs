@@ -11,6 +11,7 @@ use super::super::{orders, siege_counter, tactics, census::{Slot, Unit}};
 use super::cell_distance;
 
 pub(super) const MIN_COLUMN: usize = 3;
+pub(super) const MIN_CONTINUATION: usize = 2;
 pub(super) const MAX_COLUMN: usize = 24;
 pub(super) const MAX_COHORT_SEARCH: usize = 48;
 
@@ -87,9 +88,9 @@ pub(super) struct Forecast {
     pub(super) allowed: bool,
 }
 
-fn acceptable(n: usize, hp: i64, cost: i64, target_cost: i64, frames: i64, loss: i64) -> bool {
-    n >= MIN_COLUMN && hp > 0 && frames <= 540 && loss.saturating_mul(100) <= hp.saturating_mul(45)
-        && loss.saturating_mul(cost.max(1)) / hp <= target_cost.max(1)*2 + cost/10
+fn acceptable_with_min(n: usize, minimum:usize, hp: i64, cost: i64, target_cost: i64, frames: i64, loss: i64) -> bool {
+    n >= minimum && hp > 0 && frames <= 540 && loss.saturating_mul(100) <= hp.saturating_mul(30)
+        && loss.saturating_mul(cost.max(1)) / hp <= target_cost.max(1)*3/2 + cost/10
 }
 
 /// Only evaluate the exact cohort to which the subsequent order is issued.
@@ -98,7 +99,17 @@ fn acceptable(n: usize, hp: i64, cost: i64, target_cost: i64, frames: i64, loss:
 /// no credit for unobserved powers, friendly repairs or future purchases.
 pub(super) fn estimate(rules: &RuleSet, obs: &Observation<'_>, battery: EnemyEntity,
     ready: &[&Unit]) -> Option<Forecast> {
-    if ready.len() < MIN_COLUMN || ready.len() > MAX_COLUMN
+    estimate_with_min(rules,obs,battery,ready,MIN_COLUMN)
+}
+
+pub(super) fn estimate_remaining(rules:&RuleSet,obs:&Observation<'_>,battery:EnemyEntity,
+    ready:&[&Unit])->Option<Forecast> {
+    estimate_with_min(rules,obs,battery,ready,MIN_CONTINUATION)
+}
+
+fn estimate_with_min(rules:&RuleSet,obs:&Observation<'_>,battery:EnemyEntity,
+    ready:&[&Unit],minimum:usize)->Option<Forecast> {
+    if ready.len() < minimum || ready.len() > MAX_COLUMN
         || !obs.visible_enemy_entities().any(|e| e.entity_id == battery.entity_id)
         || obs.visible_enemy_invulnerable(battery.entity_id) { return None; }
     let target = obs.entity_type(rules,battery.entity_id)?;
@@ -148,7 +159,7 @@ pub(super) fn estimate(rules: &RuleSet, obs: &Observation<'_>, battery: EnemyEnt
             // If a lethal/contact/spawn effect isn't described by direct DPS,
             // do not grant an optimistic blind assault through that threat.
             let Some(gun) = fire(rules,obs,enemy.entity_id,ty,victim) else { return None; };
-            let splash = if gun.splash {150} else {100};
+            let splash = if gun.splash {175} else {100};
             worst = worst.max(gun.dps_milli*splash/100);
             opening = opening.max(gun.volley*splash/100);
         }
@@ -163,18 +174,29 @@ pub(super) fn estimate(rules: &RuleSet, obs: &Observation<'_>, battery: EnemyEnt
     let loss = (incoming*frames/1000 + volley) * (if threats > 1 {125} else {100}) /100;
     Some(Forecast {hp,target_hp,frames:frames as u64,approach:travel as u64,
         loss_hp:loss,loss_credits:loss.saturating_mul(cost)/hp,
-        allowed:acceptable(ready.len(),hp,cost,i64::from(obs.cost_of(rules,target)),frames,loss)})
+        allowed:acceptable_with_min(ready.len(),minimum,hp,cost,i64::from(obs.cost_of(rules,target)),frames,loss)})
 }
 
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+    fn acceptable(n:usize,hp:i64,cost:i64,target_cost:i64,frames:i64,loss:i64)->bool {
+        acceptable_with_min(n,MIN_COLUMN,hp,cost,target_cost,frames,loss)
+    }
+    #[test]
+    fn two_remaining_may_finish_but_never_launch_a_wave() {
+        assert!(!acceptable(2,600,1400,1200,90,90));
+        assert!(acceptable_with_min(2,MIN_CONTINUATION,600,1400,1200,90,90));
+        assert!(!acceptable_with_min(2,MIN_CONTINUATION,600,1400,1200,90,181));
+        assert!(!acceptable_with_min(1,MIN_CONTINUATION,600,1400,1200,90,10));
+    }
     #[test]
     fn a_viable_line_tank_group_is_not_required_to_be_heavy_armour() {
         // 8 ordinary 300-HP vehicles; 20% forecast HP loss for a useful tower.
         assert!(acceptable(8,2400,5600,1200,180,480));
-        assert!(acceptable(3,1200,2400,1200,180,520));
-        assert!(!acceptable(3,1200,2400,1200,180,550));
+        assert!(acceptable(3,1200,2400,1200,180,360));
+        assert!(!acceptable(3,1200,2400,1200,180,361));
+        assert!(!acceptable(3,1200,2400,1200,180,520));
         assert!(!acceptable(2,2400,5600,1200,180,480));
         assert!(!acceptable(8,2400,5600,1200,180,1200));
         assert!(!acceptable(8,2400,5600,1200,541,200));

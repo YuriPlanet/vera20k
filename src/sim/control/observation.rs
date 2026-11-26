@@ -61,6 +61,16 @@ pub enum Engage {
     Cannot,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ObservedStrikeKind { Nuclear, Dominator, Lightning }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ObservedStrike {
+    pub(crate) kind:ObservedStrikeKind,
+    pub(crate) cell:(u16,u16),
+    pub(crate) radius:i32,
+}
+
 /// What one house's agent may look at, and nothing else.
 pub struct Observation<'a> {
     sim: &'a Simulation,
@@ -250,6 +260,114 @@ impl<'a> Observation<'a> {
     /// The tick commands issued now are stamped with.
     pub fn tick(&self) -> u64 {
         self.sim.session().tick()
+    }
+
+    /// Read the actual session discriminator, not the presence of a yard.
+    pub fn is_campaign(&self) -> bool {
+        self.sim.session().game_mode() == crate::sim::scenario_session::ScenarioGameMode::Campaign
+    }
+
+    /// Observed stock superweapon danger. Nuclear markers use exactly the
+    /// same psychic-warning admission as the UI. A storm is only exposed
+    /// after the public start, and the announced Dominator only before impact.
+    /// Unknown mod handlers must never be interpreted as stock blasts.
+    pub(crate) fn observed_superweapon_strikes(&self,rules:&RuleSet)->Vec<ObservedStrike> {
+        if rules.ares() || rules.ares_form() {return Vec::new();}
+        let mut result=Vec::new();
+        let spread=|name:&str|rules.warhead(name).map_or(0,|w|
+            w.cell_spread_f64.ceil().clamp(0.0,64.0) as i32);
+        if let Some(weapon)=rules.weapon("NukePayload") {
+            let radius=weapon.warhead.as_deref().map_or(0,spread);
+            if radius>0 {
+                for (_,anim) in self.sim.anims() {
+                    if anim.completed() || !self.sim.interner().resolve(anim.type_id())
+                        .eq_ignore_ascii_case(crate::rules::effect_asset_catalog::PSI_WARNING_ANIM)
+                        || !self.sim.psi_warning_detected_by(self.house,anim,rules) {continue;}
+                    let world=anim.world_coord();
+                    let (Ok(x),Ok(y))=(u16::try_from(world.x.div_euclid(256)),u16::try_from(world.y.div_euclid(256)))
+                        else {continue;};
+                    if self.is_cell_in_playfield(x,y) {
+                        result.push(ObservedStrike{kind:ObservedStrikeKind::Nuclear,cell:(x,y),radius:radius+1});
+                    }
+                }
+            }
+        }
+        let hostile=|owner:Option<InternedId>|owner.is_some_and(|owner|owner!=self.house
+            && !self.sim.house_alliances().is_allied(self.sim.interner(),self.house,owner));
+        let observed=|(x,y):(i16,i16)|{
+            let (Ok(x),Ok(y))=(u16::try_from(x),u16::try_from(y)) else {return None;};
+            (self.is_cell_in_playfield(x,y) && self.is_cell_visible(x,y)).then_some((x,y))
+        };
+        if let Some((cell,owner))=self.sim.psychic_dominator.announced_pending_strike() {
+            if hostile(owner) {
+                if let Some(cell)=observed(cell) {
+                    let radius=spread(&rules.general.dominator_warhead)
+                        .max(rules.general.dominator_capture_range.clamp(0,64))+1;
+                    result.push(ObservedStrike{kind:ObservedStrikeKind::Dominator,cell,radius});
+                }
+            }
+        }
+        if let Some((cell,owner))=self.sim.lightning_storm.announced_strike() {
+            if hostile(owner) {
+                if let Some(cell)=observed(cell) {
+                    let radius=(rules.general.lightning_cell_spread/2).clamp(0,64)
+                        +spread(&rules.general.lightning_warhead)+2;
+                    result.push(ObservedStrike{kind:ObservedStrikeKind::Lightning,cell,radius});
+                }
+            }
+        }
+        result.sort_unstable_by_key(|s|(s.cell,s.radius,s.kind as u8));
+        result.dedup();
+        result
+    }
+
+    /// Single-centre stock receiver forecast. An uncertain footprint,
+    /// unknown warning, modded damage, or native unsellability means KEEP.
+    pub(crate) fn forecast_strike_sale(&self,rules:&RuleSet,id:u64,
+        strike:ObservedStrike)->Option<i32> {
+        if !self.production_enabled() || !self.owns_object(id) || self.owned_by_hand(id)
+            || !self.is_cell_visible(strike.cell.0,strike.cell.1)
+            || !crate::sim::production::can_sell_building(self.sim,rules,id)
+        {return None;}
+        let (at,type_id)=self.object_cell_and_type(id)?;
+        // Only certify the primary foundation cell. Do not assume every
+        // building in CellSpread receives the centre damage (or any damage).
+        if at!=strike.cell {return None;}
+        let ty=self.object_type(rules,type_id)?;
+        if ty.category!=ObjectCategory::Building || ty.construction_yard
+            || ty.can_be_occupied || ty.build_const_eligible() || ty.undeploys_into.is_some()
+            || ty.strength<=0 {return None;}
+        let (damage,warhead)=match strike.kind {
+            ObservedStrikeKind::Nuclear=>{
+                let weapon=rules.weapon("NukePayload")?;
+                (weapon.damage,weapon.warhead.as_deref()?)
+            }
+            // Storm scatter is stochastic; the Dominator's damage and
+            // source attribution differ from the nuke. Never liquidate
+            // based on those uncertain forecasts in this first policy.
+            _=>return None,
+        };
+        let predicted=crate::sim::combat::stock_strike_damage_on_building(
+            self.sim,rules,id,damage,warhead)?;
+        // Even full-health survival (or a borderline prediction) means
+        // keep it. A native sale request still need not finish before impact.
+        (i64::from(predicted)*100>=i64::from(ty.strength)*125).then_some(predicted)
+    }
+
+    /// Centre-hit estimate through the stock damage receiver. Callers
+    /// must not treat splash falloff, random storm scatter or later repairs
+    /// as guaranteed kills. Unavailable for unsupported mod receivers.
+    pub(crate) fn visible_strike_building_damage(&self,rules:&RuleSet,id:u64,
+        damage:i32,warhead:&str)->Option<i32> {
+        if !self.visible_enemy_entities().any(|e|e.entity_id==id)
+            || self.visible_enemy_invulnerable(id) {return Some(0);}
+        crate::sim::combat::stock_strike_damage_on_building(self.sim,rules,id,damage,warhead)
+    }
+
+    /// The same online producer that backs has_producer, for planning a
+    /// prospective specialist's actual starting region.
+    pub fn current_producer(&self,rules:&RuleSet,ty:&ObjectType)->Option<u64> {
+        crate::sim::production::find_factory(self.sim,rules,self.house,ty,false,true,true)
     }
 
     /// The house's wallet: `HouseState::economy`, the authoritative balance.
@@ -520,6 +638,33 @@ impl<'a> Observation<'a> {
             return None;
         }
         Some(controller_id)
+    }
+
+    /// Actual own rank, not a type-level estimate or an enemy fog query.
+    pub(crate) fn own_combat_experience(&self,actor:u64)->Option<i32> {
+        let e=self.sim.entities().get(actor)?;
+        if e.owner()!=self.house || e.health.current()<=0 {return None;}
+        let value=f32::from_bits(e.veterancy.raw().bits());
+        value.is_finite().then_some((value.clamp(0.0,20.0)*1000.0) as i32)
+    }
+
+    pub(crate) fn own_elite(&self,actor:u64)->bool {
+        self.sim.entities().get(actor).is_some_and(|e|e.owner()==self.house
+            && e.veterancy.rank_kind()==crate::sim::combat::veterancy::VeterancyRank::Elite)
+    }
+
+    pub(crate) fn observed_actor_weapon<'r>(&self,rules:&'r RuleSet,actor:u64,slot:usize)
+        ->Option<&'r crate::rules::weapon_type::WeaponType> {
+        let e=self.sim.entities().get(actor)?;
+        if e.owner()!=self.house && !self.is_cell_visible(e.position.rx(),e.position.ry()) {
+            return None;
+        }
+        let ty=self.sim.object_type(e.type_ref(),rules)?;
+        if ty.gunner {
+            return if slot==0 {self.active_gunner_weapon(rules,actor)}else{None};
+        }
+        crate::sim::combat::combat_weapon::weapon_for_index(ty,e.veterancy.rank(),
+            i32::try_from(slot).ok()?).and_then(|record|record.weapon(rules))
     }
 
     /// Current Gunner weapon *on this specific vehicle*. Its passenger has
@@ -942,6 +1087,14 @@ impl<'a> Observation<'a> {
     /// building that is neither the house's nor an enemy's, so no target list
     /// holds it. The caller decides what counts as in the way; this only says
     /// which objects are nobody's.
+    pub(crate) fn visible_passive_structure(&self,id:u64)->bool {
+        let Some(e)=self.sim.entities().get(id) else{return false;};
+        e.owner()!=self.house && e.category()==EntityCategory::Structure
+            && e.health.current()>0 && !e.lifecycle.in_limbo()
+            && self.is_cell_visible(e.position.rx(),e.position.ry())
+            && self.sim.houses().get(&e.owner()).is_some_and(|h|h.multiplay_passive())
+    }
+
     pub fn neutral_structures(&self) -> impl Iterator<Item = EnemyEntity> + '_ {
         let houses = self.sim.houses();
         self.sim.entities().values().filter_map(move |entity| {
@@ -1205,6 +1358,16 @@ impl<'a> Observation<'a> {
             && e.seldom.radio_contacts.slot(0).is_none_or(|id| id == actor)
     }
 
+    pub(crate) fn can_visit_own_repair_bay(&self,rules:&RuleSet,actor:u64,bay:u64)->bool {
+        self.owns_object(actor) && self.own_repair_bay_available(rules,actor,bay)
+            && self.sim.entities().get(actor).is_some_and(|e|
+                e.category()==EntityCategory::Unit
+                && self.sim.object_type(e.type_ref(),rules).is_some_and(|ty|
+                    ty.movement_zone!=MovementZone::Fly && !ty.jumpjet && !ty.balloon_hover))
+            && crate::sim::radio::receive::can_load_query(self.sim,bay,actor,rules)
+                ==crate::sim::radio::RadioResponse::Roger
+    }
+
     /// A native service relationship must be observed, not inferred from a
     /// Sleep mission alone (newly produced units are asleep too).
     pub fn own_repair_service(&self, rules: &RuleSet, actor: u64) -> bool {
@@ -1300,6 +1463,47 @@ impl<'a> Observation<'a> {
         })
     }
 
+    /// Campaign recruitment candidates: ordinary capture or repair of
+    /// friendly/passive occupiable cover. The native actor-specific action
+    /// remains authoritative when an actual engineer exists.
+    pub fn campaign_engineer_sites<'r>(&'r self, rules: &'r RuleSet)
+        -> impl Iterator<Item = (EnemyEntity, bool)> + 'r
+    {
+        let allied = crate::map::houses::ally_test(
+            self.sim.house_alliances.as_map(), self.sim.interner().resolve(self.house));
+        let visible_hostiles:std::collections::BTreeSet<_>=self.visible_enemy_entities()
+            .map(|e|e.entity_id).collect();
+        self.sim.entities().values().filter_map(move |entity| {
+            if entity.lifecycle.in_limbo()
+                || entity.health.current() <= 0 || entity.category() != EntityCategory::Structure
+                || entity.is_warped_out() || entity.building_up() || entity.building_down()
+            { return None; }
+            let cell=(entity.position.rx(),entity.position.ry());
+            if !self.is_cell_visible(cell.0,cell.1) { return None; }
+            let ty=self.sim.object_type(entity.type_ref(),rules)?;
+            let repairable=if rules.ares() {
+                ty.building_type_ext().engineer_repairable(ty.repairable)
+            } else {ty.repairable};
+            if !repairable || ty.is_1x1_with_undeploy() || ty.bridge_repair_hut {return None;}
+            let id=entity.stable_id();
+            if self.is_hostile(id) && !visible_hostiles.contains(&id) {return None;}
+            let site=EnemyEntity{entity_id:id,type_id:entity.type_ref(),cell};
+            let owner=entity.owner();
+            let passive=self.sim.houses().get(&owner).is_some_and(|h|h.multiplay_passive());
+            if ty.can_be_occupied && (owner==self.house || passive) {
+                // Repair badly damaged houses; never consume an engineer
+                // on an intact passive house that can already be garrisoned.
+                let hp=f64::from(entity.health.current());
+                let full=f64::from(ty.strength);
+                let red=f64::from(rules.general.condition_red);
+                return (ty.strength>0 && hp<full && hp<=full*red)
+                    .then_some((site,true));
+            }
+            (self.is_campaign() && owner!=self.house && !allied(self.sim.interner().resolve(owner))
+                && ty.capturable).then_some((site,false))
+        })
+    }
+
     /// Whether `actor` may be told to take `building`: the click's own answer,
     /// from the three `InfantryClass::What_Action_OnObject` arms that answer
     /// action 9 (`Capture`).
@@ -1319,6 +1523,31 @@ impl<'a> Observation<'a> {
     /// `Capturable=no` structure — is an order the object refuses on arrival:
     /// the specialist walks the whole way there and stands at the wall, which
     /// reads as a stuck unit and is not one.
+    pub(crate) fn engineer_takes_in_one(&self,rules:&RuleSet,actor:u64,building:u64)->bool {
+        self.owns_object(actor) && self.observed_object_cell(building).is_some()
+            && matches!(self.sim.engineer_building_action(actor,building,rules),
+                Some(crate::sim::world::EngineerBuildingAction::Capture))
+    }
+
+    /// Prospective estimate when the engineer has not yet been produced.
+    /// Custom Ares thresholds are left to native admission on arrival.
+    pub(crate) fn easy_capture_candidate(&self,rules:&RuleSet,building:u64)->bool {
+        let Some(cell)=self.observed_object_cell(building) else{return false;};
+        if !self.is_cell_visible(cell.0,cell.1) || self.owns_object(building){return false;}
+        let Some(e)=self.sim.entities().get(building) else{return false;};
+        let Some(ty)=self.sim.object_type(e.type_ref(),rules) else{return false;};
+        if !ty.capturable || ty.category!=ObjectCategory::Building
+            || e.health.current()<=0 || e.lifecycle.in_limbo()
+            || e.is_warped_out() || e.building_up() || e.building_down()
+            || ty.is_1x1_with_undeploy() || ty.bridge_repair_hut
+            || (ty.can_be_occupied && self.visible_passive_structure(building))
+        {return false;}
+        if rules.ares(){return false;}
+        ty.repairable && ty.strength>0 &&
+            (e.health.current() as f64)/(ty.strength as f64)
+                <= f64::from(f32::from_bits(rules.general.engineer_capture_level.bits()))
+    }
+
     pub fn can_take_building(&self, rules: &RuleSet, actor: u64, building: u64) -> bool {
         use crate::sim::world::EngineerBuildingAction;
         match self.sim.engineer_building_action(actor, building, rules) {
@@ -1344,6 +1573,15 @@ impl<'a> Observation<'a> {
                 {
                     return true;
                 }
+                // The native engineer arm also answers Repair(true) for a
+                // damaged passive occupiable house. In campaign this is a
+                // legitimate preparation for garrisoning, not a capture.
+                if self.observed_object_cell(building).is_some()
+                    && self.sim.entities().get(building).is_some_and(|entity|
+                        self.sim.houses().get(&entity.owner()).is_some_and(|h|h.multiplay_passive())
+                        && self.sim.object_type(entity.type_ref(),rules)
+                            .is_some_and(|ty|ty.can_be_occupied))
+                {return true;}
             }
             _ => {}
         }
@@ -1703,8 +1941,8 @@ impl<'a> Observation<'a> {
                 .is_some_and(weapon_answers);
         }
         (0..unit_type.weapon_record_count()).any(|slot|
-            unit_type.weapon_at(slot).and_then(|name| rules.weapon(name))
-                .is_some_and(|weapon| weapon_answers(weapon)))
+            crate::sim::combat::combat_weapon::weapon_for_index(unit_type,unit_entity.veterancy.rank(),slot as i32)
+                .and_then(|record|record.weapon(rules)).is_some_and(weapon_answers))
     }
 
     /// Why `firer` may not fire at `target` right now, when it may not. `None`
@@ -2319,6 +2557,12 @@ impl<'a> Observation<'a> {
     /// yet is water as a movement layer — `MovementLayer` has no `Water` — so
     /// this answers connectivity between cells, not the cost of the cells
     /// between them.
+    pub(crate) fn known_water_cell(&self,x:u16,y:u16)->bool {
+        self.is_cell_revealed(x,y) && self.is_cell_in_playfield(x,y)
+            && self.sim.resolved_terrain.as_ref().and_then(|t|t.cell(x,y))
+                .is_some_and(|c|c.land_type==crate::sim::pathfinding::passability::LandType::Water.as_index())
+    }
+
     pub fn has_zone_grid(&self) -> bool {
         self.sim.zone_grid().is_some()
     }

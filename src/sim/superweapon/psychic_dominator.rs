@@ -148,6 +148,13 @@ impl std::hash::Hash for PsychicDominatorState {
 }
 
 impl PsychicDominatorState {
+    /// Stock launch raises the public radar event before this animation.
+    /// Once Struck, no second damage prediction is made from the fade.
+    pub(crate) fn announced_pending_strike(&self)->Option<((i16,i16),Option<InternedId>)> {
+        (self.ares_super.is_none() && matches!(self.status,Status::Started|Status::Rising))
+            .then_some((self.cell,self.owner))
+    }
+
     /// CurrentPsyDom's `Light.*`, none without one.
     pub(crate) fn ares_light(
         &self,

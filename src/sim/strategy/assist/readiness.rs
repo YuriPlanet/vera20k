@@ -12,6 +12,8 @@ use super::{AssistBrain, census::Slot, squads::Role};
 pub(super) fn refresh(brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>) {
     let now = obs.tick();
     let mut unavailable = BTreeSet::new();
+    unavailable.extend(brain.charge_rotating.iter().filter(|(_, (_, until))| now < *until)
+        .map(|(id, _)| *id));
     unavailable.extend(brain.crate_claims.keys().copied());
     unavailable.extend(brain.crate_returns.keys().copied());
     unavailable.extend(brain.specialist_shuttles.keys().copied());
@@ -20,6 +22,10 @@ pub(super) fn refresh(brain: &mut AssistBrain, rules: &RuleSet, obs: &Observatio
     borrowed.extend(brain.asset_guards.keys().copied());
     borrowed.extend(brain.outpost_guards.keys().copied());
     unavailable.extend(brain.tracked.tasks.entries().map(|(actor, _)| actor));
+    unavailable.extend(brain.cover_detail.values().map(|(actor,_,_)|*actor));
+    unavailable.extend(brain.recon.sweep_actor());
+    borrowed.extend(brain.mine_clearance.iter().filter(|(_,(_,end))|now<*end)
+        .map(|(actor,_)|*actor));
     unavailable.extend(brain.repair_ifv_pending.iter().filter(|(_, until)| now < **until)
         .map(|(id, _)| *id));
     let mut detached = BTreeSet::new();
@@ -30,8 +36,7 @@ pub(super) fn refresh(brain: &mut AssistBrain, rules: &RuleSet, obs: &Observatio
         if brain.safety.reserved(rules, obs, unit) || brain.tracked.held(now, id)
             || brain.avoid_retreat_until.get(&id).is_some_and(|until| now < *until)
             || (unit.slot == Slot::Aircraft && obs.out_of_ammo(id))
-            || (unit.slot == Slot::Vehicle && obs.active_gunner_weapon(rules, id)
-                .is_some_and(|weapon| weapon.damage < 0))
+            || super::advanced::field_healer(rules,obs,id)
             || (unit.slot == Slot::Vehicle && obs.own_repair_service(rules, id))
         { unavailable.insert(id); }
     }

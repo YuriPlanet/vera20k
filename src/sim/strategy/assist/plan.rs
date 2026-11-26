@@ -176,6 +176,19 @@ pub(super) fn proposed_cost(rules: &RuleSet, obs: &Observation<'_>, out: &crate:
     }).fold(0i32,i32::saturating_add)
 }
 
+/// The native snapshot cannot see a QueueProduction proposed earlier in this
+/// same think. Route by the native factory category (including naval/Defense),
+/// not by ObjectCategory, so independent lines may still work in parallel.
+pub(super) fn line_proposed(rules: &RuleSet, obs: &Observation<'_>,
+    out: &crate::sim::control::brain::Outbox, category: ProductionCategory) -> bool {
+    out.intents.iter().any(|intent| match intent {
+        crate::sim::control::intent::Intent::QueueProduction { type_id } =>
+            obs.object_type(rules, *type_id).is_some_and(|ty|
+                crate::sim::production::category_for_object(ty) == category),
+        _ => false,
+    })
+}
+
 /// Read the budget: the ledger's own commitment, the reserve the house will not
 /// spend, and the wallet beside them.
 pub(super) fn budget(

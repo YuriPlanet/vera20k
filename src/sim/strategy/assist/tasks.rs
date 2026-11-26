@@ -60,7 +60,8 @@ impl Job {
         match self.kind {
             JobKind::Crate => no_progress >= 240 || now.saturating_sub(self.assigned_at) >= 600,
             JobKind::Garrison => no_progress >= 480,
-            JobKind::Engineer | JobKind::Spy => no_progress >= 450,
+            JobKind::Engineer | JobKind::Spy => no_progress >= 450
+                || now.saturating_sub(self.assigned_at)>=3600,
             JobKind::Yard => no_progress >= 720,
             JobKind::Recycle => no_progress >= 600,
         }
@@ -198,9 +199,22 @@ impl TaskLedger {
     }
 
     pub fn reconcile(&mut self, now: u64, rules: &RuleSet,
-        obs: &Observation<'_>, census: &Census) {
+        obs: &Observation<'_>, census: &Census) -> Vec<(u64,Job)> {
         let mut ended = Vec::new();
+        let mut abandoned=Vec::new();
         for (&actor, job) in &mut self.jobs {
+            if job.kind==JobKind::Garrison && obs.owns_object(actor)
+                && job.target.is_some_and(|target|obs.inside_transport(actor)==Some(target)
+                    && obs.owns_object(target)
+                    && obs.entity_type(rules,target).is_some_and(|ty|
+                        ty.category==crate::rules::object_type::ObjectCategory::Building))
+            {
+                if super::trace_enabled("AUTOPLAY_V56_TRACE") {
+                    log::info!("auto play: v56_garrison_confirmed tick={now} actor={actor} target={:?}",job.target);
+                }
+                ended.push(actor);
+                continue;
+            }
             let Some(unit) = census.units.iter().find(|unit| unit.entity_id == actor) else {
                 // Do not call an MCV successful merely because it vanished:
                 // verify an owned yard of the *declared* type near the site.
@@ -244,7 +258,8 @@ impl TaskLedger {
             }
             if job.kind == JobKind::Engineer
                 && job.target.is_some_and(|id|
-                    obs.own_entities().any(|own| own.entity_id == id))
+                    obs.own_entities().any(|own|own.entity_id==id)
+                    && !obs.can_take_building(rules,actor,id))
             {
                 ended.push(actor);
                 continue;
@@ -268,16 +283,30 @@ impl TaskLedger {
             }
             if job.stale(now) {
                 log::debug!("auto play: {:?} job for {actor} made no progress; release", job.kind);
+                if matches!(job.kind,JobKind::Engineer|JobKind::Spy|JobKind::Garrison) {
+                    abandoned.push((actor,*job));
+                }
                 ended.push(actor);
             }
         }
         for actor in ended { self.jobs.remove(&actor); }
+        abandoned
     }
 }
 
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v61_a_specialist_cannot_renew_a_wandering_job_forever() {
+        let mut tasks=TaskLedger::new();
+        tasks.claim(10,8,JobKind::Engineer,Some(20),Some((40,40)),(2,2));
+        let job=tasks.jobs.get_mut(&8).unwrap();
+        job.last_progress=3609;
+        assert!(!job.stale(3609));
+        assert!(job.stale(3610));
+    }
 
     #[test]
     fn crate_goal_is_exclusive_except_for_a_short_emergency_step() {

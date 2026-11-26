@@ -91,7 +91,9 @@ pub(super) fn effective_ground_warhead(
 ) -> bool {
     let normal_head = || weapon.warhead.as_deref().and_then(|n| rules.warhead(n));
     let interaction = |head: &crate::rules::warhead_type::WarheadType| {
-        f64::from_bits(head.interaction(target.armor_id()).multiplier().bits()) > 0.0
+        !head.mind_control && !head.is_locomotor && !head.ivan_bomb && !head.parasite
+            && head.interaction(target.armor_id()).can_fire()
+            && f64::from_bits(head.interaction(target.armor_id()).multiplier().bits()) > 0.0
     };
     if weapon.spawner {
         if let Some(family) = launcher.spawns.as_deref().filter(|s| !s.is_empty())
@@ -163,11 +165,15 @@ pub(super) fn focus(brain: &AssistBrain, rules: &RuleSet,
             let near_front = front.is_some_and(|cell| cell_distance(cell, enemy.cell) <= 22);
             let near_army = front_units.iter().any(|cell|
                 cell_distance(*cell, enemy.cell) <= 30);
-            (near_front || near_army).then_some((enemy.entity_id, enemy.cell, reach))
+            let mining_incident=brain.mine_incidents.get(&enemy.entity_id)
+                .is_some_and(|(_,end)|obs.tick()<*end);
+            (near_front || near_army || mining_incident)
+                .then_some((enemy.entity_id, enemy.cell, reach))
         }).take(BATTERY_LOOK).collect();
     if guns.is_empty() { return None; }
     // Prefer the battery covering the current push; then its actual reach.
     guns.sort_unstable_by_key(|(id,cell,reach)| (
+        !brain.mine_incidents.get(id).is_some_and(|(_,end)|obs.tick()<*end),
         front.map_or(0, |at| cell_distance(*cell, at)),
         std::cmp::Reverse(*reach), *id));
     let (id, cell, reach) = guns[0];
@@ -242,7 +248,7 @@ fn choice<'r>(brain: &AssistBrain, rules: &'r RuleSet,
         (ObjectCategory::Aircraft, ProductionCategory::Aircraft),
     ] {
         if brain.census.line(line).busy() {continue;}
-        for (ty, id) in build::class_types(rules, obs, category).take(128) {
+        for (ty, id) in build::all_class_types(rules, obs, category) {
             if obs.can_build(rules, ty, true) != CanBuild::Yes || !obs.has_producer(rules, ty)
                 || !super::composition::air_stock_allows(rules,obs,ty) { continue; }
             let clear = is_flying(ty) && air_approach_clear(rules,obs,battery,ty,None);
@@ -334,7 +340,7 @@ pub(super) fn procurement<'r>(
 ) -> Option<(ProductionCategory, &'r ObjectType, InternedId)> {
     if brain.mobilization.active() || brain.census.refineries == 0
         || brain.census.harvesters == 0 || brain.director.under_attack_now()
-        || brain.director.recovering_income() || brain.director.rebuilding_force()
+        || brain.director.recovering_income() || brain.director.recovering_under_fire()
         || brain.campaign.economy_resting() || brain.siege_charge.is_some() {
         return None;
     }
@@ -429,10 +435,13 @@ pub(super) fn standoff_strike(brain: &mut AssistBrain, rules: &RuleSet,
         let Some(tower) = obs.entity_type(rules,battery.id) else { continue; };
         let max = valid_ground_reach(rules,ty,tower);
         if max <= battery.reach + 1 || !obs.can_hurt(rules,unit.entity_id,battery.id) { continue; }
-        let search = !brain.director.rebuilding_force() && !brain.mobilization.active() && !brain.campaign.economy_resting()
-            && obs.tick()%15 == unit.entity_id%15;
+        let preparing=brain.campaign.preparation().is_some_and(|p|
+            cell_distance(p.front,battery.cell)<=16);
+        if preparing && !super::safety::firing_here(rules,obs,unit,battery.id) {continue;}
+        let search = !brain.director.recovering_under_fire() && !brain.mobilization.active() && !brain.campaign.economy_resting()
+            && !preparing && obs.tick()%15 == unit.entity_id%15;
         // During recovery preserve safe fire, but do not advance the gun.
-        if (brain.director.rebuilding_force() || brain.mobilization.active() || brain.campaign.economy_resting())
+        if (brain.director.recovering_under_fire() || brain.mobilization.active() || brain.campaign.economy_resting())
             && !super::safety::firing_here(rules,obs,unit,battery.id) { continue; }
         if work_battery(&mut brain.tracked,brain.trace,rules,obs,out,
             unit,battery.id,battery.cell,search) { issued += 1; }
@@ -444,7 +453,7 @@ pub(super) fn standoff_strike(brain: &mut AssistBrain, rules: &RuleSet,
 /// flight engine still decide whether a sortie launches and hits.
 pub(super) fn air_strike(brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox) {
-    if brain.director.under_attack_now() || brain.director.rebuilding_force()
+    if brain.director.under_attack_now() || brain.director.recovering_under_fire()
         || brain.mobilization.active() || brain.campaign.economy_resting() { return; }
     let Some(battery) = focus(brain,rules,obs) else { return; };
     let Some(squad) = brain.squads.squad(Role::Attack) else { return; };

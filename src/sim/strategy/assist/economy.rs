@@ -160,6 +160,65 @@ pub(super) fn can_save_for(free: i32, price: i32, income: Option<i32>) -> bool {
         i64::from(price).saturating_sub(i64::from(free)) <= i64::from(rate)*3)
 }
 
+/// A selected investment can protect real cash for at most one minute.
+/// A failed or displaced bank gives ordinary production another 30 seconds;
+/// choosing the same item again cannot renew its original deadline.
+#[derive(Debug, Default)]
+pub(super) struct InvestmentBank {
+    target: Option<(crate::sim::intern::InternedId, u64)>,
+    retry_after: u64,
+}
+
+impl InvestmentBank {
+    pub(super) fn active(&self, now: u64) -> Option<crate::sim::intern::InternedId> {
+        self.target.filter(|(_,until)| now < *until).map(|(id,_)| id)
+    }
+
+    pub(super) fn clear(&mut self) { self.target = None; }
+
+    /// Losing an unfunded optional commitment is not completing it. Keep the
+    /// same cooldown as an expired bank, even if another pass displaced it.
+    pub(super) fn interrupt(&mut self, now: u64) {
+        if self.target.take().is_some() {
+            self.retry_after = self.retry_after.max(now.saturating_add(450));
+        }
+    }
+
+    pub(super) fn hold(&mut self, now: u64, id: crate::sim::intern::InternedId,
+        free: i32, price: i32, income: Option<i32>) -> i32 {
+        self.hold_for(now,id,free,price,income,900,1,false)
+    }
+
+    /// An income-producing purchase can wait for up to two minutes of
+    /// measured income. It still expires and cannot borrow future credits.
+    pub(super) fn hold_income(&mut self,now:u64,id:crate::sim::intern::InternedId,
+        free:i32,price:i32,income:Option<i32>,waiting:bool)->i32 {
+        self.hold_for(now,id,free,price,income,1800,2,waiting)
+    }
+
+    fn hold_for(&mut self,now:u64,id:crate::sim::intern::InternedId,
+        free:i32,price:i32,income:Option<i32>,frames:u64,minutes:i64,waiting:bool)->i32 {
+        if free >= price && !waiting { self.clear(); return 0; }
+        if let Some((selected, until)) = self.target {
+            if selected != id || now >= until {
+                self.interrupt(now);
+                return 0;
+            }
+        }
+        if free<price && !income.is_some_and(|rate| rate > 0
+            && i64::from(price) - i64::from(free) <= i64::from(rate)*minutes)
+        {
+            self.interrupt(now);
+            return 0;
+        }
+        if now < self.retry_after { return 0; }
+        if self.target.is_none() {
+            self.target = Some((id,now.saturating_add(frames)));
+        }
+        price.max(0)
+    }
+}
+
 /// Discretionary purchases must leave the next useful line vehicle funded
 /// on a functioning but thin economy. Urgent recovery/defence is handled by
 /// its own earlier admission. Rich economies can spend their true surplus.
@@ -175,6 +234,42 @@ pub(super) fn discretionary_floor(free: i32, income: Option<i32>, line: i32) -> 
 #[cfg(all(test, tests_sim_p_s))]
 mod v50_tests {
     use super::*;
+    #[test]
+    fn income_bank_waits_for_a_real_busy_line_but_expires() {
+        let id=crate::sim::intern::InternedId::from_index(1);
+        let mut bank=InvestmentBank::default();
+        assert_eq!(bank.hold_income(0,id,400,1400,Some(600),false),1400);
+        assert_eq!(bank.hold_income(1200,id,1400,1400,None,true),1400);
+        assert_eq!(bank.hold_income(1800,id,1400,1400,None,true),0);
+        assert_eq!(bank.hold_income(1801,id,1400,1400,None,false),0);
+        assert_eq!(bank.active(1801),None);
+    }
+    #[test]
+    fn bounded_quality_bank_expires_and_cannot_borrow() {
+        let id=crate::sim::intern::InternedId::from_index(1);
+        let mut bank=InvestmentBank::default();
+        assert_eq!(bank.hold(0,id,-100,1200,Some(1250)),0);
+        assert_eq!(bank.hold(0,id,500,1200,None),0);
+        assert_eq!(bank.hold(0,id,500,1200,Some(800)),1200);
+        assert_eq!(bank.hold(899,id,500,1200,Some(800)),1200);
+        assert_eq!(bank.hold(900,id,500,1200,Some(800)),0);
+        assert_eq!(bank.hold(1349,id,500,1200,Some(800)),0);
+        assert_eq!(bank.hold(1350,id,500,1200,Some(800)),1200);
+        assert_eq!(bank.hold(1351,id,1200,1200,Some(800)),0);
+        assert_eq!(bank.active(1351),None);
+    }
+    #[test]
+    fn displaced_optional_bank_cannot_restart_its_deadline_next_frame() {
+        let id=crate::sim::intern::InternedId::from_index(1);
+        let mut bank=InvestmentBank::default();
+        assert_eq!(bank.hold(0,id,500,1200,Some(800)),1200);
+        bank.interrupt(30);
+        assert_eq!(bank.active(30),None);
+        assert_eq!(bank.hold(31,id,500,1200,Some(800)),0);
+        bank.interrupt(100); // no active bank: do not extend cooldown forever
+        assert_eq!(bank.hold(479,id,500,1200,Some(800)),0);
+        assert_eq!(bank.hold(480,id,500,1200,Some(800)),1200);
+    }
     #[test]
     fn an_investment_protects_saved_cash_not_only_its_deficit() {
         assert_eq!(investment_hold(1900,2000),2000);

@@ -42,6 +42,7 @@ enum Interest {
     Factory,
     Logistics,
     Technology,
+    Other,
 }
 
 impl Interest {
@@ -52,6 +53,7 @@ impl Interest {
             Self::Factory => 4,
             Self::Logistics => 3,
             Self::Technology => 3,
+            Self::Other => 1,
         }
     }
 }
@@ -72,7 +74,7 @@ fn interest(ty: &ObjectType) -> Option<Interest> {
     else if ty.power > 0 { Some(Interest::Power) }
     else if ty.resource_destination { Some(Interest::Logistics) }
     else if ty.capturable { Some(Interest::Technology) }
-    else { None }
+    else { Some(Interest::Other) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,6 +169,10 @@ pub(super) struct Director {
     next_assign: u64,
     /// V37 urgent *remembered* asset; only influences safe scout waypoints.
     priority_asset: Option<(u16,u16)>,
+    sector_seen: BTreeMap<(u16,u16),u64>,
+    sector_retry: BTreeMap<(u16,u16),u64>,
+    sector_sample: Option<u64>,
+    sweep: Option<(u64,Assignment)>,
 }
 
 impl Director {
@@ -193,6 +199,162 @@ impl Director {
             .map(|site| site.cell)
     }
 
+    pub(super) fn sweeping(&self,actor:u64)->bool {
+        self.sweep.is_some_and(|(id,_)|id==actor)
+    }
+
+    pub(super) fn sweep_actor(&self)->Option<u64> {
+        self.sweep.map(|(actor,_)|actor)
+    }
+
+    fn sample_sectors(&mut self,obs:&Observation<'_>) {
+        let now=obs.tick();
+        if self.sector_sample.is_some_and(|at|now.saturating_sub(at)<120){return;}
+        self.sector_sample=Some(now);
+        self.sector_retry.retain(|_,end|now<*end);
+        let (width,height)=obs.map_extent();
+        // Cover a finer lattice than ordinary frontier scouting, including
+        // previously revealed but now dark ground. No entity lookup in fog.
+        for y in (0..height).step_by(4) {
+            for x in (0..width).step_by(4) {
+                if obs.is_cell_in_playfield(x,y) && obs.is_cell_visible(x,y) {
+                    self.sector_seen.insert((x,y),now);
+                }
+            }
+        }
+    }
+
+    fn sweep_site(&self,rules:&RuleSet,obs:&Observation<'_>,
+        unit:&super::census::Unit,visible:&[crate::sim::control::observation::EnemyEntity])
+        ->Option<(u16,u16)> {
+        let ty=obs.object_type(rules,unit.type_id)?;
+        let now=obs.tick();
+        let guns=super::safety::envelopes(rules,obs,unit.entity_id,visible,true);
+        let (width,height)=obs.map_extent();
+        let mut best=None;
+        for y in (0..height).step_by(4) {
+            for x in (0..width).step_by(4) {
+                let cell=(x,y);
+                if obs.is_cell_visible(x,y) || cell_distance(unit.cell,cell)<3
+                    || !obs.is_cell_in_playfield(x,y)
+                    || self.sector_retry.contains_key(&cell)
+                    || self.sector_seen.get(&cell).is_some_and(|at|now.saturating_sub(*at)<1800)
+                    || !eligible(obs,ty.movement_zone,unit.cell,cell,&[],
+                        &self.blocked,&BTreeSet::new(),now)
+                {continue;}
+                let unknown=!obs.is_cell_revealed(x,y);
+                let last=self.sector_seen.get(&cell).copied().unwrap_or(0);
+                let age=now.saturating_sub(last).min(12000) as i32;
+                // Old dark ground eventually outranks a nearby repeatedly
+                // inspected corner. Never use hidden enemy coordinates.
+                let score=(i32::from(unknown)*300 + age/12
+                    - cell_distance(unit.cell,cell)*4, std::cmp::Reverse(cell));
+                if best.as_ref().is_some_and(|(old,_)|*old>=score){continue;}
+                if super::safety::safe_leg(&guns,unit.cell,cell,false) {
+                    best=Some((score,cell));
+                }
+            }
+        }
+        best.map(|(_,cell)|cell)
+    }
+
+    /// Last-mile search when the observed battlefield is mostly empty.
+    /// Revisit dark corners even if the shroud was removed earlier. The
+    /// actual mover's native zone is used instead of the army centroid.
+    pub(super) fn sweep_idle(brain:&mut super::AssistBrain,rules:&RuleSet,
+        obs:&Observation<'_>,out:&mut crate::sim::control::brain::Outbox) {
+        use crate::sim::control::Goal;
+        use super::tracked::TrackedKind;
+        let now=obs.tick();
+        if now%30!=0{return;}
+        let visible:Vec<_>=obs.visible_enemy_entities().collect();
+        if now<4500 || brain.director.under_attack_now()
+            || brain.campaign.economy_resting()
+            || (visible.len()>8 && brain.push_gate!="no-reachable-target") {
+            brain.recon.sweep=None;
+            return;
+        }
+        brain.recon.sample_sectors(obs);
+        if let Some((id,mut mission))=brain.recon.sweep {
+            let unit=brain.census.units.iter().find(|u|u.entity_id==id).copied();
+            let valid=unit.is_some_and(|u|u.controllable() && !u.in_service()
+                && !brain.safety.reserved(rules,obs,&u)
+                && u.health_permille>=650
+                && brain.tracked.tasks.get(id).is_none()
+                && !brain.cover_detail.values().any(|(actor,_,_)|*actor==id)
+                && !brain.mine_clearance.contains_key(&id)
+                && !brain.joint_ops.reserves(id)
+                && !obs.attack_target(id).is_some_and(|target|
+                    visible.iter().any(|e|e.entity_id==target))
+                && !visible.iter().any(|e|cell_distance(u.cell,e.cell)<=12
+                    && (obs.can_hurt(rules,id,e.entity_id)
+                        || obs.can_hurt(rules,e.entity_id,id)))
+                && super::orders::reachable(rules,obs,id,mission.destination)
+                && super::safety::safe_attack_leg(rules,obs,&u,mission.destination,&visible));
+            let arrived=unit.is_some_and(|u|cell_distance(u.cell,mission.destination)<=2)
+                || obs.is_cell_visible(mission.destination.0,mission.destination.1);
+            if let Some(u)=unit {
+                if mission.last_cell!=u.cell {
+                    mission.last_cell=u.cell;mission.last_progress=now;
+                }
+            }
+            if !valid || arrived || now.saturating_sub(mission.last_progress)>=450
+                || now.saturating_sub(mission.began)>=1800 {
+                brain.recon.sector_retry.insert(mission.destination,now.saturating_add(900));
+                brain.recon.sweep=None;
+                if arrived {
+                    brain.recon.sector_seen.insert(mission.destination,now);
+                } else if unit.is_some_and(|u|u.controllable())
+                    && obs.destination(id)==Some(mission.destination)
+                    && !out.ordered_this_frame(id) {
+                    let _=out.want(id,1,Goal::Stop);
+                }
+                brain.tracked.forget_primary(id);
+            } else {
+                brain.recon.sweep=Some((id,mission));
+                if !out.ordered_this_frame(id) && obs.destination(id)!=Some(mission.destination) {
+                    let _=super::orders::issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                        id,TrackedKind::Move,None,Some(mission.destination),
+                        Goal::Move{cell:mission.destination});
+                }
+                return;
+            }
+        }
+        if now%120!=0{return;}
+        let mut candidates:Vec<_>=brain.census.units.iter().copied().filter(|u|
+            brain.census.available(u) && u.health_permille>=700 && !u.traits.irreplaceable
+            && !obs.own_elite(u.entity_id) && !u.traits.aircraft
+            && matches!(u.slot,super::census::Slot::Infantry|super::census::Slot::Vehicle|super::census::Slot::Ship)
+            && brain.tracked.tasks.get(u.entity_id).is_none()
+            && !brain.tracked.held(now,u.entity_id)
+            && !brain.census.factory_handoffs.contains_key(&u.entity_id)
+            && !brain.joint_ops.reserves(u.entity_id)
+            && !brain.cover_detail.values().any(|(id,_,_)|*id==u.entity_id)
+            && !super::advance::siege_member(brain,now,u.entity_id)
+            && !obs.is_deployed(u.entity_id)
+            && !out.ordered_this_frame(u.entity_id)
+            && obs.attack_target(u.entity_id).is_none()
+            && obs.destination(u.entity_id).is_none()
+            && !brain.squads.squad(Role::Defend).is_some_and(|s|s.members.contains(&u.entity_id))
+            && !visible.iter().any(|e|obs.can_hurt(rules,u.entity_id,e.entity_id)
+                && (obs.engage(rules,u.entity_id,e.entity_id)==crate::sim::control::observation::Engage::Ready
+                    || super::advance::cell_distance(u.cell,e.cell)<=16)))
+            .collect();
+        candidates.sort_by_key(|u|(!u.traits.scout,
+            std::cmp::Reverse(brain.census.facts(u.type_id).map_or(0,|ty|ty.speed)),u.entity_id));
+        for u in candidates.into_iter().take(4) {
+            let Some(cell)=brain.recon.sweep_site(rules,obs,&u,&visible) else{continue;};
+            if super::orders::issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                u.entity_id,TrackedKind::Move,None,Some(cell),Goal::Move{cell}) {
+                brain.recon.sweep=Some((u.entity_id,Assignment{destination:cell,purpose:Purpose::Frontier,
+                    last_cell:u.cell,last_progress:now,began:now}));
+                brain.census.unavailable.insert(u.entity_id);
+                log::info!("auto play: v62_sector_sweep tick={now} actor={} cell={cell:?}",u.entity_id);
+                break;
+            }
+        }
+    }
+
     fn survey_sites(&mut self, now: u64, rules: &RuleSet,
         obs: &Observation<'_>,
     ) {
@@ -203,7 +365,7 @@ impl Director {
         let mut present = BTreeSet::new();
         // These are **visible** hostile objects. Never call `enemy_entities`
         // here: it returns all of the hidden enemy's live structures.
-        for enemy in obs.visible_enemy_entities().take(MAX_SITES) {
+        for enemy in obs.visible_enemy_entities() {
             let Some(ty) = obs.object_type(rules, enemy.type_id) else { continue; };
             let Some(value) = interest(ty) else { continue; };
             present.insert(enemy.entity_id);
@@ -238,10 +400,10 @@ impl Director {
         // exists, but repeated scouting it has a separate probe cooldown.
         if self.sites.len() > MAX_SITES {
             let excess = self.sites.len() - MAX_SITES;
-            let mut oldest: Vec<(u64,u64)> = self.sites.iter()
-                .map(|(id, site)| (site.last_seen, *id)).collect();
+            let mut oldest: Vec<_> = self.sites.iter()
+                .map(|(id, site)| (site.last_seen, site.interest.priority(), *id)).collect();
             oldest.sort_unstable();
-            for (_,id) in oldest.into_iter().take(excess) {
+            for (_,_,id) in oldest.into_iter().take(excess) {
                 self.sites.remove(&id);
             }
         }
@@ -259,12 +421,11 @@ impl Director {
         for y in (0..height).step_by(FRONTIER_STEP) {
             for x in (0..width).step_by(FRONTIER_STEP) {
                 let cell = (x,y);
-                if obs.is_cell_revealed(x,y)
-                    || !eligible(obs,zone,from,cell,threats,
+                if !obs.is_cell_in_playfield(x,y) {continue;}
+                let gain = unknown_gain(obs,cell);
+                if gain == 0 || !eligible(obs,zone,from,cell,threats,
                         &self.blocked,occupied,now)
                 { continue; }
-                let gain = unknown_gain(obs,cell);
-                if gain == 0 { continue; }
                 let distance = cell_distance(from,cell);
                 let choice = Candidate {
                     destination: cell, purpose: Purpose::Frontier,
@@ -332,8 +493,7 @@ impl Director {
             let Some(mission) = self.missions.get_mut(id) else { continue; };
             let reached = cell_distance(unit.cell, mission.destination) <= 3;
             let observed = match mission.purpose {
-                Purpose::Frontier => obs.is_cell_revealed(
-                    mission.destination.0,mission.destination.1),
+                Purpose::Frontier => unknown_gain(obs,mission.destination)==0,
                 Purpose::Revisit(site_id) => self.sites.get(&site_id)
                     .is_none_or(|site| obs.is_cell_visible(site.cell.0,site.cell.1)),
             };

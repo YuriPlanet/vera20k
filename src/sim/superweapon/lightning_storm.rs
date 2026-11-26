@@ -209,6 +209,12 @@ impl Default for LightningStorm {
 }
 
 impl LightningStorm {
+    /// The public strike-centre radar event is raised at storm start,
+    /// not at the private deferred target selection. No countdown peek.
+    pub(crate) fn announced_strike(&self)->Option<((i16,i16),Option<InternedId>)> {
+        self.active.then_some((self.cell,self.owner))
+    }
+
     /// The storm's house, `0x00A9FACC`, while a storm counts down or rages.
     pub(crate) fn owner(&self) -> Option<InternedId> {
         self.owner

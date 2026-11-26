@@ -111,6 +111,11 @@ pub(super) fn step_out(
     threats: &[Threat],
     target: Option<(u16, u16)>,
 ) -> Option<(u16, u16)> {
+    step_out_where(cell,threats,target,|_|true)
+}
+
+fn step_out_where(cell:(u16,u16),threats:&[Threat],target:Option<(u16,u16)>,
+    mut admissible:impl FnMut((u16,u16))->bool)->Option<(u16,u16)> {
     let here = exposure(cell, threats);
     if here.covered == 0 {
         return None;
@@ -125,6 +130,7 @@ pub(super) fn step_out(
         let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) else {
             continue;
         };
+        if !admissible((x,y)) {continue;}
         let exposure = exposure((x, y), threats);
         let reach = target.map_or(0, |target| chebyshev((x, y), target));
         if best.is_none_or(|(_, best_exposure, best_reach)| {
@@ -235,7 +241,8 @@ pub(super) fn run(
         if super::advance::charge_member(brain, obs.tick(), unit.entity_id) {
             continue;
         }
-        if !unit.traits.combat || !unit.controllable() {
+        if !unit.traits.combat || !unit.controllable()
+            || super::advanced::field_healer(rules,obs,unit.entity_id) {
             continue;
         }
         // A walk-in or a depot visit owns the destination; a kite `Move` over
@@ -293,7 +300,7 @@ pub(super) fn run(
         {
             continue;
         }
-        let mine = super::advance::weapon_range_cells(rules, ty, false);
+        let mine=super::tactics::actor_reach(rules,obs,unit.entity_id);
         // What the unit is shooting at: the native mission's own choice. A unit
         // that was never given one does not get an attack from here — the micro
         // pass is where targets are chosen, and a pass that both moves and
@@ -348,11 +355,11 @@ pub(super) fn run(
         // deaths at 24000 ticks: 1.38/2.57/1.86/13.5 without it and
         // 1.17/1.46/8.0/2.35 with it — three of four seeds worse, and seed 42
         // went from 4 own deaths to 20. Reverted; the numbers are the reason.
-        let Some(step) = step_out(unit.cell, &threats, direction_target) else {
-            continue;
-        };
-        if !obs.is_ground_walkable(step.0, step.1)
-            || !super::orders::reachable(rules,obs,unit.entity_id,step) { continue; }
+        let Some(step)=step_out_where(unit.cell,&threats,direction_target,|cell|{
+            obs.is_cell_in_playfield(cell.0,cell.1) && obs.is_ground_walkable(cell.0,cell.1)
+                && super::orders::reachable(rules,obs,unit.entity_id,cell)
+                && !threats.iter().any(|t|!t.covers(unit.cell) && t.covers(cell))
+        }) else {continue;};
         let before = exposure(unit.cell,&threats);
         let after = exposure(step,&threats);
         // A healthy firing unit should not step out of its own effective
@@ -412,6 +419,15 @@ mod tests {
     /// A tank on the left of the unit, the building it is shooting in front:
     /// the step goes right, away from the tank and no further from the target
     /// than it has to be.
+    #[test]
+    fn v63_reload_step_tries_a_legal_alternative() {
+        let threats=[threat((6,10),4)];
+        let step=step_out_where((10,10),&threats,Some((14,10)),|p|p!=(11,10))
+            .expect("alternative escape");
+        assert_ne!(step,(11,10));
+        assert_eq!(exposure(step,&threats).covered,0);
+    }
+
     #[test]
     fn a_tank_on_the_left_steps_the_unit_right() {
         let threats = [threat((6, 10), 6)];

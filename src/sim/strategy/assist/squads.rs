@@ -332,6 +332,7 @@ impl Squads {
             .units
             .iter()
             .filter(|unit| unit.traits.scout && census.available(unit)
+                && !census.elites.contains(&unit.entity_id)
                 && !census.detached.contains(&unit.entity_id))
             .map(|unit| unit.entity_id)
             .collect();
@@ -416,11 +417,18 @@ impl Squads {
                  raid.is_none() && !old_defend.contains(&unit.entity_id),
                  !infantry, distance, unit.entity_id)
             });
-            let mut members: BTreeSet<u64> = nearest
-                .into_iter()
-                .take(want)
-                .map(|unit| unit.entity_id)
-                .collect();
+            // Reserve one local AA body (two in a large garrison) inside the
+            // existing defender quota. Do not recall the whole field army to
+            // satisfy a paper reserve or steal another task's unit.
+            let aa_want = if want >= 4 { 2 } else { usize::from(want >= 2) };
+            let mut members: BTreeSet<u64> = nearest.iter().copied()
+                .filter(|u| census.mobile_aa.contains(&u.entity_id)
+                    && census.base_cell.is_some_and(|home|squared_distance(u.cell,home)<=24*24))
+                .take(aa_want).map(|u|u.entity_id).collect();
+            for unit in nearest {
+                if members.len()>=want { break; }
+                members.insert(unit.entity_id);
+            }
             let ready = members.len();
             members.extend(borrowed.iter().copied());
             taken.extend(members.iter().copied());
@@ -467,6 +475,7 @@ impl Squads {
                 .collect();
             nearest.sort_by_key(|unit| {
                 (
+                    census.elites.contains(&unit.entity_id),
                     !old_harass.contains(&unit.entity_id),
                     // Mobile vehicles with good rule-defined speed suit a
                     // mining raid better than slow, costly siege assets.
@@ -525,6 +534,21 @@ impl Squads {
         });
     }
 
+    /// A previously committed attack member may have disappeared from the
+    /// membership during recovery. Restore an unassigned actor to the same
+    /// attack squad, but never override a different role's new assignment.
+    /// The caller owns readiness, cohort provenance and forecast checks.
+    pub(super) fn restore_attack_member(&mut self, actor: u64) -> bool {
+        if self.squads.iter().any(|s| s.role != Role::Attack && s.members.contains(&actor)) {
+            return false;
+        }
+        let Some(team) = self.squads.iter_mut().find(|s| s.role == Role::Attack) else {
+            return false;
+        };
+        team.members.insert(actor);
+        true
+    }
+
     /// Every team, in role order: the micro layer walks all of them.
     pub(super) fn all(&self) -> &[Squad] {
         &self.squads
@@ -563,6 +587,21 @@ fn home_threat(census: &Census) -> Option<(u64, (u16, u16))> {
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovered_attack_member_may_return_but_never_steal_another_role() {
+        let mut squads=Squads::default();
+        for (role,members) in [(Role::Attack,BTreeSet::from([1u64])),
+            (Role::Defend,BTreeSet::from([2u64]))] {
+            squads.squads.push(Squad {role,members,target:None,lock_until:0,
+                want:2,state:SquadState::Ready});
+        }
+        assert!(squads.restore_attack_member(3));
+        assert!(squads.restore_attack_member(3));
+        assert!(!squads.restore_attack_member(2));
+        assert_eq!(squads.squad(Role::Attack).unwrap().members,BTreeSet::from([1,3]));
+        assert_eq!(squads.squad(Role::Defend).unwrap().members,BTreeSet::from([2]));
+    }
 
     #[test]
     fn standing_garrison_scales_without_consuming_small_opening() {

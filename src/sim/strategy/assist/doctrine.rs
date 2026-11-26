@@ -46,29 +46,31 @@ fn multiplier(rules: &RuleSet, weapon: &crate::rules::weapon_type::WeaponType,
 /// a regular rifleman; deploy-only area weapons are checked separately.
 pub(super) fn duty(rules: &RuleSet, ty: &ObjectType) -> Duty {
     if ty.category == ObjectCategory::Building { return Duty::Line; }
-    if (0..ty.weapon_record_count()).filter_map(|slot|
+    // Gunner records are alternative passenger modes, not simultaneous weapons.
+    let slots = if ty.gunner { 1 } else { ty.weapon_record_count() };
+    if (0..slots).filter_map(|slot|
         ty.weapon_at(slot).and_then(|name| rules.weapon(&name)))
         .filter(|weapon| !weapon.never_use).any(|weapon| weapon.suicide)
     { return Duty::Disposable; }
-    if ty.ivan || (0..ty.weapon_record_count()).filter_map(|slot|
+    if ty.ivan || (0..slots).filter_map(|slot|
         ty.weapon_at(slot).and_then(|name| rules.weapon(&name)))
         .filter(|weapon| !weapon.never_use).any(|weapon|
             weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
                 .is_some_and(|wh| wh.ivan_bomb))
     { return Duty::BombPlanter; }
-    if (0..ty.weapon_record_count()).filter_map(|slot|
+    if (0..slots).filter_map(|slot|
         ty.weapon_at(slot).and_then(|name| rules.weapon(&name)))
         .filter(|weapon| !weapon.never_use).any(|weapon| weapon.area_fire
             && (weapon.rad_level > 0 || weapon.is_rad_eruption
                 || weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
                     .is_some_and(|wh| wh.radiation)))
     { return Duty::Radiation; }
-    if (0..ty.weapon_record_count()).filter_map(|slot|
+    if (0..slots).filter_map(|slot|
         ty.weapon_at(slot).and_then(|name| rules.weapon(&name)))
         .filter(|weapon| !weapon.never_use).any(|weapon| weapon.warhead.as_deref()
             .and_then(|name| rules.warhead(name)).is_some_and(|wh| wh.mind_control))
     { return Duty::Controller; }
-    if (0..ty.weapon_record_count()).filter_map(|slot|
+    if (0..slots).filter_map(|slot|
         ty.weapon_at(slot).and_then(|name| rules.weapon(&name)))
         .filter(|weapon| !weapon.never_use).any(|weapon| weapon.warhead.as_deref()
             .and_then(|name| rules.warhead(name)).is_some_and(|wh| wh.parasite))
@@ -88,6 +90,22 @@ pub(super) fn duty(rules: &RuleSet, ty: &ObjectType) -> Duty {
         { return Duty::TankHunter; }
     }
     Duty::Line
+}
+
+/// Tactical classification of a *live* gunner. Procurement uses the empty
+/// chassis, while a manually loaded terrorist or Ivan keeps its safety rules.
+pub(super) fn actor_duty(rules: &RuleSet, obs: &Observation<'_>, actor: u64) -> Option<Duty> {
+    let ty = obs.entity_type(rules,actor)?;
+    if !ty.gunner { return Some(duty(rules,ty)); }
+    let Some(w) = obs.active_gunner_weapon(rules,actor) else { return Some(duty(rules,ty)); };
+    let head = w.warhead.as_deref().and_then(|name|rules.warhead(name));
+    Some(if w.suicide { Duty::Disposable }
+        else if ty.ivan || head.is_some_and(|wh|wh.ivan_bomb) { Duty::BombPlanter }
+        else if w.area_fire && (w.rad_level > 0 || w.is_rad_eruption
+            || head.is_some_and(|wh|wh.radiation)) { Duty::Radiation }
+        else if head.is_some_and(|wh|wh.mind_control) { Duty::Controller }
+        else if head.is_some_and(|wh|wh.parasite) { Duty::Parasite }
+        else { Duty::Line })
 }
 
 /// Combat troops able to cover ordinary infantry/tank duties. Dogs, demolition
@@ -202,7 +220,11 @@ pub(super) fn radiation_deploy_safe(rules: &RuleSet, obs: &Observation<'_>,
     unit: u64, cell: (u16,u16)) -> bool
 {
     let Some(ty) = obs.entity_type(rules,unit) else { return false; };
-    let radius = radiation_deploy_radius(rules,ty);
+    let radius = if ty.gunner && actor_duty(rules,obs,unit)==Some(Duty::Radiation) {
+        obs.active_gunner_weapon(rules,unit).and_then(|w|w.warhead.as_deref())
+            .and_then(|head|rules.warhead(head))
+            .map_or(6,|wh|(wh.cell_spread_f64.ceil() as i32).max(5)+1)
+    } else { radiation_deploy_radius(rules,ty) };
     if radius == 0 { return true; }
     !obs.own_entities().any(|friend| friend.entity_id != unit
         && friend.health > 0
@@ -220,7 +242,7 @@ pub(super) fn target_ok(rules: &RuleSet, obs: &Observation<'_>,
 {
     let (Some(ty),Some(victim)) = (obs.entity_type(rules,attacker),
         obs.entity_type(rules,target)) else { return false; };
-    match duty(rules,ty) {
+    match actor_duty(rules,obs,attacker).unwrap_or_else(||duty(rules,ty)) {
         Duty::Line | Duty::Controller => true,
         Duty::Scout | Duty::Marksman => victim.category == ObjectCategory::Infantry,
         Duty::Parasite | Duty::TankHunter => victim.category == ObjectCategory::Vehicle,
@@ -246,12 +268,15 @@ pub(super) fn preference_penalty(rules: &RuleSet, obs: &Observation<'_>,
 {
     let (Some(source), Some(victim)) = (obs.entity_type(rules,attacker),
         obs.entity_type(rules,target)) else { return 0; };
-    if duty(rules,source) != Duty::Line { return 0; }
-    let efficacy = (0..source.weapon_record_count()).filter_map(|slot| {
+    if actor_duty(rules,obs,attacker) != Some(Duty::Line) { return 0; }
+    let efficacy = if source.gunner {
+        obs.active_gunner_weapon(rules,attacker).filter(|w|!w.never_use && w.damage>0)
+            .map_or(0.0,|w|multiplier(rules,w,victim.armor_id()))
+    } else { (0..source.weapon_record_count()).filter_map(|slot| {
         let weapon = source.weapon_at(slot).and_then(|name| rules.weapon(&name))?;
         if weapon.never_use || weapon.damage <= 0 { return None; }
         Some(multiplier(rules,weapon,victim.armor_id()))
-    }).fold(0.0_f64,f64::max);
+    }).fold(0.0_f64,f64::max) };
     if efficacy >= 0.7 { 0 }
     else if efficacy >= 0.4 { 1 }
     else if efficacy >= 0.2 { 2 }
@@ -266,7 +291,7 @@ mod tests {
     fn stock_factions_get_line_units_before_specialists() {
         let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
         else { return; };
-        for name in ["E1", "E2", "INIT", "HTNK", "LTNK"] {
+        for name in ["E1", "E2", "INIT", "HTNK", "LTNK", "FV"] {
             assert_eq!(duty(&rules,rules.object(name).expect(name)),Duty::Line,"{}",name);
         }
         for (name,kind) in [

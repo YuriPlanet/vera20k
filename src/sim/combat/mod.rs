@@ -178,6 +178,28 @@ pub(crate) use threat_posed::live_threat_posed;
 pub use threat_range::ScanMission;
 pub(crate) use world_fire::estimated_damage_on;
 
+/// Read-only estimate of one stock direct-centre area receiver. No RNG,
+/// event dispatch, HP mutation or simulation clone. The caller must establish
+/// that the target occupies the actual strike cell and that the warning is
+/// legitimately observed. Extension shields/area hooks are not certified.
+pub(crate) fn stock_strike_damage_on_building(
+    sim:&crate::sim::world::Simulation,rules:&crate::rules::ruleset::RuleSet,
+    target:u64,damage:i32,warhead:&str,
+)->Option<i32> {
+    if rules.ares() || rules.ares_form() || cfg!(feature="phobos") || damage<=0
+    {return None;}
+    let entity=sim.entities().get(target)?;
+    if entity.category()!=crate::map::entities::EntityCategory::Structure
+        || entity.health.current()<=0 || entity.lifecycle.in_limbo()
+    {return None;}
+    let id=sim.interner.get(warhead)?;
+    let event=EntityDamageEvent::area(target,damage,0,RAD_NO_ATTACKER,None,id);
+    let predicted=resolve_receive_damage(&event,&sim.substrate.entities,rules,&sim.interner,
+        &sim.houses,&sim.house_alliances,sim.session.no_damage(),sim.session.tick(),
+        sim.resolved_terrain.as_ref(),None)?;
+    Some(if predicted.outcome.apply_object_damage {predicted.outcome.hp_delta.max(0)} else {0})
+}
+
 // Shared between combat's children, which reach them through `super::`.
 use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
 use projectile_delivery::{

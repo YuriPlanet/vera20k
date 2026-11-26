@@ -27,9 +27,71 @@ pub(super) fn emergency_threat_score(rules: &RuleSet, ty: &ObjectType) -> i32 {
     else if ty.c4 { 1_100 }
     else if mind { 1_050 }
     else if air && ty.strength >= 500 { 1_000 }
+    else if anti_infantry_standoff(rules,ty) { 900 }
     else if air { 550 }
     else if ty.strength >= 700 { 330 }
     else { 0 }
+}
+
+/// Long-range personnel-killers (Sniper/Virus and rule-equivalent mods).
+/// Classify the actual weapon by its range and interaction, not its name.
+pub(super) fn anti_infantry_standoff(rules:&RuleSet,ty:&ObjectType)->bool {
+    if ty.category!=ObjectCategory::Infantry {return false;}
+    (0..ty.weapon_record_count()).filter_map(|slot|rules.weapon(ty.weapon_at(slot)?))
+        .any(|w|!w.never_use && w.damage>=35
+            && super::siege_counter::max_range_cells(w)>=8
+            && rules.weapon_projectile(w).is_some_and(|p|p.ag)
+            && w.warhead.as_deref().and_then(|name|rules.warhead(name)).is_some_and(|head|{
+                let soft=["none","flak","plate"].into_iter().map(|armor|
+                    f64::from_bits(head.interaction(crate::rules::armor::armor_index(armor)).multiplier().bits()))
+                    .fold(0.0f64,f64::max);
+                let steel=f64::from_bits(head.interaction(crate::rules::armor::armor_index("heavy")).multiplier().bits());
+                soft*f64::from(w.damage)>=50.0 && steel<=soft*0.25
+            }))
+}
+
+/// A candidate can close on a personnel specialist when its actual armour
+/// makes even the enemy's best ordinary volley a small fraction of its HP.
+pub(super) fn personnel_resistant(rules:&RuleSet,enemy:&ObjectType,ours:&ObjectType)->bool {
+    if !matches!(ours.category,ObjectCategory::Vehicle|ObjectCategory::Aircraft)
+        || ours.strength<=0 || ours.speed<=0 {return false;}
+    let air=ours.category==ObjectCategory::Aircraft || ours.balloon_hover || ours.jumpjet;
+    let worst=(0..enemy.weapon_record_count()).filter_map(|slot|rules.weapon(enemy.weapon_at(slot)?))
+        .filter(|w|!w.never_use && rules.weapon_projectile(w).is_some_and(|p|
+            if air {p.aa}else{p.ag}))
+        .filter_map(|w|{
+            let head=rules.warhead(w.warhead.as_deref()?)?;
+            if head.mind_control || head.parasite || head.temporal || head.is_locomotor {
+                return Some(f64::from(ours.strength));
+            }
+            let mult=f64::from_bits(head.interaction(ours.armor_id()).multiplier().bits());
+            Some(f64::from(w.damage.max(0))*mult.max(0.0)*f64::from(w.burst.max(1)))
+        }).fold(0.0f64,f64::max);
+    worst<=f64::from(ours.strength)*0.10
+}
+
+pub(super) fn psychic_immune(rules:&RuleSet,obs:&Observation<'_>,actor:u64)->bool {
+    obs.entity_type(rules,actor).is_some_and(|ty|
+        ty.immune_to_psionics)
+}
+
+pub(super) fn actor_control_reach(rules:&RuleSet,obs:&Observation<'_>,actor:u64)->Option<i32> {
+    let ty=obs.entity_type(rules,actor)?;
+    (0..ty.weapon_record_count()).filter_map(|slot|obs.observed_actor_weapon(rules,actor,slot))
+        .filter(|weapon|!weapon.never_use && weapon.warhead.as_deref()
+            .and_then(|name|rules.warhead(name)).is_some_and(|head|head.mind_control))
+        .map(super::siege_counter::max_range_cells).max()
+}
+
+pub(super) fn actor_reach(rules:&RuleSet,obs:&Observation<'_>,actor:u64)->i32 {
+    let Some(ty)=obs.entity_type(rules,actor) else{return 0;};
+    // Preserve native deployed weapon selection for GIs and artillery.
+    if obs.is_deployed(actor) {
+        return super::advance::weapon_range_cells(rules,ty,true);
+    }
+    (0..ty.weapon_record_count()).filter_map(|slot|obs.observed_actor_weapon(rules,actor,slot))
+        .filter(|weapon|!weapon.never_use)
+        .map(super::siege_counter::max_range_cells).max().unwrap_or(0)
 }
 
 pub(super) fn mind_control_reach(rules: &RuleSet, ty: &ObjectType) -> Option<i32> {
@@ -50,8 +112,7 @@ pub(super) fn controller_covering(
     rules: &RuleSet, obs: &Observation<'_>, cell: (u16,u16),
 ) -> Option<(u64, (u16,u16), i32)> {
     obs.visible_enemy_entities().filter_map(|enemy| {
-        let ty = obs.entity_type(rules, enemy.entity_id)?;
-        let reach = mind_control_reach(rules, ty)?;
+        let reach = actor_control_reach(rules,obs,enemy.entity_id)?;
         // One cell of grace for moving targets and turning the turret.
         (distance(cell, enemy.cell) <= reach + 1)
             .then_some((enemy.entity_id, enemy.cell, reach))
@@ -96,8 +157,7 @@ pub(super) fn controller_covering_path(
     from: (u16, u16), to: (u16, u16),
 ) -> Option<(u64, (u16, u16), i32)> {
     obs.visible_enemy_entities().filter_map(|enemy| {
-        let ty = obs.entity_type(rules, enemy.entity_id)?;
-        let reach = mind_control_reach(rules, ty)?;
+        let reach = actor_control_reach(rules,obs,enemy.entity_id)?;
         path_enters_control_box(from, to, enemy.cell, reach + 2)
             .then_some((enemy.entity_id, enemy.cell, reach))
     }).min_by_key(|(id, cell, _)| (distance(from, *cell), *id))
@@ -151,7 +211,11 @@ pub(super) fn siege_barrier(
             || distance(enemy.cell,target) > 14
             || !fighters.iter().any(|unit| distance(unit.cell,enemy.cell) <= 18
                 && (obs.can_hurt(rules,enemy.entity_id,unit.entity_id)
-                    || mind_control_reach(rules,ty).is_some()))
+                    || mind_control_reach(rules,ty).is_some())
+                && (distance(unit.cell,enemy.cell)<=actual_threat_reach(
+                    rules,obs,enemy.entity_id,unit.entity_id).max(mind_control_reach(rules,ty).unwrap_or(0))+1
+                    || obs.object_type(rules,unit.type_id).is_some_and(|kind|
+                        super::orders::building_approachable(obs,kind.movement_zone,unit.cell,enemy.cell))))
         { return None; }
         let reach = super::siege_counter::battery_reach(rules,ty);
         // Light defenses are handled by normal local superiority and
@@ -225,7 +289,7 @@ pub(super) fn effective_reach_against(
         } else { 0 };
     }
     (0..gun.weapon_record_count()).filter_map(|slot| {
-        let weapon = rules.weapon(gun.weapon_at(slot)?)?;
+        let weapon = obs.observed_actor_weapon(rules,attacker,slot)?;
         if weapon.never_use { return None; }
         let viable = rules.weapon_projectile(weapon).is_some_and(|projectile|
             if air { projectile.aa } else { projectile.ag })
@@ -233,6 +297,27 @@ pub(super) fn effective_reach_against(
                 rules,gun,weapon,target);
         viable.then_some(super::siege_counter::max_range_cells(weapon))
     }).max().unwrap_or(0)
+}
+
+/// A ranking estimate, not a damage receiver or a guaranteed kill. It
+/// only compares visible targets for ordinary positive-damage fire.
+pub(super) fn shots_to_finish(rules:&RuleSet,obs:&Observation<'_>,actor:u64,target:u64)->u32 {
+    let Some(ours)=obs.entity_type(rules,actor) else{return u32::MAX;};
+    let Some(enemy)=obs.entity_type(rules,target) else{return u32::MAX;};
+    let Some(hp)=obs.health(target).filter(|hp|*hp>0) else{return u32::MAX;};
+    let air=enemy.category==ObjectCategory::Aircraft || enemy.balloon_hover
+        || (enemy.jumpjet && !obs.is_deployed(target));
+    let volley=(0..ours.weapon_record_count()).filter_map(|slot|obs.observed_actor_weapon(rules,actor,slot))
+        .filter(|w|!w.never_use && w.damage>0 && !w.suicide && !w.spawner && !w.area_fire
+            && rules.weapon_projectile(w).is_some_and(|p|if air{p.aa}else{p.ag}))
+        .filter_map(|w|{
+            let head=rules.warhead(w.warhead.as_deref()?)?;
+            if head.mind_control || head.parasite || head.temporal || head.is_locomotor {return None;}
+            let mult=f64::from_bits(head.interaction(enemy.armor_id()).multiplier().bits());
+            if !mult.is_finite() || mult<=0.0 {return None;}
+            Some((f64::from(w.damage)*mult*f64::from(w.burst.max(1))).clamp(0.0,100000.0) as u32)
+        }).max().unwrap_or(0);
+    if volley==0 {u32::MAX}else{(hp as u32).div_ceil(volley)}
 }
 
 pub(super) fn actual_threat_reach(
@@ -421,7 +506,7 @@ pub(super) fn siege_post(
     rules: &RuleSet, obs: &Observation<'_>, actor: u64,
     from: (u16,u16), gun: (u16,u16), reach: i32,
 ) -> Option<(u16,u16)> {
-    siege_post_impl(rules,obs,actor,from,from,gun,reach,&[])
+    siege_post_impl(rules,obs,actor,from,from,gun,reach,&[],&[],0,None)
 }
 
 /// Main-fist staging uses a common approach direction. If that direction
@@ -429,11 +514,11 @@ pub(super) fn siege_post(
 pub(super) fn siege_post_on_lane(
     rules:&RuleSet,obs:&Observation<'_>,actor:u64,
     from:(u16,u16),approach_from:(u16,u16),gun:(u16,u16),reach:i32,
-    visible:&[EnemyEntity],
+    visible:&[EnemyEntity], reserved:&[(u64,(u16,u16))], gap:i32,
 )->Option<(u16,u16)> {
     let guns=super::safety::envelopes(rules,obs,actor,visible,false);
     let zone=obs.entity_type(rules,actor)?.movement_zone;
-    if let Some(post)=obs.destination(actor).filter(|post|
+    let existing=obs.destination(actor).filter(|post|
         obs.attack_target(actor).is_none()
         && distance(*post,gun)>=reach+2 && distance(*post,gun)<=reach+8
         && standoff_lane(approach_from,gun,reach+2,0)
@@ -441,19 +526,43 @@ pub(super) fn siege_post_on_lane(
         && obs.is_ground_walkable(post.0,post.1)
         && obs.can_reach(zone,from,*post)
         && super::safety::safe_leg(&guns,from,*post,true)
-        && !unsafe_post(rules,obs,actor,*post))
-    {return Some(post);}
-    siege_post_impl(rules,obs,actor,from,approach_from,gun,reach,&guns)
+        && !unsafe_post(rules,obs,actor,*post));
+    if gap==0 && existing.is_some() {return existing;}
+    // Prefer retaining the current legal position to shuffling at a safe
+    // post. A lower-ID reservation wins a conflict, so two neighbours do
+    // not continually trade destinations. Candidate scoring still avoids
+    // all neighbours, not only the higher-priority ones.
+    let stable=existing.or_else(|| (gap>0 && distance(from,gun)>=reach+2
+        && distance(from,gun)<=reach+8 && !unsafe_post(rules,obs,actor,from)
+        && super::safety::safe_leg(&guns,from,from,false)).then_some(from));
+    if stable.is_some_and(|cell| crowding(actor,cell,reserved,gap,true)==0) {return stable;}
+    siege_post_impl(rules,obs,actor,from,approach_from,gun,reach,&guns,reserved,gap,stable)
         .or_else(|| {
             (approach_from!=from).then(||
-                siege_post_impl(rules,obs,actor,from,from,gun,reach,&guns)).flatten()
+                siege_post_impl(rules,obs,actor,from,from,gun,reach,&guns,reserved,gap,stable)).flatten()
         })
+}
+
+fn crowding(actor:u64,cell:(u16,u16),reserved:&[(u64,(u16,u16))],gap:i32,priority_only:bool)->i32 {
+    reserved.iter().filter(|(id,_)| *id!=actor && (!priority_only || *id<actor))
+        .map(|(_,other)|(gap-distance(cell,*other)).max(0)).sum()
+}
+
+/// Whole-cell blast radius from the real weapon, not a named unit. A cap
+/// avoids turning large modded blast radii into map-wide dispersal orders.
+pub(super) fn battery_spacing(rules:&RuleSet,ty:&crate::rules::object_type::ObjectType)->i32 {
+    (0..ty.weapon_record_count()).filter_map(|slot|rules.weapon(ty.weapon_at(slot)?))
+        .filter(|w|w.damage>0 && !w.never_use && rules.weapon_projectile(w).is_some_and(|p|p.ag))
+        .filter_map(|w|rules.warhead(w.warhead.as_deref()?))
+        .map(|head|head.cell_spread_f64.floor() as i32)
+        .max().filter(|&r|r>0).map_or(0,|r|r.saturating_add(1).clamp(2,4))
 }
 
 fn siege_post_impl(
     rules:&RuleSet,obs:&Observation<'_>,actor:u64,
     from:(u16,u16),approach_from:(u16,u16),gun:(u16,u16),reach:i32,
-    guns:&[super::safety::Envelope],
+    guns:&[super::safety::Envelope], reserved:&[(u64,(u16,u16))],gap:i32,
+    stable:Option<(u16,u16)>,
 )->Option<(u16,u16)> {
     let zone = obs.entity_type(rules, actor)?.movement_zone;
     // Give adjacent units distinct lanes; one shared post would turn the
@@ -462,18 +571,25 @@ fn siege_post_impl(
     // The first safe annulus is Reach+2; Range is an OUTER radius and a
     // Prism Tank (Range=10) can fire on a prism tower (Range=8) here.
     // Starting at +3 made an otherwise winning gun park out of range.
+    let mut best=stable.map(|cell|(crowding(actor,cell,reserved,gap,false),cell));
+    let shifts=[lane*2,0,-lane*2,-4,4,-6,6];
     for radius in [reach + 2, reach + 3, reach + 5, reach + 7] {
-        for shift in [lane * 2, 0, -lane * 2] {
+        for &shift in &shifts[..if gap>0 {shifts.len()} else {3}] {
             let Some((x,y)) = standoff_lane(approach_from,gun,radius,shift) else { continue; };
             let post = (x,y);
+            let penalty=crowding(actor,post,reserved,gap,false);
+            if best.is_some_and(|(old,_)|penalty>=old) {continue;}
             if !obs.is_ground_walkable(x,y) || !obs.can_reach(zone,from,post) {
                 continue;
             }
             if super::safety::safe_leg(guns,from,post,true)
-                && !unsafe_post(rules,obs,actor,post) { return Some(post); }
+                && !unsafe_post(rules,obs,actor,post) {
+                if penalty==0 {return Some(post);}
+                best=Some((penalty,post));
+            }
         }
     }
-    None
+    best.map(|(_,cell)|cell)
 }
 
 /// The army has enough strength in total, but not at the point of contact.
@@ -551,6 +667,15 @@ mod tests {
         assert!(!early_extraction(700,2,true));
         assert!(!early_extraction(550,0,true));
         assert!(early_extraction(390,0,false));
+    }
+
+    #[test]
+    fn spread_reservations_do_not_count_self_or_force_low_id_to_yield() {
+        let posts=[(1,(20,20)),(2,(21,20)),(3,(30,30))];
+        assert_eq!(crowding(1,(20,20),&posts,3,true),0);
+        assert_eq!(crowding(2,(21,20),&posts,3,true),2);
+        assert_eq!(crowding(2,(24,20),&posts,3,false),0);
+        assert_eq!(crowding(2,(21,20),&posts,0,false),0);
     }
 
     #[test]

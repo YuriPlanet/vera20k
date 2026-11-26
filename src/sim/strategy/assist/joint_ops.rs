@@ -148,7 +148,7 @@ impl Director {
     fn create(brain: &AssistBrain, rules: &RuleSet,
         obs: &Observation<'_>, retry: &BTreeMap<u64,u64>,
     ) -> Option<Operation> {
-        if brain.director.under_attack_now() || brain.director.rebuilding_force()
+        if brain.director.under_attack_now() || brain.director.recovering_under_fire()
             || brain.mobilization.active() || brain.campaign.economy_resting()
             || brain.siege_charge.is_some()
             || brain.blackout.is_some()
@@ -214,7 +214,7 @@ impl Director {
         };
         // An operation is one bounded strategic task, not a per-frame enemy
         // scanner. An actual home raid must still preempt it immediately.
-        if now % 15 != 0 && !brain.director.under_attack_now() && !brain.director.rebuilding_force()
+        if now % 15 != 0 && !brain.director.under_attack_now() && !brain.director.recovering_under_fire()
             && !brain.mobilization.active() && !brain.campaign.economy_resting() {
             director.active = Some(op);
             brain.joint_ops = director;
@@ -248,7 +248,7 @@ impl Director {
         let remaining_front = roster.iter().filter(|unit|
             op.front.contains(&unit.entity_id)).count();
         let revoked = brain.director.under_attack_now()
-            || brain.director.rebuilding_force()
+            || brain.director.recovering_under_fire()
             || brain.mobilization.active() || brain.campaign.economy_resting()
             || !obs.forces_enabled()
             || now.saturating_sub(op.started) > OPERATION_LIMIT

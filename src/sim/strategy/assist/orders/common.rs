@@ -78,7 +78,8 @@ pub(in crate::sim::strategy::assist) fn admits(
         Goal::Attack { target } => {
             // A remembered position may be searched by AttackMove, but an
             // entity-id Attack is a click on a currently visible object.
-            ((obs.is_hostile(target)
+            !super::protected_neutral(rules,obs,target)
+                && ((obs.is_hostile(target)
                 && obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))
                 || obs.can_control_neutral(rules, unit, target))
                 && obs.can_engage(rules, unit, target)
@@ -96,18 +97,19 @@ pub(in crate::sim::strategy::assist) fn admits(
         // in the middle of our own army and detonate there. Their explicit
         // target orders are handled by orders::suicide_errand/bomb_errand.
         Goal::AttackMove { .. } | Goal::Guard | Goal::GuardAt { .. }
-            if obs.entity_type(rules,unit).is_some_and(|ty| matches!(
-                super::super::doctrine::duty(rules,ty),
-                super::super::doctrine::Duty::Disposable |
+            if super::super::doctrine::actor_duty(rules,obs,unit).is_some_and(|duty| matches!(
+                duty, super::super::doctrine::Duty::Disposable |
                     super::super::doctrine::Duty::BombPlanter)) => false,
         Goal::AttackCell { .. }
-            if obs.entity_type(rules,unit).is_some_and(|ty| matches!(
-                super::super::doctrine::duty(rules,ty),
-                super::super::doctrine::Duty::Disposable |
+            if super::super::doctrine::actor_duty(rules,obs,unit).is_some_and(|duty| matches!(
+                duty, super::super::doctrine::Duty::Disposable |
                     super::super::doctrine::Duty::BombPlanter)) => false,
         Goal::Capture { target } => {
-            (!obs.is_hostile(target)
-                || obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))
+            // Ownership or current visibility is required for every fresh
+            // Capture click, including neutral assets and empty garrisons.
+            obs.observed_object_cell(target).is_some()
+                && (!obs.is_hostile(target)
+                    || obs.visible_enemy_entities().any(|enemy| enemy.entity_id==target))
                 && obs.can_take_building(rules, unit, target)
         }
         Goal::Grind { target } => obs.controlled_by_own_controller(unit)
@@ -157,6 +159,10 @@ fn issue_at_rank(
         && obs.entity_type(rules, unit).is_some_and(|ty| ty.engineer)
         && !super::super::safety::specialist_approach_safe(rules,obs,unit,target)
     { return false; }
+    if let Goal::Capture {target}=goal
+        && obs.entity_type(rules,unit).is_some_and(|ty|ty.occupier && !ty.engineer && !ty.agent)
+        && !super::super::safety::garrison_approach_safe(rules,obs,unit,target)
+    {return false;}
     // The map is the other thing a goal can be wrong about, and neither the
     // funnel nor `Funnel::prepare` looks at it: `Command::Move` to a cell past
     // the edge is accepted, the nav target is never reached, and the unit

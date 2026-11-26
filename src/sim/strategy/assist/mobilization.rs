@@ -11,6 +11,9 @@ use crate::sim::intern::InternedId;
 use crate::sim::production::CanBuild;
 use super::{build, census::Census, doctrine, plan::Item};
 
+// V58: restore the ordinary opening selector. Keep the old wave policy
+// available for a future controlled experiment, not as a default veto.
+const ENFORCE_OPENING_WAVE: bool = false;
 const OPENING_LIMIT: u64 = 9_000;
 const SAMPLE_PERIOD: u64 = 45;
 const WAVE_VEHICLES: usize = 3;
@@ -71,6 +74,12 @@ impl Mobilization {
 
     pub(super) fn observe(&mut self, rules: &RuleSet, obs: &Observation<'_>, census: &Census) {
         let now = obs.tick();
+        if !ENFORCE_OPENING_WAVE {
+            self.active = false;
+            self.floor = None;
+            self.completed = true;
+            return;
+        }
         if !obs.production_enabled() || census.yards == 0 {
             // A player disabling production or a house with no yard must not
             // be forced to wait for an opening which it cannot execute.

@@ -293,6 +293,10 @@ pub struct AssistBrain {
     /// spends the lab's money on one more soldier every frame is a house that
     /// never reaches the lab.
     pub(super) yard_reserve: i32,
+    pub(super) research_bank: economy::InvestmentBank,
+    pub(super) income_bank: economy::InvestmentBank,
+    pub(super) quality_bank: economy::InvestmentBank,
+    pub(super) quality_reserve: i32,
     /// The buildings whose wrench the house has switched on, and the frame
     /// before which it will not switch it again. The click is a toggle, so a
     /// second one turns the repair off — and a click that was refused has to be
@@ -305,6 +309,14 @@ pub struct AssistBrain {
     /// Engineer repairs of occupied structures consume the engineer. Do not
     /// buy/dispatch a second while the first is walking to that same target.
     pub(super) engineer_repair_after: BTreeMap<u64, u64>,
+    pub(super) campaign_engineer_after: u64,
+    /// Repair receipt candidates: actual HP is rechecked, not inferred from
+    /// the engineer disappearing. (actor, HP before request, deadline).
+    pub(super) campaign_repairs: BTreeMap<u64,(u64,i32,u64)>,
+    pub(super) campaign_restored_cover: BTreeMap<u64,u64>,
+    /// site -> (reserved occupier, safe entrance post, hard deadline)
+    pub(super) cover_detail: BTreeMap<u64,(u64,(u16,u16),u64)>,
+    pub(super) crate_retry_after: BTreeMap<(u64,(u16,u16)),u64>,
     /// What each type is for, read out of the warheads once and never
     /// changed. Built on the first frame, because the rules a scenario plays
     /// with are the ones the brain is handed there.
@@ -402,6 +414,8 @@ pub struct AssistBrain {
     pub(super) captured_assets: BTreeMap<u64, u64>,
     /// Defender actor -> captured asset being protected.
     pub(super) asset_guards: BTreeMap<u64, u64>,
+    pub(super) asset_guard_posts: BTreeMap<u64,((u16,u16),(u16,u16),u64)>,
+    pub(super) asset_guard_retry: BTreeMap<u64,u64>,
     /// Why the push did not leave this frame, as the gate that refused it:
     /// `push` when it did. Read by the forty-second census line — the question
     /// "why is the army standing in its yard" is otherwise unanswerable from a
@@ -481,11 +495,19 @@ pub struct AssistBrain {
     /// One bounded engineer/spy ferry, whose carrier cannot be borrowed by
     /// the generic troop transport to rush an enemy base.
     pub(super) specialist_shuttles: BTreeMap<u64, orders::SpecialistShuttle>,
+    pub(super) ferry_retry:BTreeMap<u64,u64>,
+    pub(super) ferry_buy_after:[u64;3],
+    pub(super) naval_demand:bool,
+    pub(super) naval_demand_at:Option<u64>,
     /// Spy purchases are independent of engineer captures; one infiltration
     /// expedition must not be starved by unsuccessful engineer rushes.
     pub(super) next_spy_purchase: u64,
     /// Local emergency unloading is a cooldown, not a permanent garrison ban.
     pub(super) garrison_release_after: BTreeMap<u64, u64>,
+    pub(super) next_garrison_purchase_scan:u64,
+    pub(super) combat_feedback:composition::CombatFeedback,
+    pub(super) asset_defense_builds:BTreeMap<InternedId,u64>,
+    pub(super) next_asset_defense_scan:u64,
     /// A combat carrier takes at most one reserve soldier each short window.
     pub(super) combat_board_after: u64,
     /// Siege deploy is a toggle: never send it in both directions every frame.
@@ -496,6 +518,9 @@ pub struct AssistBrain {
     /// Last seen ore density per cell. Updates only on currently visible
     /// cells, so depleted/growing ore behind fog is not omniscient knowledge.
     ore_known: BTreeMap<(u16, u16), u8>,
+    /// Surveyed ore accessible from our economy, not raw enemy-base ore.
+    pub(super) expansion_ore:BTreeMap<(u16,u16),u8>,
+    pub(super) expansion_bank:economy::InvestmentBank,
     /// The structure the fist committed to, and the frame the commitment may be
     /// re-made: `(entity, until)`. Seven bases make "the nearest structure" a
     /// different answer every time the army moves, and an army that re-picks
@@ -516,6 +541,16 @@ pub struct AssistBrain {
     pub(super) unstuck: unstuck::Recovery,
     /// Short-lived evasions for economically valuable harvesters.
     pub(super) miner_avoid_until: BTreeMap<u64, u64>,
+    pub(super) mining_hostile_sites: BTreeMap<u64,((u16,u16),i32,u64)>,
+    pub(super) miner_standby: BTreeMap<u64,(u16,u16)>,
+    /// Observed attacker -> (last mining incident cell, expiry).
+    pub(super) mine_incidents: BTreeMap<u64,((u16,u16),u64)>,
+    /// Short local clearance assignment, not a permanent second army.
+    pub(super) mine_clearance: BTreeMap<u64,(u64,u64)>,
+    pub(super) mine_clearance_retry: BTreeMap<u64,u64>,
+    /// Previously owned victim -> (visible controller, rescue deadline).
+    pub(super) liberation_window: BTreeMap<u64,(u64,u64)>,
+    pub(super) liberation_retry: BTreeMap<u64,u64>,
     /// Conventional miners on an explicit journey to a *known* remote ore
     /// seam: (destination, last observed position, last progress tick).
     pub(super) miner_journeys: BTreeMap<u64, ((u16,u16), (u16,u16), u64)>,
@@ -564,6 +599,8 @@ pub struct AssistBrain {
     pub(super) siege_charge: Option<advance::SiegeCharge>,
     pub(super) charge_retry: BTreeMap<u64,advance::ChargeRetry>,
     pub(super) charge_released: BTreeMap<u64,u64>,
+    /// Per-actor withdrawal leases, not a second force commander.
+    pub(super) charge_rotating: BTreeMap<u64,(u64,u64)>,
     /// A visible economic victim is locked for a bounded raid, preventing
     /// the detachment from changing miners whenever positions change.
     pub(super) harass_focus: Option<(u64, u64)>,
@@ -630,9 +667,18 @@ impl AssistBrain {
             wall_build: None,
             wall_order_after: 0,
             yard_reserve: 0,
+            research_bank: economy::InvestmentBank::default(),
+            income_bank: economy::InvestmentBank::default(),
+            quality_bank: economy::InvestmentBank::default(),
+            quality_reserve: 0,
             repairing: BTreeMap::new(),
             repaired: BTreeSet::new(),
             engineer_repair_after: BTreeMap::new(),
+            campaign_engineer_after: 0,
+            campaign_repairs: BTreeMap::new(),
+            campaign_restored_cover: BTreeMap::new(),
+            cover_detail: BTreeMap::new(),
+            crate_retry_after: BTreeMap::new(),
             roles: None,
             census: Census::default(),
             super_at: BTreeMap::new(),
@@ -658,6 +704,8 @@ impl AssistBrain {
             capturable_last: BTreeSet::new(),
             captured_assets: BTreeMap::new(),
             asset_guards: BTreeMap::new(),
+            asset_guard_posts: BTreeMap::new(),
+            asset_guard_retry: BTreeMap::new(),
             push_gate: "none",
             push_rest: (0, "none"),
             sale_at: 0,
@@ -678,17 +726,34 @@ impl AssistBrain {
             repair_ifv_after: BTreeMap::new(),
             repair_ifv_pending: BTreeMap::new(),
             specialist_shuttles: BTreeMap::new(),
+            ferry_retry:BTreeMap::new(),
+            ferry_buy_after:[0;3],
+            naval_demand:false,
+            naval_demand_at:None,
             next_spy_purchase: 0,
             garrison_release_after: BTreeMap::new(),
+            next_garrison_purchase_scan:0,
+            combat_feedback:composition::CombatFeedback::default(),
+            asset_defense_builds:BTreeMap::new(),
+            next_asset_defense_scan:0,
             combat_board_after: 0,
             siege_toggle_after: BTreeMap::new(),
             ore_scan: None,
             ore_known: BTreeMap::new(),
+            expansion_ore:BTreeMap::new(),
+            expansion_bank:economy::InvestmentBank::default(),
             push_target: None,
             issued: [0; 5],
             last_tick: 0,
             unstuck: unstuck::Recovery::default(),
             miner_avoid_until: BTreeMap::new(),
+            mining_hostile_sites: BTreeMap::new(),
+            miner_standby: BTreeMap::new(),
+            mine_incidents: BTreeMap::new(),
+            mine_clearance: BTreeMap::new(),
+            mine_clearance_retry: BTreeMap::new(),
+            liberation_window: BTreeMap::new(),
+            liberation_retry: BTreeMap::new(),
             miner_journeys: BTreeMap::new(),
             miner_idle_since: BTreeMap::new(),
             miner_rejected: BTreeMap::new(),
@@ -704,6 +769,7 @@ impl AssistBrain {
             siege_charge: None,
             charge_retry: BTreeMap::new(),
             charge_released: BTreeMap::new(),
+            charge_rotating: BTreeMap::new(),
             harass_focus: None,
             harass_site: None,
             trace: std::env::var("AUTOPLAY_TRACE")
@@ -757,6 +823,7 @@ impl AssistBrain {
     /// two independently refreshed ore scans were how production paid for a
     /// field that miners had already given up on.
     fn refresh_ore(&mut self, rules: &RuleSet, obs: &Observation<'_>) {
+        orders::observe_mining_territory(self,rules,obs);
         let mut anchors = self.census.refinery_cells.clone();
         if anchors.is_empty() {
             if let Some(home) = self.census.base_cell {
@@ -788,9 +855,15 @@ impl AssistBrain {
                 .find(|ty| ty.category == crate::rules::object_type::ObjectCategory::Vehicle)
                 .or_else(|| build::harvester(rules, obs).map(|(ty, _)| ty))
                 .map_or(crate::rules::locomotor_type::MovementZone::Crusher, |ty| ty.movement_zone);
-            self.ore_scan = Some(ore::Survey::read(
-                rules, obs, &self.census, anchors, zone, &self.ore_known,
-            ));
+            // Preserve the raw ore memory for future liberation of a field.
+            // Only currently workable territory may drive economic expansion.
+            let workable:BTreeMap<_,_>=self.ore_known.iter().filter(|(cell,_)|
+                !orders::hostile_mining_ground(self,**cell))
+                .map(|(cell,stage)|(*cell,*stage)).collect();
+            let survey=ore::Survey::read(rules,obs,&self.census,anchors,zone,&workable);
+            self.expansion_ore=survey.fields.iter().filter_map(|cell|
+                workable.get(cell).map(|stage|(*cell,*stage))).collect();
+            self.ore_scan=Some(survey);
         }
         self.census.ore_targets = self.ore_scan.as_ref().map(|scan| scan.targets);
         if trace_enabled("AUTOPLAY_TRACE_ORE") && obs.tick() % 600 == 0 {
@@ -869,6 +942,7 @@ impl Brain for AssistBrain {
         // than walking the entity store again.
         self.income.sample(obs.tick(), obs.earned());
         self.rebuild_census(rules, obs);
+        self.combat_feedback.observe(rules,obs,&self.census);
         factory_handoff::observe(self, obs.tick());
         self.refresh_ore(rules, obs);
         // The house's picture: what the shroud shows, plus what it remembers
@@ -899,7 +973,20 @@ impl Brain for AssistBrain {
                 unit.cell, obs.destination(unit.entity_id));
         }
         self.void_orders_the_world_does_not_show();
-        self.tracked.tasks.reconcile(obs.tick(), rules, obs, &self.census);
+        let abandoned=self.tracked.tasks.reconcile(obs.tick(),rules,obs,&self.census);
+        for (actor,job) in abandoned {
+            self.tracked.cancel_for_safety(actor);
+            if let Some(target)=job.target {
+                self.specialist_risk_after.insert((actor,target),obs.tick().saturating_add(450));
+                if job.kind==tasks::JobKind::Engineer {
+                    self.asset_ops.aborted(obs.tick(),actor,target);
+                    self.tracked.cancel_capture_purchase(obs.tick(),target);
+                }
+            }
+            self.safety.abandon(actor);
+            self.tracked.hold(actor,obs.tick().saturating_add(90));
+        }
+        orders::observe_campaign_repairs(self,rules,obs);
         readiness::refresh(self, rules, obs);
         // What each unit is *for*, before anything decides what it does: the
         // membership is rebuilt on its own term, not every frame.
@@ -919,7 +1006,7 @@ impl Brain for AssistBrain {
         readiness::report(self, obs.tick());
         let signals = strategy::Signals::read(
             rules, obs, &self.census, attack_members,
-            &self.ore_known, self.income.per_minute(),
+            &self.expansion_ore, self.income.per_minute(),
         );
         if let Some((from, to)) = self.director.observe(obs.tick(), signals) {
             // A new strategic priority invalidates a *purchase promise*, not
@@ -927,11 +1014,14 @@ impl Brain for AssistBrain {
             // a lab or MCV after the refinery was destroyed or a raid began.
             if matches!(to, strategy::Objective::RecoverYard
                 | strategy::Objective::RecoverIncome
-                | strategy::Objective::HoldBase
-                | strategy::Objective::RebuildArmy)
+                | strategy::Objective::HoldBase)
             {
                 self.plan_hold = None;
                 self.yard_reserve = 0;
+                self.research_bank.interrupt(obs.tick());
+                self.expansion_bank.interrupt(obs.tick());
+                self.quality_bank.interrupt(obs.tick());
+                self.quality_reserve = 0;
             }
             log::info!(
                 "auto play: strategy {:?} -> {:?} at {} yard={} ref={} harv={} fighters={} attack={} visible_raid={} far_ore={} income={:?} fighting_points={} power={} blackout={}",
@@ -944,7 +1034,7 @@ impl Brain for AssistBrain {
         }
         let emergency = matches!(self.director.objective(),
             strategy::Objective::RecoverYard | strategy::Objective::RecoverIncome
-                | strategy::Objective::HoldBase) || self.director.rebuilding_force();
+                | strategy::Objective::HoldBase) || self.director.recovering_under_fire();
         if let Some((before, after)) = self.campaign.observe(
             obs.tick(), rules, obs, &self.census, &self.squads,
             signals, emergency, self.push_target.map(|(_, _, cell)| cell),
@@ -955,6 +1045,9 @@ impl Brain for AssistBrain {
                 obs.enemy_house_count(), obs.tick(),
             );
         }
+        self.campaign.observe_preparation(obs.tick(),rules,obs,&self.census,&self.squads,signals,
+            !emergency && !self.mobilization.active() && self.siege_charge.is_none()
+                && self.blackout.is_none(),self.push_target.map(|(_,_,cell)|cell));
         if obs.tick() % 600 == 0 {
             log::info!("auto play: convergence tick={} economy_rest={}",obs.tick(),self.campaign.economy_resting());
             log::info!("auto play: combat_doctrine tick={}",obs.tick());
@@ -962,7 +1055,7 @@ impl Brain for AssistBrain {
         }
         // A siege charge belongs to a committed operation. Do not prepare
         // another suicide wave while a healthy house is deliberately saving.
-        if self.director.rebuilding_force() || self.mobilization.active() || self.campaign.economy_resting() {
+        if self.director.recovering_under_fire() || self.mobilization.active() || self.campaign.economy_resting() {
             self.blackout = None;
             self.blackout_withdraw_after.clear();
             self.assault_wait = None;
@@ -983,6 +1076,10 @@ impl Brain for AssistBrain {
         // cadence the board and the yard deploy log on: "the AI builds nothing"
         // has to be answerable from the log the client already writes.
         if obs.tick() % 600 == 0 {
+            log::info!("auto play: v58_recovery_policy tick={} loss_recovery={} home_raid={} offensive_hold={} opening_wave={} refit={}",
+                obs.tick(),self.director.rebuilding_force(),self.director.under_attack_now(),
+                self.director.recovering_under_fire(),self.mobilization.active(),
+                self.campaign.phase()==campaign::Phase::Refit);
             if self.director.emergency_spending(obs) || obs.power_balance() < 0 {
                 log::info!(
                     "auto play: recovery tick={} objective={:?} rebuilding_force={} credits={} free={} committed={} power={} blackout={} lines={:?}",
@@ -1035,6 +1132,35 @@ impl Brain for AssistBrain {
                     format!("{name}:{count}")
                 })
                 .collect();
+            if trace_enabled("AUTOPLAY_V56_TRACE") {
+                let full: Vec<_> = types.iter().map(|(id,count)| {
+                    let name=obs.object_type(rules,*id).map_or("?",|ty|ty.id.as_str());
+                    format!("{name}:{count}")
+                }).collect();
+                let (hulls,aa)=composition::ground_stock(self,rules,obs);
+                let mut repair=0usize;
+                let mut garrisoned=0usize;
+                let mut ready=0usize;
+                let mut idle=0usize;
+                let mut capture=0usize;
+                for unit in &self.census.units {
+                    let id=unit.entity_id;
+                    if obs.active_gunner_weapon(rules,id).is_some_and(|w|w.damage<0)
+                        && advanced::repair_ifv_loaded(rules,obs,&self.census,id) { repair+=1; }
+                    if unit.traits.occupier && obs.inside_transport(id).is_some_and(|parent|
+                        obs.owns_object(parent) && obs.entity_type(rules,parent).is_some_and(|ty|
+                            ty.category==crate::rules::object_type::ObjectCategory::Building)) { garrisoned+=1; }
+                    if unit.traits.engineer && unit.mission.known()==Some(crate::sim::mission::MissionType::Capture) { capture+=1; }
+                    if self.census.main_available(unit) {
+                        if obs.attack_target(id).is_some_and(|target|obs.is_hostile(target)
+                            && obs.observed_object_cell(target).is_some() && obs.can_hurt(rules,id,target)
+                            && obs.engage(rules,id,target)==crate::sim::control::observation::Engage::Ready) { ready+=1; }
+                        if obs.destination(id).is_none() && obs.attack_target(id).is_none() { idle+=1; }
+                    }
+                }
+                log::info!("auto play: v56_capabilities tick={} roster=[{}] hulls={} mobile_aa={} repair_mode={} garrisoned={} capture_mission={} ready_attack={} available_idle={}",
+                    obs.tick(),full.join(","),hulls,aa,repair,garrisoned,capture,ready,idle);
+            }
             let crates: Vec<(u16, u16)> = obs.crate_cells(rules);
             // Unclaimed, not merely unordered: a unit with no live intent is one
             // no layer has spoken for inside the intent term. The census's own
@@ -1156,6 +1282,10 @@ impl Brain for AssistBrain {
         // that order has been tuned against winning fixed-seed replays.
         // The fifth key only changes actor eligibility, never these switches.
         if obs.production_enabled() {
+            if self.naval_demand_at.is_none_or(|at|obs.tick().saturating_sub(at)>=120) {
+                self.naval_demand=composition::naval_need(self,rules,obs);
+                self.naval_demand_at=Some(obs.tick());
+            }
             expand::deploy_yard_maker(self, rules, obs, out);
             build::spend(self, rules, obs, &budget, out);
             // The yard's new QueueProduction is already a commitment this
@@ -1163,6 +1293,14 @@ impl Brain for AssistBrain {
             let yard_cost = plan::proposed_cost(rules,obs,out);
             composition::fill_lines(self, rules, obs, &budget.after_commitment(yard_cost), out);
             if obs.tick() % 600 == 0 {
+                if let Some(survey)=self.ore_scan.as_ref() {
+                    log::info!("auto play: v57_income_state tick={} miners={} bays={} target_miners={} target_bays={} ore={} income={} cash={} income_bank={}",
+                        obs.tick(),self.census.harvesters,self.census.refineries,survey.targets.harvesters,
+                        survey.targets.refineries,survey.stock,budget.income.unwrap_or(-1),obs.credits(),
+                        self.income_bank.active(obs.tick()).is_some());
+                }
+                log::info!("auto play: v56_quality_budget tick={} research_bank={} unit_bank={}",
+                    obs.tick(),self.yard_reserve,self.quality_reserve);
                 log::info!("auto play: economy_budget tick={} cash={} spent={} committed={} bank={} proposed={} rest={}",
                     obs.tick(),obs.credits(),obs.spent_credits(),budget.committed,self.yard_reserve,
                     plan::proposed_cost(rules,obs,out),self.campaign.economy_resting());
@@ -1173,13 +1311,15 @@ impl Brain for AssistBrain {
         }
         if obs.production_enabled() && !obs.has_pending_production_commands() {
             let repair_budget = budget.after_commitment(plan::proposed_cost(rules,obs,out))
-                .reserving(if self.director.under_attack_now() { 0 } else { self.yard_reserve });
+                .reserving(if self.director.under_attack_now() { 0 }
+                    else { self.yard_reserve.saturating_add(self.quality_reserve) });
             orders::repairs(self, rules, obs, &repair_budget, out);
         }
         if obs.abilities_enabled() {
             orders::supers(self, rules, obs, out);
         }
         if obs.forces_enabled() {
+            dodge::evacuate_superweapons(self,rules,obs,out);
             orders::bridges(self, rules, obs, out);
             orders::specialist_transports(self, rules, obs, out);
             // Boarding and engineer repairs reserve only a spare specialist.
@@ -1190,13 +1330,13 @@ impl Brain for AssistBrain {
             recycle::run(self, rules, obs, out);
             advanced::free_repair_ifv_seat(self, rules, obs, out);
             advanced::combat_carriers(self, rules, obs, out);
-            orders::repair_garrisons(self, rules, obs, out);
             orders::supervise_specialists(self, rules, obs, out);
             orders::resume_specialist_jobs(self, rules, obs, out);
             // A single spare defender may establish an observation/security
             // post before the engineer's actual Capture is considered safe.
             asset_ops::Director::muster(self, rules, obs, out);
             orders::captures(self, rules, obs, out);
+            orders::repair_garrisons(self,rules,obs,out);
             orders::protect_engineer_prizes(self, rules, obs, out);
         }
         if obs.production_enabled() {
@@ -1213,29 +1353,32 @@ impl Brain for AssistBrain {
                 walls::clear_the_ring(self, rules, obs, out, obs.tick());
             }
             advanced::avoid_invulnerable_assault(self, rules, obs, out);
+            advanced::attempt_liberation(self,rules,obs,out);
+            advanced::clear_mine_raids(self,rules,obs,out);
+            // Safe local cover is a legitimate defence during a raid.
+            // Active shooters and a minimal mobile screen are protected.
+            orders::garrison(self, rules, obs, out);
             advanced::protect_base(self, rules, obs, out);
             advanced::station_home_reserve(self, rules, obs, out);
             advanced::secure_outpost(self, rules, obs, out);
             advanced::secure_captured_assets(self, rules, obs, out);
-            advanced::relieve_garrison(self, rules, obs, out);
             advanced::repair_ifvs(self, rules, obs, out);
-            // While the base is being raided, do not return just-evacuated
-            // infantry to their occupied buildings in the same frame.
-            if !self.director.under_attack_now() {
-                orders::garrison(self, rules, obs, out);
-            }
             dodge::run(self, rules, obs, out);
             kite::run(self, rules, obs, out);
             orders::crates(self, rules, obs, out);
             // V40: a safe blast route can become unsafe when friends move.
             // Check in-flight bombs *before* offering a new target.
             orders::supervise_hazardous_attacks(self,rules,obs,out);
-            if self.director.rebuilding_force() || self.mobilization.active() || self.campaign.economy_resting() {
+            if self.director.recovering_under_fire() || self.mobilization.active() || self.campaign.economy_resting() {
                 advance::withdraw_for_recovery(self, rules, obs, out);
             } else {
                 orders::suicide_errand(self, rules, obs, out);
                 orders::bomb_errand(self, rules, obs, out);
             }
+            composition::respond_to_threats(self,rules,obs,out);
+            advance::trailing_siege(self,rules,obs,out);
+            advance::local_contacts(self,rules,obs,out);
+            orders::naval_operations(self,rules,obs,out);
             micro::run(self, rules, obs, out);
             avoidance::run(self, rules, obs, out);
             // A capture can borrow one spare defender, without overruling
@@ -1264,13 +1407,18 @@ impl Brain for AssistBrain {
             // currently observed strategic prize. Ordinary advance excludes
             // its members until release, even when no new order is needed.
             joint_ops::Director::run(self, rules, obs, out);
-            if !advance::advance(self, rules, obs, out) {
+            let advancing=advance::advance(self,rules,obs,out);
+            advance::campaign_cleanup(self,rules,obs,out);
+            recon::Director::sweep_idle(self,rules,obs,out);
+            micro::idle_miner_pressure(self,rules,obs,out);
+            if !advancing {
                 orders::forces(self, rules, obs, out);
             }
             orders::slave_miners(self, rules, obs, out);
             orders::harvesters(self, rules, obs, out);
         }
         if obs.production_enabled() {
+            dodge::sell_doomed_strike_building(self,rules,obs,out);
             orders::sell_hard_to_hold(self, rules, obs, out);
         }
         if obs.forces_enabled() {
@@ -1284,10 +1432,16 @@ impl Brain for AssistBrain {
         self.finish_orders(out);
         if obs.forces_enabled() {
             advance::finish_charge(self,rules,obs,out);
+            safety::recall_orphans(self,rules,obs,out);
             safety::review(self, rules, obs, out);
         }
         // Expansion can be enabled even when ordinary force automation is off.
         site_risk::review_makers(self, rules, obs, out);
+        if obs.forces_enabled() {
+            orders::review_capture_prizes(self,rules,obs,out);
+            advanced::review_liberation(self,rules,obs,out);
+            dodge::review_superweapon_moves(self,rules,obs,out);
+        }
         // Last assistant-only gate, including direct asks and attachments.
         factory_handoff::filter(self, obs.tick(), out);
         // What the army was told this frame, counted by kind: the census line

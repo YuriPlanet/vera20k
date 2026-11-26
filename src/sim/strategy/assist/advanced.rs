@@ -192,6 +192,8 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         if !(defenders.contains(&defender.entity_id) || local_reserve
             || emergency_loan || air_emergency || critical_emergency || local_contact)
             || !defender.controllable()
+            || brain.cover_detail.values().any(|(id,_,_)|*id==defender.entity_id)
+            || brain.mine_clearance.get(&defender.entity_id).is_some_and(|(_,end)|obs.tick()<*end)
             || defender.in_service() || !defender.traits.combat
             || brain.safety.reserved(rules,obs,defender)
             || ordered_this_frame(out, defender.entity_id)
@@ -205,8 +207,36 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
             .filter(|enemy| !local_contact || (super::convergence::mobile_threat(rules,obs,enemy)
                 && obs.engage(rules,defender.entity_id,enemy.entity_id) == crate::sim::control::observation::Engage::Ready))
             .filter(|enemy| !obs.visible_enemy_invulnerable(enemy.entity_id)
+                && !protect_controlled_friend(brain,rules,obs,defender.entity_id,enemy.entity_id)
                 && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
                 && obs.can_hurt(rules, defender.entity_id, enemy.entity_id))
+            .filter(|enemy|{
+                let Some(theirs)=obs.object_type(rules,enemy.type_id) else{return false;};
+                let id=defender.entity_id;
+                let ready=obs.engage(rules,id,enemy.entity_id)
+                    ==crate::sim::control::observation::Engage::Ready;
+                if let Some(control)=super::tactics::actor_control_reach(rules,obs,enemy.entity_id) {
+                    if !super::tactics::psychic_immune(rules,obs,id) {
+                        return ready && super::advance::cell_distance(defender.cell,enemy.cell)>control+1;
+                    }
+                }
+                if super::tactics::anti_infantry_standoff(rules,theirs) {
+                    return ready || obs.object_type(rules,defender.type_id).is_some_and(|ours|
+                        super::tactics::personnel_resistant(rules,theirs,ours))
+                        && super::orders::reachable(rules,obs,id,enemy.cell)
+                        && super::tactics::lethal_approach(rules,obs,id,defender.cell,enemy.cell).is_none();
+                }
+                true
+            })
+            .filter(|enemy|{
+                // The distant mining district must not recruit a lone tank
+                // through a dangerous or disconnected route. The bounded
+                // clearance detail above owns coordinated pursuit.
+                let remote_mine=brain.mine_incidents.contains_key(&enemy.entity_id)
+                    && sites.iter().all(|site|squared_distance(*site,enemy.cell)>18*18);
+                !remote_mine || obs.engage(rules,defender.entity_id,enemy.entity_id)
+                    ==crate::sim::control::observation::Engage::Ready
+            })
             .min_by_key(|enemy| {
                 // Attacks directly aimed at income assets take precedence.
                 let attacks_asset = obs.attack_target(enemy.entity_id).is_some_and(|id|
@@ -234,6 +264,334 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
             defender.entity_id, TrackedKind::Engage, Some(target.entity_id), Some(target.cell),
             Goal::Attack { target: target.entity_id }) { issued += 1; }
+    }
+}
+
+/// A recently controlled friendly is still a recoverable asset. Prefer an
+/// observed controller and a feasible, actual damaging weapon. No attempt
+/// is recorded for an unseen or unreachable controller.
+const LIBERATION_WINDOW:u64=210;
+const LIBERATION_RETRY:u64=450;
+
+fn open_liberation_window(windows:&mut std::collections::BTreeMap<u64,(u64,u64)>,
+    victim:u64,controller:u64,now:u64) {
+    windows.entry(victim).or_insert((controller,now.saturating_add(LIBERATION_WINDOW)));
+}
+
+pub(super) fn attempt_liberation(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    use crate::sim::control::observation::Engage;
+    use super::advance::cell_distance;
+    let now=obs.tick();
+    if now%15!=0{return;}
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let pairs:Vec<_>=visible.iter().filter_map(|victim|
+        obs.visible_liberation_target(victim.entity_id).map(|controller|(victim.entity_id,controller)))
+        .collect();
+    let expired:Vec<_>=brain.liberation_window.iter().filter(|(victim,(controller,end))|
+        now>=*end || !pairs.contains(&(**victim,*controller)))
+        .map(|(id,_)|*id).collect();
+    for victim in expired {
+        brain.liberation_window.remove(&victim);
+        if obs.owns_object(victim) {
+            log::info!("auto play: v62_liberation_recovered tick={now} victim={victim}");
+        }
+        brain.liberation_retry.insert(victim,now.saturating_add(LIBERATION_RETRY));
+    }
+    brain.liberation_retry.retain(|_,end|now<*end);
+    if pairs.is_empty(){return;}
+    let mut used=std::collections::BTreeSet::new();
+    let mut checked=std::collections::BTreeSet::new();
+    let mut issued=0;
+    for (_,target) in pairs.iter().copied() {
+        if issued>=4 || !checked.insert(target){continue;}
+        let Some(enemy)=visible.iter().find(|e|e.entity_id==target) else {continue;};
+        let Some(ty)=obs.object_type(rules,enemy.type_id) else {continue;};
+        if obs.visible_enemy_invulnerable(target){continue;}
+        let victims:Vec<_>=pairs.iter().filter_map(|(victim,controller)|
+            (*controller==target).then_some(*victim)).collect();
+        if victims.iter().all(|victim|brain.liberation_retry.contains_key(victim)){continue;}
+        let mut candidates=Vec::new();
+        for u in brain.census.units.iter().filter(|u|brain.census.available(u)
+            && u.health_permille>=700 && !u.traits.irreplaceable
+            && !u.traits.scout && !used.contains(&u.entity_id)
+            && !brain.tracked.held(now,u.entity_id)
+            && brain.tracked.tasks.get(u.entity_id).is_none()
+            && !brain.cover_detail.values().any(|(id,_,_)|*id==u.entity_id)
+            && !brain.joint_ops.reserves(u.entity_id)
+            && !brain.census.factory_handoffs.contains_key(&u.entity_id)
+            && !super::advance::siege_member(brain,now,u.entity_id)
+            && !brain.mine_clearance.contains_key(&u.entity_id)
+            && !obs.out_of_ammo(u.entity_id)
+            && cell_distance(u.cell,enemy.cell)<=24
+            && obs.can_hurt(rules,u.entity_id,target)
+            && super::orders::admits(rules,obs,u.entity_id,&Goal::Attack{target})) {
+            let id=u.entity_id;
+            let Some(ours)=obs.object_type(rules,u.type_id) else {continue;};
+            let immune=ours.immune_to_psionics;
+            let psychic=super::tactics::actor_control_reach(rules,obs,target).unwrap_or(0);
+            let range=super::tactics::actual_threat_reach(rules,obs,id,target);
+            let enemy_range=super::tactics::actual_threat_reach(rules,obs,target,id);
+            let ready=obs.engage(rules,id,target)==Engage::Ready;
+            // Do not feed another victim to the same controller.
+            if !immune && psychic>0 && cell_distance(u.cell,enemy.cell)<=psychic+1 {continue;}
+            if obs.attack_target(id).is_some_and(|old|old!=target && !victims.contains(&old)
+                && obs.engage(rules,id,old)==Engage::Ready
+                && obs.attack_target(old)==Some(id)) {continue;}
+            let guns=super::safety::envelopes(rules,obs,id,&visible,true);
+            if ready {
+                if !super::safety::firing_here(rules,obs,u,target) {continue;}
+                candidates.push((!ready,cell_distance(u.cell,enemy.cell),id,u.cell,Goal::Attack{target}));
+                continue;
+            }
+            if immune && enemy_range==0 && !obs.is_deployed(id)
+                && super::orders::reachable(rules,obs,id,enemy.cell)
+                && super::safety::safe_leg(&guns,u.cell,enemy.cell,false) {
+                candidates.push((true,cell_distance(u.cell,enemy.cell),id,enemy.cell,Goal::Attack{target}));
+                continue;
+            }
+            if obs.is_deployed(id) || u.traits.aircraft || range<=enemy_range.max(if immune{0}else{psychic})+2 {
+                continue;
+            }
+            // Select an actual walkable firing position, not a Move into
+            // the controller's cell. Recheck safety and range every sample.
+            let r=(range-1).clamp(2,24);
+            let mut post=None;
+            for (dx,dy) in [(r,0),(-r,0),(0,r),(0,-r),
+                (r*2/3,r*2/3),(-r*2/3,r*2/3),(r*2/3,-r*2/3),(-r*2/3,-r*2/3)] {
+                let (Ok(x),Ok(y))=(u16::try_from(i32::from(enemy.cell.0)+dx),
+                    u16::try_from(i32::from(enemy.cell.1)+dy)) else {continue;};
+                let cell=(x,y);
+                if !obs.is_cell_in_playfield(x,y) || !obs.is_ground_walkable(x,y)
+                    || !super::orders::reachable(rules,obs,id,cell)
+                    || !super::safety::safe_leg(&guns,u.cell,cell,false)
+                    || (!immune && cell_distance(cell,enemy.cell)<=psychic+1) {continue;}
+                let score=(cell_distance(u.cell,cell),cell);
+                if post.is_none_or(|old|score<old){post=Some(score);}
+            }
+            if let Some((distance,cell))=post {
+                candidates.push((true,distance,id,cell,Goal::Move{cell}));
+            }
+        }
+        candidates.sort_by_key(|(approach,distance,id,_,_)|(*approach,*distance,*id));
+        let mut attempted=false;
+        for (_,_,actor,cell,goal) in candidates.into_iter().take(2) {
+            if issued>=4{break;}
+            let ready_native=matches!(goal,Goal::Attack{target:t} if obs.attack_target(actor)==Some(t));
+            let moving_native=matches!(goal,Goal::Move{cell:c} if obs.destination(actor)==Some(c));
+            let requested=if ordered_this_frame(out,actor){false}
+                else if ready_native || moving_native {true}
+                else {
+                    let kind=if matches!(goal,Goal::Attack{..}){TrackedKind::Engage}else{TrackedKind::Move};
+                    issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                        actor,kind,matches!(goal,Goal::Attack{..}).then_some(target),Some(cell),goal)
+                };
+            if requested {
+                attempted=true;used.insert(actor);issued+=1;
+                log::debug!("auto play: v62_liberation_attempt tick={now} actor={actor} controller={target} goal={goal:?}");
+            }
+        }
+        if attempted {
+            for victim in victims {
+                if !brain.liberation_retry.contains_key(&victim) {
+                    if !brain.liberation_window.contains_key(&victim) {
+                        log::info!("auto play: v62_liberation_window tick={now} victim={victim} controller={target}");
+                    }
+                    open_liberation_window(&mut brain.liberation_window,victim,target,now);
+                }
+            }
+        }
+    }
+}
+
+/// Temporary victim protection applies only while a live, visible controller
+/// relationship remains. An immediate self-defence shot is still permitted.
+pub(super) fn protect_controlled_friend(brain:&AssistBrain,rules:&RuleSet,obs:&Observation<'_>,
+    actor:u64,victim:u64)->bool {
+    let Some((controller,end))=brain.liberation_window.get(&victim) else{return false;};
+    obs.tick()<*end && obs.visible_liberation_target(victim)==Some(*controller)
+        && !(obs.attack_target(victim)==Some(actor)
+            && obs.engage(rules,victim,actor)==crate::sim::control::observation::Engage::Ready)
+}
+
+/// Reconcile after ordinary attack planners. This only blocks explicit
+/// assistant attacks, not native automatic fire or already-launched shots.
+pub(super) fn review_liberation(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    if brain.liberation_window.is_empty(){return;}
+    let mut blocked=std::collections::BTreeSet::new();
+    out.orders.retain(|order|{
+        let Goal::Attack{target}=order.goal else{return true;};
+        if obs.owned_by_hand(order.actor) || !protect_controlled_friend(brain,rules,obs,order.actor,target)
+        {return true;}
+        blocked.insert(order.actor);false
+    });
+    for u in &brain.census.units {
+        if !u.controllable() || u.in_service() || !u.traits.combat {continue;}
+        let id=u.entity_id;
+        if obs.attack_target(id).is_some_and(|victim|protect_controlled_friend(brain,rules,obs,id,victim))
+            && !out.orders.iter().any(|o|o.actor==id) {
+            blocked.insert(id);
+            out.orders.push(crate::sim::control::intent::Order{actor:id,goal:Goal::Stop});
+        }
+    }
+    for id in blocked {
+        brain.tracked.void(id,TrackedKind::Attack);
+        brain.tracked.void(id,TrackedKind::Engage);
+        brain.tracked.forget_primary(id);
+    }
+}
+
+/// A mine's attacker remains a local clearance objective after the miner
+/// flees. Select only visible live threats, not a hidden enemy location.
+/// The existing base guard remains responsible for its own emergency.
+pub(super) fn clear_mine_raids(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    use crate::sim::control::observation::Engage;
+    use super::advance::cell_distance;
+    let now=obs.tick();
+    if now%15!=0 {return;}
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let miners:Vec<_>=brain.census.units.iter().filter(|u|u.traits.harvester
+        || obs.object_type(rules,u.type_id).is_some_and(|ty|
+            ty.category==ObjectCategory::Building && ty.resource_destination && ty.enslaves.is_some()))
+        .copied().collect();
+    for e in &visible {
+        if let Some(miner)=miners.iter().find(|m|obs.can_hurt(rules,e.entity_id,m.entity_id)
+            && (obs.attack_target(e.entity_id)==Some(m.entity_id)
+                || (cell_distance(e.cell,m.cell)<=10
+                    && obs.engage(rules,e.entity_id,m.entity_id)==Engage::Ready))) {
+            brain.mine_incidents.insert(e.entity_id,(miner.cell,now.saturating_add(600)));
+        }
+    }
+    // Keep a sighted incident only while the threat remains in the mining
+    // district. If it disappears, the old ID is not an attack instruction.
+    brain.mine_incidents.retain(|target,(cell,end)|now<*end && visible.iter().any(|e|
+        e.entity_id==*target && cell_distance(e.cell,*cell)<=22));
+    let live=&brain.census.units;
+    brain.mine_clearance_retry.retain(|_,end|now<*end);
+    let expired:Vec<_>=brain.mine_clearance.iter().filter(|(_, (target,end))|
+        now>=*end || !brain.mine_incidents.contains_key(target))
+        .map(|(actor,(target,_))|(*actor,*target)).collect();
+    for (actor,target) in expired {
+        brain.mine_clearance.remove(&actor);
+        brain.mine_clearance_retry.insert(actor,now.saturating_add(240));
+        if live.iter().any(|u|u.entity_id==actor && u.controllable() && !u.in_service())
+            && obs.attack_target(actor)==Some(target)
+            && obs.engage(rules,actor,target)!=Engage::Ready {
+            brain.tracked.cancel_for_safety(actor);
+            brain.safety.abandon(actor);
+            if !out.ordered_this_frame(actor){let _=out.want(actor,0,Goal::Stop);}
+        }
+    }
+    brain.mine_clearance.retain(|actor,(target,end)|now<*end
+        && brain.mine_incidents.contains_key(target)
+        && live.iter().any(|u|u.entity_id==*actor && u.controllable()
+            && !u.in_service() && u.health_permille>=650
+            && !brain.safety.reserved(rules,obs,u)));
+    if brain.mine_incidents.is_empty(){return;}
+    let defenders=brain.squads.squad(Role::Defend)
+        .map(|s|s.members.clone()).unwrap_or_default();
+    let home=brain.census.base_cell;
+    let home_guard_count=live.iter().filter(|u|defenders.contains(&u.entity_id)
+        && brain.census.available(u) && home.is_some_and(|h|cell_distance(h,u.cell)<=18)).count();
+    let mut issued=0;
+    let mut spent_home=0;
+    let mut incidents:Vec<_>=brain.mine_incidents.iter().filter_map(|(id,(cell,_))|
+        visible.iter().find(|e|e.entity_id==*id).copied().map(|e|(e,*cell))).collect();
+    incidents.sort_by_key(|(e,_)|(!obs.attack_target(e.entity_id)
+        .is_some_and(|target|miners.iter().any(|m|m.entity_id==target)),e.entity_id));
+    for (enemy,field) in incidents {
+        if issued>=4 {break;}
+        let target=enemy.entity_id;
+        let Some(ty)=obs.object_type(rules,enemy.type_id) else {continue;};
+        if obs.visible_enemy_invulnerable(target) || ty.category==ObjectCategory::Building
+            || super::tactics::mind_control_reach(rules,ty).is_some() {continue;}
+        // Actual heavy fixed positions and psychic controllers remain the
+        // siege/counter owner's job, never a speculative miner-rescue charge.
+        let other_threats:Vec<_>=visible.iter().copied().filter(|e|e.entity_id!=target).collect();
+        let mut candidates:Vec<_>=live.iter().copied().filter(|u|{
+            let id=u.entity_id;
+            let old=brain.mine_clearance.get(&id).is_some_and(|(t,end)|*t==target && now<*end);
+            let at_home=home.is_some_and(|h|cell_distance(h,u.cell)<=18);
+            let near=cell_distance(u.cell,enemy.cell)<=48;
+            (old || brain.census.available(u)) && u.controllable() && !u.in_service()
+                && !brain.mine_clearance_retry.contains_key(&id)
+                && !out.ordered_this_frame(id)
+                && matches!(u.slot,super::census::Slot::Infantry|super::census::Slot::Vehicle)
+                && !u.traits.aircraft && !u.traits.irreplaceable && !u.traits.scout
+                && u.health_permille>=700 && near
+                && !brain.safety.reserved(rules,obs,u)
+                && !brain.tracked.held(now,id)
+                && brain.tracked.tasks.get(id).is_none()
+                && !brain.cover_detail.values().any(|(actor,_,_)|*actor==id)
+                && !brain.joint_ops.reserves(id)
+                && !super::advance::siege_member(brain,now,id)
+                && !brain.asset_guards.contains_key(&id)
+                && !brain.outpost_guards.contains_key(&id)
+                && !brain.census.factory_handoffs.contains_key(&id)
+                && !obs.is_deployed(id)
+                && !obs.owned_by_hand(id)
+                && !obs.attack_target(id).is_some_and(|t|t!=target
+                    && obs.engage(rules,id,t)==Engage::Ready)
+                && (old || !at_home || !defenders.contains(&id)
+                    || (!brain.director.under_attack_now() && home_guard_count>2))
+                && obs.can_hurt(rules,id,target)
+                && super::orders::admits(rules,obs,id,&Goal::Attack{target})
+                && (obs.attack_target(id)==Some(target)
+                    || brain.tracked.admits(now,id,TrackedKind::Engage,Some(target),Some(enemy.cell)))
+                && super::safety::safe_leg(&super::safety::envelopes(rules,obs,id,&other_threats,true),
+                    u.cell,enemy.cell,false)
+                && (obs.engage(rules,id,target)==Engage::Ready
+                    || super::orders::reachable(rules,obs,id,enemy.cell))
+        }).collect();
+        candidates.sort_by_key(|u|(
+            !brain.mine_clearance.get(&u.entity_id).is_some_and(|(t,_)|*t==target),
+            obs.engage(rules,u.entity_id,target)!=Engage::Ready,
+            cell_distance(u.cell,enemy.cell),std::cmp::Reverse(u.health_permille),u.entity_id));
+        // Cohort local to the nearest responder; do not count a tank across
+        // the map or an unqualified weapon as support. A lone ready shot
+        // can defend itself but cannot launch a losing pursuit.
+        let Some(first)=candidates.first().copied() else {continue;};
+        candidates.retain(|u|cell_distance(u.cell,first.cell)<=12);
+        let mut home_slots=home_guard_count.saturating_sub(2+spent_home);
+        let group:Vec<_>=candidates.into_iter().filter(|u|{
+            let loan=defenders.contains(&u.entity_id)
+                && home.is_some_and(|h|cell_distance(h,u.cell)<=18)
+                && !brain.mine_clearance.contains_key(&u.entity_id);
+            if !loan{return true;}
+            if home_slots==0{return false;}
+            home_slots-=1;true
+        }).take((4usize.saturating_sub(issued)).max(1)).collect();
+        let strength=group.iter().fold(0i64,|sum,u|sum+i64::from(u.points.max(0)));
+        let hp=i64::from(obs.health(target).unwrap_or(ty.strength).max(1));
+        let supported=group.len()>=2 && strength>=hp.saturating_mul(2);
+        for u in group {
+            if issued>=4 {break;}
+            let id=u.entity_id;
+            let ready=obs.engage(rules,id,target)==Engage::Ready;
+            let loses=super::tactics::unfavourable_vehicle_duel(rules,obs,id,target);
+            if (!supported && (!ready || loses))
+                || (obs.own_elite(id) && !ready && !supported) {continue;}
+            let home_loan=defenders.contains(&id) && home.is_some_and(|h|cell_distance(h,u.cell)<=18)
+                && !brain.mine_clearance.contains_key(&id);
+            if home_loan && home_guard_count.saturating_sub(spent_home)<=2 {continue;}
+            if obs.attack_target(id)==Some(target) && (ready || supported) {
+                brain.mine_clearance.entry(id).or_insert((target,now.saturating_add(600)));
+                brain.census.unavailable.insert(id);
+                if home_loan {spent_home+=1;}
+                continue;
+            }
+            if ordered_this_frame(out,id) {continue;}
+            if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                id,TrackedKind::Engage,Some(target),Some(enemy.cell),Goal::Attack{target}) {
+                brain.mine_clearance.entry(id).or_insert((target,now.saturating_add(600)));
+                brain.census.unavailable.insert(id);
+                if home_loan {spent_home+=1;}
+                issued+=1;
+                log::info!("auto play: v62_mine_clearance tick={now} actor={id} target={target} field={field:?} supported={supported}");
+            }
+        }
     }
 }
 
@@ -352,69 +710,149 @@ pub(super) fn secure_outpost(
 /// it. Assign a *bounded*, persistent escort out of the reserve instead of
 /// repeatedly raiding the enemy base for a prize we cannot hold.
 /// GuardAt is an ordinary player order; the native world owns combat.
+fn asset_guard_capacity(defenders:usize,assets:usize)->usize {
+    defenders.saturating_sub(3).min(8).min(assets.saturating_mul(2))
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+#[test]
+fn v65_asset_guards_never_consume_the_last_three_defenders() {
+    assert_eq!(asset_guard_capacity(3,10),0);
+    assert_eq!(asset_guard_capacity(7,10),4);
+    assert_eq!(asset_guard_capacity(20,10),8);
+    assert_eq!(asset_guard_capacity(20,1),2);
+}
+
 pub(super) fn secure_captured_assets(
     brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox,
 ) {
-    if brain.director.recovering_income() || brain.director.under_attack_now() { return; }
-    let reserves = brain.squads.squad(Role::Defend)
-        .map(|s| s.members.clone()).unwrap_or_default();
-    if reserves.len() < 5 { return; }
-    let mut assets: Vec<_> = brain.captured_assets.keys().filter_map(|id| {
-        let building = obs.own_entities().find(|e| e.entity_id == *id)?;
-        let ty = obs.entity_type(rules, *id)?;
-        (ty.category == ObjectCategory::Building && guarded_prize(rules, ty))
-            .then_some((*id, building.cell, high_value_prize(rules, ty)))
+    let now=obs.tick();
+    if now%15!=0 {return;}
+    let reserves=brain.squads.squad(Role::Defend)
+        .map(|s|s.members.clone()).unwrap_or_default();
+    // Every actually held public asset is worth considering, including a
+    // recaptured oil rig after a save/load. Do not depend on a receipt list.
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let mut assets:Vec<_>=obs.own_entities().filter_map(|building|{
+        let ty=obs.object_type(rules,building.type_id)?;
+        if ty.category!=ObjectCategory::Building
+            || !(super::orders::strategic_public_asset(ty)
+                || (brain.captured_assets.contains_key(&building.entity_id) && guarded_prize(rules,ty)))
+        {return None;}
+        let cell=building.cell;
+        let threatened=visible.iter().any(|e|super::advance::cell_distance(cell,e.cell)<=18
+            && obs.object_type(rules,e.type_id).is_some_and(|t|
+                t.engineer || (t.category!=ObjectCategory::Building
+                    && super::orders::is_combat_unit(rules,t))));
+        let remote=brain.census.base_cell.is_some_and(|home|super::advance::cell_distance(home,cell)>12);
+        let priority=if ty.produce_cash_amount>0 {
+            4+(i64::from(ty.produce_cash_amount)*900/i64::from(ty.produce_cash_delay.max(1)))
+                .clamp(0,4000) as i32/1000
+        }else if ty.hospital || ty.unit_repair {3}
+        else if high_value_prize(rules,ty){4}else{2};
+        (remote || threatened).then_some((building.entity_id,cell,threatened,priority))
     }).collect();
-    assets.sort_by_key(|(id, _, priority)| (!*priority, *id));
-    let live = &brain.census.units;
-    brain.asset_guards.retain(|guard, asset| {
-        assets.iter().any(|(id,_,_)| *id == *asset)
-            && reserves.contains(guard)
-            && live.iter().any(|u| u.entity_id == *guard && u.controllable()
-                && u.traits.combat && !u.in_service())
-    });
-    for (id, cell, priority) in assets {
-        let desired: usize = if priority { 2 } else { 1 };
-        let assigned = brain.asset_guards.values().filter(|value| **value == id).count();
-        // An existing local combat unit already provides a shield; do not
-        // waste several reserve guards marching to the same captured site.
-        let local = live.iter().filter(|u| u.traits.combat && u.controllable()
-            && brain.asset_guards.get(&u.entity_id) != Some(&id)
-            && squared_distance(u.cell, cell) <= 7 * 7).count();
-        if assigned + local >= desired || brain.asset_guards.len() >= 3
-            || reserves.len().saturating_sub(brain.asset_guards.len()
-                + brain.outpost_guards.len()) <= 4 { continue; }
-        let candidate = live.iter()
-            .filter(|u| reserves.contains(&u.entity_id) && brain.census.available(u)
-                && !brain.outpost_guards.contains_key(&u.entity_id)
-                && !brain.asset_guards.contains_key(&u.entity_id)
-                && !ordered_this_frame(out, u.entity_id)
-                && !brain.tracked.held(obs.tick(), u.entity_id)
-                && obs.attack_target(u.entity_id).is_none())
-            .min_by_key(|u| (squared_distance(u.cell, cell), u.entity_id));
-        let Some(unit) = candidate else { continue; };
-        let Some(ty) = obs.entity_type(rules, unit.entity_id) else { continue; };
-        // Stand around the foundation. A lab is not a civilian garrison and
-        // cannot accept an Enter command merely because it is ours.
-        let offsets = [(3,0),(-3,0),(0,3),(0,-3),(2,2),(2,-2),(-2,2),(-2,-2)];
-        let post = offsets.into_iter().filter_map(|(dx,dy)| {
-            let (Ok(x),Ok(y)) = (u16::try_from(i32::from(cell.0)+dx),
-                u16::try_from(i32::from(cell.1)+dy)) else { return None; };
-            let post = (x,y);
-            (obs.is_cell_in_playfield(x,y) && obs.is_ground_walkable(x,y)
-                && (!obs.has_zone_grid()
-                    || obs.can_reach(ty.movement_zone, unit.cell, post))
-                && !obs.visible_enemy_entities().any(|enemy|
-                    squared_distance(enemy.cell, post) <= 8 * 8)).then_some(post)
-        }).min_by_key(|post| squared_distance(unit.cell, *post));
-        let Some(post) = post else { continue; };
-        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
-            unit.entity_id, TrackedKind::Guard, None, Some(post),
-            Goal::GuardAt { cell: post }) {
-            brain.asset_guards.insert(unit.entity_id, id);
-            log::debug!("auto play: assign defender {} to captured asset {id} at {post:?}", unit.entity_id);
-            // Keep order budgets small; further sites receive the next frame.
+    assets.sort_by_key(|(id,_,threatened,value)|(!*threatened,std::cmp::Reverse(*value),*id));
+    let live=&brain.census.units;
+    let emergency=brain.director.under_attack_now() || brain.director.recovering_income()
+        || brain.director.recovering_under_fire();
+    brain.asset_guards.retain(|guard,asset|!emergency && assets.iter().any(|(id,_,_,_)|id==asset)
+        && reserves.contains(guard) && live.iter().any(|u|u.entity_id==*guard
+            && u.controllable() && !u.in_service() && u.health_permille>=600));
+    brain.asset_guard_posts.retain(|id,_|brain.asset_guards.contains_key(id));
+    brain.asset_guard_retry.retain(|_,end|now<*end);
+    if emergency || reserves.len()<3 {return;}
+    let capacity=asset_guard_capacity(reserves.len(),assets.len());
+    let assigned:Vec<_>=brain.asset_guards.iter().map(|(actor,asset)|(*actor,*asset)).collect();
+    for (actor,asset) in assigned {
+        let Some(u)=live.iter().find(|u|u.entity_id==actor) else {continue;};
+        let Some((post,last,progress))=brain.asset_guard_posts.get(&actor).copied()
+            else {brain.asset_guards.remove(&actor);continue;};
+        let guns=super::safety::envelopes(rules,obs,actor,&visible,true);
+        let near=squared_distance(post,u.cell)<=4*4;
+        let fighting=obs.attack_target(actor).is_some_and(|target|
+            obs.engage(rules,actor,target)==crate::sim::control::observation::Engage::Ready);
+        let safe=super::orders::reachable(rules,obs,actor,post)
+            && super::safety::safe_leg(&guns,u.cell,post,false);
+        if (!safe && !fighting) || (!near && !fighting && last==u.cell
+            && now.saturating_sub(progress)>=450) {
+            brain.asset_guards.remove(&actor);
+            brain.asset_guard_posts.remove(&actor);
+            brain.asset_guard_retry.insert(asset,now.saturating_add(450));
+            brain.tracked.cancel_for_safety(actor);
+            brain.safety.abandon(actor);
+            continue;
+        }
+        if last!=u.cell || near || fighting {
+            brain.asset_guard_posts.insert(actor,(post,u.cell,now));
+        }
+        if !near && !fighting && obs.destination(actor)!=Some(post)
+            && !out.ordered_this_frame(actor) {
+            let _=issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                actor,TrackedKind::Guard,None,Some(post),Goal::GuardAt{cell:post});
+        }
+    }
+    let home_available=reserves.iter().filter(|id|!brain.asset_guards.contains_key(*id)
+        && !brain.outpost_guards.contains_key(*id)
+        && live.iter().any(|u|u.entity_id==**id && brain.census.available(u)
+            && brain.census.base_cell.is_some_and(|home|
+                super::advance::cell_distance(home,u.cell)<=20))).count();
+    for (id,cell,threatened,priority) in assets {
+        // A local mobile body counts only when it can actually cover the
+        // site. Aircraft passing overhead or a remote appointment do not.
+        let desired=if threatened && priority>=3 {2}else{1};
+        let assigned=brain.asset_guards.values().filter(|asset|**asset==id).count();
+        let local=live.iter().filter(|u|u.traits.combat && u.controllable()
+            && !u.in_service() && u.health_permille>=600
+            && matches!(u.slot,super::census::Slot::Infantry|super::census::Slot::Vehicle)
+            && !u.traits.aircraft
+            && !brain.asset_guards.contains_key(&u.entity_id)
+            && reserves.contains(&u.entity_id)
+            && squared_distance(u.cell,cell)<=6*6
+            && obs.attack_target(u.entity_id).is_none()
+            && obs.destination(u.entity_id).is_none()).count();
+        if assigned>=desired || brain.asset_guards.len()>=capacity
+            || brain.asset_guard_retry.contains_key(&id) {continue;}
+        let mut best=None;
+        for unit in live.iter().filter(|u|reserves.contains(&u.entity_id)
+            && brain.census.available(u) && u.health_permille>=650
+            && !brain.outpost_guards.contains_key(&u.entity_id)
+            && !brain.asset_guards.contains_key(&u.entity_id)
+            && !brain.census.mobile_aa.contains(&u.entity_id)
+            && !out.ordered_this_frame(u.entity_id) && !brain.tracked.held(now,u.entity_id)
+            && obs.attack_target(u.entity_id).is_none()
+            && matches!(u.slot,super::census::Slot::Infantry|super::census::Slot::Vehicle)
+            && !u.traits.aircraft) {
+            let at_home=brain.census.base_cell.is_some_and(|home|
+                super::advance::cell_distance(home,unit.cell)<=20);
+            if home_available<=3 && at_home {continue;}
+            let guns=super::safety::envelopes(rules,obs,unit.entity_id,&visible,true);
+            for (dx,dy) in [(3,0),(-3,0),(0,3),(0,-3),(4,4),(-4,4),(4,-4),(-4,-4)] {
+                let (Ok(x),Ok(y))=(u16::try_from(i32::from(cell.0)+dx),
+                    u16::try_from(i32::from(cell.1)+dy)) else {continue;};
+                let post=(x,y);
+                if !obs.is_cell_in_playfield(x,y) || !obs.is_ground_walkable(x,y)
+                    || !super::orders::reachable(rules,obs,unit.entity_id,post)
+                    || !super::safety::safe_leg(&guns,unit.cell,post,false)
+                {continue;}
+                let crowd=brain.asset_guard_posts.values().filter(|(at,_,_)|
+                    squared_distance(*at,post)<=3*3).count() as i32;
+                let near_asset=squared_distance(unit.cell,cell)<=6*6;
+                let score=(squared_distance(unit.cell,post).saturating_add(crowd*100)
+                    .saturating_add(if local>0 && !near_asset {1000}else{0}),
+                    unit.entity_id,post);
+                if best.is_none_or(|old|score<old){best=Some(score);}
+            }
+        }
+        let Some((_,actor,post))=best else {continue;};
+        if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+            actor,TrackedKind::Guard,None,Some(post),Goal::GuardAt{cell:post}) {
+            brain.asset_guards.insert(actor,id);
+            if let Some(unit)=live.iter().find(|u|u.entity_id==actor) {
+                brain.asset_guard_posts.insert(actor,(post,unit.cell,now));
+            }
+            log::info!("auto play: v61_asset_guard tick={now} actor={actor} target={id} post={post:?}");
             break;
         }
     }
@@ -431,38 +869,8 @@ fn guarded_prize(rules: &RuleSet, ty: &crate::rules::object_type::ObjectType) ->
         || ty.factory_type().is_some()
 }
 
-/// A garrison is valuable cover, so do not empty it just because a scout
-/// passes by. If an owned occupied building is being attacked by a vehicle
-/// and nobody nearby can help, a controlled evacuation lets its passengers
-/// use their normal weapons or escape. Neutral garrisons do not grant ownership
-/// of the building, so the normal command gate may refuse them.
-pub(super) fn relieve_garrison(brain: &mut AssistBrain, rules: &RuleSet,
-    obs: &Observation<'_>, out: &mut Outbox) {
-    if !brain.director.under_attack_now() { return; }
-    for site in obs.own_entities() {
-        if !site.orderable || obs.passengers(site.entity_id) == 0
-            || obs.owned_by_hand(site.entity_id)
-            || obs.tick() < brain.garrison_release_after.get(&site.entity_id)
-                .copied().unwrap_or(0) { continue; }
-        if obs.entity_type(rules, site.entity_id)
-            .is_none_or(|ty| ty.category != ObjectCategory::Building) { continue; }
-        let attacked = obs.visible_enemy_entities().any(|enemy|
-            obs.attack_target(enemy.entity_id) == Some(site.entity_id)
-            && squared_distance(site.cell, enemy.cell) <= 10 * 10);
-        if !attacked { continue; }
-        // Do not discard the benefit of the firing ports if mobile defenders
-        // are already answering this threat.
-        let close_mobiles = brain.census.units.iter()
-            .filter(|unit| unit.traits.combat && unit.controllable()
-                && squared_distance(site.cell, unit.cell) <= 8 * 8).count();
-        if close_mobiles >= 2 { continue; }
-        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
-            site.entity_id, TrackedKind::Enter, None, None, Goal::Unload) {
-            brain.garrison_release_after.insert(site.entity_id, obs.tick() + 450);
-            break;
-        }
-    }
-}
+// Garrison release is owned by the native damage/occupancy engine.
+// A shortage of mobile defenders must not itself cause Unload.
 
 /// Reconfigure one safe, GI-loaded gunner IFV as a mechanic carrier.
 /// Without this step a base that already filled all its IFVs with riflemen
@@ -488,10 +896,14 @@ pub(super) fn free_repair_ifv_seat(
             ty.category == ObjectCategory::Vehicle)).count();
     if !wounded && (tanks < 5 || obs.credits() < 3_000) { return; }
     if brain.census.units.iter().any(|unit|
-        repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id)) { return; }
+        repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id))
+        || brain.repair_ifv_pending.iter().any(|(id,until)|obs.tick()<*until && obs.owns_object(*id))
+    { return; }
+    let aa_stock = super::composition::boarding_air_stock(brain,rules,obs);
     let has_empty_chassis = brain.census.units.iter().any(|unit| {
         obs.entity_type(rules, unit.entity_id).is_some_and(|ty| ty.gunner)
             && obs.passengers(unit.entity_id) == 0
+            && !super::composition::preserve_air_carrier(rules,obs,unit,aa_stock)
             && squared_distance(base, unit.cell) <= 18 * 18
     });
     if has_empty_chassis { return; }
@@ -503,6 +915,7 @@ pub(super) fn free_repair_ifv_seat(
             && squared_distance(base,unit.cell) <= 18 * 18
             && obs.passengers(unit.entity_id) > 0
             && obs.entity_type(rules,unit.entity_id).is_some_and(|ty| ty.gunner)
+            && !super::composition::preserve_air_carrier(rules,obs,unit,aa_stock)
             && !brain.repair_ifv_pending.contains_key(&unit.entity_id)
             && !obs.visible_enemy_entities().any(|enemy|
                 squared_distance(enemy.cell,unit.cell) <= 9*9))
@@ -527,7 +940,8 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
     brain.repair_ifv_pending.retain(|_, until| *until > obs.tick());
     let reserves = brain.squads.squad(Role::Defend)
         .map(|s| s.members.clone()).unwrap_or_default();
-    if reserves.len() < 2 { return; }
+    // Mechanics are a separate service, not two riflemen borrowed from the
+    // defend squad. The ordinary combat boarding floor still applies below.
     let attackers = brain.squads.squad(Role::Attack)
         .map(|s| s.members.clone()).unwrap_or_default();
     // Once a mechanic is riding a repair IFV, another vehicle must not spend
@@ -541,6 +955,10 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
             })
         })
     });
+    let pending_mechanic = brain.repair_ifv_pending.iter()
+        .filter(|(id,until)|obs.tick()<**until && obs.owns_object(**id))
+        .map(|(&id,_)|id).min();
+    let mut aa_stock = None;
     for carrier in &brain.census.units {
         if !carrier.controllable() || carrier.in_service()
             || ordered_this_frame(out, carrier.entity_id) { continue; }
@@ -571,6 +989,7 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
         // weapon, rather than a passenger rifle. Only take a spare engineer
         // when there is a damaged friendly vehicle to heal. The sole engineer
         // is reserved for capturing public assets, not consumed as a gunner.
+        let stock = *aa_stock.get_or_insert_with(||super::composition::boarding_air_stock(brain,rules,obs));
         let wounded_vehicles = brain.census.units.iter().filter(|u| {
             u.health_permille < 850 && u.traits.combat
                 && obs.entity_type(rules, u.entity_id)
@@ -590,13 +1009,19 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
         // engineer is trained: otherwise normal reserve infantry fills it
         // with riflemen first, and the mechanic never gets a slot.
         let selected_repair_carrier = ty.gunner && !repair_carrier_exists
-            && prepare_repair && home
-            && brain.census.units.iter().filter(|unit| {
-                obs.entity_type(rules, unit.entity_id).is_some_and(|kind| kind.gunner)
-                    && brain.census.base_cell.is_some_and(|base|
-                        squared_distance(base, unit.cell) <= 18 * 18)
-            }).filter(|unit| obs.passengers(unit.entity_id) == 0)
-              .map(|unit| unit.entity_id).min() == Some(carrier.entity_id);
+            && (prepare_repair || pending_mechanic==Some(carrier.entity_id)) && home
+            && super::composition::repair_carrier_allowed(brain,rules,obs,carrier,stock)
+            && match pending_mechanic {
+                Some(id) => id==carrier.entity_id,
+                None => brain.census.units.iter().filter(|unit| {
+                    unit.controllable() && !unit.in_service()
+                        && obs.entity_type(rules, unit.entity_id).is_some_and(|kind| kind.gunner)
+                        && super::composition::repair_carrier_allowed(brain,rules,obs,unit,stock)
+                        && brain.census.base_cell.is_some_and(|base|
+                            squared_distance(base, unit.cell) <= 18 * 18)
+                }).filter(|unit| obs.passengers(unit.entity_id) == 0)
+                  .map(|unit| unit.entity_id).min() == Some(carrier.entity_id),
+            };
         if selected_repair_carrier && engineer_count < 2 { continue; }
         if selected_repair_carrier
             && engineer_count >= 2
@@ -646,7 +1071,9 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
         // Never immediately fill a selected mechanic seat with a GI when the
         // engineer is not within reach this frame. The long rendezvous is a
         // mission, not an invitation to change the chassis weapon again.
-        if selected_repair_carrier || brain.repair_ifv_pending.contains_key(&carrier.entity_id) {
+        if selected_repair_carrier || brain.repair_ifv_pending.contains_key(&carrier.entity_id)
+            || reserves.len() < 2
+            || (ty.gunner && super::composition::preserve_air_carrier(rules,obs,carrier,stock)) {
             continue;
         }
         // A Battle-Fortress style platform gets no firepower from seats that
@@ -749,54 +1176,96 @@ pub(super) fn repair_ifv_loaded(
 /// Repair IFVs need to *stop* next to a damaged tank and enter native Guard
 /// so the healer's short Guard scan can choose it. Repeated Move orders would
 /// continuously reset that scan. No direct health edits are ever made.
+pub(super) fn field_healer(rules:&RuleSet,obs:&Observation<'_>,actor:u64)->bool {
+    let Some(ty)=obs.entity_type(rules,actor) else{return false;};
+    matches!(ty.category,ObjectCategory::Infantry|ObjectCategory::Vehicle)
+        && !ty.spawned && ty.speed>0
+        && (0..ty.weapon_record_count()).filter_map(|slot|obs.observed_actor_weapon(rules,actor,slot))
+            .any(|w|w.damage<0 && !w.never_use)
+        && !(0..ty.weapon_record_count()).filter_map(|slot|obs.observed_actor_weapon(rules,actor,slot))
+            .any(|w|w.damage>0 && !w.never_use)
+}
+
+pub(super) fn field_heal_compatible(rules:&RuleSet,obs:&Observation<'_>,healer:u64,target:u64)->bool {
+    if healer==target || !obs.owns_object(healer) || !obs.owns_object(target) {return false;}
+    let Some(ty)=obs.entity_type(rules,healer) else{return false;};
+    let Some(victim)=obs.entity_type(rules,target) else{return false;};
+    matches!(victim.category,ObjectCategory::Infantry|ObjectCategory::Vehicle)
+        && (0..ty.weapon_record_count()).filter_map(|slot|obs.observed_actor_weapon(rules,healer,slot))
+            .any(|w|w.damage<0 && !w.never_use && rules.weapon_projectile(w).is_some_and(|p|p.ag)
+                && w.warhead.as_deref().and_then(|name|rules.warhead(name)).is_some_and(|head|
+                    f64::from_bits(head.interaction(victim.armor_id()).multiplier().bits())>0.0))
+}
+
 pub(super) fn repair_ifvs(
     brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox,
 ) {
-    if brain.director.under_attack_now() { return; }
-    brain.repair_ifv_after.retain(|_, until| *until > obs.tick());
+    let now=obs.tick();
+    if now%15!=0 {return;}
+    brain.repair_ifv_after.retain(|_,until|now<*until);
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let mut claimed=std::collections::BTreeSet::new();
     for carrier in &brain.census.units {
+        let id=carrier.entity_id;
         if !carrier.controllable() || carrier.in_service()
-            || ordered_this_frame(out, carrier.entity_id)
-            || brain.repair_ifv_after.contains_key(&carrier.entity_id)
-            || obs.attack_target(carrier.entity_id).is_some() { continue; }
-        let Some(ty) = obs.entity_type(rules, carrier.entity_id) else { continue; };
-        if ty.category != ObjectCategory::Vehicle || !ty.gunner { continue; }
-        let has_repair_gunner = brain.census.units.iter().any(|passenger| {
-            obs.inside_transport(passenger.entity_id) == Some(carrier.entity_id)
-                && obs.entity_type(rules, passenger.entity_id)
-                    .is_some_and(|kind| gunner_repairs(rules, ty, kind.ifv_mode))
-        });
-        if !has_repair_gunner { continue; }
-        let wounded = brain.census.units.iter()
-            .filter(|unit| unit.entity_id != carrier.entity_id
-                && unit.health_permille < 850 && unit.health_permille > 0
-                && obs.entity_type(rules, unit.entity_id)
-                    .is_some_and(|kind| kind.category == ObjectCategory::Vehicle)
-                && !unit.in_service())
-            .min_by_key(|unit| (squared_distance(unit.cell, carrier.cell), unit.entity_id));
-        let Some(wounded) = wounded else { continue; };
-        if squared_distance(carrier.cell, wounded.cell) > 20 * 20 { continue; }
-        let near = squared_distance(carrier.cell, wounded.cell) <= 2 * 2;
-        let (goal, post) = if near {
-            (Goal::Guard, None)
-        } else {
-            let post = [(1,0),(-1,0),(0,1),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)]
-                .into_iter().filter_map(|(dx,dy)| {
-                    let (Ok(x),Ok(y)) = (u16::try_from(i32::from(wounded.cell.0)+dx),
-                        u16::try_from(i32::from(wounded.cell.1)+dy)) else { return None; };
+            || brain.safety.reserved(rules,obs,carrier)
+            || ordered_this_frame(out,id) || brain.tracked.held(now,id)
+            || brain.repair_ifv_after.contains_key(&id)
+            || brain.tracked.tasks.get(id).is_some()
+            || brain.census.factory_handoffs.contains_key(&id)
+            || !field_healer(rules,obs,id) {continue;}
+        let Some(ty)=obs.entity_type(rules,id) else{continue;};
+        let guns=super::safety::envelopes(rules,obs,id,&visible,true);
+        // Repair a safe, stationary patient first, not a healthy vehicle
+        // currently marching into battle. The native Guard healer scan
+        // still owns the actual shot/repair, never set the patient's HP.
+        let wounded=brain.census.units.iter().filter(|u|
+            u.controllable() && u.entity_id!=id && !u.in_service()
+            && u.health_permille>0 && u.health_permille<950
+            && !brain.safety.field_retry(u.entity_id,now)
+            && !claimed.contains(&u.entity_id)
+            && !obs.own_repair_service(rules,u.entity_id)
+            && obs.inside_transport(u.entity_id).is_none()
+            && squared_distance(u.cell,carrier.cell)<=28*28
+            && field_heal_compatible(rules,obs,id,u.entity_id)
+            && (brain.safety.reserved(rules,obs,u)
+                || (obs.attack_target(u.entity_id).is_none() && obs.destination(u.entity_id).is_none()))
+            && super::safety::safe_leg(&guns,carrier.cell,u.cell,false)
+            && !visible.iter().any(|e|squared_distance(e.cell,u.cell)<=6*6
+                && obs.can_hurt(rules,e.entity_id,u.entity_id)))
+            .min_by_key(|u|(!brain.charge_rotating.contains_key(&u.entity_id),
+                !obs.own_elite(u.entity_id),u.health_permille,
+                squared_distance(u.cell,carrier.cell),u.entity_id));
+        let Some(patient)=wounded else{continue;};
+        let near=squared_distance(carrier.cell,patient.cell)<=2*2;
+        let (goal,post)=if near {
+            (Goal::Guard,None)
+        }else{
+            let post=[(1,0),(-1,0),(0,1),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)]
+                .into_iter().filter_map(|(dx,dy)|{
+                    let (Ok(x),Ok(y))=(u16::try_from(i32::from(patient.cell.0)+dx),
+                        u16::try_from(i32::from(patient.cell.1)+dy)) else{return None;};
+                    let cell=(x,y);
                     (obs.is_cell_in_playfield(x,y) && obs.is_ground_walkable(x,y)
-                        && obs.can_reach(ty.movement_zone, carrier.cell, (x,y))
-                        && !obs.visible_enemy_entities().any(|enemy|
-                            squared_distance(enemy.cell,(x,y)) <= 6*6)).then_some((x,y))
-                }).min_by_key(|cell| squared_distance(carrier.cell,*cell));
-            let Some(post) = post else { continue; };
-            (Goal::GuardAt { cell: post }, Some(post))
+                        && obs.can_reach(ty.movement_zone,carrier.cell,cell)
+                        && super::safety::safe_leg(&guns,carrier.cell,cell,false))
+                        .then_some(cell)
+                }).min_by_key(|cell|{
+                    let occupied=brain.census.units.iter().filter(|u|u.entity_id!=id
+                        && squared_distance(u.cell,*cell)<=1).count();
+                    (occupied,squared_distance(carrier.cell,*cell),*cell)
+                });
+            let Some(post)=post else{continue;};
+            (Goal::GuardAt{cell:post},Some(post))
         };
-        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
-            carrier.entity_id, TrackedKind::Guard, None, post, goal) {
-            brain.repair_ifv_after.insert(carrier.entity_id, obs.tick().saturating_add(240));
-            break;
+        if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+            id,TrackedKind::Guard,None,post,goal) {
+            brain.repair_ifv_after.insert(id,now.saturating_add(if near {120}else{180}));
+            claimed.insert(patient.entity_id);
+            log::debug!("auto play: v63_field_healer tick={now} actor={id} patient={} hp={}",
+                patient.entity_id,patient.health_permille);
+            if claimed.len()>=3 {break;}
         }
     }
 }
@@ -839,6 +1308,14 @@ pub(super) fn siege_artillery(brain: &mut AssistBrain, rules: &RuleSet,
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v62_a_rescue_attempt_cannot_indefinitely_extend_victim_protection() {
+        let mut windows=std::collections::BTreeMap::new();
+        open_liberation_window(&mut windows,9,10,100);
+        open_liberation_window(&mut windows,9,10,200);
+        assert_eq!(windows.get(&9),Some(&(10,100+LIBERATION_WINDOW)));
+    }
 
     #[test]
     fn aircraft_trigger_home_alert_before_ground_units() {

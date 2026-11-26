@@ -28,6 +28,44 @@ fn reach_against(rules:&RuleSet, obs:&Observation<'_>, e:&EnemyEntity, victim:&O
     else {(0..ty.weapon_record_count()).filter_map(|slot|rules.weapon(ty.weapon_at(slot)?)).map(reach).max().unwrap_or(0)}
 }
 
+/// Prospective infantry has no entity ID yet. Use visible weapons against
+/// its rule-defined armour, never a hidden enemy or an invented future unit.
+pub(super) fn prospective_ground_leg(rules:&RuleSet,obs:&Observation<'_>,
+    victim:&ObjectType,visible:&[EnemyEntity],from:Cell,to:Cell)->bool {
+    let guns:Vec<_>=visible.iter().filter_map(|e| {
+        let ty=obs.object_type(rules,e.type_id)?;
+        if ty.category==ObjectCategory::Building && !obs.visible_enemy_building_operational(rules,e.entity_id) {return None;}
+        let control=if victim.immune_to_psionics {0}
+            else {tactics::mind_control_reach(rules,ty).unwrap_or(0)};
+        let reach=reach_against(rules,obs,e,victim).max(control);
+        let margin=if victim.engineer && ty.category!=ObjectCategory::Building {3} else {1};
+        (reach>0).then_some(Envelope {at:e.cell,reach:reach.saturating_add(margin)})
+    }).collect();
+    safety::safe_leg(&guns,from,to,false)
+}
+
+/// Prefer a clearly open specialist corridor to a nominally legal one
+/// skirting the edge of mobile fire or mind control. This is a ranking,
+/// not permission to traverse an otherwise illegal or dangerous route.
+pub(super) fn engineer_route_risk(rules:&RuleSet,obs:&Observation<'_>,
+    victim:&ObjectType,visible:&[EnemyEntity],from:Cell,to:Cell)->u8 {
+    let mut risk=0u8;
+    for e in visible {
+        let Some(ty)=obs.object_type(rules,e.type_id) else {continue;};
+        if ty.category==ObjectCategory::Building && !obs.visible_enemy_building_operational(rules,e.entity_id)
+        {continue;}
+        let control=if victim.immune_to_psionics {0}
+            else {tactics::mind_control_reach(rules,ty).unwrap_or(0)};
+        let reach=reach_against(rules,obs,e,victim).max(control);
+        if reach<=0 {continue;}
+        let extra=if ty.category==ObjectCategory::Building {3}else{7};
+        if tactics::path_enters_control_box(from,to,e.cell,reach.saturating_add(extra)) {
+            risk=risk.saturating_add(if ty.category==ObjectCategory::Building {2}else{3});
+        }
+    }
+    risk
+}
+
 fn threats(rules:&RuleSet,obs:&Observation<'_>,target:&ObjectType,ignored:Option<u64>,visible:&[EnemyEntity])->Vec<Threat> {
     let (w,h)=target.foundation.dimensions();
     // Conservative footprint margin (centre/origin conventions differ for

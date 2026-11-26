@@ -82,11 +82,17 @@ pub(super) fn run(
 ) {
     let tick = obs.tick();
     emergency_raid_retreat(brain, rules, obs, out);
+    // Snapshot these as shared borrows: the outer squad() borrow and the inner
+    // census/tracked reads must not move `brain` into the FnMut closure.
+    let units = &brain.census.units;
+    let available = |unit: &super::census::Unit| brain.census.available(unit);
+    let tasked = |id: u64| brain.tracked.tasks.get(id).is_none();
     let raiders: Vec<super::census::Unit> = brain.squads.squad(Role::Harass)
-        .into_iter().flat_map(|team| brain.census.units.iter().filter(move |unit|
-            team.members.contains(&unit.entity_id) && unit.controllable()
-                && !unit.in_service()).copied()).collect();
-    let rebuilding = brain.director.rebuilding_force() || brain.mobilization.active() || brain.campaign.economy_resting();
+        .into_iter().flat_map(|team| units.iter().filter(move |unit|
+            team.members.contains(&unit.entity_id) && available(unit)
+                && unit.health_permille>=700
+                && tasked(unit.entity_id)).copied()).collect();
+    let rebuilding = brain.director.recovering_under_fire() || brain.mobilization.active() || brain.campaign.economy_resting();
     let raid_target = if rebuilding { None } else {
         mining_raid_objective(rules, obs, brain, &raiders)
     };
@@ -140,8 +146,9 @@ pub(super) fn run(
         .filter_map(|enemy| obs.visible_liberation_target(enemy.entity_id))
         .collect();
     let controllers: BTreeSet<u64> = obs.visible_enemy_entities()
-        .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
-            .is_some_and(|ty| super::tactics::mind_control_reach(rules, ty).is_some()))
+        .filter(|enemy| super::tactics::actor_control_reach(rules,obs,enemy.entity_id).is_some()
+            || obs.entity_type(rules,enemy.entity_id).is_some_and(|ty|
+                super::tactics::anti_infantry_standoff(rules,ty)))
         .map(|enemy| enemy.entity_id).collect();
     // An enemy shooting an ore carrier, a refinery, or the yard is a real
     // economic emergency. The spare guns in reach should focus that raider
@@ -238,15 +245,22 @@ pub(super) fn run(
         // controller, but short-range infantry/vehicles must not chase some
         // nearer rifleman and wander into the controller's range.
         if !item.deployed
+            && !super::tactics::psychic_immune(rules,obs,item.entity_id)
             && obs.entity_type(rules, item.entity_id).is_some_and(|ty|
                 ty.category != ObjectCategory::Aircraft && !ty.naval)
             && let Some((controller, position, enemy_reach)) =
                 super::tactics::controller_covering(rules, obs, item.cell)
         {
-            if item.reach > enemy_reach + 1
+            if super::tactics::actual_threat_reach(rules,obs,item.entity_id,controller)>enemy_reach+1
+                && obs.engage(rules,item.entity_id,controller)==Engage::Ready
                 && super::orders::admits(rules, obs, item.entity_id,
                     &Goal::Attack { target: controller })
             {
+                // Keep the native shot/reload cycle, rather than refresh
+                // the same target every time this tactical branch runs.
+                if obs.attack_target(item.entity_id)==Some(controller)
+                    && obs.engage(rules,item.entity_id,controller)==Engage::Ready
+                { continue; }
                 if super::orders::issue_tracked(&mut brain.tracked,
                     brain.trace, out, rules, obs, item.entity_id,
                     TrackedKind::Engage, Some(controller), Some(position),
@@ -323,6 +337,7 @@ pub(super) fn run(
                         || super::safety::supported_ready_fire(
                             brain,rules,obs,&item.unit,Goal::Attack {target}))
                     && !obs.visible_enemy_invulnerable(target)
+                    && !super::advanced::protect_controlled_friend(brain,rules,obs,item.entity_id,target)
                     && super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
                     && obs.can_hurt(rules, item.entity_id, target)
                     && (!super::tactics::unfavourable_vehicle_duel(
@@ -331,14 +346,15 @@ pub(super) fn run(
                         || super::tactics::armored_support(&brain.census, rules, obs,
                             item.entity_id, target, item.cell))
             },
-            |target| target_rank(
+            |target| (target_rank(
                 prefer(rules,obs,item.preference,target,personnel_specialist)
                     .saturating_add(super::doctrine::preference_penalty(
                         rules,obs,item.entity_id,target)),
                 liberators.contains(&target) || controllers.contains(&target),
                 economic_raiders.contains(&target),
                 focus_targets.contains(&target),
-            ),
+            ),structures.contains(&target),
+                super::tactics::shots_to_finish(rules,obs,item.entity_id,target)),
             |target|obs.engage(rules,item.entity_id,target)==Engage::Ready,
         ) {
             // A tank beside a soldier flattens him instead of trading shots:
@@ -540,26 +556,10 @@ pub(super) fn run(
             // target. Keep their own nearest visible reachable naval foe;
             // coastal targets may be attacked only within the ship's present
             // weapon reach, without a blind order to cross dry land.
-            Role::Attack if obs.entity_type(rules, item.entity_id)
-                .is_some_and(|ty| ty.naval) => {
-                let naval_target = brain.census.enemies.iter()
-                    .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
-                    .filter(|enemy| super::orders::admits(rules, obs,
-                        item.entity_id, &Goal::Attack { target: enemy.entity_id }))
-                    .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
-                        .is_some_and(|ty| ty.naval)
-                        && obs.can_reach(item.zone, item.cell, enemy.cell)
-                        || squared_distance(item.cell, enemy.cell)
-                            <= (item.reach + 1).pow(2))
-                    .min_by_key(|enemy|
-                        (squared_distance(item.cell, enemy.cell), enemy.entity_id));
-                if let Some(enemy) = naval_target
-                    && super::orders::issue_tracked(&mut brain.tracked,
-                        brain.trace, out, rules, obs, item.entity_id,
-                        TrackedKind::Attack, Some(enemy.entity_id), Some(enemy.cell),
-                        Goal::Attack { target: enemy.entity_id }) {
-                    issued += 1;
-                }
+            Role::Attack if obs.entity_type(rules,item.entity_id)
+                .is_some_and(|ty|ty.naval) => {
+                // Ready fire is handled above; distant ship movement belongs
+                // to the explicit water-post commander, not a land advance.
                 continue;
             }
             // The land fist is the advance step's; it should not pull ships
@@ -617,10 +617,16 @@ pub(super) fn run(
                         // mobile raiders must have made it to the same front.
                         let gathered = raiders.iter().filter(|friend|
                             super::advance::cell_distance(friend.cell, item.cell) <= 9
+                                && obs.can_hurt(rules,friend.entity_id,victim)
+                                && obs.entity_type(rules,victim).is_some_and(|ty|
+                                    raid_target_reachable(rules,obs,friend.entity_id,ty,cell))
                                 && safe_mining_raid_leg(rules, obs,
                                     friend.entity_id, friend.cell, cell)
                         ).count();
-                        if gathered >= 2 {
+                        let free_shot=obs.engage(rules,item.entity_id,victim)
+                            ==crate::sim::control::observation::Engage::Ready
+                            && super::tactics::actual_threat_reach(rules,obs,victim,item.entity_id)==0;
+                        if gathered >= 2 || free_shot {
                             if obs.attack_target(item.entity_id) != Some(victim)
                                 && super::orders::issue_tracked(
                                     &mut brain.tracked, brain.trace, out, rules, obs,
@@ -803,6 +809,7 @@ fn collect(
         for unit in &brain.census.units {
             if !squad.members.contains(&unit.entity_id) || !unit.controllable()
                 || unit.traits.yard_maker
+                || super::advanced::field_healer(rules,obs,unit.entity_id)
                 || obs.entity_type(rules,unit.entity_id).is_some_and(|ty| matches!(
                     super::doctrine::duty(rules,ty),
                     super::doctrine::Duty::Disposable |
@@ -825,8 +832,7 @@ fn collect(
                     && obs.engage(rules,unit.entity_id,target)==Engage::Ready
                     && obs.can_hurt(rules,unit.entity_id,target));
             let deployed = obs.is_deployed(unit.entity_id);
-            let reach = obs.object_type(rules, unit.type_id)
-                .map_or(0, |ty| super::advance::weapon_range_cells(rules, ty, deployed));
+            let reach = super::tactics::actor_reach(rules,obs,unit.entity_id);
             let under_fire = brain.census.enemies.iter().any(|enemy| {
                 visible.contains(&enemy.entity_id)
                     && aimed_at.get(&enemy.entity_id)==Some(&unit.entity_id)
@@ -890,9 +896,7 @@ fn collect(
             let pilot = ty.map_or(super::pilots::Pilot::Structure, |ty| {
                 super::pilots::Pilot::of(rules, ty)
             });
-            let reach = ty.map_or(0, |ty| {
-                super::advance::weapon_range_cells(rules, ty, deployed)
-            });
+            let reach = super::tactics::actor_reach(rules,obs,unit.entity_id);
             work.push(Work {
                 unit:*unit,
                 entity_id: unit.entity_id,
@@ -928,12 +932,12 @@ fn in_reach(
     in_reach_ready(enemies,from,reach,answers,rank,|_|true)
 }
 
-fn in_reach_ready(
+fn in_reach_ready<R:Ord>(
     enemies: impl Iterator<Item = (u64, (u16, u16), bool, bool)>,
     from: (u16, u16),
     reach: i32,
     answers: impl Fn(u64) -> bool,
-    rank: impl Fn(u64) -> u8,
+    rank: impl Fn(u64) -> R,
     ready: impl Fn(u64) -> bool,
 ) -> Option<(u64, (u16, u16))> {
     if reach <= 0 {
@@ -1099,7 +1103,11 @@ fn safe_mining_raid_leg(
     if super::tactics::controller_covering_path(rules, obs, from, to).is_some() {
         return false;
     }
-    !obs.visible_enemy_entities().any(|defender| {
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    if !super::safety::safe_leg(&super::safety::envelopes(rules,obs,actor,&visible,false),from,to,false) {
+        return false;
+    }
+    !visible.iter().any(|defender| {
         let Some(ty) = obs.entity_type(rules, defender.entity_id) else { return false; };
         if !super::siege_counter::dangerous_battery(rules, ty)
             || !obs.visible_enemy_building_operational(
@@ -1118,6 +1126,55 @@ fn safe_mining_raid_leg(
 /// a costly frontal siege. Target only *currently visible* harvesters or their
 /// unloading bays, and require more than a single fighter to have a safe
 /// native attack route. The target is shared across the squad.
+pub(super) fn idle_miner_pressure(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    let now=obs.tick();
+    if now%30!=0 || brain.director.under_attack_now()
+        || brain.campaign.economy_resting() {return;}
+    let candidates:Vec<_>=brain.census.units.iter().copied().filter(|u|
+        brain.census.main_available(u) && u.health_permille>=750
+        && u.slot==super::census::Slot::Vehicle && !u.traits.irreplaceable
+        && !brain.census.mobile_aa.contains(&u.entity_id)
+        && brain.tracked.tasks.get(u.entity_id).is_none()
+        && !super::advance::siege_member(brain,now,u.entity_id)
+        && !brain.squads.squad(Role::Defend).is_some_and(|s|s.members.contains(&u.entity_id))
+        && !out.ordered_this_frame(u.entity_id)
+        && obs.destination(u.entity_id).is_none() && obs.attack_target(u.entity_id).is_none())
+        .collect();
+    let mut issued=0;
+    for enemy in obs.visible_enemy_entities() {
+        if issued>=2 {break;}
+        let Some(ty)=obs.object_type(rules,enemy.type_id) else {continue;};
+        if ty.category!=ObjectCategory::Vehicle || !ty.resource_gatherer
+            || obs.visible_enemy_invulnerable(enemy.entity_id) {continue;}
+        let local:Vec<_>=candidates.iter().filter(|u|
+            !out.ordered_this_frame(u.entity_id)
+            && super::advance::cell_distance(u.cell,enemy.cell)<=12
+            && obs.can_hurt(rules,u.entity_id,enemy.entity_id)
+            && raid_target_reachable(rules,obs,u.entity_id,ty,enemy.cell)
+            && safe_mining_raid_leg(rules,obs,u.entity_id,u.cell,enemy.cell))
+            .collect();
+        if local.len()<2 {continue;}
+        let Some(lead)=local.iter().copied().find(|u|local.iter().any(|v|
+            v.entity_id!=u.entity_id && super::advance::cell_distance(u.cell,v.cell)<=8))
+            else {continue;};
+        let pair:Vec<_>=local.iter().copied().filter(|u|
+            super::advance::cell_distance(u.cell,lead.cell)<=8).take(2).collect();
+        if pair.len()<2 {continue;}
+        let strength=pair.iter().map(|u|u.points).fold(0i32,i32::saturating_add);
+        if brain.census.enemy_points(rules,obs,enemy.cell,10)>strength.saturating_mul(2)/3
+        {continue;}
+        for u in pair {
+            if super::orders::issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                u.entity_id,TrackedKind::Attack,Some(enemy.entity_id),Some(enemy.cell),
+                Goal::Attack{target:enemy.entity_id}) {
+                issued+=1;
+                log::debug!("auto play: v60_miner_pressure tick={now} actor={} target={}",u.entity_id,enemy.entity_id);
+            }
+        }
+    }
+}
+
 fn mining_raid_objective(
     rules: &RuleSet, obs: &Observation<'_>, brain: &AssistBrain,
     actors: &[super::census::Unit],
@@ -1139,22 +1196,32 @@ fn mining_raid_objective(
         // workforce and the output point, and destroying it severs the whole
         // slave-harvesting economy. Match the retail `Enslaves=` property in
         // both mobile (`SMIN`) and deployed (`YAREFN`) forms, not their IDs.
-        let rank = mining_objective_rank(ty, traits.harvester, traits.refinery)?;
-        let safe = actors.iter().filter(|unit|
-            obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
+        let rank = mining_objective_rank(ty, traits.harvester, traits.refinery)
+            .or_else(|| peripheral_raid_rank(ty))?;
+        if obs.visible_enemy_invulnerable(enemy.entity_id)
+            || super::orders::reclamation_reserved(rules,obs,&brain.census,&brain.tracked,enemy)
+        {return None;}
+        let safe:Vec<_>=actors.iter().filter(|unit|
+            super::advance::cell_distance(unit.cell,enemy.cell)<=28
+                && super::orders::admits(rules,obs,unit.entity_id,&Goal::Attack {target:enemy.entity_id})
+                && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
                 && raid_target_reachable(rules, obs, unit.entity_id, ty, enemy.cell)
                 && safe_mining_raid_leg(rules, obs,
                     unit.entity_id, unit.cell, enemy.cell)
-        ).count();
-        if safe < 2 || brain.census.enemy_points(rules, obs, enemy.cell, 10)
-            > ours.saturating_mul(2) / 3
+        ).collect();
+        // The distant or blocked members cannot finance the local exchange.
+        let local=safe.iter().filter(|u|safe.iter().any(|v|u.entity_id!=v.entity_id
+            && super::advance::cell_distance(u.cell,v.cell)<=9))
+            .fold(0i32,|sum,u|sum.saturating_add(u.points));
+        if safe.len() < 2 || local<=0 || brain.census.enemy_points(rules, obs, enemy.cell, 10)
+            > local.min(ours).saturating_mul(2) / 3
         { return None; }
         let held = until.is_some_and(|(id, limit)| id == enemy.entity_id
             && obs.tick() < limit);
         Some((!held, rank, super::squared_distance(center, enemy.cell),
             enemy.entity_id, enemy.cell))
     }).min_by_key(|(not_held, rank, distance, id, _)|
-        (*not_held, *rank, *distance, *id))
+        (*rank >= 4, *not_held, *rank, *distance, *id))
         .map(|(_, _, _, id, cell)| (id, cell))
 }
 
@@ -1168,6 +1235,18 @@ fn mining_objective_rank(ty: &ObjectType, harvester: bool, refinery: bool) -> Op
     else if harvester { Some(2) }
     else if refinery { Some(3) }
     else { None }
+}
+
+/// A raiding group with no accessible mine may hit exposed power and
+/// production instead of walking aimlessly along the map edge. Fixed armed
+/// structures are excluded here; their actual envelope is checked separately.
+fn peripheral_raid_rank(ty:&ObjectType)->Option<u8> {
+    if ty.category!=ObjectCategory::Building || ty.is_base_defense || ty.weapon_record_count()>0 {
+        return None;
+    }
+    if ty.power>0 {Some(4)}
+    else if ty.weapons_factory || ty.factory_type().is_some() {Some(5)}
+    else {None}
 }
 
 /// The centre of a deployed mine occupies ground. A zone query to that exact
@@ -1272,40 +1351,31 @@ pub(super) fn nearest_unexplored(
     from: (u16, u16),
     zone: MovementZone,
 ) -> Option<(u16, u16)> {
-    let (width, height) = obs.map_extent();
-    let zones = obs.has_zone_grid();
-    let mut reach: Option<(i32, u16, u16)> = None;
-    let mut walk: Option<(i32, u16, u16)> = None;
-    let mut any: Option<(i32, u16, u16)> = None;
-    let mut ry = 0;
-    while ry < height {
-        let mut rx = 0;
-        while rx < width {
-            if !obs.is_cell_revealed(rx, ry) {
-                let distance = squared_distance((rx, ry), from);
-                if any.is_none_or(|(closest, _, _)| distance < closest) {
-                    any = Some((distance, rx, ry));
-                }
-                let open = obs.is_ground_walkable(rx, ry);
-                if open && walk.is_none_or(|(closest, _, _)| distance < closest) {
-                    walk = Some((distance, rx, ry));
-                }
-                if open
-                    && zones
-                    && obs.can_reach(zone, from, (rx, ry))
-                    && reach.is_none_or(|(closest, _, _)| distance < closest)
-                {
-                    reach = Some((distance, rx, ry));
-                }
+    let (width,height)=obs.map_extent();
+    let ground_bound=!matches!(zone,MovementZone::Fly|MovementZone::Water|MovementZone::WaterBeach
+        |MovementZone::Amphibious|MovementZone::AmphibiousCrusher|MovementZone::AmphibiousDestroyer);
+    // Dense scans are a periodic last resort, not a new per-frame full
+    // map traversal after the game has already revealed everything.
+    let steps:&[usize]=if obs.tick()%120==0 {
+        &[RECON_STEP_CELLS as usize,2,1]
+    }else{&[RECON_STEP_CELLS as usize]};
+    for &step in steps {
+        let mut best=None;
+        for y in (0..height).step_by(step) {
+            for x in (0..width).step_by(step) {
+                let cell=(x,y);
+                if obs.is_cell_revealed(x,y) || !obs.is_cell_in_playfield(x,y)
+                    || (ground_bound && obs.has_ground_grid() && !obs.is_ground_walkable(x,y))
+                    || !obs.can_reach(zone,from,cell) {continue;}
+                let score=(squared_distance(cell,from),cell);
+                if best.is_none_or(|old|score<old){best=Some(score);}
             }
-            rx = rx.saturating_add(RECON_STEP_CELLS);
         }
-        ry = ry.saturating_add(RECON_STEP_CELLS);
+        if let Some((_,cell))=best{return Some(cell);}
+        // Once the map is known, the dedicated periodic sector sweep owns
+        // revisits. Do not invent a map-centre or unreachable fallback.
     }
-    if zones {
-        return reach.map(|(_, rx, ry)| (rx, ry));
-    }
-    walk.or(any).map(|(_, rx, ry)| (rx, ry))
+    None
 }
 
 /// The nearest hostile of any kind, as `(id, cell)`; ties by id.
@@ -1655,6 +1725,15 @@ mod priority_regression_tests {
 #[cfg(all(test, tests_sim_p_s))]
 mod v41_slaveminer_raid_tests {
     use super::*;
+
+    #[test]
+    fn peripheral_raids_prefer_unarmed_power_and_production_not_towers() {
+        let Some(rules)=crate::rules::retail_ini_fixture::retail_unlayered_rules() else {return;};
+        assert_eq!(peripheral_raid_rank(rules.object("GAPOWR").unwrap()),Some(4));
+        assert_eq!(peripheral_raid_rank(rules.object("GAWEAP").unwrap()),Some(5));
+        assert_eq!(peripheral_raid_rank(rules.object("GTGCAN").unwrap()),None);
+        assert_eq!(peripheral_raid_rank(rules.object("ATESLA").unwrap()),None);
+    }
 
     #[test]
     fn deployed_slave_mine_precedes_mobile_miner_and_normal_refinery() {

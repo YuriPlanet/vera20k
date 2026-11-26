@@ -25,8 +25,8 @@ use super::squared_distance;
 use super::tasks::JobKind;
 use super::tracked::{TrackedKind, Tracker};
 
-const SURVEY_INTERVAL: u64 = 75;
-const MAX_SITES: usize = 72;
+const SURVEY_INTERVAL: u64 = 30;
+const MAX_SITES: usize = 160;
 const SIGHTING_TTL: u64 = 5_400;
 const CAPTURE_SETTLE: u64 = 90;
 const RETRY_BASE: u64 = 360;
@@ -116,6 +116,30 @@ fn security_priority(value:Value,income:bool,distance_sq:i32)->Option<i32> {
     } else {None}
 }
 
+pub(super) fn capture_priority(rules:&RuleSet,obs:&Observation<'_>,
+    target:&EnemyEntity,from:(u16,u16),short_income:bool)->i32 {
+    let Some(ty)=obs.object_type(rules,target.type_id) else {return i32::MIN;};
+    let value=value_of(rules,ty).map_or(10,Value::score);
+    let public=orders::strategic_public_asset(ty);
+    let hostile=obs.is_hostile(target.entity_id);
+    let distance=super::advance::cell_distance(from,target.cell);
+    let income=ty.produce_cash_amount>0 || ty.resource_destination;
+    let recurring=if ty.produce_cash_amount>0 {
+        (i64::from(ty.produce_cash_amount)*900/i64::from(ty.produce_cash_delay.max(1)))
+            .clamp(0,6000) as i32
+    }else{0};
+    let foreign_yard=ty.build_const_eligible() && super::build::foreign_yard(rules,obs,ty);
+    value*100
+        + if hostile && obs.easy_capture_candidate(rules,target.entity_id) {1800}else{0}
+        + if foreign_yard {3500}else{0}
+        + if public {4500}else{0}
+        + if income && short_income {4000}else{0}
+        + if recurring>0 {3000+recurring.min(4000)}else{0}
+        + if ty.hospital || ty.unit_repair {1500}else{0}
+        + if !hostile {1800}else{0}
+        - distance.saturating_mul(120)
+}
+
 fn prize_ready(contested: bool, restricted: bool, remote: bool, income: bool, guards: usize) -> bool {
     !contested && (!restricted || !remote || income || guards >= 2)
 }
@@ -129,9 +153,9 @@ pub(super) fn capture_opportunity(brain: &AssistBrain, rules: &RuleSet,
     if !super::site_risk::capture_site_safe(&brain.census,rules,obs,target.entity_id,visible) { return false; }
     if value_of(rules,ty).is_none() { return true; }
     let restricted = obs.is_hostile(target.entity_id) && brain.census.yards > 0
-        && (brain.mobilization.active()
-        || brain.campaign.economy_resting() || brain.director.rebuilding_force()
-        || brain.census.available_fighters() < 6);
+        && !orders::strategic_public_asset(ty)
+        && (brain.campaign.economy_resting() || brain.director.recovering_under_fire()
+            || brain.director.under_attack_now());
     let remote = brain.census.base_cell.is_none_or(|home| squared_distance(home,target.cell)>16*16)
         && brain.census.refinery_cells.iter().all(|home| squared_distance(*home,target.cell)>16*16);
     let income = ty.produce_cash_amount > 0 || ty.resource_destination;
@@ -185,7 +209,10 @@ impl Director {
     )->Option<(u64,(u16,u16))> {
         let now=obs.tick();
         self.sites.iter().filter(|(id,site)|
-            site.phase==Phase::Secure && !site.hostile && now>=site.retry_after
+            site.phase==Phase::Secure
+                && (!site.hostile || obs.object_type(rules,site.type_id)
+                    .is_some_and(orders::strategic_public_asset))
+                && now>=site.retry_after
                 && now>=after.get(*id).copied().unwrap_or(0)
                 && obs.is_cell_visible(site.cell.0,site.cell.1)
         ).filter_map(|(id,site)|{
@@ -251,7 +278,6 @@ impl Director {
         // visibility filtering MUST happen before their details influence us.
         for target in obs.capturable_buildings(rules)
             .filter(|target| obs.is_cell_visible(target.cell.0, target.cell.1))
-            .take(MAX_SITES * 2)
         {
             let Some(ty) = obs.object_type(rules, target.type_id) else { continue };
             let Some(value) = value_of(rules, ty) else { continue };
@@ -267,7 +293,9 @@ impl Director {
             site.last_seen = now;
             site.hostile = hostile;
             site.value = value;
-            if site.phase == Phase::Recon { site.phase = Phase::Ready; }
+            if site.phase == Phase::Recon {
+                site.phase = if now < site.retry_after { Phase::Cooldown } else { Phase::Ready };
+            }
         }
         // A loss of visibility is not target destruction, nor permission to
         // query its true hidden status. Confirm ownership only for OUR assets.
@@ -309,7 +337,11 @@ impl Director {
                     attempt_failed(site, now);
                 }
             } else if site.phase == Phase::Cooldown {
-                if now >= site.retry_after { site.phase = Phase::Ready; }
+                if now >= site.retry_after {
+                    site.phase = if super::site_risk::capture_site_safe(census,rules,obs,*id,&threats) {
+                        Phase::Ready
+                    } else { Phase::Secure };
+                }
             } else {
                 // Grade the actual prospective asset. A passive unit or
                 // nominal AA weapon is not automatically a lethal approach.
@@ -325,9 +357,10 @@ impl Director {
                 && now.saturating_sub(site.last_seen) <= SIGHTING_TTL);
         if self.sites.len() > MAX_SITES {
             let mut ranks: Vec<_> = self.sites.iter().map(|(id, site)|
-                (site.phase == Phase::Capturing, site.last_seen, *id)).collect();
+                (site.phase == Phase::Capturing, site.phase == Phase::Ready,
+                    site.value.score(), site.last_seen, *id)).collect();
             ranks.sort_unstable();
-            for (_,_,id) in ranks.into_iter().take(self.sites.len() - MAX_SITES) {
+            for (_,_,_,_,id) in ranks.into_iter().take(self.sites.len() - MAX_SITES) {
                 self.sites.remove(&id);
             }
         }
@@ -346,27 +379,26 @@ impl Director {
     /// Only a currently visible and approach-safe objective outranks the
     /// traditional capture-value heuristic. Existing specialist job ownership
     /// and native CanTakeBuilding checks are done by `orders::captures`.
-    pub(super) fn preferred_target(&self, obs: &Observation<'_>,
+    pub(super) fn preferred_target(&self, rules:&RuleSet, obs: &Observation<'_>,
         engineer: u64, from: (u16, u16), candidates: &[EnemyEntity],
-        _guards: &[(u16,u16)], _guns: &[(u16,u16)], focus: Option<u64>,
+        _guards: &[(u16,u16)], _guns: &[(u16,u16)], focus: Option<u64>, tracked:&Tracker,
     ) -> Option<EnemyEntity> {
-        candidates.iter().filter(|target| {
-            let Some(site) = self.sites.get(&target.entity_id) else { return false };
-            site.phase == Phase::Ready
-                && obs.is_cell_visible(target.cell.0, target.cell.1)
-                && site.claimant.is_none_or(|claim| claim == engineer)
-        }).max_by_key(|target| {
-            let site = &self.sites[&target.entity_id];
-            // Do not sacrifice the first income line chasing a distant
-            // abandoned yard when the house cannot yet finance its army.
-            (site.value.score() * 100 + if focus == Some(target.entity_id) { 20_000 } else { 0 }
-                - i32::from(site.hostile) * 1000
-                + (if obs.credits() < 3_500 && site.value == Value::Public {
-                    6_500
-                } else { 0 })
-                - squared_distance(from, target.cell) / 24,
-                std::cmp::Reverse(target.entity_id))
-        }).copied()
+        let victim=obs.entity_type(rules,engineer)?;
+        let visible:Vec<_>=obs.visible_enemy_entities().collect();
+        let home=obs.own_entities().filter(|e|obs.object_type(rules,e.type_id)
+            .is_some_and(|ty|ty.resource_destination)).take(2).count();
+        candidates.iter().filter(|target|self.permits_capture(engineer,target.entity_id)
+            && obs.is_cell_visible(target.cell.0,target.cell.1))
+            .max_by_key(|target|{
+                let risk=super::site_risk::engineer_route_risk(rules,obs,victim,&visible,from,target.cell);
+                let bonus=if focus==Some(target.entity_id)
+                    && super::advance::cell_distance(from,target.cell)<=18 {1000}else{0};
+                (std::cmp::Reverse(risk),
+                    capture_priority(rules,obs,target,from,home<2)+bonus
+                        + if obs.engineer_takes_in_one(rules,engineer,target.entity_id) {1800}else{0}
+                        + if tracked.capture_purchase_live(obs.tick(),target.entity_id) {3500}else{0},
+                    std::cmp::Reverse(target.entity_id))
+            }).copied()
     }
 
     /// A cooldown is a target-level obligation, not just a preference.
@@ -380,6 +412,20 @@ impl Director {
                 Phase::Capturing => site.claimant == Some(engineer),
                 Phase::Recon | Phase::Secure | Phase::Cooldown | Phase::Owned => false,
             },
+        }
+    }
+
+    /// Safety invalidated a specific proposed/native assignment. Release only
+    /// its claimant; never turn an unseen site into a current target.
+    pub(super) fn aborted(&mut self, now:u64, engineer:u64,target:u64) {
+        if let Some(site)=self.sites.get_mut(&target)
+            && site.phase==Phase::Capturing && site.claimant==Some(engineer)
+        {
+            site.phase=Phase::Cooldown;
+            site.claimant=None;
+            // A safety abort is not a lost engineer. Do not escalate the
+            // death/failure backoff just because a tank appeared briefly.
+            site.retry_after=now.saturating_add(240);
         }
     }
 
@@ -405,7 +451,7 @@ impl Director {
             return;
         }
         let home_raid = brain.director.under_attack_now() || brain.campaign.economy_resting()
-            || brain.mobilization.active() || brain.director.rebuilding_force();
+            || brain.mobilization.active() || brain.director.recovering_under_fire();
         let defenders: BTreeSet<u64> = brain.squads.squad(Role::Defend)
             .map(|squad| squad.members.clone()).unwrap_or_default();
         // Forget a muster once the prize is clear, the guard is gone, or
@@ -517,6 +563,12 @@ mod tests {
         assert!(!op.permits_capture(9, id));
         op.submitted(90, 8, id); // A repeated order cannot reset the watchdog.
         assert_eq!(op.sites[&id].submitted_at, 20);
+        op.aborted(100,9,id); // Another engineer cannot release this prize.
+        assert!(op.permits_capture(8,id));
+        op.aborted(110,8,id);
+        assert_eq!(op.sites[&id].failures,0);
+        assert_eq!(op.sites[&id].retry_after,350);
+        assert!(!op.permits_capture(8,id));
         attempt_failed(op.sites.get_mut(&id).unwrap(), 120);
         assert!(!op.permits_capture(8, id));
         assert!(!op.purchase_ready(id));

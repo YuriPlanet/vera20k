@@ -338,7 +338,7 @@ impl Traits {
         // its `Primary=`, and a deployed desolator's eruption is its
         // `Secondary=`, so reading slot 0 alone would miss half of them.
         let mut weapon_traits = WeaponTraits::default();
-        for slot in 0..8 {
+        for slot in 0..if ty.gunner { 1 } else { 8 } {
             let Some(weapon) = ty.weapon_at(slot).and_then(|name| rules.weapon(&name)) else {
                 continue;
             };
@@ -605,6 +605,9 @@ pub(super) struct Census {
     /// How many of this house's fighting units can actually do each job: their
     /// weight in it clears [`ROLE_FLOOR`].
     pub(super) able: [u32; ROLES.len()],
+    /// Controllable healthy ground bodies with an actual AA weapon.
+    pub(super) mobile_aa: BTreeSet<u64>,
+    pub(super) elites: BTreeSet<u64>,
 }
 
 impl Census {
@@ -762,6 +765,9 @@ impl Census {
         self.tiers = [[0; 3]; 5];
         self.threat = [0; ROLES.len()];
         self.able = [0; ROLES.len()];
+        self.mobile_aa.clear();
+        self.elites.clear();
+        let mut aa_by_type = BTreeMap::new();
         self.enemy_strike_sites = 0;
         self.enemy_structures = 0;
         self.own_strike_sites = 0;
@@ -786,7 +792,15 @@ impl Census {
             } else {
                 0
             };
-            let traits = Traits::of(rules, ty);
+            let mut traits = Traits::of(rules, ty);
+            if ty.gunner {
+                if let Some(w) = obs.active_gunner_weapon(rules,entity.entity_id) {
+                    let head = w.warhead.as_deref().and_then(|name|rules.warhead(name));
+                    traits.suicide = w.suicide;
+                    traits.splash = w.area_fire || head.is_some_and(|wh|wh.cell_spread_f64>1.0);
+                    traits.channels = head.is_some_and(|wh|wh.temporal || wh.mind_control);
+                }
+            }
             let combat = traits.combat;
             let tier = if combat {
                 price_tier(obs.cost_of(rules, ty))
@@ -867,14 +881,32 @@ impl Census {
                     // reason — the shortfall vector is threat (all live enemy objects)
                     // against able, so a house with a platoon in limbo read itself as
                     // answering a role it could not answer.
+                    let active_gunner = ty.gunner.then(||obs.active_gunner_weapon(rules,entity.entity_id)).flatten();
+                    let aa = if ty.gunner {
+                        active_gunner.map_or(0,|w|super::composition::aa_output(rules,w))
+                    } else if weights.get(Role::AntiAir)>=ROLE_FLOOR {
+                        *aa_by_type.entry(entity.type_id).or_insert_with(||super::composition::fresh_aa(rules,ty))
+                    } else { 0 };
+                    if aa>=8 && matches!(slot,Slot::Infantry | Slot::Vehicle)
+                        && !ty.jumpjet && !ty.balloon_hover && !ty.naval
+                        && health_permille>=500 && !obs.owned_by_hand(entity.entity_id) {
+                        self.mobile_aa.insert(entity.entity_id);
+                    }
                     for role in ROLES {
-                        if weights.get(role) >= ROLE_FLOOR {
+                        let covers = if ty.gunner && role == Role::AntiAir {
+                            aa>=8
+                        } else if ty.gunner && active_gunner
+                            .is_some_and(|w|w.damage<=0 || w.suicide) {
+                            false
+                        } else { weights.get(role) >= ROLE_FLOOR };
+                        if covers {
                             self.able[role.index()] += 1;
                         }
                     }
                 }
             }
 
+            if obs.own_elite(entity.entity_id) {self.elites.insert(entity.entity_id);}
             self.units.push(Unit {
                 entity_id: entity.entity_id,
                 type_id: entity.type_id,
@@ -894,7 +926,11 @@ impl Census {
         // yards are counted: the first yard the scan met wins, and no later yard
         // can take the anchor away from it. A house that has lost that yard
         // anchors on the next one, which is the first of what is left.
-        if let Some(cell) = self.yard_cells.first().copied() {
+        if let Some(cell) = self.units.iter().find(|u|
+            u.traits.yard && obs.object_type(rules,u.type_id).is_some_and(|ty|
+                !super::build::foreign_yard(rules,obs,ty))).map(|u|u.cell)
+            .or_else(||self.yard_cells.first().copied())
+        {
             self.base_cell = Some(cell);
         }
 

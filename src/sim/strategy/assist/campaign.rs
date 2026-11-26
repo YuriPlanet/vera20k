@@ -86,6 +86,31 @@ fn can_commit(picture: Picture, wanted: usize, waited: u64) -> bool {
             && picture.attack_points >= 2_500)
 }
 
+const PREPARATION_LIMIT:u64=900;
+const PREPARATION_RETRY:u64=1200;
+
+#[derive(Debug,Clone,Copy)]
+pub(super) struct Preparation {
+    pub(super) target:u64,
+    pub(super) front:(u16,u16),
+    pub(super) rally:(u16,u16),
+    pub(super) guns_wanted:usize,
+    began:u64,
+}
+
+#[derive(Debug,Clone,Copy)]
+struct PressureSample {
+    target:u64,
+    hp:i32,
+    points:i32,
+    at:u64,
+}
+
+fn local_superiority(screen:usize,points:i32,enemy:i32,ready:usize)->bool {
+    screen>=4 && points>=2400 && i64::from(points)>=2*i64::from(enemy.max(0))
+        && ready>=2
+}
+
 #[derive(Debug, Default)]
 pub(super) struct Campaign {
     phase: Phase,
@@ -96,6 +121,10 @@ pub(super) struct Campaign {
     committed_points: i32,
     observed_at: Option<u64>,
     sightings: BTreeMap<InternedId, OpponentSightings>,
+    pressure: Option<PressureSample>,
+    preparation: Option<Preparation>,
+    prepare_after:u64,
+    pressure_at:Option<u64>,
 }
 
 impl Campaign {
@@ -106,10 +135,135 @@ impl Campaign {
     // Keep the query for existing consumers; cash disciplines live in production.
     pub(super) fn economy_resting(&self) -> bool { false }
 
-    /// Contain and stockpile are procurement advice, not blanket attack vetoes.
-    /// Advance still weighs the actual local enemy, and the force-loss
-    /// director still owns recovery. Only a large observed commitment-strength drop refits.
-    pub(super) fn holding_fist(&self) -> bool { self.phase == Phase::Refit }
+    /// The broad phase remains advice, not an unconditional attack veto.
+    /// V64 uses the separate bounded, observed local preparation window;
+    /// it never restores a global stockpile/attrition pause.
+    pub(super) fn holding_fist(&self) -> bool { false }
+
+    pub(super) fn preparation(&self)->Option<Preparation> {self.preparation}
+
+    fn end_preparation(&mut self,now:u64,reason:&str) {
+        if let Some(p)=self.preparation.take() {
+            self.prepare_after=now.saturating_add(PREPARATION_RETRY);
+            log::info!("auto play: v64_preparation_end tick={now} target={} elapsed={} reason={reason}",
+                p.target,now.saturating_sub(p.began));
+        }
+    }
+
+    /// A bounded window to group reinforcement artillery behind a working
+    /// local screen. A visible opponent and a larger global army are not
+    /// sufficient evidence. Require current safe shots AND observed damage
+    /// on the same structure at consecutive samples. Never gate scripted
+    /// campaign missions, actual siege waves or emergency recovery.
+    pub(super) fn observe_preparation(&mut self,now:u64,rules:&RuleSet,obs:&Observation<'_>,
+        census:&Census,teams:&squads::Squads,signals:Signals,allowed:bool,
+        front:Option<(u16,u16)>) {
+        if !allowed || obs.is_campaign() || !obs.forces_enabled()
+            || !signals.economy_ok_for_preparation()
+            || obs.power_blackout_active() || front.is_none() {
+            self.pressure=None;
+            self.end_preparation(now,"interrupted");
+            return;
+        }
+        if let Some(p)=self.preparation {
+            if now.saturating_sub(p.began)>=PREPARATION_LIMIT
+                || obs.observed_object_cell(p.target).is_none() || !obs.is_hostile(p.target)
+                || front.is_none_or(|at|super::advance::cell_distance(at,p.front)>16) {
+                self.end_preparation(now,"deadline-or-front-change");
+            }
+        }
+        if self.pressure_at.is_some_and(|at|now.saturating_sub(at)<90){return;}
+        self.pressure_at=Some(now);
+        let Some(front)=front else{return;};
+        let Some(team)=teams.squad(squads::Role::Attack) else{
+            self.end_preparation(now,"no-screen");return;
+        };
+        let visible:Vec<_>=obs.visible_enemy_entities().collect();
+        let fighters:Vec<_>=census.units.iter().filter(|u|team.members.contains(&u.entity_id)
+            && census.main_available(u) && u.health_permille>=700
+            && u.slot==super::census::Slot::Vehicle && !u.traits.aircraft
+            && obs.object_type(rules,u.type_id).is_some_and(|ty|!ty.naval && !ty.balloon_hover
+                && !ty.jumpjet && !ty.resource_gatherer)).collect();
+        let local:Vec<_>=fighters.iter().copied().filter(|u|
+            super::advance::cell_distance(u.cell,front)<=26).collect();
+        let screen=local.iter().filter(|u|obs.object_type(rules,u.type_id)
+            .is_some_and(|ty|super::composition::siege_range(rules,ty)<8)).count();
+        let points=local.iter().fold(0i32,|sum,u|sum.saturating_add(u.points.max(0)));
+        let mut enemy_points=0i32;
+        let mut serious=false;
+        for e in &visible {
+            if super::advance::cell_distance(e.cell,front)>30 {continue;}
+            let Some(ty)=obs.object_type(rules,e.type_id) else{continue;};
+            if ty.category==ObjectCategory::Building || !super::convergence::mobile_threat(rules,obs,e)
+                {continue;}
+            enemy_points=enemy_points.saturating_add(obs.health(e.entity_id).unwrap_or(ty.strength).max(0));
+            if super::tactics::emergency_threat_score(rules,ty)>=900
+                || obs.visible_enemy_invulnerable(e.entity_id) {serious=true;}
+        }
+        let mut contacts:BTreeMap<u64,Vec<&super::census::Unit>>=BTreeMap::new();
+        for u in &local {
+            let id=u.entity_id;
+            let Some(target)=obs.attack_target(id) else{continue;};
+            if !visible.iter().any(|e|e.entity_id==target
+                && super::advance::cell_distance(e.cell,front)<=16
+                && obs.object_type(rules,e.type_id).is_some_and(|ty|
+                    ty.category==ObjectCategory::Building && !ty.immune))
+                || !obs.can_hurt(rules,id,target)
+                || obs.engage(rules,id,target)!=crate::sim::control::observation::Engage::Ready
+                || !super::orders::admits(rules,obs,id,&crate::sim::control::Goal::Attack{target})
+            {continue;}
+            let guns=super::safety::envelopes(rules,obs,id,&visible,true);
+            if guns.iter().any(|g|super::advance::cell_distance(u.cell,g.at)<=g.reach)
+                {continue;}
+            contacts.entry(target).or_default().push(*u);
+        }
+        let contact=contacts.into_iter().filter(|(_,guns)|guns.len()>=2)
+            .max_by_key(|(id,guns)|(guns.len(),std::cmp::Reverse(*id)));
+        let Some((target,shooters))=contact else{
+            self.pressure=None;self.end_preparation(now,"no-safe-pressure");return;
+        };
+        let Some(hp)=obs.health(target).filter(|v|*v>0) else{
+            self.pressure=None;self.end_preparation(now,"lost-target");return;
+        };
+        let site=obs.observed_object_cell(target).unwrap_or(front);
+        let previous=self.pressure.replace(PressureSample{target,hp,points,at:now});
+        let advantage=local_superiority(screen,points,enemy_points,shooters.len()) && !serious;
+        let rally=shooters.iter().max_by_key(|u|
+            (super::advance::cell_distance(u.cell,site),std::cmp::Reverse(u.entity_id)))
+            .map(|u|u.cell).unwrap_or(front);
+        let armed_guns=fighters.iter().filter(|u|obs.object_type(rules,u.type_id)
+            .is_some_and(|ty|super::composition::siege_range(rules,ty)>=8)
+            && obs.can_hurt(rules,u.entity_id,target)).count();
+        let rally=self.preparation.map_or(rally,|p|p.rally);
+        let coherent_guns=fighters.iter().filter(|u|
+            super::advance::cell_distance(u.cell,rally)<=9
+            && obs.object_type(rules,u.type_id).is_some_and(|ty|
+                super::composition::siege_range(rules,ty)>=8)
+            && obs.can_hurt(rules,u.entity_id,target)).count();
+        if let Some(p)=self.preparation {
+            if !advantage || p.target!=target
+                || previous.is_some_and(|old|i64::from(points)*4<i64::from(old.points)*3)
+                || coherent_guns>=p.guns_wanted {
+                self.end_preparation(now,if coherent_guns>=p.guns_wanted {"cohort-ready"}else{"pressure-lost"});
+            }
+            return;
+        }
+        if !advantage || now<self.prepare_after || coherent_guns>=3
+            || obs.entity_type(rules,target).is_none_or(|ty|i64::from(hp)*3<i64::from(ty.strength))
+            || !previous.is_some_and(|old|old.target==target && old.hp>hp
+                && now.saturating_sub(old.at)<=180 && i64::from(points)*4>=i64::from(old.points)*3)
+        {return;}
+        let legal=super::build::class_types(rules,obs,ObjectCategory::Vehicle).any(|(ty,_)|
+            !ty.naval && !ty.jumpjet && !ty.balloon_hover
+            && super::composition::siege_range(rules,ty)>=8
+            && obs.can_build(rules,ty,true)==crate::sim::production::CanBuild::Yes
+            && obs.has_producer(rules,ty));
+        if !legal && armed_guns<3 {return;}
+        let wanted=(screen/2).clamp(3,5);
+        self.preparation=Some(Preparation{target,front:site,rally,guns_wanted:wanted,began:now});
+        log::info!("auto play: v64_preparation_begin tick={now} target={target} screen={screen} points={points} enemy_points={enemy_points} ready={} guns={coherent_guns}/{wanted}",
+            shooters.len());
+    }
 
     pub(super) fn prefer_quality(&self) -> bool {
         matches!(self.phase, Phase::Stockpile | Phase::Commit)
@@ -265,6 +419,27 @@ impl Campaign {
 mod tests {
     use super::*;
 
+    #[test]
+    fn v64_preparation_requires_a_real_screen_and_safe_current_contact() {
+        assert!(!local_superiority(3,4000,100,2));
+        assert!(!local_superiority(6,4000,2100,3));
+        assert!(!local_superiority(6,4000,0,0));
+        assert!(local_superiority(6,4000,1800,2));
+    }
+
+    #[test]
+    fn v64_preparation_release_has_a_fixed_retry_deadline() {
+        let mut campaign=Campaign::default();
+        campaign.preparation=Some(Preparation{
+            target:7,front:(20,20),rally:(10,10),guns_wanted:3,began:100,
+        });
+        campaign.end_preparation(100+PREPARATION_LIMIT,"test");
+        assert!(campaign.preparation().is_none());
+        let retry=campaign.prepare_after;
+        campaign.end_preparation(2000,"already released");
+        assert_eq!(campaign.prepare_after,retry);
+    }
+
     fn picture() -> Picture {
         Picture { has_known_opponent: true, economy_works: true,
             economy_surplus: true, attack_members: 8, coherent_members: 8,
@@ -303,7 +478,7 @@ mod tests {
         p.attack_points = 1_000;
         c.update(202, p);
         assert_eq!(c.phase(), Phase::Refit);
-        assert!(c.holding_fist());
+        assert!(!c.holding_fist(), "attrition is advice, not a blanket attack veto");
     }
 
     #[test]

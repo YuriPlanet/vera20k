@@ -256,6 +256,10 @@ struct RestoreRequest {
 pub(super) struct Tracker {
     /// Long-term missions outlive the per-order priority and timeout.
     pub(super) tasks: super::tasks::TaskLedger,
+    // target -> (finite purchase window, retry after). One new engineering
+    // plan must not indefinitely prevent victory against the last structure.
+    capture_purchases: BTreeMap<u64,(u64,u64)>,
+    capture_related: BTreeMap<u64,(u64,u64)>,
     intents: BTreeMap<u64, UnitRuntime>,
     /// The standing strategic order beneath temporary tactical overrides.
     ///
@@ -281,12 +285,47 @@ impl Tracker {
     pub(super) fn new() -> Self {
         Self {
             tasks: super::tasks::TaskLedger::new(),
+            capture_purchases: BTreeMap::new(),
+            capture_related: BTreeMap::new(),
             intents: BTreeMap::new(),
             primary: BTreeMap::new(),
             paused: BTreeMap::new(),
             restoring: BTreeMap::new(),
             held: BTreeMap::new(),
             refused: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn capture_purchase_due(&self,now:u64,target:u64)->bool {
+        self.capture_purchases.get(&target).is_none_or(|(_,retry)|now>=*retry)
+    }
+
+    pub(super) fn capture_purchase_live(&self,now:u64,target:u64)->bool {
+        self.capture_purchases.get(&target).is_some_and(|(until,_)|now<*until)
+            || self.capture_related.get(&target).is_some_and(|(until,_)|now<*until)
+    }
+
+    pub(super) fn reserve_related_prize(&mut self,now:u64,target:u64,travel:u64) {
+        self.capture_related.retain(|_,(_,retry)|now<*retry);
+        if self.capture_related.get(&target).is_none_or(|(_,retry)|now>=*retry)
+            && self.capture_purchase_due(now,target) {
+            let until=now.saturating_add(travel.clamp(900,2250));
+            self.capture_related.insert(target,(until,until.saturating_add(900)));
+        }
+    }
+
+    pub(super) fn reserve_capture_purchase(&mut self,now:u64,target:u64,travel:u64) {
+        self.capture_purchases.retain(|_,(_,retry)|now<*retry);
+        if self.capture_purchase_due(now,target) {
+            let until=now.saturating_add(travel.clamp(900,2250));
+            self.capture_purchases.insert(target,(until,until.saturating_add(900)));
+        }
+    }
+
+    pub(super) fn cancel_capture_purchase(&mut self,now:u64,target:u64) {
+        if self.capture_purchase_live(now,target) {
+            self.capture_purchases.insert(target,(now,now.saturating_add(900)));
+            self.capture_related.insert(target,(now,now.saturating_add(900)));
         }
     }
 
@@ -727,6 +766,26 @@ fn moved(was: Option<(u16, u16)>, now: Option<(u16, u16)>) -> bool {
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v61_capture_plan_is_finite_and_related_prizes_do_not_count_as_purchases() {
+        let mut t=Tracker::new();
+        t.reserve_capture_purchase(100,7,1200);
+        t.reserve_related_prize(100,8,1200);
+        assert!(t.capture_purchase_live(1299,7));
+        assert!(t.capture_purchase_live(1299,8));
+        assert!(!t.capture_purchase_due(1299,7));
+        assert!(t.capture_purchase_due(1299,8));
+        t.reserve_capture_purchase(1200,7,1200);
+        assert!(!t.capture_purchase_live(1300,7));
+        assert!(!t.capture_purchase_live(1300,8));
+        assert!(!t.capture_purchase_due(2199,7));
+        assert!(t.capture_purchase_due(2200,7));
+        t.reserve_capture_purchase(2200,7,900);
+        assert!(t.capture_purchase_live(2200,7));
+        t.cancel_capture_purchase(2300,7);
+        assert!(!t.capture_purchase_live(2300,7));
+    }
 
     /// A toggle issued twice is the bug this layer exists for: the second
     /// press undoes the first, so the answer has to be no until the pose has

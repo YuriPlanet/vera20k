@@ -26,7 +26,7 @@
 //! when the unit can leave that radius before the shot lands: a dodge that
 //! arrives late is a wasted order and a unit out of position.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
@@ -36,6 +36,157 @@ use crate::sim::control::observation::Observation;
 
 use super::AssistBrain;
 use super::tracked::TrackedKind;
+
+/// Stock superweapon warnings are observational evidence, not access to
+/// the enemy's private targeting state. Clear only units inside the actual
+/// observed danger, or units whose next native destination enters it.
+pub(super) fn evacuate_superweapons(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    let now=obs.tick();
+    if now%5!=0 || !obs.forces_enabled() {return;}
+    let strikes=obs.observed_superweapon_strikes(rules);
+    if strikes.is_empty() {return;}
+    let distance=super::advance::cell_distance;
+    let danger=|cell:(u16,u16)|strikes.iter().any(|s|distance(cell,s.cell)<=s.radius);
+    let visible:Vec<_>=obs.visible_enemy_entities().collect();
+    let mut posts:Vec<(u16,u16)>=Vec::new();
+    for unit in brain.census.units.iter().copied() {
+        let id=unit.entity_id;
+        if !unit.controllable() || unit.in_service()
+            || brain.census.factory_handoffs.contains_key(&id)
+            || obs.is_deployed(id) || obs.inside_transport(id).is_some()
+            || brain.specialist_shuttles.contains_key(&id)
+            || brain.specialist_shuttles.values().any(|trip|trip.passenger==id)
+            || obs.own_repair_service(rules,id)
+        {continue;}
+        let Some(ty)=obs.object_type(rules,unit.type_id) else {continue;};
+        if ty.speed<=0 || ty.category==ObjectCategory::Building {continue;}
+        let from=unit.cell;
+        let destination=obs.destination(id);
+        let exposed=danger(from);
+        if !exposed && !destination.is_some_and(danger) {continue;}
+        if destination.is_some_and(|cell|!danger(cell)
+            && strikes.iter().all(|s|if distance(from,s.cell)<=s.radius {
+                distance(cell,s.cell)>distance(from,s.cell)
+            } else {!super::tactics::path_enters_control_box(from,cell,s.cell,s.radius)})) {continue;}
+        let guns=super::safety::envelopes(rules,obs,id,&visible,false);
+        let mut best=None;
+        for r in 2i32..=40 {
+            for (dx,dy) in [(r,0),(-r,0),(0,r),(0,-r),(r,r),(-r,r),(r,-r),(-r,-r),
+                (r,r/2),(r,-r/2),(-r,r/2),(-r,-r/2),(r/2,r),(-r/2,r),(r/2,-r),(-r/2,-r)] {
+                let (Ok(x),Ok(y))=(u16::try_from(i32::from(from.0)+dx),
+                    u16::try_from(i32::from(from.1)+dy)) else {continue;};
+                let cell=(x,y);
+                if danger(cell) || !obs.is_cell_in_playfield(x,y)
+                    || !super::orders::reachable(rules,obs,id,cell)
+                    || !super::safety::safe_leg(&guns,from,cell,true)
+                    || !strikes.iter().all(|s|{
+                        let inside=distance(from,s.cell)<=s.radius;
+                        if inside {distance(cell,s.cell)>distance(from,s.cell)}
+                        else {!super::tactics::path_enters_control_box(from,cell,s.cell,s.radius)}
+                    }) {continue;}
+                let spacing=posts.iter().filter(|p|distance(**p,cell)<=2).count();
+                let score=(r+4*i32::try_from(spacing).unwrap_or(100),r,cell);
+                if best.is_none_or(|old|score<old){best=Some(score);}
+            }
+            if best.is_some_and(|(score,_,_)|score<=r) {break;}
+        }
+        let goal=best.map(|(_,_,cell)|Goal::Move{cell});
+        // Outside the blast, cancel an obsolete native approach if no safe
+        // alternative exists. Inside, never replace a legal escape by Stop.
+        let goal=goal.or_else(||(!exposed).then_some(Goal::Stop));
+        let Some(goal)=goal else {continue;};
+        if !out.ordered_this_frame(id) && super::orders::admits(rules,obs,id,&goal)
+            && out.want(id,0,goal) {
+            brain.tracked.cancel_for_safety(id);
+            brain.crate_claims.remove(&id);
+            brain.crate_returns.remove(&id);
+            brain.tracked.hold(id,now.saturating_add(90));
+            brain.avoid_retreat_until.insert(id,now.saturating_add(90));
+            if let Goal::Move{cell}=goal {posts.push(cell);}
+            log::info!("auto play: v60_superweapon_evacuation tick={now} actor={id} goal={goal:?}");
+        }
+    }
+}
+
+pub(super) fn review_superweapon_moves(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    let strikes=obs.observed_superweapon_strikes(rules);
+    if strikes.is_empty(){return;}
+    let mut blocked=Vec::new();
+    out.orders.retain(|order|{
+        let id=order.actor;
+        if obs.owned_by_hand(id) {return true;}
+        let Some(from)=obs.observed_object_cell(id) else {return true;};
+        let to=match order.goal {
+            Goal::Move{cell}|Goal::AttackMove{cell}|Goal::GuardAt{cell}|Goal::Harvest{cell}=>Some(cell),
+            Goal::Attack{target} if obs.engage(rules,id,target)
+                !=crate::sim::control::observation::Engage::Ready=>obs.observed_object_cell(target),
+            Goal::Capture{target}|Goal::MoveToObject{target}|Goal::Enter{target}=>obs.observed_object_cell(target),
+            _=>None,
+        };
+        if let Some(to)=to {
+            let safe=strikes.iter().all(|s|{
+                let from_depth=super::advance::cell_distance(from,s.cell);
+                let to_depth=super::advance::cell_distance(to,s.cell);
+                if from_depth<=s.radius {to_depth>from_depth && matches!(order.goal,Goal::Move{..})}
+                else {!super::tactics::path_enters_control_box(from,to,s.cell,s.radius)}
+            });
+            if !safe {blocked.push(id);return false;}
+        }
+        true
+    });
+    for id in blocked {
+        brain.tracked.cancel_for_safety(id);
+        brain.crate_claims.remove(&id);
+        brain.crate_returns.remove(&id);
+        brain.tracked.hold(id,obs.tick().saturating_add(60));
+    }
+}
+
+/// A building is not sold just because it is inside a superweapon radius.
+/// Only the native stock centre receiver's conservative full-HP fatal
+/// estimate permits a proposal. Keep yards, last production plants, last
+/// power/income structures, and buildings that could survive.
+pub(super) fn sell_doomed_strike_building(brain:&mut AssistBrain,rules:&RuleSet,
+    obs:&Observation<'_>,out:&mut Outbox) {
+    use crate::sim::control::intent::Intent;
+    let now=obs.tick();
+    if now%5!=0 || !obs.production_enabled() || now<brain.sale_at {return;}
+    let strikes=obs.observed_superweapon_strikes(rules);
+    if strikes.is_empty(){return;}
+    let own:Vec<_>=obs.own_entities().collect();
+    for site in &own {
+        let id=site.entity_id;
+        let Some(ty)=obs.object_type(rules,site.type_id) else {continue;};
+        if ty.category!=ObjectCategory::Building || !site.orderable
+            || obs.owned_by_hand(id) || brain.sale_attempts.get(&id).copied().unwrap_or(0)>0
+            || out.intents.iter().any(|intent|matches!(intent,Intent::SellBuilding{entity_id} if *entity_id==id))
+            {continue;}
+        // Count other actually existing facilities of the same essential
+        // kind. A solitary factory or income source is never liquidated.
+        if (ty.factory_type().is_some() || ty.power>0 || ty.refinery || ty.resource_destination
+            || ty.produce_cash_amount>0)
+            && !own.iter().any(|other|other.entity_id!=id && other.health>0 && other.orderable
+                && strikes.iter().all(|s|super::advance::cell_distance(other.cell,s.cell)>s.radius+4)
+                && obs.object_type(rules,other.type_id).is_some_and(|t|
+                    t.category==ObjectCategory::Building
+                    && (ty.factory_type().is_none() || t.factory_type()==ty.factory_type())
+                    && (ty.power<=0 || t.power>0)
+                    && (!(ty.refinery||ty.resource_destination)||t.refinery||t.resource_destination)
+                    && (ty.produce_cash_amount<=0 || t.produce_cash_amount>0)))
+        {continue;}
+        if let Some((strike,predicted))=strikes.iter().find_map(|s|
+            obs.forecast_strike_sale(rules,id,*s).map(|damage|(*s,damage))) {
+            out.intent(Intent::SellBuilding{entity_id:id});
+            *brain.sale_attempts.entry(id).or_default()+=1;
+            brain.sale_at=now.saturating_add(30);
+            log::info!("auto play: v60_superweapon_sale tick={now} target={id} kind={:?} centre={:?} hp={} full={} predicted={predicted}",
+                strike.kind,strike.cell,site.health,ty.strength);
+            break;
+        }
+    }
+}
 
 /// Frames a reaction costs: the shot is seen on this frame and the walk starts
 /// on the next, with one frame of slack for the order's round trip.
@@ -91,6 +242,11 @@ pub(super) fn escape_cell(
     threats: &[Shell],
     extent: (u16, u16),
 ) -> Option<(u16, u16)> {
+    escape_cell_where(cell,threats,extent,|_|true)
+}
+
+fn escape_cell_where(cell:(u16,u16),threats:&[Shell],extent:(u16,u16),
+    mut allowed:impl FnMut((u16,u16))->bool)->Option<(u16,u16)> {
     let here = (i32::from(cell.0), i32::from(cell.1));
     let current = exposure_to_all(here, threats);
     if current == 0 {
@@ -120,9 +276,9 @@ pub(super) fn escape_cell(
             }
             let exposure = exposure_to_all((i32::from(x), i32::from(y)), threats);
             let distance = dx.abs().max(dy.abs());
-            if best.is_none_or(|(_, best_exposure, best_distance)| {
+            if exposure<current && best.is_none_or(|(_, best_exposure, best_distance)| {
                 (exposure, distance) < (best_exposure, best_distance)
-            }) {
+            }) && allowed((x,y)) {
                 best = Some(((x, y), exposure, distance));
             }
         }
@@ -165,7 +321,12 @@ pub(super) fn run(
     // takes the hit, but an airframe that leaves the launcher's range or the
     // missile's turn circle does outfly it. Air gets them; the ground does not.
     let mut homing: BTreeMap<u64, Vec<Shell>> = BTreeMap::new();
+    let mut collateral:Vec<(u64,Shell)>=Vec::new();
+    let mut visible_sources: Option<BTreeSet<u64>> = None;
     for (target, shot) in obs.shots_in_flight() {
+        // Shots at other houses never drive an owned actor's direct dodge
+        // and must not force a whole-army loop in an unrelated fight.
+        if !obs.owns_object(target) { continue; }
         let spread = obs.warhead_spread_cells(rules, shot.warhead);
         let threat = Shell {
             impact: (i32::from(shot.impact.0), i32::from(shot.impact.1)),
@@ -177,16 +338,34 @@ pub(super) fn run(
             homing.entry(target).or_default().push(threat);
         } else {
             by_target.entry(target).or_default().push(threat);
+            // A shell does not stop hurting neighbours just because its
+            // object target is another tank. Do not use hidden launchers or
+            // other players' targets to add new situational information.
+            if spread>0 && shot.frames>REACTION_FRAMES && shot.damage>0
+                && visible_sources.get_or_insert_with(|| obs.visible_enemy_entities()
+                    .map(|e|e.entity_id).collect()).contains(&shot.source_id) {
+                collateral.push((target,threat));
+            }
         }
     }
     if by_target.is_empty() && homing.is_empty() {
         return;
     }
 
+    let mut pending_steps=Vec::new();
     for unit in &brain.census.units {
-        if super::advance::charge_member(brain, obs.tick(), unit.entity_id) {
+        let wave=super::advance::siege_member(brain,obs.tick(),unit.entity_id);
+        let sidestep=if wave {super::advance::sidestep_slot(brain,obs.tick(),unit.entity_id,pending_steps.len())} else {None};
+        if super::advance::charge_member(brain, obs.tick(), unit.entity_id) && sidestep.is_none() {
             continue;
         }
+        // Focused assault casualties use the individual extraction owner.
+        // Only an unfocused neighbour between volleys may take a short
+        // collateral sidestep and keep the same assault membership.
+        if wave && (pending_steps.len()>=2 || unit.slot!=super::census::Slot::Vehicle || obs.weapon_ready(unit.entity_id)
+            || by_target.contains_key(&unit.entity_id) || homing.contains_key(&unit.entity_id)
+            || !sidestep.is_some_and(|target|obs.attack_target(unit.entity_id)==Some(target)
+                && obs.engage(rules,unit.entity_id,target)==crate::sim::control::observation::Engage::Ready)) {continue;}
         if !unit.traits.combat || !unit.controllable() {
             continue;
         }
@@ -225,12 +404,19 @@ pub(super) fn run(
         // shot it cannot step out of.
         let airborne = ty.category == ObjectCategory::Aircraft
             || ty.movement_zone == crate::rules::locomotor_type::MovementZone::Fly;
-        let threats: Vec<Shell> = match (by_target.get(&unit.entity_id), airborne) {
+        let mut threats: Vec<Shell> = match (by_target.get(&unit.entity_id), airborne) {
             (Some(list), _) => list.clone(),
             (None, true) => homing.get(&unit.entity_id).cloned().unwrap_or_default(),
-            (None, false) => continue,
+            (None, false) => Vec::new(),
         };
-        if threats.is_empty() {
+        let before=threats.len();
+        if !airborne {
+            let here=(i32::from(unit.cell.0),i32::from(unit.cell.1));
+            threats.extend(collateral.iter().filter(|(target,shell)|*target!=unit.entity_id
+                && exposure(here,shell)>0).map(|(_,shell)|*shell));
+        }
+        let neighbour=threats.len()>before;
+        if threats.is_empty() || (wave && !neighbour) {
             continue;
         }
         // A burst weapon mid-cycle takes the shell. The step is a Move and a
@@ -254,15 +440,24 @@ pub(super) fn run(
                 obs.observed_object_cell(target).is_some() && obs.is_hostile(target)
                     && obs.engage(rules,unit.entity_id,target)==crate::sim::control::observation::Engage::Ready)
             && (!airborne || obs.weapon_ready(unit.entity_id))
-            && unit.health_permille >= 750
+            && unit.health_permille >= 750 && !neighbour
             && threats.len() == 1 && threats[0].spread <= 1
             && obs.health(unit.entity_id).is_some_and(|hp| threats[0].damage.max(0) <= hp/4)
         {
             continue;
         }
-        let Some(target) = escape_cell(unit.cell, &threats, obs.map_extent()) else {
-            continue;
-        };
+        let target=if neighbour && !airborne {
+            let visible:Vec<_>=obs.visible_enemy_entities().collect();
+            let guns=super::safety::envelopes(rules,obs,unit.entity_id,&visible,false);
+            escape_cell_where(unit.cell,&threats,obs.map_extent(),|cell| {
+                exposure_to_all((i32::from(cell.0),i32::from(cell.1)),&threats)==0
+                    && obs.is_ground_walkable(cell.0,cell.1)
+                    && super::orders::reachable(rules,obs,unit.entity_id,cell)
+                    && sidestep.map_or_else(||super::safety::safe_leg(&guns,unit.cell,cell,true),
+                        |target|super::advance::sidestep_safe(rules,obs,unit,target,cell))
+            })
+        } else {escape_cell(unit.cell,&threats,obs.map_extent())};
+        let Some(target)=target else {continue;};
         if !airborne {
             let exposure_at = |cell: (u16,u16)| exposure_to_all(
                 (i32::from(cell.0),i32::from(cell.1)),&threats);
@@ -292,7 +487,10 @@ pub(super) fn run(
         if !can_clear(cells, speed, deadline, REACTION_FRAMES) {
             continue;
         }
-        super::orders::issue_tracked(
+        if wave && !super::advance::sidestep_keeps_fire(brain,rules,obs,unit.entity_id,&pending_steps) {
+            continue;
+        }
+        if super::orders::issue_tracked(
             &mut brain.tracked,
             brain.trace,
             out,
@@ -303,7 +501,19 @@ pub(super) fn run(
             None,
             Some(target),
             Goal::Move { cell: target },
-        );
+        ) && neighbour {
+            if wave {
+                let travel=(i64::from(cells)*i64::from(crate::util::lepton::LEPTONS_PER_CELL_I32)
+                    + i64::from(speed.max(1))-1)/i64::from(speed.max(1));
+                pending_steps.push((unit.entity_id,target,travel.max(0) as u64+4));
+            }
+            if super::trace_enabled("AUTOPLAY_V56_TRACE") {
+                log::info!("auto play: v56_collateral_dodge tick={} actor={} wave={} cell={target:?}",obs.tick(),unit.entity_id,wave);
+            }
+        }
+    }
+    for (actor,cell,travel) in pending_steps {
+        super::advance::record_sidestep(brain,obs.tick(),actor,cell,travel);
     }
 }
 
@@ -345,6 +555,13 @@ mod tests {
 
     /// A unit already in the clear is not ordered anywhere: a dodge pass that
     /// shuffles units standing outside the blast spends the frame on nothing.
+    #[test]
+    fn a_blocked_first_escape_can_use_another_clear_cell() {
+        let threat=shot((10,10),60,1);
+        assert_eq!(escape_cell_where((10,10),&[threat],(60,60),|cell|cell==(12,10)),Some((12,10)));
+        assert_eq!(escape_cell_where((10,10),&[threat],(60,60),|_|false),None);
+    }
+
     #[test]
     fn a_clear_cell_asks_for_no_step() {
         assert_eq!(escape_cell((1, 1), &[shot((10, 10), 6, 0)], (60, 60)), None);

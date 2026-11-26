@@ -89,6 +89,7 @@ pub(super) fn targets(stock: u32, mean_distance: u32, refineries: usize) -> Targ
     let demand = usize::try_from(demand).unwrap_or(usize::MAX);
     let refineries_wanted = demand
         .div_ceil(HARVESTERS_PER_BAY)
+        .max(if stock>=DENSITY_PER_HARVESTER*3 {2} else {1})
         .clamp(1, MAX_RESOURCE_BAYS);
     Targets {
         harvesters: demand.min(refineries.max(1).saturating_mul(HARVESTERS_PER_BAY)),
@@ -305,6 +306,9 @@ mod resource_target_tests {
     fn more_ore_supports_more_miners_and_more_unloading_bays() {
         assert_eq!(targets(55, 4, 1).harvesters, 1);
         assert_eq!(targets(110, 4, 1).harvesters, 2);
+        assert_eq!(targets(110, 4, 1).refineries, 1);
+        assert_eq!(targets(165, 4, 1).refineries, 2);
+        assert_eq!(targets(165, 4, 1).harvesters, 3);
         assert_eq!(targets(550, 4, 1).harvesters, HARVESTERS_PER_BAY);
         assert_eq!(targets(550, 4, 2).harvesters, HARVESTERS_PER_BAY * 2);
         assert_eq!(targets(550, 4, 1).refineries, MAX_RESOURCE_BAYS);

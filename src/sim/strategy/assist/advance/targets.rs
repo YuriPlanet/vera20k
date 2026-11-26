@@ -110,6 +110,14 @@ pub(super) fn choose_focused(
     // entity that is no longer in vision. Target selection must contain only
     // the currently seen enemy ids. Recon supplies a coordinate-only search
     // route when the live target list is empty.
+    // Air units or detached units on another island must not lend their
+    // reachability to the main ground column.
+    let land:Vec<_>=fighters.iter().copied().filter(|u|
+        ground_fighter(u,rules,obs)).collect();
+    let connected:Vec<_>=land.iter().copied().filter(|u|
+        super::super::orders::reachable(rules,obs,u.entity_id,anchor)).collect();
+    let fighters=if !connected.is_empty() {connected.as_slice()}
+        else if !land.is_empty() {land.as_slice()} else {fighters};
     let visible_ids: BTreeSet<u64> = obs.visible_enemy_entities()
         .map(|enemy| enemy.entity_id).collect();
     let structures: Vec<(&ObjectType, EnemyEntity)> = census
@@ -163,8 +171,19 @@ pub(super) fn choose_focused(
     let mut contact: Vec<_> = census.enemies.iter().filter(|e|
         visible_ids.contains(&e.entity_id) && !obs.visible_enemy_invulnerable(e.entity_id)
             && super::super::convergence::mobile_threat(rules,obs,e))
-        .filter_map(|e| super::super::convergence::local_rank(census,anchor,e)
-            .map(|rank| (rank,*e))).collect();
+        .filter_map(|e| {
+            let original=super::super::convergence::local_rank(census,anchor,e);
+            let mut local=fighters.iter().filter(|u|cell_distance(u.cell,e.cell)<=12
+                && u.controllable() && !u.in_service() && u.health_permille>=550
+                && unit_target_reachable(e,u,rules,obs));
+            let first=local.next();
+            let second=local.next();
+            let supported=first.zip(second).map(|(a,b)|{
+                let d=cell_distance(a.cell,e.cell).min(cell_distance(b.cell,e.cell));
+                (true,d,e.entity_id)
+            });
+            original.or(supported).map(|rank|(rank,*e))
+        }).collect();
     contact.sort_by_key(|(rank,_)| *rank);
     if let Some((_,enemy)) = contact.into_iter().take(REACHABLE_CANDIDATES)
         .find(|(_,e)| target_reachable(e,fighters,rules,obs)) {
@@ -201,7 +220,7 @@ pub(super) fn choose_focused(
         // alternative takes priority over a stale site across a cliff.
         let site = remembered_search.filter(|cell| fighters.iter().any(|unit|
             super::super::orders::reachable(rules,obs,unit.entity_id,*cell)));
-        let Some(cell) = site.or_else(|| searching_cell(obs, anchor)) else {
+        let Some(cell) = site.or_else(|| searching_cell(obs,anchor,fighters,rules)) else {
             return (Answer::NowhereToLook, progress);
         };
         targets.push(EnemyEntity {
@@ -225,8 +244,20 @@ pub(super) fn choose_focused(
         reachable_target(&alternatives,anchor,fighters,rules,obs)
     } else { None };
     let rotated = alternative.is_some();
-    let Some(nearest) = alternative.or_else(|| reachable_target(&targets, anchor, fighters, rules, obs)) else {
-        return (Answer::NoTarget, progress);
+    let Some(nearest) = alternative.or_else(|| reachable_target(&targets, anchor, fighters, rules, obs))
+        .or_else(|| {
+            let mobile:Vec<_>=census.enemies.iter().copied().filter(|e|
+                visible_ids.contains(&e.entity_id) && obs.object_type(rules,e.type_id)
+                    .is_some_and(|ty|ty.category!=ObjectCategory::Building)).collect();
+            reachable_target(&mobile,anchor,fighters,rules,obs)
+        }) else {
+        // Visible enemies on another island are not a reason to ignore
+        // unexplored reachable ground on this one.
+        let cell=remembered_search.filter(|cell|fighters.iter().any(|u|
+            super::super::orders::reachable(rules,obs,u.entity_id,*cell)))
+            .or_else(||searching_cell(obs,anchor,fighters,rules));
+        return (cell.map_or(Answer::NoTarget,|cell|Answer::Chosen(Chosen{
+            entity_id:0,cell,nearest:(0,cell),mopping_up:false,local_contact:false})),progress);
     };
     // A hostile forward base within reach of our ore chain is a defence
     // problem *now*, even if the army's first member stands nearer the
@@ -313,10 +344,7 @@ pub(super) fn choose_focused(
                 && obs.visible_enemy_house(power.entity_id) == Some(owner)
                 && cell_distance(power.cell, tower.cell) <= 28
                 && cell_distance(power.cell, anchor) <= 36
-                && fighters.iter().any(|unit|
-                    obs.can_hurt(rules, unit.entity_id, power.entity_id)
-                        && super::super::orders::reachable(
-                            rules, obs, unit.entity_id, power.cell))
+                && target_reachable(power,fighters,rules,obs)
         }).min_by_key(|(ty, power)| {
             (power_target_rank(cell_distance(anchor, power.cell), ty.power),
                 power.entity_id)
@@ -326,10 +354,12 @@ pub(super) fn choose_focused(
         .filter(|(_,enemy)| !rotated || super::super::convergence::outside_deferred(enemy,deferred))
         .filter(|(ty, enemy)| super::super::build::grants_a_strike(rules, ty)
             && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
-            && strike_on_approach(anchor, nearest.cell, enemy.cell))
+            && strike_on_approach(anchor, nearest.cell, enemy.cell)
+            && target_reachable(enemy,fighters,rules,obs))
         .min_by_key(|(_, enemy)| (cell_distance(enemy.cell, anchor), enemy.entity_id))
         .map_or(nearest, |(_, enemy)| *enemy));
-    let blockage = blocking_structure(&structures, anchor, campaign_target).filter(|blocker| {
+    let blockage = blocking_structure(&structures, anchor, campaign_target)
+        .filter(|blocker|target_reachable(blocker,fighters,rules,obs)).filter(|blocker| {
         // A disabled defensive tower is not a reason to cancel a power-plant
         // raid. Its now-silent cell can be skirted; an operational gun or a
         // solid wall along the route is still handled by normal cover rules.
@@ -340,14 +370,18 @@ pub(super) fn choose_focused(
         })
     });
     let target = match blockage {
-        Some(blocker) => covering_defense(&structures, blocker, rules, obs).unwrap_or(blocker),
-        None => covering_defense(&structures, campaign_target, rules, obs).unwrap_or(campaign_target),
+        Some(blocker) => covering_defense(&structures, blocker, rules, obs)
+            .filter(|e|target_reachable(e,fighters,rules,obs)).unwrap_or(blocker),
+        None => covering_defense(&structures, campaign_target, rules, obs)
+            .filter(|e|target_reachable(e,fighters,rules,obs)).unwrap_or(campaign_target),
     };
     // A neutral building is nobody's, so it is in no census and no target list;
     // it is still closed ground the fist walks into and stops at. Sampling the
     // line for one turns "the whole army is jammed at a civilian block" into a
     // demolition order.
     let (entity_id, cell) = neutral_blocker(census, obs, rules, anchor, target.cell)
+        .filter(|(id,cell)|obs.object_cell_and_type(*id).is_some_and(|(_,type_id)|
+            target_reachable(&EnemyEntity{entity_id:*id,type_id,cell:*cell},fighters,rules,obs)))
         .unwrap_or((target.entity_id, target.cell));
     (
         Answer::Chosen(Chosen {
@@ -598,7 +632,6 @@ pub(super) fn pick_reachable(
         .iter()
         .find(|target| can_reach(target.cell))
         .copied()
-        .or_else(|| nearest_first.first().copied())
 }
 
 /// The enemy structure nearest `from` that someone in the fist can walk to.
@@ -624,6 +657,11 @@ fn reachable_target(
             .is_some_and(|ty| ty.resource_destination);
         (local_objective_rank(cell_distance(target.cell, from), income), target.entity_id)
     });
+    if obs.is_campaign() {
+        return nearest_first.iter().find(|target|
+            !obs.visible_enemy_invulnerable(target.entity_id)
+            && target_reachable(target,fighters,rules,obs)).copied();
+    }
     let head = nearest_first.len().min(REACHABLE_CANDIDATES);
     let tail = &nearest_first[head..];
     nearest_first[..head].iter().chain(tail.iter().cycle()
@@ -635,26 +673,38 @@ fn reachable_target(
 /// Native damage admission plus reachable approach. The cell of a building
 /// can itself be occupied; a ready gun or nearby reachable perimeter is a
 /// legitimate attack opportunity even when the occupied centre is blocked.
-fn target_reachable(target: &EnemyEntity, fighters: &[&Unit], rules: &RuleSet,
-    obs: &Observation<'_>) -> bool {
+pub(super) fn ground_fighter(unit:&Unit,rules:&RuleSet,obs:&Observation<'_>)->bool {
+    matches!(unit.slot,super::super::census::Slot::Infantry|super::super::census::Slot::Vehicle)
+        && !unit.traits.aircraft && obs.object_type(rules,unit.type_id).is_some_and(|ty|
+            ty.movement_zone!=crate::rules::locomotor_type::MovementZone::Fly && !ty.jumpjet && !ty.balloon_hover)
+}
+
+pub(super) fn unit_target_reachable(target:&EnemyEntity,unit:&Unit,rules:&RuleSet,obs:&Observation<'_>)->bool {
     use crate::sim::control::observation::Engage;
-    fighters.iter().any(|unit| {
-        let id = unit.entity_id;
-        let reachable = |cell| super::super::orders::reachable(rules,obs,id,cell);
-        if target.entity_id == 0 { return reachable(target.cell); }
-        if !obs.can_hurt(rules,id,target.entity_id) { return false; }
-        match obs.engage(rules,id,target.entity_id) {
-            Engage::Cannot => false,
-            Engage::Ready => true,
-            Engage::OutOfRange => reachable(target.cell) ||
-                (obs.object_type(rules,target.type_id).is_some_and(|ty| ty.category==ObjectCategory::Building)
-                    && [(-2i32,0),(2,0),(0,-2),(0,2)].iter().any(|(dx,dy)| {
-                        let (Ok(x),Ok(y)) = (u16::try_from(i32::from(target.cell.0)+dx),
-                            u16::try_from(i32::from(target.cell.1)+dy)) else { return false; };
-                        obs.is_cell_in_playfield(x,y) && reachable((x,y))
-                    })),
+    let id=unit.entity_id;
+    let reachable=|cell| super::super::orders::reachable(rules,obs,id,cell);
+    if target.entity_id==0 {return reachable(target.cell);}
+    if !obs.can_hurt(rules,id,target.entity_id) {return false;}
+    match obs.engage(rules,id,target.entity_id) {
+        Engage::Cannot=>false,
+        Engage::Ready=>true,
+        Engage::OutOfRange=>{
+            if obs.object_type(rules,target.type_id).is_some_and(|ty|ty.category==ObjectCategory::Building) {
+                obs.object_type(rules,unit.type_id).is_some_and(|ty|
+                    ty.movement_zone==crate::rules::locomotor_type::MovementZone::Fly
+                    || if obs.is_campaign() {
+                        super::super::orders::campaign_building_approachable(
+                            rules,obs,ty.movement_zone,unit.cell,target.entity_id)
+                    } else {
+                        super::super::orders::building_approachable(obs,ty.movement_zone,unit.cell,target.cell)
+                    })
+            } else {reachable(target.cell)}
         }
-    })
+    }
+}
+
+fn target_reachable(target:&EnemyEntity,fighters:&[&Unit],rules:&RuleSet,obs:&Observation<'_>)->bool {
+    fighters.iter().any(|unit|unit_target_reachable(target,unit,rules,obs))
 }
 
 /// The enemy structure nearest `from`, ties going to the earlier one in

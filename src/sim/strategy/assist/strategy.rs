@@ -69,6 +69,7 @@ pub(super) enum Objective {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct Signals {
+    pub(super) campaign: bool,
     pub(super) yards: usize,
     pub(super) yard_makers: usize,
     pub(super) refineries: usize,
@@ -83,6 +84,12 @@ pub(super) struct Signals {
 }
 
 impl Signals {
+    pub(super) fn economy_ok_for_preparation(self)->bool {
+        self.yards>0 && self.refineries>0 && self.harvesters>=2
+            && self.raiders_visible==0 && (self.credits>=6500
+                || self.income_per_minute.is_some_and(|rate|rate>=1200))
+    }
+
     fn economy_ok(self) -> bool {
         self.refineries > 0 && self.harvesters > 0
     }
@@ -112,7 +119,8 @@ impl Signals {
 fn should_expand_while_fighting(signals: Signals) -> bool {
     signals.can_expand()
         && (signals.attack_members < squads::ARMY_TO_ATTACK
-            || (signals.far_ore_stock >= FAR_FIELD_STOCK * 2 && signals.credits >= 7_000))
+            || (signals.far_ore_stock >= FAR_FIELD_STOCK * 2 && signals.fighters>=8
+                && (signals.credits>=5_500 || signals.income_per_minute.is_some_and(|rate|rate>=1_800))))
 }
 
 /// The known, unserved ore, not the omniscient native overlay grid. This is
@@ -158,6 +166,7 @@ impl Signals {
             }
         }).count();
         Self {
+            campaign: obs.is_campaign(),
             yards: census.yards,
             yard_makers: census.yard_makers,
             refineries: census.refineries,
@@ -187,6 +196,8 @@ pub(super) struct Director {
     force_samples: VecDeque<(u64, i32)>,
     loss_recovery_since: Option<u64>,
     had_income_chain: bool,
+    had_yard: bool,
+    field_operation: bool,
 }
 
 impl Director {
@@ -213,12 +224,23 @@ impl Director {
         self.initialized && self.objective == Objective::HoldBase
     }
 
+    /// A campaign can deliberately begin with a barracks or field army
+    /// instead of a construction yard. Do not invent a lost-base emergency.
+    pub(super) fn field_operation(&self) -> bool { self.field_operation }
+
     pub(super) fn rebuilding_force(&self) -> bool {
         self.loss_recovery_since.is_some()
     }
 
+    /// A loss elsewhere is not authority to recall a healthy local force.
+    /// Keep the loss detector for diagnosis; only a current home raid makes
+    /// its old global recovery restrictions relevant.
+    pub(super) fn recovering_under_fire(&self) -> bool {
+        self.rebuilding_force() && self.under_attack_now()
+    }
+
     pub(super) fn emergency_spending(&self, obs: &Observation<'_>) -> bool {
-        (self.initialized && (self.rebuilding_force()
+        (self.initialized && (self.recovering_under_fire()
             || self.objective == Objective::RecoverYard
             || (self.had_income_chain && self.recovering_income())))
             || (obs.power_balance() < 0 && !obs.power_blackout_active())
@@ -232,7 +254,7 @@ impl Director {
         if !self.initialized {
             return true;
         }
-        if self.rebuilding_force() {
+        if self.recovering_under_fire() {
             return matches!(item, Item::Power | Item::Refinery | Item::Barracks
                 | Item::Weapons | Item::Support | Item::Repair);
         }
@@ -290,6 +312,8 @@ impl Director {
     /// particular, one cleared threat cell does not immediately resume buying
     /// expansion, and a newly lost last harvester interrupts any luxury plan.
     pub(super) fn observe(&mut self, now: u64, signals: Signals) -> Option<(Objective, Objective)> {
+        self.had_yard |= signals.yards>0;
+        self.field_operation=signals.campaign && !self.had_yard && signals.yards==0;
         self.raided_now = signals.raiders_visible > 0;
         if signals.raiders_visible > 0 {
             self.last_raid_at = Some(now);
@@ -306,9 +330,10 @@ impl Director {
             .is_some_and(|at| now.saturating_sub(at) < BASE_QUIET_FRAMES);
         let economy_recovered = self.income_stable_since
             .is_some_and(|at| now.saturating_sub(at) >= ECONOMY_STABLE_FRAMES);
-        let desired = if signals.yards == 0 {
+        let desired = if signals.yards == 0 && !self.field_operation {
             Objective::RecoverYard
-        } else if !signals.economy_ok() || !economy_recovered {
+        } else if (!self.field_operation || self.had_income_chain || signals.refineries>0)
+            && (!signals.economy_ok() || !economy_recovered) {
             Objective::RecoverIncome
         } else if threatened {
             Objective::HoldBase
@@ -458,6 +483,28 @@ mod tests {
     }
 
     #[test]
+    fn a_yardless_campaign_is_not_a_lost_yard_or_income_emergency() {
+        let mut director=Director::default();
+        let s=Signals {campaign:true, fighters:3, credits:1500, ..Default::default()};
+        director.observe(0,s);
+        assert!(director.field_operation());
+        assert_eq!(director.objective(),Objective::Muster);
+        assert!(!director.recovering_income());
+        director.observe(400,Signals{yards:1,..s});
+        assert!(!director.field_operation());
+        director.observe(401,s);
+        assert_eq!(director.objective(),Objective::RecoverYard);
+    }
+
+    #[test]
+    fn a_yardless_skirmish_keeps_native_recovery_policy() {
+        let mut director=Director::default();
+        director.observe(0,Signals{fighters:3,credits:1500,..Default::default()});
+        assert!(!director.field_operation());
+        assert_eq!(director.objective(),Objective::RecoverYard);
+    }
+
+    #[test]
     fn current_base_loss_preempts_every_other_objective() {
         let mut director = Director::default();
         let mut s = base();
@@ -485,7 +532,8 @@ mod tests {
         assert!(director.rebuilding_force());
         assert!(!director.may_expand());
         assert!(director.permits_build(Item::Weapons));
-        assert!(!director.permits_build(Item::Tech));
+        assert!(!director.recovering_under_fire());
+        assert!(director.permits_build(Item::Tech));
         s.fighting_points = 1_300;
         director.observe(1_209, s);
         assert!(director.rebuilding_force());
@@ -494,6 +542,26 @@ mod tests {
         s.fighting_points = 1_500;
         director.observe(1_211, s);
         assert_eq!(director.objective(), Objective::ExpandOre);
+    }
+
+    #[test]
+    fn loss_recovery_only_holds_offense_during_a_current_raid() {
+        let mut director = Director::default();
+        let mut s = base();
+        ready(&mut director, s);
+        s.fighting_points = 100;
+        director.observe(520, s);
+        assert!(director.rebuilding_force());
+        assert!(!director.recovering_under_fire());
+        assert!(director.permits_build(Item::Tech));
+        s.raiders_visible = 2;
+        director.observe(521, s);
+        assert!(director.recovering_under_fire());
+        assert!(!director.permits_build(Item::Tech));
+        s.raiders_visible = 0;
+        director.observe(522, s);
+        assert!(director.rebuilding_force());
+        assert!(!director.recovering_under_fire());
     }
 
     #[test]

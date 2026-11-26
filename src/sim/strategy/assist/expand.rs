@@ -771,54 +771,28 @@ pub(super) fn expansion_is_worth_saving_for(
     rules: &RuleSet,
     obs: &Observation<'_>,
 ) -> bool {
-    // An optional second yard must have strategic permission. This is not
-    // the lost-yard recovery path, which still buys its MCV unconditionally.
-    if !brain.director.may_expand() || brain.mobilization.active() || brain.campaign.economy_resting() {
-        return false;
+    if obs.is_campaign() && brain.director.field_operation() {return false;}
+    if brain.director.emergency_spending(obs) || brain.director.under_attack_now()
+        || brain.director.recovering_income() || brain.director.rebuilding_force()
+        || brain.mobilization.active() || brain.campaign.economy_resting()
+        || obs.power_blackout_active() || obs.power_balance()<0
+        || !yard_stands(&brain.census) || owns_yard_maker(&brain.census)
+        || brain.census.yards>=3 {return false;}
+    if brain.director.initialized() {
+        let stock=brain.expansion_ore.iter().filter(|(cell,_)|
+            !super::orders::hostile_mining_ground(brain,**cell)
+            && brain.census.yard_cells.iter().all(|at|cell_distance(**cell,*at)>22)
+            && brain.census.refinery_cells.iter().all(|at|cell_distance(**cell,*at)>16))
+            .fold(0u32,|n,(_,stage)|n.saturating_add(u32::from(*stage)+1));
+        let viable=brain.director.may_expand() || (!obs.is_campaign()
+            && (brain.campaign.preparation().is_some()
+                || brain.income.per_minute().is_some_and(|rate|rate>=1800)
+                || obs.credits()>=5500));
+        if !viable || brain.census.refineries==0 || brain.census.harvesters<2
+            || brain.census.available_fighters()<6 || stock<(if brain.census.yards>=2 {64}else{24})
+        {return false;}
     }
-    if brain.director.initialized() && (brain.census.refineries == 0
-        || brain.census.harvesters < 2 || brain.census.available_fighters() < 8
-        || brain.census.base_cell.is_none_or(|home| !far_ore(&brain.ore_known,home))) {
-        return false;
-    }
-    if !yard_stands(&brain.census) || owns_yard_maker(&brain.census) {
-        return false;
-    }
-    // A second base is the ordinary case; a third needs a reason, and the reason
-    // is the wishlist's "矿点距离": ore worth a base of its own, standing beyond
-    // the ring the first base covers. A house that opens bases with no ore in
-    // them has bought 2500 credits of ground it cannot use.
-    //
-    // The ore walk is a whole-map scan, so it is cached and refreshed on a slow
-    // cadence rather than asked per frame.
-    if brain.census.yards > MAX_YARDS {
-        return false;
-    }
-    let too_many = brain.census.yards >= MAX_YARDS;
-    if too_many {
-        let Some(home) = brain.census.base_cell else {
-            return false;
-        };
-        if !far_ore(&brain.ore_known, home) {
-            return false;
-        }
-    }
-    // The first base has to exist, and that is the whole test.
-    //
-    // An earlier arm also asked `harvesters_served` and then "one truck and one
-    // bay", and the log says why neither worked: `harv=0 ref=0` holds for the
-    // first ~1800 frames while the wallet falls from 10000 to 5000, so every
-    // frame with money in it was a frame where the precondition refused. By the
-    // time a truck existed the factories had spent the opening, and the price
-    // was never reached again.
-    //
-    // A second base is bought out of the opening's own credits or not at all,
-    // and holding part of them back is exactly what `yard_reserve` is for. The
-    // manufactory gate (`ExpansionNeeds`) is the real question: `AMCV` carries
-    // `Prerequisite=GAWEAP,GADEPT`, so a house without a service depot cannot
-    // buy one whatever it holds, and `expansion_site` already refuses when the
-    // rules offer no maker.
-    yard_type(rules, obs).is_some()
+    yard_type(rules,obs).is_some()
 }
 
 /// What a second base costs before it produces anything: the maker plus the
@@ -886,8 +860,9 @@ fn deploy_second_yard(
         let progress = if cell != last_cell { obs.tick() } else { progress };
         let reachable = obs.entity_type(rules, entity_id).is_some_and(|ty|
             obs.can_reach(ty.movement_zone, cell, site));
-        if !risk.site(&brain.census,Some(cell),site) { return; }
-        if brain.blocked_expansion_sites.contains_key(&site)
+        if !risk.site(&brain.census,Some(cell),site)
+            || super::orders::hostile_mining_ground(brain,site)
+            || brain.blocked_expansion_sites.contains_key(&site)
             || !reachable || maker_trip_stalled(obs.tick(), progress)
         {
             brain.maker_journeys.remove(&entity_id);
@@ -1098,17 +1073,25 @@ pub(super) fn expansion_site(
     // The deploy's own answer for this cell. With a maker on the field the
     // question is asked with the maker's body lifted -- the deploy lifts it
     // -- and without one the ground has to be clear of everything.
-    let maker_position = maker.and_then(|id| {
-        brain.census.units.iter().find(|unit| unit.entity_id == id).and_then(|unit| {
-            let ty = obs.object_type(rules, unit.type_id)?;
-            Some((unit.cell, ty.movement_zone))
-        })
-    });
+    let maker_position=maker.and_then(|id|brain.census.units.iter()
+        .find(|u|u.entity_id==id).and_then(|u|{
+            Some((u.cell,obs.object_type(rules,u.type_id)?.movement_zone))
+        })).or_else(||{
+            if maker.is_some(){return None;}
+            let (ty,_)=yard_maker(rules,obs)?;
+            let factory=obs.current_producer(rules,ty)?;
+            let at=obs.observed_object_cell(factory)?;
+            let entry=super::census::rally_near(obs,at,&brain.census.home_cells)?;
+            Some((entry,ty.movement_zone))
+        });
     let risk=super::site_risk::YardSurvey::read(rules,obs,yard,maker);
+    let route_safe=|cell:(u16,u16)|maker_position.is_none_or(|(from,zone)|
+        obs.can_reach(zone,from,cell) && brain.mining_hostile_sites.values().all(|(at,radius,_)|
+            !super::tactics::path_enters_control_box(from,cell,*at,*radius)));
     let admits = |cell: (u16, u16)| {
-        if rejected.contains(&cell) || !risk.site(&brain.census,maker_position.map(|p|p.0),cell) { return false; }
-        let reachable = maker_position.is_none_or(|(from, zone)| obs.can_reach(zone, from, cell));
-        reachable && match maker {
+        if rejected.contains(&cell) || super::orders::hostile_mining_ground(brain,cell)
+            || !risk.site(&brain.census,maker_position.map(|p|p.0),cell) {return false;}
+        route_safe(cell) && match maker {
             Some(id) => obs.deploy_admits_at(rules, id, yard, cell),
             None => obs.clear_for_deploy(rules, yard, cell),
         }
@@ -1117,9 +1100,7 @@ pub(super) fn expansion_site(
     // map's ground, and a maker that re-aims on every probe spends the match
     // walking between two patches instead of reaching one.
     if let Some((selected_at, Some(site))) = brain.expansion_probe {
-        let reachable = maker_position.is_none_or(|(from, zone)| {
-            obs.can_reach(zone, from, site)
-        });
+        let reachable=route_safe(site);
         // MCVs are large. A transient tank or harvester on the foundation
         // changes deploy_admits_at without making the ore field a bad plan.
         // Keep walking toward the committed site for a bounded period instead
@@ -1127,6 +1108,10 @@ pub(super) fn expansion_site(
         let travelling_to_site = maker.is_some_and(|id|
             obs.destination(id) == Some(site));
         if !rejected.contains(&site)
+            && !super::orders::hostile_mining_ground(brain,site)
+            && (!brain.director.initialized() || brain.expansion_ore.keys().any(|ore|
+                cell_distance(*ore,site)<=EXPAND_ORE_RING
+                && !super::orders::hostile_mining_ground(brain,*ore)))
             && risk.site(&brain.census,maker_position.map(|p|p.0),site)
             && reachable
             && (travelling_to_site
@@ -1141,25 +1126,33 @@ pub(super) fn expansion_site(
         brain.expansion_probe = Some((tick, None));
         return None;
     };
-    // An MCV already on the map may outlive the distant ore that justified
-    // its purchase. Never turn that into permission to deploy at a random
-    // roadside fallback: hold the maker at a safe rally point until the
-    // player has actually discovered another distant field.
-    if brain.director.initialized()
-        && expansion_aim(&brain.ore_known, home, &brain.census.home_cells).is_none()
-    {
-        brain.expansion_probe = Some((tick, None));
-        return None;
-    }
-    let found = search_expansion_site(
-        &brain.ore_known,
-        obs,
-        home,
-        &brain.census.home_cells,
-        yard,
-        &admits,
-        &super::terrain::Space::read(obs, rules, &brain.census.home_cells, brain.census.base_cell),
-    );
+    let known=if brain.director.initialized() {
+        &brain.expansion_ore
+    }else{&brain.ore_known};
+    let usable:std::collections::BTreeMap<_,_>=known.iter()
+        .filter(|(cell,_)|!super::orders::hostile_mining_ground(brain,**cell)
+            && (!brain.director.initialized()
+                || brain.census.refinery_cells.iter().all(|bay|cell_distance(**cell,*bay)>16))
+            && (!obs.is_cell_visible(cell.0,cell.1) || super::ore::at(rules,obs,**cell)))
+        .map(|(cell,stage)|(*cell,*stage)).collect();
+    let space=super::terrain::Space::read(obs,rules,&brain.census.home_cells,Some(home));
+    let found=if brain.director.initialized() {
+        // A rich field on the wrong island or with no legal foundation
+        // must not mask the next safe field. Bucket centres are real seen
+        // ore cells. Bound expensive placement probes to six alternatives.
+        let mut patches=super::ore::ore_patches(&usable);
+        patches.retain(|patch|patch.stock>=8
+            && brain.census.yard_cells.iter().all(|at|cell_distance(*at,patch.cell)>22)
+            && maker_position.is_some_and(|(from,zone)|obs.can_reach(zone,from,patch.cell)));
+        patches.sort_by_key(|patch|(std::cmp::Reverse(patch.stock),
+            cell_distance(home,patch.cell),patch.cell));
+        patches.into_iter().take(6).find_map(|patch|
+            search_rings_from(obs,&brain.census.home_cells,patch.cell,0,EXPAND_ORE_RING,
+                &|site|admits(site) && brain.census.yard_cells.iter().all(|at|
+                    cell_distance(*at,site)>=22),&space))
+    }else{
+        search_expansion_site(&usable,obs,home,&brain.census.home_cells,yard,&admits,&space)
+    };
     if found.is_some() {
         log::info!("auto play: second base site at {found:?}",);
     }
