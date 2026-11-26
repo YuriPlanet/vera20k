@@ -117,7 +117,7 @@ VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉ�
 
 <ul type="none">
   <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30</a></li>
-  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
 ## เครดิตและข้อกฎหมาย

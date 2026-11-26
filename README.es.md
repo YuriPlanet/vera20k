@@ -134,7 +134,7 @@ Pagos a los colaboradores:
 
 <ul type="none">
   <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 contra 29 IA en dificultad brutal en Arctic Circle 30</a></li>
-  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
 ## Créditos y aviso legal

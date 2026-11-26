@@ -131,7 +131,7 @@ Katkıda bulunanlara ödeme yöntemleri:
 
 <ul type="none">
   <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30 haritasında 1 oyuncuya karşı 29 Brutal yapay zekâ</a></li>
-  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
 ## Teşekkürler ve yasal bilgiler

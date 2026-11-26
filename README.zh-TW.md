@@ -124,7 +124,7 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
 
 <ul type="none">
   <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30：1 對 29 個冷酷 AI</a></li>
-  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
 ## 致謝與法律宣告

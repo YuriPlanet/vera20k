@@ -131,7 +131,7 @@ Các hình thức chi trả cho người đóng góp:
 
 <ul type="none">
   <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 đấu 29 AI độ khó Brutal trên Arctic Circle 30</a></li>
-  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
 ## Ghi công và pháp lý

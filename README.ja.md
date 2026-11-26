@@ -111,7 +111,7 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 
 <ul type="none">
   <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30 で 1 対 29（難易度 Brutal の AI）</a></li>
-  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
 ## 謝辞と法的事項
