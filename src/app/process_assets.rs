@@ -757,24 +757,15 @@ impl ProcessAssets {
         if self.startup_kratos {
             bytes.extend_from_slice(b"kratos on\0");
         }
-        // VERA: the NPatch launch setting and what it made the startup rules
-        // play, which the digested sources leave out: On plays features and
-        // fixes in every game, Off ignores their keys, and Auto follows them.
-        // A peer on another setting with the same files must not agree.
+        // VERA: what the NPatch launch setting made the startup rules play,
+        // which the digested sources leave out: On adds both, Off disables
+        // both, and Auto follows the data. A peer whose same files play the
+        // other answer must not agree.
         if self.startup_npatch {
             bytes.extend_from_slice(b"npatch features on\0");
         }
         if self.startup_npatch_fixes {
             bytes.extend_from_slice(b"npatch fixes on\0");
-        }
-        match self.npatch_setting {
-            crate::util::npatch_launch::NpatchSetting::Auto => {}
-            crate::util::npatch_launch::NpatchSetting::On => {
-                bytes.extend_from_slice(b"npatch setting on\0");
-            }
-            crate::util::npatch_launch::NpatchSetting::Off => {
-                bytes.extend_from_slice(b"npatch setting off\0");
-            }
         }
         // VERA: RA2 mode (docs/ra2-mode.md) also plays RA2's rules in the
         // simulation (`util::ra2_launch`), which its INI roots alone do not
@@ -1018,11 +1009,6 @@ impl ProcessAssets {
             kratos: self.startup_kratos,
             npatch: self.startup_npatch,
             npatch_fixes: self.startup_npatch_fixes,
-            npatch_setting: match self.npatch_setting {
-                crate::util::npatch_launch::NpatchSetting::Auto => None,
-                crate::util::npatch_launch::NpatchSetting::On => Some("on"),
-                crate::util::npatch_launch::NpatchSetting::Off => Some("off"),
-            },
             ini_roots_stock: self.stock_ini_roots(),
             // As the digest counts it.
             ra2: crate::util::ra2_launch::enabled(),
@@ -1648,13 +1634,17 @@ mod tests {
 
         let install = audio_test_install("npatch-agreement");
         for (file, data) in [
-            ("rulesmd.ini", "[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\n"),
             ("aimd.ini", "[AI]\nValue=1\n"),
         ] {
             std::fs::write(install.path().join(file), data).unwrap();
         }
         std::fs::write(install.path().join("artmd.ini"), "[GI]\n").unwrap();
-        let game = |setting| {
+        let game = |setting, general: &str| {
+            std::fs::write(
+                install.path().join("rulesmd.ini"),
+                format!("{general}[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\n"),
+            )
+            .unwrap();
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
                 .with_npatch_setting(setting);
             let assets = process.reconstruct_manager(install.path()).unwrap();
@@ -1667,19 +1657,21 @@ mod tests {
                 parts["settings"].clone(),
             )
         };
-        let stock = game(Auto);
+        let stock = game(Auto, "");
         assert!(stock.1.get("npatch").is_none());
         assert!(stock.1.get("npatch_fixes").is_none());
-        assert!(stock.1.get("npatch_setting").is_none());
-        let off = game(Off);
-        assert_ne!(off.0, stock.0);
-        assert_eq!(off.1["npatch_setting"].as_str(), Some("off"));
-        assert!(off.1.get("npatch").is_none());
-        let enabled = game(On);
+        let off_stock = game(Off, "");
+        assert_eq!(off_stock, stock, "Off on stock data changes nothing");
+        let off_data = game(Off, "[General]\nNPatch=yes\n");
+        assert_ne!(off_data.0, stock.0);
+        assert!(off_data.1.get("npatch").is_none());
+        let auto_data = game(Auto, "[General]\nNPatch=yes\n");
+        assert_eq!(auto_data.1["npatch"], serde_json::Value::Bool(true));
+        assert_eq!(auto_data.1["npatch_fixes"], serde_json::Value::Bool(true));
+        let enabled = game(On, "");
         assert_ne!(enabled.0, stock.0);
         assert_eq!(enabled.1["npatch"], serde_json::Value::Bool(true));
         assert_eq!(enabled.1["npatch_fixes"], serde_json::Value::Bool(true));
-        assert_eq!(enabled.1["npatch_setting"].as_str(), Some("on"));
     }
 
     #[test]

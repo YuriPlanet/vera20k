@@ -31,8 +31,9 @@ Extensions), is the stronger outer answer and holds from one start to the next. 
 plays every NPatch feature and NPExt fix, `[General] NPatch=no` included; **Off** ignores
 the global and every feature key; **Auto** keeps the data answer above. The processed
 rules carry the setting, so a save, a replay and every peer reach the same answer, and the
-effective switch is part of the network agreement (`settings.npatch`,
-`settings.npatch_fixes`, and `settings.npatch_setting` while not Auto).
+effective switches are part of the network agreement (`settings.npatch` and
+`settings.npatch_fixes`); the loaded match's start also compares the NPatch answer a
+map or mode can change.
 
 Without the global key, `rules::npatch_switch` decides per game from any key only an NPatch
 reader found (`VehicleParachute`, `DisableParallelAIQueues` or its ext173 name

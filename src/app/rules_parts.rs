@@ -90,11 +90,6 @@ pub(crate) struct RulesSettings {
     /// original parts.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(crate) npatch_fixes: bool,
-    /// The player's launch setting where it is not Auto (`on` or `off`):
-    /// Off ignores keys Auto may follow, so peers must see it. Left out while
-    /// Auto, so a game without the setting keeps its original parts.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) npatch_setting: Option<&'static str>,
     /// The INI roots listed under `resources` and the theater suffix are all
     /// YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
@@ -241,7 +236,6 @@ impl RulesParts {
                 kratos: false,
                 npatch: false,
                 npatch_fixes: false,
-                npatch_setting: None,
                 ini_roots_stock: true,
                 ra2: false,
                 resources: None,

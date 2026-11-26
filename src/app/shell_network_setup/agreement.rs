@@ -285,6 +285,14 @@ pub(crate) fn start_rules(
     if rules.kratos() {
         rules_digest.push_str(" kratos");
     }
+    // NPatch's launch setting and the map's keys can turn it on where the
+    // room's startup digest saw neither; the loaded rules name both answers.
+    if rules.npatch() {
+        rules_digest.push_str(" npatch");
+    }
+    if rules.npatch_fixes() {
+        rules_digest.push_str(" npatch fixes");
+    }
     rules_digest
 }
 
