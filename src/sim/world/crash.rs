@@ -435,7 +435,7 @@ impl Simulation {
             }
         } else if crashable {
             self.set_object_height(id, 0, rules, frame_effects);
-            let bridge_state_changed = if balloon_hover {
+            let bridge_state_changed = if balloon_hover || rules.npatch() {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
             } else {
                 self.unit_death_explosion(

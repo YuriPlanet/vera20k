@@ -69,6 +69,15 @@ pub(crate) fn in_game_key_edge(
             .formation_line
             .release_key(edge.physical);
     }
+    // NPatch (NPExt item 95, #2941): a release clears the held key even when
+    // the pause gate below refuses the edge, so a key held when the match is
+    // paused or detached cannot leave camera scroll running afterwards.
+    if state.rules().is_some_and(|rules| rules.npatch()) && !edge.state.is_pressed() {
+        state.match_state.input.keys_held.remove(&edge.physical);
+        if let Some(scroll_key) = hotkeys::physical_scroll_key(edge.physical) {
+            state.match_state.input.keys_held.remove(&scroll_key);
+        }
+    }
     // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
