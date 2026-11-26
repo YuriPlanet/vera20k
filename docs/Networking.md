@@ -29,6 +29,12 @@ password or delete it ([Accounts](lobby-protocol.md#accounts)). Players then cre
 or join a game. A host can select Easy, Normal or Hard AI from an open player slot in
 Battle or Free For All.
 
+In a desktop online room, **Choose Map → Online Maps** lets the host browse the
+same categories as the website. A map may appear in several categories, including
+after the host downloads it. A public, optional [category feed](lobby-protocol.md#map-library)
+only filters the host's picker. Mixed rooms, releases without category support and
+rollbacks use the existing room map selection and transfer messages.
+
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
