@@ -142,7 +142,7 @@ pub fn paid_pair_source<'r>(
     // writes -1); Fire_SW pairs it with the House's last Super. The
     // ticket pairs it with the first ChronoSphere whose player click
     // selects it (1006ED30), the source that click leaves last.
-    let source = if sw.kind.has_ares_handler() {
+    let source = if sw.launch_kind(rules).has_ares_handler() {
         rules.super_weapon_order.iter().find_map(|name| {
             let source = rules.super_weapon(name)?;
             (source.kind == crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere
@@ -972,7 +972,7 @@ impl SuperWeaponInstance {
                 self.charge_drain_state = 0;
             }
             if sw.uses_extension_rules(rules)
-                && sw.kind.has_ares_handler()
+                && sw.launch_kind(rules).has_ares_handler()
                 && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
             {
                 // These handlers already retain successful launch history.
@@ -2017,10 +2017,17 @@ pub(super) fn deactivate_ares_handler(
     is_player: bool,
     effects: &mut FrameEffects<'_>,
 ) {
-    if !sw.kind.has_ares_handler() {
+    // A built-in Iron Curtain has no Protect deactivation work and leaves
+    // the stock-way map's House Tags alone.
+    let kind = if rules.ares_form() {
+        sw.launch_kind(rules)
+    } else {
+        sw.kind
+    };
+    if !kind.has_ares_handler() {
         return;
     }
-    match sw.kind {
+    match kind {
         crate::rules::superweapon_type::SuperWeaponKind::Battery => {
             battery::deactivate(sim, rules, owner, sw);
         }

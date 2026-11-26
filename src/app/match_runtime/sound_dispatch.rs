@@ -431,9 +431,8 @@ pub(super) fn dispatch_sim_sound_events(
                         });
                     }
                 }
-                // Ares SW_Protect::Activate10074750: StartSound at the cell.
-                if ares
-                    && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
+                // Ares 3.0p1 SW_Protect::Activate (0x100758AF): StartSound at the cell.
+                if sw.launch_kind(rules) == crate::rules::superweapon_type::SuperWeaponKind::Protect
                     && let Some(sound_id) = sw.start_sound.as_deref()
                 {
                     output.push(GameSoundEvent::VocAt {
@@ -463,7 +462,7 @@ pub(super) fn dispatch_sim_sound_events(
                 // A handler's launch (hook 6CC390) skips the stock case: its
                 // EVA and cleanup are the common Launch's own facts, its
                 // sounds the handler's.
-                let ares_handler = ares && sw.ares_eva().is_some();
+                let ares_handler = sw.ares_eva(rules).is_some();
                 let mut cue = if ares_handler
                     || sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
                 {
@@ -501,7 +500,7 @@ pub(super) fn dispatch_sim_sound_events(
                             sw,
                             eva_producers::SuperWeaponEvaStage::Activated,
                             cue.eva_event,
-                            ares,
+                            rules,
                         )
                     })
                     .flatten()
@@ -896,7 +895,7 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::AresSuperWeaponActivatedEva { sw_type } => {
                 let Some(event) = rules
                     .super_weapon(sim.interner().resolve(sw_type))
-                    .and_then(|sw| sw.ares_eva())
+                    .and_then(|sw| sw.ares_eva(rules))
                     .and_then(|eva| eva.activated())
                     .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
                 else {
@@ -1109,7 +1108,7 @@ pub(super) fn dispatch_sim_sound_events(
                         sw,
                         eva_producers::SuperWeaponEvaStage::Ready,
                         eva_producers::super_weapon_ready_event(sw.kind),
-                        ares,
+                        rules,
                     )
                 }) else {
                     continue;
@@ -1132,7 +1131,7 @@ pub(super) fn dispatch_sim_sound_events(
                 }
                 let Some(event) = rules
                     .super_weapon(sim.interner().resolve(sw_type))
-                    .and_then(|sw| sw.ares_eva())
+                    .and_then(|sw| sw.ares_eva(rules))
                     .and_then(|eva| eva.ready())
                 else {
                     continue;
@@ -1161,7 +1160,7 @@ pub(super) fn dispatch_sim_sound_events(
                             sw,
                             eva_producers::SuperWeaponEvaStage::Detected,
                             eva_producers::super_weapon_detected_event(sw.kind, index),
-                            ares,
+                            rules,
                         )
                     })
                 else {
@@ -3575,16 +3574,31 @@ mod tests {
     fn construction_detection_uses_the_shared_extension_building_gate() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
-        // The Iron Curtain keeps its stock handler under Ares, so its line
-        // comes off the list index: slot 0 is EVA_NuclearSiloDetected.
+        use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+        use crate::rules::sound_ini::EvaRegistry;
+        use std::sync::Arc;
         let ini = crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=IronCurtain\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
         );
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(
-            &ini,
-            &IniFile::from_str("[AUX]\nFoundation=1x1\n[VETO]\nFoundation=1x1\n"),
+        // SW_Protect::Initialize (Ares 3.0p1 0x10075C10) looks up the fixed
+        // EVA line even when the Iron Curtain is in SuperWeaponTypes slot 0.
+        let mut rules_owner = NativeRulesProcessOwner::from_cold_start_sources(
+            ini,
+            None,
+            IniFile::from_str("[AUX]\nFoundation=1x1\n[VETO]\nFoundation=1x1\n"),
+            Arc::default(),
+            Arc::new(EvaRegistry::from_ini(&IniFile::from_str(
+                "[DialogList]\n0=EVA_IronCurtainDetected\n",
+            ))),
         )
         .unwrap();
+        let (rules, ..) = rules_owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
@@ -3610,7 +3624,7 @@ mod tests {
         sim.spawn_object_at_height("AUX", "Russians", 6, 6, 0, 0, &rules)
             .unwrap();
         assert!(
-            matches!(hear(&sim).as_slice(), [GameSoundEvent::Eva { event, .. }] if event == "EVA_NuclearSiloDetected")
+            matches!(hear(&sim).as_slice(), [GameSoundEvent::Eva { event, .. }] if event == "EVA_IronCurtainDetected")
         );
         sim.spawn_object_at_height("VETO", "Russians", 8, 8, 0, 0, &rules)
             .unwrap();

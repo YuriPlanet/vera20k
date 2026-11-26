@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
 use crate::util::native_x87::NativeF64Bits;
 
 use super::{RuleSet, default_fog_rate, default_shroud_rate};
@@ -1267,18 +1268,28 @@ impl RuleSet {
             "Ares.SuperWeaponMoney".hash(&mut hasher);
             superweapon_money.hash(&mut hasher);
         }
-        if self.ares {
-            let default = crate::rules::superweapon_type::AresSuperWeaponPresentation::default();
-            let presentation = Self::by_upper_id(
-                self.super_weapons
-                    .iter()
-                    .filter(|(_, sw)| sw.presentation != default)
-                    .map(|(id, sw)| (id, &sw.presentation)),
-            );
-            if !presentation.is_empty() {
-                "Ares.SuperWeaponPresentation".hash(&mut hasher);
-                presentation.hash(&mut hasher);
-            }
+        let redirected_iron_curtain = |sw: &SuperWeaponType| {
+            sw.kind == SuperWeaponKind::IronCurtain
+                && sw.launch_kind(self) == SuperWeaponKind::Protect
+        };
+        if self.super_weapons.values().any(redirected_iron_curtain) {
+            // Older scenario saves can contain Iron Curtain records without
+            // Protect's retained defaults or settings. Reject the old digest
+            // before running their newly selected handler.
+            b"iron-curtain-protect-v1".hash(&mut hasher);
+        }
+        let default = crate::rules::superweapon_type::AresSuperWeaponPresentation::default();
+        let presentation = Self::by_upper_id(
+            self.super_weapons
+                .iter()
+                .filter(|(_, sw)| {
+                    sw.presentation != default && (self.ares || redirected_iron_curtain(sw))
+                })
+                .map(|(id, sw)| (id, &sw.presentation)),
+        );
+        if !presentation.is_empty() {
+            "Ares.SuperWeaponPresentation".hash(&mut hasher);
+            presentation.hash(&mut hasher);
         }
         let deliveries = Self::by_upper_id(
             self.super_weapons

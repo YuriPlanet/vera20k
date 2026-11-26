@@ -1,11 +1,12 @@
-//! Ares `Type=Protect` (`src/Misc/SWTypes/Protect.cpp`): an Iron Curtain
-//! over a rectangle or range with its own duration, sounds and blackout.
+//! Ares SW_Protect (`src/Misc/SWTypes/Protect.cpp`) handles `Type=Protect`
+//! and redirected `Type=IronCurtain`: an Iron Curtain over a rectangle or
+//! range with its own duration, sounds and blackout.
 //!
-//! Installed Ares: Activate `0x10074750`, Initialize `0x10074B60` (Iron
+//! Ares 3.0p1: Activate `0x10075800`, Initialize `0x10075C10` (Iron
 //! Curtain EVA lines, AnimHeight 5, AITargeting IronCurtain, the IronCurtain
-//! cursor), LoadFromINI `0x10074C20` (`Protect.Duration`, `.PowerOutage`,
-//! `.PlayFadeSoundTime`), GetRange `0x10074AD0` (the type's `SW.Range`, else
-//! a 3x3 rectangle) and GetAnim `0x10074A90` (`SW.Animation`, else
+//! cursor), LoadFromINI `0x10075CD0` (`Protect.Duration`, `.PowerOutage`,
+//! `.PlayFadeSoundTime`), GetRange `0x10075B80` (the type's `SW.Range`, else
+//! a 3x3 rectangle) and GetAnim `0x10075B40` (`SW.Animation`, else
 //! `IronCurtainInvokeAnim=`, built by the common Launch). A Protect type is
 //! never the Force Shield arm: Protect_IsForceShield is set only for a
 //! redirected `Type=ForceShield`, whose stock owner VERA keeps.
@@ -35,7 +36,9 @@ use crate::sim::intern::InternedId;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
-/// SW_Protect::Activate `0x10074750` for `owner`'s Super of `sw_type`.
+/// Ares 3.0p1 SW_Protect::Activate `0x10075800` for `owner`'s Super of `sw_type`.
+/// The Launch hook at `0x006CC390` skips the stock case for this handler and
+/// resumes at `0x006CDE40` after the common Launch.
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -57,8 +60,11 @@ pub(super) fn launch(
     let duration = launch
         .protect_duration()
         .unwrap_or(rules.general.iron_curtain_duration);
-    let coords @ [x, y, z] = super::deck_coords(sim, (rx, ry));
-    // 1007479B: StartSound (+0xC4) through VocClass::PlayAt.
+    // 0x1007585F uses CellClass::GetCoords for StartSound and the fade
+    // timer. The shared presentation adds bridge height to its own cues.
+    let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
+    let coords @ [x, y, z] = [ground.x, ground.y, ground.z];
+    // 0x1007589F..0x100758AF: StartSound (+0xC4) through VocClass::PlayAt.
     if sw.start_sound.is_some() {
         sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
             sw_type,
@@ -80,7 +86,7 @@ pub(super) fn launch(
             .house_mut(owner)
             .start_blackout(frame, outage);
     }
-    // GetRange10074AD0: the type's SW.Range, else a 3x3 rectangle.
+    // GetRange 0x10075B80: the type's SW.Range, else a 3x3 rectangle.
     let range = match launch.range() {
         (width, height) if width < 0.0 && height < 0 => (3.0, 3),
         range => range,
@@ -137,21 +143,48 @@ fn area_technos_with(
     center: (u16, u16),
     spread: bool,
 ) -> Vec<u64> {
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return Vec::new();
+    };
+    // A centered rectangle this wide can span every cell of the largest
+    // supported map. Refuse larger authored dimensions before enumeration.
+    // CellSpread already clamps its input to the native table.
+    let max_span = i32::from(crate::map::cell_index::MAX_CELL_SIDE) * 2 + 1;
+    let rectangle = height > 0 && (width as i32) > 0;
+    if (!spread || rectangle) && (width > max_span as f32 || height > max_span) {
+        return Vec::new();
+    }
     let (cx, cy) = (i32::from(center.0 as i16), i32::from(center.1 as i16));
-    let mut cells = Vec::new();
-    if spread && !(height > 0 && (width as i32) > 0) {
-        if height <= 0 && (width as i32) > 0 {
-            for &(dx, dy) in crate::sim::combat::cell_spread::sweep(width as i32 as usize) {
-                cells.push((cx + i32::from(dx), cy + i32::from(dy)));
+    let mut found = std::collections::BTreeMap::new();
+    let mut visit = |x, y| {
+        // MapClass::TryGetCellAt: only real cells.
+        let crate::sim::cell_rect::CellRef::Real(real) =
+            crate::sim::cell_rect::get_cellclass_fallback(Some(terrain), x, y)
+        else {
+            return;
+        };
+        for member in sim.native_cell_content((real.rx, real.ry)) {
+            let CellObjectMember::Entity(id) = member else {
+                continue;
+            };
+            if let Some(entity) = sim.substrate.entities.get(id) {
+                found.entry(entity.native_unique_id()).or_insert(id);
             }
         }
-    } else if height > 0 && (width as i32) > 0 {
+    };
+    if spread && !rectangle {
+        if height <= 0 && (width as i32) > 0 {
+            for &(dx, dy) in crate::sim::combat::cell_spread::sweep(width as i32 as usize) {
+                visit(cx + i32::from(dx), cy + i32::from(dy));
+            }
+        }
+    } else if rectangle {
         // for_each_in_rect: width x height cells from center - size/2.
         let width = width as i32;
         let (left, top) = (cx - width / 2, cy - height / 2);
         for y in top..top + height {
             for x in left..left + width {
-                cells.push((x, y));
+                visit(x, y);
             }
         }
     } else if height <= 0 && width >= 0.0 {
@@ -165,26 +198,8 @@ fn area_technos_with(
             for x in left..=left + range {
                 let (dx, dy) = (f64::from(x - cx), f64::from(y - cy));
                 if dx * dx + dy * dy <= radius * radius {
-                    cells.push((x, y));
+                    visit(x, y);
                 }
-            }
-        }
-    }
-    let terrain = sim.resolved_terrain.as_ref();
-    let mut found = std::collections::BTreeMap::new();
-    for (x, y) in cells {
-        // MapClass::TryGetCellAt: only real cells.
-        let crate::sim::cell_rect::CellRef::Real(real) =
-            crate::sim::cell_rect::get_cellclass_fallback(terrain, x, y)
-        else {
-            continue;
-        };
-        for member in sim.native_cell_content((real.rx, real.ry)) {
-            let CellObjectMember::Entity(id) = member else {
-                continue;
-            };
-            if let Some(entity) = sim.substrate.entities.get(id) {
-                found.entry(entity.native_unique_id()).or_insert(id);
             }
         }
     }

@@ -122,6 +122,15 @@ impl SuperWeaponKind {
         self.is_extension() || self.is_ares_redirect()
     }
 
+    /// Ares 3.0p1 SW_Protect::HandlesType (0x10075BF0) accepts the stock
+    /// Iron Curtain index 1. Keep the raw identity for stock type lookups.
+    fn launch_kind(self, redirect_iron_curtain: bool) -> Self {
+        match self {
+            Self::IronCurtain if redirect_iron_curtain => Self::Protect,
+            kind => kind,
+        }
+    }
+
     /// A stock Type that Ares hands to its NewSWType (`FindHandler`
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
@@ -219,7 +228,7 @@ impl SuperWeaponKind {
         Self::parse_kind(s, crate::rules::ares_switch::ares_way())
     }
 
-    fn parse_kind(s: &str, ares: bool) -> Option<Self> {
+    pub(super) fn parse_kind(s: &str, ares: bool) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "multimissile" => Some(Self::MultiMissile),
             "ironcurtain" => Some(Self::IronCurtain),
@@ -676,9 +685,10 @@ impl AresSuperWeaponPresentation {
 /// tracked per-house in `sim/superweapon/`.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponType {
-    /// An authored base selector or paid charge/drain definition participates
-    /// in the corresponding SWTypeExt path independently of the global mode.
+    /// This definition uses its authored extension settings in stock mode.
     builtin_rules: bool,
+    /// This stock Iron Curtain definition opts into SW_Protect's launch.
+    builtin_iron_curtain: bool,
     pub(crate) presentation: AresSuperWeaponPresentation,
     /// Section name in rules.ini (e.g., "LightningStormSpecial").
     pub id: String,
@@ -842,11 +852,9 @@ impl SuperWeaponType {
         &self.presentation.texts
     }
 
-    /// Only implemented extension handlers own the Ares announcement path.
-    /// Stock redirects keep their existing readers and dispatch boundaries.
-    pub fn ares_eva(&self) -> Option<&AresSuperWeaponEva> {
-        self.kind
-            .has_ares_handler()
+    /// The announcement data owned by this game's launch handler.
+    pub fn ares_eva(&self, rules: &crate::rules::ruleset::RuleSet) -> Option<&AresSuperWeaponEva> {
+        self.uses_ares_handler(rules)
             .then_some(&self.presentation.eva)
     }
 
@@ -869,7 +877,7 @@ impl SuperWeaponType {
     /// way.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         // A standalone section has no earlier ranges or CombatDamage layer.
-        Self::from_ini_section_with_range(id, section, None, false, 3)
+        Self::from_ini_section_with_range(id, section, None, false, false, 3)
     }
 
     pub(crate) fn has_builtin_rules(&self) -> bool {
@@ -881,11 +889,24 @@ impl SuperWeaponType {
         self.builtin_rules || rules.ares_form()
     }
 
+    /// The launch handler selected by this game's rules.
+    pub fn launch_kind(&self, rules: &crate::rules::ruleset::RuleSet) -> SuperWeaponKind {
+        self.kind
+            .launch_kind(self.builtin_iron_curtain || rules.ares_form())
+    }
+
+    pub(crate) fn uses_ares_handler(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        let kind = self.launch_kind(rules);
+        kind.has_ares_handler()
+            && (rules.ares_form() || (self.builtin_rules && kind.is_extension()))
+    }
+
     pub(crate) fn from_ini_section_with_range(
         id: &str,
         section: &IniSection,
         processed_range: Option<(f32, i32)>,
         base_targeting: bool,
+        configured_protect: bool,
         psychic_reveal_radius: i32,
     ) -> Self {
         let ares_way = crate::rules::ares_switch::ares_way();
@@ -912,15 +933,22 @@ impl SuperWeaponType {
             // Ctor6CE5B0 initializes Type to -1; rejected/missing reads do
             // not remove the registered type or skip its other fields.
             .unwrap_or(SuperWeaponKind::NoEffect);
-        let builtin_rules = kind.has_builtin_rules(base_targeting, charge_drain, has_price);
+        let builtin_iron_curtain = kind == SuperWeaponKind::IronCurtain && configured_protect;
+        let builtin_rules =
+            builtin_iron_curtain || kind.has_builtin_rules(base_targeting, charge_drain, has_price);
+        let launch_kind = kind.launch_kind(ares_way || builtin_iron_curtain);
         let _builtin = (builtin_rules && !ares_way).then(crate::rules::ares_switch::not_ares_reads);
         let ares_way = ares_way || builtin_rules;
         let (extension_kind, ares_click_flags) = if ares_way {
             (
-                kind.has_ares_handler(),
+                launch_kind.has_ares_handler(),
                 (
-                    kind.ares_flags().has(AresSuperWeaponFlags::PRE_CLICK),
-                    kind.ares_flags().has(AresSuperWeaponFlags::POST_CLICK),
+                    launch_kind
+                        .ares_flags()
+                        .has(AresSuperWeaponFlags::PRE_CLICK),
+                    launch_kind
+                        .ares_flags()
+                        .has(AresSuperWeaponFlags::POST_CLICK),
                 ),
             )
         } else {
@@ -928,6 +956,7 @@ impl SuperWeaponType {
         };
         Self {
             builtin_rules,
+            builtin_iron_curtain,
             presentation: AresSuperWeaponPresentation::default(),
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
@@ -955,7 +984,7 @@ impl SuperWeaponType {
             // InitializeConstants supplies an Attack cursor. Stock ReadAction
             // keeps its 0x20-byte ReadString (`0x00474EE0`), which a stock-way
             // read uses for every Type.
-            action: match kind {
+            action: match launch_kind {
                 _ if !ares_way => section.read_action_name("Action").map(str::to_string),
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
                 // SW_HunterSeeker::Initialize clears Action (10072A16) after
@@ -967,7 +996,7 @@ impl SuperWeaponType {
                 // SW_Firewall::LoadFromINI10071620 writes Action=None every
                 // pass too.
                 SuperWeaponKind::Firestorm => None,
-                // SW_Protect::Initialize10074B60 installs the custom action
+                // SW_Protect::Initialize (3.0p1 0x10075C10) installs the custom action
                 // and SW_Cursor=IronCurtain; VERA names that cursor by action.
                 SuperWeaponKind::Protect => Some("IronCurtain".to_string()),
                 // Both LoadFromINI handlers overwrite Action (10075360, 10075710).
@@ -2748,12 +2777,20 @@ mod tests {
             .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &map)
             .unwrap()
             .into_parts();
-        let seek = rules.super_weapon("Seek").unwrap().ares_eva().unwrap();
+        let seek = rules
+            .super_weapon("Seek")
+            .unwrap()
+            .ares_eva(&rules)
+            .unwrap();
         assert_eq!(
             (seek.ready(), seek.activated(), seek.detected()),
             (Some("Custom"), Some("none"), None)
         );
-        let plain = rules.super_weapon("Plain").unwrap().ares_eva().unwrap();
+        let plain = rules
+            .super_weapon("Plain")
+            .unwrap()
+            .ares_eva(&rules)
+            .unwrap();
         assert_eq!(
             (plain.ready(), plain.activated(), plain.detected()),
             (
@@ -2773,7 +2810,7 @@ mod tests {
             (AiTargetingMode::None, HouseMask::ALL)
         );
         for name in ["Strike", "Delivery", "Late"] {
-            let eva = rules.super_weapon(name).unwrap().ares_eva().unwrap();
+            let eva = rules.super_weapon(name).unwrap().ares_eva(&rules).unwrap();
             assert_eq!(
                 (eva.ready(), eva.activated(), eva.detected()),
                 (None, None, None)
@@ -2784,8 +2821,8 @@ mod tests {
         let restored = crate::util::save_codec::deserialize(&saved).unwrap();
         let restored = owner.project_saved_scenario_rules(&restored).unwrap();
         assert_eq!(
-            rules.super_weapon("Seek").unwrap().ares_eva(),
-            restored.super_weapon("Seek").unwrap().ares_eva()
+            rules.super_weapon("Seek").unwrap().ares_eva(&rules),
+            restored.super_weapon("Seek").unwrap().ares_eva(&restored)
         );
     }
 
@@ -2909,7 +2946,7 @@ mod tests {
             "the read follows Initialize's 5"
         );
         assert_eq!(
-            shield.ares_eva().unwrap().ready(),
+            shield.ares_eva(&rules).unwrap().ready(),
             None,
             "the stock lines are absent from this catalog"
         );

@@ -35,15 +35,16 @@ pub(super) fn on_launch(
         return;
     };
     let presentation = &sw.presentation;
+    let launch_kind = sw.launch_kind(rules);
     let mut coord = super::deck_coords(sim, cell);
     // Launch10033068..100330F9: GetAnim (base Nullable fallback nullptr;
-    // SW_Protect::GetAnim10074A90 falls back to IronCurtainInvokeAnim), add
+    // SW_Protect::GetAnim (3.0p1 0x10075B40) falls back to IronCurtainInvokeAnim), add
     // the signed height, construct regardless of visibility, then write
     // Hidden. No OwnerHouse store is made by this producer.
     let animation = match &presentation.animation {
         _ if flags.has(F::NO_ANIM) => None,
         Some(animation) => animation.clone(),
-        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
+        None if launch_kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
             Some(rules.general.iron_curtain_invoke_anim.clone())
         }
         // SW_GeneticMutator::GetAnim10071F30: `[General] IonBlast=`.

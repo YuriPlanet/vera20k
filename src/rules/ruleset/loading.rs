@@ -1814,6 +1814,11 @@ impl RuleSet {
             .super_weapon_availability_states()
             .map(|(name, metadata)| (name.to_ascii_uppercase(), metadata))
             .collect();
+        let animated_supers: HashSet<_> = processed
+            .super_weapon_presentation_states()
+            .filter(|(_, presentation)| presentation.animation.is_some())
+            .map(|(name, _)| name.to_ascii_uppercase())
+            .collect();
         let mut super_weapons: HashMap<String, SuperWeaponType> = HashMap::new();
         let sw_ids: Vec<String> = parse_registry(ini, "SuperWeaponTypes");
         let super_weapon_order: Vec<String> = sw_ids.clone();
@@ -1827,11 +1832,22 @@ impl RuleSet {
                         AiTargetingMode::Base | AiTargetingMode::EnemyBase
                     )
                 });
+                let configured_protect = animated_supers.contains(&key)
+                    || metadata.is_some_and(|ext| {
+                        let launch = ext.launch();
+                        let (width, height) = launch.range();
+                        width >= 0.0
+                            || height >= 0
+                            || launch.protect_duration().is_some()
+                            || launch.protect_power_outage().is_some()
+                            || launch.protect_fade_sound_time().is_some()
+                    });
                 let sw = SuperWeaponType::from_ini_section_with_range(
                     sw_id,
                     section,
                     metadata.map(|ext| ext.launch().range()),
                     base_targeting,
+                    configured_protect,
                     general.psychic_reveal_radius,
                 );
                 if !ares_way && !sw.has_builtin_rules() {

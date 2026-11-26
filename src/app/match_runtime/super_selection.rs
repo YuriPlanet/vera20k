@@ -141,21 +141,22 @@ pub(super) fn follow_selection_writes(
             }
             continue;
         }
-        match rules
-            .super_weapon(sim.interner().resolve(*sw_type))
-            .map(|sw| sw.kind)
-        {
-            Some(
-                SuperWeaponKind::GenericWarhead
-                | SuperWeaponKind::UnitDelivery
-                | SuperWeaponKind::HunterSeeker
-                | SuperWeaponKind::Protect
-                | SuperWeaponKind::Battery
-                | SuperWeaponKind::SonarPulse
-                | SuperWeaponKind::EMPulse
-                | SuperWeaponKind::Firestorm
-                | SuperWeaponKind::DropPod,
-            ) if ares => {
+        let Some(sw) = rules.super_weapon(sim.interner().resolve(*sw_type)) else {
+            continue;
+        };
+        let launch_kind = sw.launch_kind(rules);
+        match launch_kind {
+            SuperWeaponKind::GenericWarhead
+            | SuperWeaponKind::UnitDelivery
+            | SuperWeaponKind::HunterSeeker
+            | SuperWeaponKind::Protect
+            | SuperWeaponKind::Battery
+            | SuperWeaponKind::SonarPulse
+            | SuperWeaponKind::EMPulse
+            | SuperWeaponKind::Firestorm
+            | SuperWeaponKind::DropPod
+                if ares || launch_kind != sw.kind =>
+            {
                 // Ares new-type cleanup only clears the fired selection:
                 // an automatic launch must not disarm a different SW.
                 if selected
@@ -164,32 +165,28 @@ pub(super) fn follow_selection_writes(
                     *targeting = None;
                 }
             }
-            Some(SuperWeaponKind::ChronoSphere) => {
+            SuperWeaponKind::ChronoSphere => {
                 // SW_ChronoSphere::Activate (1006ED30) selects its own warp.
                 let warp = if ares {
-                    rules
-                        .super_weapon(sim.interner().resolve(*sw_type))
-                        .and_then(|sphere| {
-                            crate::sim::superweapon::ares_chrono_warp_for(rules, sphere)
-                        })
+                    crate::sim::superweapon::ares_chrono_warp_for(rules, sw)
                 } else {
                     chrono_warp_selection(rules)
                 };
                 *targeting = warp.map(|name| TargetingMode::SuperWeapon(name.to_string()));
             }
-            Some(
-                SuperWeaponKind::MultiMissile
-                | SuperWeaponKind::IronCurtain
-                | SuperWeaponKind::LightningStorm
-                | SuperWeaponKind::ChronoWarp
-                | SuperWeaponKind::ParaDrop
-                | SuperWeaponKind::AmerParaDrop
-                | SuperWeaponKind::PsychicDominator
-                | SuperWeaponKind::SpyPlane
-                | SuperWeaponKind::GeneticConverter
-                | SuperWeaponKind::ForceShield
-                | SuperWeaponKind::PsychicReveal,
-            ) if selected.is_some() => {
+            SuperWeaponKind::MultiMissile
+            | SuperWeaponKind::IronCurtain
+            | SuperWeaponKind::LightningStorm
+            | SuperWeaponKind::ChronoWarp
+            | SuperWeaponKind::ParaDrop
+            | SuperWeaponKind::AmerParaDrop
+            | SuperWeaponKind::PsychicDominator
+            | SuperWeaponKind::SpyPlane
+            | SuperWeaponKind::GeneticConverter
+            | SuperWeaponKind::ForceShield
+            | SuperWeaponKind::PsychicReveal
+                if selected.is_some() =>
+            {
                 *targeting = None;
             }
             _ => {}

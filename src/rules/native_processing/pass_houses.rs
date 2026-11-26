@@ -377,9 +377,9 @@ impl RulesPassProcessor {
                         .super_weapon_phobos_availability = availability;
                 }
                 {
-                    // A later pass may opt this type into a base target or
-                    // an activation price. Retain ordered reads without
-                    // enabling Ares or allocating Ares-only dependencies.
+                    // A later pass may opt into built-in SWTypeExt behavior.
+                    // Retain ordered reads without enabling Ares or allocating
+                    // Ares-only dependencies.
                     let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                     let _ares = crate::rules::ares_switch::ares_reads();
                     // LoadFromINIFile10033250: the first call runs the Type
@@ -387,9 +387,22 @@ impl RulesPassProcessor {
                     // EVA.Ready/Activated/Detected before the other fields.
                     let kind = self.families[&RulesTypeFamily::SuperWeapon][index]
                         .body
-                        .read_name("Type", 0x28)
-                        .map(str::to_owned);
-                    let kind = kind.as_deref();
+                        .read_string_with("Type", 0x28, None, |current, name| {
+                            // ReadINI 0x006CEC5B..0x006CEC7E retains the last
+                            // recognized type when a later layer rejects Type.
+                            crate::rules::superweapon_type::SuperWeaponKind::parse_kind(name, true)
+                                .map(|_| name.to_owned())
+                                .or(current)
+                        });
+                    // SW_Protect::HandlesType (Ares 3.0p1 0x10075BF0) routes
+                    // Type=IronCurtain to the same Initialize and LoadFromINI.
+                    let kind = kind.as_deref().map(|kind| {
+                        if kind.eq_ignore_ascii_case("IronCurtain") {
+                            "Protect"
+                        } else {
+                            kind
+                        }
+                    });
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
                         .read_pass(&raw, kind);
@@ -398,7 +411,7 @@ impl RulesPassProcessor {
                     if initialized {
                         presentation.eva.initialize_for_kind(kind, _fixed_eva);
                         presentation.texts.initialize_for_kind(kind);
-                        // SW_Protect::Initialize10074B60: SW_AnimHeight=5.
+                        // SW_Protect::Initialize (3.0p1 0x10075C1D): SW_AnimHeight=5.
                         if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Protect")) {
                             presentation.height = 5;
                         }
@@ -539,8 +552,9 @@ impl RulesPassProcessor {
                     }
                     availability.read_shots_pass(&raw);
                     // SW.CreateRadarEvent, SW.Range and SW.Group, then the
-                    // Protect/Battery LoadFromINI (10074C20/1006ECC0) after
-                    // the common reads; Battery's vectors use Find only.
+                    // Protect LoadFromINI (3.0p1 0x10075CD0) and Battery
+                    // LoadFromINI (3.0 0x1006ECC0) follow the common reads.
+                    // Battery's vectors use Find only.
                     let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
                     let mut reads = crate::rules::superweapon_type::AresHandlerReads::default();
                     if is("Battery") {

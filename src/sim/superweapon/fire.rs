@@ -176,7 +176,7 @@ impl Simulation {
         // Ares hook 4FAE72 (10034C90) pairs a handler's PostClick type with
         // the House's last Super instead of its PreDependent.
         let post_click_source = |sim: &Self| {
-            if ares && sw.kind.has_ares_handler() {
+            if ares && sw.launch_kind(rules).has_ares_handler() {
                 super::ares_post_click_source(sim, rules, owner)
             } else {
                 super::pre_dependent(rules, sw)
@@ -473,9 +473,8 @@ fn click_fire(
     {
         return false;
     }
-    // Without Ares no type has a handler, and Fire_SW passes no `payment`
-    // and never selects a paid source.
-    let extension_effect = ares && (sw.kind.has_ares_handler() || sw.has_builtin_rules());
+    // Handlers and built-in rules settle payments after a successful effect.
+    let extension_effect = sw.uses_ares_handler(rules) || sw.has_builtin_rules();
     if let Some((money_type, money_sw)) = payment
         && !extension_effect
         && money_sw.money_amount != 0
@@ -573,17 +572,21 @@ fn complete_ares_effect(
             );
         }
     }
-    if sw.kind.has_ares_handler() && (rules.ares_form() || sw.kind.is_extension()) {
+    if sw.uses_ares_handler(rules) {
         super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
-        super::raise_ares_activation_events(
-            sim,
-            rules,
-            owner,
-            sw_type_id,
-            cell,
-            overlay_registry,
-            frame_effects,
-        );
+        // A built-in Iron Curtain can use Protect in a stock-way map.
+        // Its launch does not broadcast Ares events to that map's House Tags.
+        if rules.ares_form() || sw.kind.is_extension() {
+            super::raise_ares_activation_events(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                cell,
+                overlay_registry,
+                frame_effects,
+            );
+        }
     } else if sw.has_builtin_rules() {
         // A built-in selector can reach a stock launch without changing
         // its payload or presentation. Its common SW.Shots is still live.
@@ -651,6 +654,7 @@ fn launch(
 ) -> bool {
     use super::paradrop::ParaDropKind;
     let ares = rules.ares_form();
+    let launch_kind = sw.launch_kind(rules);
     // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
     // redirected Type's handler Activate runs first; an accepted one ends
     // Launch through the common tail, a refused one falls through to the
@@ -741,14 +745,14 @@ fn launch(
     // (ForceShield6CD072..6CD077; case4 starts6CC4B2 with radar production).
     // Drain ClickFire can reach Launch after Reset retained state1 but cleared
     // rawReady. Keep the earlier timer transition while skipping case effects.
-    let native_kind = sw.kind.native_index();
+    let native_kind = launch_kind.native_index();
     if (0..12).contains(&native_kind)
         && native_kind != 4
         && !super::is_charged(sim, owner, sw_type_id)
     {
         return false;
     }
-    match sw.kind {
+    match launch_kind {
         // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
         // effects. ClickFire's ordinary/one-time finish still runs afterwards.
         SuperWeaponKind::NoEffect => {}

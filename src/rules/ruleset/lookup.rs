@@ -158,14 +158,14 @@ impl RuleSet {
             .is_some_and(|policy| policy.use_ai_targeting())
     }
 
-    /// The ordered SWTypeExt targeting fields of an Ares GenericWarhead or
-    /// UnitDelivery type. Stock types keep their retail dispatch owners.
+    /// The ordered SWTypeExt targeting fields used by the active handler
+    /// or by an authored built-in targeting rule.
     pub(crate) fn super_weapon_target_policy(
         &self,
         id: &str,
     ) -> Option<crate::rules::superweapon_targeting::AresSuperWeaponTargetingState> {
         let sw = self.super_weapon(id)?;
-        if !sw.has_builtin_rules() && !(self.ares && sw.kind.has_ares_handler()) {
+        if !sw.has_builtin_rules() && !sw.uses_ares_handler(self) {
             return None;
         }
         self.super_weapon_metadata(id)

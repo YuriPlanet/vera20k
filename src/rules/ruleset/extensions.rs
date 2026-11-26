@@ -86,14 +86,13 @@ impl RuleSet {
     /// The `[MouseCursors]` cursors `SWTypeExt::ExtData::WhatAction @
     /// 10033EB0` shows over a cell superweapon `id` may or may not fire at.
     /// It answers only for a type a NewSWType handles or whose `Action=` is
-    /// `Custom`; the others keep the stock action cursor. VERA's handled types
-    /// are its implemented handlers (`SuperWeaponKind::has_ares_handler`).
+    /// `Custom`; the others keep the stock action cursor.
     pub fn ares_super_weapon_cursors(
         &self,
         id: &str,
     ) -> Option<crate::rules::ares_mouse_cursor::SuperWeaponCursors> {
         let sw = self.super_weapon(id)?;
-        (sw.kind.has_ares_handler()
+        (sw.launch_kind(self).has_ares_handler()
             || sw
                 .action
                 .as_deref()
