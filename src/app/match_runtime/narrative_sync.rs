@@ -377,7 +377,11 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
                 },
             );
         }
-        App::finish_fullscreen_movie(state);
+        let step =
+            App::finish_fullscreen_movie(&mut state.frontend.fullscreen_movie, &mut state.audio);
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
         App::return_disconnected_to_main_menu(state);
         App::open_shell_notice(
             &state.platform.window,

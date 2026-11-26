@@ -470,7 +470,19 @@ impl App {
                     crate::app::input::multiplayer_setup::mouse(state, button, edge.is_pressed())
                 }
             },
-            ScreenPage::MovieList if left => Self::handle_movie_list_mouse(state, down),
+            ScreenPage::MovieList if left => {
+                let step = Self::handle_movie_list_mouse(
+                    &state.renderer.gpu,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    down,
+                );
+                if let Some(step) = step {
+                    Self::apply_step(state, step);
+                }
+            }
             ScreenPage::Mods if left => Self::handle_mods_mouse(state, down),
             ScreenPage::Campaign if left => match down {
                 None => Self::handle_campaign_mouse_move(

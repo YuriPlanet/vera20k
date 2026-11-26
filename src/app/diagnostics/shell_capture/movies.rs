@@ -838,7 +838,15 @@ impl MoviesCapture {
                     self.route.push(
                         json!({"dialog": 0x101, "frame": frame, "action": format!("{action:?}")}),
                     );
-                    App::handle_movies_credits_action(state, action);
+                    let step = App::handle_movies_credits_action(
+                        &state.renderer.gpu,
+                        &mut state.frontend,
+                        &state.persistence.options_profile,
+                        action,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
             }
             (Phase::SinglePlayerPage, PresentedShell::SinglePlayer) => {
@@ -1320,12 +1328,27 @@ impl MoviesCapture {
             }
             (Phase::List, PresentedShell::MovieList) => {
                 if Self::slide_settled(&state.frontend, ShellSlideKind::MovieList) {
+                    // The list's pointer handler, its step applied at the call
+                    // as the routing applies it.
+                    let list_mouse = |state: &mut AppState, down: Option<bool>| {
+                        let step = App::handle_movie_list_mouse(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                            down,
+                        );
+                        if let Some(step) = step {
+                            App::apply_step(state, step);
+                        }
+                    };
                     if let MoviesTarget::FullList { down_presses } = self.target {
                         state.match_state.input.cursor_x = LIST_DOWN_ARROW_POINT.0;
                         state.match_state.input.cursor_y = LIST_DOWN_ARROW_POINT.1;
                         for _ in 0..down_presses {
-                            App::handle_movie_list_mouse(state, Some(true));
-                            App::handle_movie_list_mouse(state, Some(false));
+                            list_mouse(state, Some(true));
+                            list_mouse(state, Some(false));
                         }
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press down arrow", "count": down_presses,
@@ -1334,8 +1357,8 @@ impl MoviesCapture {
                     if self.target == MoviesTarget::List0x129Selected {
                         state.match_state.input.cursor_x = LIST_ROW0_POINT.0;
                         state.match_state.input.cursor_y = LIST_ROW0_POINT.1;
-                        App::handle_movie_list_mouse(state, Some(true));
-                        App::handle_movie_list_mouse(state, Some(false));
+                        list_mouse(state, Some(true));
+                        list_mouse(state, Some(false));
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press row", "point": [LIST_ROW0_POINT.0, LIST_ROW0_POINT.1]}));
                     }
@@ -1345,7 +1368,7 @@ impl MoviesCapture {
                         &state.renderer.gpu,
                         &mut state.match_state.input,
                     );
-                    App::handle_movie_list_mouse(state, None);
+                    list_mouse(state, None);
                     self.route.push(
                         json!({"dialog": 0x129, "frame": frame, "action": "pointer at neutral"}),
                     );
