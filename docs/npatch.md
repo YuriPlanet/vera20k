@@ -16,6 +16,11 @@ when no NPatch-only key is present; `no` keeps them off even when one is; absent
 answer to the keys below. The key is a plain read, so its own presence never turns NPatch on.
 The log names either this answer or the deciding NPatch-only key.
 
+"NPatch" here names the family: CnCVK's original NPatch and its SE/AE editions, LH_Mouse's
+2011 NPExt extension on top of them, and the current NPSE 2.0 continuation. NPExt is newer
+than the original NPatch but older than NPSE 2.0 #359 (2026-07-07); `NPatch=yes` turns on the
+implemented family, not a claim that every later NPSE build is ported.
+
 Bug-fix chains are stricter: `RuleSet::npatch_fixes` is on only with `NPatch=yes`. An
 individual NPatch key turns on its own feature paths (the canopy, AI queue or build-limit
 behavior it names), not every NPExt fix. `NPatch=no` or an absent master key keeps the
@@ -372,13 +377,14 @@ NPatch (NewPatch) is a RockPatch-based YR platform created by **CnCVK (VK)**,
 a former RockPatch developer. The project has several editions:
 
 - **NPatch 1.00** - the original release, published by CnCVK.
-- **NPatch Extended (NPExt)** - released by **LH_Mouse**; its manual is
-  NPExt #169 (2011), and it thanks pd and CnCVK. VERA's legacy
+- **NPatch Extended (NPExt)** - released by **LH_Mouse** in January 2011 as an extension
+  of NPatch SE/AE; its manual is NPExt #169 (2011), and it thanks pd and CnCVK. It is newer
+  than the original NPatch but older than NPSE 2.0. VERA's legacy
   `EnableAIBuildLimitation` path cites the NPExt `ext173` reader
   (`0xC2D132`, gate `0xC2CF67`).
 - **NPatch Special Edition (NPSE)** - installer #0020 on CnCVK's NPatch
   download page. The **NPSE 2.0 #359** manual and changelog are authored by
-  **lydjjlyd**.
+  **lydjjlyd**; its latest entry is dated 2026-07-07.
 - **NPatch Autumn Edition (NPAE)** - installer #0011 on the same page.
 
 The NPSE 2.0 manual credits its testers **我爱二次元**, **蓝天白云fd**,
