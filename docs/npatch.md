@@ -289,6 +289,12 @@ The sections follow the behavior chains of #3024.
   at the building's current health (`BuildingClass::Update`), still raises
   the owner's NotifyUnderAttack alarm before the death postlude. Native's
   non-fatal hit-response block never ran for that packet.
+- #2977 (NPExt changelog item 42): an AI victim that already holds an attack
+  target no longer overrides its mission for every accepted hit
+  (`ShouldRetaliate`'s existing-target arm, `0x0070884A`). Native applied
+  that arm only to a human house, so focus fire re-aimed any AI defender at
+  the newest attacker. The battle-fortress/prism-tower charge loop the report
+  describes is that same retarget; it has no separate runtime repro.
 - #2943 (NPExt changelog item 13): a `BalloonHover=no` helicopter's crash
   takes the DeathWeapon arm, not only the `BalloonHover=yes` branch
   (`FootClass` crash end); a crashing helicopter now fires its death weapon
@@ -333,6 +339,11 @@ The sections follow the behavior chains of #3024.
 - #2941 (NPExt changelog item 95): a key release clears the held-key state
   even while the pause gate refuses the edge, so a held scroll key cannot
   keep the camera moving after a pause or focus loss.
+- #2964 (NPExt changelog item 15): a `Spawned=yes` aircraft such as a
+  carrier's Hornet is not selectable under NPatch. Native `Object5F6C30`
+  (+138) read only `Selectable=`; the type's `Spawned=` flag (Techno+0x6B8)
+  kept no selection arm, so players could box-select and order carrier-born
+  jets.
 - #2970 (NPExt changelog item 73): a building entering the Selling mission
   releases its gattling `Report=` loop immediately, instead of waiting for
   stage 2's limbo release (`0x006F6C6B`), so a sold Gatling cannon is silent.

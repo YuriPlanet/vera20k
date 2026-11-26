@@ -67,6 +67,28 @@ pub(super) fn spawn_rule_backed_unit(
     sim.substrate.entities.insert(entity);
 }
 
+/// NPExt item 15: a carrier's `Spawned=yes` aircraft is not selectable under
+/// NPatch; stock reads only `Selectable=` at `Object5F6C30 +138`.
+#[test]
+fn npatch_keeps_a_spawned_aircraft_unselectable() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=HORNET\n\
+         [HORNET]\nStrength=100\nSelectable=yes\nSpawned=yes\n",
+    ))
+    .expect("HORNET rules");
+    let mut sim = Simulation::new();
+    let type_ref = sim.interner.intern("HORNET");
+    let mut entity = GameEntity::test_default(101, "HORNET", "Test", 20, 5);
+    entity.set_type_ref_for_test(type_ref);
+    entity.set_category_for_test(EntityCategory::Aircraft);
+    entity.lifecycle.set_in_limbo_for_test(false);
+    sim.substrate.entities.insert(entity);
+    assert!(sim.object_is_selectable(101, &rules));
+    let mut npatch = rules.clone();
+    npatch.set_npatch_for_test(true);
+    assert!(!sim.object_is_selectable(101, &npatch));
+}
+
 #[test]
 fn delegated_mission_only_unit_cannot_be_selected() {
     use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};

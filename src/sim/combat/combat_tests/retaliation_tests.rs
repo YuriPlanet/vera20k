@@ -544,6 +544,37 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
 }
 
+/// NPExt item 42: an AI victim that already holds an attack target keeps it
+/// under NPatch. Native `0x0070884A` refused only a human's object, so each
+/// accepted hit replaced the AI's target with the newest attacker.
+#[test]
+fn npatch_an_ai_victim_with_a_target_does_not_retaliate() {
+    use combat_targeting::should_retaliate;
+    for npatch in [false, true] {
+        let (mut sim, mut rules) = retaliation_gate_world(
+            "VICTIM",
+            EntityCategory::Unit,
+            "SOURCE",
+            EntityCategory::Unit,
+            false,
+        );
+        sim.substrate
+            .entities
+            .get_mut(GATE_VICTIM)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(9)));
+        if npatch {
+            rules.set_npatch_for_test(true);
+        }
+        assert_eq!(
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            !npatch,
+            "held target, NPatch {npatch}"
+        );
+    }
+}
+
 /// A garrisoned building fights back with its occupant's weapon: GetWeapon
 /// (`BuildingClass::GetWeapon @ 0x004526F0`) answers the occupant's
 /// `OccupyWeapon=` for every slot, so `GetWeaponDamageValue(-1)`, SelectWeapon,
