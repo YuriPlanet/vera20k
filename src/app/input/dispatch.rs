@@ -207,7 +207,18 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if crate::app::input::layout_edit::active(&state.match_state.match_presentation)
         && !state.match_state.paused()
     {
-        crate::app::input::layout_edit::mouse(state, button, pressed);
+        crate::app::input::layout_edit::mouse(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            button,
+            pressed,
+        );
         return;
     }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
@@ -250,7 +261,18 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
                 }
             }
             menu if button == MouseButton::Left => {
-                crate::app::input::dialog_page::in_game_pointer(state, menu, Some(pressed));
+                crate::app::input::dialog_page::in_game_pointer(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &mut state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    menu,
+                    Some(pressed),
+                );
             }
             _ => {}
         }
@@ -291,7 +313,16 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         // in-game surface is on the chrome).
         ChromeRoute::Consumed | ChromeRoute::NotConsumed => {}
     }
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1562,7 +1593,16 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     if crate::app::input::layout_edit::active(&state.match_state.match_presentation)
         && !state.match_state.paused()
     {
-        crate::app::input::layout_edit::cursor_moved(state);
+        crate::app::input::layout_edit::cursor_moved(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+        );
         return;
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
@@ -1583,7 +1623,18 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
                 crate::app::App::update_saved_game_browser(state, true);
             }
-            menu => crate::app::input::dialog_page::in_game_pointer(state, menu, None),
+            menu => crate::app::input::dialog_page::in_game_pointer(
+                &mut state.platform,
+                &mut state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                menu,
+                None,
+            ),
         }
         return;
     }

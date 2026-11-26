@@ -2,6 +2,7 @@ use super::*;
 use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -667,7 +668,16 @@ impl App {
             // A relay launch first reports its result to the match service;
             // its live service starts the same quit once that settles.
             if !crate::app::shell_wol::end_spawned_match(state.frontend.wol.as_mut()) {
-                Self::start_quit_cascade(state);
+                Self::start_quit_cascade(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                );
             }
             return;
         }
@@ -1014,17 +1024,23 @@ impl App {
     /// true when one picked a language, after which the dialog's captions
     /// read again ([`Self::launcher_options_labels`]).
     pub(crate) fn run_launcher_options_events(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         cues: Vec<PageCue>,
         events: Vec<crate::ui::main_menu_dialogs::options::LauncherOptionsEvent>,
     ) -> bool {
         use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
         for cue in cues {
             Self::play_page_cue(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
                 cue,
             );
         }
@@ -1033,7 +1049,14 @@ impl App {
             .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
         for event in events {
             crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                state, event,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                event,
             );
         }
         language
@@ -1047,7 +1070,17 @@ impl App {
         mut dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
     ) {
         let output = dialog.drain_output();
-        if Self::run_launcher_options_events(state, output.cues, output.events) {
+        if Self::run_launcher_options_events(
+            &mut state.platform,
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            output.cues,
+            output.events,
+        ) {
             dialog.set_labels(Self::launcher_options_labels(
                 state.frontend.shell_route,
                 &state.process_assets,
@@ -1529,7 +1562,17 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         crate::app::updater::notes::sync(&state.renderer.gpu, &mut state.frontend);
-        if Self::shell_menu_pointer(state, Some(down)) && down {
+        if Self::shell_menu_pointer(
+            &mut state.platform,
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            Some(down),
+        ) && down
+        {
             return;
         }
         #[cfg(any(
@@ -1653,7 +1696,16 @@ impl App {
         let yes = answer == 0;
         match message_box.purpose {
             Purpose::ShellMenu(_) => Self::answer_shell_menu(state, answer),
-            Purpose::ExitGame if yes => Self::confirm_quit(state),
+            Purpose::ExitGame if yes => Self::confirm_quit(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+            ),
             Purpose::ExitGame | Purpose::Notice => state.platform.window.request_redraw(),
             Purpose::CampaignReplay(retry) => Self::answer_campaign_replay(state, retry, answer),
             Purpose::CampaignVictory(victory) => Self::advance_campaign_victory(state, *victory),
@@ -1679,7 +1731,18 @@ impl App {
             ),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             Purpose::UpdateCheck => crate::app::updater::cancel_check(&mut state.frontend),
-            Purpose::ModRestart(folder) => Self::answer_mod_restart(state, folder, yes),
+            Purpose::ModRestart(folder) => Self::answer_mod_restart(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                folder,
+                yes,
+            ),
             Purpose::ModFiles(which) => Self::answer_mod_files(
                 &state.platform.window,
                 &state.renderer,
@@ -1732,10 +1795,28 @@ impl App {
     /// VERA.INI, then run the graceful cascade (music fade → trailing-voice
     /// wait → hard stop → exit) via render_frame instead of exiting
     /// immediately. The updater quits the same way once its update is ready.
-    pub(super) fn confirm_quit(state: &mut AppState) {
-        Self::close_shell_message_box_from_controller(&mut state.frontend);
-        Self::persist_settings_on_quit(&state.platform, &state.persistence.options_profile);
-        Self::start_quit_cascade(state);
+    pub(super) fn confirm_quit(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+    ) {
+        Self::close_shell_message_box_from_controller(frontend);
+        Self::persist_settings_on_quit(platform, &persistence.options_profile);
+        Self::start_quit_cascade(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
 
     /// What ending the program from any shell page saves first.

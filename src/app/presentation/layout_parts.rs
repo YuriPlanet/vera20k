@@ -382,9 +382,18 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
 /// button's, or a built-in button's the layout gives another command.
 pub(crate) fn run(state: &mut AppState, command: ButtonCommand, right: bool) {
     match command {
-        ButtonCommand::Bar(id) => {
-            crate::app::input::dispatch::dispatch_command_bar(state, id, right)
-        }
+        ButtonCommand::Bar(id) => crate::app::input::dispatch::dispatch_command_bar(
+            &mut state.platform,
+            &mut state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            id,
+            right,
+        ),
         ButtonCommand::Hotkey(command) => crate::app::input::dispatch::handle_hotkey_pressed(
             state,
             crate::app::input::hotkeys::HotkeyResolution::Command(command),

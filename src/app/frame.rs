@@ -258,7 +258,16 @@ impl App {
         // for that tick. No Input, so the screen shake stands as last
         // presented. The tick's end wakes the pass that finishes it.
         if !state.match_state.sim_runtime.pass_may_run(wait_for_tick) {
-            sim_tick::service_beside_tick(state);
+            sim_tick::service_beside_tick(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+            );
             return RuntimeServiceResult {
                 screen_shake_offset: (state.frontend.screen == GameScreen::InGame).then(|| {
                     state
@@ -525,7 +534,17 @@ impl App {
                     // Main_Tick55DE4F..55DE71 and Main_Game55CFD0 retain their
                     // independent restart/EXIT/outcome priority after the modal.
                     Self::consume_scenario_restart_request(state);
-                    Self::consume_executed_abort_exit(state, scenario_now_ms);
+                    Self::consume_executed_abort_exit(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &state.persistence,
+                        scenario_now_ms,
+                    );
                     crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
                         state,
                         scenario_now_ms,
@@ -574,7 +593,17 @@ impl App {
                 )
             {
                 Self::consume_scenario_restart_request(state);
-                Self::consume_executed_abort_exit(state, scenario_now_ms);
+                Self::consume_executed_abort_exit(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                    scenario_now_ms,
+                );
                 crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
                     state,
                     scenario_now_ms,
@@ -590,7 +619,17 @@ impl App {
         // Main_Tick55DE4F skips the frame while the restart byte is set and
         // Main_Game's router55CFD0 takes it before EXIT.
         Self::consume_scenario_restart_request(state);
-        Self::consume_executed_abort_exit(state, scenario_now_ms);
+        Self::consume_executed_abort_exit(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            scenario_now_ms,
+        );
         crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
             state,
             scenario_now_ms,
@@ -696,7 +735,17 @@ impl App {
                 scenario_now_ms,
             );
         }
-        crate::app::radar_movie::service(state, scenario_now_ms);
+        crate::app::radar_movie::service(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            scenario_now_ms,
+        );
         crate::app::commander_feedback::service(
             &state.renderer,
             &state.frontend,
@@ -737,8 +786,17 @@ impl App {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             // Wait_For_Players runs inside the frame's network service, ahead
             // of the frame it holds back.
-            if crate::app::match_runtime::network_match::service_wait(state, now_ms)
-                == crate::app::match_runtime::network_match::WaitPass::Leave
+            if crate::app::match_runtime::network_match::service_wait(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                now_ms,
+            ) == crate::app::match_runtime::network_match::WaitPass::Leave
             {
                 Self::leave_network_wait_to_main_menu(state);
                 return RuntimeServiceResult {
@@ -763,7 +821,17 @@ impl App {
             }
             // EventClass EXIT is dispatched at the simulation tail. Consume
             // its terminal edge before any outcome route can claim teardown.
-            Self::consume_executed_abort_exit(state, now_ms);
+            Self::consume_executed_abort_exit(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                now_ms,
+            );
             // The House's own Vox wait has finished before its result request.
             // Route the retained request after all remaining frame callbacks.
             crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(state, now_ms);
@@ -1107,7 +1175,16 @@ impl App {
                     .expect("active startup splash exists")
                     .mark_presented(Instant::now());
             } else {
-                Self::follow_window_size(state);
+                Self::follow_window_size(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                );
             }
             return Ok(if presented {
                 FrameRenderOutcome::Presented
@@ -1291,7 +1368,16 @@ impl App {
             .acquire_frame()
             .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?
         else {
-            Self::follow_window_size(state);
+            Self::follow_window_size(
+                &mut state.platform,
+                &mut state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+            );
             return Ok(FrameRenderOutcome::Unavailable);
         };
         let screen_wait = Instant::now().saturating_duration_since(acquire_started);

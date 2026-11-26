@@ -11,7 +11,8 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::sidebar_projection::SidebarViewInputs;
 use crate::sim::production;
@@ -171,15 +172,53 @@ fn apply_cameo_transitions(
 /// transitions, never from a view consumer. It derives the simulation's
 /// inputs afresh, so a transition that wrote the world outside a frame needs
 /// no revision of its own.
-pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
-    refresh_projection(state, false);
+pub(crate) fn refresh_sidebar_projection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    refresh_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        false,
+    );
 }
 
 /// The frame pass's republish on every unlocked presentation pass: the same
 /// refresh, reusing the simulation inputs kept for the world's revision
 /// ([`crate::app::sidebar_projection::SidebarSimInputs`]).
-pub(crate) fn republish_sidebar_projection(state: &mut AppState) {
-    refresh_projection(state, true);
+pub(crate) fn republish_sidebar_projection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    refresh_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        true,
+    );
 }
 
 /// The local side's sidebar table: the original's for its theme and position
@@ -346,61 +385,66 @@ pub(crate) fn refresh_added_parts(
     }
 }
 
-fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
-    refresh_radar_animation_source(state);
-    let spec = sidebar_layout_spec(
-        &state.platform,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+fn refresh_projection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    reuse_sim_inputs: bool,
+) {
+    refresh_radar_animation_source(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
     );
-    state.match_state.match_presentation.sidebar_layout_spec = spec;
-    refresh_added_parts(&state.platform, &state.frontend, &mut state.match_state);
+    let spec = sidebar_layout_spec(platform, frontend, match_state, persistence);
+    match_state.match_presentation.sidebar_layout_spec = spec;
+    refresh_added_parts(platform, frontend, match_state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
     let sidebar_frame = crate::app::state::sidebar_frame(
-        &state.platform,
-        &state.persistence,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation.sidebar_layout_spec,
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
     );
     let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
-    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .clear();
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
+        match_state.match_presentation.sidebar_projection.clear();
         return;
     };
-    let Some(owner) = state.match_state.sim_runtime.presentation().map(|runtime| {
+    let Some(owner) = match_state.sim_runtime.presentation().map(|runtime| {
         runtime
             .simulation
             .interner()
             .get(&owner_name)
             .unwrap_or_default()
     }) else {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .clear();
+        match_state.match_presentation.sidebar_projection.clear();
         return;
     };
     // A scenario's first projection seeds its strips from every building's
     // construction options (`UpdateConstructionOptions`), once: a query of
     // the live world, which waits for a pass that holds it.
-    let seed_additions = if state
-        .match_state
+    let seed_additions = if match_state
         .match_presentation
         .sidebar_projection
         .model
         .needs_cameo_seed(owner)
     {
-        if state.match_state.sim_runtime.is_lent() {
+        if match_state.sim_runtime.is_lent() {
             return;
         }
-        let Some(live) = state.match_state.sim_runtime.runtime() else {
+        let Some(live) = match_state.sim_runtime.runtime() else {
             return;
         };
         production::initial_construction_options(&live.simulation, &live.resources.rules)
@@ -410,16 +454,14 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // What the sidebar reads of the objects is the frame's
     // (`presentation::frame`), captured for the local player with the types
     // its strips hold and are about to add.
-    let asked = state
-        .match_state
+    let asked = match_state
         .match_presentation
         .sidebar_projection
         .model
         .asked_types(&seed_additions);
-    state.match_state.sim_runtime.ask_sidebar_types(&asked);
-    state.match_state.sim_runtime.ensure_frame();
+    match_state.sim_runtime.ask_sidebar_types(&asked);
+    match_state.sim_runtime.ensure_frame();
     let inputs = {
-        let match_state = &mut state.match_state;
         let Some(frame) = match_state.sim_runtime.frame() else {
             match_state.match_presentation.sidebar_projection.clear();
             return;
@@ -436,8 +478,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         std::sync::Arc::clone(inputs)
     };
 
-    let runtime = state
-        .match_state
+    let runtime = match_state
         .sim_runtime
         .presentation()
         .expect("sidebar runtime");
@@ -446,12 +487,12 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
     #[cfg(feature = "phobos")]
     let sw_plan = crate::app::presentation::sw_sidebar::plan(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
         owner,
         &inputs.sw_views,
     );
@@ -471,57 +512,50 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     };
     #[cfg(not(feature = "phobos"))]
     let right_sw_views = inputs.sw_views.clone();
-    let cameos = state
-        .match_state
+    let cameos = match_state
         .match_presentation
         .sidebar_projection
         .cameo_candidates(
             sim,
             rules,
-            state.process_assets.csf.as_ref(),
+            process_assets.csf.as_ref(),
             owner,
             &inputs,
             &right_sw_views,
             reuse_sim_inputs,
         );
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .set_cameo_columns(spec.columns());
-    let reconciled = state
-        .match_state
+    let reconciled = match_state
         .match_presentation
         .sidebar_projection
         .model
         .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .set_cameo_frame(sim.session().binary_frame() as i32);
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .reconcile_factory_links(sim, owner);
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .advance_cameo_requests(sim, owner);
     {
-        let presentation = &mut state.match_state.match_presentation;
+        let presentation = &mut match_state.match_presentation;
         apply_cameo_transitions(
             reconciled.transitions(),
             &mut presentation.active_sidebar_tab,
@@ -530,23 +564,22 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     }
     if reconciled.build_inserted() {
         crate::app::input::dispatch::push_local_eva(
-            &mut state.match_state.match_audio,
+            &mut match_state.match_audio,
             crate::app::input::sidebar_eva::EVA_NEW_CONSTRUCTION_OPTIONS,
         );
         crate::app::input::messages::post_eva_new_construction(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         );
     }
 
-    let display_credits = state
-        .match_state
+    let display_credits = match_state
         .match_presentation
         .sidebar_projection
         .model
@@ -559,7 +592,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         scroll_up_btn_size,
         top_btn_sizes,
     ) = {
-        let atlas = current_sidebar_chrome(&state.frontend, &state.match_state);
+        let atlas = current_sidebar_chrome(frontend, match_state);
         let size = |part| {
             atlas
                 .and_then(|atlas| atlas.art(part, ArtKey::Art, 0))
@@ -578,8 +611,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // lifecycle facts. A missing Ready row alone is not pointer expiry:
     // Dispatch7258D0 can clear product while retaining type/foundation.
     // App targeting state -> the sidebar-owned armed projection (F06 seam).
-    let armed_entry = state
-        .match_state
+    let armed_entry = match_state
         .input
         .targeting_mode
         .as_ref()
@@ -592,9 +624,9 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             }
         });
     let view_inputs = SidebarViewInputs {
-        spec: state.match_state.match_presentation.sidebar_layout_spec,
+        spec: match_state.match_presentation.sidebar_layout_spec,
         frame: sidebar_frame,
-        tab: state.match_state.match_presentation.active_sidebar_tab,
+        tab: match_state.match_presentation.active_sidebar_tab,
         credits: display_credits,
         sim: inputs,
         button_sizes: [
@@ -608,37 +640,26 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         ],
         armed: armed_entry,
         supers: right_sw_views,
-        gadgets: state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .clone(),
+        gadgets: match_state.match_presentation.sidebar_gadget_state.clone(),
         grids: added_grids(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
         ),
     };
     // The gadget refresh runs this on every service pass, several per game
     // frame; while the inputs, strips and Factory links all hold, the view
     // it would build equals the retained one. Debug builds build it anyway
     // and compare.
-    let holds = state
-        .match_state
+    let holds = match_state
         .match_presentation
         .sidebar_projection
         .view_holds_for(&view_inputs);
     if !holds || crate::sim::live_read_check_enabled() {
-        let view = build_view(
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &view_inputs,
-            owner,
-        );
-        let projection = &mut state.match_state.match_presentation.sidebar_projection;
+        let view = build_view(frontend, match_state, process_assets, &view_inputs, owner);
+        let projection = &mut match_state.match_presentation.sidebar_projection;
         if holds {
             assert_eq!(
                 projection.view(),
@@ -650,7 +671,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     }
     #[cfg(feature = "phobos")]
     {
-        let sw = &mut state.match_state.match_presentation.sw_sidebar;
+        let sw = &mut match_state.match_presentation.sw_sidebar;
         sw.layout = sw_plan.0;
         sw.entries = sw_plan.1;
     }
@@ -1414,20 +1435,38 @@ pub(crate) fn current_sidebar_chrome<'a>(
 /// 652E90 installs radar shape/palette from the current scenario side, without
 /// resetting frame/time. VERA's unpinned sandbox owner switch uses a forced
 /// source redraw; this development interaction has no native lifecycle claim.
-fn refresh_radar_animation_source(state: &mut AppState) {
-    let Some(resolved) = current_sidebar_resolution(&state.frontend, &state.match_state) else {
+fn refresh_radar_animation_source(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    let Some(resolved) = current_sidebar_resolution(frontend, match_state) else {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::radar_movie::retire(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            wall_ms,
+        );
         // No housing is left to settle and end the radar's static.
-        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
-        let presentation = &mut state.match_state.match_presentation;
+        crate::app::radar_movie::end_radar_sound_loop(audio);
+        let presentation = &mut match_state.match_presentation;
         presentation.radar_anim = None;
         presentation.radar_animation_source = None;
         presentation.radar_content_insets = None;
         return;
     };
-    if state
-        .match_state
+    if match_state
         .match_presentation
         .radar_animation_source
         .as_ref()
@@ -1443,12 +1482,12 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     let frames = resolved.atlas.radar_frames.clone();
     let [width, height] = resolved.atlas.radar_frame_size;
     let insets = resolved.atlas.radar_content_insets;
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     if let Some(radar) = presentation.radar_anim.as_mut() {
         if !radar.replace_frames(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             frames,
             width,
             height,
@@ -1457,9 +1496,9 @@ fn refresh_radar_animation_source(state: &mut AppState) {
         }
     } else {
         presentation.radar_anim = crate::render::radar::anim::RadarAnimState::new(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             frames,
             width,
             height,
@@ -1479,8 +1518,18 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     presentation.radar_content_insets = Some(insets);
     if presentation.radar_anim.is_none() {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
+        crate::app::radar_movie::retire(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            wall_ms,
+        );
+        crate::app::radar_movie::end_radar_sound_loop(audio);
     }
 }
 

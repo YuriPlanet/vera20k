@@ -3,10 +3,13 @@
 
 use super::*;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 
 /// Where the command bar's twelve buttons take the pointer, in frame pixels
@@ -155,7 +158,18 @@ pub(crate) fn tooltips(places: &CommandBarPlaces) -> Vec<(u16, Rect, &'static st
 }
 
 /// A command-bar button fired: `id` its result id; false when it is none.
-pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
+pub(super) fn apply(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    id: u16,
+    right: bool,
+) -> bool {
     if id == 0xF0 || id == 0xF1 {
         let opening = id == 0xF1;
         // Original gamemd.exe:
@@ -163,8 +177,7 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
         // state or gadget changes. F0 has no defeat guard. The chrome has
         // already consumed/released the physical button.
         if opening
-            && state
-                .match_state
+            && match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|runtime| runtime.simulation.local_player_defeated())
@@ -175,10 +188,10 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
         // existing bar state already matches. Programmatic6D1610/6D1660
         // remain separate soundless paths. Reuse the fixed catalog/player.
         crate::app::App::play_shell_rules_sound(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
             |rules| {
                 if opening {
                     rules.general.gui_open_sound()
@@ -187,8 +200,7 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
                 }
             },
         );
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_gadget_state
             .command_bar_closed = !opening;
@@ -199,7 +211,18 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
     }
     // Original6D0660 routes these IDs by command identity. Existing action
     // owners retain gameplay authority.
-    crate::app::input::dispatch::dispatch_command_bar(state, (id - 0xD6) as usize, right);
+    crate::app::input::dispatch::dispatch_command_bar(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        (id - 0xD6) as usize,
+        right,
+    );
     true
 }
 

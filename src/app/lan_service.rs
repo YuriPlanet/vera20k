@@ -1834,7 +1834,17 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 None
             };
             if let Some(destroyed) = destroyed {
-                super::match_runtime::network_match::post_connection_line(state, destroyed);
+                super::match_runtime::network_match::post_connection_line(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    destroyed,
+                );
             }
             return Ok(());
         }

@@ -564,7 +564,17 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         &mut state.match_state.match_presentation,
     );
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+        wall_ms,
+    );
     crate::app::chrono_screen::retire(
         &state.frontend.screen,
         &mut state.match_state,
@@ -1010,7 +1020,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             log::error!("Scenario installation rejected startup: {err}");
         }
     }
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+    );
 }
 
 /// VERA watching (docs/Networking.md "Watching"): the live session that

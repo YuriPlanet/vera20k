@@ -1019,7 +1019,17 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             service.poll_renewal(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
         if service.spawned {
-            poll_spawned_exit(state, &mut service);
+            poll_spawned_exit(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                &mut service,
+            );
         }
         show_problem_line(
             &mut state.frontend,

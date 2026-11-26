@@ -11,12 +11,15 @@ use crate::util::time::Instant;
 use std::path::Path;
 
 use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
@@ -289,7 +292,17 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // Game Movie` on, this route waited for the losing commander's clip, so
     // the verdict below is the first thing said after the loser. With the
     // switch off, this cuts a clip still playing.
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+        wall_ms,
+    );
     crate::app::chrono_screen::retire(
         &state.frontend.screen,
         &mut state.match_state,
@@ -1422,7 +1435,17 @@ fn advance_in_game_runtime_mode(
         && !state.match_state.debug_pause
         && !crate::app::state::focus_freeze_active(&state.platform, &state.match_state);
     if service_live {
-        super::scenario_pause::poll(state, wall_ms);
+        super::scenario_pause::poll(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            wall_ms,
+        );
     }
     let scenario_paused = state
         .match_state
@@ -1661,7 +1684,17 @@ fn advance_in_game_runtime_mode(
         // A frame sent to the simulation thread has no result yet: the pass
         // that finishes it does this ([`finish_threaded_frame`]).
         if frame_committed || !state.match_state.sim_runtime.is_lent() {
-            after_frame(state, frame_committed);
+            after_frame(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                frame_committed,
+            );
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(
@@ -1674,7 +1707,14 @@ fn advance_in_game_runtime_mode(
         );
     }
     after_simulation_pass(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
         decision,
         main_tick_pumps_audio,
         scroll_steps,
@@ -1683,16 +1723,25 @@ fn advance_in_game_runtime_mode(
 }
 
 /// The client work that follows one frame's result, committed or not.
-fn after_frame(state: &mut AppState, frame_committed: bool) {
+fn after_frame(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    frame_committed: bool,
+) {
     #[cfg(feature = "telemetry-dashboard")]
-    if frame_committed && state.diag.telemetry_active() {
-        state.match_state.telemetry_tick_rate.record(Instant::now());
+    if frame_committed && diag.telemetry_active() {
+        match_state.telemetry_tick_rate.record(Instant::now());
     }
     if frame_committed {
         // House4F92E2's strip pass reaches this frame as a pending
         // recheck; membership must not wait for the next player input.
-        let recheck = state
-            .match_state
+        let recheck = match_state
             .match_presentation
             .sidebar_projection
             .model
@@ -1700,32 +1749,34 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
         // Native Strip AI6A8CF3 requests redraw throughout the authored
         // flash window, even with no input. Reuse the one projection owner
         // only in these windows; ordinary idle ticks do not enumerate cameos.
-        let flashing = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .is_some_and(|runtime| {
-                state
-                    .match_state
-                    .match_presentation
-                    .sidebar_projection
-                    .model
-                    .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
-            });
+        let flashing = match_state.sim_runtime.runtime().is_some_and(|runtime| {
+            match_state
+                .match_presentation
+                .sidebar_projection
+                .model
+                .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
+        });
         // StripDraw6A9540 asks each entry's availability and reads its
         // Factory while drawing, so the drawn state follows the simulation
         // even when no pass, input or flash window rebuilt the projection
         // this frame.
         if recheck || flashing {
             // The rebuilt view takes the same drawn state.
-            crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
-        } else {
-            crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(
-                &mut state.match_state,
+            crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
             );
+        } else {
+            crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(match_state);
         }
         #[cfg(feature = "phobos")]
-        crate::app::presentation::sw_sidebar::refresh_draw_state(&mut state.match_state);
+        crate::app::presentation::sw_sidebar::refresh_draw_state(match_state);
     }
 }
 
@@ -1743,7 +1794,17 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
     {
         return;
     }
-    after_frame(state, frame_committed);
+    after_frame(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+        frame_committed,
+    );
     // What the pass that admitted the frame left to its result: the
     // Main_Tick's tactical composite, and its audio pump after Logic
     // (`0x0055DE4A`), so the tick's sounds start now and not when the next
@@ -1782,62 +1843,83 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
 /// the tick. The camera takes the steps its own clock owes, so scrolling
 /// keeps the picture rate however long the tick takes, and the per-pass
 /// presentation services run.
-pub(crate) fn service_beside_tick(state: &mut AppState) {
-    if state.frontend.screen != GameScreen::InGame {
+pub(crate) fn service_beside_tick(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    if frontend.screen != GameScreen::InGame {
         return;
     }
-    let replaying = state.match_state.match_diagnostics.is_replay_playback();
-    let scenario_paused = state
-        .match_state
+    let replaying = match_state.match_diagnostics.is_replay_playback();
+    let scenario_paused = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|rt| rt.simulation.session().scenario_paused());
     let decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: false,
-        window_active: state.platform.window_active,
-        focus_frozen: crate::app::state::focus_freeze_active(&state.platform, &state.match_state),
-        startup_admitted: state.match_state.startup.admits_ordinary_tick(),
+        window_active: platform.window_active,
+        focus_frozen: crate::app::state::focus_freeze_active(platform, match_state),
+        startup_admitted: match_state.startup.admits_ordinary_tick(),
         frame_stepping: false,
-        paused: state.match_state.paused(),
+        paused: match_state.paused(),
         scenario_paused: scenario_paused && !replaying,
-        menu_open: state.match_state.match_presentation.in_game_menu.is_open(),
-        session_mode: state.match_state.session_mode(),
+        menu_open: match_state.match_presentation.in_game_menu.is_open(),
+        session_mode: match_state.session_mode(),
         pacer_timing_admits: false,
-        network_wait: state.match_state.network_wait.waiting(),
-        network_dialog_open: state.match_state.network_wait.dialog_open(),
+        network_wait: match_state.network_wait.waiting(),
+        network_dialog_open: match_state.network_wait.dialog_open(),
     });
     let scroll_steps = crate::app::input::camera::take_scroll_steps(
-        &mut state.match_state.input,
+        &mut match_state.input,
         decision.camera_scroll,
         decision.frames_running,
         false,
     );
     if let Some(request) = crate::app::input::camera::sample_mouse_scroll(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         decision.scroll_input,
         scroll_steps,
     ) {
         crate::app::input::camera::commit_camera_scroll(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             request,
         );
     }
     // A held key release has not reached the keys yet: an arrow it lets go
     // must not keep scrolling until the tick is back.
-    let keyboard_steps = if state.platform.window_events_held {
+    let keyboard_steps = if platform.window_events_held {
         crate::app::input::camera::ScrollSteps::None
     } else {
         scroll_steps
     };
-    after_simulation_pass(state, decision, false, keyboard_steps, replaying);
+    after_simulation_pass(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        decision,
+        false,
+        keyboard_steps,
+        replaying,
+    );
 }
 
 /// Move the simulation's pending radar-terrain marks into the minimap's
@@ -1854,7 +1936,14 @@ pub(crate) fn drain_radar_terrain_marks(match_state: &mut super::state::MatchSta
 /// What every pass does after its simulation step, whether or not a frame
 /// ran.
 fn after_simulation_pass(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
     decision: RuntimePassDecision,
     main_tick_pumps_audio: bool,
     scroll_steps: crate::app::input::camera::ScrollSteps,
@@ -1862,10 +1951,8 @@ fn after_simulation_pass(
 ) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
     // including the path where the pacer admitted no simulation frame.
-    let wall_ms =
-        crate::app::diagnostics::state::radar_presentation_ms(&state.diag, &state.match_state);
-    state
-        .match_state
+    let wall_ms = crate::app::diagnostics::state::radar_presentation_ms(diag, match_state);
+    match_state
         .match_presentation
         .detail
         .borrow_mut()
@@ -1873,49 +1960,57 @@ fn after_simulation_pass(
 
     // Ordered native source/global operations were applied with the frame
     // output; they alone relight cells. Follow the detail option.
-    refresh_cell_lighting(&mut state.match_state);
+    refresh_cell_lighting(match_state);
 
     let sidebar_visits = crate::app::presentation::sidebar_gadgets::current_sidebar_action_visits(
-        &state.match_state,
+        match_state,
         decision.sidebar_action,
     );
     crate::app::presentation::building_anim::update_power_bar_anim(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
         wall_ms,
         sidebar_visits,
     );
     crate::app::presentation::sidebar_render::advance_sidebar_credits(
-        &state.frontend,
-        &mut state.match_state,
+        frontend,
+        match_state,
         sidebar_visits,
     );
     crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(
-        &state.frontend,
-        &mut state.match_state,
+        frontend,
+        match_state,
         sidebar_visits,
     );
     // Every unlocked pass republishes the complete sidebar projection,
     // including the retained House power pair the tooltip driver reads.
-    if state
-        .match_state
+    if match_state
         .match_presentation
         .sidebar_projection
         .view()
         .is_some()
-        && !crate::app::input::campaign_input::is_locked(&state.match_state)
+        && !crate::app::input::campaign_input::is_locked(match_state)
     {
-        crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
+        crate::app::presentation::sidebar_render::republish_sidebar_projection(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
         crate::app::input::chrome_input::refresh_pointer(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
         );
     }
     // The audio service is NOT gated on the simulation. gamemd's
@@ -1934,50 +2029,50 @@ fn after_simulation_pass(
     // belongs to the in-game frame.
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::presentation::building_anim::drain_sound_events(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
     );
-    let in_game_music = state.persistence.options_profile.in_game_music;
-    state.audio.main_tick_theme(in_game_music, music_now_ms);
+    let in_game_music = persistence.options_profile.in_game_music;
+    audio.main_tick_theme(in_game_music, music_now_ms);
     // Main_Tick's Network_ServiceLoop after Logic (`0x0055DE4A`). Logic's
     // sounds reach the arbiter in the drain above, so they start in this
     // same Main_Tick, as native's direct submissions do. A frame on the
     // simulation thread has delivered none yet: its pump runs when it
     // finishes ([`finish_threaded_frame`]).
-    if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
+    if decision.run_sim && main_tick_pumps_audio && !match_state.sim_runtime.is_lent() {
         pump_audio_service(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             music_now_ms,
         );
     }
-    crate::app::input::camera::queue_keyboard_scroll(&mut state.match_state, scroll_steps);
+    crate::app::input::camera::queue_keyboard_scroll(match_state, scroll_steps);
     if decision.tactical_mutation || replaying {
         crate::app::input::camera::animate_zoom(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
         );
     }
     if decision.tactical_mutation {
         update_building_placement_preview(
-            &state.platform,
-            &state.renderer,
-            &state.frontend,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
             FoundationCentre::Tactical,
         );
     }
@@ -3695,7 +3790,18 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 );
             }
             TriggerEffect::InputLockChanged { locked, was_locked } => {
-                crate::app::input::campaign_input::apply_lock_effect(state, *locked, *was_locked);
+                crate::app::input::campaign_input::apply_lock_effect(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                    *locked,
+                    *was_locked,
+                );
             }
             TriggerEffect::CancelPlacementModes => {
                 // Main_Tick runs Logic, where action 46 fires (0x0055DC9E),
@@ -3797,7 +3903,16 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
     // Publish the tab and initial flash phase in this same ordered batch;
     // input events are not required to expose trigger-authored UI changes.
     if refresh_sidebar {
-        crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+        crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+        );
     }
 }
 

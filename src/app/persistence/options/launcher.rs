@@ -6,6 +6,7 @@
 //! and child routing remain with their established owners.
 
 use super::audio::{AudioVolume, apply_volume, set_volume};
+use crate::app::App;
 use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
@@ -14,7 +15,6 @@ use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
-use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::{
     LauncherCheckboxId as C, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
     LauncherOptionsValues, LauncherParentResult, LauncherTrackbarId as S, OptionsDialogState, ROWS,
@@ -139,13 +139,22 @@ pub(crate) fn launcher_dialog_from_profile(
 /// Options' accept writes out); the boxes below also apply here to the
 /// window, the renderer or the rules. The audio predicate is queried again in
 /// [`apply_volume`] so a forged or stale audio event stores nothing.
-pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: LauncherOptionsEvent) {
+pub(crate) fn dispatch_launcher_preview_event(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    event: LauncherOptionsEvent,
+) {
     use LauncherOptionsEvent as E;
-    let profile = &mut state.persistence.options_profile;
+    let profile = &mut persistence.options_profile;
     match event {
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
-            App::sync_zoom_pass(&state.platform, &mut state.renderer, profile);
+            App::sync_zoom_pass(platform, renderer, profile);
         }
         E::SidebarSelected(size) => profile.sidebar = size,
         E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
@@ -166,22 +175,22 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // screen (or back to the system's choice) before the page is accepted.
         E::DisplaySelected(display) => {
             profile.display = display.clone();
-            let displays = crate::app::display_target::current_displays(&state.platform.window);
-            crate::app::display_target::apply(&state.platform.window, &displays, &display);
+            let displays = crate::app::display_target::current_displays(&platform.window);
+            crate::app::display_target::apply(&platform.window, &displays, &display);
         }
         // The open Options page reads its captions again once the events
         // have run.
         E::LanguageSelected(tag) => {
             if crate::app::shell_main_menu::use_language(
-                &mut state.frontend,
-                &mut state.match_state,
-                &mut state.process_assets,
+                frontend,
+                match_state,
+                process_assets,
                 &tag,
             ) {
-                state.persistence.options_profile.language = Some(tag);
+                persistence.options_profile.language = Some(tag);
             }
         }
-        E::SetWindowSizeRequested => App::restore_launch_window(&mut state.platform),
+        E::SetWindowSizeRequested => App::restore_launch_window(platform),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
         E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
@@ -193,37 +202,46 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
             if let Some(stored) = stored_box(profile, id) {
                 *stored = on;
             }
-            apply_box(state, id, on);
+            apply_box(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                id,
+                on,
+            );
         }
         // Baked into a battle's colour tables when it loads, like the sprite
         // atlas that reads them.
         E::HouseColorStrengthChanged(strength) => profile.house_color_strength = strength,
         E::ScorePreview(volume) => apply_volume(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence.options_profile,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            &mut persistence.options_profile,
             AudioVolume::Score,
             volume,
             true,
         ),
         E::SoundPreview(volume) => apply_volume(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence.options_profile,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            &mut persistence.options_profile,
             AudioVolume::Sound,
             volume,
             true,
         ),
         E::VoicePreview(volume) => apply_volume(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence.options_profile,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            &mut persistence.options_profile,
             AudioVolume::Voice,
             volume,
             true,
@@ -232,47 +250,48 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
 }
 
 /// A VERA box's change beyond the profile value it stores.
-fn apply_box(state: &mut AppState, id: C, on: bool) {
+fn apply_box(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    persistence: &PersistenceState,
+    id: C,
+    on: bool,
+) {
     match id {
-        C::FullScreen => {
-            App::set_full_screen(&mut state.platform, &state.persistence.options_profile, on)
-        }
-        C::OriginalShape => App::sync_zoom_pass(
-            &state.platform,
-            &mut state.renderer,
-            &state.persistence.options_profile,
-        ),
+        C::FullScreen => App::set_full_screen(platform, &persistence.options_profile, on),
+        C::OriginalShape => App::sync_zoom_pass(platform, renderer, &persistence.options_profile),
         // The menu movie's session identity carries the choice, so its next
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
         // built) now, before another shell screen can paint.
         C::YrOriginalStyle => {
             let _ = App::ensure_skirmish_shell_chrome(
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+                renderer,
+                frontend,
+                process_assets,
+                &persistence.options_profile,
             );
         }
         C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
         ),
         C::LockCursor => {
-            state.platform.cursor_confined = on;
-            crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
+            platform.cursor_confined = on;
+            crate::app::input::cursor::apply_cursor_confinement(platform);
         }
-        C::VeraIcon => show_vera_icon(&state.platform, &state.persistence.options_profile, on),
-        C::VSync => App::sync_present_mode(
-            &state.platform,
-            &mut state.renderer.gpu,
-            &state.persistence.options_profile,
-        ),
+        C::VeraIcon => show_vera_icon(platform, &persistence.options_profile, on),
+        C::VSync => {
+            App::sync_present_mode(platform, &mut renderer.gpu, &persistence.options_profile)
+        }
         // Live state only; no profile stores it, so each launch starts hidden.
-        C::PerformanceStats => state.renderer.performance_overlay.set_visible(on),
+        C::PerformanceStats => renderer.performance_overlay.set_visible(on),
         // The box arms the hotkey but leaves the texts showing, so ticking it
         // never swaps the page under the pointer. The loaded table and the
         // language catalog both answer with keys once the hotkey asks; map
@@ -280,15 +299,15 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
         C::ShowStringKeys => {
             crate::i18n::set_show_string_keys(on);
             crate::app::shell_main_menu::refresh_string_key_labels(
-                &mut state.frontend,
-                &mut state.match_state,
-                &mut state.process_assets,
+                frontend,
+                match_state,
+                process_assets,
             );
         }
         // A rule switch, as Terrain Deformation is: the next offline
         // scenario's rules read it, so a running match keeps what it started
         // with and every peer, save and replay plays the same rules.
-        C::BuildingProductionQueue => state.process_assets.set_building_production_queue(on),
+        C::BuildingProductionQueue => process_assets.set_building_production_queue(on),
         _ => {}
     }
 }
