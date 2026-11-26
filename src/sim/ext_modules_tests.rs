@@ -255,8 +255,8 @@ fn a_rust_built_module_runs() {
 /// `VERA20K_TEST_TS_WASM` lists AssemblyScript-built modules, `:`-separated
 /// (`sdk/typescript/examples`, `vera20k build`): each plays 9,000 frames of
 /// a Battle against one computer house, saved and loaded at frame 4,500.
-/// The loaded match must end with the live one's full state hash and module
-/// digests, the module must still be running (no trap and no budget
+/// The loaded match must keep the live one's module digests and end with a
+/// byte-identical save, the module must still be running (no trap and no budget
 /// overrun) and its memory must stay bounded. Prints each log and memory
 /// size (`--nocapture`).
 #[test]
@@ -293,7 +293,20 @@ fn typescript_modules_resume_from_a_save_exactly() {
                 assert_eq!(digests(&resumed), digests(&live), "{} frame {frame}", path.display());
             }
         }
-        assert_eq!(resumed.sim().state_hash(), live.sim().state_hash(), "{}", path.display());
+        // The full state: a save of each. (`state_hash` also covers caches a
+        // headless load rebuilds differently, unequal straight after loading
+        // whichever module runs.)
+        let save = |scene: &HeadlessScenario| {
+            let rules = &scene.runtime.resources.rules;
+            crate::sim::snapshot::GameSnapshot::save_validated(
+                scene.sim(),
+                0,
+                rules.simulation_config_hash(),
+                "ext modules",
+                0,
+            )
+        };
+        assert!(save(&resumed) == save(&live), "{}: the saves differ at frame 9,000", path.display());
         let status = live.sim().ext_modules().status();
         let log = live.runtime.simulation.ext_modules_mut().take_log();
         let end = live.sim().ext_modules().memory_bytes()[0];
