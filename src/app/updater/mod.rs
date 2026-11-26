@@ -30,7 +30,15 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBoxPurpose;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::state::AppState;
 use crate::app::web_link::{DOWNLOAD_PAGE, open_in_browser};
 use crate::ui::shell::modal::ShellBox;
@@ -329,7 +337,18 @@ fn advance(state: &mut AppState) -> Option<Instant> {
         } => match result.try_recv() {
             Ok(Ok(mut finish)) => {
                 state.frontend.updater.phase = Phase::Finished;
-                restart(state, &release, &mut finish);
+                restart(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                    &release,
+                    &mut finish,
+                );
                 None
             }
             // Whatever stopped a download the player cancelled, say nothing.
@@ -737,23 +756,43 @@ fn progress_text(version: Version, received: u64, size: u64) -> String {
 
 /// The update is in place (or its installer is ready): start what finishes
 /// it, then quit the way Exit Game does.
-fn restart(state: &mut AppState, release: &Release, finish: &mut Command) {
+fn restart(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    release: &Release,
+    finish: &mut Command,
+) {
     match finish.spawn() {
         Ok(child) => {
             // The macOS and Linux helper starts the new version when its
             // standard input ends, which this process's exit closes.
             std::mem::forget(child);
             log::info!("Updater: restarting into VERA20k {}", release.version);
-            App::confirm_quit(state);
+            App::confirm_quit(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+            );
         }
         Err(error) => {
             log::warn!("Updater: cannot start {:?}: {error}", finish.get_program());
             show_failure(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+                &platform.window,
+                renderer,
+                frontend,
+                process_assets,
+                &persistence.options_profile,
                 release.version,
                 &anyhow::Error::from(error),
             );

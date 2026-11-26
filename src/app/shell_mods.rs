@@ -10,11 +10,15 @@ use crate::util::time::Instant;
 
 use super::{App, AppState};
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::shell_layout::mods_layout;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::{ModFilesBox, ShellMessageBoxPurpose};
+use crate::app::match_runtime::state::MatchState;
 use crate::app::mod_files::{Against, Checked, PageCheck, Step};
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -1368,23 +1372,43 @@ impl App {
     /// The restart question's answer. Restart keeps the choice for the next
     /// start, then leaves the way Exit Game does; the game starts again once
     /// this copy is gone (`app::restart`).
-    pub(super) fn answer_mod_restart(state: &mut AppState, folder: Option<String>, restart: bool) {
+    pub(super) fn answer_mod_restart(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+        folder: Option<String>,
+        restart: bool,
+    ) {
         if !restart {
             return;
         }
         if Self::keep_mod_choice(
-            &state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            platform,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
             folder.as_deref(),
         ) {
             log::info!("Mods: restarting to use {folder:?}");
             crate::app::restart::ask();
             // As Exit Game leaves: from the empty backdrop, the page gone.
-            Self::close_mods_page(&mut state.frontend);
-            Self::confirm_quit(state);
+            Self::close_mods_page(frontend);
+            Self::confirm_quit(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+            );
         }
     }
 }

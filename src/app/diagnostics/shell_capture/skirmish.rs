@@ -1622,7 +1622,14 @@ impl SkirmishCapture {
                     // The abort box's Leave through the production action
                     // (queues the EXIT event, `0x004F192C`).
                     crate::app::input::abort::activate(
-                        state,
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
                         crate::ui::shell::abort::AbortButton::Leave,
                     );
                     self.route.push(json!({"screen": "in game", "frame": frame,

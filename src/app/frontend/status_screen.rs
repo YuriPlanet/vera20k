@@ -104,7 +104,14 @@ impl Action {
                 InGameMenuState::AbortConfirm,
             ),
             Self::Leave => App::apply_in_game_modal_outcome(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 ModalOutcome::LeaveMatch { destruct: false },
             ),
             // The import dialog is self-contained: it owns the step, and the
