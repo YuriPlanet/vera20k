@@ -21,10 +21,6 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 <img src="docs/images/vera20k-screenshots.png" alt="หน้าตั้งค่าการต่อสู้และภาพขณะเล่น VERA20K" width="100%">
 
-<p>
-  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> ชม Command &amp; Conquer Vietnam เล่น VERA20K บนแผนที่ Arctic Circle 16 เจอกับ AI ระดับ Brutal 29 ฝ่าย</a>
-</p>
-
 ## ดาวน์โหลดและเล่น
 
 1. ติดตั้ง Red Alert 2: Yuri's Revenge จาก Steam หรือแอป EA
@@ -32,6 +28,12 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 3. เปิดไฟล์ที่ดาวน์โหลดมา ระบบจะค้นหาเกมของคุณและติดตั้ง VERA20K ในโฟลเดอร์ของตัวเอง
 
 ติดปัญหาอยู่ใช่ไหม ดูที่[หน้าช่วยเหลือ](https://vera20k.org/th/help)
+
+## Command & Conquer Vietnam
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> ช่อง YouTube</a>
+
+[ชม Command & Conquer Vietnam เล่น VERA20K บนแผนที่ Arctic Circle 16 เจอกับ AI ระดับ Brutal 29 ฝ่าย](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ## เป้าหมายของโครงการ
 
@@ -121,7 +123,6 @@ Command & Conquer และ Red Alert ภายใต้ GPL, World-Altering Edi
 
 ลิขสิทธิ์ © 2026 Halvor Nikolai Rusten และผู้ร่วมพัฒนา VERA20K
 เผยแพร่ภายใต้สัญญาอนุญาต [GPLv3](LICENSE-GPL) พร้อม[ข้อกำหนดเพิ่มเติม](LEGAL.md#additional-terms)
-VERA20K ได้รับอนุญาตให้รวมไทล์แผนที่หิมะและน้ำแข็งจาก Tiberian Sun: Firestorm ไว้ในชุดติดตั้ง ไทล์เหล่านี้ยังคงเป็นทรัพย์สินของ Electronic Arts
 ผู้เล่นต้องใช้ไฟล์เกมจาก Red Alert 2: Yuri's Revenge ฉบับที่ตนเป็นเจ้าของ
 Command & Conquer และ Red Alert เป็นเครื่องหมายการค้าของ Electronic Arts Inc.
 ภาพหน้าจอและไอคอนแอป (ดาวแดงของ Red Alert 2) แสดงงานภาพจากเกมที่เป็นของ Electronic Arts

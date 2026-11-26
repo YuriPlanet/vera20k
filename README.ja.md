@@ -19,10 +19,6 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K のスカーミッシュ設定画面とゲーム画面" width="100%">
 
-<p>
-  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Command &amp; Conquer Vietnam が VERA20K のマップ「Arctic Circle 16」で難易度 Brutal の AI 29 勢力に挑戦。</a>
-</p>
-
 ## ダウンロードとプレイ
 
 1. Steam または EA app から Red Alert 2: Yuri's Revenge をインストールします。
@@ -30,6 +26,12 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 3. ダウンロードしたファイルを開きます。ゲームを見つけて、VERA20K を専用のフォルダーにセットアップします。
 
 うまくいかないときは[ヘルプページ](https://vera20k.org/help)（英語）をご覧ください。
+
+## Command & Conquer Vietnam
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube チャンネル</a>
+
+[Command & Conquer Vietnam が VERA20K のマップ「Arctic Circle 16」で難易度 Brutal の AI 29 勢力に挑戦。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ## プロジェクトの目標
 
@@ -112,7 +114,7 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開した Command & Conquer と Red Alert のソースコード、World-Altering Editor、Final Alert、YRpp、Ares、Phobos、そのほか多くの皆さんに感謝します。
 
 本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。
-VERA20K は許可を得て Tiberian Sun: Firestorm の雪と氷の地形タイルを同梱しています。これらのタイルは引き続き Electronic Arts の所有物です。Red Alert 2: Yuri's Revenge のゲームファイルはご自身でご用意ください。
+Red Alert 2: Yuri's Revenge のゲームファイルはご自身でご用意ください。
 Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).

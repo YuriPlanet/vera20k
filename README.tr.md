@@ -23,10 +23,6 @@ oyuncular söylüyor.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K çatışma ayarları ekranı ve oyun içi görünüm" width="100%">
 
-<p>
-  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Command &amp; Conquer Vietnam, VERA20K’yi Arctic Circle 16 haritasında Brutal zorluk seviyesindeki 29 yapay zekâ rakibine karşı oynuyor.</a>
-</p>
-
 ## İndir ve oyna
 
 1. Red Alert 2: Yuri's Revenge'i Steam'den ya da EA uygulamasından kurun.
@@ -34,6 +30,12 @@ oyuncular söylüyor.
 3. İndirdiğiniz dosyayı açın. Oyununuzu bulur ve VERA20K'yi kendi klasörüne kurar.
 
 Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
+
+## Command & Conquer Vietnam
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube kanalı</a>
+
+[Command & Conquer Vietnam, VERA20K’yi Arctic Circle 16 haritasında Brutal zorluk seviyesindeki 29 yapay zekâ rakibine karşı oynuyor.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ## Projenin hedefleri
 
@@ -135,8 +137,7 @@ Ares, Phobos ve daha nicelerine teşekkürler.
 
 Telif hakkı © 2026 Halvor Nikolai Rusten ve VERA20K'ya katkıda bulunanlar.
 [Ek koşullarla](LEGAL.md#additional-terms) birlikte [GPLv3](LICENSE-GPL) ile lisanslanmıştır.
-Tiberian Sun: Firestorm'daki kar ve buz karoları pakete izinle dahil edilmiştir.
-Bu karoların mülkiyeti Electronic Arts'a aittir. Oyuncular Red Alert 2: Yuri's Revenge
+Oyuncular Red Alert 2: Yuri's Revenge
 dosyalarını kendi oyun kopyalarından sağlar.
 Command & Conquer ve Red Alert, Electronic Arts Inc. şirketinin ticari markalarıdır.
 Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı yıldızı) oyun grafikleri

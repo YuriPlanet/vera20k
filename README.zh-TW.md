@@ -19,10 +19,6 @@ VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K 遭遇戰設定介面和遊戲畫面" width="100%">
 
-<p>
-  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> 觀看 Command &amp; Conquer Vietnam 在 VERA20K 的 Arctic Circle 16 地圖上挑戰 29 個冷酷 AI。</a>
-</p>
-
 ## 下載與遊玩
 
 1. 從 Steam 或 EA app 安裝《紅色警戒2：尤里的復仇》。
@@ -30,6 +26,12 @@ VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 3. 開啟下載的檔案。它會找到你的遊戲，並把 VERA20K 安裝到單獨的資料夾。
 
 遇到問題？請看[幫助頁面](https://vera20k.org/zh/help)。
+
+## Command & Conquer Vietnam
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube 頻道</a>
+
+[觀看 Command & Conquer Vietnam 在 VERA20K 的 Arctic Circle 16 地圖上挑戰 29 個冷酷 AI。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ## 專案目標
 
@@ -127,7 +129,7 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
 以及其他為此做出貢獻的專案和社群。
 
 版權所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 貢獻者。本專案採用 [GPLv3](LICENSE-GPL) 許可證，並附有[附加條款](LEGAL.md#additional-terms)。
-VERA20K 經許可隨附《Tiberian Sun: Firestorm》的雪地和冰面地塊，這些地塊仍歸 Electronic Arts 所有。玩家需自行提供《紅色警戒2：尤里的復仇》的遊戲檔案。
+玩家需自行提供《紅色警戒2：尤里的復仇》的遊戲檔案。
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商標，截圖和應用圖示（《紅色警戒2》的紅星）中的遊戲美術資源歸 Electronic Arts 所有。
 VERA20K 與 Electronic Arts 無隸屬關係，也未獲其認可。
 

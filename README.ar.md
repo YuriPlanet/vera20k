@@ -23,10 +23,6 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 
 <img src="docs/images/vera20k-screenshots.png" alt="شاشة إعداد المناوشات ومشهد من اللعب في VERA20K" width="100%">
 
-<p>
-  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> شاهد قناة Command &amp; Conquer Vietnam وهي تلعب VERA20K على خريطة Arctic Circle 16 ضد 29 خصمًا يتحكم بهم الحاسوب على مستوى Brutal.</a>
-</p>
-
 ## التنزيل واللعب
 
 1. ثبّت Red Alert 2: Yuri's Revenge من Steam أو تطبيق EA.
@@ -34,6 +30,12 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 3. افتح الملف الذي نزّلته. سيعثر على لعبتك ويثبّت VERA20K في مجلد خاص به.
 
 هل واجهتك مشكلة؟ راجع [صفحة المساعدة](https://vera20k.org/ar/help).
+
+## Command & Conquer Vietnam
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> قناة YouTube</a>
+
+[شاهد قناة Command & Conquer Vietnam وهي تلعب VERA20K على خريطة Arctic Circle 16 ضد 29 خصمًا يتحكم بهم الحاسوب على مستوى Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ## أهداف المشروع
 
@@ -133,7 +135,6 @@ cargo run --release --bin vera20k
 
 حقوق النشر © 2026 Halvor Nikolai Rusten والمساهمون في VERA20K.
 المشروع مرخّص بموجب [GPLv3](LICENSE-GPL) مع [شروط إضافية](LEGAL.md#additional-terms).
-أُدرجت بلاطات الثلج والجليد من Tiberian Sun: Firestorm في VERA20K بإذن، وتظل ملكًا لشركة Electronic Arts.
 على اللاعبين توفير ملفات اللعبة من نسختهم الخاصة من Red Alert 2: Yuri's Revenge. تُعد
 Command & Conquer وRed Alert علامتين تجاريتين لشركة Electronic Arts Inc.، وتعرض لقطات الشاشة
 وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.
