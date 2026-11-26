@@ -55,7 +55,7 @@ content as work lands; do not append a diary.
 | Map embedding (`[VeraWasm]`, `[VeraWasmRulesPack]`) | `src/map/ext_module_pack.rs` |
 | Loading | `headless_scenario.rs`, `app/loading/init.rs`: `PreparedExtModules::load` (mod folder `rules.wasm`, then map) before the rules load, `install_scenario_ext_modules` after the simulation exists |
 | `asset wasm-check / wasm-embed / wasm-extract` | `src/asset_tools/verb_wasm.rs` |
-| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` |
+| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field`; the benchmark `control-bench` |
 
 Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `.cargo/config.toml` targets wasm32 with the allowlisted features). The engine tests
@@ -70,7 +70,21 @@ house with each module that `VERA20K_TEST_PLAYTEST_WASM` lists (`:`-separated) a
 checks it keeps running with no trigger refused; `--nocapture` prints the module logs.
 These tests need `RA2_DIR` (the retail install) or they return early and pass
 without running.
-The examples' `.cargo/config.toml` is ignored by the root
+The benchmark mod `sdk/examples/control-bench` reaches nearly every phase-1 control
+point in one module (222 marks in a rules stage, four areas and a finale, all by
+frame ~2900) and runs
+through `control_bench_reaches_every_mark` (`VERA20K_TEST_CONTROL_BENCH` the built
+module, `VERA20K_TEST_CONTROL_BENCH_FRAMES` the frames, 6000 by default): the test
+makes a mod folder as a modder ships it (`rules.wasm`; the retail `rulesmd.ini`
+with the bench's merged in, since a mod's `rulesmd.ini` replaces the game's;
+`mod.ini`; `ControlBench.map`, XMP03T4 with the bench's `map.ini` TeamTypes) and
+loads the Battle against one computer house through that mod
+(`headless_scenario::load_with_mod_folder`), so `vera_init` and `on_rules` run
+at the rules stage. The finale starts when the areas are done or at frame 4800.
+It exercises `SuspendProduction`, vetoes then allows `Defeat`, and calls `EndFor`.
+The test requires `DEMO-OK bench.all` and fails on any `BENCH-FAIL` or refusal.
+It reports the failures and marks still missing. Its `README.zh-CN.md` lists what
+it leaves out and why. The examples' `.cargo/config.toml` is ignored by the root
 `.gitignore`; add a new one with `git add -f`.
 
 Writing modules: `core::fmt` (`write!`, `format_args!`, `{:?}`) in a `no_std` module
@@ -466,7 +480,8 @@ Items 1 and 2 of the control-point plan:
   computer's automatic deploy, the Approach arm). A refusal leaves a DeploysInto unit
   queueing Guard, a simple deployer's or infantryman's Unload ending in Guard without
   deploying, the others standing. Undeploys are not asked (RFC 4.5). Tests: a standing
-  GI's refusal (`ext_modules_control_tests.rs`).
+  GI's refusal (`ext_modules_control_tests.rs`); the Control Bench's
+  `movement.DeployInfantry`, `movement.DeployMcv`, `movement.DeployAllowed` (chopper).
 - Deferred by the maintainer: `MissionChanged` (1048, tier `later`; no raise
   point: mission transitions are written from many callers without rules or frame
   effects). `has_kind` answers 0 for it (`ext_modules_control_tests.rs`).
@@ -652,7 +667,9 @@ modules, external modders, freeze), and the later items (peer calls,
 
 - `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building
   survivors have no engine test (the duel scene's MCV does not deploy; survivor rolls
-  are random draws), nor does a vehicle crew's `Birth`.
+  are random draws); the Control Bench covers them in a Battle (`movement.DeployMcv`,
+  `movement.BirthYard`, `movement.BirthSurvivor`). A vehicle crew's `Birth` is tested
+  by neither.
 
 - The stopped-module notice is translated (`VERA:ModuleStopped`), but the fault
   reason inside it is English only.

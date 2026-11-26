@@ -15,8 +15,13 @@ pub(super) fn scenario() -> Option<HeadlessScenario> {
 
 /// The Battle on [`MAP`] against one computer house.
 pub(super) fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
+    session_against_computer(MAP)
+}
+
+/// The Battle on `map` against one computer house.
+fn session_against_computer(map: &str) -> crate::skirmish_launch::SkirmishLaunchSession {
     crate::headless_scenario::battle_session(
-        MAP,
+        map,
         &[(
             crate::skirmish_launch::LaunchCountry::Russia,
             crate::skirmish_launch::AiDifficulty::Easy,
@@ -350,6 +355,186 @@ fn ini_demo_mods_reach_their_marks() {
             );
         }
     }
+}
+
+/// The Control Bench (`sdk/examples/control-bench`) played as a mod when
+/// `VERA20K_TEST_CONTROL_BENCH` names its built module
+/// (`VERA20K_TEST_CONTROL_BENCH_FRAMES` frames, 6000 by default). The test
+/// makes the mod's folder as a modder ships it (docs/modding.md): the module
+/// as `rules.wasm`; `rulesmd.ini`, the retail file with the bench's
+/// `rulesmd.ini` merged in, since a mod's `rulesmd.ini` takes the place of
+/// the game's; `mod.ini`; and the bench's `ControlBench.map`. The match then loads through
+/// the mod: the module's `vera_init` and `on_rules` run while the rules are
+/// processed, its `Wasm.Tags` triggers come from the mod's `rulesmd.ini`.
+/// A Battle on the bench's map against one computer house runs that many
+/// frames. The module must still be running, reach `DEMO-OK bench.all` and
+/// log no refusals or `BENCH-FAIL` lines. A failure names the marks
+/// of the bench's latest `BENCH-MISSING` lines that no `DEMO-OK` line
+/// reached later. Prints the log
+/// (`--nocapture`).
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[test]
+fn control_bench_reaches_every_mark() {
+    const BENCH_MAP: &str = "ControlBench.map";
+    let Some(wasm) = std::env::var_os("VERA20K_TEST_CONTROL_BENCH") else {
+        return;
+    };
+    let Some((retail, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let frames: u32 = std::env::var("VERA20K_TEST_CONTROL_BENCH_FRAMES").map_or(6000, |f| {
+        f.trim()
+            .parse()
+            .expect("VERA20K_TEST_CONTROL_BENCH_FRAMES is a number")
+    });
+    let bench = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("sdk/examples/control-bench");
+    let read = |name: &str| {
+        std::fs::read_to_string(bench.join(name))
+            .unwrap_or_else(|e| panic!("{}: {e}", bench.join(name).display()))
+    };
+    let retail_file = |name: &str| {
+        assets
+            .resolve_ref(name)
+            .unwrap_or_else(|| panic!("the installation has no {name}"))
+            .bytes
+            .to_vec()
+    };
+    let folder = tempfile::tempdir().expect("create the bench mod folder");
+    std::fs::copy(&wasm, folder.path().join("rules.wasm")).expect("the module copies");
+    let files = [
+        ("mod.ini", read("mod.ini").into_bytes()),
+        (
+            "rulesmd.ini",
+            merge_ini_text(&retail_file("rulesmd.ini"), &read("rulesmd.ini")),
+        ),
+        (
+            BENCH_MAP,
+            merge_ini_text(&retail_file(MAP), &read("map.ini")),
+        ),
+    ];
+    for (name, bytes) in files {
+        std::fs::write(folder.path().join(name), bytes).expect("the mod's file is written");
+    }
+    let mut scene = crate::headless_scenario::load_with_mod_folder(
+        &retail,
+        BENCH_MAP,
+        SEED,
+        session_against_computer(BENCH_MAP),
+        folder.path(),
+    )
+    .expect("the bench loads as a mod");
+    // The rules stage's lines, then each frame's: the engine keeps only the
+    // latest lines, so collect them as they come.
+    let mut log = scene.runtime.simulation.ext_modules_mut().take_log();
+    for _ in 0..frames {
+        scene.tick();
+        log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
+    }
+    eprintln!("== Control Bench, {frames} frames");
+    for line in &log {
+        eprintln!("   {line}");
+    }
+    let status = scene.sim().ext_modules().status();
+    assert!(
+        matches!(status.as_slice(), [(ModuleSource::Mod, None)]),
+        "the bench is not running: {status:?}"
+    );
+    let failures: Vec<_> = log
+        .iter()
+        .filter(|line| line.starts_with("BENCH-FAIL ") || line.contains("refused"))
+        .collect();
+    let complete = log.iter().any(|line| line == "DEMO-OK bench.all");
+    if !complete || !failures.is_empty() {
+        // The latest report's list (the lines after the last `BENCH frame`
+        // line that has any), less the marks that came after it.
+        let mut missing: Vec<&str> = Vec::new();
+        let mut report_seen = false;
+        for line in &log {
+            if line.starts_with("BENCH frame") {
+                report_seen = true;
+            } else if let Some(name) = line.strip_prefix("BENCH-MISSING ") {
+                if report_seen {
+                    missing.clear();
+                    report_seen = false;
+                }
+                missing.push(name);
+            }
+        }
+        let reached: std::collections::HashSet<&str> = log
+            .iter()
+            .filter_map(|l| l.strip_prefix("DEMO-OK "))
+            .collect();
+        missing.retain(|name| !reached.contains(name));
+        panic!(
+            "after {frames} frames: bench.all={complete}, missing={missing:?}, failures={failures:?}"
+        );
+    }
+}
+
+/// `fragment` merged into the INI text `full` as a modder adds a mod's
+/// sections to a full copy of a file: the entries of each fragment section
+/// go right after the first header of that section in `full` (a section's
+/// first copy of a key wins), a section `full` lacks is appended. Comments
+/// and blank lines of the fragment are dropped. Works on bytes: retail INI
+/// text is not UTF-8.
+fn merge_ini_text(full: &[u8], fragment: &str) -> Vec<u8> {
+    let header = |line: &[u8]| -> Option<Vec<u8>> {
+        let line = line.trim_ascii_start();
+        let rest = line.strip_prefix(b"[")?;
+        let end = rest.iter().position(|&b| b == b']')?;
+        Some(rest[..end].to_vec())
+    };
+    let mut sections: Vec<(Vec<u8>, Vec<&str>, bool)> = Vec::new();
+    for line in fragment.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with(';') {
+            continue;
+        }
+        if let Some(name) = header(line.as_bytes()) {
+            sections.push((name, Vec::new(), false));
+        } else if let Some(section) = sections.last_mut() {
+            section.1.push(line);
+        }
+    }
+    let mut out = Vec::with_capacity(full.len() + fragment.len());
+    for line in full.split_inclusive(|&b| b == b'\n') {
+        out.extend_from_slice(line);
+        if !line.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        let Some(name) = header(line) else { continue };
+        if let Some(section) = sections.iter_mut().find(|s| !s.2 && s.0 == name) {
+            for entry in &section.1 {
+                out.extend_from_slice(entry.as_bytes());
+                out.push(b'\n');
+            }
+            section.2 = true;
+        }
+    }
+    for (name, entries, merged) in &sections {
+        if *merged {
+            continue;
+        }
+        out.push(b'[');
+        out.extend_from_slice(name);
+        out.extend_from_slice(b"]\n");
+        for entry in entries {
+            out.extend_from_slice(entry.as_bytes());
+            out.push(b'\n');
+        }
+    }
+    out
+}
+
+#[test]
+fn a_mod_fragment_merges_into_the_full_file() {
+    let full = b"[A]\r\nX=1\r\n[B]\r\nY=2";
+    let merged = merge_ini_text(full, "; note\n[B]\nZ=3\n\n[C]\nW=4\n");
+    assert_eq!(
+        String::from_utf8(merged).unwrap(),
+        "[A]\r\nX=1\r\n[B]\r\nZ=3\nY=2\n[C]\nW=4\n"
+    );
 }
 
 /// The player's units in Muster Field's camp, by cell: (id, cell, type).
