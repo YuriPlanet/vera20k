@@ -566,7 +566,7 @@ fn render_picture_cameo(
         })
         .and_then(|picture| {
             crate::render::picture_atlas::GamePictureFrames::shrink(
-                &picture,
+                picture,
                 None,
                 Some(CAMEO_CANVAS),
             )

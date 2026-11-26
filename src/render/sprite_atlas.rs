@@ -3116,6 +3116,27 @@ pub(crate) fn prepare_sprite_atlas(
     let mut building_type_bounds = previous_atlas
         .map(|atlas| atlas.building_type_bounds.clone())
         .unwrap_or_default();
+    // VERA-only, experimental (docs/picture-model-art.md): the body, Buildup
+    // and bib pictures the bounds below fold, decoded side by side.
+    if let Some(routes) = picture_routes.as_ref() {
+        let sources: Vec<PictureSource> = new_objects
+            .iter()
+            .filter(|(type_id, _)| !building_type_bounds.contains_key(type_id))
+            .filter_map(|(type_id, _)| {
+                let body = routes.object(type_id)?;
+                let bib = routes
+                    .art
+                    .get(&body.section)
+                    .and_then(|entry| entry.bib_shape.as_deref())
+                    .and_then(|bib| routes.bibs.get(&bib.to_ascii_uppercase()))
+                    .cloned();
+                Some([Some(body), routes.buildup(type_id), bib])
+            })
+            .flatten()
+            .flatten()
+            .collect();
+        pictures.prefetch(&sources, routes.art, asset_manager, theater_name);
+    }
     for (type_id, _) in &new_objects {
         if building_type_bounds.contains_key(type_id) {
             continue;
@@ -3556,6 +3577,11 @@ pub(crate) fn prepare_sprite_atlas(
             new_keys.iter().map(|key| routes.key(key)).collect()
         });
     let picture_of = |index: usize| key_pictures.get(index).and_then(Option::as_ref);
+    // The pictures the keys draw from, decoded side by side before the keys
+    // are placed one by one below.
+    if let Some(art) = art {
+        pictures.prefetch(key_pictures.iter().flatten(), art, asset_manager, theater_name);
+    }
     log::info!(
         "Sprite atlas: {} already resolved, {} new to render, {} total needed",
         needed.len() - new_keys.len(),
@@ -3700,39 +3726,54 @@ pub(crate) fn prepare_sprite_atlas(
     let mut placed_pictures = Vec::new();
     let mut picture_unrenderable = Vec::new();
     let default_ramps = HouseColorRamps::default();
+    // VERA-only, experimental (docs/picture-model-art.md): each picture key's
+    // frame, cropped and house-coloured, placed side by side from the
+    // pictures decoded above, as render_shp_frame places an SHP frame.
+    let picture_keys: Vec<usize> = (0..new_keys.len())
+        .filter(|&index| art.is_some() && picture_of(index).is_some())
+        .collect();
+    let mut picture_placements = crate::sim::parallel::map(&picture_keys, |&index| {
+        let (key, palette_choice) = (&new_keys[index], palette_choices[index]);
+        let (Some(source), Some(art)) = (picture_of(index), art) else {
+            return None;
+        };
+        let ramp = (key_house_remap(key, palette_choice)
+            && key.house_color != crate::rules::house_colors::NO_REMAP)
+            .then(|| {
+                rules
+                    .map_or(&default_ramps, |rules| &rules.house_color_ramps)
+                    .ramp(key.house_color)
+            });
+        let kind = key.palette_context.image_kind();
+        let draw_offsets = if kind == ShpImageKind::Projectile
+            || key.palette_context == ShpPaletteContext::Harvest
+        {
+            (0, 0)
+        } else {
+            art_draw_offsets(Some(art), &key.type_id, kind)
+        };
+        let infantry = shp_key_is_infantry(key, rules);
+        pictures.place_decoded(
+            key,
+            source,
+            draw_offsets,
+            |count| shp_frame_index(key, count, infantry),
+            ramp,
+        )
+    })
+    .into_iter();
+    // The decoded pictures are done with; freeing a map's worth of them takes
+    // a while, so a worker does it.
+    if picture_keys.is_empty() {
+        drop(pictures);
+    } else {
+        crate::sim::parallel::drop_on_pool(pictures);
+    }
     for (index, (key, palette_choice)) in new_keys.into_iter().zip(palette_choices).enumerate() {
         // VERA-only, experimental (docs/picture-model-art.md): a key whose
-        // art declares Picture= draws from its picture, never from an SHP,
-        // placed and offset as render_shp_frame places an SHP frame.
-        if let Some(source) = picture_of(index)
-            && let Some(art) = art
-        {
-            let ramp = (key_house_remap(&key, palette_choice)
-                && key.house_color != crate::rules::house_colors::NO_REMAP)
-                .then(|| {
-                    rules
-                        .map_or(&default_ramps, |rules| &rules.house_color_ramps)
-                        .ramp(key.house_color)
-                });
-            let kind = key.palette_context.image_kind();
-            let draw_offsets = if kind == ShpImageKind::Projectile
-                || key.palette_context == ShpPaletteContext::Harvest
-            {
-                (0, 0)
-            } else {
-                art_draw_offsets(Some(art), &key.type_id, kind)
-            };
-            let infantry = shp_key_is_infantry(&key, rules);
-            let placed = pictures.place(
-                &key,
-                source,
-                art,
-                asset_manager,
-                theater_name,
-                draw_offsets,
-                |count| shp_frame_index(&key, count, infantry),
-                ramp,
-            );
+        // art declares Picture= draws from its picture, never from an SHP.
+        if art.is_some() && picture_of(index).is_some() {
+            let placed = picture_placements.next().flatten();
             match placed {
                 Some(mut placed) => {
                     // Retail building bodies and Buildup frames are stored

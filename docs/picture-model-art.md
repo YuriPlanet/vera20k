@@ -640,6 +640,16 @@ current: say what was done, what was not, and what comes next.
   hash after 9,000 ticks at 1v29; mean frame within 0.15 ms of main
   (3.70–4.03 ms); the zoom-100 capture differs in 2–5 pixels, no more than
   two main runs differ from each other (within the noise rule).
+- Load time with declared art: the sprite atlas decoded and shrank every
+  picture, cropped each key's frame and freed them one by one on the
+  loading thread, and the overlay and bridge atlases decoded each rubble
+  body picture again. They are now decoded side by side on the worker pool
+  (`PictureSources::prefetch`, `rubble_pictures`), each key's frame is
+  placed side by side from them (`place_decoded`), a worker frees them, and
+  an APNG frame composites row by row. A full art set (XMP03T4, about 290
+  `Picture=` and 60 `Model=` sections) loaded in 45-50 s and now in 15 s,
+  with the same frames and state hash; retail data takes the same 2.3 s
+  as upstream main, the same pixels and hashes.
 - Zoomed units in front (fix): the zoomed HD copy of a picture building
   covered infantry standing in front of it, and its own SHP `ActiveAnim`,
   because those draw after it without writing Z. Production check,

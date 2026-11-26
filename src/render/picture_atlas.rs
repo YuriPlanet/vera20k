@@ -108,7 +108,7 @@ impl GamePictureFrames {
     /// the class most of its covered pixels have. Without `canvas` the
     /// picture is 1x art.
     pub(crate) fn shrink(
-        picture: &PictureFrames,
+        picture: PictureFrames,
         mask: Option<&PictureFrames>,
         canvas: Option<[u32; 2]>,
     ) -> Result<Self, PictureArtError> {
@@ -141,17 +141,18 @@ impl GamePictureFrames {
                 shrink_frame(rgba, mask, size[0], canvas, scale)
             })
             .collect();
+        // The HD frames keep the picture's own pixels, moved, not copied.
         let full = if scale > 1 {
             picture
                 .frames
-                .iter()
+                .into_iter()
                 .enumerate()
                 .map(|(index, rgba)| GameFrame {
-                    rgba: rgba.clone(),
                     classes: match mask {
                         Some(mask) => mask.frames[index].chunks_exact(4).map(mask_class).collect(),
                         None => vec![MaskClass::Plain; rgba.len() / 4],
                     },
+                    rgba,
                 })
                 .collect()
         } else {
@@ -468,33 +469,53 @@ impl PictureSources {
         self.decoded
             .entry(source.clone())
             .or_insert_with(|| {
-                let section = source.section.as_str();
-                let decl = &source.decl;
-                let (file, bytes) = art
-                    .picture_candidates(section, decl, theater_name)
-                    .into_iter()
-                    .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))?;
-                decode_declared_picture(section, &file, bytes, &decl, asset_manager)
+                decode_source(source, art, asset_manager, theater_name)
+                    .and_then(|(file, decoded)| report_decoded(source, &file, decoded))
             })
             .as_ref()
     }
 
-    /// `key`'s frame of `source`, placed at the art's `draw_offsets`, house
-    /// colour in `ramp`; None when it draws nothing. `select_frame` picks the
-    /// frame drawn from the picture's frame count, as `render_shp_frame`
-    /// picks an SHP's.
-    pub(crate) fn place(
+    /// Decode each of `sources` not decoded yet, side by side on the worker
+    /// pool, so the atlas build that follows finds them all decoded. A map
+    /// whose art declares many pictures otherwise decodes and shrinks them one
+    /// by one on the loading thread. Logs and art problems are told in the
+    /// order of `sources`, as [`Self::frames`] would tell them.
+    pub(crate) fn prefetch<'s>(
         &mut self,
-        key: &crate::render::sprite_atlas::ShpSpriteKey,
-        source: &PictureSource,
+        sources: impl IntoIterator<Item = &'s PictureSource>,
         art: &crate::rules::art_data::ArtRegistry,
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_name: &str,
+    ) {
+        let mut seen = std::collections::HashSet::new();
+        let todo: Vec<&PictureSource> = sources
+            .into_iter()
+            .filter(|source| !self.decoded.contains_key(*source) && seen.insert(*source))
+            .collect();
+        let decoded = crate::sim::parallel::map(&todo, |source| {
+            decode_source(source, art, asset_manager, theater_name)
+        });
+        for (source, decoded) in todo.into_iter().zip(decoded) {
+            let frames = decoded.and_then(|(file, decoded)| report_decoded(source, &file, decoded));
+            self.decoded.insert(source.clone(), frames);
+        }
+    }
+
+    /// `key`'s frame of `source`, placed at the art's `draw_offsets`, house
+    /// colour in `ramp`; None when it draws nothing, or when
+    /// [`Self::frames`] or [`Self::prefetch`] has not decoded `source`.
+    /// `select_frame` picks the frame drawn from the picture's frame count,
+    /// as `render_shp_frame` picks an SHP's. Reads only, so keys can be
+    /// placed side by side.
+    pub(crate) fn place_decoded(
+        &self,
+        key: &crate::render::sprite_atlas::ShpSpriteKey,
+        source: &PictureSource,
         draw_offsets: (i32, i32),
         select_frame: impl FnOnce(usize) -> Option<usize>,
         ramp: Option<&[Color; RAMP_SIZE]>,
     ) -> Option<PlacedPicture> {
-        let frames = self.frames(source, art, asset_manager, theater_name)?;
+        let frames = self.decoded_frames(source)?;
         let sprite = frames.sprite(select_frame(frames.frame_count())?, ramp)?;
         let [width, height] = frames.canvas;
         // -ShapeWidth/2, truncated, as `render_shp_frame`.
@@ -575,17 +596,31 @@ pub(crate) fn building_render_bounds(
     bounds
 }
 
-/// The picture `file`, read as `bytes` for art section `section` that
-/// declares it as `decl`, with its mask beside it, at game pixels. A
-/// picture that cannot be decoded or does not fit its canvas is logged and
-/// draws nothing.
-fn decode_declared_picture(
-    section: &str,
+/// The file `source` loads in `theater_name`, and its picture at game pixels
+/// ([`shrink_picture`]); None when no candidate file is there. Pure: what
+/// it found is told by [`report_decoded`].
+fn decode_source(
+    source: &PictureSource,
+    art: &crate::rules::art_data::ArtRegistry,
+    asset_manager: &crate::assets::asset_manager::AssetManager,
+    theater_name: &str,
+) -> Option<(String, Result<GamePictureFrames, PictureArtError>)> {
+    let (file, bytes) = art
+        .picture_candidates(&source.section, &source.decl, theater_name)
+        .into_iter()
+        .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))?;
+    let decoded = shrink_picture(&file, bytes, &source.decl, asset_manager);
+    Some((file, decoded))
+}
+
+/// The picture `file` (`bytes`), with its mask beside it, shrunk to the
+/// game pixels `decl` gives.
+fn shrink_picture(
     file: &str,
     bytes: &[u8],
     decl: &crate::rules::art_data::PictureDecl,
     asset_manager: &crate::assets::asset_manager::AssetManager,
-) -> Option<GamePictureFrames> {
+) -> Result<GamePictureFrames, PictureArtError> {
     let mask_name = format!(
         "{}.mask.png",
         file.rsplit_once('.').map_or(file, |(stem, _)| stem)
@@ -597,13 +632,23 @@ fn decode_declared_picture(
             .transpose()?;
         Ok((picture, mask))
     });
-    let shrunk = decoded
+    decoded
         .map_err(PictureArtError::from)
         .and_then(|(picture, mask)| {
             let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
-            GamePictureFrames::shrink(&picture, mask.as_ref(), canvas)
-        });
-    match shrunk {
+            GamePictureFrames::shrink(picture, mask.as_ref(), canvas)
+        })
+}
+
+/// Log `source`'s picture `file` as decoded, or why it cannot be drawn, as
+/// an art problem told in the match.
+fn report_decoded(
+    source: &PictureSource,
+    file: &str,
+    decoded: Result<GamePictureFrames, PictureArtError>,
+) -> Option<GamePictureFrames> {
+    let (section, decl) = (source.section.as_str(), &source.decl);
+    match decoded {
         Ok(frames) => {
             log::info!(
                 "[{section}] {file}: {} frames of {}x{}",
@@ -626,17 +671,35 @@ fn decode_declared_picture(
     }
 }
 
-/// A destroyed building's rubble frames when its art declares `Picture=`:
-/// the body picture rubble binding resolved (`RubbleArt::shp`), at game
-/// pixels. None for SHP rubble, which never reaches here, and for a picture
-/// that cannot be drawn.
-pub(crate) fn rubble_picture(
-    art: &crate::rules::building_rubble::RubbleArt,
+/// A destroyed building's rubble frames, for each of `arts` in order, when
+/// its art declares `Picture=`: the body picture rubble binding resolved
+/// (`RubbleArt::shp`), at game pixels. None for SHP rubble and for a picture
+/// that cannot be drawn. Each declared picture is decoded and shrunk side by
+/// side on the worker pool (each is a whole building body), then logged and
+/// reported in `arts`' order. All None, and no pool work, when none declares
+/// a picture.
+pub(crate) fn rubble_pictures(
+    arts: &[crate::rules::building_rubble::RubbleArt],
     asset_manager: &crate::assets::asset_manager::AssetManager,
-) -> Option<GamePictureFrames> {
-    let decl = art.picture.as_ref()?;
-    let bytes = asset_manager.get_ref(&art.shp)?;
-    decode_declared_picture(&art.shp, &art.shp, bytes, decl, asset_manager)
+) -> Vec<Option<GamePictureFrames>> {
+    if arts.iter().all(|art| art.picture.is_none()) {
+        return arts.iter().map(|_| None).collect();
+    }
+    let decoded = crate::sim::parallel::map(arts, |art| {
+        let decl = art.picture.as_ref()?;
+        let bytes = asset_manager.get_ref(&art.shp)?;
+        Some(shrink_picture(&art.shp, bytes, decl, asset_manager))
+    });
+    arts.iter()
+        .zip(decoded)
+        .map(|(art, decoded)| {
+            let source = PictureSource {
+                section: art.shp.clone(),
+                decl: art.picture.clone()?,
+            };
+            report_decoded(&source, &art.shp, decoded?)
+        })
+        .collect()
 }
 
 /// One RGBA source page of picture sprites: its size, pixels, index plane
@@ -854,7 +917,7 @@ mod tests {
         ];
         let mask: Vec<u8> = mask_rows.concat().concat();
         let shrunk = GamePictureFrames::shrink(
-            &picture(4, 2, vec![frame]),
+            picture(4, 2, vec![frame]),
             Some(&picture(4, 2, vec![mask])),
             Some([2, 1]),
         )
@@ -875,7 +938,7 @@ mod tests {
         let frame = vec![255, 0, 0, 255, 0, 100, 0, 255];
         let mask = vec![255, 0, 0, 255, 255, 0, 0, 255];
         let shrunk = GamePictureFrames::shrink(
-            &picture(2, 1, vec![frame.clone()]),
+            picture(2, 1, vec![frame.clone()]),
             Some(&picture(2, 1, vec![mask])),
             None,
         )
@@ -886,7 +949,7 @@ mod tests {
         assert_eq!(sprite.rgba, [0, 0, 0, 255, 9, 0, 0, 255]);
         assert_eq!(sprite.indices, [LIT_INDEX, LIT_INDEX]);
         assert!(
-            GamePictureFrames::shrink(&picture(2, 1, vec![frame]), None, Some([3, 1])).is_err()
+            GamePictureFrames::shrink(picture(2, 1, vec![frame]), None, Some([3, 1])).is_err()
         );
     }
 
@@ -954,7 +1017,7 @@ mod tests {
         let unlit = [0, 255, 0, 255];
         let mask_rows = [[[0; 4]; 4], [[0; 4], unlit, [0; 4], [0; 4]]];
         let shrunk = GamePictureFrames::shrink(
-            &picture(4, 2, vec![rows.concat().concat()]),
+            picture(4, 2, vec![rows.concat().concat()]),
             Some(&picture(4, 2, vec![mask_rows.concat().concat()])),
             Some([2, 1]),
         )

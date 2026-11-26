@@ -209,7 +209,12 @@ pub fn build_bridge_atlas(
     // Cell47F64B uses its recorded BuildingType's image, independently of
     // the overlay image whose rectangle admits the outer Tactical sweep.
     let mut loaded_rubble = HashSet::new();
+    // VERA-only (docs/picture-model-art.md): the declared body pictures,
+    // decoded side by side.
+    let mut rubble_pictures =
+        crate::render::picture_atlas::rubble_pictures(rubble_arts, asset_manager).into_iter();
     for art in rubble_arts {
+        let picture = rubble_pictures.next().flatten();
         let key = BridgeAtlasKey {
             name: crate::render::overlay_atlas::rubble_image_name(&art.shp),
             frame: art.shadow_frame,
@@ -223,7 +228,7 @@ pub fn build_bridge_atlas(
         // its SHP is never opened.
         if art.picture.is_some() {
             rendered.extend(
-                crate::render::picture_atlas::rubble_picture(art, asset_manager)
+                picture
                     .and_then(|frames| frames.stored_frame(usize::from(art.shadow_frame)))
                     .map(|frame| RenderedBridge {
                         key,

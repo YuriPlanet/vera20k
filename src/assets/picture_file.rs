@@ -87,7 +87,15 @@ impl PictureFrames {
             {
                 return Err(PictureError::FrameOutside);
             }
-            let rgba = to_rgba(&buffer[..output.buffer_size()], output.color_type, w, h);
+            let samples = &buffer[..output.buffer_size()];
+            // RGBA output is used as it is; other layouts are expanded.
+            let expanded;
+            let rgba: &[u8] = if output.color_type == png::ColorType::Rgba {
+                samples
+            } else {
+                expanded = to_rgba(samples, output.color_type, w, h);
+                &expanded
+            };
             let dispose = control.map_or(png::DisposeOp::None, |control| control.dispose_op);
             // A first frame's Previous disposal acts as Background (APNG 1.0).
             let dispose = match (index, dispose) {
@@ -96,17 +104,27 @@ impl PictureFrames {
             };
             let saved = (dispose == png::DisposeOp::Previous).then(|| canvas.clone());
             let over = control.is_some_and(|control| control.blend_op == png::BlendOp::Over);
+            let row_bytes = (w * 4) as usize;
             for row in 0..h {
-                for column in 0..w {
-                    let from = ((row * w + column) * 4) as usize;
-                    let to = (((y + row) * width + x + column) * 4) as usize;
-                    let source: [u8; 4] = rgba[from..from + 4].try_into().unwrap();
-                    let target = &mut canvas[to..to + 4];
-                    if over {
-                        let blended = blend_over(source, target.try_into().unwrap());
-                        target.copy_from_slice(&blended);
-                    } else {
-                        target.copy_from_slice(&source);
+                let from = (row * w * 4) as usize;
+                let to = (((y + row) * width + x) * 4) as usize;
+                let source = &rgba[from..from + row_bytes];
+                let target = &mut canvas[to..to + row_bytes];
+                if !over {
+                    target.copy_from_slice(source);
+                    continue;
+                }
+                for (source, target) in source.chunks_exact(4).zip(target.chunks_exact_mut(4)) {
+                    match source[3] {
+                        255 => target.copy_from_slice(source),
+                        0 => {}
+                        _ => {
+                            let blended = blend_over(
+                                source.try_into().unwrap(),
+                                (&*target).try_into().unwrap(),
+                            );
+                            target.copy_from_slice(&blended);
+                        }
                     }
                 }
             }

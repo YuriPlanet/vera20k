@@ -875,7 +875,12 @@ pub(crate) fn build_overlay_atlas_on_device(
     // destroyed type's own image frame through the cell's ordinary Convert, so
     // it shares the ordinary overlay palette and has no type Y bias.
     let mut rubble_loaded: HashSet<OverlaySpriteKey> = HashSet::new();
+    // VERA-only (docs/picture-model-art.md): the declared body pictures,
+    // decoded side by side.
+    let mut rubble_pictures =
+        crate::render::picture_atlas::rubble_pictures(rubble_arts, asset_manager).into_iter();
     for art in rubble_arts {
+        let picture = rubble_pictures.next().flatten();
         let key = rubble_key(&art.shp, art.body_frame);
         if rubble_loaded.contains(&key) {
             continue;
@@ -884,8 +889,7 @@ pub(crate) fn build_overlay_atlas_on_device(
         // Picture= draws its rubble frame from the picture; its SHP is never
         // opened.
         if art.picture.is_some() {
-            if let Some(sprite) = crate::render::picture_atlas::rubble_picture(art, asset_manager)
-                .and_then(|frames| render_rubble_picture(&frames, art))
+            if let Some(sprite) = picture.and_then(|frames| render_rubble_picture(&frames, art))
             {
                 rendered.push(sprite);
                 rubble_loaded.insert(key);
@@ -2304,7 +2308,7 @@ mod tests {
             })
             .collect();
         let picture = GamePictureFrames::shrink(
-            &crate::assets::picture_file::PictureFrames {
+            crate::assets::picture_file::PictureFrames {
                 width: 8,
                 height: 2,
                 frames,
@@ -2351,7 +2355,7 @@ mod tests {
             })
             .collect();
         let picture = GamePictureFrames::shrink(
-            &crate::assets::picture_file::PictureFrames {
+            crate::assets::picture_file::PictureFrames {
                 width: 4,
                 height: 1,
                 frames,
