@@ -230,6 +230,16 @@ pub(crate) enum ClientStep {
     Now(ShellExitThen),
 }
 
+/// One thing a transport service's translator would have applied, in its
+/// order ([`App::apply_service_steps`]).
+#[must_use = "a step runs only when App::apply_service_steps applies it"]
+pub(crate) enum ServiceStep {
+    /// `shell_network_setup::service_event(event)`: its error stops the list.
+    Setup(crate::app::shell_network_setup::NetworkSetupEvent),
+    /// A page step or a rebuild step ([`App::apply_step`]).
+    Client(ClientStep),
+}
+
 impl App {
     /// Shared pre-dialog Session read: Skirmish at52E11E and LAN (including
     /// failed IPX admission) at52E37D. Preferences stay in their process
@@ -1927,6 +1937,24 @@ impl App {
             }
             ClientStep::Now(then) => then(state),
         }
+    }
+
+    /// Run a translator's steps in order, where it returned them. The first
+    /// setup error stops the rest and is returned, as the translator's `?`
+    /// stopped it.
+    pub(super) fn apply_service_steps(
+        state: &mut AppState,
+        steps: Vec<ServiceStep>,
+    ) -> anyhow::Result<()> {
+        for step in steps {
+            match step {
+                ServiceStep::Setup(event) => {
+                    crate::app::shell_network_setup::service_event(state, event)?
+                }
+                ServiceStep::Client(step) => Self::apply_step(state, step),
+            }
+        }
+        Ok(())
     }
 
     /// Leave network setup `dialog` for the agreed start: the only result the

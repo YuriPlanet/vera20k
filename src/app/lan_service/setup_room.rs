@@ -1,6 +1,11 @@
 //! The setup room's liveness and requests: setup leases, presence announcements,
 //! queued setup requests, host timing and the player-row projection.
 
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::net::global::GlobalDestination;
 use crate::net::lan_messages::LanMessage;
 use crate::net::lan_messages::LanNamedMessage;
@@ -549,26 +554,36 @@ pub(crate) fn prepare_host_timing(
 }
 
 pub(super) fn observe_participant(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
     endpoint: SocketAddrV4,
     message: LanMessage,
     now: u32,
 ) {
     if message
         .name()
-        .eq_ignore_ascii_case(&local_name(&state.frontend, &state.match_state.session))
+        .eq_ignore_ascii_case(&local_name(frontend, &match_state.session))
     {
         return;
     }
-    let Some(service) = state.match_state.lan_service.as_mut() else {
+    let Some(service) = match_state.lan_service.as_mut() else {
         return;
     };
     service.record_observed_participant(endpoint, message, now);
-    project_players(state);
+    project_players(renderer, frontend, match_state, process_assets, sfx_player);
 }
 
-pub(super) fn project_players(state: &mut AppState) {
-    let Some(service) = state.match_state.lan_service.as_ref() else {
+pub(super) fn project_players(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let Some(service) = match_state.lan_service.as_ref() else {
         return;
     };
     let game = service.selected_game.and_then(|id| service.game(id));
@@ -577,8 +592,8 @@ pub(super) fn project_players(state: &mut AppState) {
     let mut players = Vec::new();
     if game.is_none() {
         players.push(super::shell_lan::local_lobby_row(&local_name(
-            &state.frontend,
-            &state.match_state.session,
+            frontend,
+            &match_state.session,
         )));
     }
     for peer in &service.observed_participants {
@@ -601,7 +616,11 @@ pub(super) fn project_players(state: &mut AppState) {
         });
     }
     super::shell_lan::service_event(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         super::shell_lan::LanServiceEvent::Players {
             game_id: selected,
             players,

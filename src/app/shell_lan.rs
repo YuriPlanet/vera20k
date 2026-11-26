@@ -3,6 +3,7 @@
 //! and replies here; only MatchSession owns admitted participants/setup.
 
 use super::{App, AppState};
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::match_runtime::session::{
@@ -11,6 +12,7 @@ use crate::app::match_runtime::session::{
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_route::ShellRoute;
 use crate::audio::sfx::SfxPlayer;
 use crate::net::lan_messages::setup;
@@ -114,7 +116,6 @@ pub(crate) enum LanServiceEvent {
     JoinCanceled {
         game_id: u64,
     },
-    JoinAccepted(LanJoinAcceptance),
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +203,16 @@ impl LanShellRuntime {
         self.lobby.selection_enabled = true;
         self.lobby.set_enabled(true);
         self.requests.push(LanServiceRequest::Refresh);
+    }
+
+    /// The games list's selection for the player named `local`: the Lobby
+    /// sentinel shows only the local row; the service projects a game's.
+    fn select_game(&mut self, local: &str, game_id: Option<u64>, change: LanSelectionChange) {
+        if game_id.is_none() {
+            self.lobby.replace_players(vec![local_lobby_row(local)]);
+        }
+        self.requests
+            .push(LanServiceRequest::SelectGame { game_id, change });
     }
 }
 
@@ -702,40 +713,47 @@ pub(crate) fn report_error(
     });
 }
 
-pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
-    let name = state
-        .frontend
-        .multiplayer_shell_runtime
-        .local_participant()
-        .name;
+/// What the lobby does for `action`. Create (stock BB) and Back return their
+/// leave as the step.
+#[must_use]
+pub(crate) fn dispatch(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    action: LanLobbyAction,
+) -> Option<ClientStep> {
+    let name = frontend.multiplayer_shell_runtime.local_participant().name;
     if matches!(
         action,
         LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) && crate::app::lan_service::unavailable(&state.platform, &state.match_state)
+    ) && crate::app::lan_service::unavailable(platform, match_state)
     {
         // Without its sockets the room would be one nobody sees: try them
         // again, and say why when they are still taken.
         crate::app::lan_service::open(
-            &state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
         );
-        if crate::app::lan_service::unavailable(&state.platform, &state.match_state) {
-            if let Some(runtime) = state.frontend.lan.as_mut() {
+        if crate::app::lan_service::unavailable(platform, match_state) {
+            if let Some(runtime) = frontend.lan.as_mut() {
                 runtime.lobby.set_enabled(true);
             }
-            return;
+            return None;
         }
     }
     match action {
         // VERA's room limits are modal within BB (0x005DDBD0). Stock BB's
         // Create command goes straight to room setup.
-        LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
-            let limits = state.frontend.room_limits;
-            state.frontend.lan.as_mut().expect("active BB").creating = true;
+        LanLobbyAction::Create { observe: _ } if !frontend.native_shell_ui => {
+            let limits = frontend.room_limits;
+            frontend.lan.as_mut().expect("active BB").creating = true;
             let choices = crate::ui::room_limits::widgets(limits, ROOM_PLAYERS, ROOM_SPECTATORS);
             let align = crate::ui::shell::geom::ShellAlign::H_RIGHT
                 | crate::ui::shell::geom::ShellAlign::V_CENTER;
@@ -745,38 +763,40 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 align,
             );
             push_box(
-                &state.renderer,
-                &mut state.frontend,
+                renderer,
+                frontend,
                 box_spec(&[OK, CANCEL]).children(choices).child(caption),
             );
+            None
         }
-        LanLobbyAction::Create { observe: _ } => create(state, &name),
+        LanLobbyAction::Create { observe: _ } => {
+            create(renderer, frontend, &mut match_state.session, &name)
+        }
         LanLobbyAction::Join { game_id, observe } => {
-            state.match_state.session.take_network_room_return();
-            let reserved = reserved_names(&state.process_assets);
+            match_state.session.take_network_room_return();
+            let reserved = reserved_names(process_assets);
             let error = join_error(
-                &state.frontend.lan.as_ref().expect("active BB").lobby,
+                &frontend.lan.as_ref().expect("active BB").lobby,
                 &name,
                 &reserved,
             );
             if let Some(key) = error {
-                state
-                    .frontend
+                frontend
                     .lan
                     .as_mut()
                     .expect("active BB")
                     .lobby
                     .set_enabled(true);
                 report_error(
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
                     key,
                 );
             } else if let Some(game_id) = game_id {
-                let runtime = state.frontend.lan.as_mut().expect("active BB");
+                let runtime = frontend.lan.as_mut().expect("active BB");
                 runtime.pending_join = Some(PendingJoin {
                     game_id,
                     observe,
@@ -788,28 +808,23 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                     .requests
                     .push(LanServiceRequest::Join { game_id, observe });
             }
+            None
         }
-        LanLobbyAction::Back => {
-            App::leave_shell_dialog(state, shell_transition::ShellSlideKind::LanLobby, |state| {
+        LanLobbyAction::Back => Some(ClientStep::Leave(
+            shell_transition::ShellSlideKind::LanLobby,
+            Box::new(|state: &mut AppState| {
                 App::commit_lan_back(&mut state.frontend, &mut state.match_state)
-            })
+            }),
+        )),
+        LanLobbyAction::ObserverChanged(value) => {
+            frontend.multiplayer_shell_runtime.set_lan_observer(value);
+            None
         }
-        LanLobbyAction::ObserverChanged(value) => state
-            .frontend
-            .multiplayer_shell_runtime
-            .set_lan_observer(value),
         LanLobbyAction::NameChanged(value) => {
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .set_lan_name(&value);
+            frontend.multiplayer_shell_runtime.set_lan_name(&value);
             // The row shows the name as sent, as the service's rebuild does.
-            let name = state
-                .frontend
-                .multiplayer_shell_runtime
-                .local_participant()
-                .name;
-            let runtime = state.frontend.lan.as_mut().expect("active BB");
+            let name = frontend.multiplayer_shell_runtime.local_participant().name;
+            let runtime = frontend.lan.as_mut().expect("active BB");
             runtime.requests.push(LanServiceRequest::NameChanged);
             // Local discovery row is a projection. It is always first only
             // when looking at the Lobby sentinel, never a selected game's roster.
@@ -823,15 +838,16 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 }
                 runtime.lobby.replace_players(players);
             }
+            None
         }
         LanLobbyAction::SendChat(message) => {
             let mut display: Vec<u16> = format!("[{name}] ").encode_utf16().collect();
             display.extend_from_slice(&message);
             append_chat(
-                &state.renderer,
-                &mut state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
                 LanChatLine {
                     text: display,
                     // `0x005DDEB9..0x005DDECA`: the echo uses `[0x7EEF44]`;
@@ -839,34 +855,39 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                     color: 0x0040_FFFF,
                 },
             );
-            state
-                .frontend
+            frontend
                 .lan
                 .as_mut()
                 .expect("active BB")
                 .requests
                 .push(LanServiceRequest::Chat { text: message });
+            None
         }
         LanLobbyAction::SelectGame { game_id, change } => {
-            let runtime = state.frontend.lan.as_mut().expect("active BB");
-            if game_id.is_none() {
-                runtime.lobby.replace_players(vec![local_lobby_row(&name)]);
-            }
-            runtime
-                .requests
-                .push(LanServiceRequest::SelectGame { game_id, change });
+            frontend
+                .lan
+                .as_mut()
+                .expect("active BB")
+                .select_game(&name, game_id, change);
+            None
         }
     }
 }
 
-/// Only declared service events mutate discovery/request state. Accepted data
-/// is moved into the transition and then MatchSession, never cached as a second
-/// participant table. Stale replies cannot accept a different pending game.
-pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
-    if state.frontend.shell_route != ShellRoute::LanLobby {
+/// Only declared service events mutate discovery/request state. None of them
+/// leaves the lobby; an accepted join does ([`join_accepted`]).
+pub(crate) fn service_event(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    event: LanServiceEvent,
+) {
+    if frontend.shell_route != ShellRoute::LanLobby {
         return;
     }
-    let Some(runtime) = state.frontend.lan.as_mut() else {
+    let Some(runtime) = frontend.lan.as_mut() else {
         return;
     };
     match event {
@@ -875,26 +896,27 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             let selection = runtime.lobby.replace_games(games);
             for (name, open, new_record) in notices {
                 discovery_notice(
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
                     &name,
                     open,
                     new_record,
                 );
             }
-            if let Some(action) = selection {
-                dispatch(state, action);
+            // A refresh only clamps the selection (`replace_games`), which
+            // `dispatch` takes no step for: its arm runs here directly.
+            if let Some(LanLobbyAction::SelectGame { game_id, change }) = selection {
+                let name = frontend.multiplayer_shell_runtime.local_participant().name;
+                frontend
+                    .lan
+                    .as_mut()
+                    .expect("active BB")
+                    .select_game(&name, game_id, change);
             }
-            rejoin_host(
-                &state.renderer,
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-            );
+            rejoin_host(renderer, frontend, match_state, process_assets, sfx_player);
         }
         LanServiceEvent::Players { game_id, players } => {
             if runtime.lobby.selected_game().map(|game| game.id) == game_id {
@@ -912,49 +934,27 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             let message = denial_modal(reason, pending.observe);
             runtime.release_request();
             report_error(
-                &state.renderer,
-                &mut state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
                 "TXT_REQUEST_DENIED",
             );
             if let Some(message) = message {
-                show_modal(&state.renderer, &mut state.frontend, message);
+                show_modal(renderer, frontend, message);
             }
             // VERA: the host compared the rules hash, and retail's text for
             // it sends the player to Westwood. Say what this game changes.
             if reason == 6 {
                 let body = crate::app::shell_network_setup::agreement::rules_differ_text(
-                    &state.frontend.mods,
-                    &state.process_assets,
+                    &frontend.mods,
+                    process_assets,
                 );
-                if let Some(runtime) = state.frontend.lan.as_mut() {
+                if let Some(runtime) = frontend.lan.as_mut() {
                     runtime.modal_body = Some(body);
                 }
             }
-        }
-        LanServiceEvent::JoinAccepted(accepted) => {
-            if !runtime
-                .pending_join
-                .as_ref()
-                .is_some_and(|pending| pending.game_id == accepted.game_id && !pending.canceling)
-            {
-                return;
-            }
-            runtime.pending_join = None;
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellSlideKind::LanLobby,
-                move |state| {
-                    App::open_joined_setup(
-                        state,
-                        accepted.local,
-                        accepted.observer_row,
-                        crate::ui::multiplayer_setup::SetupFlavor::Lan,
-                    );
-                },
-            );
         }
         LanServiceEvent::JoinCanceled { game_id } => {
             if runtime
@@ -966,6 +966,40 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             }
         }
     }
+}
+
+/// The host accepted the pending join: the lobby's leave to the joined setup
+/// is the returned step. Accepted data is moved into the transition and then
+/// MatchSession, never cached as a second participant table. Stale replies
+/// cannot accept a different pending game.
+#[must_use]
+pub(crate) fn join_accepted(
+    frontend: &mut FrontendState,
+    accepted: LanJoinAcceptance,
+) -> Option<ClientStep> {
+    if frontend.shell_route != ShellRoute::LanLobby {
+        return None;
+    }
+    let runtime = frontend.lan.as_mut()?;
+    if !runtime
+        .pending_join
+        .as_ref()
+        .is_some_and(|pending| pending.game_id == accepted.game_id && !pending.canceling)
+    {
+        return None;
+    }
+    runtime.pending_join = None;
+    Some(ClientStep::Leave(
+        shell_transition::ShellSlideKind::LanLobby,
+        Box::new(move |state: &mut AppState| {
+            App::open_joined_setup(
+                state,
+                accepted.local,
+                accepted.observer_row,
+                crate::ui::multiplayer_setup::SetupFlavor::Lan,
+            );
+        }),
+    ))
 }
 
 /// VERA: a returning guest joins its host's room as soon as it is listed.
@@ -1078,57 +1112,58 @@ fn discovery_notice(
     }
 }
 
-fn create(state: &mut AppState, name: &str) {
+/// Create the game named `name`: a name the lobby refuses opens its notice,
+/// and any other returns the leave to the room as the step.
+#[must_use]
+fn create(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    name: &str,
+) -> Option<ClientStep> {
     // Opening the picker is reversible; retire an old room wait on confirmation.
-    state.match_state.session.take_network_room_return();
-    let observe = state
-        .frontend
-        .multiplayer_shell_runtime
-        .lan_create_observer();
-    let error = create_error(&state.frontend.lan.as_ref().expect("active BB").lobby, name);
+    session.take_network_room_return();
+    let observe = frontend.multiplayer_shell_runtime.lan_create_observer();
+    let error = create_error(&frontend.lan.as_ref().expect("active BB").lobby, name);
     if let Some(key) = error {
-        state
-            .frontend
+        frontend
             .lan
             .as_mut()
             .expect("active BB")
             .lobby
             .set_enabled(true);
-        show_modal(&state.renderer, &mut state.frontend, key);
+        show_modal(renderer, frontend, key);
+        None
     } else {
-        App::leave_shell_dialog(
-            state,
+        Some(ClientStep::Leave(
             shell_transition::ShellSlideKind::LanLobby,
-            move |state| App::commit_lan_create(state, observe),
-        );
+            Box::new(move |state: &mut AppState| App::commit_lan_create(state, observe)),
+        ))
     }
 }
 
-/// The Create Game box's OK keeps its limits for the room and creates it;
-/// Cancel returns to the lobby.
-fn close_create_box(state: &mut AppState, confirmed: bool) {
-    let Some(runtime) = state
-        .frontend
-        .lan
-        .as_mut()
-        .filter(|runtime| runtime.creating)
-    else {
-        return;
-    };
+/// The Create Game box's OK keeps its limits for the room and creates it,
+/// returning [`create`]'s step; Cancel returns to the lobby.
+#[must_use]
+fn close_create_box(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    confirmed: bool,
+) -> Option<ClientStep> {
+    let runtime = frontend.lan.as_mut().filter(|runtime| runtime.creating)?;
     runtime.creating = false;
-    let limits = room_limits(&state.frontend);
-    state.frontend.shell_controller.pop();
+    let limits = room_limits(frontend);
+    frontend.shell_controller.pop();
     if confirmed {
-        state.frontend.room_limits = limits;
-        let name = state
-            .frontend
-            .multiplayer_shell_runtime
-            .local_participant()
-            .name;
-        create(state, &name);
-    } else if let Some(runtime) = state.frontend.lan.as_mut() {
+        frontend.room_limits = limits;
+        let name = frontend.multiplayer_shell_runtime.local_participant().name;
+        return create(renderer, frontend, session, &name);
+    }
+    if let Some(runtime) = frontend.lan.as_mut() {
         runtime.lobby.set_enabled(true);
     }
+    None
 }
 
 fn acknowledge(frontend: &mut FrontendState) {
@@ -1203,7 +1238,18 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let controller = &mut state.frontend.shell_controller;
     let actions = crate::ui::lan_shell::key(controller, &mut runtime.lobby, code, text);
     for action in actions {
-        dispatch(state, action);
+        let step = dispatch(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            action,
+        );
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
     }
 }
 
@@ -1358,17 +1404,31 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     handle_events(state);
 }
 
-/// What the lobby makes of control `id`'s activation.
-fn lobby_command(state: &mut AppState, id: u16) {
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    if let Some(action) = state
-        .frontend
+/// What the lobby makes of control `id`'s activation; its step is returned.
+#[must_use]
+fn lobby_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    id: u16,
+) -> Option<ClientStep> {
+    let observer = frontend.multiplayer_shell_runtime.lan_observer();
+    let action = frontend
         .lan
         .as_mut()
-        .and_then(|runtime| runtime.lobby.activate(id, observer))
-    {
-        dispatch(state, action);
-    }
+        .and_then(|runtime| runtime.lobby.activate(id, observer))?;
+    dispatch(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        action,
+    )
 }
 
 /// The widgets' events of the last input, in order: each control's cue,
@@ -1393,12 +1453,31 @@ fn handle_events(state: &mut AppState) {
     for event in events {
         match event {
             PageEvent::Activated(OK | CANCEL) if creating => {
-                close_create_box(state, event == PageEvent::Activated(OK))
+                let step = close_create_box(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    event == PageEvent::Activated(OK),
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
             }
             PageEvent::Activated(OK) => acknowledge(&mut state.frontend),
             PageEvent::Activated(id)
             | PageEvent::Toggled(id @ (OBSERVER_TOGGLE | OBSERVER_IMAGE), _) => {
-                lobby_command(state, id)
+                let step = lobby_command(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    id,
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
             }
             // A second press in time joins the selected game.
             PageEvent::Selected(GAMES, row) | PageEvent::DoubleClicked(GAMES, row) => {
@@ -1411,7 +1490,18 @@ fn handle_events(state: &mut AppState) {
                     .then(|| runtime.lobby.activate(JOIN, observer))
                     .flatten();
                 for action in selection.into_iter().chain(join) {
-                    dispatch(state, action);
+                    let step = dispatch(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        action,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
                 App::play_page_cue(
                     &state.frontend,

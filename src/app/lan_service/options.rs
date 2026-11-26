@@ -524,10 +524,14 @@ pub(super) fn receive_extended(
                 .map_err(anyhow::Error::from)
                 .and_then(|options| receive_host_options(state, scope, options, host));
             if result.is_err() {
-                super::reject_setup_compatibility(
-                    state,
+                let step = super::reject_setup_compatibility(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     &crate::i18n::tr("VERA:LanOptionsInvalid"),
                 );
+                super::App::apply_step(state, step);
             }
             result
         }
