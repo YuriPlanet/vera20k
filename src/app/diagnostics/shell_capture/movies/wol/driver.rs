@@ -512,7 +512,7 @@ impl WolCapture {
                 }
             }
             WolPhase::Rejected => {
-                let expected = state.csf_label("TXT_BADPASS", "TXT_BADPASS");
+                let expected = state.process_assets.csf_label("TXT_BADPASS", "TXT_BADPASS");
                 ensure!(
                     state
                         .frontend
@@ -580,7 +580,7 @@ impl WolCapture {
                 self.settle();
             }
             WolPhase::AutoLoginBox => {
-                let expected = state.csf_label("TXT_BADPASS", "TXT_BADPASS");
+                let expected = state.process_assets.csf_label("TXT_BADPASS", "TXT_BADPASS");
                 ensure!(
                     state
                         .frontend
@@ -611,7 +611,8 @@ impl WolCapture {
             WolPhase::PersonaClosing if state.frontend.shell_exit.is_none() => {
                 let file = info_file(&state.platform.game_config)?;
                 if let Some(locale) = self.chosen_locale {
-                    let persona = file.load_persona(NICKNAME, &|key| state.csf_label(key, key));
+                    let persona = file
+                        .load_persona(NICKNAME, &|key| state.process_assets.csf_label(key, key));
                     ensure!(
                         (persona.locale, persona.locale_verified) == (locale, false),
                         "0xFE OK did not save the persona's locale: {persona:?}"
@@ -860,7 +861,7 @@ impl WolCapture {
                             .context("the game channel stays until its leave")?;
                     service_event(state, WolServiceEvent::ChannelLeft);
                     let left = crate::assets::csf_file::format_csf(
-                        &state.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
+                        &state.process_assets.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
                         &[crate::assets::csf_file::CsfArg::Str(&game.name)],
                     );
                     let shown = Self::lobby(&state.frontend.wol)?
@@ -966,7 +967,9 @@ impl WolCapture {
                             WolServiceEvent::NetStatus(crate::app::shell_wol::NET_STATUS_LOST),
                         );
                     }
-                    let lost = state.csf_label("TXT_WOL_CONNLOST", "TXT_WOL_CONNLOST");
+                    let lost = state
+                        .process_assets
+                        .csf_label("TXT_WOL_CONNLOST", "TXT_WOL_CONNLOST");
                     let messages = state.match_state.match_presentation.message_list.messages();
                     ensure!(
                         rows(state) == before + 1
@@ -1026,7 +1029,9 @@ impl WolCapture {
                 if !house.left_game() || (!house.is_defeated() && waited < 300) {
                     return Ok(());
                 }
-                let left = state.csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let left = state
+                    .process_assets
+                    .csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
                 let posted = state
                     .match_state
                     .match_presentation
@@ -1210,7 +1215,9 @@ impl WolCapture {
                     // The one chat lobby is named nowhere: no list, no join line
                     // (rows start with their time).
                     let joined = crate::assets::csf_file::format_csf(
-                        &state.csf_label("TXT_JOINED_S", "TXT_JOINED_S"),
+                        &state
+                            .process_assets
+                            .csf_label("TXT_JOINED_S", "TXT_JOINED_S"),
                         &[crate::assets::csf_file::CsfArg::Str("")],
                     );
                     let layout = crate::app::shell_wol::lobby::layout(
@@ -1282,7 +1289,9 @@ impl WolCapture {
                         &state.process_assets,
                     );
                     ensure!(
-                        help == state.csf_label("VERA:RankedGameHelp", "VERA:RankedGameHelp"),
+                        help == state
+                            .process_assets
+                            .csf_label("VERA:RankedGameHelp", "VERA:RankedGameHelp"),
                         "Ranked game's help read {help:?}"
                     );
                     self.event(frame, json!({"Ranked game help": help}));
@@ -1311,7 +1320,7 @@ impl WolCapture {
                         &state.match_state.input,
                         &state.process_assets,
                     );
-                    let label = |key: &str| state.csf_label(key, key);
+                    let label = |key: &str| state.process_assets.csf_label(key, key);
                     let expected = crate::i18n::fill(
                         &label("VERA:PlayerHelp"),
                         &[
@@ -1357,13 +1366,15 @@ impl WolCapture {
                         &state.process_assets,
                     );
                     let expected = crate::i18n::fill(
-                        &state.csf_label("VERA:MessageHelp", "VERA:MessageHelp"),
+                        &state
+                            .process_assets
+                            .csf_label("VERA:MessageHelp", "VERA:MessageHelp"),
                         &[("name", &"Tanya")],
                     );
                     ensure!(help == expected, "Message's help read {help:?}");
                     // The season row: her OS to the hundredth, and what OS
                     // is under the pointer.
-                    let label = |key: &str| state.csf_label(key, key);
+                    let label = |key: &str| state.process_assets.csf_label(key, key);
                     let rows = crate::app::shell_wol::player_card::view(
                         &state.frontend,
                         &state.process_assets,
@@ -1515,7 +1526,9 @@ impl WolCapture {
                             .map(|line| String::from_utf16_lossy(&line.text))
                             .collect();
                         if self.target == WolTarget::GuestKicked {
-                            let kicked = state.csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
+                            let kicked = state
+                                .process_assets
+                                .csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
                             let expected = crate::assets::csf_file::format_csf(
                                 &kicked,
                                 &[
@@ -1653,10 +1666,10 @@ impl WolCapture {
                         setup_view(state)?.room_checks[no_france],
                         "No France did not toggle in Game Options"
                     );
-                    let french = state
-                        .rules()
-                        .and_then(|rules| rules.trigger_house_type_index("French"))
-                        .map(|index| i32::from(index.0));
+                    let french =
+                        crate::app::state::active_rules(&state.frontend, &state.match_state)
+                            .and_then(|rules| rules.trigger_house_type_index("French"))
+                            .map(|index| i32::from(index.0));
                     let view = setup_view(state)?;
                     ensure!(
                         row_combo(&view, crate::ui::multiplayer_setup::SetupColumn::Country, 0)
@@ -2335,8 +2348,9 @@ impl WolCapture {
                 let Some(message) = &verify.mismatch else {
                     return Ok(());
                 };
-                let expected =
-                    state.csf_label("TXT_SCENARIOS_DO_NOT_MATCH", "TXT_SCENARIOS_DO_NOT_MATCH");
+                let expected = state
+                    .process_assets
+                    .csf_label("TXT_SCENARIOS_DO_NOT_MATCH", "TXT_SCENARIOS_DO_NOT_MATCH");
                 ensure!(
                     message.body == expected
                         && verify.names == [NICKNAME.to_owned(), SERVICE_GUEST.to_owned()]
@@ -2419,7 +2433,9 @@ impl WolCapture {
                     crate::app::shell_wol::lobby::current_channel(state.frontend.wol.as_ref())
                         .context("C2's game channel")?;
                 let line = crate::assets::csf_file::format_csf(
-                    &state.csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
+                    &state
+                        .process_assets
+                        .csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
                     &[
                         crate::assets::csf_file::CsfArg::Str(SERVICE_GUEST),
                         crate::assets::csf_file::CsfArg::Str(&channel.name),

@@ -1275,7 +1275,10 @@ impl App {
         else {
             return false;
         };
-        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let (w, h) = (
+            state.renderer.render_width(&state.frontend.screen) as i32,
+            state.renderer.render_height(&state.frontend.screen) as i32,
+        );
         let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         if let Some(id) = Self::shell_box_pointer(
             &mut state.frontend,

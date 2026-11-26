@@ -439,9 +439,11 @@ pub(crate) fn place_beacon(
                 &mut state.match_state.match_audio,
                 EVA_BEACON_PLACED,
             );
-            if let Some(sound_id) = state.rules().and_then(|rules| {
-                Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?))
-            }) {
+            if let Some(sound_id) =
+                crate::app::state::active_rules(&state.frontend, &state.match_state).and_then(
+                    |rules| Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?)),
+                )
+            {
                 state
                     .match_state
                     .match_audio

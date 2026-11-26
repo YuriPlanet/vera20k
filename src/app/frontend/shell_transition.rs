@@ -488,8 +488,7 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
                 .as_ref()
                 .and_then(|art| art.scra.as_ref())
                 .map_or(0, |strip| strip.frames.len());
-            let sound = state
-                .rules()
+            let sound = crate::app::state::active_rules(&state.frontend, &state.match_state)
                 .filter(|_| kind == ShellSlideKind::CampaignScore)
                 .and_then(|rules| rules.general.score_anim_sound())
                 .map(str::to_owned);

@@ -80,7 +80,9 @@ pub(crate) fn render_connection_shell(
                 ConnectionControl::Player(slot) => Some(page.rows.get(first + slot)?.name.clone()),
                 ConnectionControl::Countdown => Some(match &page.countdown {
                     Some(countdown) => countdown.clone(),
-                    None => state.csf_label("GUI:TimeRemaining", "Time Remaining:"),
+                    None => state
+                        .process_assets
+                        .csf_label("GUI:TimeRemaining", "Time Remaining:"),
                 }),
                 _ => None,
             }

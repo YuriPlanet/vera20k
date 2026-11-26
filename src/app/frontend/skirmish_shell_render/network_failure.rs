@@ -12,12 +12,15 @@ pub(crate) fn render_network_failure(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let (width, height) = (state.render_width(), state.render_height());
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     let (body, button) = labels(&state.match_state.sim_runtime);
     let shell_box = crate::ui::shell::modal::ShellBox::notice(
         vera_body(&state.frontend, &state.match_state, &state.process_assets)
-            .unwrap_or_else(|| state.csf_label(body.0, body.1)),
-        state.csf_label(button.0, button.1),
+            .unwrap_or_else(|| state.process_assets.csf_label(body.0, body.1)),
+        state.process_assets.csf_label(button.0, button.1),
     )
     .on_screen();
     let parts = super::shell_box::skirmish_parts(&shell_box, (width as i32, height as i32));

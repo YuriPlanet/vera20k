@@ -550,7 +550,9 @@ impl BattleOpening {
                     && self.rally_planning_commits[index].is_some()
                 {
                     let sim = simulation(&state.match_state.sim_runtime)?;
-                    let rules = state.rules().context("retail rules")?;
+                    let rules =
+                        crate::app::state::active_rules(&state.frontend, &state.match_state)
+                            .context("retail rules")?;
                     let owner = sim
                         .interner()
                         .get(&local_owner(&state.match_state.session)?)
@@ -755,7 +757,8 @@ impl BattleOpening {
             }
             Step::RepairDamaging => {
                 let index = usize::from(!host);
-                let rules = state.rules().context("retail repair rules")?;
+                let rules = crate::app::state::active_rules(&state.frontend, &state.match_state)
+                    .context("retail repair rules")?;
                 let strength = rules.object("GAPILE").context("retail GAPILE")?.strength;
                 let damaged = simulation(&state.match_state.sim_runtime)?
                     .entities()
@@ -845,7 +848,9 @@ impl BattleOpening {
                 {
                     let id = self.fighter_ids()?[index];
                     let sim = simulation(&state.match_state.sim_runtime)?;
-                    let rules = state.rules().context("retail reentry rules")?;
+                    let rules =
+                        crate::app::state::active_rules(&state.frontend, &state.match_state)
+                            .context("retail reentry rules")?;
                     let owner = sim.entities().get(id).context("paid reentry GI")?.owner();
                     let goal = sale
                         .cells
@@ -2830,7 +2835,8 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         "diagnostic attempted a remote House's rally input query"
     );
     let origin = (source.position.rx(), source.position.ry());
-    let rules = state.rules().context("retail rules")?;
+    let rules = crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .context("retail rules")?;
     for (dx, dy) in [
         (6, 0),
         (0, 6),
@@ -2848,6 +2854,7 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
             continue;
         };
         let Some(cell) = state
+            .match_state
             .resolved_terrain()
             .and_then(|terrain| terrain.cell(x, y))
         else {
@@ -3161,6 +3168,7 @@ pub(super) fn latency_move_with_mouse(
                 .filter(|cell| *cell != from)
                 .filter(|cell| {
                     state
+                        .match_state
                         .resolved_terrain()
                         .and_then(|terrain| terrain.cell(cell.0, cell.1))
                         .is_some_and(|terrain| {
@@ -3392,6 +3400,7 @@ pub(super) fn selected_move_with_mouse(
                 continue;
             };
             let Some(terrain) = state
+                .match_state
                 .resolved_terrain()
                 .and_then(|terrain| terrain.cell(cell.0, cell.1))
             else {

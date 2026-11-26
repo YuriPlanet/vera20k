@@ -1447,8 +1447,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         request.startup(),
     );
     let mut request = request.with_skirmish_colors(
-        state
-            .rules()
+        crate::app::state::active_rules(&state.frontend, &state.match_state)
             .map(crate::rules::ruleset::RuleSet::skirmish_colors),
     );
     request.the_team_enabled = state
@@ -1464,7 +1463,10 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         .map(|config| config.paths.ra2_dir.clone());
     // Resolve the backing fill from the live rules `[Colors]` schemes now that
     // `state.rules` is reachable (the native ctor only sees the launch session).
-    if let (Some(native), Some(rules)) = (session.native.as_mut(), state.rules()) {
+    if let (Some(native), Some(rules)) = (
+        session.native.as_mut(),
+        crate::app::state::active_rules(&state.frontend, &state.match_state),
+    ) {
         // ReadScenario68479D..6847C9 projects raw HouseType+BC; ctor-only
         // countries retain -1. Only observer country selection maps to entry0.
         if let Some(launch) = session.stage.startup().launch_session() {
@@ -2493,7 +2495,7 @@ fn poll_network_load_wait(
             // Retire the held result and its asset lease through the normal
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
-            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.process_assets.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {

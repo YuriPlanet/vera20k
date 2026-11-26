@@ -657,7 +657,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::PeerLeft { source } => {
             // 0x005E2700(-1, GUI:PlayerLeftCoop, name).
             let name = participant_name(&state.match_state.session, source);
-            let format = state.csf_text("GUI:PlayerLeftCoop");
+            let format = state.process_assets.csf_text("GUI:PlayerLeftCoop");
             let text = crate::assets::csf_file::format_csf(
                 &format,
                 &[crate::assets::csf_file::CsfArg::Str(&name)],
@@ -681,7 +681,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::Exit(false) => finish(state),
         CooperativeRoundStep::TimedOut => {
             finish(state);
-            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.process_assets.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             crate::app::shell_lan::append_chat(
                 &state.renderer,
                 &mut state.frontend,

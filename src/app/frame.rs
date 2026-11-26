@@ -423,7 +423,7 @@ impl App {
         // Wait_For_Players still enters GScreen Input at 0x006485B7 and
         // 0x00649827; repeated services read the same binary-frame parity.
         let input_is_active = in_game
-            && (!state.focus_freeze_active()
+            && (!crate::app::state::focus_freeze_active(&state.platform, &state.match_state)
                 || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
                 || network_wait_pending);
         let input_frame = input_is_active.then(|| {
@@ -726,7 +726,10 @@ impl App {
         if matches!(state.frontend.screen, GameScreen::InGame)
             && (network_frame_pending
                 || (simulation_allowed
-                    && !state.focus_freeze_active()
+                    && !crate::app::state::focus_freeze_active(
+                        &state.platform,
+                        &state.match_state,
+                    )
                     && state.match_state.scenario_exit.is_none()
                     && state.match_state.scenario_outcome.is_none()
                     && !Self::local_outcome_exit_ready(&state.match_state)))
@@ -942,12 +945,24 @@ impl App {
                 // visible. Do NOT gate on `battlefield_drawn`: the sim stops
                 // redrawing while paused, so the battlefield is not "drawn" yet the
                 // debug pause still needs a visible pointer.
-                status_screen_drawn || !state.use_software_cursor()
+                status_screen_drawn
+                    || !crate::app::state::use_software_cursor(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
             } else {
                 status_screen_drawn
                     || if battlefield_drawn {
-                        !state.use_software_cursor()
-                            && state.match_state.input.cursor_visibility.is_visible()
+                        !crate::app::state::use_software_cursor(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        ) && state.match_state.input.cursor_visibility.is_visible()
                     } else {
                         state
                             .match_state
@@ -979,7 +994,7 @@ impl App {
         state
             .renderer
             .gpu
-            .set_color_vision_matrix(state.color_vision_matrix());
+            .set_color_vision_matrix(state.persistence.color_vision_matrix());
         // The glyph atlas empties or grows only between frames, while no
         // instance built from it is waiting to draw.
         state
@@ -1165,7 +1180,9 @@ impl App {
         // Native polls timed pause before Logic, then Manage55DDA5 afterwards.
         // Retain that admission: Action110 can enter a new hold during Logic.
         // Exact-step diagnostics already advanced their admitted frame above.
-        let message_ms = if state.focus_freeze_active() {
+        let focus_frozen =
+            crate::app::state::focus_freeze_active(&state.platform, &state.match_state);
+        let message_ms = if focus_frozen {
             None
         } else {
             crate::app::input::messages::show_status_notices(
@@ -1633,7 +1650,10 @@ impl App {
                         ],
                     );
                 let times = render::GameRenderTimes {
-                    radar_ms: state.radar_presentation_ms(),
+                    radar_ms: crate::app::diagnostics::state::radar_presentation_ms(
+                        &state.diag,
+                        &state.match_state,
+                    ),
                     tooltip_ms,
                     message_ms,
                 };

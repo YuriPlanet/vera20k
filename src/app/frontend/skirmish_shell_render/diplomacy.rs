@@ -45,7 +45,7 @@ pub(crate) fn render_diplomacy_shell(
                     .find(|header| DiplomacyControl::Header(*header).id() == id)?
                     .label()
             };
-            Some(state.csf_label(key, fallback))
+            Some(state.process_assets.csf_label(key, fallback))
         };
         let style = GuiStyle {
             buttons: ButtonArt::Side,

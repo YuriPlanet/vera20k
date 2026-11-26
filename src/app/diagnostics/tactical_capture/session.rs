@@ -1134,7 +1134,10 @@ impl TacticalCaptureSession {
             drawn_sidebar,
             aperture,
             insets,
-            [state.render_width(), state.render_height()],
+            [
+                state.renderer.render_width(&state.frontend.screen),
+                state.renderer.render_height(&state.frontend.screen),
+            ],
         )?;
         let sidebar = drawn_sidebar.context("production render emitted no SidebarView")?;
         let spec = state.match_state.match_presentation.sidebar_layout_spec;
@@ -1142,7 +1145,8 @@ impl TacticalCaptureSession {
         let panel_contains_aperture = aperture.x >= sidebar.panel_rect.x
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
-            && aperture.y + aperture.h <= state.render_height() as f32;
+            && aperture.y + aperture.h
+                <= state.renderer.render_height(&state.frontend.screen) as f32;
         let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(
             &state.platform,
             &state.renderer,
@@ -1157,8 +1161,13 @@ impl TacticalCaptureSession {
         )
         .and_then(crate::app::input::cursor::cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
-        let cursor_ready = state.use_software_cursor()
-            && cursor_id == CursorId::Default
+        let cursor_ready = crate::app::state::use_software_cursor(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ) && cursor_id == CursorId::Default
             && state.match_state.input.cursor_x == profile.capture.post_load_cursor.x as f32
             && state.match_state.input.cursor_y == profile.capture.post_load_cursor.y as f32;
         let power = sim.power_states().get(&owner_id);
@@ -1167,12 +1176,11 @@ impl TacticalCaptureSession {
                 && !power.is_low_power()
                 && power.blackout_remaining(sim.session().binary_frame()) == 0
         });
-        let radar_authority = state
-            .rules()
+        let radar_authority = crate::app::state::active_rules(&state.frontend, &state.match_state)
             .is_some_and(|rules| crate::sim::radar::has_radar_for_owner(sim, rules, owner));
         let bound_structures_ready = self.bound_structures_ready(&state.match_state.sim_runtime)?;
         let no_modal_or_debug = !state.match_state.paused()
-            && !state.main_menu_dialog_open()
+            && !state.frontend.main_menu_dialog_open()
             && !state.diag.debug_show_pathgrid
             && !state.diag.debug_show_cell_grid
             && !state.diag.debug_show_heightmap
@@ -1386,7 +1394,7 @@ impl TacticalCaptureSession {
                 "blackout_remaining": power.blackout_remaining(sim.session().binary_frame()),
             },
             "radar": {
-                "authority_active": state.rules().is_some_and(|rules| {
+                "authority_active": crate::app::state::active_rules(&state.frontend, &state.match_state).is_some_and(|rules| {
                     crate::sim::radar::has_radar_for_owner(sim, rules, owner)
                 }),
                 "app_has_radar": state.match_state.match_presentation.has_radar,

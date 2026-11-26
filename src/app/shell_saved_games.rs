@@ -119,7 +119,7 @@ impl App {
 
     fn replace_saved_game_browser(state: &mut AppState, browser: SavedSeedBrowserState<PathBuf>) {
         if state.frontend.screen == GameScreen::MainMenu {
-            let title = state.csf_text(browser.game_title_label().0);
+            let title = state.process_assets.csf_text(browser.game_title_label().0);
             state
                 .frontend
                 .shell_page_title
@@ -245,7 +245,9 @@ impl App {
             path.as_deref(),
         ) {
             Ok(_) => {
-                let body = state.csf_label("TXT_GAME_WAS_SAVED", "The game was saved.");
+                let body = state
+                    .process_assets
+                    .csf_label("TXT_GAME_WAS_SAVED", "The game was saved.");
                 Self::show_saved_game_prompt(
                     &mut state.frontend,
                     &mut state.match_state.match_presentation,
@@ -257,7 +259,9 @@ impl App {
             }
             Err(error) => {
                 log::warn!("Save browser: {error}");
-                let body = state.csf_label("TXT_ERROR_SAVING_GAME", "Error saving game.");
+                let body = state
+                    .process_assets
+                    .csf_label("TXT_ERROR_SAVING_GAME", "Error saving game.");
                 Self::show_saved_game_prompt(
                     &mut state.frontend,
                     &mut state.match_state.match_presentation,
@@ -336,6 +340,7 @@ impl App {
             } => {
                 if description.is_empty() {
                     let body = state
+                        .process_assets
                         .csf_label("TXT_MUSTENTER_DESCRIPTION", "You must enter a description!");
                     Self::show_saved_game_prompt(
                         &mut state.frontend,
@@ -354,7 +359,9 @@ impl App {
                     .is_some_and(|b| b.is_naming_conversion())
                         || state.persistence.repository.exists(path)
                 }) {
-                    let body = state.csf_label("TXT_CONFIRM_SAVE", "Overwrite existing save game?");
+                    let body = state
+                        .process_assets
+                        .csf_label("TXT_CONFIRM_SAVE", "Overwrite existing save game?");
                     Self::show_saved_game_prompt(
                         &mut state.frontend,
                         &mut state.match_state.match_presentation,
@@ -415,7 +422,9 @@ impl App {
                 Self::replace_saved_game_browser(state, browser);
             }
             SavedSeedOutcome::Delete(file_name) => {
-                let prefix = state.csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
+                let prefix = state
+                    .process_assets
+                    .csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
                 let description = state
                     .match_state
                     .match_presentation

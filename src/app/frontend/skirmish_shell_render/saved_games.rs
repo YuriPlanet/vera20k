@@ -279,7 +279,7 @@ pub(crate) fn render_saved_game_shell(
                 .texts
                 .push(crate::render::shell_text::draw_in_rect_scaled(
                     &state.renderer.bit_font,
-                    &state.csf_text(key),
+                    &state.process_assets.csf_text(key),
                     crate::render::shell_text::TextRect::of(layout.blank),
                     SHELL_LABEL_TEXT_RGB,
                     ShellAlign::NONE,
@@ -296,10 +296,14 @@ pub(crate) fn render_saved_game_shell(
             match u16::try_from(id).ok()? {
                 ACTION => {
                     let (key, fallback) = browser.mode.action_label();
-                    Some(state.csf_label(key, fallback))
+                    Some(state.process_assets.csf_label(key, fallback))
                 }
-                CONVERT => Some(state.csf_label("VERA:ConvertSave", "Convert")),
-                BACK => Some(state.csf_label("GUI:Back", "Back")),
+                CONVERT => Some(
+                    state
+                        .process_assets
+                        .csf_label("VERA:ConvertSave", "Convert"),
+                ),
+                BACK => Some(state.process_assets.csf_label("GUI:Back", "Back")),
                 _ => None,
             }
         };

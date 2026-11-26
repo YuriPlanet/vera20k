@@ -697,7 +697,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         },
         result.presentation,
     );
-    if let Some(rules) = state.rules() {
+    if let Some(rules) = crate::app::state::active_rules(&state.frontend, &state.match_state) {
         state
             .match_state
             .match_presentation
@@ -719,7 +719,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // ClearScene685573 -> Mouse5BDF50 -> Sidebar6A5030 -> Power63F730:
     // fresh matches clear the retained Power fields. The saved-load route
     // shares install_world_presentation but has a distinct NoInit contract.
-    let wall_ms = state.radar_presentation_ms();
+    let wall_ms =
+        crate::app::diagnostics::state::radar_presentation_ms(&state.diag, &state.match_state);
     state
         .match_state
         .match_presentation
@@ -799,7 +800,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // that switch.
     let mut message_list = crate::ui::messages::MessageList::scenario();
     let shell = crate::app::persistence::options_profile::RETAIL_SHELL_SIZE;
-    if (state.render_width(), state.render_height()) != (shell.width, shell.height) {
+    if (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    ) != (shell.width, shell.height)
+    {
         message_list.set_width(tactical_width as i32);
     }
     state.match_state.match_presentation.message_list = message_list;

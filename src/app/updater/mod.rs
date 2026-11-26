@@ -295,7 +295,13 @@ fn advance(state: &mut AppState) -> Option<Instant> {
         Phase::Found { package, offer } => {
             // Before the menu shows, the slide-out below is skipped and the
             // offer opens at once.
-            if state.main_menu_at_rest() || crate::app::state::main_menu_not_shown(&state.frontend)
+            if crate::app::state::main_menu_at_rest(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ) || crate::app::state::main_menu_not_shown(&state.frontend)
             {
                 state.frontend.updater.phase = Phase::Offered { package, offer };
                 App::leave_shell_dialog(

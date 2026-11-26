@@ -1338,7 +1338,11 @@ fn apply(state: &mut AppState, step: WolStep) {
                 .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(&state.process_assets, state.csf_text(key), yes_no);
+            let message = message_box(
+                &state.process_assets,
+                state.process_assets.csf_text(key),
+                yes_no,
+            );
             let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };
@@ -1435,7 +1439,7 @@ fn connect_succeeded(state: &mut AppState) {
         file.as_ref(),
         &nickname,
         server.as_ref().map(WolServer::persona_server),
-        &|key| state.csf_text(key),
+        &|key| state.process_assets.csf_text(key),
     );
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings

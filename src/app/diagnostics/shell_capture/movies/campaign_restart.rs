@@ -494,9 +494,14 @@ impl RestartCapture {
             &state.match_state.match_presentation,
         )
         .context("no sidebar view")?;
-        let rect = state
-            .sidebar_frame()
-            .rect_to_frame(view.top_buttons[0].rect);
+        let rect = crate::app::state::sidebar_frame(
+            &state.platform,
+            &state.persistence,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation.sidebar_layout_spec,
+        )
+        .rect_to_frame(view.top_buttons[0].rect);
         let point = [rect.x + rect.w / 2.0, rect.y + rect.h / 2.0];
         state.match_state.input.cursor_x = point[0];
         state.match_state.input.cursor_y = point[1];
@@ -509,7 +514,7 @@ impl RestartCapture {
             "the 0xF2 tab did not open the restate briefing"
         );
         // ALL01UMD.MAP's MISSIONMD Briefing key.
-        let expected = state.csf_text("Brief:ALL01md");
+        let expected = state.process_assets.csf_text("Brief:ALL01md");
         ensure!(
             presentation.restate_text == expected,
             "the restate briefing did not resolve Brief:ALL01md"
@@ -647,7 +652,9 @@ impl RestartCapture {
             }
             Step::Settling(_) | Step::Done => {}
             Step::AwaitObjective => {
-                let expected = state.csf_label("MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
+                let expected = state
+                    .process_assets
+                    .csf_label("MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
                 let row = state
                     .match_state
                     .match_presentation
@@ -822,7 +829,7 @@ impl RestartCapture {
                         crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
                     )
                 {
-                    let expected = state.csf_text("MSG:UnableMapSelect");
+                    let expected = state.process_assets.csf_text("MSG:UnableMapSelect");
                     ensure!(
                         message.shell_box.body == expected,
                         "MapSelect notice has wrong text"
@@ -875,8 +882,8 @@ impl RestartCapture {
                     } else {
                         let layout = crate::ui::shell::modal::menu_message_box(
                             1,
-                            state.render_width() as i32,
-                            state.render_height() as i32,
+                            state.renderer.render_width(&state.frontend.screen) as i32,
+                            state.renderer.render_height(&state.frontend.screen) as i32,
                         );
                         set_window_pointer_to_rect_center(
                             &state.renderer,

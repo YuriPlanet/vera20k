@@ -2094,7 +2094,7 @@ fn poll_is_admitted(main_tick_admitted: bool, currently_frozen: bool) -> bool {
 #[cfg(target_os = "android")]
 pub(crate) fn lane_contains_window_px(state: &AppState, px: i32, py: i32) -> bool {
     let (lx, ly, lw, lh) = state.match_state.match_presentation.message_list.lane_box();
-    let (lx, ly, lw, lh) = match state.tactical_zoom() {
+    let (lx, ly, lw, lh) = match state.renderer.tactical_zoom(&state.frontend.screen) {
         Some(zoom) => {
             let (x, y) = zoom.source_to_window(lx as f32, ly as f32);
             let scale = zoom.scale();

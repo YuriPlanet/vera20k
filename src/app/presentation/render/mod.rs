@@ -339,7 +339,10 @@ pub(crate) fn render_game(
     // back on `GameRenderOutput` and never written into the world here.
     let render_started =
         render_phases_wanted(&state.renderer.performance_overlay, &state.diag).then(Instant::now);
-    let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
+    let (sw, sh) = (
+        state.renderer.render_width(&state.frontend.screen) as f32,
+        state.renderer.render_height(&state.frontend.screen) as f32,
+    );
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
     // The sidebar chrome of the side the local player draws, built on the
@@ -365,7 +368,7 @@ pub(crate) fn render_game(
     // here on (this frame's first draws included) also make their HD picture,
     // and keep doing so once HD art has been on in this run, so turning it off
     // and on again (Page Up) shows them at once.
-    let hd_art_on = state.hd_art_on().0;
+    let hd_art_on = crate::app::state::hd_art_on(&state.persistence).0;
     state.renderer.hd_art_seen |= hd_art_on;
     crate::render::vxl_raster::set_hd_voxels(state.renderer.hd_art_seen);
     crate::render::hd_art::set_active(hd_art_on);
@@ -419,7 +422,7 @@ pub(crate) fn render_game(
     );
 
     let local_owner = preferred_local_owner_name(&state.match_state);
-    let translucent_fog = state.translucent_fog_enabled();
+    let translucent_fog = state.platform.translucent_fog_enabled();
     let sandbox = state.match_state.sandbox_full_visibility;
     // Effective viewport in world pixels — zoom shrinks what's visible.
     let z = state.match_state.input.zoom_level;
@@ -437,7 +440,10 @@ pub(crate) fn render_game(
         // When the Options zoom scales the frame, the world also goes
         // straight into the window (`draw_world_window_copy`). At 100% (the
         // Original shape's bars) the frame's world is already the window's.
-        let window_copy = state.tactical_zoom().is_some_and(|zoom| zoom.percent > 100);
+        let window_copy = state
+            .renderer
+            .tactical_zoom(&state.frontend.screen)
+            .is_some_and(|zoom| zoom.percent > 100);
         let renderer = &mut state.renderer;
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
@@ -552,8 +558,8 @@ pub(crate) fn render_game(
     // Phase 3: Recompose the shroud ABuffer on the GPU, recorded into this
     // frame's encoder ahead of every reader: world blitters, surface lines
     // and A-gated surface stores all sample the same plane.
-    let rw = state.render_width();
-    let rh = state.render_height();
+    let rw = state.renderer.render_width(&state.frontend.screen);
+    let rh = state.renderer.render_height(&state.frontend.screen);
     // F10 cone: the render feed reads through SimView getters. This site
     // holds `&mut state.shroud_buffer`, so it keeps the field chain and views
     // the runtime directly for split borrows.
@@ -732,7 +738,13 @@ pub(crate) fn render_game(
     let composition_view = state.renderer.combat_light_renderer.composition_view();
     // The sidebar and its bar draw into their own surfaces at the Sidebar
     // size.
-    let sidebar_frame = state.sidebar_frame();
+    let sidebar_frame = crate::app::state::sidebar_frame(
+        &state.platform,
+        &state.persistence,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation.sidebar_layout_spec,
+    );
     let renderer = &mut state.renderer;
     let gpu = &renderer.gpu;
     if let Some(surface) = renderer.sidebar_surface.as_mut() {
@@ -771,8 +783,16 @@ pub(crate) fn render_game(
         &state.match_state,
         &state.persistence,
     );
-    let armed_super_weapon = state.armed_super_weapon_type().map(str::to_owned);
-    let armed_building = state.armed_building_type().map(str::to_owned);
+    let armed_super_weapon = state
+        .match_state
+        .input
+        .armed_super_weapon_type()
+        .map(str::to_owned);
+    let armed_building = state
+        .match_state
+        .input
+        .armed_building_type()
+        .map(str::to_owned);
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
         crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
             &state.match_state,
@@ -1438,7 +1458,8 @@ fn upload_to_gpu(
 
     // Ares DisplayCredits' labels draw when Ares plays, the answer under
     // which the sim pays a bounty (`sim::combat::record_kill`).
-    let ares = state.rules().is_some_and(|rules| rules.ares());
+    let ares = crate::app::state::active_rules(&state.frontend, &state.match_state)
+        .is_some_and(|rules| rules.ares());
     let bounty_text = if ares {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {

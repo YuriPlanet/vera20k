@@ -207,7 +207,8 @@ pub(crate) fn commit_prepared_load(
     // MouseLoad5BE092 restores incoming Power; SidebarNoInit6A4F89/94
     // rearms only slide. Sample after world adoption so diagnostic time uses
     // the incoming tick too. Rejected preparation never reaches this commit.
-    let power_ms = state.radar_presentation_ms();
+    let power_ms =
+        crate::app::diagnostics::state::radar_presentation_ms(&state.diag, &state.match_state);
     let mut power = committed.power_bar_anim;
     power.reanchor_after_load(power_ms);
     state.match_state.match_presentation.power_bar_anim = power;

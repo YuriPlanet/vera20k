@@ -822,7 +822,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if mods.record.is_none() && mods.notice.is_none() && mods.rules_file_notice.is_none() {
         return None;
     }
-    if !state.main_menu_at_rest() {
+    if !crate::app::state::main_menu_at_rest(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         state.frontend.mods.menu_rest_since = None;
         return None;
     }

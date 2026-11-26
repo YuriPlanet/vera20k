@@ -357,7 +357,13 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     state.match_state.match_presentation.sidebar_layout_spec = spec;
     refresh_added_parts(&state.platform, &state.frontend, &mut state.match_state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
-    let sidebar_frame = state.sidebar_frame();
+    let sidebar_frame = crate::app::state::sidebar_frame(
+        &state.platform,
+        &state.persistence,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation.sidebar_layout_spec,
+    );
     let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
     let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
         state

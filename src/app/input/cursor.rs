@@ -2756,10 +2756,13 @@ pub(crate) fn hold_pointer_in_window(
             return false;
         }
         let physical = position.to_physical::<f64>(platform.window.scale_factor());
-        input.set_cursor_from_window(
-            (physical.x as f32, physical.y as f32),
-            renderer.tactical_zoom(screen),
-            platform.confines_pointer(),
+        crate::app::state::set_cursor_from_window(
+            platform,
+            renderer,
+            screen,
+            input,
+            physical.x as f32,
+            physical.y as f32,
         );
         true
     }

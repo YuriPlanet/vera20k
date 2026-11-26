@@ -120,7 +120,7 @@ pub(crate) fn render_movie_list(
                 (id == FAMILY_LIST_ID).then(|| {
                     let rows = list.iter().enumerate();
                     rows.map(|(row, movie)| match shown.contains(&row) {
-                        true => (state.csf_text(movie.label_key), u32::MAX),
+                        true => (state.process_assets.csf_text(movie.label_key), u32::MAX),
                         false => (String::new(), u32::MAX),
                     })
                     .collect()

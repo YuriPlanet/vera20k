@@ -646,7 +646,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
             );
             x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h
         })
-        .then(|| state.csf_text("STT:EmoteButton"));
+        .then(|| state.process_assets.csf_text("STT:EmoteButton"));
         #[cfg(not(target_os = "android"))]
         let send_help: Option<String> = None;
         let help = send_help.unwrap_or_else(|| {

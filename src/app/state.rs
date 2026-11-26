@@ -72,142 +72,6 @@ pub(crate) fn color_vision_matrix_for(
     }
 }
 
-impl AppState {
-    pub(crate) fn translucent_fog_enabled(&self) -> bool {
-        self.platform.translucent_fog_enabled()
-    }
-
-    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
-        self.persistence.color_vision_matrix()
-    }
-
-    pub(crate) fn focus_freeze_active(&self) -> bool {
-        focus_freeze_active(&self.platform, &self.match_state)
-    }
-
-    pub(crate) fn render_width(&self) -> u32 {
-        self.renderer.render_width(&self.frontend.screen)
-    }
-
-    pub(crate) fn render_height(&self) -> u32 {
-        self.renderer.render_height(&self.frontend.screen)
-    }
-
-    pub(crate) fn sidebar_frame(&self) -> crate::ui::sidebar::SidebarFrame {
-        sidebar_frame(
-            &self.platform,
-            &self.persistence,
-            &self.renderer,
-            &self.frontend.screen,
-            &self.match_state.match_presentation.sidebar_layout_spec,
-        )
-    }
-
-    /// Whether HD art is on (`render::hd_switch`), and whether its debug tint is:
-    /// the `VERA20K_HD_ART` capture override, else `[VERA] HdArt=`, which the
-    /// Options list and the HD art key (Page Up) set.
-    pub(crate) fn hd_art_on(&self) -> (bool, bool) {
-        hd_art_on(&self.persistence)
-    }
-
-    pub(crate) fn smooth_online_menus(&self) -> bool {
-        self.persistence
-            .smooth_online_menus(self.frontend.native_shell_ui)
-    }
-
-    pub(crate) fn match_zoom_pass(&self) -> Option<&crate::render::upscale_pass::UpscalePass> {
-        self.renderer.match_zoom_pass(&self.frontend.screen)
-    }
-
-    pub(crate) fn tactical_zoom(
-        &self,
-    ) -> Option<crate::ui::main_menu_dialogs::options::ZoomGeometry> {
-        self.renderer.tactical_zoom(&self.frontend.screen)
-    }
-
-    /// Store a pointer position given in window pixels, in the space this
-    /// screen reads it in.
-    pub(crate) fn set_cursor_from_window(&mut self, x: f32, y: f32) {
-        let zoom = self.renderer.tactical_zoom(&self.frontend.screen);
-        self.match_state.input.set_cursor_from_window(
-            (x, y),
-            zoom,
-            self.platform.confines_pointer(),
-        );
-    }
-
-    /// Move the stored cursor into the space the current screen reads it in,
-    /// before each window event: leaving a zoomed match or resizing one would
-    /// otherwise leave it in the old space until the pointer moves.
-    pub(crate) fn sync_cursor_space(&mut self) {
-        let zoom = self.renderer.tactical_zoom(&self.frontend.screen);
-        self.match_state.input.sync_cursor_space(zoom);
-    }
-
-    pub(crate) fn cursor_position(&self) -> (f32, f32) {
-        self.match_state.input.cursor_position()
-    }
-
-    pub(crate) fn window_cursor_position(&self) -> (f32, f32) {
-        self.match_state
-            .input
-            .window_cursor_position(self.renderer.tactical_zoom(&self.frontend.screen))
-    }
-
-    pub(crate) fn use_software_cursor(&self) -> bool {
-        use_software_cursor(
-            &self.platform,
-            &self.renderer,
-            &self.frontend,
-            &self.match_state,
-            &self.persistence,
-        )
-    }
-
-    /// The main menu at rest, where a box may ask or tell the player
-    /// something: its page takes input (not sliding, no movie, page or error
-    /// over it), past the splash, with no dialog.
-    pub(crate) fn main_menu_at_rest(&self) -> bool {
-        use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        input_layer(
-            &self.platform,
-            &self.renderer,
-            &self.frontend,
-            &self.match_state,
-            &self.persistence,
-        ) == InputLayer::Screen(ScreenPage::MainMenu)
-            && self.frontend.shell_route == ShellRoute::MainMenu
-            && self.frontend.startup_splash.is_none()
-            && !self.frontend.main_menu_dialog_open()
-    }
-
-    pub(crate) fn main_menu_dialog_open(&self) -> bool {
-        self.frontend.main_menu_dialog_open()
-    }
-
-    pub(crate) fn armed_building_type(&self) -> Option<&str> {
-        self.match_state.input.armed_building_type()
-    }
-
-    pub(crate) fn armed_super_weapon_type(&self) -> Option<&str> {
-        self.match_state.input.armed_super_weapon_type()
-    }
-
-    pub(crate) fn resolved_terrain(
-        &self,
-    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
-        self.match_state.resolved_terrain()
-    }
-
-    pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
-        active_rules(&self.frontend, &self.match_state)
-    }
-
-    pub(crate) fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
-        lobby_colors(&self.frontend, &self.match_state)
-    }
-}
-
 /// Is the match frozen because the window is not the foreground? Only the
 /// configured freeze, and only offline: `Main_Tick` (`0x0055D38D`) sleeps
 /// until reactivated in GameMode 0 or 5, but a network game sleeps 10 ms
@@ -217,6 +81,52 @@ pub(crate) fn focus_freeze_active(
     match_state: &crate::app::match_runtime::state::MatchState,
 ) -> bool {
     platform.focus_freeze_configured() && match_state.session_mode().is_single_player()
+}
+
+/// Store a pointer position given in window pixels, in the space this
+/// screen reads it in.
+pub(crate) fn set_cursor_from_window(
+    platform: &PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    screen: &crate::ui::game_screen::GameScreen,
+    input: &mut crate::app::input::state::MatchInputState,
+    x: f32,
+    y: f32,
+) {
+    input.set_cursor_from_window(
+        (x, y),
+        renderer.tactical_zoom(screen),
+        platform.confines_pointer(),
+    );
+}
+
+/// Move the stored cursor into the space the current screen reads it in,
+/// before each window event: leaving a zoomed match or resizing one would
+/// otherwise leave it in the old space until the pointer moves.
+pub(crate) fn sync_cursor_space(
+    renderer: &crate::app::renderer_state::RendererState,
+    screen: &crate::ui::game_screen::GameScreen,
+    input: &mut crate::app::input::state::MatchInputState,
+) {
+    input.sync_cursor_space(renderer.tactical_zoom(screen));
+}
+
+/// The main menu at rest, where a box may ask or tell the player
+/// something: its page takes input (not sliding, no movie, page or error
+/// over it), past the splash, with no dialog.
+pub(crate) fn main_menu_at_rest(
+    platform: &PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    persistence: &crate::app::persistence::PersistenceState,
+) -> bool {
+    use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
+    input_layer(platform, renderer, frontend, match_state, persistence)
+        == InputLayer::Screen(ScreenPage::MainMenu)
+        && frontend.shell_route == ShellRoute::MainMenu
+        && frontend.startup_splash.is_none()
+        && !frontend.main_menu_dialog_open()
 }
 
 /// VERA: the main menu is the page to show but has not started to slide

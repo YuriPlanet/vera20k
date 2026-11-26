@@ -1346,7 +1346,7 @@ pub(super) fn build_ui_instances(
             .presentation()
             .map(|rt| &rt.simulation),
         state.match_state.sim_runtime.frame(),
-        state.rules(),
+        crate::app::state::active_rules(&state.frontend, &state.match_state),
         state
             .match_state
             .match_presentation
@@ -1370,7 +1370,7 @@ pub(super) fn build_ui_instances(
                 .presentation()
                 .map(|rt| &rt.simulation),
             state.match_state.sim_runtime.frame(),
-            state.rules(),
+            crate::app::state::active_rules(&state.frontend, &state.match_state),
             &cursor.selected,
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(&state.match_state).as_deref(),

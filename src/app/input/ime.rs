@@ -137,7 +137,7 @@ impl ImeState {
 /// The edit that takes keys now, with its rectangle in window pixels.
 /// The dialogs the key dispatch serves first leave none.
 fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
-    if state.main_menu_dialog_open()
+    if state.frontend.main_menu_dialog_open()
         || crate::app::input::coop_score::active(&state.frontend)
         || crate::app::frontend::preview_zoom::is_open(&state.frontend.preview_zoom)
     {

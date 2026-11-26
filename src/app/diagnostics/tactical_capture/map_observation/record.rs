@@ -668,7 +668,7 @@ impl TacticalCaptureSession {
             .is_some();
         let ready = sidebar_drawn
             && !state.match_state.paused()
-            && !state.main_menu_dialog_open()
+            && !state.frontend.main_menu_dialog_open()
             && !state.diag.debug_show_pathgrid
             && !state.diag.debug_show_cell_grid
             && !state.diag.debug_show_heightmap
@@ -722,7 +722,7 @@ impl TacticalCaptureSession {
         );
         let mut render = json!({"ready": ready, "sidebar_view_present": sidebar_drawn,
             "instance_counts": super::super::super::evidence::RenderInstanceCountEvidence::from_counts(output.instance_counts)?,
-            "internal_extent": [state.render_width(), state.render_height()],
+            "internal_extent": [state.renderer.render_width(&state.frontend.screen), state.renderer.render_height(&state.frontend.screen)],
             "surface_extent": [state.renderer.gpu.config.width, state.renderer.gpu.config.height],
             "gpu": super::super::super::evidence::GpuAdapterEvidence::from_observation(state.renderer.gpu.capture_adapter_observation()),
             "unit_atlas": unit_atlas,

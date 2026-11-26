@@ -198,7 +198,8 @@ impl TacticalCaptureSession {
             // Simulation::intern_rule_type_ids owns these handles. Observation
             // reads the rules-owned names and installed handles without adding
             // an interner entry or translating a production command.
-            let rules = state.rules().context("loaded rules absent")?;
+            let rules = crate::app::state::active_rules(&state.frontend, &state.match_state)
+                .context("loaded rules absent")?;
             let mut rule_types = Vec::new();
             for (category, names) in production_type_names(rules) {
                 for name in names {
@@ -601,10 +602,13 @@ impl TacticalCaptureSession {
                     }
                     MapGesture::Sidebar { target, .. } => {
                         let (position, slot) =
-                            sidebar_before
-                                .as_ref()
-                                .expect("sidebar captured")
-                                .resolve(target, [state.render_width(), state.render_height()])?;
+                            sidebar_before.as_ref().expect("sidebar captured").resolve(
+                                target,
+                                [
+                                    state.renderer.render_width(&state.frontend.screen),
+                                    state.renderer.render_height(&state.frontend.screen),
+                                ],
+                            )?;
                         (position, position, Some(slot))
                     }
                     MapGesture::CommandBar { .. } => {

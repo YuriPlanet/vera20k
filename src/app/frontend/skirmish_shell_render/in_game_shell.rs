@@ -356,10 +356,13 @@ pub(super) fn paint_dialog(
             match u16::try_from(id).ok()? {
                 TITLE => dialog
                     .title
-                    .map(|(key, fallback)| state.csf_label(key, fallback)),
-                FOOTER => crate::app::input::dialog_page::help(ui, under)
-                    .map(|key| state.csf_label(key, (dialog.help_fallback)(key))),
-                _ => Some(state.csf_label(key, fallback)),
+                    .map(|(key, fallback)| state.process_assets.csf_label(key, fallback)),
+                FOOTER => crate::app::input::dialog_page::help(ui, under).map(|key| {
+                    state
+                        .process_assets
+                        .csf_label(key, (dialog.help_fallback)(key))
+                }),
+                _ => Some(state.process_assets.csf_label(key, fallback)),
             }
         };
         let style = super::gui_paint::GuiStyle {
@@ -560,11 +563,19 @@ pub(super) fn render_shell_frame(
     overlay: ShellFrameOverlay,
     cursor_policy: ShellFrameCursor,
 ) -> anyhow::Result<()> {
-    let width = state.render_width();
-    let height = state.render_height();
+    let width = state.renderer.render_width(&state.frontend.screen);
+    let height = state.renderer.render_height(&state.frontend.screen);
     let window_raster = Some(state.renderer.bit_font.raster())
         .filter(|raster| *raster != crate::render::bit_font::TextRaster::NATIVE);
-    let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| state.sidebar_frame());
+    let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| {
+        crate::app::state::sidebar_frame(
+            &state.platform,
+            &state.persistence,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation.sidebar_layout_spec,
+        )
+    });
     let (shell_width, shell_height) =
         sidebar_frame.map_or((width, height), |frame| frame.layout_size());
     if let Some(frame) = sidebar_frame {
@@ -829,7 +840,7 @@ pub(super) fn render_shell_frame(
         pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
         batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
     }
-    match state.match_zoom_pass() {
+    match state.renderer.match_zoom_pass(&state.frontend.screen) {
         Some(zoom) => {
             presenter.encode_present(encoder, zoom.color_texture());
             zoom.draw(encoder, &destination.create_view(&Default::default()));

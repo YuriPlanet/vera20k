@@ -1923,8 +1923,9 @@ impl App {
             .manager()
             .map(crate::map::rmg::RmgSettings::load)
             .unwrap_or_default();
-        let description =
-            state.csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
+        let description = state
+            .process_assets
+            .csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
         // VERA: where the Extras view keeps the player's own presets.
         let preset_dir = Self::random_map_dir(state.platform.game_config.as_ref());
         let Some(modal) = state

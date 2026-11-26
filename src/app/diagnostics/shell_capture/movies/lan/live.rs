@@ -581,7 +581,7 @@ impl LiveLanCapture {
                 "countries":choices.iter().filter(|choice| choice.value >= 0)
                     .map(|choice| json!({"value":choice.value,"text":choice.text}))
                     .collect::<Vec<_>>(),
-                "colors":state.lobby_colors(),
+                "colors":crate::app::state::lobby_colors(&state.frontend, &state.match_state),
             }));
         }
         setup::apply_action(

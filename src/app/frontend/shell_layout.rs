@@ -275,7 +275,10 @@ pub(crate) fn launcher_options_layout(
     category: crate::ui::main_menu_dialogs::options::Category,
 ) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
-    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen) as i32,
+        state.renderer.render_height(&state.frontend.screen) as i32,
+    );
     let layout = if fills_window(&state.renderer.gpu) {
         LauncherOptionsLayout::responsive(width, height, category)
     } else {

@@ -2303,9 +2303,14 @@ fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
             &state.match_state.match_presentation,
         )
         .context("loaded match has no sidebar view")?;
-        let rect = state
-            .sidebar_frame()
-            .rect_to_frame(view.top_buttons[index].rect);
+        let rect = crate::app::state::sidebar_frame(
+            &state.platform,
+            &state.persistence,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation.sidebar_layout_spec,
+        )
+        .rect_to_frame(view.top_buttons[index].rect);
         state.match_state.input.cursor_x = rect.x + rect.w / 2.0;
         state.match_state.input.cursor_y = rect.y + rect.h / 2.0;
         for edge in [ElementState::Pressed, ElementState::Released] {

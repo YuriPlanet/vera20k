@@ -40,7 +40,10 @@ pub(crate) fn render_saved_game_loading(
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
-    let frame = (state.render_width(), state.render_height());
+    let frame = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     let restored = state
         .renderer
         .shell_surface_presenter
@@ -80,7 +83,9 @@ pub(crate) fn render_saved_game_loading(
         false => menu_area(width, height),
     };
     let layout = message_box_parts(1, area);
-    let body = state.csf_label("TXT_LOADING", "Mission is loading. Please wait...");
+    let body = state
+        .process_assets
+        .csf_label("TXT_LOADING", "Mission is loading. Please wait...");
     let shell_box = crate::ui::shell::modal::ShellBox::new(
         crate::ui::shell::descriptor::DialogResourceId(0xF0),
         body,
