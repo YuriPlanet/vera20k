@@ -107,10 +107,19 @@ impl LiveRoundFlow {
         let mut run = self.watch.take().context("online watch run")?;
         let result = match run.step {
             Step::List => self.join_listed_match(&mut run, state, rendered, frame),
-            Step::Joining => self.await_watched_match(&mut run, state, frame),
+            Step::Joining => {
+                self.await_watched_match(&mut run, &state.frontend, &state.match_state, frame)
+            }
             Step::Playing => self.play_watched_match(&mut run, state, frame),
             Step::Panning => self.pan_watched_view(&mut run, state, frame),
-            Step::Followed => self.leave_watched_match(&mut run, state, frame),
+            Step::Followed => self.leave_watched_match(
+                &mut run,
+                &state.platform,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                frame,
+            ),
             Step::Returning => self.watch_returned(&mut run, state, rendered, frame),
         };
         self.watch = Some(run);
@@ -125,7 +134,7 @@ impl LiveRoundFlow {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        if !lobby_ready(state, rendered) {
+        if !lobby_ready(&state.frontend, rendered) {
             return Ok(());
         }
         let host = self.online_config().host.clone();
@@ -179,11 +188,11 @@ impl LiveRoundFlow {
     fn await_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &AppState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
         frame: u32,
     ) -> Result<()> {
-        if let Some(message) = state
-            .frontend
+        if let Some(message) = frontend
             .wol
             .as_ref()
             .and_then(|visit| visit.lobby())
@@ -191,29 +200,27 @@ impl LiveRoundFlow {
         {
             bail!("the watch did not start: {}", message.body);
         }
-        if state.frontend.screen != GameScreen::InGame {
+        if frontend.screen != GameScreen::InGame {
             return Ok(());
         }
-        let delay = state
-            .match_state
+        let delay = match_state
             .live_network
             .as_ref()
             .filter(|live| live.watching())
             .and_then(|live| live.relay_watch_delay())
             .context("the watched match runs without a watcher's relay route")?;
         ensure!(
-            state
-                .match_state
+            match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().watcher()),
             "the watched match started as a player's world"
         );
         ensure!(
-            !state.match_state.sandbox_full_visibility,
+            !match_state.sandbox_full_visibility,
             "the watched match started on the whole map, not its followed player's sight"
         );
-        let native = native_frame(state)?;
+        let native = native_frame(&match_state.sim_runtime)?;
         run.delay_seconds = Some(delay);
         run.first_frame = Some(native);
         run.last_frame = Some((native, Instant::now()));
@@ -240,7 +247,7 @@ impl LiveRoundFlow {
             "the watched match ended {} frames after its catch-up, before {FRAMES_AFTER_CATCH_UP}",
             run.frames_after
         );
-        let native = native_frame(state)?;
+        let native = native_frame(&state.match_state.sim_runtime)?;
         let (last, at) = run.last_frame.context("watched frame")?;
         if native != last {
             run.last_frame = Some((native, Instant::now()));
@@ -286,7 +293,7 @@ impl LiveRoundFlow {
         }
         // Tab goes through the other players and the observer's sidebar back
         // to the player it started with.
-        let start = shown_view(state)?;
+        let start = shown_view(&state.match_state.sim_runtime)?;
         let mut views: Vec<String> = Vec::new();
         while views.last() != Some(&start) {
             ensure!(
@@ -294,8 +301,14 @@ impl LiveRoundFlow {
                 "Tab never came back to {start}: {}",
                 views.join(" -> ")
             );
-            press(state, KeyCode::Tab)?;
-            let view = shown_view(state)?;
+            press(
+                &state.platform,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                KeyCode::Tab,
+            )?;
+            let view = shown_view(&state.match_state.sim_runtime)?;
             ensure!(
                 views.last().unwrap_or(&start) != &view,
                 "Tab kept showing {view}"
@@ -362,7 +375,7 @@ impl LiveRoundFlow {
             return Ok(());
         }
         watching::mouse(state, MouseButton::Right, false);
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         let moved = [camera.0 - from.0, camera.1 - from.1];
         self.record(
             frame,
@@ -379,11 +392,14 @@ impl LiveRoundFlow {
     fn leave_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &mut AppState,
+        platform: &PlatformState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        sfx_player: &mut Option<SfxPlayer>,
         frame: u32,
     ) -> Result<()> {
-        let native = native_frame(state)?;
-        press(state, KeyCode::Escape)?;
+        let native = native_frame(&match_state.sim_runtime)?;
+        press(platform, frontend, match_state, sfx_player, KeyCode::Escape)?;
         run.exit_route
             .push(json!({"step":"Escape","render_frame":frame,"native_frame":native}));
         self.record(frame, "Escape pressed in the watched match");
@@ -400,7 +416,7 @@ impl LiveRoundFlow {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        if !lobby_ready(state, rendered) {
+        if !lobby_ready(&state.frontend, rendered) {
             ensure!(
                 run.since.elapsed() < RETURN_WAIT,
                 "Escape did not return to the online lobby within {} s",
@@ -416,10 +432,11 @@ impl LiveRoundFlow {
         run.exit_route
             .push(json!({"step":"online lobby","render_frame":frame}));
         self.record(frame, "Escape returned to the online lobby");
-        let rect = crate::app::shell_wol::lobby::layout(state)
-            .page
-            .button_rect(wol_lobby::BACK)
-            .context("WOL lobby Back button")?;
+        let rect =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                .page
+                .button_rect(wol_lobby::BACK)
+                .context("WOL lobby Back button")?;
         click(state, rect);
         self.record(
             frame,
@@ -429,7 +446,11 @@ impl LiveRoundFlow {
         Ok(())
     }
 
-    pub(super) fn watch_receipt(&self, state: &AppState, run: &WatchRun) -> Result<Value> {
+    pub(super) fn watch_receipt(
+        &self,
+        live_network: &Option<LiveCommandSession>,
+        run: &WatchRun,
+    ) -> Result<Value> {
         let (start, views) = run
             .tab
             .as_ref()
@@ -440,7 +461,7 @@ impl LiveRoundFlow {
             .context("online watch capture did not return to the settled Main Menu")?;
         ensure!(self.ready(), "online watch capture is incomplete");
         ensure!(
-            state.match_state.live_network.is_none(),
+            live_network.is_none(),
             "finished watch capture retained command transport"
         );
         let mut exit_route = run.exit_route.clone();
@@ -461,10 +482,8 @@ impl LiveRoundFlow {
     }
 }
 
-fn native_frame(state: &AppState) -> Result<u32> {
-    Ok(state
-        .match_state
-        .sim_runtime
+fn native_frame(sim_runtime: &SimHost) -> Result<u32> {
+    Ok(sim_runtime
         .runtime()
         .context("watched world")?
         .simulation
@@ -474,13 +493,8 @@ fn native_frame(state: &AppState) -> Result<u32> {
 
 /// What the watcher shows: the observer's sidebar, or the House it stands in
 /// for (`current_house`).
-fn shown_view(state: &AppState) -> Result<String> {
-    let sim = &state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .context("watched world")?
-        .simulation;
+fn shown_view(sim_runtime: &SimHost) -> Result<String> {
+    let sim = &sim_runtime.runtime().context("watched world")?.simulation;
     if sim.session().watcher_observes() {
         return Ok(OBSERVER_VIEW.to_owned());
     }
@@ -499,7 +513,7 @@ fn shown_view(state: &AppState) -> Result<String> {
 /// as the window's button events reach it in a watched match, and the pointer
 /// moved right past the drag threshold. Answers the view before the drag.
 fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
-    MoviesCapture::restore_neutral_pointer(state);
+    MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
     ensure!(
         crate::app::input::camera::cursor_over_battlefield(
             &state.platform,
@@ -521,14 +535,28 @@ fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
 
 /// A press and release through the watcher's key adapter, as the window's
 /// key events reach it in a watched match.
-fn press(state: &mut AppState, code: KeyCode) -> Result<()> {
+fn press(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    code: KeyCode,
+) -> Result<()> {
     ensure!(
-        state.frontend.screen == GameScreen::InGame && watching::active(&state.match_state),
+        frontend.screen == GameScreen::InGame && watching::active(match_state),
         "{code:?} reached no watched match"
     );
     for pressed in [true, false] {
         ensure!(
-            watching::key(state, code, pressed, false),
+            watching::key(
+                platform,
+                frontend,
+                match_state,
+                sfx_player,
+                code,
+                pressed,
+                false
+            ),
             "{code:?} is no watcher's key"
         );
     }

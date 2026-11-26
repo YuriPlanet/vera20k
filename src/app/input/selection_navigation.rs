@@ -2,9 +2,17 @@
 //! Original body/caller/data and executed controls:
 //! tools/input_oracle/selection_navigation.{py,json,meta.json,md}.
 
-use super::{AppState, SelectionMutation};
+use super::SelectionMutation;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::types::CategoryNavigationKind;
 use crate::assets::csf_file::{CsfArg, format_csf};
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::health_category;
 
@@ -82,38 +90,54 @@ fn after_anchor(
     first
 }
 
-pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectDirection) {
+pub(super) fn execute_object_navigation(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    direction: ObjectDirection,
+) {
     // Next/Previous Object (0x00536610/0x00536A80) first call
     // SetTogglePowerMode(0) (0x00536617/0x00536A87), then SetWaypointMode,
     // SetRepairMode(0) and SetSellMode(0).
-    crate::app::input::power_mode::disable(&mut state.match_state);
-    let placement = state.armed_building_type().is_some();
-    state
-        .match_state
+    crate::app::input::power_mode::disable(match_state);
+    let placement = match_state.input.armed_building_type().is_some();
+    match_state
         .match_presentation
         .sidebar_gadget_state
         .disable_selection_modes(placement);
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
         return;
     };
     let current = super::selected_stable_ids_in_order(
         Some(sim),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    let Some(id) = next_object(sim, state.rules(), current.first().copied(), direction) else {
+    let Some(id) = next_object(
+        sim,
+        crate::app::state::active_rules(frontend, match_state),
+        current.first().copied(),
+        direction,
+    ) else {
         return;
     };
     // UnselectAll is unconditional after a found candidate, including a
     // singleton wrap. Select may refuse (e.g. pending building placement).
     super::apply_selection_mutation(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         SelectionMutation {
             clear: true,
             select: vec![id],
@@ -122,13 +146,13 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
         super::SelectionVoicePolicy::EveryAdded,
     );
     crate::app::input::camera::center_view_on_selection(
-        &state.platform,
-        &mut state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     );
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
     // No selected-action-line timer start, Scenario draw or Detach in this path.
 }
 
@@ -223,62 +247,70 @@ fn combatant_selection(
     }
 }
 
-pub(super) fn execute_combatant_selection(state: &mut AppState) {
-    if state
-        .match_state
+pub(super) fn execute_combatant_selection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if match_state
         .sim_runtime
         .runtime()
         .is_none_or(|rt| !selection_navigation_allowed(&rt.simulation))
     {
         return;
     }
-    state
-        .match_state
-        .input
-        .type_select
-        .prepare_combatant_scope();
+    match_state.input.type_select.prepare_combatant_scope();
     let result = {
-        let Some(sim) = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation)
-        else {
+        let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
             return;
         };
-        let Some(rules) = state.rules() else {
+        let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
             return;
         };
         let selected = super::selected_stable_ids_in_order(
             Some(sim),
             Some(rules),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
+            &match_state.input.selection_order,
+            match_state.input.selection_order_pending,
         );
         combatant_selection(
             sim,
             rules,
-            &crate::app::presentation::instances::tactical_screen_entity_encounter_order(state),
+            &crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
+            ),
             &super::map_entity_creation_order(sim.entities()),
             &selected,
-            !state.match_state.input.hotkey_modifiers.shift_key(),
-            state.match_state.input.type_select.across_map,
+            !match_state.input.hotkey_modifiers.shift_key(),
+            match_state.input.type_select.across_map,
         )
     };
     super::apply_selection_mutation(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         result.mutation,
         super::SelectionVoicePolicy::EveryAdded,
     );
     let selected = super::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     let outcome = if selected.is_empty() {
         crate::app::types::TypeSelectOutcome::Empty
@@ -287,14 +319,22 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
     } else {
         crate::app::types::TypeSelectOutcome::Screen
     };
-    state
-        .match_state
+    match_state
         .input
         .type_select
         .finish_combatant_selection(outcome, result.across_map);
-    crate::app::input::messages::post_type_select_feedback(state, outcome.csf_key());
+    crate::app::input::messages::post_type_select_feedback(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        outcome.csf_key(),
+    );
     super::apply_selection_action_line_policy(
-        &mut state.match_state,
+        match_state,
         super::SelectionActionLinePolicy::Preserve,
     );
 }
@@ -480,10 +520,19 @@ fn category_selection(
     })
 }
 
-pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNavigationKind) {
+pub(super) fn execute_category_navigation(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    kind: CategoryNavigationKind,
+) {
     // Reject before asking the presentation owner for its tactical array.
-    if state
-        .match_state
+    if match_state
         .sim_runtime
         .runtime()
         .is_none_or(|rt| !selection_navigation_allowed(&rt.simulation))
@@ -491,30 +540,34 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         return;
     }
     let current = super::selected_stable_ids_in_order(
-        state
-            .match_state
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    let screen = if !state
-        .match_state
+    let screen = if !match_state
         .input
         .type_select
         .category_navigation_continues(kind)
         && current.is_empty()
     {
-        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state)
+        crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+        )
     } else {
         Vec::new()
     };
     let result = {
-        let runtime = state.match_state.sim_runtime.runtime().unwrap();
+        let runtime = match_state.sim_runtime.runtime().unwrap();
         let rules = &runtime.resources.rules;
-        let input = &mut state.match_state.input;
+        let input = &mut match_state.input;
         category_selection(
             &runtime.simulation,
             rules,
@@ -530,32 +583,35 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         return;
     };
     super::apply_selection_mutation(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         result.mutation,
         super::SelectionVoicePolicy::EveryAdded,
     );
     // The native direct Select calls do not start the mouse action-line timer.
     super::apply_selection_action_line_policy(
-        &mut state.match_state,
+        match_state,
         super::SelectionActionLinePolicy::Preserve,
     );
     let selected = super::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        match_state.sim_runtime.runtime().map(|rt| &rt.simulation),
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    let sim = &state.match_state.sim_runtime.runtime().unwrap().simulation;
-    let rules = state.rules().unwrap();
+    let sim = &match_state.sim_runtime.runtime().unwrap().simulation;
+    let rules = crate::app::state::active_rules(frontend, match_state).unwrap();
     let mixed = selected.iter().any(|id| {
         entity_navigation_category(sim, rules, *id, kind)
             .is_some_and(|category| category != result.category)
     });
-    let label = state.csf_text(if mixed {
+    let label = process_assets.csf_text(if mixed {
         "MSG:Mixed"
     } else {
         category_key(kind, result.category)
@@ -566,7 +622,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         .iter()
         .filter_map(|id| sim.entities().get(*id))
         .filter_map(|entity| {
-            let rules = state.rules()?;
+            let rules = crate::app::state::active_rules(frontend, match_state)?;
             let object = sim.interner().object_type(entity.type_ref(), rules)?;
             Some(sim.cost_of(entity.owner(), object, rules))
         })
@@ -576,12 +632,20 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         selected.len(),
         worth,
         &label,
-        &state.csf_text("MSG:NavEmpty"),
-        &state.csf_text("MSG:NoUnitsSel"),
-        &state.csf_text("MSG:UnitsWorth"),
+        &process_assets.csf_text("MSG:NavEmpty"),
+        &process_assets.csf_text("MSG:NoUnitsSel"),
+        &process_assets.csf_text("MSG:UnitsWorth"),
     );
-    crate::app::input::messages::post_selection_navigation_text(state, &text);
-    let input = &mut state.match_state.input;
+    crate::app::input::messages::post_selection_navigation_text(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        persistence,
+        &text,
+    );
+    let input = &mut match_state.input;
     input
         .category_navigation
         .record_category(kind, result.category);

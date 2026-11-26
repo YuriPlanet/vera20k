@@ -8,6 +8,9 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::types::HoverTargetKind;
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -173,13 +176,19 @@ impl PickWorld for PresentedWorld<'_> {
     }
 }
 pub(crate) fn presented<'a>(
-    state: &'a crate::app::AppState,
+    platform: &'a PlatformState,
+    frontend: &'a FrontendState,
+    match_state: &'a MatchState,
     sim: &'a crate::sim::world::Simulation,
 ) -> PresentedWorld<'a> {
     PresentedWorld {
         sim,
-        rules: state.rules(),
-        translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
+        rules: crate::app::state::active_rules(frontend, match_state),
+        translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(
+            platform,
+            match_state,
+            sim,
+        ),
     }
 }
 
@@ -319,24 +328,28 @@ fn may_pick(span: crate::app::presentation::display_members::ScreenSpan, x: f32,
 /// TacticalPick of a frame, whose target both the cursor's action and the
 /// hover health bar read. With the world home the frame is the home
 /// world's, so the pick asks only the objects near the cursor.
-pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverObject> {
-    let host = &state.match_state.sim_runtime;
+pub(crate) fn cursor_hover_object(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<HoverObject> {
+    let host = &match_state.sim_runtime;
     let sim = &host.runtime()?.simulation;
     let frame = (!host.is_lent()).then(|| host.frame()).flatten();
-    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
+    let owner = crate::app::input::commands::preferred_local_owner_name(match_state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        &match_state.input,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     tactical_hover_object_at_point(
-        presented(state, sim),
+        presented(platform, frontend, match_state, sim),
         frame,
         world_x,
         world_y,
         &owner,
-        state.match_state.sandbox_full_visibility,
-        crate::app::input::campaign_input::is_locked(&state.match_state),
+        match_state.sandbox_full_visibility,
+        crate::app::input::campaign_input::is_locked(match_state),
     )
 }
 

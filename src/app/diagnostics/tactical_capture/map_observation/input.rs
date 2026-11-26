@@ -2,6 +2,7 @@
 //! selection, placement, sidebar and command-bar state seen around each gesture.
 
 use super::*;
+use crate::app::persistence::PersistenceState;
 
 #[derive(Debug, Serialize)]
 pub(super) struct MapCommandReceipt {
@@ -210,10 +211,14 @@ pub(super) struct MapLocalInputObservation {
 }
 
 impl MapLocalInputObservation {
-    pub(super) fn capture(state: &AppState, sim: &crate::sim::world::Simulation) -> Self {
+    pub(super) fn capture(
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        sim: &crate::sim::world::Simulation,
+    ) -> Self {
         use crate::app::types::TargetingMode;
-        let input = &state.match_state.input;
-        let gadgets = &state.match_state.match_presentation.sidebar_gadget_state;
+        let input = &match_state.input;
+        let gadgets = &match_state.match_presentation.sidebar_gadget_state;
         let main_rng = sim.rng_views().main;
         Self {
             camera_top_left: [input.camera_x, input.camera_y],
@@ -239,8 +244,7 @@ impl MapLocalInputObservation {
             )),
             main_rng_cursor: [main_rng.index_a, main_rng.index_b],
             selection_voice_enabled: input.selection_voice_enabled,
-            selection_voice_requests: state
-                .match_state
+            selection_voice_requests: match_state
                 .match_audio
                 .sound_events
                 .iter()
@@ -249,7 +253,10 @@ impl MapLocalInputObservation {
                         Some(MapSelectionVoiceRequest {
                             speaker_id: *speaker_id,
                             sound_id: event
-                                .sound_id(state.rules().map(|rules| rules.sound_names()))
+                                .sound_id(
+                                    crate::app::state::active_rules(frontend, match_state)
+                                        .map(|rules| rules.sound_names()),
+                                )
                                 .to_string(),
                         })
                     }
@@ -260,8 +267,7 @@ impl MapLocalInputObservation {
                 &input.type_select,
                 &input.category_navigation,
             ),
-            hud_messages: state
-                .match_state
+            hud_messages: match_state
                 .match_presentation
                 .message_list
                 .messages()
@@ -273,25 +279,28 @@ impl MapLocalInputObservation {
 }
 
 impl MapInputObservation {
-    pub(super) fn capture(state: &AppState, local_input: bool) -> Result<Self> {
-        let sim = &state
-            .match_state
+    pub(super) fn capture(
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        local_input: bool,
+    ) -> Result<Self> {
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("gesture observation requires a simulation")?
             .simulation;
-        let lines = &state.match_state.match_presentation.target_lines;
+        let lines = &match_state.match_presentation.target_lines;
         Ok(Self {
             selected_ids: crate::app::input::dispatch::selected_stable_ids_in_order(
                 Some(sim),
-                state.rules(),
-                &state.match_state.input.selection_order,
-                state.match_state.input.selection_order_pending,
+                crate::app::state::active_rules(frontend, match_state),
+                &match_state.input.selection_order,
+                match_state.input.selection_order_pending,
             ),
-            selection_pending: state.match_state.input.selection_order_pending,
+            selection_pending: match_state.input.selection_order_pending,
             target_line_remaining: lines.remaining_frames(sim.session().binary_frame()),
             target_line_active: lines.is_selected_action_active(sim.session().binary_frame()),
-            planning_active: state.match_state.input.planning.active(),
+            planning_active: match_state.input.planning.active(),
             planning_paths: sim
                 .session()
                 .current_house()
@@ -306,7 +315,8 @@ impl MapInputObservation {
                         })
                         .collect()
                 }),
-            local_input: local_input.then(|| MapLocalInputObservation::capture(state, sim)),
+            local_input: local_input
+                .then(|| MapLocalInputObservation::capture(frontend, match_state, sim)),
         })
     }
 
@@ -397,12 +407,12 @@ pub(super) struct MapSidebarObservation {
 }
 
 impl MapSidebarObservation {
-    pub(super) fn capture(state: &AppState) -> Result<Self> {
+    pub(super) fn capture(
+        presentation: &crate::app::presentation::state::MatchPresentationState,
+    ) -> Result<Self> {
         Self::from_view(
-            crate::app::presentation::sidebar_render::current_sidebar_view(
-                &state.match_state.match_presentation,
-            )
-            .context("sidebar observation requires the retained view")?,
+            crate::app::presentation::sidebar_render::current_sidebar_view(presentation)
+                .context("sidebar observation requires the retained view")?,
         )
     }
 
@@ -586,14 +596,12 @@ pub(super) struct MapCommandBarThumbState {
 }
 
 impl MapCommandBarThumbState {
-    pub(super) fn capture(state: &AppState, handle: vera20k_gui::NodeId) -> Result<Self> {
-        let presentation = &state.match_state.match_presentation;
-        let (gui, nodes) =
-            crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
-                .context("thumb control disappeared")?;
+    pub(super) fn capture(match_state: &MatchState, handle: vera20k_gui::NodeId) -> Result<Self> {
+        let presentation = &match_state.match_presentation;
+        let (gui, nodes) = crate::app::input::chrome_input::chrome(&match_state.match_presentation)
+            .context("thumb control disappeared")?;
         let control = ChromeControl::read(gui, handle).context("thumb control disappeared")?;
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("thumb observation requires a simulation")?
@@ -604,7 +612,7 @@ impl MapCommandBarThumbState {
             closed: presentation.sidebar_gadget_state.command_bar_closed,
             pressed: gui.shows_pressed_in(nodes.layer, handle),
             sticky: gui.pressed_in(nodes.layer) == Some(handle),
-            left_held: state.match_state.input.tactical_mouse.left_held(),
+            left_held: match_state.input.tactical_mouse.left_held(),
             gadget_id: control.id,
             rect: [
                 control.rect.x,
@@ -664,12 +672,12 @@ pub(super) struct MapCommandBarThumbEdge {
 }
 
 impl MapCommandBarThumbEdge {
-    pub(super) fn capture(state: &AppState, handle: vera20k_gui::NodeId) -> Result<Self> {
-        let snapshot = MapCommandBarThumbState::capture(state, handle)?;
+    pub(super) fn capture(match_state: &MatchState, handle: vera20k_gui::NodeId) -> Result<Self> {
+        let snapshot = MapCommandBarThumbState::capture(match_state, handle)?;
         // Both ordinary input ingress and the chrome return before routing
         // while Scenario input is locked. Do not mistake the record of an
         // earlier edge for a dispatch of this blocked edge.
-        let chrome = &state.match_state.match_presentation.in_game_chrome;
+        let chrome = &match_state.match_presentation.in_game_chrome;
         let dispatch = (!snapshot.input_locked && chrome.last_route == Some(handle)).then(|| {
             let fired = chrome.last_fired.filter(|(node, _)| *node == handle);
             MapCommandBarDispatchObservation {
@@ -713,29 +721,44 @@ impl MapCommandBarGestureReceipt {
         })
     }
 
-    pub(super) fn capture(state: &AppState, command: &str) -> Result<(Self, vera20k_gui::NodeId)> {
+    pub(super) fn capture(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+        command: &str,
+    ) -> Result<(Self, vera20k_gui::NodeId)> {
         let (layout, slots) =
-            crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state)
-                .context("command-bar layout is absent")?;
-        let (gui, nodes) =
-            crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
-                .context("command-bar controls are absent")?;
+            crate::app::presentation::sidebar_build::command_bar::layout_and_slots(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            )
+            .context("command-bar layout is absent")?;
+        let (gui, nodes) = crate::app::input::chrome_input::chrome(&match_state.match_presentation)
+            .context("command-bar controls are absent")?;
         let (mut receipt, handle) = Self::resolve(
             command,
             layout,
             &slots,
             (gui, nodes.command_bar),
-            [state.render_width(), state.render_height()],
+            [
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
+            ],
         )?;
         if command == "Thumb" {
             ensure!(
-                state.frontend.screen == crate::ui::game_screen::GameScreen::InGame
-                    && !state.match_state.paused()
-                    && state.frontend.keyboard_dialog.is_none(),
+                frontend.screen == crate::ui::game_screen::GameScreen::InGame
+                    && !match_state.paused()
+                    && frontend.keyboard_dialog.is_none(),
                 "thumb gesture requires ordinary unpaused in-game input"
             );
             receipt.thumb = Some(MapCommandBarThumbReceipt {
-                before: MapCommandBarThumbState::capture(state, handle)?,
+                before: MapCommandBarThumbState::capture(match_state, handle)?,
                 press: None,
                 release: None,
                 after: None,
@@ -844,7 +867,12 @@ impl MapKeyboardGestureReceipt {
         let (physical, logical) = literal_key(key)?;
         let planning_before = state.match_state.input.planning.active();
         let modifier_keys = literal_modifiers(modifiers)?;
-        literal_modifier_edges(state, &modifier_keys, true);
+        literal_modifier_edges(
+            &mut state.platform,
+            &mut state.match_state.input,
+            &modifier_keys,
+            true,
+        );
         let location = KeyLocation::Standard;
         let encoded_key = hotkeys::logical_virtual_key(&logical, location)
             .context("literal key has no production virtual-key identity")?;
@@ -894,7 +922,12 @@ impl MapKeyboardGestureReceipt {
             edge(state, ElementState::Released, false);
         }
         let release_cleared = !state.match_state.input.keys_held.contains(&physical);
-        literal_modifier_edges(state, &modifier_keys, false);
+        literal_modifier_edges(
+            &mut state.platform,
+            &mut state.match_state.input,
+            &modifier_keys,
+            false,
+        );
         ensure!(
             (key_edge == Some(MapKeyEdge::Released) || press_held)
                 && (matches!(key_edge, Some(MapKeyEdge::Pressed | MapKeyEdge::Repeat))

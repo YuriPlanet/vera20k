@@ -413,15 +413,37 @@ pub(crate) fn place_beacon(
         PlacementFeedback::None => {}
         PlacementFeedback::Local => {
             use crate::app::input::messages::{HudMessage, post_hud_message};
-            post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP1"));
-            post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP2"));
+            post_hud_message(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                HudMessage::BeaconHelp("TXT_BEACON_HELP1"),
+            );
+            post_hud_message(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                HudMessage::BeaconHelp("TXT_BEACON_HELP2"),
+            );
             crate::app::input::dispatch::push_local_eva(
                 &mut state.match_state.match_audio,
                 EVA_BEACON_PLACED,
             );
-            if let Some(sound_id) = state.rules().and_then(|rules| {
-                Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?))
-            }) {
+            if let Some(sound_id) =
+                crate::app::state::active_rules(&state.frontend, &state.match_state).and_then(
+                    |rules| Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?)),
+                )
+            {
                 state
                     .match_state
                     .match_audio
@@ -592,7 +614,14 @@ pub(crate) fn local_player_defeated(state: &mut AppState) {
         delete_all_beacons(&mut state.match_state, local);
     }
     crate::app::input::beacon::set_place_beacon_mode(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
         crate::app::input::beacon::BeaconModeRequest::Off,
     );
 }

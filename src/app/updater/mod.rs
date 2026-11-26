@@ -165,13 +165,13 @@ enum Phase {
 /// a player's run (not a shell capture or hidden run): the main menu's first
 /// entry waits for it ([`Updater::holds_main_menu`]). A CnCNet-launched match
 /// quits at its end, with no main menu to ask at.
-pub(crate) fn launch(state: &mut AppState) {
-    let phase = if state.frontend.external_launch {
+pub(crate) fn launch(frontend: &mut crate::app::frontend::state::FrontendState) {
+    let phase = if frontend.external_launch {
         Phase::Finished
     } else {
         start(false).unwrap_or(Phase::Finished)
     };
-    state.frontend.updater.begin(phase, Instant::now());
+    frontend.updater.begin(phase, Instant::now());
 }
 
 /// Advance the updater; the deadline keeps the event loop polling while a
@@ -208,7 +208,13 @@ fn advance(state: &mut AppState) -> Option<Instant> {
                     if state.frontend.shell_message_box.is_some() {
                         App::close_shell_message_box_from_controller(&mut state.frontend);
                     }
-                    open_offer(state);
+                    open_offer(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    );
                     return None;
                 }
                 let skipped = Version::parse(&state.persistence.options_profile.skipped_update);
@@ -221,7 +227,14 @@ fn advance(state: &mut AppState) -> Option<Instant> {
                 if asked {
                     let text =
                         crate::i18n::tr_fill("VERA:UpToDate", &[("version", &Version::current())]);
-                    show_notice(state, text);
+                    show_notice(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                        text,
+                    );
                 }
                 None
             }
@@ -229,7 +242,14 @@ fn advance(state: &mut AppState) -> Option<Instant> {
                 log::info!("Updater: check failed: {error:#}");
                 state.frontend.updater.phase = Phase::Finished;
                 if asked {
-                    show_notice(state, crate::i18n::tr(CHECK_FAILED));
+                    show_notice(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                        crate::i18n::tr(CHECK_FAILED),
+                    );
                 }
                 None
             }
@@ -245,7 +265,14 @@ fn advance(state: &mut AppState) -> Option<Instant> {
             Err(TryRecvError::Disconnected) => {
                 state.frontend.updater.phase = Phase::Finished;
                 if asked {
-                    show_notice(state, crate::i18n::tr(CHECK_FAILED));
+                    show_notice(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                        crate::i18n::tr(CHECK_FAILED),
+                    );
                 }
                 None
             }
@@ -254,18 +281,41 @@ fn advance(state: &mut AppState) -> Option<Instant> {
             package,
             offer: Offer::Update(release),
         } if UNATTENDED => {
-            download(state, package, release);
+            download(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                package,
+                release,
+            );
             Some(Instant::now() + POLL_INTERVAL)
         }
         Phase::Found { package, offer } => {
             // Before the menu shows, the slide-out below is skipped and the
             // offer opens at once.
-            if state.main_menu_at_rest() || state.main_menu_not_shown() {
+            if crate::app::state::main_menu_at_rest(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ) || crate::app::state::main_menu_not_shown(&state.frontend)
+            {
                 state.frontend.updater.phase = Phase::Offered { package, offer };
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
-                    crate::app::updater::open_offer,
+                    |state| {
+                        crate::app::updater::open_offer(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.persistence.options_profile,
+                        )
+                    },
                 );
             } else {
                 state.frontend.updater.phase = Phase::Found { package, offer };
@@ -290,7 +340,15 @@ fn advance(state: &mut AppState) -> Option<Instant> {
             Ok(Err(error)) => {
                 log::warn!("Updater: updating to {} failed: {error:#}", release.version);
                 state.frontend.updater.phase = Phase::Finished;
-                show_failure(state, release.version, &error);
+                show_failure(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    release.version,
+                    &error,
+                );
                 None
             }
             Err(TryRecvError::Empty) => {
@@ -317,7 +375,7 @@ fn advance(state: &mut AppState) -> Option<Instant> {
         },
         phase => {
             state.frontend.updater.phase = phase;
-            notes::poll_scroll(state)
+            notes::poll_scroll(&state.platform, &state.renderer.gpu, &mut state.frontend)
         }
     }
 }
@@ -358,51 +416,70 @@ const CHECK_FAILED: &str = "VERA:UpdateCheckFailed";
 /// Vera Options' Check for Updates, once its page has slid out: an offer
 /// waiting for the main menu shows now, and otherwise a check (the one
 /// under way, or a new one) answers in a box, offering a skipped version too.
-pub(crate) fn open_check(state: &mut AppState) {
+pub(crate) fn open_check(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
     // Over the empty shell backdrop, as the offer asks.
-    App::destroy_current_shell_dialog(state);
-    match std::mem::take(&mut state.frontend.updater.phase) {
+    App::destroy_current_shell_dialog(frontend);
+    match std::mem::take(&mut frontend.updater.phase) {
         Phase::Found { package, offer } => {
-            state.frontend.updater.phase = Phase::Offered { package, offer };
-            open_offer(state);
+            frontend.updater.phase = Phase::Offered { package, offer };
+            open_offer(window, renderer, frontend, process_assets, options_profile);
         }
         Phase::Checking {
             package, result, ..
         } => {
             // The player reached Options, so the menu has shown.
-            state.frontend.updater.phase = Phase::Checking {
+            frontend.updater.phase = Phase::Checking {
                 package,
                 result,
                 asked: true,
                 menu_hold: None,
             };
-            open_checking(state);
+            open_checking(window, renderer, frontend, process_assets, options_profile);
         }
         Phase::NotStarted | Phase::Finished => match start(true) {
             Ok(phase) => {
-                state.frontend.updater.phase = phase;
-                open_checking(state);
+                frontend.updater.phase = phase;
+                open_checking(window, renderer, frontend, process_assets, options_profile);
             }
             Err(reason) => {
-                state.frontend.updater.phase = Phase::Finished;
-                show_notice(state, crate::i18n::tr(reason));
+                frontend.updater.phase = Phase::Finished;
+                show_notice(
+                    window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
+                    crate::i18n::tr(reason),
+                );
             }
         },
         // A box of the updater's own is up already.
         phase @ (Phase::Offered { .. } | Phase::Downloading { .. }) => {
-            state.frontend.updater.phase = phase;
+            frontend.updater.phase = phase;
         }
     }
 }
 
-fn open_checking(state: &mut AppState) {
-    let cancel = state.csf_label("TXT_CANCEL", "Cancel");
+fn open_checking(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
+    let cancel = process_assets.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        &state.platform.window,
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
         ShellMessageBoxPurpose::UpdateCheck,
     );
@@ -432,9 +509,15 @@ pub(crate) fn lobby_outdated(frontend: &mut crate::app::frontend::state::Fronten
 
 /// The menu has slid out, or has not shown yet: ask over the empty shell
 /// backdrop, as Exit Game does (`App::open_exit_confirm`).
-pub(crate) fn open_offer(state: &mut AppState) {
+pub(crate) fn open_offer(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
     use crate::i18n::{tr, tr_fill};
-    let Phase::Offered { offer, .. } = &state.frontend.updater.phase else {
+    let Phase::Offered { offer, .. } = &frontend.updater.phase else {
         return;
     };
     let (question, confirm, skip, changes) = match offer {
@@ -466,14 +549,14 @@ pub(crate) fn open_offer(state: &mut AppState) {
         tr("VERA:Later"),
         skip.map(tr).unwrap_or_default(),
     );
-    let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
-    App::destroy_current_shell_dialog(state);
+    let notes = notes::ReleaseNotes::new(&renderer.bit_font, changes);
+    App::destroy_current_shell_dialog(frontend);
     App::open_shell_message_box(
-        &state.platform.window,
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         shell_box,
         ShellMessageBoxPurpose::UpdateOffer(notes),
     );
@@ -481,20 +564,34 @@ pub(crate) fn open_offer(state: &mut AppState) {
 
 /// The offer's answer: 0 Update (or Download), 2 Skip This Version, 1 (or
 /// Esc/Enter) Later.
-pub(crate) fn answer_offer(state: &mut AppState, answer: usize) {
-    let Phase::Offered { package, offer } = std::mem::take(&mut state.frontend.updater.phase)
-    else {
+pub(crate) fn answer_offer(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &mut crate::app::persistence::options_profile::RetailOptionsProfile,
+    answer: usize,
+) {
+    let Phase::Offered { package, offer } = std::mem::take(&mut frontend.updater.phase) else {
         return;
     };
-    state.frontend.updater.phase = Phase::Finished;
+    frontend.updater.phase = Phase::Finished;
     match (answer, offer) {
-        (0, Offer::Update(release)) => download(state, package, release),
+        (0, Offer::Update(release)) => download(
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            package,
+            release,
+        ),
         (0, Offer::Manual { .. }) => open_in_browser(DOWNLOAD_PAGE),
         (0, Offer::NewKey { .. }) => open_in_browser(GITHUB_RELEASES),
         (2, offer @ (Offer::Update(_) | Offer::Manual { .. })) => {
-            let profile = &mut state.persistence.options_profile;
+            let profile = options_profile;
             profile.skipped_update = offer.version().to_string();
-            if let Some(config) = state.platform.game_config.as_ref()
+            if let Some(config) = platform.game_config.as_ref()
                 && let Err(error) = profile.commit_skipped_update(config.paths.settings_dir())
             {
                 log::warn!("Updater: cannot save the skipped version: {error}");
@@ -504,7 +601,15 @@ pub(crate) fn answer_offer(state: &mut AppState, answer: usize) {
     }
 }
 
-fn download(state: &mut AppState, package: Package, release: Release) {
+fn download(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    package: Package,
+    release: Release,
+) {
     let progress = Arc::new(Progress::default());
     let (sender, result) = mpsc::channel();
     let worker = {
@@ -529,25 +634,49 @@ fn download(state: &mut AppState, package: Package, release: Release) {
         .name("vera-update-download".into())
         .spawn(worker)
     {
-        show_failure(state, release.version, &anyhow::Error::from(error));
+        show_failure(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            release.version,
+            &anyhow::Error::from(error),
+        );
         return;
     }
-    open_progress(state, &release, 0);
-    state.frontend.updater.phase = Phase::Downloading {
+    open_progress(
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
+        &release,
+        0,
+    );
+    frontend.updater.phase = Phase::Downloading {
         release,
         progress,
         result,
     };
 }
 
-fn open_progress(state: &mut AppState, release: &Release, received: u64) {
-    let cancel = state.csf_label("TXT_CANCEL", "Cancel");
+fn open_progress(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    release: &Release,
+    received: u64,
+) {
+    let cancel = process_assets.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
-        &state.platform.window,
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         ShellBox::notice(
             progress_text(release.version, received, release.size),
             cancel,
@@ -559,17 +688,31 @@ fn open_progress(state: &mut AppState, release: &Release, received: u64) {
 /// The progress box's button, Esc or Enter. It stops the download; the
 /// worker's result still ends the update, so an install already under way
 /// finishes and restarts, and its box stays up until then.
-pub(crate) fn cancel_download(state: &mut AppState) {
+pub(crate) fn cancel_download(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
     let Phase::Downloading {
         release, progress, ..
-    } = &state.frontend.updater.phase
+    } = &frontend.updater.phase
     else {
         return;
     };
     let received = progress.received.load(Ordering::Relaxed);
     if received >= release.size {
         let release = release.clone();
-        open_progress(state, &release, received);
+        open_progress(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            &release,
+            received,
+        );
         return;
     }
     progress.cancel.store(true, Ordering::Relaxed);
@@ -605,18 +748,38 @@ fn restart(state: &mut AppState, release: &Release, finish: &mut Command) {
         }
         Err(error) => {
             log::warn!("Updater: cannot start {:?}: {error}", finish.get_program());
-            show_failure(state, release.version, &anyhow::Error::from(error));
+            show_failure(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                release.version,
+                &anyhow::Error::from(error),
+            );
         }
     }
 }
 
-fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
+fn show_failure(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    version: Version,
+    error: &anyhow::Error,
+) {
     let reason = error.downcast_ref::<install::Hint>().map_or_else(
         || crate::i18n::tr("VERA:UpdateTryLater"),
         |hint| hint.0.clone(),
     );
     show_notice(
-        state,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         crate::i18n::tr_fill(
             "VERA:UpdateFailed",
             &[("version", &version), ("reason", &reason)],
@@ -626,13 +789,20 @@ fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
 
 /// An OK box in place of the updater's open one: a failure, or what Check
 /// for Updates found.
-fn show_notice(state: &mut AppState, text: String) {
+fn show_notice(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    text: String,
+) {
     App::open_shell_notice(
-        &state.platform.window,
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         text,
     );
 }

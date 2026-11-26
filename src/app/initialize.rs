@@ -1522,8 +1522,16 @@ impl App {
                         );
                     }
                 }
-                Self::sync_zoom_pass(&mut state);
-                Self::sync_present_mode(&mut state);
+                Self::sync_zoom_pass(
+                    &state.platform,
+                    &mut state.renderer,
+                    &state.persistence.options_profile,
+                );
+                Self::sync_present_mode(
+                    &state.platform,
+                    &mut state.renderer.gpu,
+                    &state.persistence.options_profile,
+                );
                 #[cfg(feature = "telemetry-dashboard")]
                 attach_dashboard(&mut state.diag);
 

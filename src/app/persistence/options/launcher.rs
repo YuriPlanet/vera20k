@@ -6,7 +6,14 @@
 //! and child routing remain with their established owners.
 
 use super::audio::{AudioVolume, apply_volume, set_volume};
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::{
     LauncherCheckboxId as C, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
@@ -138,7 +145,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
     match event {
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
-            App::sync_zoom_pass(state);
+            App::sync_zoom_pass(&state.platform, &mut state.renderer, profile);
         }
         E::SidebarSelected(size) => profile.sidebar = size,
         E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
@@ -165,11 +172,16 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // The open Options page reads its captions again once the events
         // have run.
         E::LanguageSelected(tag) => {
-            if state.use_language(&tag) {
+            if crate::app::shell_main_menu::use_language(
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &tag,
+            ) {
                 state.persistence.options_profile.language = Some(tag);
             }
         }
-        E::SetWindowSizeRequested => App::restore_launch_window(state),
+        E::SetWindowSizeRequested => App::restore_launch_window(&mut state.platform),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
         E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
@@ -222,8 +234,14 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
 /// A VERA box's change beyond the profile value it stores.
 fn apply_box(state: &mut AppState, id: C, on: bool) {
     match id {
-        C::FullScreen => App::set_full_screen(state, on),
-        C::OriginalShape => App::sync_zoom_pass(state),
+        C::FullScreen => {
+            App::set_full_screen(&mut state.platform, &state.persistence.options_profile, on)
+        }
+        C::OriginalShape => App::sync_zoom_pass(
+            &state.platform,
+            &mut state.renderer,
+            &state.persistence.options_profile,
+        ),
         // The menu movie's session identity carries the choice, so its next
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
@@ -248,7 +266,11 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
             crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
         }
         C::VeraIcon => show_vera_icon(&state.platform, &state.persistence.options_profile, on),
-        C::VSync => App::sync_present_mode(state),
+        C::VSync => App::sync_present_mode(
+            &state.platform,
+            &mut state.renderer.gpu,
+            &state.persistence.options_profile,
+        ),
         // Live state only; no profile stores it, so each launch starts hidden.
         C::PerformanceStats => state.renderer.performance_overlay.set_visible(on),
         // The box arms the hotkey but leaves the texts showing, so ticking it
@@ -257,7 +279,11 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
         // titles follow, as on a language change.
         C::ShowStringKeys => {
             crate::i18n::set_show_string_keys(on);
-            state.refresh_string_key_labels();
+            crate::app::shell_main_menu::refresh_string_key_labels(
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+            );
         }
         // A rule switch, as Terrain Deformation is: the next offline
         // scenario's rules read it, so a running match keeps what it started
@@ -390,38 +416,60 @@ fn apply_launcher_parent(
 /// applies and destroys the primary before child preparation/route or the one
 /// final write. Keyboard then rebuilds a fresh primary without writing.
 pub(crate) fn dispatch_launcher_parent_result(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     dialog: OptionsDialogState,
     result: LauncherParentResult,
     opened: Option<LauncherOptionsPacked>,
 ) {
     apply_launcher_parent(
-        &state.platform,
-        &mut state.match_state,
-        &mut state.audio,
-        &mut state.persistence.options_profile,
+        platform,
+        match_state,
+        audio,
+        &mut persistence.options_profile,
         dialog.pack(),
         opened,
     );
     drop(dialog);
     match result {
         LauncherParentResult::Back | LauncherParentResult::Terminal => {
-            super::persist_options_profile(&state.platform, &state.persistence.options_profile);
+            super::persist_options_profile(platform, &persistence.options_profile);
         }
         LauncherParentResult::Keyboard => {
             use crate::ui::shell::keyboard::KeyboardParent;
-            crate::app::input::keyboard::open(state, KeyboardParent::Launcher);
+            crate::app::input::keyboard::open(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                KeyboardParent::Launcher,
+            );
             // Native caller blocks in A3. Our asynchronous child resumes this
             // continuation when it closes (after its teardown slide).
-            if state.frontend.keyboard_dialog.is_none() {
-                App::open_launcher_options_dialog(state);
+            if frontend.keyboard_dialog.is_none() {
+                App::open_launcher_options_dialog(
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    audio,
+                    &persistence.options_profile,
+                );
             }
         }
         // VERA's own. Written first: Use This Mod leaves the game from the
         // Mods page, whose Back builds the parent again.
         LauncherParentResult::Mods => {
-            super::persist_options_profile(&state.platform, &state.persistence.options_profile);
-            App::open_mods_page(state);
+            super::persist_options_profile(platform, &persistence.options_profile);
+            App::open_mods_page(platform.game_config.as_ref(), &renderer.gpu, frontend);
         }
     }
 }

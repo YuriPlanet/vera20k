@@ -21,6 +21,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::sim_host::SimHost;
@@ -29,7 +30,6 @@ use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::renderer_state::RendererState;
 use crate::app::types::ScrollDir;
-use crate::app::{AppState, PlatformState};
 use crate::map::terrain;
 use crate::ui::game_screen::GameScreen;
 
@@ -986,21 +986,32 @@ pub(crate) fn set_view_bookmark(
 /// With a building armed, its foundation follows the cursor's new Cell
 /// (the View1..View4 commands, `0x005373C3`, `0x005374B3`, `0x005375A3`,
 /// `0x00537693`).
-pub(crate) fn recall_view_bookmark(state: &mut AppState, slot: usize) {
-    let Some((rx, ry)) = state.match_state.input.view_bookmarks.get(slot) else {
+pub(crate) fn recall_view_bookmark(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    slot: usize,
+) {
+    let Some((rx, ry)) = match_state.input.view_bookmarks.get(slot) else {
         return;
     };
     center_camera_on_cell(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
         rx,
         ry,
     );
     crate::app::match_runtime::sim_tick::update_building_placement_preview(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
 }
@@ -2130,40 +2141,50 @@ pub(crate) fn cursor_over_battlefield(
 }
 
 /// The battlefield point the player is pointing at now, in world pixels.
-pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> {
-    let pointer = state.match_state.input.pointer_in_window()?;
+pub(crate) fn spawn_pointer_world_point(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<(f32, f32)> {
+    let pointer = match_state.input.pointer_in_window()?;
     // A tap supplies window coordinates even when the hardware mouse is outside.
-    if !(state.platform.pointer_in_client || touch_owns_pointer(&state.match_state.input))
-        || !cursor_over_battlefield(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
-        )
+    if !(platform.pointer_in_client || touch_owns_pointer(&match_state.input))
+        || !cursor_over_battlefield(platform, renderer, screen, match_state, persistence)
     {
         return None;
     }
-    if let Some(zoom) = state.tactical_zoom() {
+    if let Some(zoom) = renderer.tactical_zoom(screen) {
         let (width, height) = zoom.frame_size();
-        if !state.platform.pointer_held
+        if !platform.pointer_held
             && !viewport_contains((zoom.origin.0, zoom.origin.1, width, height), pointer)
         {
             return None;
         }
     }
-    let (x, y) = state.cursor_position();
+    let (x, y) = match_state.input.cursor_position();
     // A floating sidebar (including its radar) can cover the tactical rectangle.
-    if viewport_contains(state.sidebar_frame().column(), (x, y)) {
+    if viewport_contains(
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        )
+        .column(),
+        (x, y),
+    ) {
         return None;
     }
     // A live control there, Phobos' superweapon column included.
-    let (px, py) = state.match_state.input.cursor_px();
-    if crate::app::input::chrome_input::control_at(&state.match_state.match_presentation, px, py) {
+    let (px, py) = match_state.input.cursor_px();
+    if crate::app::input::chrome_input::control_at(&match_state.match_presentation, px, py) {
         return None;
     }
     Some(crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
+        &match_state.input,
         x,
         y,
     ))
@@ -2525,26 +2546,37 @@ pub(crate) fn center_camera_on_lepton_point(
 /// Home7315A0: use the shared SetView6D6070 owner, then clear the Follow
 /// pair through the input owner (4AEB30 at731826), even without a target.
 /// Refresh an armed building's foundation (4A91B0 at73181A) after SetView.
-pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
+pub(crate) fn apply_home_camera(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    coord: Option<[i32; 3]>,
+) {
     if let Some([x, y, z]) = coord {
         center_camera_on_lepton_point(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             x,
             y,
             z,
         );
     }
     crate::app::match_runtime::sim_tick::update_building_placement_preview(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
-    state.match_state.input.follow_target = None;
+    match_state.input.follow_target = None;
     // A complete redraw (`0x00731832`): the move keeps the Z seed.
-    state.renderer.native_z_seed.complete_redraw();
+    renderer.native_z_seed.complete_redraw();
 }
 
 /// `CenterView` (Numpad 5 in the stock archive): snap the tactical view onto the

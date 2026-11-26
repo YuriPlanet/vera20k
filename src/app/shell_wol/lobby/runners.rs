@@ -16,8 +16,13 @@ use super::{
     options_screen, request, show_box, show_wait,
 };
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
+use crate::render::gpu::GpuContext;
+use crate::util::config::GameConfig;
 
 pub(super) fn new_runner(
     runner: Runner,
@@ -58,9 +63,16 @@ pub(super) fn new_runner(
 /// Buddy List runner's entry (`0x0079F140`, steps 1-2) and the Quick Match
 /// runner's lobby list (`0x0079FCF0..0x0079FD35`), whose entry cleared the
 /// observer preference (`0x0079FC40..0x0079FC5D`).
-pub(in crate::app::shell_wol) fn open_runner(state: &mut AppState, runner: Runner) {
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(in crate::app::shell_wol) fn open_runner(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    runner: Runner,
+) {
+    let observer = frontend.multiplayer_shell_runtime.lan_observer();
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.in_game = false;
@@ -72,27 +84,15 @@ pub(in crate::app::shell_wol) fn open_runner(state: &mut AppState, runner: Runne
         Instant::now(),
         !visit.legacy_ui,
     ));
-    if state.match_state.session.network_return_context().is_none() {
-        state
-            .match_state
-            .session
-            .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
+    if session.network_return_context().is_none() {
+        session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
-    super::leaf::free_art(&mut state.frontend.wol_art, crate::ui::wol_login::DIALOG);
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
-    );
-    show_wait(
-        &mut state.frontend,
-        &state.process_assets,
-        "TXT_REQ_CHANLIST",
-    );
+    super::leaf::free_art(&mut frontend.wol_art, crate::ui::wol_login::DIALOG);
+    frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    show_wait(frontend, process_assets, "TXT_REQ_CHANLIST");
     request(
-        state.frontend.wol.as_mut(),
+        frontend.wol.as_mut(),
         WolServiceRequest::ListChannels { kind: 0, flags: 0 },
     );
 }
@@ -122,7 +122,13 @@ pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, cha
             context.local_hash,
             channel.ex_info,
         );
-        super::quick_match::game_refused(state, reason);
+        super::quick_match::game_refused(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            reason,
+        );
         return;
     }
     join_channel(state, channel, "", true, false);
@@ -131,24 +137,27 @@ pub(in crate::app::shell_wol) fn quick_match_join_game(state: &mut AppState, cha
 /// `0x00789B60`'s Quick Match branch (`0x00789BA8..0x00789D60`,
 /// `0x00789EC4..0x00789EEE`): no `0xC3` and no key; the leave and the
 /// create then run as for Create.
-pub(in crate::app::shell_wol) fn quick_match_create(state: &mut AppState) {
-    let nickname = nickname(&state.frontend.wol_account);
-    let tournament = i32::from(!super::quick_match::quick_coop(state.frontend.wol.as_ref()));
-    let (width, _) = options_screen(state);
-    let ex_info = ex_info(
-        &state.frontend,
-        &state.match_state.session,
-        &state.process_assets,
-    );
-    let globals = &mut state.frontend.wol_lobby_globals;
+pub(in crate::app::shell_wol) fn quick_match_create(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
+) {
+    let nickname = nickname(&frontend.wol_account);
+    let tournament = i32::from(!super::quick_match::quick_coop(frontend.wol.as_ref()));
+    let (width, _) = options_screen(gpu, options_profile);
+    let ex_info = ex_info(frontend, session, process_assets);
+    let globals = &mut frontend.wol_lobby_globals;
     if width >= 1024 {
         globals.limit_resolution = false;
     }
     let channel = quick_match_channel(&nickname, tournament, globals.lobby_number, ex_info);
     leave_then_create(
-        &mut state.frontend,
-        state.platform.game_config.as_ref(),
-        &state.process_assets,
+        frontend,
+        game_config,
+        process_assets,
         channel,
         String::new(),
         false,
@@ -273,7 +282,15 @@ pub(in crate::app::shell_wol) fn buddy_join(state: &mut AppState, channel: WolCh
     )
     .is_err()
     {
-        join_failed_locally(state, true);
+        join_failed_locally(
+            &mut state.frontend,
+            &state.platform.window,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+            true,
+        );
         return;
     }
     continue_join(state, channel);

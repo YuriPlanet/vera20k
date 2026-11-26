@@ -1,10 +1,14 @@
 //! B8 orchestration and physical input. Original6B6300 owns control projection;
 //! Options/Theme retain values and playback, including while simulation is paused.
 use super::dialog_page::InGameDialog;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options::audio::{AudioVolume, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
-use crate::app::{App, AppState};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::App;
 use crate::audio::theme::ThemeRuntime;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::page::PageEvent;
@@ -13,6 +17,9 @@ use crate::ui::shell::sound::{
 };
 use crate::util::time::Instant;
 use winit::window::Window;
+use crate::app::PlatformState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
 
 fn channel(id: SoundSlider) -> AudioVolume {
     match id {
@@ -38,25 +45,41 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
         helps.find(|(of, _)| *of == key).map_or("", |(_, fallback)| fallback)
     },
 };
-pub(crate) fn open(state: &mut AppState) {
-    if !state.audio.launcher_audio_available {
+pub(crate) fn open(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    if !audio.launcher_audio_available {
         return;
     }
     // 4E2370 -> accepted4E1D9A: parent apply/write precede state6/B8. The
     // in-game menu, whose page the Sound button is on, does both as it closes
     // for this state.
-    App::enter_in_game_menu_state(state, InGameMenuState::Sound);
-    let positions = volume_positions(&state.persistence.options_profile);
-    let rows = state
-        .audio
+    App::enter_in_game_menu_state(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        InGameMenuState::Sound,
+    );
+    let positions = volume_positions(&persistence.options_profile);
+    let rows = audio
         .theme
         .entries()
         .iter()
         .enumerate()
-        .filter(|(index, _)| state.audio.theme.is_allowed(*index as i32))
+        .filter(|(index, _)| audio.theme.is_allowed(*index as i32))
         .enumerate()
         .map(|(row, (index, entry))| {
-            let text = state.csf_text(&entry.name_key);
+            let text = process_assets.csf_text(&entry.name_key);
             // Native720480's localized Name buffer holds63 UTF16 units.
             let name = String::from_utf16_lossy(&text.encode_utf16().take(63).collect::<Vec<_>>());
             SoundTrackRow {
@@ -74,30 +97,34 @@ pub(crate) fn open(state: &mut AppState) {
     // BBB's 0x52D writes state 6; State_Machine 0x0048C8B0 then runs B8
     // (0x006B6230 at 0x0048C9EF) inside the same pause bracket. The transition
     // owner clears B8's retained state, so the new dialog is installed after it.
-    state.match_state.match_presentation.sound_dialog = Some(SoundState::new(
-        positions,
-        rows,
-        state.audio.theme.current_song(),
-    ));
+    match_state.match_presentation.sound_dialog =
+        Some(SoundState::new(positions, rows, audio.theme.current_song()));
 }
 /// Back `0x686` in `0x6B6300`, shared by B8 and the shell's `0xD6`:
 /// re-apply the three volumes; a zero score volume queues the current song
 /// and stops it. No RA2MD write.
-pub(crate) fn apply_back_volumes(state: &mut AppState, positions: [u8; 3]) {
+pub(crate) fn apply_back_volumes(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    options_profile: &mut RetailOptionsProfile,
+    positions: [u8; 3],
+) {
     for id in SoundSlider::ALL {
         apply_volume(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence.options_profile,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            options_profile,
             channel(id),
             (f64::from(positions[id as usize]) * 0.1) as f32,
             false,
         );
         if id == SoundSlider::Music && positions[0] == 0 {
             let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-            state.audio.queue_then_stop_score_zero(now);
+            audio.queue_then_stop_score_zero(now);
         }
     }
 }
@@ -110,48 +137,96 @@ pub(crate) fn volume_positions(options_profile: &RetailOptionsProfile) -> [u8; 3
 }
 
 /// A changed slider applies live (`WM_HSCROLL`).
-pub(crate) fn apply_slider_volume(state: &mut AppState, id: SoundSlider, volume: f32) {
+pub(crate) fn apply_slider_volume(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    options_profile: &mut RetailOptionsProfile,
+    id: SoundSlider,
+    volume: f32,
+) {
     apply_volume(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio,
-        &mut state.persistence.options_profile,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        options_profile,
         channel(id),
         volume,
         true,
     );
 }
 
-fn back(state: &mut AppState) {
-    let Some(dialog) = state.match_state.match_presentation.sound_dialog.take() else {
+fn back(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    let Some(dialog) = match_state.match_presentation.sound_dialog.take() else {
         return;
     };
-    apply_back_volumes(state, dialog.positions());
+    apply_back_volumes(
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        &mut persistence.options_profile,
+        dialog.positions(),
+    );
     // State_Machine 0x0048C9F4 writes state 5 after B8 returns, where gamemd
     // recreates BBB. VERA's Game Controls is the in-game menu's page, so the
     // menu is what comes back.
-    App::enter_in_game_menu_state(state, InGameMenuState::Menu);
+    App::enter_in_game_menu_state(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        InGameMenuState::Menu,
+    );
 }
-fn activate(state: &mut AppState, id: SoundButton) {
+fn activate(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    id: SoundButton,
+) {
     let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     match id {
-        SoundButton::Back => back(state),
+        SoundButton::Back => back(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        ),
         SoundButton::Play => {
-            state.persistence.options_profile.in_game_music = true;
-            if let Some(index) = state
-                .match_state
+            persistence.options_profile.in_game_music = true;
+            if let Some(index) = match_state
                 .match_presentation
                 .sound_dialog
                 .as_ref()
                 .and_then(SoundState::selected_theme)
             {
-                state.audio.play_sound_selection(index, now);
+                audio.play_sound_selection(index, now);
             }
         }
         SoundButton::Stop => {
-            state.audio.stop_sound_selection(now);
-            state.persistence.options_profile.in_game_music = false;
+            audio.stop_sound_selection(now);
+            persistence.options_profile.in_game_music = false;
         }
     }
 }
@@ -217,12 +292,25 @@ fn put_boxes(
 
 /// Makes B8's nodes current without input (rects, the boxes' Checked): its
 /// renderer's call every drawn frame before it paints from them.
-pub(crate) fn sync(state: &mut AppState) -> Option<SoundLayout> {
-    let layout = super::dialog_page::layout(state, SoundLayout::new)?;
-    let boxes = score_boxes(&state.persistence.options_profile);
+pub(crate) fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<SoundLayout> {
+    let layout = super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        SoundLayout::new,
+    )?;
+    let boxes = score_boxes(&persistence.options_profile);
     let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
     DIALOG.sync(
-        &mut state.match_state.match_presentation,
+        &mut match_state.match_presentation,
         nodes,
         |id| layout.rect(id),
         sync,
@@ -233,22 +321,50 @@ pub(crate) fn sync(state: &mut AppState) -> Option<SoundLayout> {
 /// One pointer message on B8 (`down`: `None` moves). Back, Play and Stop are
 /// owner-draw (GUIMainButtonSound, 0x0061376B); a row press plays the
 /// generic click; 6B6382/6B63EA/6B6444 suppress the rail's.
-pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = super::dialog_page::layout(state, SoundLayout::new) else {
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let Some(layout) = super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        SoundLayout::new,
+    ) else {
         return;
     };
-    let boxes = score_boxes(&state.persistence.options_profile);
+    let boxes = score_boxes(&persistence.options_profile);
     let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
-    let events = DIALOG.route(state, down, nodes, |id| layout.rect(id), sync);
-    state.platform.window.request_redraw();
+    let events = DIALOG.route(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
+        down,
+        nodes,
+        |id| layout.rect(id),
+        sync,
+    );
+    platform.window.request_redraw();
     for event in events {
         if let Some((id, volume)) = sound::shell_sound_volume(&event) {
             apply_volume(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio,
-                &mut state.persistence.options_profile,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                &mut persistence.options_profile,
                 channel(id),
                 volume,
                 true,
@@ -259,15 +375,24 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
             continue;
         };
         match SoundControl::from_id(id) {
-            Some(SoundControl::Button(button)) => activate(state, button),
+            Some(SoundControl::Button(button)) => activate(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                button,
+            ),
             Some(SoundControl::Shuffle) => toggle_score_option(
-                &mut state.audio.theme,
-                &mut state.persistence.options_profile,
+                &mut audio.theme,
+                &mut persistence.options_profile,
                 true,
             ),
             Some(SoundControl::Repeat) => toggle_score_option(
-                &mut state.audio.theme,
-                &mut state.persistence.options_profile,
+                &mut audio.theme,
+                &mut persistence.options_profile,
                 false,
             ),
             _ => {}

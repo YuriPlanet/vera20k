@@ -6,8 +6,8 @@ content as work lands; do not append a diary.
 
 ## Where the work is
 
-- Phase 1 is on `main` of `YuriPlanet/vera20k` (#5183); its further control
-  points are on `feature/wasm-control-points` of `libi/vera20k`.
+- Repository: `YuriPlanet/vera20k`. Phase 1 is on `main` (#5183); the control
+  points below (phase 2a) follow it.
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
 - Feedback: the RFC draft PR
@@ -430,8 +430,7 @@ seat budgets are separate work).
 
 ## Done (phase 1c: reads for driving a house)
 
-RFC 0001 section 6i's read surface (branch `impl-6i-reads`; claims and orders are
-separate work):
+RFC 0001 section 6i's read surface (claims and orders are separate work):
 
 - Objects: `Destination` (NavCom, cell or object), `WeaponReady` (rearm timer run
   out), `Deployed` (`is_fully_deployed`), `UnderConstruction` (BState 0),
@@ -458,7 +457,7 @@ separate work):
 
 ## Done (phase 2a: RFC 0.0.21 gaps and unit control points, RFC 0.0.22)
 
-Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
+Items 1 and 2 of the control-point plan:
 
 - Gaps the RFC already promised: stock `SpiedBy` (2) and `ThievedBy` (3) for module
   triggers (module-only raises; no native site raises them on a Tag); `Birth` for

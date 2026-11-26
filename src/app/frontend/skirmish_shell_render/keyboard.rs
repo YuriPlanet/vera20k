@@ -40,10 +40,21 @@ pub(crate) fn render_keyboard_shell(
         .parent
         == KeyboardParent::GameControls;
     // The in-game A3 sits in the active-game shell's pixels.
-    let shell = active
-        .then(|| in_game_shell::current_in_game_shell_layout(state).expect("active A3 frame"));
+    let shell = active.then(|| {
+        in_game_shell::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )
+        .expect("active A3 frame")
+    });
     let (width, height) = shell.map_or(
-        (state.render_width() as i32, state.render_height() as i32),
+        (
+            state.renderer.render_width(&state.frontend.screen) as i32,
+            state.renderer.render_height(&state.frontend.screen) as i32,
+        ),
         |shell| (shell.width, shell.height),
     );
     // The front-end page slides like its family: the teardown slide keeps
@@ -82,7 +93,15 @@ pub(crate) fn render_keyboard_shell(
             .then(|| state.frontend.shell_page_title.paint(now))
             .flatten()
     };
-    let layout = crate::app::input::keyboard::sync(state).expect("active A3 geometry");
+    let layout = crate::app::input::keyboard::sync(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    )
+    .expect("active A3 geometry");
     let status_label = if active || sliding {
         None
     } else {
@@ -91,7 +110,7 @@ pub(crate) fn render_keyboard_shell(
             .keyboard_dialog
             .as_ref()
             .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui, None))
-            .map(|key| state.csf_label(key, ""))
+            .map(|key| state.process_assets.csf_label(key, ""))
             .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             &mut state.frontend.shell_status_line,
@@ -112,12 +131,18 @@ pub(crate) fn render_keyboard_shell(
     // In game Back is a node on the right panel's type-2 art.
     let mut side = None;
     let mut art = if active {
-        let sidebar = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-            .expect("active A3 side art");
+        let sidebar = crate::app::presentation::sidebar_render::current_sidebar_chrome(
+            &state.frontend,
+            &state.match_state,
+        )
+        .expect("active A3 side art");
         let shell = shell.expect("active A3 frame");
         side = Some(SideButtons {
             frames: sidebar.in_game_shell.buttons,
-            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(
+                &state.frontend,
+                &state.match_state,
+            ),
             clip: RectPx::new(0, 0, width, height),
         });
         in_game_shell::background_instances(sidebar, shell.layout, width, height)
@@ -173,7 +198,7 @@ pub(crate) fn render_keyboard_shell(
             // front end's is the family static.
             FOOTER => {
                 let key = crate::app::input::dialog_page::help(&dialog.ui, None)?;
-                return active.then(|| shared.csf_label(key, ""));
+                return active.then(|| shared.process_assets.csf_label(key, ""));
             }
             _ => match KeyboardControl::from_id(id)? {
                 KeyboardControl::Button(KeyboardButton::Back) => ("GUI:Back", "Back"),
@@ -183,7 +208,7 @@ pub(crate) fn render_keyboard_shell(
                 _ => return None,
             },
         };
-        Some(shared.csf_label(key, fallback))
+        Some(shared.process_assets.csf_label(key, fallback))
     };
     let reveal_of = |id: i32| -> Option<PathAReveal> {
         let window = title.filter(|_| id == i32::from(TITLE))?;

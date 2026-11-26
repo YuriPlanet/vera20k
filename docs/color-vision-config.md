@@ -223,7 +223,7 @@ repainted synchronously, outside the frame loop: `pump/render.rs`
 (`render_and_present`) each acquire a frame, submit and call `output.present`
 themselves. A filter attached only to `frame.rs` therefore showed uncorrected
 colours for the whole load. `GpuContext` owns the filter and publishes the matrix once per frame
-(`AppState::color_vision_matrix`); all five present paths call
+(`PersistenceState::color_vision_matrix`); all five present paths call
 `gpu.encode_color_vision(...)` before their `submit`. Startup publishes the
 persisted mode before the first splash, since no `AppState` exists yet, and
 `Off` still skips all GPU work. The test

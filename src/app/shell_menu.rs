@@ -20,6 +20,7 @@ use crate::app::frontend::shell_transition;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -32,16 +33,22 @@ impl App {
     /// widgets took it (an open drop-down closes, without a cue), or it
     /// opened the menu.
     pub(super) fn shell_menu_key(
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        launcher_audio_available: bool,
+        options_profile: &RetailOptionsProfile,
         event: &KeyEvent,
         screen: ScreenPage,
     ) -> bool {
         if event.physical_key != PhysicalKey::Code(KeyCode::Escape)
             || !event.state.is_pressed()
             || event.repeat
-            || state.frontend.shell_message_box.is_some()
-            || shell_transition::current_shell_slide_target(state).is_none()
-            || !Self::page_leaves_escape(state, screen)
+            || frontend.shell_message_box.is_some()
+            || shell_transition::current_shell_slide_target(frontend, match_state).is_none()
+            || !Self::page_leaves_escape(renderer, frontend, match_state, process_assets, screen)
         {
             return false;
         }
@@ -49,36 +56,38 @@ impl App {
         // reached them.
         let my_info = screen == ScreenPage::Wol
             && matches!(
-                state.frontend.wol.as_ref().map(|visit| &visit.page),
+                frontend.wol.as_ref().map(|visit| &visit.page),
                 Some(super::shell_wol::WolPage::MyInformation(_))
             );
         let escape =
             gui_input(Some(KeyCode::Escape), false, event.text.as_deref()).filter(|_| !my_info);
-        let controller = &mut state.frontend.shell_controller;
+        let controller = &mut frontend.shell_controller;
         if escape.is_some_and(|escape| controller.on_input(escape)) {
             return true;
         }
         // A focused edit reported the Escape as its cancel; the menu takes it.
         controller.discard_cancelled();
         Self::open_shell_menu(
-            &state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            state.audio.launcher_audio_available,
-            &state.persistence.options_profile,
+            platform,
+            renderer,
+            frontend,
+            process_assets,
+            launcher_audio_available,
+            options_profile,
         );
         true
     }
 
     /// Movies, credits, Options, the Keyboard page, score screens and a match
     /// keep their own Esc.
-    fn page_leaves_escape(state: &AppState, screen: ScreenPage) -> bool {
-        let chooser_open = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_some();
+    fn page_leaves_escape(
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        screen: ScreenPage,
+    ) -> bool {
+        let chooser_open = frontend.skirmish_shell_state.choose_map_modal.is_some();
         match screen {
             ScreenPage::MainMenu
             | ScreenPage::SinglePlayer
@@ -87,18 +96,21 @@ impl App {
             | ScreenPage::Mods
             | ScreenPage::Campaign => true,
             ScreenPage::LoadSavedGame => {
-                Self::load_saved_game_leaves_escape(state.frontend.load_saved_game.as_ref())
+                Self::load_saved_game_leaves_escape(frontend.load_saved_game.as_ref())
             }
-            ScreenPage::LanLobby => {
-                crate::app::shell_lan::leaves_escape(state.frontend.lan.as_ref())
-            }
+            ScreenPage::LanLobby => crate::app::shell_lan::leaves_escape(frontend.lan.as_ref()),
             ScreenPage::NetworkSetup if !chooser_open => {
-                crate::app::input::multiplayer_setup::leaves_escape(state)
+                crate::app::input::multiplayer_setup::leaves_escape(
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                )
             }
             ScreenPage::Skirmish | ScreenPage::NetworkSetup => {
-                Self::skirmish_leaves_escape(&state.frontend.skirmish_shell_state)
+                Self::skirmish_leaves_escape(&frontend.skirmish_shell_state)
             }
-            ScreenPage::Wol => Self::wol_leaves_escape(state),
+            ScreenPage::Wol => Self::wol_leaves_escape(frontend),
             _ => false,
         }
     }
@@ -191,7 +203,7 @@ impl App {
         };
         let output = settings.drain_output();
         if Self::run_launcher_options_events(state, output.cues, output.events) {
-            let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+            let csf = |key: &str, fallback: &str| state.process_assets.csf_label(key, fallback);
             let shell_box = shell_menu(&csf);
             let option_labels =
                 Self::launcher_options_labels(state.frontend.shell_route, &state.process_assets);
@@ -211,20 +223,18 @@ impl App {
     /// The menu's box shows what the window is. A change is written once the
     /// window has made it, which is what the box and the profile follow.
     pub(super) fn shell_menu_follow_full_screen(
-        state: &mut AppState,
+        platform: &PlatformState,
+        shell_message_box: &mut Option<ShellMessageBox>,
+        options_profile: &RetailOptionsProfile,
         full_screen: bool,
         changed: bool,
     ) {
-        let Some(settings) = Self::shell_menu_settings(&mut state.frontend.shell_message_box)
-        else {
+        let Some(settings) = Self::shell_menu_settings(shell_message_box) else {
             return;
         };
         settings.sync_full_screen(full_screen);
         if changed {
-            crate::app::persistence::options::persist_options_profile(
-                &state.platform,
-                &state.persistence.options_profile,
-            );
+            crate::app::persistence::options::persist_options_profile(platform, options_profile);
         }
     }
 
@@ -243,11 +253,30 @@ impl App {
     /// its own, and slides back in when Options closes.
     pub(super) fn answer_shell_menu(state: &mut AppState, answer: usize) {
         match answer {
-            0 => match shell_transition::current_shell_slide_target(state) {
+            0 => match shell_transition::current_shell_slide_target(
+                &state.frontend,
+                &state.match_state,
+            ) {
                 Some(kind) => {
-                    Self::leave_shell_dialog(state, kind, App::open_launcher_options_dialog);
+                    Self::leave_shell_dialog(state, kind, |state| {
+                        App::open_launcher_options_dialog(
+                            &state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.audio,
+                            &state.persistence.options_profile,
+                        )
+                    });
                 }
-                None => Self::open_launcher_options_dialog(state),
+                None => Self::open_launcher_options_dialog(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.audio,
+                    &state.persistence.options_profile,
+                ),
             },
             2 => {
                 Self::prepare_shell_terminal_exit(state);
@@ -269,7 +298,15 @@ impl App {
         {
             crate::app::input::keyboard::prepare_terminal_exit(state);
         }
-        Self::close_launcher_options_terminal(state);
+        Self::close_launcher_options_terminal(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         if state
             .frontend
             .shell_message_box

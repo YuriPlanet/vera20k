@@ -24,13 +24,25 @@ pub(crate) fn render_coop_score(
     if state.frontend.skirmish_shell_chrome.is_none() {
         return Ok(false);
     }
-    let Some(view) = crate::app::cooperative_round::view(state) else {
+    let Some(view) = crate::app::cooperative_round::view(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) else {
         return Ok(false);
     };
-    crate::app::input::coop_score::update_geometry(state);
-    let layout = crate::app::input::coop_score::layout(state);
+    crate::app::input::coop_score::update_geometry(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
+    let layout = crate::app::input::coop_score::layout(&state.renderer.gpu);
     let scale = layout.page.scale;
-    let (width, height) = (state.render_width(), state.render_height());
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     let fills = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
     let (can_continue, map_index) = {
         let model = &state.frontend.coop_score_page.as_ref().expect("view").model;
@@ -39,7 +51,15 @@ pub(crate) fn render_coop_score(
     match map_index.filter(|_| can_continue) {
         Some(index) => {
             let preview = layout.control_rect(PREVIEW).unwrap_or_default();
-            ensure_map_preview_texture(state, index, preview)
+            ensure_map_preview_texture(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence,
+                index,
+                preview,
+            )
         }
         None => state.frontend.skirmish_preview_texture = None,
     }
@@ -48,7 +68,7 @@ pub(crate) fn render_coop_score(
     let hovered = crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_PAGE.dialog);
     let status = hovered
         .and_then(help_key)
-        .map(|key| state.csf_label(key, ""))
+        .map(|key| state.process_assets.csf_label(key, ""))
         .unwrap_or_default();
     let page = state.frontend.coop_score_page.as_ref().expect("view");
     let model = &page.model;
@@ -118,7 +138,11 @@ pub(crate) fn render_coop_score(
             });
         }
         match id {
-            TITLE => Some(state.csf_label(COOP_SCORE_PAGE.title_key, COOP_SCORE_PAGE.title_key)),
+            TITLE => Some(
+                state
+                    .process_assets
+                    .csf_label(COOP_SCORE_PAGE.title_key, COOP_SCORE_PAGE.title_key),
+            ),
             STATUS => Some(status.clone()),
             TIME => Some(model.time.clone()),
             NEXT_MISSION => Some(model.next_mission.clone()),
@@ -131,7 +155,8 @@ pub(crate) fn render_coop_score(
             id if STARTS.contains(&id) => pick(&slot(STARTS)?.start),
             id => {
                 let spec = COOP_SCORE_CONTROLS.iter().find(|spec| spec.id == id)?;
-                spec.caption_key.map(|key| state.csf_label(key, key))
+                spec.caption_key
+                    .map(|key| state.process_assets.csf_label(key, key))
             }
         }
     };

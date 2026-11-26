@@ -720,7 +720,7 @@ impl App {
             }
         }
         state.persistence.options_profile.game_speed = request.game_speed;
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.shell_first_paint_slide = None;
         let mut clock = SpawnSeedClock { seed: request.seed };
         match request.game {
@@ -775,7 +775,10 @@ impl App {
                             request.game_speed
                         );
                         return crate::app::lan_service::begin_direct_spawn(
-                            state,
+                            state.platform.game_config.as_ref(),
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
                             network.session,
                             direct,
                             seed,
@@ -981,7 +984,7 @@ impl App {
             state.match_state.session.leave_network();
         }
         state.frontend.network_setup_protocol = None;
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.browser_exit_pending = true;
     }
 
@@ -1103,7 +1106,13 @@ impl App {
                 // The player's route: open the abort box (its init picks
                 // Observe/Leave from the live match), then press a button.
                 Self::enter_in_game_menu_state(
-                    state,
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
                     crate::ui::pause_menu::InGameMenuState::AbortConfirm,
                 );
                 let secondary = state.match_state.match_presentation.abort_secondary;
@@ -1123,7 +1132,13 @@ impl App {
                             "Spawn action: resign unavailable (abort box secondary {secondary:?}); nothing pressed"
                         );
                         Self::enter_in_game_menu_state(
-                            state,
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
                             crate::ui::pause_menu::InGameMenuState::Closed,
                         );
                     }

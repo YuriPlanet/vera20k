@@ -110,11 +110,11 @@ impl CooperativeRun {
         self.ending != CoopEnding::Retry
     }
 
-    fn setup_settled(&self, state: &AppState, host: bool) -> bool {
+    fn setup_settled(&self, frontend: &FrontendState, host: bool) -> bool {
         if self.online {
-            super::online::online_setup_settled(state, host)
+            super::online::online_setup_settled(frontend, host)
         } else {
-            setup_settled(state, host)
+            setup_settled(frontend, host)
         }
     }
 
@@ -129,14 +129,15 @@ impl CooperativeRun {
     ) -> Result<bool> {
         match self.phase {
             CoopPhase::OpenChooser
-                if rendered == PresentedShell::NetworkSetup && self.setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && self.setup_settled(&state.frontend, true) =>
             {
                 setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
                 self.phase = CoopPhase::Chooser;
             }
             CoopPhase::Chooser
                 if rendered == PresentedShell::NetworkSetup
-                    && MoviesCapture::slide_settled(state, ShellSlideKind::ChooseMap)
+                    && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::ChooseMap)
                     && state
                         .frontend
                         .skirmish_shell_state
@@ -146,7 +147,9 @@ impl CooperativeRun {
             {
                 let labels = click_cooperative_mode(state)?;
                 if self.saved {
-                    let label = state.csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
+                    let label = state
+                        .process_assets
+                        .csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
                     let row = labels
                         .iter()
                         .position(|row| *row == label)
@@ -159,11 +162,12 @@ impl CooperativeRun {
                 self.phase = CoopPhase::ChooserReturn;
             }
             CoopPhase::ChooserReturn
-                if rendered == PresentedShell::NetworkSetup && self.setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup
+                    && self.setup_settled(&state.frontend, true) =>
             {
                 let launch = state.match_state.session.network_setup().context("BC")?;
                 ensure!(
-                    launch.mode.id == cooperative_mode(state)?.id,
+                    launch.mode.id == cooperative_mode(&state.frontend.skirmish_modes)?.id,
                     "Use Map left Cooperative"
                 );
                 self.first_map = launch.selected_map_file.clone();
@@ -179,14 +183,12 @@ impl CooperativeRun {
     }
 
     /// The guest learns the first map from the host's options.
-    pub(super) fn match_loaded(&mut self, state: &AppState) {
+    pub(super) fn match_loaded(&mut self, session: &MatchSession) {
         if self.phase == CoopPhase::OpenChooser {
             self.phase = CoopPhase::Playing;
         }
         if self.first_map.is_none() {
-            self.first_map = state
-                .match_state
-                .session
+            self.first_map = session
                 .network_setup()
                 .and_then(|launch| launch.selected_map_file.clone());
         }
@@ -194,10 +196,10 @@ impl CooperativeRun {
 
     /// A winning variant holds the simulation at the win frame, so both
     /// processes flag the win before the same tick.
-    pub(super) fn holds_simulation(&self, state: &AppState) -> bool {
+    pub(super) fn holds_simulation(&self, sim_runtime: &SimHost) -> bool {
         self.phase == CoopPhase::Playing
             && self.flags_win()
-            && committed_frame(state).is_ok_and(|frame| frame >= OBSERVE_FRAME)
+            && committed_frame(sim_runtime).is_ok_and(|frame| frame >= OBSERVE_FRAME)
     }
 
     /// Online, BC6's Continue returns both players to the kept room. True
@@ -206,37 +208,32 @@ impl CooperativeRun {
     /// partner's return must not print `+0x94`'s saved-campaign notice.
     pub(super) fn room_returned(
         &mut self,
-        state: &AppState,
+        frontend: &FrontendState,
+        session: &MatchSession,
+        process_assets: &ProcessAssets,
         host: bool,
         route: &mut Vec<Value>,
         frame: u32,
     ) -> Result<bool> {
-        if self.phase != CoopPhase::AwaitRoom || !self.setup_settled(state, host) {
+        if self.phase != CoopPhase::AwaitRoom || !self.setup_settled(frontend, host) {
             return Ok(false);
         }
-        let launch = state
-            .match_state
-            .session
-            .network_setup()
-            .context("kept room")?;
+        let launch = session.network_setup().context("kept room")?;
         let next = launch.selected_map_file.clone();
         if launch.humans.len() == 2
-            && launch.mode.id == cooperative_mode(state)?.id
+            && launch.mode.id == cooperative_mode(&frontend.skirmish_modes)?.id
             && next.is_some()
             && next != self.first_map
         {
-            let notice = state.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
-            let shown = state
-                .frontend
-                .multiplayer_setup
-                .as_ref()
-                .is_some_and(|setup| {
-                    setup
-                        .chat
-                        .lines
-                        .iter()
-                        .any(|line| String::from_utf16_lossy(&line.text) == notice)
-                });
+            let notice =
+                process_assets.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            let shown = frontend.multiplayer_setup.as_ref().is_some_and(|setup| {
+                setup
+                    .chat
+                    .lines
+                    .iter()
+                    .any(|line| String::from_utf16_lossy(&line.text) == notice)
+            });
             ensure!(
                 !shown,
                 "the kept room printed {notice:?} for the partner's return"
@@ -264,7 +261,7 @@ impl CooperativeRun {
     ) -> Result<()> {
         match self.phase {
             CoopPhase::Playing => {
-                if committed_frame(state)? < OBSERVE_FRAME {
+                if committed_frame(&state.match_state.sim_runtime)? < OBSERVE_FRAME {
                     return Ok(());
                 }
                 ensure!(
@@ -277,12 +274,12 @@ impl CooperativeRun {
                     "the live match is not Cooperative"
                 );
                 if self.flags_win() {
-                    let committed = committed_frame(state)?;
+                    let committed = committed_frame(&state.match_state.sim_runtime)?;
                     ensure!(
                         committed == OBSERVE_FRAME,
                         "the win frame was overshot: {committed}"
                     );
-                    flag_humans_won(state)?;
+                    flag_humans_won(&mut state.match_state.sim_runtime)?;
                     route.push(json!({"render_frame":frame,"action":"every human House flagged to win","native_frame":committed}));
                     self.phase = CoopPhase::AwaitResult;
                     return Ok(());
@@ -409,8 +406,8 @@ impl CooperativeRun {
                         self.next_map
                     );
                 }
-                self.next_startup = Some(startup_receipt(state)?);
-                self.next_first_frame = committed_frame(state)?;
+                self.next_startup = Some(startup_receipt(&state.frontend.wol, &state.match_state)?);
+                self.next_first_frame = committed_frame(&state.match_state.sim_runtime)?;
                 route.push(json!({"render_frame":frame,"action":if advance {
                     "the kept room's next stage loaded over the relay"
                 } else {
@@ -427,7 +424,7 @@ impl CooperativeRun {
                     page.dialog == CampaignScoreDialog::CampaignEnd,
                     "BC6 Quit opened another campaign score dialog"
                 );
-                if !MoviesCapture::slide_settled(state, ShellSlideKind::CampaignEnd)
+                if !MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::CampaignEnd)
                     || !page.statics.is_terminal()
                 {
                     return Ok(());
@@ -458,11 +455,19 @@ impl CooperativeRun {
                     page.layout(width, height, fills)
                 };
                 let continue_button = page_layout.control_rect(page.dialog.continue_button());
-                set_window_pointer_to_rect_center(state, continue_button.unwrap_or_default());
+                set_window_pointer_to_rect_center(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    continue_button.unwrap_or_default(),
+                );
                 App::handle_campaign_score_mouse(state, None);
                 App::handle_campaign_score_mouse(state, Some(true));
                 App::handle_campaign_score_mouse(state, Some(false));
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 ensure!(
                     crate::app::frontend::shell_transition::shell_exit_wave(
                         &state.frontend.shell_exit,
@@ -489,7 +494,9 @@ impl CooperativeRun {
                     state.frontend.screen == GameScreen::InGame,
                     "the mission after BC6 left gameplay"
                 );
-                if committed_frame(state)? >= self.next_first_frame + RETRY_FRAMES {
+                if committed_frame(&state.match_state.sim_runtime)?
+                    >= self.next_first_frame + RETRY_FRAMES
+                {
                     route.push(json!({"render_frame":frame,"action":
                         if self.ending == CoopEnding::Advance { "next stage ran" } else { "retried mission ran" }}));
                     self.phase = CoopPhase::Done;
@@ -500,15 +507,13 @@ impl CooperativeRun {
         Ok(())
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+    pub(super) fn receipt(&self, screen: &GameScreen, sim_runtime: &SimHost) -> Result<Value> {
         ensure!(self.done(), "live co-op capture has not finished");
         if matches!(self.ending, CoopEnding::CampaignEnd { .. }) {
             return Ok(json!({"first_map":self.first_map,"result":self.result,
-                "campaign_end":self.campaign_end,"screen":format!("{:?}",state.frontend.screen)}));
+                "campaign_end":self.campaign_end,"screen":format!("{:?}",*screen)}));
         }
-        let sim = &state
-            .match_state
-            .sim_runtime
+        let sim = &sim_runtime
             .runtime()
             .context("simulation after BC6")?
             .simulation;
@@ -529,21 +534,30 @@ impl CooperativeRun {
 
 /// Clicks one of BC6's buttons through its ordinary mouse input.
 fn press_score_button(state: &mut AppState, control: u16) -> Result<()> {
-    let rect = crate::app::input::coop_score::layout(state)
+    let rect = crate::app::input::coop_score::layout(&state.renderer.gpu)
         .control_rect(control)
         .with_context(|| format!("BC6 control {control:#06x}"))?;
-    set_window_pointer_to_rect_center(state, rect);
-    crate::app::input::coop_score::cursor_moved(state);
+    set_window_pointer_to_rect_center(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.input,
+        rect,
+    );
+    crate::app::input::coop_score::cursor_moved(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
     crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
-    MoviesCapture::restore_neutral_pointer(state);
+    MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
     Ok(())
 }
 
-fn committed_frame(state: &AppState) -> Result<u32> {
-    Ok(state
-        .match_state
-        .sim_runtime
+fn committed_frame(sim_runtime: &SimHost) -> Result<u32> {
+    Ok(sim_runtime
         .runtime()
         .context("live simulation")?
         .simulation
@@ -555,10 +569,8 @@ fn committed_frame(state: &AppState) -> Result<u32> {
 /// a network game) through the dev producer both processes run before the
 /// same tick.
 #[cfg(feature = "dev-overlays")]
-fn flag_humans_won(state: &mut AppState) -> Result<()> {
-    let runtime = state
-        .match_state
-        .sim_runtime
+fn flag_humans_won(sim_runtime: &mut SimHost) -> Result<()> {
+    let runtime = sim_runtime
         .write_sim(SimWrite::Debug)
         .context("live simulation")?;
     ensure!(
@@ -572,6 +584,6 @@ fn flag_humans_won(state: &mut AppState) -> Result<()> {
 }
 
 #[cfg(not(feature = "dev-overlays"))]
-fn flag_humans_won(_: &mut AppState) -> Result<()> {
+fn flag_humans_won(_: &mut SimHost) -> Result<()> {
     bail!("the co-op campaign-end capture needs the dev-overlays build")
 }

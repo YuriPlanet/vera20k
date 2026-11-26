@@ -4,14 +4,18 @@
 use super::*;
 
 impl TacticalCaptureSession {
-    pub(super) fn record_map_frame(&mut self, state: &AppState) -> Result<()> {
+    pub(super) fn record_map_frame(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        sfx_player: Option<&crate::audio::sfx::SfxPlayer>,
+    ) -> Result<()> {
         let profile = &self
             .request
             .map_profile()
             .context("map profile missing")?
             .value;
-        let runtime = state
-            .match_state
+        let runtime = match_state
             .sim_runtime
             .runtime()
             .context("observation simulation absent")?;
@@ -198,7 +202,8 @@ impl TacticalCaptureSession {
                 // timer or inferring a phase from the rendered pixels. Signed
                 // +224 progress is what the native visual query consumes.
                 let cloak = if let Some(cloak) = entity.cloak.as_ref() {
-                    let rules = state.rules().context("cloak observation rules absent")?;
+                    let rules = crate::app::state::active_rules(frontend, match_state)
+                        .context("cloak observation rules absent")?;
                     let object = rules
                         .object(type_name)
                         .context("cloak observation type absent")?;
@@ -251,7 +256,8 @@ impl TacticalCaptureSession {
                     "radio": {"contacts": contacts, "dock_entered_with": entity.seldom.tether.partner()},
                 });
                 if profile.observe_disguise_inputs == Some(true) {
-                    observation["disguise_inputs"] = disguise_inputs(state, entity)?;
+                    observation["disguise_inputs"] =
+                        disguise_inputs(frontend, match_state, entity)?;
                 }
                 if profile.observe_lasers == Some(true)
                     || profile.observe_electric_bolts == Some(true)
@@ -283,8 +289,7 @@ impl TacticalCaptureSession {
                     {
                         Value::Null
                     } else {
-                        let rules = state
-                            .rules()
+                        let rules = crate::app::state::active_rules(frontend, match_state)
                             .context("action-line observation rules absent")?;
                         let object = rules
                             .object(type_name)
@@ -355,8 +360,7 @@ impl TacticalCaptureSession {
                 row
             })
             .collect();
-        let local_owner =
-            crate::app::input::commands::preferred_local_owner_name(&state.match_state);
+        let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
         let local_visibility_owner = local_owner
             .as_deref()
             .and_then(|owner| sim.interner().get(owner).map(|id| (owner, id)));
@@ -438,7 +442,7 @@ impl TacticalCaptureSession {
             audio_state: profile
                 .observe_audio
                 .as_ref()
-                .map(|_| sound_state(state, profile))
+                .map(|_| sound_state(&match_state.sim_runtime, sfx_player, profile))
                 .transpose()?,
             actors,
             houses,
@@ -449,16 +453,16 @@ impl TacticalCaptureSession {
                 .then(|| MapEffectObservation::capture(sim, &runtime.resources.rules, profile))
                 .transpose()?,
             lasers: (profile.observe_lasers == Some(true))
-                .then(|| MapLaserObservation::capture(state))
+                .then(|| MapLaserObservation::capture(match_state))
                 .transpose()?,
             electric_bolts: profile
                 .observes_electric_step(self.exact_step_receipts.len() as u64)
-                .then(|| MapElectricBoltObservation::capture(state))
+                .then(|| MapElectricBoltObservation::capture(match_state))
                 .transpose()?,
             radiation_beams: (profile.observe_radiation_beams == Some(true))
                 .then(|| {
                     MapRadiationBeamObservation::capture(
-                        &state.match_state.match_presentation.radiation_beams,
+                        &match_state.match_presentation.radiation_beams,
                     )
                 })
                 .transpose()?,
@@ -469,12 +473,18 @@ impl TacticalCaptureSession {
             input: profile
                 .gestures
                 .as_ref()
-                .map(|_| MapInputObservation::capture(state, profile.observes_local_input()))
+                .map(|_| {
+                    MapInputObservation::capture(
+                        frontend,
+                        match_state,
+                        profile.observes_local_input(),
+                    )
+                })
                 .transpose()?,
         };
         let sidebar = profile
             .observes_sidebar_step(&frame)
-            .then(|| MapSidebarObservation::capture(state))
+            .then(|| MapSidebarObservation::capture(&match_state.match_presentation))
             .transpose()?;
         let completed_steps = frame.completed_steps;
         let map = self.map_state_mut()?;
@@ -499,7 +509,9 @@ impl TacticalCaptureSession {
 
     pub(in crate::app::diagnostics::tactical_capture::session) fn observe_map_draw(
         &mut self,
-        state: &AppState,
+        diag: &DiagnosticsState,
+        match_state: &MatchState,
+        gpu: &crate::render::gpu::GpuContext,
         output: &GameRenderOutput,
     ) -> Result<()> {
         let profile = &self
@@ -509,10 +521,9 @@ impl TacticalCaptureSession {
             .value;
         let requested = profile.ticks;
         let tooltip = (profile.observe_tooltips == Some(true))
-            .then(|| capture_tooltip(state))
+            .then(|| capture_tooltip(match_state))
             .transpose()?;
-        let sim = &state
-            .match_state
+        let sim = &match_state
             .sim_runtime
             .runtime()
             .context("map simulation absent")?
@@ -524,7 +535,8 @@ impl TacticalCaptureSession {
             "map draw differs from committed exact-step receipts"
         );
         ensure!(
-            state.diagnostic_presentation_ms() == Some(output.times.radar_ms),
+            crate::app::diagnostics::state::diagnostic_presentation_ms(diag, match_state)
+                == Some(output.times.radar_ms),
             "map diagnostic presentation policy is not active"
         );
         let electric = self
@@ -533,19 +545,19 @@ impl TacticalCaptureSession {
             .unwrap()
             .value
             .observes_electric_step(step)
-            .then(|| MapElectricBoltObservation::capture(state))
+            .then(|| MapElectricBoltObservation::capture(match_state))
             .transpose()?;
         let radiation = (profile.observe_radiation_beams == Some(true))
             .then(|| {
                 MapRadiationBeamObservation::capture(
-                    &state.match_state.match_presentation.radiation_beams,
+                    &match_state.match_presentation.radiation_beams,
                 )
             })
             .transpose()?;
         let terrain_render: Vec<_> = profile
             .terrain_cells()
             .iter()
-            .map(|&[rx, ry]| terrain_render_observation(state, rx, ry))
+            .map(|&[rx, ry]| terrain_render_observation(match_state, gpu, rx, ry))
             .collect();
         let map = self.map_state_mut()?;
         if let Some(effects) = electric {
@@ -615,7 +627,7 @@ impl TacticalCaptureSession {
         {
             let rendered = MapSidebarObservation::from_view(
                 output
-                    .drawn_sidebar_view(&state.match_state.match_presentation)
+                    .drawn_sidebar_view(&match_state.match_presentation)
                     .context("requested sidebar draw is absent")?,
             )?;
             ensure!(
@@ -629,11 +641,9 @@ impl TacticalCaptureSession {
 
     pub(in crate::app::diagnostics::tactical_capture::session) fn map_fingerprint(
         &self,
-        state: &AppState,
+        sim_runtime: &SimHost,
     ) -> Result<Value> {
-        let sim = &state
-            .match_state
-            .sim_runtime
+        let sim = &sim_runtime
             .runtime()
             .context("simulation absent")?
             .simulation;
@@ -650,7 +660,7 @@ impl TacticalCaptureSession {
         state: &AppState,
         output: &GameRenderOutput,
     ) -> Result<(bool, Value)> {
-        validate_loaded_resources(state)?;
+        validate_loaded_resources(&state.frontend, &state.match_state, &state.process_assets)?;
         let unit_atlas =
             unit_atlas_statistics(state.match_state.match_presentation.unit_atlas.as_ref())?;
         let sidebar_drawn = output
@@ -658,7 +668,7 @@ impl TacticalCaptureSession {
             .is_some();
         let ready = sidebar_drawn
             && !state.match_state.paused()
-            && !state.main_menu_dialog_open()
+            && !state.frontend.main_menu_dialog_open()
             && !state.diag.debug_show_pathgrid
             && !state.diag.debug_show_cell_grid
             && !state.diag.debug_show_heightmap
@@ -679,8 +689,16 @@ impl TacticalCaptureSession {
             ready && static_default_cursor && camera_input_idle,
             "map observation requires every draw ready with a static cursor and idle camera input: ready={ready}, static_cursor={static_default_cursor}, camera_idle={camera_input_idle}, cursor_feedback={:?}, cursor_position={cursor_position:?}",
             crate::app::input::cursor::current_cursor_feedback_kind(
-                state,
-                &crate::app::input::cursor::CursorTargets::read(state),
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+                &crate::app::input::cursor::CursorTargets::read(
+                    &state.platform,
+                    &state.frontend,
+                    &state.match_state
+                ),
             )
         );
         let profile = &self
@@ -704,7 +722,7 @@ impl TacticalCaptureSession {
         );
         let mut render = json!({"ready": ready, "sidebar_view_present": sidebar_drawn,
             "instance_counts": super::super::super::evidence::RenderInstanceCountEvidence::from_counts(output.instance_counts)?,
-            "internal_extent": [state.render_width(), state.render_height()],
+            "internal_extent": [state.renderer.render_width(&state.frontend.screen), state.renderer.render_height(&state.frontend.screen)],
             "surface_extent": [state.renderer.gpu.config.width, state.renderer.gpu.config.height],
             "gpu": super::super::super::evidence::GpuAdapterEvidence::from_observation(state.renderer.gpu.capture_adapter_observation()),
             "unit_atlas": unit_atlas,
@@ -722,7 +740,8 @@ impl TacticalCaptureSession {
 
     pub(in crate::app::diagnostics::tactical_capture::session) fn publish_map_observation(
         &self,
-        state: &AppState,
+        platform: &PlatformState,
+        sim_runtime: &SimHost,
         format: wgpu::TextureFormat,
         pixels: &[u8],
     ) -> Result<()> {
@@ -769,12 +788,12 @@ impl TacticalCaptureSession {
             "inputs": self.map_state()?.inputs, "map_source": self.map_source_evidence,
             "startup": self.startup_evidence, "initial": self.map_state()?.initial,
             "loaded_session": self.map_state()?.loaded_session,
-            "final": self.map_fingerprint(state)?, "exact_step_count": self.exact_step_receipts.len(),
+            "final": self.map_fingerprint(sim_runtime)?, "exact_step_count": self.exact_step_receipts.len(),
             "first_exact_step": self.exact_step_receipts.first(), "last_exact_step": self.exact_step_receipts.last(),
             "frame": frame, "render": render,
             "observations": map.transcript(&profile.value),
-            "lifecycle": {"window_hidden": state.platform.window.is_visible() == Some(false),
-                "window_focused": state.platform.window.has_focus(), "focus_violations": self.focus_violations,
+            "lifecycle": {"window_hidden": platform.window.is_visible() == Some(false),
+                "window_focused": platform.window.has_focus(), "focus_violations": self.focus_violations,
                 "input_violations": self.input_violations},
             "native_comparator": "NONE", "parity_certification": "NONE",
             "evidence_limitations": ["Production loading, exact stepping and GPU readback only; no native pixel or gameplay equivalence is established.",

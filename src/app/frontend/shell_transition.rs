@@ -15,6 +15,8 @@
 //! `GUIMoveInSound` (stock `MenuSlideIn`); the end cue `ShellButtonSlideSound` is
 //! empty in stock rules.
 
+use crate::app::match_runtime::state::MatchState;
+use crate::app::renderer_state::RendererState;
 use crate::util::time::{Duration, Instant};
 
 use crate::app::AppState;
@@ -267,27 +269,24 @@ pub(crate) enum ShellExitStart {
 /// steadily shown dialog slides out: one still sliding in, or one that is not
 /// the showing dialog, returns its result at once.
 pub(crate) fn begin_shell_exit(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
     kind: ShellSlideKind,
     network_start: bool,
     then: ShellExitThen,
 ) -> ShellExitStart {
-    if state.frontend.shell_exit.is_some() {
+    if frontend.shell_exit.is_some() {
         return ShellExitStart::AlreadyLeaving;
     }
-    if current_shell_slide_target(state) != Some(kind)
-        || state.frontend.shell_slide_active_shell != Some(kind)
-        || state.frontend.shell_first_paint_slide.is_some()
+    if current_shell_slide_target(frontend, match_state) != Some(kind)
+        || frontend.shell_slide_active_shell != Some(kind)
+        || frontend.shell_first_paint_slide.is_some()
     {
         return ShellExitStart::Immediate(then);
     }
-    state.frontend.shell_exit = Some(ShellExit {
-        wave: new_wave(
-            &state.renderer.gpu,
-            &state.frontend,
-            kind,
-            WaveDirection::SlideOut,
-        ),
+    frontend.shell_exit = Some(ShellExit {
+        wave: new_wave(&renderer.gpu, frontend, kind, WaveDirection::SlideOut),
         kind,
         network_start,
         then,
@@ -316,11 +315,12 @@ impl ShellExit {
 /// result with it.
 pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<ShellExitThen> {
     let kind = state.frontend.shell_exit.as_ref()?.kind;
-    if current_shell_slide_target(state) != Some(kind) {
+    if current_shell_slide_target(&state.frontend, &state.match_state) != Some(kind) {
         state.frontend.shell_exit = None;
         return None;
     }
-    let hidden_online_start = crate::app::App::online_start_runs_while_hidden(state);
+    let hidden_online_start =
+        crate::app::App::online_start_runs_while_hidden(&state.platform, &state.match_state);
     let exit = state.frontend.shell_exit.as_mut()?;
     if !exit.advance(now, hidden_online_start) {
         return None;
@@ -388,7 +388,7 @@ pub(crate) fn invalidate_main_menu_dialog_instance(frontend: &mut FrontendState)
 /// dialog's SHOW completion runs, so this frame already paints the steady
 /// dialog. Returns the dialog whose slide-in completed.
 pub(crate) fn drive_shell_entry(state: &mut AppState, now: Instant) -> Option<ShellSlideKind> {
-    let target = current_shell_slide_target(state);
+    let target = current_shell_slide_target(&state.frontend, &state.match_state);
     let previous = state.frontend.shell_slide_active_shell;
     if target != previous {
         state.frontend.shell_slide_active_shell = target;
@@ -441,7 +441,12 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
         // `0x102`'s own statics start, or repaint when the dialog shows again
         // after Choose Map.
         ShellSlideKind::NetworkSetup(_) => {
-            return crate::app::shell_network_setup::show_statics(state);
+            return crate::app::shell_network_setup::show_statics(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            );
         }
         ShellSlideKind::Skirmish => {
             let (title, game_type, map_label) =
@@ -483,8 +488,7 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
                 .as_ref()
                 .and_then(|art| art.scra.as_ref())
                 .map_or(0, |strip| strip.frames.len());
-            let sound = state
-                .rules()
+            let sound = crate::app::state::active_rules(&state.frontend, &state.match_state)
                 .filter(|_| kind == ShellSlideKind::CampaignScore)
                 .and_then(|rules| rules.general.score_anim_sound())
                 .map(str::to_owned);
@@ -526,31 +530,31 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
     frontend.shell_status_line.start(now);
 }
 
-pub(crate) fn blocks_shell_input(state: &AppState) -> bool {
+pub(crate) fn blocks_shell_input(frontend: &FrontendState) -> bool {
     // The graceful quit cascade also freezes shell input (the original processes
     // no input during its blocking teardown), so a stray click can't re-enter the
     // menu mid-fade.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-    if state.frontend.browser_exit_pending {
+    if frontend.browser_exit_pending {
         return true;
     }
-    state.frontend.quit_cascade.is_some()
-        || shell_slide_running(&state.frontend)
-        || external_menu_wait(state).is_some()
-        || update_check_holds_main_menu(state)
+    frontend.quit_cascade.is_some()
+        || shell_slide_running(frontend)
+        || external_menu_wait(frontend).is_some()
+        || update_check_holds_main_menu(frontend)
 }
 
 /// VERA: the main menu's first entry waits for the startup update check
 /// (`updater::Updater::holds_main_menu`), over the empty backdrop and taking
 /// no shell input, so a newer release is offered before the menu slides in.
-pub(crate) fn update_check_holds_main_menu(state: &AppState) -> bool {
+pub(crate) fn update_check_holds_main_menu(frontend: &FrontendState) -> bool {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let held = state.frontend.updater.holds_main_menu();
+    let held = frontend.updater.holds_main_menu();
     // The browser build has no updater.
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let held = false;
-    held && state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
+    held && frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
 }
 
 /// Why an external network launch (docs/spawn.md) is at the main menu. It
@@ -563,14 +567,12 @@ pub(crate) enum ExternalMenuWait {
     Reporting,
 }
 
-pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
-    let external = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && (crate::app::shell_wol::spawned_visit(state.frontend.wol.as_ref())
-            || crate::app::shell_network_setup::external(
-                state.frontend.network_setup_protocol.as_ref(),
-            ));
+pub(crate) fn external_menu_wait(frontend: &FrontendState) -> Option<ExternalMenuWait> {
+    let external = frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && (crate::app::shell_wol::spawned_visit(frontend.wol.as_ref())
+            || crate::app::shell_network_setup::external(frontend.network_setup_protocol.as_ref()));
     external.then(|| {
-        if state.frontend.external_progress.match_started.is_none() {
+        if frontend.external_progress.match_started.is_none() {
             ExternalMenuWait::Joining
         } else {
             ExternalMenuWait::Reporting
@@ -583,17 +585,19 @@ pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
 /// Utility-card / skirmish-setup paths are not native shell dialogs and do not
 /// slide. Returns the score dialog on the result screen and `None` off the
 /// shell screens.
-pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideKind> {
+pub(crate) fn current_shell_slide_target(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<ShellSlideKind> {
     use crate::ui::game_screen::GameScreen;
     // The score dialog runs after the game, before the shell resumes.
-    if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
-        if crate::app::App::score_shell_active(&state.frontend) {
+    if matches!(frontend.screen, GameScreen::MissionResult { .. }) {
+        if crate::app::App::score_shell_active(frontend) {
             return Some(ShellSlideKind::Score);
         }
-        if crate::app::App::campaign_score_shell_active(&state.frontend) {
+        if crate::app::App::campaign_score_shell_active(frontend) {
             return Some(ShellSlideKind::campaign_score(
-                state
-                    .frontend
+                frontend
                     .campaign_score_page
                     .as_ref()
                     .map_or_else(Default::default, |page| page.dialog),
@@ -601,12 +605,12 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         }
         return None;
     }
-    if state.frontend.screen != GameScreen::MainMenu {
+    if frontend.screen != GameScreen::MainMenu {
         return None;
     }
     // Play_Movie and Show_Credits run after their source dialog is destroyed
     // and before the next one exists: no shell dialog is showing.
-    if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
+    if frontend.fullscreen_movie.is_some() || frontend.credits_roll.is_some() {
         return None;
     }
     // Options `0xD5` runs after `0xE2` is destroyed (state 5,
@@ -615,36 +619,35 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // slides like it. The Exit confirmation (state 6) and the quit after it
     // (state 7) run without a family dialog. VERA's Esc menu asks over the
     // showing dialog, which stays the target.
-    if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
+    if let Some(dialog) = frontend.keyboard_dialog.as_ref() {
         return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
             .then_some(ShellSlideKind::Keyboard);
     }
-    if state
-        .frontend
+    if frontend
         .shell_message_box
         .as_ref()
         .is_some_and(|message_box| !message_box.keeps_page())
-        || state.frontend.quit_cascade.is_some()
+        || frontend.quit_cascade.is_some()
     {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
-    if state.frontend.options_dialog.is_some() {
-        return crate::app::App::native_launcher_options_active(&state.frontend)
+    if frontend.options_dialog.is_some() {
+        return crate::app::App::native_launcher_options_active(frontend)
             .then_some(ShellSlideKind::Options);
     }
     use crate::app::shell_route::ShellRoute;
     use crate::app::shell_wol::WolPage;
-    let shell = &state.frontend.skirmish_shell_state;
-    let wol_page = state.frontend.wol.as_ref().map(|visit| &visit.page);
-    Some(match state.frontend.shell_route {
+    let shell = &frontend.skirmish_shell_state;
+    let wol_page = frontend.wol.as_ref().map(|visit| &visit.page);
+    Some(match frontend.shell_route {
         ShellRoute::Skirmish => skirmish_slide_target(shell)?,
         ShellRoute::LanLobby => ShellSlideKind::LanLobby,
         ShellRoute::NetworkSetup if shell.choose_map_modal.is_some() => {
             skirmish_slide_target(shell)?
         }
         ShellRoute::NetworkSetup => ShellSlideKind::NetworkSetup(
-            crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state),
+            crate::app::shell_network_setup::dialog(frontend, match_state),
         ),
         ShellRoute::SinglePlayer => ShellSlideKind::SinglePlayer,
         ShellRoute::MoviesAndCredits => ShellSlideKind::MoviesAndCredits,
@@ -670,8 +673,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             Some(WolPage::Options(page)) if page.sound.is_some() => ShellSlideKind::WolSoundOptions,
             Some(WolPage::Options(_)) => ShellSlideKind::WolOptions,
             // 0x113 is created hidden and hidden again for a game join.
-            _ if !state
-                .frontend
+            _ if !frontend
                 .wol
                 .as_ref()
                 .and_then(|visit| visit.lobby())
@@ -682,8 +684,8 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             _ => ShellSlideKind::WolLobby,
         },
         ShellRoute::MainMenu
-            if state.frontend.main_menu_shell_error.is_none()
-                && !update_check_holds_main_menu(state) =>
+            if frontend.main_menu_shell_error.is_none()
+                && !update_check_holds_main_menu(frontend) =>
         {
             ShellSlideKind::MainMenu
         }

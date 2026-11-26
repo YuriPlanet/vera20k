@@ -3,13 +3,18 @@
 //! with their voice and action-line policies.
 
 use super::{ORDINARY_SELECTION_VOICE_POLICY, SelectionActionLinePolicy, SelectionVoicePolicy};
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{preferred_local_owner, schedule_command};
 use crate::app::input::entity_pick::SelectionMutation;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::sim::command::Command;
 use std::collections::{HashSet, VecDeque};
 
@@ -392,26 +397,28 @@ pub(crate) fn selection_order_for_world(
 }
 
 pub(super) fn apply_selection_mutation(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     mutation: SelectionMutation,
     voice_policy: SelectionVoicePolicy,
 ) -> bool {
     if !mutation.clear && mutation.deselect.is_empty() && mutation.select.is_empty() {
         return false;
     }
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(sim) = match_state.sim_runtime.runtime().map(|rt| &rt.simulation) else {
         return false;
     };
     let current = selected_stable_ids_in_order(
         Some(sim),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     let SelectionMutationEffects {
         ordered,
@@ -423,23 +430,23 @@ pub(super) fn apply_selection_mutation(
         unselected_all,
     } = resolve_selection_mutation(
         sim,
-        state.rules(),
+        crate::app::state::active_rules(frontend, match_state),
         current,
-        state.match_state.input.follow_target,
-        state.armed_building_type().is_some(),
-        state.match_state.input.planning.active(),
+        match_state.input.follow_target,
+        match_state.input.armed_building_type().is_some(),
+        match_state.input.planning.active(),
         &mutation,
     );
-    state.match_state.input.follow_target = follow_target;
+    match_state.input.follow_target = follow_target;
     // Phobos "Flashing Technos on selecting": the client switch gates the
     // `[AudioVisual] SelectionFlashDuration` the sim's flash owner reads.
     // ObjectClass_Select flashes each newly selected Techno the current player
     // controls (0x005F46AE/0x005F4718); an already-selected object makes no
     // Select call and therefore no flash.
     #[cfg(feature = "phobos")]
-    if state.match_state.match_presentation.show_flash_on_selecting
+    if match_state.match_presentation.show_flash_on_selecting
         && !successful_adds.is_empty()
-        && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+        && let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Command)
     {
         runtime
             .simulation
@@ -447,38 +454,40 @@ pub(super) fn apply_selection_mutation(
     }
     if unselected_all {
         // Unselect_All's tail, BeaconManager ClearSelection (0x0048DCB8).
-        state
-            .match_state
-            .match_presentation
-            .beacons
-            .clear_selection();
+        match_state.match_presentation.beacons.clear_selection();
     }
 
     // Select and Unselect_All reset only the selection mode (0x00731D00);
     // nothing but the T and P keys writes the map-scope byte B0FE64.
     if native_selection_mode_reset {
-        state
-            .match_state
+        match_state
             .input
             .type_select
             .note_successful_selection_mutation(false);
     }
     for id in selection_voice_recipients(
         voice_policy,
-        state.match_state.input.selection_voice_enabled,
+        match_state.input.selection_voice_enabled,
         &successful_adds,
         first_select_adds,
         first_attempt_added,
     ) {
-        emit_selection_voice(&mut state.match_state, *id);
+        emit_selection_voice(match_state, *id);
     }
-    state.match_state.input.selection_order = ordered.clone();
-    state.match_state.input.selection_order_pending = true;
-    let Some(owner) = preferred_local_owner(&state.match_state) else {
+    match_state.input.selection_order = ordered.clone();
+    match_state.input.selection_order_pending = true;
+    let Some(owner) = preferred_local_owner(match_state) else {
         return true;
     };
     schedule_command(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         &owner,
         Command::Select {
             entity_ids: ordered,
@@ -682,12 +691,26 @@ pub(super) fn selection_voice_recipients(
 }
 
 pub(super) fn queue_selection_snapshot_command(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     selected_ids: Vec<u64>,
     additive: bool,
 ) {
     apply_selection_mutation(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         SelectionMutation {
             clear: !additive,
             select: selected_ids,

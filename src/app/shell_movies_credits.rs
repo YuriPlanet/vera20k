@@ -13,7 +13,9 @@ use crate::app::frontend::credits_roll::{
 };
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
 use crate::app::frontend::state::FrontendState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::shell_route::ShellRoute;
+use crate::render::gpu::GpuContext;
 use crate::ui::movies_credits_shell::{
     MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
     family_list_node, family_list_selected, retained_movie_row,
@@ -32,13 +34,9 @@ const CREDITS_SILENT_SCORE_VOLUME: f32 = 0.4;
 impl App {
     /// The shell dialog being left is destroyed (child `0x71A` with it)
     /// before the next dialog or presentation is created.
-    pub(super) fn destroy_current_shell_dialog(state: &mut AppState) {
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(
-            &mut state.frontend,
-        );
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(
-            &mut state.frontend,
-        );
+    pub(super) fn destroy_current_shell_dialog(frontend: &mut FrontendState) {
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(frontend);
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(frontend);
     }
 
     /// `route` shows with `dialog` the shell's sole dialog.
@@ -52,11 +50,11 @@ impl App {
     }
 
     /// State 4: create Movies & Credits `0x101`.
-    pub(super) fn open_movies_credits_page(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
-        state.frontend.movie_list = None;
+    pub(super) fn open_movies_credits_page(frontend: &mut FrontendState) {
+        Self::destroy_current_shell_dialog(frontend);
+        frontend.movie_list = None;
         let dialog = MOVIES_CREDITS_PAGE.dialog;
-        Self::show_shell_page(&mut state.frontend, ShellRoute::MoviesAndCredits, dialog);
+        Self::show_shell_page(frontend, ShellRoute::MoviesAndCredits, dialog);
     }
 
     pub(super) fn handle_movies_credits_action(state: &mut AppState, action: MoviesCreditsAction) {
@@ -64,12 +62,16 @@ impl App {
             MoviesCreditsAction::SneakPeeks => {
                 Self::start_fullscreen_movie(state, SNEAK_PEEK_MOVIE, MovieReturn::MoviesAndCredits)
             }
-            MoviesCreditsAction::PlayMovies => Self::open_movie_list(state),
+            MoviesCreditsAction::PlayMovies => Self::open_movie_list(
+                &state.renderer.gpu,
+                &mut state.frontend,
+                &state.persistence.options_profile,
+            ),
             MoviesCreditsAction::ViewCredits => {
                 Self::start_credits_roll(state, CreditsReturn::MoviesAndCredits)
             }
             MoviesCreditsAction::MainMenu => {
-                Self::destroy_current_shell_dialog(state);
+                Self::destroy_current_shell_dialog(&mut state.frontend);
                 state.frontend.shell_route = ShellRoute::MainMenu;
             }
         }
@@ -77,28 +79,31 @@ impl App {
 
     /// State `0xE`: create movie list `0x129` with the rows `0x005FC000` adds
     /// and the retained selection `DAT_00825C80`.
-    pub(super) fn open_movie_list(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
-        let rows = active_movie_entries(state.persistence.options_profile.movie_progress);
-        state.frontend.movie_list = Some(rows);
-        Self::show_shell_page(
-            &mut state.frontend,
-            ShellRoute::MovieList,
-            MOVIE_LIST_DIALOG,
-        );
-        Self::movie_list_sync(state);
+    pub(super) fn open_movie_list(
+        gpu: &GpuContext,
+        frontend: &mut FrontendState,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        Self::destroy_current_shell_dialog(frontend);
+        let rows = active_movie_entries(options_profile.movie_progress);
+        frontend.movie_list = Some(rows);
+        Self::show_shell_page(frontend, ShellRoute::MovieList, MOVIE_LIST_DIALOG);
+        Self::movie_list_sync(gpu, frontend);
     }
 
     /// Binds the controller to the page and keeps its list `0x744`, the
     /// dialog's `List` node: a hover target for status help and its own
     /// press handler, never a button press.
-    fn movie_list_sync(state: &mut AppState) -> crate::ui::movies_credits_shell::MovieListLayout {
-        let layout = crate::app::frontend::shell_layout::movie_list_layout(&state.renderer.gpu);
-        let retained = state.frontend.movie_list_selection;
-        let controller = &mut state.frontend.shell_controller;
+    fn movie_list_sync(
+        gpu: &GpuContext,
+        frontend: &mut FrontendState,
+    ) -> crate::ui::movies_credits_shell::MovieListLayout {
+        let layout = crate::app::frontend::shell_layout::movie_list_layout(gpu);
+        let retained = frontend.movie_list_selection;
+        let controller = &mut frontend.shell_controller;
         controller.ensure_active(MOVIE_LIST_DIALOG);
         controller.set_scale(layout.page.scale);
-        if let Some(rows) = state.frontend.movie_list.as_ref() {
+        if let Some(rows) = frontend.movie_list.as_ref() {
             // The buttons and the prompt first: the list's id counts as built.
             if let Some(root) = controller.root_in(MOVIE_LIST_DIALOG) {
                 let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
@@ -135,7 +140,7 @@ impl App {
     /// (0x00615EF7).
     pub(super) fn handle_movie_list_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::app::frontend::shell_transition::ShellSlideKind::MovieList;
-        let layout = Self::movie_list_sync(state);
+        let layout = Self::movie_list_sync(&state.renderer.gpu, &mut state.frontend);
         let rect_of = |id| layout.rect_of(id);
         let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
         match Self::screen_page_pointer(
@@ -160,9 +165,9 @@ impl App {
                 }
             }
             // Back writes -1: state 4 recreates Movies & Credits.
-            Some(0x0686) => {
-                Self::leave_shell_dialog(state, MovieList, App::open_movies_credits_page)
-            }
+            Some(0x0686) => Self::leave_shell_dialog(state, MovieList, |state| {
+                App::open_movies_credits_page(&mut state.frontend)
+            }),
             _ => {}
         }
     }
@@ -187,7 +192,7 @@ impl App {
     pub(super) fn start_fullscreen_movie(state: &mut AppState, name: &str, return_to: MovieReturn) {
         let running_scenario = matches!(&return_to, MovieReturn::RunningScenario);
         // The calling dialog is destroyed before the movie state runs.
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         state.frontend.movie_list = None;
         let stem = movie_stem(name);
         // 0x005C0640 raises campaign movie progress before the existence check.
@@ -328,8 +333,12 @@ impl App {
             MovieReturn::StartupLogo | MovieReturn::StartupIntro => {
                 state.platform.window.request_redraw();
             }
-            MovieReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
-            MovieReturn::MovieList => Self::open_movie_list(state),
+            MovieReturn::MoviesAndCredits => Self::open_movies_credits_page(&mut state.frontend),
+            MovieReturn::MovieList => Self::open_movie_list(
+                &state.renderer.gpu,
+                &mut state.frontend,
+                &state.persistence.options_profile,
+            ),
             MovieReturn::CampaignStart(request) => {
                 crate::app::loading::pump::begin_loading(state, *request)
             }
@@ -346,9 +355,14 @@ impl App {
             MovieReturn::CampaignVictory(victory) => {
                 Self::advance_campaign_victory(state, *victory)
             }
-            MovieReturn::CampaignDefeat(defeat) => {
-                Self::open_campaign_replay_prompt(state, *defeat)
-            }
+            MovieReturn::CampaignDefeat(defeat) => Self::open_campaign_replay_prompt(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                *defeat,
+            ),
         }
     }
 
@@ -374,7 +388,7 @@ impl App {
     /// State `0xF`, or a won campaign's EndOfGame (`0x006859EE`):
     /// Show_Credits `0x004C3E30`.
     pub(super) fn start_credits_roll(state: &mut AppState, return_to: CreditsReturn) {
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         let bytes = state
             .process_assets
             .manager()
@@ -384,7 +398,11 @@ impl App {
             Self::finish_credits_roll_return(state, return_to);
             return;
         };
-        let lookup = |key: &str| state.csf_label(key, &format!("MISSING:'{key}'"));
+        let lookup = |key: &str| {
+            state
+                .process_assets
+                .csf_label(key, &format!("MISSING:'{key}'"))
+        };
         let config = &state.renderer.gpu.config;
         let viewport = CreditsViewport::new(config.width, config.height);
         let lines = crate::ui::movies_credits_shell::parse_credits(
@@ -458,9 +476,9 @@ impl App {
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         (state.audio).queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);
         match return_to {
-            CreditsReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
+            CreditsReturn::MoviesAndCredits => Self::open_movies_credits_page(&mut state.frontend),
             CreditsReturn::MainMenu => {
-                Self::destroy_current_shell_dialog(state);
+                Self::destroy_current_shell_dialog(&mut state.frontend);
                 state.frontend.shell_route = ShellRoute::MainMenu;
                 Self::resume_shell_after_match(state);
             }

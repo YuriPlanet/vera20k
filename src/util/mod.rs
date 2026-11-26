@@ -10,6 +10,7 @@
 pub mod ares_launch;
 pub mod archive_names;
 pub mod base64;
+pub mod android_ime;
 pub mod kratos_launch;
 #[cfg(target_os = "android")]
 pub mod app_icon;
@@ -21,6 +22,7 @@ pub mod config;
 pub mod direction;
 pub mod direction_tables;
 pub mod display_insets;
+pub mod mod_actions;
 pub mod device_identity;
 pub mod fixed_math;
 pub mod flh_transform;

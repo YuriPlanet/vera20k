@@ -17,10 +17,14 @@ use super::leaf::{self, Pointer};
 use super::service;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_buddy::*;
@@ -28,6 +32,7 @@ use crate::ui::wol_login::WolAccountGlobals;
 use crate::ui::wol_shell::WolMode;
 use vera20k_gui::NodeId;
 use winit::keyboard::KeyCode;
+use winit::window::Window;
 
 /// `SetTimer(dlg, 0, 1000)`.
 const TIMER_PERIOD: Duration = Duration::from_millis(1000);
@@ -60,34 +65,33 @@ pub(super) fn page_open(wol: Option<&WolVisit>) -> bool {
     page(wol).is_some()
 }
 
-pub(crate) fn layout(state: &AppState) -> WolBuddyLayout {
-    shell_layout::on(&state.renderer.gpu, WolBuddyLayout::new)
+pub(crate) fn layout(gpu: &GpuContext) -> WolBuddyLayout {
+    shell_layout::on(gpu, WolBuddyLayout::new)
 }
 
 /// Builds and places `0x116`'s widgets; the root.
-pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
-    let layout = layout(state);
+pub(crate) fn sync(frontend: &mut FrontendState, renderer: &RendererState) -> Option<NodeId> {
+    let layout = layout(&renderer.gpu);
     let root = leaf::sync(
-        &mut state.frontend.shell_controller,
-        &state.renderer.bit_font,
+        &mut frontend.shell_controller,
+        &renderer.bit_font,
         DIALOG,
         layout.page.scale,
         spec,
         |id| layout.rect_of(id),
     )?;
     // The painter's nodes, found once the tree is built.
-    if let Some(dialog) = page(state.frontend.wol.as_ref()) {
-        dialog.ui.nodes(state.frontend.shell_controller.gui(), root);
+    if let Some(dialog) = page(frontend.wol.as_ref()) {
+        dialog.ui.nodes(frontend.shell_controller.gui(), root);
     }
     Some(root)
 }
 
 /// Shows the page in its widgets (under `0x115` too).
-fn present(state: &mut AppState) {
-    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
-    sync(state);
-    let image = layout(state).rect_of(crate::ui::wol_buddy::OBSERVER_IMAGE);
-    let frontend = &mut state.frontend;
+fn present(frontend: &mut FrontendState, process_assets: &ProcessAssets, renderer: &RendererState) {
+    let unknown = process_assets.csf_text(UNKNOWN_STATS_KEY);
+    sync(frontend, renderer);
+    let image = layout(&renderer.gpu).rect_of(crate::ui::wol_buddy::OBSERVER_IMAGE);
     let Some(root) = frontend.shell_controller.root_in(DIALOG) else {
         return;
     };
@@ -112,17 +116,29 @@ fn present(state: &mut AppState) {
 /// channel in `[0xB77DD0]` first (`WOL:LeavingChannel`); no entry here is
 /// in one, since the lobby's Buddy List left its channel (API+0x24) and the
 /// welcome and `0x114` have none, so that wait is not modelled.
-pub(super) fn lobbies_listed(state: &mut AppState) {
-    open_dialog(state);
+pub(super) fn lobbies_listed(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    open_dialog(frontend, window, process_assets, renderer, options_profile);
 }
 
 /// The dialog loop (`0x0079F312`): the art, then `0x116` and its init
 /// (`0x0079E62D..0x0079E7FE`): the mirror restarts and the 1000 ms timer
 /// runs. The rows wait for the buddy list.
-pub(super) fn open_dialog(state: &mut AppState) {
-    super::lobby::buddy_dialog_opens(state.frontend.wol.as_mut());
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(super) fn open_dialog(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    super::lobby::buddy_dialog_opens(frontend.wol.as_mut());
+    let observer = frontend.multiplayer_shell_runtime.lan_observer();
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page = WolPage::Buddy(Box::new(BuddyDialog {
@@ -130,18 +146,13 @@ pub(super) fn open_dialog(state: &mut AppState) {
         timer_at: Instant::now() + TIMER_PERIOD,
         refresh_at: None,
     }));
-    state.frontend.shell_route = ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
-    );
-    super::leaf::open_art(state, DIALOG);
-    state.frontend.shell_controller.reset_to(DIALOG);
-    super::buddies::restart(&mut state.frontend);
-    present(state);
-    state.platform.window.request_redraw();
+    frontend.shell_route = ShellRoute::Wol;
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    super::leaf::open_art(frontend, process_assets, renderer, DIALOG);
+    frontend.shell_controller.reset_to(DIALOG);
+    super::buddies::restart(frontend);
+    present(frontend, process_assets, renderer);
+    window.request_redraw();
 }
 
 /// `0x116` has ended (`0x00622720`) and its art is released (`0x0072C0B0`):
@@ -159,13 +170,20 @@ pub(super) fn dialog_ended(frontend: &mut FrontendState) {
 /// Join and C2/C9 Back: back to the dialog loop.
 /// RESIDUAL: Create's stop path shows a set `[0xB77AD0]` in a box first;
 /// no path here leaves one set.
-pub(crate) fn stopped(state: &mut AppState) {
-    if state.frontend.shell_route == ShellRoute::NetworkSetup {
-        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+pub(crate) fn stopped(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    if frontend.shell_route == ShellRoute::NetworkSetup {
+        crate::app::shell_network_setup::abandon_for_wol_runner(frontend, match_state);
     }
-    dialog_ended(&mut state.frontend);
-    super::lobby::buddy_runner_resumes(state.frontend.wol.as_mut());
-    open_dialog(state);
+    dialog_ended(frontend);
+    super::lobby::buddy_runner_resumes(frontend.wol.as_mut());
+    open_dialog(frontend, window, process_assets, renderer, options_profile);
 }
 
 /// The runner returned 0 with mode 5: `WOL_Main` takes the return mode and
@@ -211,12 +229,23 @@ pub(crate) fn commit_close(state: &mut AppState, control: u16) {
         }
         CREATE => {
             dialog_ended(&mut state.frontend);
-            super::lobby::begin_create(state);
+            super::lobby::begin_create(
+                &mut state.frontend,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
         }
         JOIN => join_selected(state),
         _ => {
             dialog_ended(&mut state.frontend);
-            open_dialog(state);
+            open_dialog(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
         }
     }
 }
@@ -228,7 +257,13 @@ fn join_selected(state: &mut AppState) {
     let name = buddies.selected.clone();
     let status = buddies.status(&name);
     let Some(channel) = buddies.channel(&name).cloned().filter(|_| !name.is_empty()) else {
-        open_dialog(state);
+        open_dialog(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        );
         return;
     };
     match status {
@@ -256,7 +291,13 @@ fn join_selected(state: &mut AppState) {
             returned(state);
         }
         Some(5) => game_listed(state, &channel.name, false),
-        _ => open_dialog(state),
+        _ => open_dialog(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        ),
     }
 }
 
@@ -277,7 +318,13 @@ pub(super) fn game_listed(state: &mut AppState, name: &str, again: bool) {
         ),
         (None, true) => {
             log::debug!("WOL Buddy List Join: no game {name} (Find Channel by name failed)");
-            open_dialog(state);
+            open_dialog(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
         }
     }
 }
@@ -304,17 +351,23 @@ fn texts(wol: Option<&WolVisit>, process_assets: &ProcessAssets) -> BuddyTexts {
 
 /// The mirror changed: an open `0x116` rebuilds its rows (`0x0079AF10`);
 /// after the buddy list Refresh is enabled again (`KillTimer(0x704)`).
-pub(super) fn buddies_changed(state: &mut AppState, list_arrived: bool) {
-    if !page_open(state.frontend.wol.as_ref()) {
+pub(super) fn buddies_changed(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    list_arrived: bool,
+) {
+    if !page_open(frontend.wol.as_ref()) {
         return;
     }
-    rows(&mut state.frontend, &state.process_assets);
-    if list_arrived && let Some(dialog) = page_mut(state.frontend.wol.as_mut()) {
+    rows(frontend, process_assets);
+    if list_arrived && let Some(dialog) = page_mut(frontend.wol.as_mut()) {
         dialog.refresh_at = None;
         dialog.ui.set_enabled(REFRESH, true);
     }
-    present(state);
-    state.platform.window.request_redraw();
+    present(frontend, process_assets, renderer);
+    window.request_redraw();
 }
 
 /// `0x0079AF10`: every buddy's row, the selection found again, then the
@@ -367,11 +420,16 @@ fn enables(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
 }
 
 /// The ladder sink while `0x116` is open: `0x0079C040`.
-pub(super) fn stats_changed(state: &mut AppState) {
-    if page_open(state.frontend.wol.as_ref()) {
-        stats(&mut state.frontend, &state.process_assets);
-        present(state);
-        state.platform.window.request_redraw();
+pub(super) fn stats_changed(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    if page_open(frontend.wol.as_ref()) {
+        stats(frontend, process_assets);
+        present(frontend, process_assets, renderer);
+        window.request_redraw();
     }
 }
 
@@ -482,7 +540,7 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
             .multiplayer_shell_runtime
             .set_lan_observer(observer),
     }
-    present(state);
+    present(&mut state.frontend, &state.process_assets, &state.renderer);
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
 }
@@ -521,23 +579,44 @@ fn add_open(wol: Option<&WolVisit>) -> bool {
     page(wol).is_some_and(|dialog| dialog.ui.add.is_some())
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    if add_open(state.frontend.wol.as_ref()) {
-        sync_add(&mut state.frontend.shell_controller, &state.renderer);
+pub(super) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    if add_open(frontend.wol.as_ref()) {
+        sync_add(&mut frontend.shell_controller, renderer);
     } else {
-        sync(state);
+        sync(frontend, renderer);
     }
-    leaf::pointer(state, Pointer::Move);
+    leaf::pointer(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        Pointer::Move,
+    );
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state) {
+    if shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     let at = if pressed { Pointer::Down } else { Pointer::Up };
     if add_open(state.frontend.wol.as_ref()) {
         sync_add(&mut state.frontend.shell_controller, &state.renderer);
-        for event in leaf::pointer(state, at) {
+        for event in leaf::pointer(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            at,
+        ) {
             if let PageEvent::Activated(id) = event
                 && let Some(action) =
                     WolAddBuddy::activate(&mut state.frontend.shell_controller, id)
@@ -547,11 +626,18 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         }
         return;
     }
-    if sync(state).is_none() {
+    if sync(&mut state.frontend, &state.renderer).is_none() {
         return;
     }
-    present(state);
-    let events = leaf::pointer(state, at);
+    present(&mut state.frontend, &state.process_assets, &state.renderer);
+    let events = leaf::pointer(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        at,
+    );
     for event in events {
         let Some(ui) = page_mut(state.frontend.wol.as_mut()).map(|dialog| &mut dialog.ui) else {
             return;
@@ -589,7 +675,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             double_click(state);
         }
     }
-    present(state);
+    present(&mut state.frontend, &state.process_assets, &state.renderer);
 }
 
 /// `LBN_DBLCLK` (`0x0079EB52`) after the selection.
@@ -608,7 +694,7 @@ fn double_click(state: &mut AppState) {
 
 /// Keys reach only `0x115`'s edit while it runs.
 pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    if shell_transition::blocks_shell_input(state) {
+    if shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     let local = local_nickname(&state.frontend.wol_account);
@@ -627,9 +713,14 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 
 /// `0x116`'s timers (the 1000 ms status refresh and Refresh's 3000 ms
 /// hold) and the list's scroll repeats.
-pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
+pub(super) fn poll(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) -> Option<Instant> {
     let now = Instant::now();
-    let dialog = page_mut(state.frontend.wol.as_mut())?;
+    let dialog = page_mut(frontend.wol.as_mut())?;
     let mut tick = false;
     if now >= dialog.timer_at {
         dialog.timer_at = now + TIMER_PERIOD;
@@ -643,18 +734,14 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     let deadlines = [
         Some(dialog.timer_at),
         dialog.refresh_at,
-        leaf::poll(
-            &mut state.frontend.shell_controller,
-            &state.platform.window,
-            true,
-        ),
+        leaf::poll(&mut frontend.shell_controller, window, true),
     ];
     if tick {
-        super::buddies::timer(&mut state.frontend, now);
+        super::buddies::timer(frontend, now);
     }
     if reenabled {
-        present(state);
-        state.platform.window.request_redraw();
+        present(frontend, process_assets, renderer);
+        window.request_redraw();
     }
     deadlines.into_iter().flatten().min()
 }

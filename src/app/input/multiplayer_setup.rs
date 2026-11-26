@@ -4,8 +4,11 @@
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::input::state::MatchInputState;
-use crate::app::shell_route::ShellRoute;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
+use crate::render::gpu::GpuContext;
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{PageCue, PageEvent};
@@ -14,13 +17,17 @@ use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 /// The room's page in the window, before VERA's roster is placed in it.
-pub(in crate::app) fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
-    let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
+pub(in crate::app) fn page_layout(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> MultiplayerSetupLayout {
+    let (w, h) = shell_layout::shell_screen_size(gpu);
     MultiplayerSetupLayout::new(
-        crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state),
+        crate::app::shell_network_setup::dialog(frontend, match_state),
         w as i32,
         h as i32,
-        shell_layout::fills_window(&state.renderer.gpu),
+        shell_layout::fills_window(gpu),
     )
 }
 
@@ -28,31 +35,43 @@ pub(in crate::app) fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
 /// which holds the Teams count in a room with teams and the host's Room
 /// size, and two groups abreast on a wide one.
 pub(crate) fn roster_frame(
-    state: &AppState,
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     teams: bool,
     room_size: bool,
 ) -> crate::ui::multiplayer_setup::RosterFrame {
-    let mut layout = page_layout(state);
+    let mut layout = page_layout(gpu, frontend, match_state);
     layout.fit_team_bar(
-        crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state),
+        crate::app::shell_network_setup::dialog(frontend, match_state),
         teams,
         room_size,
     );
     layout.roster_frame()
 }
 
-pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
-    match crate::app::shell_network_setup::view(state) {
-        Some(view) => layout_of(state, &view),
-        None => page_layout(state),
+pub(crate) fn layout(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> MultiplayerSetupLayout {
+    match crate::app::shell_network_setup::view(renderer, frontend, match_state, process_assets) {
+        Some(view) => layout_of(&renderer.gpu, frontend, match_state, &view),
+        None => page_layout(&renderer.gpu, frontend, match_state),
     }
 }
 
 /// The room's layout for `view`: VERA's roster placed with its team bar,
 /// or the rows of a native roster of several pages moved up for Previous
 /// and Next.
-pub(crate) fn layout_of(state: &AppState, view: &SetupView) -> MultiplayerSetupLayout {
-    let mut layout = page_layout(state);
+pub(crate) fn layout_of(
+    gpu: &GpuContext,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    view: &SetupView,
+) -> MultiplayerSetupLayout {
+    let mut layout = page_layout(gpu, frontend, match_state);
     if view.dialog.modern {
         layout.arrange_roster(&view.places);
         let shown = |id| view.trackbars.iter().any(|bar| bar.id == id && bar.visible);
@@ -63,24 +82,29 @@ pub(crate) fn layout_of(state: &AppState, view: &SetupView) -> MultiplayerSetupL
     layout
 }
 
-pub(crate) fn update_geometry(state: &mut AppState) {
-    let layout = page_layout(state);
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn update_geometry(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let layout = page_layout(&renderer.gpu, frontend, match_state);
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+    let Some(ui) = frontend.multiplayer_setup.as_mut() else {
         return;
     };
     // VERA's room's chat column changes width with the window: its rows
     // wrap again to fit it; the log's list keeps its view.
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     let width = crate::ui::lan_shell::chat_wrap_width(
         layout.chat_log,
         layout.page.scale,
         layout.chat_text_scale(),
     );
     let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     if ui.chat.rewrap(width, measure) {
         let rows = ui.chat.lines.len();
         match (controller.control(page, CHAT_LOG), &mut ui.parked_chat) {
@@ -99,16 +123,16 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     }
     // The widgets on screen follow the session between inputs too: a list
     // whose row moved away closes before it paints, a box opens.
-    synced(state, false);
+    synced(renderer, frontend, match_state, process_assets, false);
 }
 
 /// The room hides behind the lobby and its dialog goes: its chat draft and
 /// log view park on the room's state ([`unpark_chat`]).
-pub(crate) fn park_chat(state: &mut AppState) {
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn park_chat(frontend: &mut FrontendState, match_state: &MatchState) {
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let (Some(edit), Some(log)) = (
         controller.control(page, CHAT),
         controller.control(page, CHAT_LOG),
@@ -127,7 +151,7 @@ pub(crate) fn park_chat(state: &mut AppState) {
         .control(page, ROSTER_SCROLL)
         .and_then(|scroll| gui.list_view(scroll))
         .map(|view| view.top);
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.parked_chat = Some(parked);
         ui.parked_roster_top = roster_top;
     }
@@ -135,27 +159,31 @@ pub(crate) fn park_chat(state: &mut AppState) {
 
 /// The room shows again: its rebuilt chat edit and log take the parked
 /// draft and view back, as the room left them, and VERA's roster its place.
-pub(crate) fn unpark_chat(state: &mut AppState) {
-    let Some((parked, roster_top)) = state
-        .frontend
+pub(crate) fn unpark_chat(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let Some((parked, roster_top)) = frontend
         .multiplayer_setup
         .as_mut()
         .and_then(|ui| Some((ui.parked_chat.take()?, ui.parked_roster_top.take())))
     else {
         return;
     };
-    let Some((view, _)) = synced(state, true) else {
+    let Some((view, _)) = synced(renderer, frontend, match_state, process_assets, true) else {
         return;
     };
     let page = view.page().dialog;
     if let Some(top) = roster_top {
         let top = vera20k_gui::Value::Int(top as i32);
-        let controller = &mut state.frontend.shell_controller;
+        let controller = &mut frontend.shell_controller;
         controller.set_prop(page, ROSTER_SCROLL, vera20k_gui::Prop::Top, top);
         // Its rows' controls follow the place before they take input.
-        synced(state, false);
+        synced(renderer, frontend, match_state, process_assets, false);
     }
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     if let Some(edit) = controller.control(page, CHAT) {
         let _ = controller.gui_mut().set_edit_state(edit, &parked.edit);
     }
@@ -175,20 +203,20 @@ pub(crate) fn unpark_chat(state: &mut AppState) {
 }
 
 /// The room's chat edit `0x540`'s text, as its widget holds it.
-pub(crate) fn chat_text(state: &AppState) -> String {
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn chat_text(frontend: &FrontendState, match_state: &MatchState) -> String {
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    state.frontend.shell_controller.text(page, CHAT)
+    frontend.shell_controller.text(page, CHAT)
 }
 
 /// Whether the room's map thumbnail shows a picture with nothing over it: no
 /// combo list, box (Game Options, the missing-map offer, a notice).
-fn preview_box_shows(state: &AppState, view: &SetupView) -> bool {
-    state.frontend.shell_controller.top_id() == Some(view.page().dialog)
-        && state.frontend.skirmish_preview_texture.is_some()
-        && state.frontend.multiplayer_setup.is_some()
-        && open_list(state).is_none()
+fn preview_box_shows(frontend: &FrontendState, match_state: &MatchState, view: &SetupView) -> bool {
+    frontend.shell_controller.top_id() == Some(view.page().dialog)
+        && frontend.skirmish_preview_texture.is_some()
+        && frontend.multiplayer_setup.is_some()
+        && open_list(frontend, match_state).is_none()
 }
 
 fn notice_active(frontend: &FrontendState) -> bool {
@@ -199,7 +227,7 @@ fn notice_active(frontend: &FrontendState) -> bool {
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
-    if !event.state.is_pressed() || shell_transition::blocks_shell_input(state) {
+    if !event.state.is_pressed() || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     let code = if let PhysicalKey::Code(code) = event.physical_key {
@@ -212,21 +240,31 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 
 /// [`key_press`] reaches the room: no verify box, page dialog or notice is
 /// over it.
-fn room_takes_keys(state: &AppState) -> bool {
-    crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref())
-        .is_none()
-        && !crate::app::shell_wol::page::open(state.frontend.wol.as_ref())
-        && !notice_active(&state.frontend)
-        && crate::app::shell_network_setup::view(state).is_some()
+fn room_takes_keys(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> bool {
+    crate::app::shell_network_setup::verify(frontend.network_setup_protocol.as_ref()).is_none()
+        && !crate::app::shell_wol::page::open(frontend.wol.as_ref())
+        && !notice_active(frontend)
+        && crate::app::shell_network_setup::view(renderer, frontend, match_state, process_assets)
+            .is_some()
 }
 
 /// VERA's Esc menu (`app::shell_menu`): the boxes and popups over the room
 /// keep Esc, and a locked room is about to launch.
-pub(crate) fn leaves_escape(state: &AppState) -> bool {
-    room_takes_keys(state)
-        && crate::app::shell_network_setup::view(state).is_some_and(|view| !view.locked)
-        && state
-            .frontend
+pub(crate) fn leaves_escape(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> bool {
+    room_takes_keys(renderer, frontend, match_state, process_assets)
+        && crate::app::shell_network_setup::view(renderer, frontend, match_state, process_assets)
+            .is_some_and(|view| !view.locked)
+        && frontend
             .multiplayer_setup
             .as_ref()
             .is_some_and(|ui| !ui.game_options && ui.map_offer.is_none())
@@ -234,23 +272,25 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`): [`key_press`] reaches the focused chat with no
-/// verify box, page dialog, notice or ChooseMap over the dialog.
-pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
-    let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route == ShellRoute::NetworkSetup
-        && state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_none()
-        && !shell_transition::blocks_shell_input(state)
-        && room_takes_keys(state);
-    state
-        .frontend
+/// verify box, page dialog, notice or ChooseMap over the dialog. Android
+/// routes every GUI edit through `ImeTarget::Gui`.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn ime_chat_rect(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Option<crate::ui::shell::geom::RectPx> {
+    let routed = frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup
+        && frontend.skirmish_shell_state.choose_map_modal.is_none()
+        && !shell_transition::blocks_shell_input(frontend)
+        && room_takes_keys(renderer, frontend, match_state, process_assets);
+    frontend
         .multiplayer_setup
         .as_ref()
         .filter(|ui| routed && !ui.game_options && ui.map_offer.is_none())
-        .map(|_| page_layout(state).chat)
+        .map(|_| page_layout(&renderer.gpu, frontend, match_state).chat)
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -263,7 +303,17 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     }
     // The page dialog 0xCF runs its own modal loop over C2/C9.
     if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
-        crate::app::shell_wol::page::key_press(state, code, text);
+        crate::app::shell_wol::page::key_press(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            code,
+            text,
+        );
         return;
     }
     // The native 5D3490 message box owns all input while its CE runs, and
@@ -278,7 +328,13 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if boxed {
         let key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false));
         if let Some(key) = key
-            && let Some((view, _)) = synced(state, true)
+            && let Some((view, _)) = synced(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                true,
+            )
         {
             state
                 .frontend
@@ -288,7 +344,13 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         }
         return;
     }
-    let Some((view, _)) = synced(state, true) else {
+    let Some((view, _)) = synced(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        true,
+    ) else {
         return;
     };
     // NewEdit consumes all keyboard input while chat has focus. Escape is
@@ -304,21 +366,22 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 
 /// The room's view and layout, its widgets synced to them; with
 /// `activate`, input routed to the room makes its page the active dialog.
-fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, MultiplayerSetupLayout)> {
-    let view = crate::app::shell_network_setup::view(state)?;
-    let layout = layout_of(state, &view);
-    let ui = state.frontend.multiplayer_setup.as_ref()?;
-    sync(
-        &mut state.frontend.shell_controller,
-        ui,
-        &view,
-        &layout,
-        activate,
-    )?;
+fn synced(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    activate: bool,
+) -> Option<(SetupView, MultiplayerSetupLayout)> {
+    let view =
+        crate::app::shell_network_setup::view(renderer, frontend, match_state, process_assets)?;
+    let layout = layout_of(&renderer.gpu, frontend, match_state, &view);
+    let ui = frontend.multiplayer_setup.as_ref()?;
+    sync(&mut frontend.shell_controller, ui, &view, &layout, activate)?;
     // The preview box `0x468` is there only while it shows a picture.
-    let shows = preview_box_shows(state, &view);
+    let shows = preview_box_shows(frontend, match_state, &view);
     let page = view.page().dialog;
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     controller.set_prop(
         page,
         MAP_PREVIEW,
@@ -329,9 +392,12 @@ fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, Multiplaye
 }
 
 /// The open list over the room: its combo and the list as it paints.
-pub(crate) fn open_list(state: &AppState) -> Option<(u16, vera20k_gui::ComboDropDown)> {
-    let controller = &state.frontend.shell_controller;
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn open_list(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+) -> Option<(u16, vera20k_gui::ComboDropDown)> {
+    let controller = &frontend.shell_controller;
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
     (controller.top_id() == Some(page))
@@ -383,11 +449,15 @@ fn pointer_target(
 /// The room loses the pointer: a box over it, a page of its roster or the
 /// missing-map offer takes it, or the window loses the focus. Its open list
 /// closes too, but for the focus.
-pub(crate) fn drop_pointer(state: &mut AppState, close_list: bool) {
-    let page = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state)
+pub(crate) fn drop_pointer(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    close_list: bool,
+) {
+    let page = crate::app::shell_network_setup::dialog(frontend, match_state)
         .page()
         .dialog;
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     if close_list && controller.top_id() == Some(page) {
         controller.gui_mut().close_popup();
     }
@@ -478,9 +548,14 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
 }
 
 /// The status help of the control under the pointer at `x`, `y`.
-fn hovered_help(state: &AppState, view: &SetupView) -> String {
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &state.frontend.shell_controller;
+fn hovered_help(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    view: &SetupView,
+) -> String {
+    let (x, y) = match_state.input.cursor_px();
+    let controller = &frontend.shell_controller;
     let gui = controller.gui();
     let hit = controller
         .top_id()
@@ -501,9 +576,9 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
     });
     let player = badge.or(over).and_then(|id| {
         crate::app::shell_network_setup::view::player_help(
-            &state.frontend.wol_lobby_globals,
-            &state.match_state.session,
-            &state.process_assets,
+            &frontend.wol_lobby_globals,
+            &match_state.session,
+            process_assets,
             view,
             id,
         )
@@ -513,8 +588,7 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
             over.or(over_preview.then_some(MAP_PREVIEW))
                 .and_then(|id| tooltip_key(view.dialog, id))
                 .and_then(|key| {
-                    state
-                        .process_assets
+                    process_assets
                         .csf
                         .as_ref()
                         .and_then(|csf| csf.get(&key))
@@ -523,7 +597,7 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
         })
         .unwrap_or_default();
     if over_preview {
-        crate::app::frontend::preview_zoom::box_help(&state.frontend.skirmish_preview_texture, help)
+        crate::app::frontend::preview_zoom::box_help(&frontend.skirmish_preview_texture, help)
     } else {
         help
     }
@@ -537,10 +611,23 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         return;
     }
     if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
-        crate::app::shell_wol::page::cursor_moved(state);
+        crate::app::shell_wol::page::cursor_moved(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio.sfx_player,
+        );
         return;
     }
-    let Some((view, _)) = synced(state, true) else {
+    let Some((view, _layout)) = synced(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        true,
+    ) else {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
@@ -548,7 +635,28 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let held = slider_held(&state.frontend.shell_controller) || notice_active(&state.frontend);
     state.frontend.shell_controller.on_pointer_move(x, y);
     if !held {
-        let help = hovered_help(state, &view);
+        // VERA's send key has no control id, so it answers its own hint here:
+        // the emote button's, whose tile it borrows (`STT:EmoteButton`).
+        #[cfg(target_os = "android")]
+        let send_help = (!view.dialog.wol() && {
+            let key = crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+                _layout.chat,
+                _layout.chat_log,
+                _layout.page.scale,
+            );
+            x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h
+        })
+        .then(|| state.process_assets.csf_text("STT:EmoteButton"));
+        #[cfg(not(target_os = "android"))]
+        let send_help: Option<String> = None;
+        let help = send_help.unwrap_or_else(|| {
+            hovered_help(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &view,
+            )
+        });
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
             return;
         };
@@ -558,7 +666,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
+    if button != MouseButton::Left || shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     if crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref())
@@ -568,13 +676,42 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     }
     if crate::app::shell_wol::page::open(state.frontend.wol.as_ref()) {
-        crate::app::shell_wol::page::mouse(state, pressed);
+        crate::app::shell_wol::page::mouse(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            pressed,
+        );
         return;
     }
-    let Some((view, layout)) = synced(state, true) else {
+    let Some((view, layout)) = synced(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        true,
+    ) else {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key: a phone has no Enter, so the button on the chat box
+    // sends the line.
+    #[cfg(target_os = "android")]
+    if pressed
+        && crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+            layout.chat,
+            layout.chat_log,
+            layout.page.scale,
+        )
+        .contains(x, y)
+    {
+        key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
+        return;
+    }
     if pressed {
         let over_preview = crate::app::frontend::preview_zoom::over_box(
             &state.frontend.shell_controller,
@@ -588,7 +725,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             false,
         )
         .is_none()
-            && preview_box_shows(state, &view)
+            && preview_box_shows(&state.frontend, &state.match_state, &view)
             && crate::app::frontend::preview_zoom::press_on_box(
                 &mut state.frontend,
                 &state.match_state.input,
@@ -628,7 +765,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if notice_active(&state.frontend) {
         return None;
     }
-    let (view, _) = synced(state, false)?;
+    let (view, _) = synced(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        false,
+    )?;
     // Another screen's dialog over the room polls its own widgets.
     let controller = &state.frontend.shell_controller;
     if ![view.page().dialog, GAME_OPTIONS_BOX, MAP_OFFER_BOX]
@@ -652,7 +795,13 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     {
         return false;
     }
-    let Some((view, layout)) = synced(state, true) else {
+    let Some((view, layout)) = synced(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        true,
+    ) else {
         return false;
     };
     let (x, y) = state.match_state.input.cursor_px();

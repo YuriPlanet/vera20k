@@ -26,8 +26,15 @@ pub(crate) fn render_pause_menu_shell(
     destination: &wgpu::Texture,
     buttons: [PauseMenuButtonState; 8],
 ) -> anyhow::Result<()> {
-    let (layout, page_layout) =
-        crate::app::input::pause_menu::sync(state, &buttons).expect("active shell");
+    let (layout, page_layout) = crate::app::input::pause_menu::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        &buttons,
+    )
+    .expect("active shell");
     let mut overlay = in_game_shell::ShellFrameOverlay::default();
     let template = layout.template;
     let label = match template {
@@ -46,7 +53,7 @@ pub(crate) fn render_pause_menu_shell(
             let index = ids.iter().position(|of| *of == id)?;
             Some(InternetSlider::ALL[index])
         };
-        let caption = |(key, fallback): (&str, &str)| state.csf_label(key, fallback);
+        let caption = |(key, fallback): (&str, &str)| state.process_assets.csf_label(key, fallback);
         let text_of = |id: i32| -> Option<String> {
             let id = u16::try_from(id).ok()?;
             if let Some(button) = template.button(id) {

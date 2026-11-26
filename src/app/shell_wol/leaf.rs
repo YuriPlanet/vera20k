@@ -7,9 +7,15 @@
 
 use vera20k_gui::{NodeId, NodeSpec, Prop};
 
+use crate::app::App;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::skirmish_shell_render::gui_paint;
-use crate::app::{App, AppState};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::bit_font::BitFont;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::ui::shell::controller::DialogController;
@@ -75,25 +81,29 @@ fn art_files(
 }
 
 /// Loads `dialog`'s art once (its loader above); whether it is loaded.
-pub(crate) fn open_art(state: &mut AppState, dialog: DialogResourceId) -> bool {
-    if art(&state.frontend.wol_art, dialog).is_some() {
+pub(crate) fn open_art(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    dialog: DialogResourceId,
+) -> bool {
+    if art(&frontend.wol_art, dialog).is_some() {
         return true;
     }
-    let (Some((background, icons)), Some(assets)) =
-        (art_files(dialog), state.process_assets.manager())
+    let (Some((background, icons)), Some(assets)) = (art_files(dialog), process_assets.manager())
     else {
         return false;
     };
     let art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
+        &renderer.gpu,
+        &renderer.batch_renderer,
         assets,
-        shell_layout::art_key_screen_width(&state.renderer.gpu),
+        shell_layout::art_key_screen_width(&renderer.gpu),
         background,
         &icons,
     );
     let loaded = art.is_some();
-    state.frontend.wol_art.extend(art.map(|art| (dialog, art)));
+    frontend.wol_art.extend(art.map(|art| (dialog, art)));
     loaded
 }
 
@@ -196,17 +206,38 @@ pub(super) enum Pointer {
 
 /// The pointer at the cursor into the top dialog's widgets: their cues play
 /// (a list row's GenericClick is the page's to play) and the rest returns.
-pub(super) fn pointer(state: &mut AppState, at: Pointer) -> Vec<PageEvent> {
-    let events = pointer_quiet(state, at);
-    state.frontend.shell_status_line.repaint();
+pub(super) fn pointer(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    at: Pointer,
+) -> Vec<PageEvent> {
+    let events = pointer_quiet(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        at,
+    );
+    frontend.shell_status_line.repaint();
     events
 }
 
 /// [`pointer`] without repainting the status line, for a dialog whose hit
 /// test writes its status help only on a move (a hover message, `0x4B2`).
-pub(super) fn pointer_quiet(state: &mut AppState, at: Pointer) -> Vec<PageEvent> {
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &mut state.frontend.shell_controller;
+pub(super) fn pointer_quiet(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    at: Pointer,
+) -> Vec<PageEvent> {
+    let (x, y) = match_state.input.cursor_px();
+    let controller = &mut frontend.shell_controller;
     match at {
         Pointer::Move => controller.on_pointer_move(x, y),
         Pointer::Down => controller.on_pointer_down(x, y),
@@ -214,14 +245,8 @@ pub(super) fn pointer_quiet(state: &mut AppState, at: Pointer) -> Vec<PageEvent>
             controller.on_pointer_up(x, y);
         }
     }
-    let events = App::shell_page_events(
-        &mut state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
-        false,
-    );
-    state.platform.window.request_redraw();
+    let events = App::shell_page_events(frontend, match_state, process_assets, sfx_player, false);
+    window.request_redraw();
     events
 }
 
@@ -245,18 +270,22 @@ pub(crate) fn status_key(controller: &DialogController, dialog: DialogResourceId
 
 /// The widgets under `dialog`'s root through the generic painter.
 pub(crate) fn paint(
-    state: &AppState,
+    frontend: &FrontendState,
+    ime: &ImeState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    bit_font: &BitFont,
     dialog: DialogResourceId,
     scale: ShellScale,
 ) -> crate::render::hud_paint::HudPaint {
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     match controller.root_in(dialog) {
         Some(root) => gui_paint::paint_gui_children(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
             controller.gui(),
             root,
             scale,

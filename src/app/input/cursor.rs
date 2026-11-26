@@ -5,6 +5,7 @@
 
 use crate::util::time::Instant;
 
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::entity_pick::HoverObject;
@@ -13,11 +14,11 @@ use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::instances::CellVisibilityState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::types::{
     CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir, SoftwareCursorSequence,
 };
-use crate::app::{AppState, PlatformState};
 use crate::render::cursor_atlas::CURSOR_TIMER_UNIT_MS;
 use crate::sim::combat;
 use crate::ui::game_screen::GameScreen;
@@ -100,16 +101,21 @@ pub(crate) struct CursorTargets {
 }
 
 impl CursorTargets {
-    pub(crate) fn read(state: &AppState) -> Self {
+    pub(crate) fn read(
+        platform: &PlatformState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+    ) -> Self {
         crate::app::match_runtime::sim_host::home_answer(
-            &state.match_state.sim_runtime,
-            &state.match_state.input.cursor_targets_seen,
+            &match_state.sim_runtime,
+            &match_state.input.cursor_targets_seen,
             || Self {
-                selected: crate::app::input::dispatch::selected_in_order(
-                    &state.frontend,
-                    &state.match_state,
+                selected: crate::app::input::dispatch::selected_in_order(frontend, match_state),
+                hover: crate::app::input::entity_pick::cursor_hover_object(
+                    platform,
+                    frontend,
+                    match_state,
                 ),
-                hover: crate::app::input::entity_pick::cursor_hover_object(state),
             },
         )
     }
@@ -119,13 +125,26 @@ impl CursorTargets {
 /// objects, so it is answered with the world home and kept for the draws
 /// beside a lent tick (`sim_host::home_answer`).
 pub(crate) fn current_cursor_feedback_kind(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {
     crate::app::match_runtime::sim_host::home_answer(
-        &state.match_state.sim_runtime,
-        &state.match_state.input.cursor_feedback_seen,
-        || find_cursor_feedback_kind(state, targets),
+        &match_state.sim_runtime,
+        &match_state.input.cursor_feedback_seen,
+        || {
+            find_cursor_feedback_kind(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+                targets,
+            )
+        },
     )
 }
 
@@ -134,92 +153,144 @@ pub(crate) fn current_cursor_feedback_kind(
 /// and action, the ferry's armed drop and the planning hover. Asked before
 /// each tick leaves (`sim_tick::advance_one_simulation_frame`), when no draw
 /// may find the world home until the ticks stop being lent.
-pub(crate) fn answer_kept_questions(state: &AppState) {
-    let targets = CursorTargets::read(state);
-    current_cursor_feedback_kind(state, &targets);
-    crate::app::input::ferry::armed_click_accepted(state);
-    crate::app::input::planning_mode::hover_node(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+pub(crate) fn answer_kept_questions(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    let targets = CursorTargets::read(platform, frontend, match_state);
+    current_cursor_feedback_kind(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        &targets,
     );
-    crate::app::input::tooltips::answer_kept_tactical_tip(state);
+    crate::app::input::ferry::armed_click_accepted(match_state);
+    crate::app::input::planning_mode::hover_node(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    );
+    crate::app::input::tooltips::answer_kept_tactical_tip(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    );
 }
 
 fn find_cursor_feedback_kind(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {
     // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
     // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
     // shows it over the battlefield.
-    if state.match_state.match_presentation.in_game_menu.is_open() {
+    if match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
-    let (x, y) = (
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
+    let (x, y) = (match_state.input.cursor_x, match_state.input.cursor_y);
     if let Some(kind) = scroll_or_arrow_cursor(
-        over_radar_top_button(state) || command_bar_arrow_hit(state.sidebar_frame(), x, y),
-        crate::app::input::camera::right_drag_pan_cursor_state(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
+        over_radar_top_button(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+        ) || command_bar_arrow_hit(
+            crate::app::state::sidebar_frame(
+                platform,
+                persistence,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation.sidebar_layout_spec,
+            ),
+            x,
+            y,
         ),
-        state.match_state.input.captured_cursor(),
+        crate::app::input::camera::right_drag_pan_cursor_state(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+        ),
+        match_state.input.captured_cursor(),
         crate::app::input::camera::edge_scroll_cursor_state(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
         ),
     ) {
         return kind;
     }
-    if let Some(radar) = crate::app::input::radar::cursor(state) {
+    if let Some(radar) =
+        crate::app::input::radar::cursor(platform, renderer, frontend, match_state, persistence)
+    {
         use crate::app::input::radar::RadarCursor;
         return match radar {
-            RadarCursor::Kept => state.match_state.input.shown_cursor(),
+            RadarCursor::Kept => match_state.input.shown_cursor(),
             RadarCursor::Arrow => None,
             RadarCursor::Mini(id) => Some(CursorFeedbackKind::Minimap(id)),
         };
     }
     if current_sidebar_view_hit(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     ) {
-        return state.match_state.input.sidebar_cursor();
+        return match_state.input.sidebar_cursor();
     }
-    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(state);
-    if state
-        .match_state
+    let (x, y) = crate::app::presentation::super_timers::cursor_in_view(
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
+    );
+    if match_state
         .match_presentation
         .super_timer_dock
         .over_toggle(x, y)
     {
         return Some(CursorFeedbackKind::Default);
     }
-    if state.match_state.input.skirmish_spawn.is_some()
-        && super::camera::spawn_pointer_world_point(state).is_some()
+    if match_state.input.skirmish_spawn.is_some()
+        && super::camera::spawn_pointer_world_point(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+        )
+        .is_some()
     {
         return Some(CursorFeedbackKind::Deploy);
     }
-    let runtime = state.match_state.sim_runtime.runtime();
+    let runtime = match_state.sim_runtime.runtime();
     let selected = runtime.map_or(
         std::borrow::Cow::Borrowed(targets.selected.as_slice()),
         |rt| {
             super::context_order::projected_order_selection(
                 &rt.simulation,
-                state.rules(),
+                crate::app::state::active_rules(frontend, match_state),
                 &targets.selected,
                 targets
                     .hover
@@ -234,20 +305,20 @@ fn find_cursor_feedback_kind(
     // only renders on the tactical map. DetermineAction answers the armed
     // superweapon only with nothing selected (`0x00692610..0x00692673`); with
     // a selection the best object's What_Action answers below.
-    let pointer_mode = state.match_state.input.tactical_pointer_mode(
-        &state.match_state.match_presentation.sidebar_gadget_state,
+    let pointer_mode = match_state.input.tactical_pointer_mode(
+        &match_state.match_presentation.sidebar_gadget_state,
         selected.is_empty(),
     );
     if let super::state::TacticalPointerMode::SuperWeapon(section) = pointer_mode {
-        if let Some(runtime) = state.match_state.sim_runtime.runtime()
-            && let Some(owner) = preferred_local_owner_name(&state.match_state)
+        if let Some(runtime) = match_state.sim_runtime.runtime()
+            && let Some(owner) = preferred_local_owner_name(match_state)
                 .and_then(|name| runtime.simulation.interner().get(&name))
             && let Some(sw_type) = runtime.simulation.interner().get(section)
         {
             let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-                &state.match_state,
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
+                match_state,
+                match_state.input.cursor_x,
+                match_state.input.cursor_y,
             );
             let allowed = runtime
                 .simulation
@@ -267,28 +338,30 @@ fn find_cursor_feedback_kind(
             }
         }
         if !crate::app::input::commands::super_weapon_pointer_target_at_cursor_is_valid(
-            state, section,
+            platform,
+            frontend,
+            match_state,
+            section,
         ) {
             return Some(CursorFeedbackKind::SuperWeaponTarget(
                 CursorId::NoForceShield,
             ));
         }
-        let cursor_id = state
-            .rules()
+        let cursor_id = crate::app::state::active_rules(frontend, match_state)
             .and_then(|r| r.super_weapon(section))
             .and_then(|sw| sw.action.as_deref())
             .and_then(super_weapon_cursor_id)
             .unwrap_or(CursorId::Default);
         return Some(CursorFeedbackKind::SuperWeaponTarget(cursor_id));
     }
-    if let Some(preview) = state.match_state.input.building_placement_preview.as_ref() {
+    if let Some(preview) = match_state.input.building_placement_preview.as_ref() {
         return Some(if preview.valid {
             CursorFeedbackKind::PlaceValid
         } else {
             CursorFeedbackKind::PlaceInvalid
         });
     }
-    if state.armed_building_type().is_some() {
+    if match_state.input.armed_building_type().is_some() {
         return Some(CursorFeedbackKind::Invalid);
     }
     let sim = &runtime?.simulation;
@@ -296,29 +369,52 @@ fn find_cursor_feedback_kind(
     // armed Super overrides it. Use the same priority as the release owner;
     // its target admission still supplies wrench/dollar or refusal feedback.
     if matches!(pointer_mode, super::state::TacticalPointerMode::RepairSell) {
-        let repair = state
-            .match_state
+        let repair = match_state
             .match_presentation
             .sidebar_gadget_state
             .repair_mode_on;
         let (wx, wy) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-            &state.match_state.input,
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
+            &match_state.input,
+            match_state.input.cursor_x,
+            match_state.input.cursor_y,
         );
         // Ares 3.0 10057E70 (hook 0x6929FC): an own sellable Unit or
         // Aircraft answers SellUnit.
         if !repair
-            && crate::app::input::commands::own_sellable_unit_under_point(state, wx, wy).is_some()
+            && crate::app::input::commands::own_sellable_unit_under_point(
+                platform,
+                frontend,
+                match_state,
+                wx,
+                wy,
+            )
+            .is_some()
         {
             return Some(CursorFeedbackKind::SellUnit);
         }
         let valid = if repair {
-            crate::app::input::commands::own_repairable_building_under_point(state, wx, wy)
-                .is_some()
+            crate::app::input::commands::own_repairable_building_under_point(
+                platform,
+                frontend,
+                match_state,
+                wx,
+                wy,
+            )
+            .is_some()
         } else {
-            crate::app::input::commands::own_sellable_building_under_point(state, wx, wy).is_some()
-                || crate::app::input::commands::sell_wall_under_cursor_is_eligible(state)
+            crate::app::input::commands::own_sellable_building_under_point(
+                platform,
+                frontend,
+                match_state,
+                wx,
+                wy,
+            )
+            .is_some()
+                || crate::app::input::commands::sell_wall_under_cursor_is_eligible(
+                    platform,
+                    frontend,
+                    match_state,
+                )
         };
         return Some(if repair {
             CursorFeedbackKind::RepairMode(valid)
@@ -331,13 +427,13 @@ fn find_cursor_feedback_kind(
     // entries.
     if matches!(pointer_mode, super::state::TacticalPointerMode::Power) {
         let kind = CursorFeedbackKind::TogglePower(
-            super::power_mode::building_under_cursor(state).is_some(),
+            super::power_mode::building_under_cursor(platform, frontend, match_state).is_some(),
         );
         return Some(super::ares_cursor::tactical(
             kind,
             &super::ares_cursor::CursorOverrides::default(),
             0,
-            state.rules(),
+            crate::app::state::active_rules(frontend, match_state),
         ));
     }
     // No early return for an empty selection here. `242c79ad0` carried
@@ -351,9 +447,9 @@ fn find_cursor_feedback_kind(
     // refusal where the click would give no transport a route. With the
     // waypoint key held the click is a waypoint: the Move cursor, or its
     // refusal on a cell no selected transport can move to.
-    if state.match_state.input.ferry.armed() {
-        let refused = crate::app::input::ferry::armed_click_accepted(state) == Some(false);
-        let waypoint = state.match_state.input.ferry.waypoint_click();
+    if match_state.input.ferry.armed() {
+        let refused = crate::app::input::ferry::armed_click_accepted(match_state) == Some(false);
+        let waypoint = match_state.input.ferry.waypoint_click();
         return Some(match (waypoint, refused) {
             (true, false) => CursorFeedbackKind::Move,
             (true, true) => CursorFeedbackKind::Invalid,
@@ -363,11 +459,11 @@ fn find_cursor_feedback_kind(
     }
     // PlanMgr63AC41 selects native action0 over a planning node.
     if crate::app::input::planning_mode::node_at_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     )
     .is_some()
     {
@@ -380,26 +476,26 @@ fn find_cursor_feedback_kind(
     // (0x006928A9) would replace 0x3D is never set in YR: its only write of
     // 1, SetWaypointMode 0x004AC7A7, is only ever called with 0.
     if selected.is_empty() {
-        if crate::app::input::beacon::mode_active(&state.match_state.match_presentation) {
+        if crate::app::input::beacon::mode_active(&match_state.match_presentation) {
             return Some(CursorFeedbackKind::PlaceBeacon);
         }
         let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            &state.match_state,
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
+            match_state,
+            match_state.input.cursor_x,
+            match_state.input.cursor_y,
         );
-        if crate::app::input::beacon::beacon_at_cell(&state.match_state, cell) {
+        if crate::app::input::beacon::beacon_at_cell(match_state, cell) {
             return Some(CursorFeedbackKind::Select);
         }
     }
     let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        &state.match_state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
+        match_state,
+        match_state.input.cursor_x,
+        match_state.input.cursor_y,
     );
     // The cursor update asks the Cell's What_Action with mouse-over set
     // (`0x0069300B`).
-    let query = ActionQuery::new(&state.frontend, &state.match_state, sim, selected, true);
+    let query = ActionQuery::new(frontend, match_state, sim, selected, true);
     // Ares DisplayClass_SetAction_CustomCursor 10057F10 (hook 0x4AB35A)
     // draws the What_Action answer with the cursor its hooks chose.
     let ares = |kind: CursorFeedbackKind, overrides: &super::ares_cursor::CursorOverrides| {
@@ -419,10 +515,10 @@ fn find_cursor_feedback_kind(
             ares(kind, &overrides)
         });
     }
-    let owner = preferred_local_owner_name(&state.match_state)?;
+    let owner = preferred_local_owner_name(match_state)?;
     let hover_object = targets.hover;
     if selected.is_empty() {
-        let fog = (!state.match_state.sandbox_full_visibility).then(|| sim.fog());
+        let fog = (!match_state.sandbox_full_visibility).then(|| sim.fog());
         let player = sim.interner().get(&owner);
         let hover = hover_object.and_then(HoverObject::techno).filter(|hover| {
             sim.entities().get(hover.stable_id).is_some_and(|entity| {
@@ -2259,18 +2355,28 @@ fn command_bar_arrow_hit(frame: crate::ui::sidebar::SidebarFrame, x: f32, y: f32
 /// (`0x00653865..0x006538F3`), on every pass and with any button held, after
 /// the radar's own press drew its row: a radar press dragged onto them shows
 /// the arrow too.
-fn over_radar_top_button(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::current_sidebar_view(
-        &state.match_state.match_presentation,
-    )
-    .is_some_and(|view| {
-        top_button_hit(
-            state.sidebar_frame(),
-            view.top_buttons.iter().map(|button| button.rect),
-            state.match_state.input.cursor_x,
-            state.match_state.input.cursor_y,
-        )
-    })
+fn over_radar_top_button(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    crate::app::presentation::sidebar_render::current_sidebar_view(&match_state.match_presentation)
+        .is_some_and(|view| {
+            top_button_hit(
+                crate::app::state::sidebar_frame(
+                    platform,
+                    persistence,
+                    renderer,
+                    screen,
+                    &match_state.match_presentation.sidebar_layout_spec,
+                ),
+                view.top_buttons.iter().map(|button| button.rect),
+                match_state.input.cursor_x,
+                match_state.input.cursor_y,
+            )
+        })
 }
 
 /// Whether (`x`, `y`) lies in one of `rects`, placed by `frame`: left and
@@ -2650,10 +2756,13 @@ pub(crate) fn hold_pointer_in_window(
             return false;
         }
         let physical = position.to_physical::<f64>(platform.window.scale_factor());
-        input.set_cursor_from_window(
-            (physical.x as f32, physical.y as f32),
-            renderer.tactical_zoom(screen),
-            platform.confines_pointer(),
+        crate::app::state::set_cursor_from_window(
+            platform,
+            renderer,
+            screen,
+            input,
+            physical.x as f32,
+            physical.y as f32,
         );
         true
     }

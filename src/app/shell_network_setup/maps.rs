@@ -2,11 +2,12 @@
 //! Transports supply physical bytes; source/catalog/session remain authoritative
 //! for decoding, effective rules, map identity and retained loading sources.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{MatchSession, NetworkMapMetadata};
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::map::source::{
     LoadedMapIni, LoadedMapSource, LoadedTransferAsset, TransferContent, TransferResource,
@@ -219,7 +220,11 @@ pub(crate) fn local_transfer_source(
 }
 
 pub(crate) fn accept_transfer_asset(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
     loaded: LoadedTransferAsset,
     resource: TransferResource,
     generated: Option<&GeneratedMapManifest>,
@@ -239,16 +244,14 @@ pub(crate) fn accept_transfer_asset(
                     )),
                 "preview differs from the selected generated map"
             );
-            let digest = state
-                .match_state
-                .session
+            let digest = session
                 .network_map_metadata()
                 .ok_or_else(|| anyhow!("seed selection ended"))?
                 .source_sha256
                 .clone();
             super::accept_network_random_map_preview(
-                &mut state.frontend.network_setup_protocol,
-                &mut state.match_state.session,
+                &mut frontend.network_setup_protocol,
+                session,
                 &digest,
                 loaded.source,
                 image,
@@ -259,13 +262,10 @@ pub(crate) fn accept_transfer_asset(
                 resource != TransferResource::Preview,
                 "scenario received as preview"
             );
-            let assets = state
-                .process_assets
+            let assets = process_assets
                 .manager()
                 .ok_or_else(|| anyhow!("assets missing"))?;
-            let file = state
-                .match_state
-                .session
+            let file = session
                 .network_setup()
                 .and_then(|setup| setup.selected_map_file.as_deref())
                 .ok_or_else(|| anyhow!("selected map missing"))?;
@@ -282,10 +282,8 @@ pub(crate) fn accept_transfer_asset(
                 resource == TransferResource::Seed,
                 file,
             )?;
-            let ares = state.process_assets.reads_ares_way();
-            let expected = state
-                .match_state
-                .session
+            let ares = process_assets.reads_ares_way();
+            let expected = session
                 .network_map_metadata()
                 .ok_or_else(|| anyhow!("map selection ended"))?;
             let seed = resource == TransferResource::Seed;
@@ -307,15 +305,20 @@ pub(crate) fn accept_transfer_asset(
             let keep = (resource == TransferResource::Map && !expected.official)
                 .then(|| (file.to_owned(), expected.source_sha256.clone()));
             if resource == TransferResource::Map {
-                install_authored_preview(&mut state.frontend.network_setup_protocol, &loaded)?;
+                install_authored_preview(&mut frontend.network_setup_protocol, &loaded)?;
             }
             if let Some((file, digest)) = keep {
-                keep_for_choose_map(state, &file, &loaded.source, &digest);
+                keep_for_choose_map(
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    &file,
+                    &loaded.source,
+                    &digest,
+                );
             }
-            state
-                .match_state
-                .session
-                .accept_verified_network_map_source(loaded.source, effective)?;
+            session.accept_verified_network_map_source(loaded.source, effective)?;
         }
     }
     Ok(())
@@ -325,7 +328,10 @@ pub(crate) fn accept_transfer_asset(
 /// and listed in Choose Map, so the player can host it. Best effort; the room
 /// never waits on it, and a file the player already has is left alone.
 fn keep_for_choose_map(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
     host_file: &str,
     source: &crate::map::source::LoadedMapSource,
     digest: &str,
@@ -340,7 +346,14 @@ fn keep_for_choose_map(
                 crate::util::sha256::sha256_hex(&bytes) == digest,
                 "received map changed"
             );
-            crate::app::map_library::keep_map(state, host_file, &bytes)
+            crate::app::map_library::keep_map(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                host_file,
+                &bytes,
+            )
         });
     match kept {
         Ok(path) => log::info!("Kept the received map {host_file} as {}", path.display()),

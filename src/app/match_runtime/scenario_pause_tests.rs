@@ -16,7 +16,7 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
             let ms = step["bucket"].as_u64().unwrap() * 16;
             let op = step["operation"].as_str().unwrap();
             let mut events = Vec::new();
-            let effects = match op {
+            let change = match op {
                 "enter" => {
                     let value = step["value"].as_i64().unwrap() as i32;
                     clock.rearm(value, ms);
@@ -30,10 +30,10 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
                 {
                     sim.expire_scenario_pause_for_test()
                 }
-                "poll" => Vec::new(),
+                "poll" => ScenarioPauseChange::NoEffect,
                 _ => unreachable!(),
             };
-            for effect in effects {
+            for effect in Vec::from(change) {
                 match effect {
                     TriggerEffect::ScenarioPause {
                         outermost: true, ..
@@ -102,8 +102,17 @@ fn radar_movie_service_cannot_add_or_release_a_recorded_pause() {
     let mut runtime = SimHost::default();
     runtime.install(Some(SimRuntime::from_simulation(Simulation::with_seed(7))));
     let mut diagnostics = MatchDiagnosticsState::default();
+    let apply = |runtime: &mut SimHost, diagnostics: &mut MatchDiagnosticsState, input| {
+        apply_live_service(
+            runtime,
+            diagnostics,
+            input,
+            ScenarioPauseInput::apply,
+            ReplayLog::apply_scenario_pause,
+        )
+    };
 
-    apply_live_service(&mut runtime, &mut diagnostics, ScenarioServiceInput::Pause);
+    apply(&mut runtime, &mut diagnostics, ScenarioPauseInput::Pause);
     let sim = &runtime.runtime().unwrap().simulation;
     assert!(sim.session().scenario_paused());
     let paused_hash = sim.state_hash();
@@ -117,8 +126,11 @@ fn radar_movie_service_cannot_add_or_release_a_recorded_pause() {
         pixel_conversion_bounds: Default::default(),
     });
     diagnostics.begin_playback(std::sync::Arc::new(log), None, "0".repeat(64));
-    for input in [ScenarioServiceInput::Resume, ScenarioServiceInput::Pause] {
-        assert!(apply_live_service(&mut runtime, &mut diagnostics, input).is_empty());
+    for input in [ScenarioPauseInput::Resume, ScenarioPauseInput::Pause] {
+        assert_eq!(
+            apply(&mut runtime, &mut diagnostics, input),
+            ScenarioPauseChange::NoEffect
+        );
         assert_eq!(
             runtime.runtime().unwrap().simulation.state_hash(),
             paused_hash
@@ -140,13 +152,12 @@ fn saved_timed_hold_rearms_zero_without_losing_an_untimed_hold() {
     assert!(restored.session().scenario_pause_timed());
     let clock = ScenarioPauseClock::after_load(999_000); // PostRead starts now, duration0.
     assert!(clock.elapsed(999_000));
-    assert!(restored.expire_scenario_pause_for_test().is_empty());
+    assert_eq!(
+        restored.expire_scenario_pause_for_test(),
+        ScenarioPauseChange::NoEffect
+    );
     assert!(restored.session().scenario_paused());
     assert!(!restored.session().scenario_pause_timed());
-    assert!(
-        restored
-            .resume_scenario()
-            .contains(&TriggerEffect::ScenarioResume)
-    );
+    assert!(Vec::from(restored.resume_scenario()).contains(&TriggerEffect::ScenarioResume));
     assert!(!restored.session().scenario_paused());
 }

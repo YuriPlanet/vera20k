@@ -175,15 +175,22 @@ pub(crate) fn toggle_heightmap_overlay(diag: &mut DiagnosticsState) {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool) {
-    if state.diag.debug_show_pathgrid {
-        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
+pub(crate) fn cycle_terrain_cost_speed_type(
+    diag: &mut DiagnosticsState,
+    match_state: &MatchState,
+    forward: bool,
+) {
+    if diag.debug_show_pathgrid {
+        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(
+            diag,
+            &match_state.sim_runtime,
+        );
         let next = if forward {
             current.cycle_next()
         } else {
             current.cycle_prev()
         };
-        state.diag.debug_terrain_cost_speed_type = Some(next);
+        diag.debug_terrain_cost_speed_type = Some(next);
         log::info!("Terrain cost overlay: {}", next.name());
     }
 }
@@ -219,7 +226,16 @@ pub(crate) fn toggle_debug_pause(frame_pacer: &mut LocalFramePacer, match_state:
 pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {
     match code {
         KeyCode::KeyM => {
-            crate::app::persistence::commands::quicksave(state);
+            crate::app::persistence::commands::quicksave(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                &state.audio,
+                &state.diag,
+                &state.process_assets,
+            );
         }
         KeyCode::KeyN => {
             crate::app::persistence::commands::quickload(&state.platform, &mut state.persistence);
@@ -227,7 +243,13 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
         KeyCode::F5 => {
             // Diagnostic shortcut shares the retail browser and modal owner.
             crate::app::App::open_saved_game_browser(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 crate::ui::skirmish_shell::SavedSeedMode::Load,
             );
         }
@@ -253,10 +275,10 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
             toggle_foot_path_overlay(&mut state.diag);
         }
         KeyCode::BracketRight => {
-            cycle_terrain_cost_speed_type(state, true);
+            cycle_terrain_cost_speed_type(&mut state.diag, &state.match_state, true);
         }
         KeyCode::BracketLeft => {
-            cycle_terrain_cost_speed_type(state, false);
+            cycle_terrain_cost_speed_type(&mut state.diag, &state.match_state, false);
         }
         KeyCode::F10 | KeyCode::KeyV => {
             #[cfg(feature = "debug-tools")]
@@ -294,7 +316,12 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
             let faster = matches!(code, KeyCode::Equal | KeyCode::NumpadAdd);
             let speed = state.platform.frame_pacer.change_debug_speed(faster);
             crate::app::input::messages::post_selection_navigation_text(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
                 &format!("Debug speed {speed}x"),
             );
         }

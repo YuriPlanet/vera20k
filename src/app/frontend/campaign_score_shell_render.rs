@@ -38,7 +38,14 @@ pub(crate) fn render_campaign_score_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.campaign_score_page.is_none() || !family_art_ready(state) {
+    if state.frontend.campaign_score_page.is_none()
+        || !family_art_ready(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
+    {
         return Ok(false);
     }
 
@@ -120,7 +127,7 @@ pub(crate) fn render_campaign_score_page(
     let status = hovered
         .and_then(|id| dialog.control(id))
         .and_then(|control| control.tooltip_key)
-        .map(|key| state.csf_text(key))
+        .map(|key| state.process_assets.csf_text(key))
         .unwrap_or_default();
 
     {

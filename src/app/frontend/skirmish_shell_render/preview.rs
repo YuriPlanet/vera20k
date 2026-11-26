@@ -6,10 +6,11 @@
 use std::cell::OnceCell;
 use std::path::Path;
 
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
 use crate::app::loading::init::MapMenuEntry;
 use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
 use crate::assets::asset_manager::AssetManager;
@@ -460,26 +461,44 @@ pub(super) fn preview_map_idx(frontend: &FrontendState) -> Option<usize> {
         .or(Some(shell.selected_map_idx))
 }
 
-pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box: RectPx) {
-    if ensure_random_map_setup_preview_texture(&state.renderer, &mut state.frontend) {
+pub(super) fn ensure_selected_preview_texture(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    preview_box: RectPx,
+) {
+    if ensure_random_map_setup_preview_texture(renderer, frontend) {
         return;
     }
-    let Some(selected_map_idx) = preview_map_idx(&state.frontend) else {
-        state.frontend.skirmish_preview_texture = None;
+    let Some(selected_map_idx) = preview_map_idx(frontend) else {
+        frontend.skirmish_preview_texture = None;
         return;
     };
-    ensure_map_preview_texture(state, selected_map_idx, preview_box);
+    ensure_map_preview_texture(
+        platform,
+        renderer,
+        frontend,
+        process_assets,
+        persistence,
+        selected_map_idx,
+        preview_box,
+    );
 }
 
 /// Shared map preview cache used by offline and network setup/chooser pages,
 /// for a preview drawn in `preview_box`.
 pub(super) fn ensure_map_preview_texture(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     selected_map_idx: usize,
     preview_box: RectPx,
 ) {
-    let selected_entry = state
-        .frontend
+    let selected_entry = frontend
         .scenario_catalog
         .shell_maps()
         .get(selected_map_idx)
@@ -487,8 +506,7 @@ pub(super) fn ensure_map_preview_texture(
     // PreviewClass689D30 applies Header reads even when no preview bitmap is
     // available. The retained Scenario header belongs to the process runtime.
     if let Some(entry) = selected_entry.as_ref() {
-        state
-            .frontend
+        frontend
             .multiplayer_shell_runtime
             .observe_map_preview(entry);
     }
@@ -497,24 +515,22 @@ pub(super) fn ensure_map_preview_texture(
         .is_some_and(is_random_map_sentinel_entry);
     if !selected_is_random_sentinel
         && selected_preview_texture_is_current(
-            &state.platform,
-            &state.frontend.skirmish_preview_texture,
-            &state.persistence,
+            platform,
+            &frontend.skirmish_preview_texture,
+            persistence,
             selected_map_idx,
             preview_box,
         )
     {
         return;
     }
-    let hd_setting = state.hd_map_previews();
-    let ra2_dir = state.ra2_dir();
+    let hd_setting = persistence.hd_map_previews(platform.capture_choices());
+    let ra2_dir = crate::app::state::ra2_dir(platform, process_assets);
     let decoded = selected_entry
         .as_ref()
-        .and_then(|entry| {
-            decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
-        })
+        .and_then(|entry| decode_preview_for_map_entry(entry, ra2_dir, process_assets.manager()))
         // A bundled or downloadable row carries preview bytes outside the install folder.
-        .or_else(|| crate::app::map_library::catalog_preview(&state.frontend, selected_map_idx));
+        .or_else(|| crate::app::map_library::catalog_preview(frontend, selected_map_idx));
     // VERA's own picture of the map, once one is kept, shrunk here by area to
     // the size the box shows it at: it is up to eight times that size, and the
     // GPU's linear filter, which reads four texels, would alias the shrink.
@@ -522,16 +538,16 @@ pub(super) fn ensure_map_preview_texture(
         && selected_entry.is_some()
         && !selected_is_random_sentinel
         && let Some(picture) = crate::app::map_picture::picture_for_map(
-            &state.platform,
-            &mut state.frontend,
-            &state.process_assets,
+            platform,
+            frontend,
+            process_assets,
             selected_map_idx,
         )
         && preview_fits_texture(
             picture.width,
             picture.height,
             picture.rgba.len(),
-            state.renderer.gpu.device.limits().max_texture_dimension_2d,
+            renderer.gpu.device.limits().max_texture_dimension_2d,
         )
     {
         // The picture shows the place of the map's own preview in that
@@ -545,8 +561,8 @@ pub(super) fn ensure_map_preview_texture(
             .filter(|&own| same_shape(own, (picture.width, picture.height)));
         let (fit_w, fit_h) = own.unwrap_or((picture.width, picture.height));
         let fitted = aspect_fit_rect(preview_box, fit_w, fit_h);
-        let texture = picture_texture(&state.renderer, &picture, (fitted.w, fitted.h));
-        state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+        let texture = picture_texture(renderer, &picture, (fitted.w, fitted.h));
+        frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
             selected_map_idx,
             texture,
             width: fit_w,
@@ -562,8 +578,8 @@ pub(super) fn ensure_map_preview_texture(
         return;
     }
 
-    state.frontend.skirmish_preview_texture = decoded
-        .and_then(|decoded| SkirmishPreviewTexture::upload(&state.renderer, decoded))
+    frontend.skirmish_preview_texture = decoded
+        .and_then(|decoded| SkirmishPreviewTexture::upload(renderer, decoded))
         .map(|texture| SkirmishPreviewTexture {
             selected_map_idx,
             hd_setting,
@@ -684,12 +700,16 @@ fn briefing_box(picture: RectPx, text: &str, font: &BitFont, scale: f32) -> Opti
 /// and close it once the box it enlarges is no longer `shown` or holds no
 /// picture. Where its parts go, while it shows.
 pub(super) fn ensure_zoom_texture(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    input: &MatchInputState,
+    process_assets: &ProcessAssets,
     scale: ShellScale,
     shown: bool,
 ) -> Option<ZoomLayout> {
-    if !crate::app::frontend::preview_zoom::is_open(&state.frontend.preview_zoom) {
-        if let Some(preview) = state.frontend.skirmish_preview_texture.as_mut() {
+    if !crate::app::frontend::preview_zoom::is_open(&frontend.preview_zoom) {
+        if let Some(preview) = frontend.skirmish_preview_texture.as_mut() {
             preview.zoom = None;
         }
         return None;
@@ -698,21 +718,20 @@ pub(super) fn ensure_zoom_texture(
     let area = RectPx::new(
         margin,
         margin,
-        state.render_width() as i32 - 2 * margin,
-        state.render_height() as i32 - 2 * margin,
+        renderer.render_width(&frontend.screen) as i32 - 2 * margin,
+        renderer.render_height(&frontend.screen) as i32 - 2 * margin,
     );
-    let shared: &AppState = state;
+    let shared: &FrontendState = frontend;
     let layout = shared
-        .frontend
         .skirmish_preview_texture
         .as_ref()
         .filter(|_| shown)
         .map(|preview| {
             let briefing = preview.briefing.get_or_init(|| {
                 crate::app::map_library::briefing(
-                    &shared.platform,
-                    &shared.frontend,
-                    &shared.process_assets,
+                    platform,
+                    shared,
+                    process_assets,
                     preview.selected_map_idx,
                 )
             });
@@ -720,27 +739,22 @@ pub(super) fn ensure_zoom_texture(
                 area,
                 (preview.width, preview.height),
                 briefing.as_deref(),
-                &shared.renderer.bit_font,
+                &renderer.bit_font,
                 scale.factor(),
             )
         })
         .filter(|layout| layout.picture.w > 0 && layout.picture.h > 0);
     let Some(mut layout) = layout else {
-        crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
+        crate::app::frontend::preview_zoom::close(&platform.window, frontend);
         return None;
     };
     if let Some(briefing) = &layout.briefing
-        && !crate::app::frontend::preview_zoom::shows_briefing(
-            &mut state.frontend,
-            &state.match_state.input,
-            briefing.frame,
-        )
+        && !crate::app::frontend::preview_zoom::shows_briefing(frontend, input, briefing.frame)
     {
         layout.briefing = None;
     }
     let fitted = layout.picture;
-    let preview = state
-        .frontend
+    let preview = frontend
         .skirmish_preview_texture
         .as_ref()
         .expect("a fitted picture");
@@ -750,9 +764,8 @@ pub(super) fn ensure_zoom_texture(
         .as_ref()
         .is_none_or(|(_, made_for)| *made_for != size)
     {
-        let texture = picture_texture(&state.renderer, &preview.source, (fitted.w, fitted.h));
-        state
-            .frontend
+        let texture = picture_texture(renderer, &preview.source, (fitted.w, fitted.h));
+        frontend
             .skirmish_preview_texture
             .as_mut()
             .expect("a fitted picture")

@@ -38,15 +38,37 @@ pub(crate) fn render_multiplayer_setup(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let Some(view) = crate::app::shell_network_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) else {
         crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         return Ok(());
     };
-    crate::app::input::multiplayer_setup::update_geometry(state);
-    crate::app::shell_network_setup::verify_sync(state);
-    let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
+    crate::app::input::multiplayer_setup::update_geometry(
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    );
+    crate::app::shell_network_setup::verify_sync(
+        &state.renderer.gpu,
+        &mut state.frontend,
+        &state.match_state,
+    );
+    let layout = crate::app::input::multiplayer_setup::layout_of(
+        &state.renderer.gpu,
+        &state.frontend,
+        &state.match_state,
+        &view,
+    );
     let scale = layout.page.scale;
-    let (width, height) = (state.render_width(), state.render_height());
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     // The notice on its widgets before it paints.
     let notice_parts = (state.frontend.multiplayer_setup.as_ref())
         .and_then(|ui| ui.notice.as_ref())
@@ -74,14 +96,32 @@ pub(crate) fn render_multiplayer_setup(
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
-        ensure_map_preview_texture(state, index, layout.map_preview);
+        ensure_map_preview_texture(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence,
+            index,
+            layout.map_preview,
+        );
     } else if !view.dialog.host {
         super::preview::ensure_received_preview_texture(&state.renderer, &mut state.frontend);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
-    let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
-    let heading = state.csf_label(view.page().title_key, view.page().title_key);
+    let zoom_layout = ensure_zoom_texture(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state.input,
+        &state.process_assets,
+        scale,
+        !sliding,
+    );
+    let heading = state
+        .process_assets
+        .csf_label(view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
         .multiplayer_setup
@@ -213,7 +253,9 @@ pub(crate) fn render_multiplayer_setup(
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay {
-        smooth_art: state.smooth_online_menus(),
+        smooth_art: state
+            .persistence
+            .smooth_online_menus(state.frontend.native_shell_ui),
         ..Default::default()
     };
     let sized =
@@ -488,6 +530,7 @@ pub(crate) fn render_multiplayer_setup(
         let chat_edit = GuiStyle {
             focus_of: Some(&chat_focus),
             caret_of: Some(&chat_caret),
+            #[cfg(not(target_os = "android"))]
             ime_target: Some(crate::app::input::ime::ImeTarget::SetupChat),
             rgb: label_rgb,
             ..GuiStyle::default()
@@ -667,7 +710,7 @@ pub(crate) fn render_multiplayer_setup(
             let text_of = |id: i32| match u16::try_from(id).ok()? {
                 MAP_OFFER_BODY => Some(body.clone()),
                 MAP_OFFER_DOWNLOAD => Some(crate::i18n::tr(offer.button_key)),
-                MAP_OFFER_LEAVE => Some(state.csf_label("GUI:Leave", "Leave")),
+                MAP_OFFER_LEAVE => Some(state.process_assets.csf_label("GUI:Leave", "Leave")),
                 _ => None,
             };
             // Download greys while the map comes, but still takes a press.
@@ -746,7 +789,13 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
-    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
+    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(
+        &state.platform.ime,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    ) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
@@ -759,12 +808,29 @@ pub(crate) fn render_multiplayer_setup(
     }
     if let Some(verify) = verify.filter(|verify| verify.shown(view.dialog.modern, now)) {
         let paint = super::paint_wol_verify(
-            state,
+            &state.platform.ime,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
             verify,
-            &crate::app::shell_network_setup::verify_layout(state),
+            &crate::app::shell_network_setup::verify_layout(
+                &state.renderer.gpu,
+                &state.frontend,
+                &state.match_state,
+            ),
         );
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);
+    }
+    // Android: VERA's send key beside the chat box. Only the LAN room needs
+    // it: the online room already has its native emote button in the chat row
+    // (`0x3ED`, WOL rooms only). It goes with the page's slide, like the LAN
+    // lobby's.
+    #[cfg(target_os = "android")]
+    if !leaving && !view.dialog.wol() {
+        let rect = super::room_chat_send_rect(layout.chat, layout.chat_log, layout.page.scale);
+        super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(
         state,

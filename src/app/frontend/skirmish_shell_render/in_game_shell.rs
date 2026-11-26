@@ -6,6 +6,7 @@
 //! its column covers the battle's.
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::dialog_page::InGameDialog;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
@@ -123,10 +124,16 @@ impl InGameShellGeometry {
 }
 
 /// Shared active-game art gate for the implemented full-screen modals.
-pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
-    state.frontend.screen == crate::app::GameScreen::InGame
+pub(crate) fn native_in_game_shell_active(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    frontend.screen == crate::app::GameScreen::InGame
         && matches!(
-            state.match_state.match_presentation.in_game_menu,
+            match_state.match_presentation.in_game_menu,
             crate::ui::pause_menu::InGameMenuState::Menu
                 | crate::ui::pause_menu::InGameMenuState::AbortConfirm
                 | crate::ui::pause_menu::InGameMenuState::Sound
@@ -136,31 +143,36 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
                 | crate::ui::pause_menu::InGameMenuState::MissionBriefing
         )
         && (matches!(
-            state.match_state.match_presentation.in_game_menu,
+            match_state.match_presentation.in_game_menu,
             crate::ui::pause_menu::InGameMenuState::Menu
                 | crate::ui::pause_menu::InGameMenuState::AbortConfirm
-        ) || state.frontend.skirmish_shell_chrome.is_some())
-        && crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+        ) || frontend.skirmish_shell_chrome.is_some())
+        && crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)
             .is_some_and(|atlas| atlas.in_game_shell.panel_tile.is_some())
-        && current_in_game_shell_layout(state).is_some()
+        && current_in_game_shell_layout(platform, renderer, frontend, match_state, persistence)
+            .is_some()
 }
 
-pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShellGeometry> {
-    let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)?;
+pub(crate) fn current_in_game_shell_layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<InGameShellGeometry> {
+    let atlas =
+        crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)?;
     let (width, height) = in_game_shell_size(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     // The Phobos switch is absent from builds without the capability, so those
     // keep the native top-left placement.
     #[cfg(feature = "phobos")]
-    let center_background = state
-        .match_state
-        .match_presentation
-        .center_pause_menu_background;
+    let center_background = match_state.match_presentation.center_pause_menu_background;
     #[cfg(not(feature = "phobos"))]
     let center_background = false;
     Some(InGameShellGeometry {
@@ -200,14 +212,27 @@ pub(super) struct InGamePaint<'a> {
 impl<'a> InGamePaint<'a> {
     /// The active-game shell's art, nothing over it yet.
     pub(super) fn new(state: &'a AppState) -> Self {
-        let shell = current_in_game_shell_layout(state).expect("active-game shell geometry");
-        let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-            .expect("active-game shell art");
+        let shell = current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )
+        .expect("active-game shell geometry");
+        let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(
+            &state.frontend,
+            &state.match_state,
+        )
+        .expect("active-game shell art");
         InGamePaint {
             state,
             atlas,
             shell,
-            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(
+                &state.frontend,
+                &state.match_state,
+            ),
             art: background_instances(atlas, shell.layout, shell.width, shell.height),
             controls: Vec::new(),
             texts: Vec::new(),
@@ -331,10 +356,13 @@ pub(super) fn paint_dialog(
             match u16::try_from(id).ok()? {
                 TITLE => dialog
                     .title
-                    .map(|(key, fallback)| state.csf_label(key, fallback)),
-                FOOTER => crate::app::input::dialog_page::help(ui, under)
-                    .map(|key| state.csf_label(key, (dialog.help_fallback)(key))),
-                _ => Some(state.csf_label(key, fallback)),
+                    .map(|(key, fallback)| state.process_assets.csf_label(key, fallback)),
+                FOOTER => crate::app::input::dialog_page::help(ui, under).map(|key| {
+                    state
+                        .process_assets
+                        .csf_label(key, (dialog.help_fallback)(key))
+                }),
+                _ => Some(state.process_assets.csf_label(key, fallback)),
             }
         };
         let style = super::gui_paint::GuiStyle {
@@ -535,11 +563,19 @@ pub(super) fn render_shell_frame(
     overlay: ShellFrameOverlay,
     cursor_policy: ShellFrameCursor,
 ) -> anyhow::Result<()> {
-    let width = state.render_width();
-    let height = state.render_height();
+    let width = state.renderer.render_width(&state.frontend.screen);
+    let height = state.renderer.render_height(&state.frontend.screen);
     let window_raster = Some(state.renderer.bit_font.raster())
         .filter(|raster| *raster != crate::render::bit_font::TextRaster::NATIVE);
-    let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| state.sidebar_frame());
+    let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| {
+        crate::app::state::sidebar_frame(
+            &state.platform,
+            &state.persistence,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation.sidebar_layout_spec,
+        )
+    });
     let (shell_width, shell_height) =
         sidebar_frame.map_or((width, height), |frame| frame.layout_size());
     if let Some(frame) = sidebar_frame {
@@ -566,9 +602,12 @@ pub(super) fn render_shell_frame(
     }
     let background_texture = match art {
         ShellFrameArt::Sidebar => Some(
-            &crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-                .expect("active side art")
-                .texture,
+            &crate::app::presentation::sidebar_render::current_sidebar_chrome(
+                &state.frontend,
+                &state.match_state,
+            )
+            .expect("active side art")
+            .texture,
         ),
         ShellFrameArt::Launcher => Some(
             &state
@@ -801,7 +840,7 @@ pub(super) fn render_shell_frame(
         pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
         batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
     }
-    match state.match_zoom_pass() {
+    match state.renderer.match_zoom_pass(&state.frontend.screen) {
         Some(zoom) => {
             presenter.encode_present(encoder, zoom.color_texture());
             zoom.draw(encoder, &destination.create_view(&Default::default()));
@@ -845,6 +884,8 @@ pub(super) fn render_shell_frame(
             );
             pass.draw_cursor(texture, buffer, *count, frame);
         }
+        let draws = pass.end();
+        state.renderer.window_ui.keep(draws);
     }
     Ok(())
 }

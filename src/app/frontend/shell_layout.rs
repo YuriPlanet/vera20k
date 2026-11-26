@@ -50,7 +50,15 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
         return 1.0;
     }
     let fitted = shell_scale_for_screen(shell_screen_size(&state.renderer.gpu)).factor();
-    if crate::app::input::precedence::modal_page(state).is_some() {
+    if crate::app::input::precedence::modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )
+    .is_some()
+    {
         return fitted;
     }
 
@@ -267,13 +275,20 @@ pub(crate) fn launcher_options_layout(
     category: crate::ui::main_menu_dialogs::options::Category,
 ) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
-    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
+    let (width, height) = (
+        state.renderer.render_width(&state.frontend.screen) as i32,
+        state.renderer.render_height(&state.frontend.screen) as i32,
+    );
     let layout = if fills_window(&state.renderer.gpu) {
         LauncherOptionsLayout::responsive(width, height, category)
     } else {
         LauncherOptionsLayout::new(width, height, category)
     };
-    let battle = crate::app::App::match_zoom_geometry(state);
+    let battle = crate::app::App::match_zoom_geometry(
+        &state.platform,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+    );
     layout.with_battle_frame((battle.src_width, battle.src_height))
 }
 

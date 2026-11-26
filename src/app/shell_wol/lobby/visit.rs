@@ -14,23 +14,27 @@ use super::{
     request_listed, sort_lobby, switching_room,
 };
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
+use winit::window::Window;
 
 /// VERA: the room's Lobby (docs/lobby-protocol.md "Visiting the lobby"):
 /// this player also joins the public lobby to look round it. Their room
 /// goes on hidden, its events still reaching it, until Back to Room.
-pub(crate) fn visit_lobby(state: &mut AppState) {
-    if quick_match_runner(state.frontend.wol.as_ref()) || !in_setup_channel(state) {
+pub(crate) fn visit_lobby(frontend: &mut FrontendState) {
+    if quick_match_runner(frontend.wol.as_ref()) || !in_setup_channel(frontend) {
         return;
     }
-    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
+    let Some(runner) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     if !matches!(runner.step, Step::Ready) || runner.visit.is_some() {
         return;
     }
     runner.step = Step::Visiting { request: None };
-    request(state.frontend.wol.as_mut(), WolServiceRequest::VisitLobby);
+    request(frontend.wol.as_mut(), WolServiceRequest::VisitLobby);
 }
 
 /// Whether this player looks round the public lobby while their game room
@@ -64,13 +68,19 @@ pub(in crate::app::shell_wol) fn page_target<'a>(
 /// The lobby let this player into the public lobby as a visitor: its page
 /// shows over the hidden room, with Back to Room. A repeat answer lists the
 /// lobby again; one this game no longer waits for ends the visit.
-pub(super) fn visit_joined(state: &mut AppState, joined: WolJoined) {
-    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
+pub(super) fn visit_joined(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    joined: WolJoined,
+) {
+    let Some(runner) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     let first = runner.visit.is_none();
     if first && !matches!(runner.step, Step::Visiting { .. }) {
-        request(state.frontend.wol.as_mut(), WolServiceRequest::EndVisit);
+        request(frontend.wol.as_mut(), WolServiceRequest::EndVisit);
         return;
     }
     if first {
@@ -78,7 +88,7 @@ pub(super) fn visit_joined(state: &mut AppState, joined: WolJoined) {
         runner.pending = None;
     }
     let listed = joined.members.clone();
-    sort_lobby(&mut state.frontend, |lobby, sort, rank| {
+    sort_lobby(frontend, |lobby, sort, rank| {
         let mut members = Vec::new();
         for member in joined.members {
             insert_member(&mut members, member, sort, rank);
@@ -89,60 +99,98 @@ pub(super) fn visit_joined(state: &mut AppState, joined: WolJoined) {
         });
         lobby.ui.set_visiting(true);
     });
-    request_listed(&mut state.frontend, &listed);
-    show_visit(state);
+    request_listed(frontend, &listed);
+    show_visit(frontend, match_state, process_assets, renderer);
     if first {
-        let room = current_channel(state.frontend.wol.as_ref())
+        let room = current_channel(frontend.wol.as_ref())
             .map(|room| room.name)
             .unwrap_or_default();
         message_line(
-            state,
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
             crate::i18n::tr_fill("VERA:VisitingLobby", &[("room", &room)]),
         );
     }
 }
 
 /// The lobby page over the visitor's hidden room.
-fn show_visit(state: &mut AppState) {
-    crate::app::shell_network_setup::hide_room(state);
-    if let Some(visit) = state.frontend.wol.as_mut() {
+fn show_visit(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    crate::app::shell_network_setup::hide_room(frontend, match_state);
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page = WolPage::Lobby;
     }
-    state
-        .frontend
-        .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG);
-    let join = selected_admits(state);
-    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
+    frontend.shell_controller.reset_to(super::WOL_LOBBY_DIALOG);
+    let join = selected_admits(frontend, match_state, process_assets, renderer);
+    if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
         lobby.shown = true;
         lobby.covered = false;
         lobby.ui.set_commands(true, join, false);
     }
-    refill_players(&mut state.frontend);
-    request_games(state.frontend.wol.as_mut());
+    refill_players(frontend);
+    request_games(frontend.wol.as_mut());
 }
 
 /// Whether the selected game row admits Join, as a player or a spectator.
-pub(super) fn selected_admits(state: &mut AppState) -> bool {
-    lobby(state.frontend.wol.as_ref())
+pub(super) fn selected_admits(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) -> bool {
+    lobby(frontend.wol.as_ref())
         .and_then(|lobby| lobby.ui.selected_row(GAMES))
         .is_some_and(|row| {
-            admit_row(state, row, false, false) || admit_row(state, row, true, false)
+            admit_row(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                row,
+                false,
+                false,
+            ) || admit_row(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                row,
+                true,
+                false,
+            )
         })
 }
 
 /// Back to Room: the visitor leaves the public lobby, and their room, which
 /// went on meanwhile, shows as it is now.
-pub(super) fn back_to_room(state: &mut AppState) {
-    if visit_ends(state) {
-        request(state.frontend.wol.as_mut(), WolServiceRequest::EndVisit);
+pub(super) fn back_to_room(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    if visit_ends(frontend, window, match_state, process_assets, renderer) {
+        request(frontend.wol.as_mut(), WolServiceRequest::EndVisit);
     }
 }
 
 /// Ends a visit here, for Back to Room or the room's start (the lobby ends
 /// it for a start itself): the room shows again. False without a visit.
-pub(in crate::app::shell_wol) fn visit_ends(state: &mut AppState) -> bool {
-    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
+pub(in crate::app::shell_wol) fn visit_ends(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) -> bool {
+    let Some(runner) = lobby_mut(frontend.wol.as_mut()) else {
         return false;
     };
     if runner.visit.take().is_none() {
@@ -158,29 +206,49 @@ pub(in crate::app::shell_wol) fn visit_ends(state: &mut AppState) -> bool {
     }
     runner.shown = false;
     runner.covered = false;
-    refill_players(&mut state.frontend);
-    crate::app::shell_network_setup::show_room(state);
+    refill_players(frontend);
+    crate::app::shell_network_setup::show_room(
+        window,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+    );
     true
 }
 
 /// A refused or lost visit: the player stays in their room.
-pub(super) fn visit_failed(state: &mut AppState) {
-    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
+pub(super) fn visit_failed(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    let Some(runner) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     runner.step = Step::Ready;
-    message_line(state, crate::i18n::tr("VERA:VisitFailed"));
+    message_line(
+        frontend,
+        match_state,
+        process_assets,
+        renderer,
+        crate::i18n::tr("VERA:VisitFailed"),
+    );
 }
 
 /// Ends the visit with its room, as leaving it or the runner's close does:
 /// the hidden room is dropped through its owner. The lobby visited, if
 /// there was a visit.
-pub(super) fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
-    let runner = lobby_mut(state.frontend.wol.as_mut())?;
+pub(super) fn take_visit(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+) -> Option<LobbyVisit> {
+    let runner = lobby_mut(frontend.wol.as_mut())?;
     let visit = runner.visit.take()?;
     runner.ui.set_visiting(false);
-    if state.frontend.network_setup_protocol.is_some() {
-        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    if frontend.network_setup_protocol.is_some() {
+        crate::app::shell_network_setup::abandon_for_wol_runner(frontend, match_state);
     }
     Some(visit)
 }
@@ -191,7 +259,7 @@ pub(super) fn visit_room_left(state: &mut AppState) {
     if lobby(state.frontend.wol.as_ref())
         .is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. }))
     {
-        take_visit(state);
+        take_visit(&mut state.frontend, &mut state.match_state);
         leave_finished(state, true);
         return;
     }
@@ -205,25 +273,37 @@ pub(super) fn visit_room_left(state: &mut AppState) {
     } else {
         "VERA:VisitedRoomClosed"
     };
-    visit_settles(state, crate::i18n::tr_fill(key, &[("room", &room)]));
+    visit_settles(
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.renderer,
+        crate::i18n::tr_fill(key, &[("room", &room)]),
+    );
 }
 
 /// The visitor's room is gone for them, kicked or closed: the lobby made
 /// the public lobby they visit their channel, and its page stays, saying
 /// why with `line`.
-pub(super) fn visit_settles(state: &mut AppState, line: String) {
-    let Some(visit) = take_visit(state) else {
+pub(super) fn visit_settles(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    line: String,
+) {
+    let Some(visit) = take_visit(frontend, match_state) else {
         return;
     };
-    state.frontend.wol_lobby_globals.lobby_number = visit.channel.joined_lobby_number();
-    let join = selected_admits(state);
-    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
+    frontend.wol_lobby_globals.lobby_number = visit.channel.joined_lobby_number();
+    let join = selected_admits(frontend, match_state, process_assets, renderer);
+    if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
         lobby.current = Some(visit.channel);
         lobby.members = visit.members;
         lobby.ui.set_commands(true, join, false);
     }
-    refill_players(&mut state.frontend);
-    message_line(state, line);
+    refill_players(frontend);
+    message_line(frontend, match_state, process_assets, renderer, line);
 }
 
 /// Another user joined the lobby this player visits: its list takes them,

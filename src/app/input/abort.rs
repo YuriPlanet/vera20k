@@ -4,8 +4,12 @@
 //! authority.
 
 use super::dialog_page::InGameDialog;
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
 use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
@@ -75,21 +79,38 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
 };
 
 /// The open B6's geometry.
-pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
-    let secondary = state.match_state.match_presentation.abort_secondary;
-    super::dialog_page::layout(state, |w, h, shell, size| {
-        abort_layout(w, h, shell, size, secondary)
-    })
+pub(crate) fn current_abort_layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<AbortLayout> {
+    let secondary = match_state.match_presentation.abort_secondary;
+    super::dialog_page::layout(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        |w, h, shell, size| abort_layout(w, h, shell, size, secondary),
+    )
 }
 
 /// Makes B6's nodes current without input (rects, the hidden 712): its
 /// renderer's call every drawn frame before it paints from them.
-pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
-    let layout = current_abort_layout(state)?;
+pub(crate) fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Option<AbortLayout> {
+    let layout = current_abort_layout(platform, renderer, frontend, match_state, persistence)?;
     let nodes = || abort::spec(layout.secondary_kind);
     let rect_of = |id| layout.rect(id);
     DIALOG.sync(
-        &mut state.match_state.match_presentation,
+        &mut match_state.match_presentation,
         nodes,
         rect_of,
         super::dialog_page::no_sync,
@@ -99,12 +120,24 @@ pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
 
 /// One pointer message on B6 (`down`: `None` moves).
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = current_abort_layout(state) else {
+    let Some(layout) = current_abort_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) else {
         return;
     };
     let nodes = || abort::spec(layout.secondary_kind);
     let events = DIALOG.route(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
         down,
         nodes,
         |id| layout.rect(id),
@@ -122,7 +155,13 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
 /// Callback4F18B0 writes the result B6 init stored for the pressed button:
 /// Leave6C9 `[0xA8EE7C]` (2, or 3 beside Observe), 712 `[0xA8EE80]`.
 pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
-    let Some(layout) = current_abort_layout(state) else {
+    let Some(layout) = current_abort_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) else {
         return;
     };
     let action = match (button, layout.secondary_kind) {

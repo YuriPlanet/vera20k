@@ -672,6 +672,8 @@ impl RulesLayerStack {
             &processor.ares_reads,
             self.kratos_setting,
         );
+        let npatch_inputs =
+            crate::rules::npatch_switch::NPatchInputs::from_passes(&processor.ares_reads);
         let (ini, native_type_construction_trace) = processor.finish();
         ProcessedRulesLayers {
             ini,
@@ -679,6 +681,7 @@ impl RulesLayerStack {
             native_type_construction_trace,
             ares_inputs,
             kratos_inputs,
+            npatch_inputs,
         }
     }
 
@@ -1027,6 +1030,11 @@ pub struct ProcessedRulesLayers {
     /// before the switch existed reads as no Kratos key.
     #[serde(default)]
     kratos_inputs: crate::rules::kratos_switch::KratosInputs,
+    /// What the passes give the per-game NPatch switch (the extension keys
+    /// they read); saved with the rules for the same reason. A rules set
+    /// saved before the switch existed reads as no NPatch key.
+    #[serde(default)]
+    npatch_inputs: crate::rules::npatch_switch::NPatchInputs,
 }
 
 #[cfg(all(test, tests_rules_a_n))]

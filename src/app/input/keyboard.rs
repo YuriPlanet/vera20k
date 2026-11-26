@@ -1,4 +1,5 @@
 //! Shared A3 lifecycle/input. Original5FBEF0/5FB320 and command assignment5FBB38.
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::registered_commands};
 use crate::app::input::state::MatchInputState;
@@ -7,7 +8,10 @@ use crate::app::input::state::MatchInputState;
     target_os = "android"
 ))]
 use crate::app::keyboard_shim::KeyEventExtModifierSupplement;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState, PlatformState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::page::PageEvent;
@@ -115,7 +119,13 @@ pub(crate) fn in_game_key_edge(
         !edge.state.is_pressed() && state.match_state.input.planning.owns_key(edge.physical);
     if owned_planning_release || !locked || is_escape {
         let planning_consumed = crate::app::input::planning_mode::key_edge(
-            state,
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
             resolution,
             edge.physical,
             edge.state,
@@ -123,7 +133,14 @@ pub(crate) fn in_game_key_edge(
         );
         let consumed = planning_consumed
             || crate::app::input::dispatch::handle_type_select_key_edge(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
                 resolution,
                 edge.physical,
                 edge.state,
@@ -179,56 +196,76 @@ pub(crate) fn in_game_key_edge(
     }
 }
 
-pub(crate) fn layout(state: &AppState) -> Option<KeyboardLayout> {
-    layout_and_pointer(state).map(|(layout, _)| layout)
+pub(crate) fn layout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<KeyboardLayout> {
+    layout_and_pointer(platform, renderer, frontend, match_state, persistence)
+        .map(|(layout, _)| layout)
 }
 
 /// [`layout`] and the pointer in its pixels: the active-game shell's in game,
 /// the window's on the front end.
-fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> {
-    let dialog = state.frontend.keyboard_dialog.as_ref()?;
+fn layout_and_pointer(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<(KeyboardLayout, (i32, i32))> {
+    let dialog = frontend.keyboard_dialog.as_ref()?;
     let (width, height, shell, pointer) = if dialog.parent == KeyboardParent::GameControls {
-        let shell =
-            crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+        let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        )?;
         (
             shell.width,
             shell.height,
             Some((shell.layout, shell.button_size)),
             crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             ),
         )
     } else {
-        let (x, y) = state.cursor_position();
+        let (x, y) = match_state.input.cursor_position();
         (
-            state.render_width() as i32,
-            state.render_height() as i32,
+            renderer.render_width(&frontend.screen) as i32,
+            renderer.render_height(&frontend.screen) as i32,
             None,
             (x.round() as i32, y.round() as i32),
         )
     };
     Some((
-        crate::app::frontend::shell_layout::keyboard_layout(
-            &state.renderer.gpu,
-            width,
-            height,
-            shell,
-        ),
+        crate::app::frontend::shell_layout::keyboard_layout(&renderer.gpu, width, height, shell),
         pointer,
     ))
 }
 /// Makes A3's nodes current without input (rects, the category's popup
 /// rows, the texts its statics show): its renderer's call every drawn frame
 /// before it paints from them. Texts allocate only when they change.
-pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
-    let layout = layout(state)?;
-    let dialog = state.frontend.keyboard_dialog.as_ref()?;
+pub(crate) fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Option<KeyboardLayout> {
+    let layout = layout(platform, renderer, frontend, match_state, persistence)?;
+    let dialog = frontend.keyboard_dialog.as_ref()?;
     let catalog = registered_commands();
-    let bindings = &state.match_state.input.hotkey_bindings;
+    let bindings = &match_state.input.hotkey_bindings;
     let selected = dialog
         .selected()
         .and_then(|row| dialog.rows.get(row).copied());
@@ -252,8 +289,8 @@ pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
             })
         });
     let capture = key_name(dialog.captured);
-    let error = dialog.error.map(|key| state.csf_label(key, key));
-    let dialog = state.frontend.keyboard_dialog.as_mut()?;
+    let error = dialog.error.map(|key| process_assets.csf_label(key, key));
+    let dialog = frontend.keyboard_dialog.as_mut()?;
     let rows = Value::Rect(layout.category_rows(dialog.categories.len()));
     dialog.ui.set_scale(layout.scale);
     let KeyboardState {
@@ -310,21 +347,39 @@ fn localized(process_assets: &ProcessAssets, key: &str, parameter: Option<u8>) -
         None => text,
     }
 }
-pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
+pub(crate) fn open(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    parent: KeyboardParent,
+) {
     if parent == KeyboardParent::GameControls {
         // BBB52C sets state4/result1;4E1D9A applies+writes before dispatcher48CA03.
         // VERA's Game Controls is a page of the in-game menu, which applies and
         // writes its controls as it closes for this state.
-        App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Keyboard);
+        App::enter_in_game_menu_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            crate::ui::pause_menu::InGameMenuState::Keyboard,
+        );
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
     // their rules switches are on, so the page does not list them otherwise.
     #[cfg(feature = "phobos")]
-    let sw_sidebar_globals = state.rules().map(|rules| rules.sw_sidebar);
+    let sw_sidebar_globals =
+        crate::app::state::active_rules(frontend, match_state).map(|rules| rules.sw_sidebar);
     // Ares registers its commands at startup (hook 0x533058); VERA lists them
     // for a game Ares plays.
-    let ares = state
-        .rules()
+    let ares = crate::app::state::active_rules(frontend, match_state)
         .is_some_and(crate::rules::ruleset::RuleSet::ares);
     let commands = registered_commands()
         .iter()
@@ -347,26 +402,22 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
         })
         .map(|(index, metadata)| KeyboardCommandRow {
             command_index: index,
-            name: localized(&state.process_assets, metadata.name_key, metadata.parameter),
-            category: localized(&state.process_assets, metadata.category_key, None),
-            description: localized(
-                &state.process_assets,
-                metadata.description_key,
-                metadata.parameter,
-            ),
+            name: localized(process_assets, metadata.name_key, metadata.parameter),
+            category: localized(process_assets, metadata.category_key, None),
+            description: localized(process_assets, metadata.description_key, metadata.parameter),
         })
         .collect();
-    state.frontend.keyboard_dialog = Some(KeyboardState::new(
+    frontend.keyboard_dialog = Some(KeyboardState::new(
         parent,
         commands,
         vec![localized(
-            &state.process_assets,
+            process_assets,
             hotkeys::catalog::VERA_CATEGORY_KEY,
             None,
         )],
     ));
-    refresh_title(&mut state.frontend, &state.process_assets);
-    state.platform.window.request_redraw();
+    refresh_title(frontend, process_assets);
+    platform.window.request_redraw();
 }
 /// Resolve the open page's heading into its static, as it opens and after
 /// the string table's labels change; the page paints it from there.
@@ -437,49 +488,87 @@ fn close(state: &mut AppState, exit: KeyboardExit) {
         App::leave_shell_dialog(
             state,
             crate::app::frontend::shell_transition::ShellSlideKind::Keyboard,
-            move |state| crate::app::input::keyboard::commit_close(state, exit),
+            move |state| {
+                crate::app::input::keyboard::commit_close(
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    exit,
+                )
+            },
         );
     } else {
-        commit_close(state, exit);
+        commit_close(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            exit,
+        );
     }
 }
 
 /// A3 is gone: save or reload the bindings and rebuild the parent.
-pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
-    let Some(dialog) = state.frontend.keyboard_dialog.take() else {
+pub(crate) fn commit_close(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    exit: KeyboardExit,
+) {
+    let Some(dialog) = frontend.keyboard_dialog.take() else {
         return;
     };
     if exit.binding_action() == BindingExit::Save {
-        if let Some(config) = state.platform.game_config.as_ref()
+        if let Some(config) = platform.game_config.as_ref()
             && let Err(error) = crate::app::persistence::keyboard::save(
                 config.paths.settings_dir(),
-                &state.match_state.input.hotkey_bindings,
+                &match_state.input.hotkey_bindings,
             )
         {
             log::warn!("Could not save VERA.INI keyboard settings: {error}");
         }
     } else if exit.binding_action() == BindingExit::Reload {
         // IDCANCEL5FB6D4 reloads CURRENT disk, including a preceding Reset All.
-        reload(
-            &state.platform,
-            &mut state.match_state.input,
-            &state.process_assets,
-            false,
-        );
+        reload(platform, &mut match_state.input, process_assets, false);
     }
     if !exit.recreate_parent(dialog.parent) {
         return;
     }
     match dialog.parent {
-        KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
+        KeyboardParent::Launcher => App::open_launcher_options_dialog(
+            platform,
+            renderer,
+            frontend,
+            process_assets,
+            audio,
+            &persistence.options_profile,
+        ),
         // State_Machine 0x0048CA0D writes state 5 after A3 returns, where
         // gamemd recreates BBB. VERA's Game Controls is the in-game menu's
         // page, so the menu is what comes back.
-        KeyboardParent::GameControls => {
-            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu)
-        }
+        KeyboardParent::GameControls => App::enter_in_game_menu_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            crate::ui::pause_menu::InGameMenuState::Menu,
+        ),
     }
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 fn activate(state: &mut AppState, id: KeyboardButton) {
     match id {
@@ -523,7 +612,13 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
 /// A3's control events, after their cues: a button's action, a command
 /// row's selection, a category pick.
 fn apply(state: &mut AppState, events: Vec<PageEvent>) {
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in super::dialog_page::play_cues(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        events,
+    ) {
         match event {
             PageEvent::Activated(CANCEL) => close(state, KeyboardExit::Cancel),
             PageEvent::Activated(id) => {
@@ -559,7 +654,13 @@ pub(crate) fn poll_scroll_repeat(window: &Window, frontend: &mut FrontendState) 
 /// (GUIMainButtonSound, 0x0061376B); a command row press plays the generic
 /// click.
 fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some((layout, (x, y))) = layout_and_pointer(state) else {
+    let Some((layout, (x, y))) = layout_and_pointer(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) else {
         return;
     };
     state.platform.window.request_redraw();
@@ -595,7 +696,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 
 pub(crate) fn wheel(state: &mut AppState, lines: f32) {
     // A dialog's wheel goes to its hovered list; the point is the pointer's.
-    let Some((layout, (x, y))) = layout_and_pointer(state) else {
+    let Some((layout, (x, y))) = layout_and_pointer(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) else {
         return;
     };
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {

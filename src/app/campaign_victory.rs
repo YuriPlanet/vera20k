@@ -364,7 +364,7 @@ impl App {
         }
         match victory.then {
             VictoryEnd::Shell => {
-                Self::destroy_current_shell_dialog(state);
+                Self::destroy_current_shell_dialog(&mut state.frontend);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::resume_shell_after_match(state);
             }
@@ -379,9 +379,9 @@ impl App {
                 // dismissal. Failed Init never reaches5AE126's ABCE08 write.
                 let shell_box =
                     crate::ui::main_menu_dialogs::map_select_failure(&|key, fallback| {
-                        state.csf_label(key, fallback)
+                        state.process_assets.csf_label(key, fallback)
                     });
-                Self::destroy_current_shell_dialog(state);
+                Self::destroy_current_shell_dialog(&mut state.frontend);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::open_shell_message_box(
                     &state.platform.window,

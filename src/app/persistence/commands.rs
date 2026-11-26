@@ -1,7 +1,13 @@
 //! User save/load requests; input and dialogs only select the operation.
 
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::{AppState, PlatformState};
+use crate::ui::game_screen::GameScreen;
 
 use std::path::{Path, PathBuf};
 
@@ -27,10 +33,30 @@ pub(crate) enum SaveCommandError {
 }
 
 #[cfg(feature = "dev-overlays")]
-pub(crate) fn quicksave(state: &mut AppState) {
+pub(crate) fn quicksave(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &super::PersistenceState,
+    audio: &AppAudioRuntime,
+    diag: &DiagnosticsState,
+    process_assets: &ProcessAssets,
+) {
     log_save_result(
         "Quicksave",
-        save(state, None, SaveDestination::Player(None)),
+        save(
+            platform,
+            renderer,
+            screen,
+            match_state,
+            persistence,
+            audio,
+            diag,
+            process_assets,
+            None,
+            SaveDestination::Player(None),
+        ),
     );
 }
 
@@ -38,20 +64,56 @@ pub(crate) fn quicksave(state: &mut AppState) {
 /// is an error, never implicit permission to overwrite an existing save.
 /// This is the VERA snapshot format; it does not claim native SAV compatibility.
 pub(crate) fn save_game(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &super::PersistenceState,
+    audio: &AppAudioRuntime,
+    diag: &DiagnosticsState,
+    process_assets: &ProcessAssets,
     description: &str,
     overwrite: Option<&Path>,
 ) -> Result<PathBuf, SaveCommandError> {
-    save(state, Some(description), SaveDestination::Player(overwrite))
+    save(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+        audio,
+        diag,
+        process_assets,
+        Some(description),
+        SaveDestination::Player(overwrite),
+    )
 }
 
 /// The opt-in autosave (`persistence::autosave`): the match under
 /// `description` in the one autosave slot.
 pub(crate) fn autosave_game(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &super::PersistenceState,
+    audio: &AppAudioRuntime,
+    diag: &DiagnosticsState,
+    process_assets: &ProcessAssets,
     description: &str,
 ) -> Result<PathBuf, SaveCommandError> {
-    save(state, Some(description), SaveDestination::Autosave)
+    save(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+        audio,
+        diag,
+        process_assets,
+        Some(description),
+        SaveDestination::Autosave,
+    )
 }
 
 enum SaveDestination<'a> {
@@ -65,24 +127,31 @@ enum SaveDestination<'a> {
 /// Only the process Rules borrow escapes; this lets the frame mutate its world
 /// before the exact MainTick55DBCD save boundary.
 pub(crate) fn prepare_initial_campaign_save<'a>(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &super::PersistenceState,
+    audio: &AppAudioRuntime,
+    diag: &DiagnosticsState,
     rules_owner: Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>,
 ) -> Option<Result<PreparedSave<'a>, SaveCommandError>> {
-    let campaign = state
-        .match_state
+    let campaign = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| !runtime.simulation.session().game_mode_nonzero());
-    state
-        .persistence
+    persistence
         .initial_campaign_save_pending(campaign)
         .then(|| {
             prepare_save(
-                state,
-                Some(&format!(
-                    "[{}]",
-                    state.match_state.campaign_names.save_title()
-                )),
+                platform,
+                renderer,
+                screen,
+                match_state,
+                persistence,
+                audio,
+                diag,
+                Some(&format!("[{}]", match_state.campaign_names.save_title())),
                 rules_owner,
             )
         })
@@ -127,20 +196,36 @@ fn initial_campaign_filename(scenario: &str) -> String {
 }
 
 fn save(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &super::PersistenceState,
+    audio: &AppAudioRuntime,
+    diag: &DiagnosticsState,
+    process_assets: &ProcessAssets,
     name: Option<&str>,
     destination: SaveDestination<'_>,
 ) -> Result<PathBuf, SaveCommandError> {
-    let prepared = prepare_save(state, name, state.process_assets.native_rules())?;
+    let prepared = prepare_save(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+        audio,
+        diag,
+        name,
+        process_assets.native_rules(),
+    )?;
     prepared.write(
-        &state
-            .match_state
+        &match_state
             .sim_runtime
             .runtime()
             .ok_or(SaveCommandError::MissingSimulation)?
             .simulation,
-        &state.persistence.repository,
-        &mut state.match_state.scenario_elapsed_clock,
+        &persistence.repository,
+        &mut match_state.scenario_elapsed_clock,
         destination,
     )
 }
@@ -162,7 +247,13 @@ pub(crate) struct PreparedSave<'a> {
 }
 
 fn prepare_save<'a>(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &super::PersistenceState,
+    audio: &AppAudioRuntime,
+    diag: &DiagnosticsState,
     name: Option<&str>,
     rules_owner: Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>,
 ) -> Result<PreparedSave<'a>, SaveCommandError> {
@@ -171,13 +262,11 @@ fn prepare_save<'a>(
             super::SaveRepository::filename_part(raw).ok_or(SaveCommandError::EmptyDescription)
         })
         .transpose()?;
-    let runtime = state
-        .match_state
+    let runtime = match_state
         .sim_runtime
         .runtime()
         .ok_or(SaveCommandError::MissingSimulation)?;
-    let map_hash = state
-        .match_state
+    let map_hash = match_state
         .loaded_map_hash
         .ok_or(SaveCommandError::MissingMapHash)?;
     let sim = &runtime.simulation;
@@ -185,14 +274,13 @@ fn prepare_save<'a>(
         .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let mut sinking_waterlines = state
-        .match_state
+    let mut sinking_waterlines = match_state
         .match_presentation
         .sinking_waterlines
         .borrow()
         .saved();
     sinking_waterlines.retain(|(id, _)| sim.entities().contains(*id));
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     let active_tab = saved_active_tab(presentation.active_sidebar_tab);
     let sidebar_order = presentation
         .sidebar_projection
@@ -200,11 +288,11 @@ fn prepare_save<'a>(
         .saved_order()
         .map(|order| order.with_active_tab(active_tab));
     let tactical_view = crate::app::input::camera::saved_tactical_view(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
     );
     let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =
@@ -219,13 +307,12 @@ fn prepare_save<'a>(
         .as_ref()
         .ok_or(SaveCommandError::MissingResources("terrain template"))?
         .capture_saved_template()?;
-    let source = state
-        .match_state
+    let source = match_state
         .loaded_map_source
         .as_ref()
         .ok_or(SaveCommandError::MissingResources("map source"))?;
-    let presentation = &state.match_state.match_presentation;
-    let mut local_view = state.match_state.input.capture_saved_local_view(
+    let presentation = &match_state.match_presentation;
+    let mut local_view = match_state.input.capture_saved_local_view(
         sim,
         &runtime.resources.rules,
         &presentation.sidebar_gadget_state,
@@ -237,7 +324,7 @@ fn prepare_save<'a>(
             .as_ref()
             .map(crate::render::radar::anim::RadarAnimState::saved_housing),
     );
-    local_view.set_credits_counter(state.match_state.local_player_owner().and_then(|owner| {
+    local_view.set_credits_counter(match_state.local_player_owner().and_then(|owner| {
         presentation
             .sidebar_projection
             .model
@@ -249,22 +336,22 @@ fn prepare_save<'a>(
     ));
     log::debug!(
         "Save: captured Power at {}ms: {:?}",
-        state.radar_presentation_ms(),
+        crate::app::diagnostics::state::radar_presentation_ms(diag, match_state),
         presentation.power_bar_anim,
     );
     let map = crate::sim::snapshot::scenario_resources::SavedMapMetadata::capture(
         map_hash,
         source,
-        &state.match_state.map_basic,
-        &state.match_state.map_ranking,
-        &state.match_state.campaign_names,
+        &match_state.map_basic,
+        &match_state.map_ranking,
+        &match_state.campaign_names,
         &presentation.terrain_objects,
         &presentation.house_roster,
         &presentation.house_color_map,
         presentation.lighting.saved_config(),
         0, // Patched from the authoritative clock at the actual save boundary.
-        state.match_state.session.local_player_name(),
-        state.audio.theme.saved_slots(),
+        match_state.session.local_player_name(),
+        audio.theme.saved_slots(),
         presentation.radar_movies.scenario_hold(),
     )
     // Save_Game's VocClass::SaveStaticSounds (`0x00751620`): the map's
@@ -272,8 +359,7 @@ fn prepare_save<'a>(
     // RESIDUAL: the audio owner keeps the list, so a session with no sound
     // device saves none and a later load with sound stays quiet there.
     .with_static_sounds(
-        state
-            .audio
+        audio
             .sfx_player
             .as_ref()
             .map(crate::audio::sfx::SfxPlayer::saved_static_sounds)
@@ -480,7 +566,17 @@ pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
             result,
         );
     } else if from_browser {
-        crate::app::App::finish_saved_game_load(state, path, result);
+        crate::app::App::finish_saved_game_load(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            path,
+            result,
+        );
     } else if let Err(error) = result {
         #[cfg(feature = "dev-overlays")]
         log_prepared_load_error(path, &error);

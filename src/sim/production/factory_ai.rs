@@ -290,18 +290,17 @@ fn start_factory(
     // #359 C335A0 reads AIBuildLimit; legacy ext173 C2D15A/C2CF67 uses
     // BuildLimit when EnableAIBuildLimitation is set. Both constraints apply
     // when a ruleset explicitly combines the compatibility keys.
-    if crate::rules::NPATCH_ENABLED
+    if rules.npatch()
         && (ai_build_limit_blocks(sim, rules, owner, object, object.aibuild_limit)
             || rules.general.enable_ai_build_limitation
                 && ai_build_limit_blocks(sim, rules, owner, object, object.build_limit))
     {
-        clear_aibuild_limit_choice(sim, owner, object);
+        clear_aibuild_limit_choice(sim, owner, object, rules.npatch());
         return;
     }
     // NPSE 2.0 Factory_AI C2F07C..C2F11F reserves the fetched type's
     // class before naval admission, allocation and construction. The House
     // owner retains failed-start/expired reservations until a native release.
-    #[cfg(feature = "npatch")]
     if rules.general.disable_parallel_ai_queues
         && !sim.houses.get_mut(&owner).is_some_and(|house| {
             house
@@ -411,7 +410,8 @@ fn parallel_start_allowed(
         AiFactorySlot::Infantry => choice_product(sim, rules, owner, UnitChoiceKind::Infantry),
         AiFactorySlot::Aircraft => choice_product(sim, rules, owner, UnitChoiceKind::Aircraft),
         AiFactorySlot::Vehicle | AiFactorySlot::Navy => {
-            let Some(kind) = UnitChoiceKind::of(ObjectCategory::Vehicle, naval) else {
+            let Some(kind) = UnitChoiceKind::of(ObjectCategory::Vehicle, naval, rules.npatch())
+            else {
                 return true;
             };
             choice_product(sim, rules, owner, kind)
@@ -483,11 +483,16 @@ fn ai_build_limit_blocks(
 /// its plan node stays unsatisfied, so `choose_building` returns the same
 /// type: that is the manual's warning (`AI克隆生产`) that a building at its
 /// limit leaves the computer unable to build anything, not a recovery.
-fn clear_aibuild_limit_choice(sim: &mut Simulation, owner: InternedId, object: &ObjectType) {
+fn clear_aibuild_limit_choice(
+    sim: &mut Simulation,
+    owner: InternedId,
+    object: &ObjectType,
+    npatch: bool,
+) {
     let Some(house) = sim.houses.get_mut(&owner) else {
         return;
     };
-    match UnitChoiceKind::of(object.category, object.naval) {
+    match UnitChoiceKind::of(object.category, object.naval, npatch) {
         Some(kind) => house.ai_unit_choices_mut().clear(kind),
         None => house.ai_production_mut().clear_building_choice(),
     }

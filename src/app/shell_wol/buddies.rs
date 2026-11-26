@@ -17,9 +17,11 @@ use crate::util::time::{Duration, Instant};
 use std::collections::{HashMap, VecDeque};
 
 use super::service::{self, WolLadderRecord, WolServiceRequest};
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::ui::wol_lobby::{GAME_CHANNEL, WolChannel};
+use winit::window::Window;
 
 /// The statuses the find sink stores (`0xB76990`); 6 has no writer.
 pub(crate) const FIND_DISABLED: i32 = 1;
@@ -280,32 +282,44 @@ pub(super) fn remove(frontend: &mut FrontendState, name: &str) {
 /// The buddy-list sink `0x007AC220`: each valid user joins the mirror and
 /// a locate starts; then the ladder is asked and an open `0x116` rebuilds
 /// its rows and enables Refresh again.
-pub(super) fn buddy_list_received(state: &mut AppState, result: Result<Vec<String>, u32>) {
+pub(super) fn buddy_list_received(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    result: Result<Vec<String>, u32>,
+) {
     let Ok(users) = result else {
         return;
     };
-    let local = state.frontend.wol_account.nickname.clone();
+    let local = frontend.wol_account.nickname.clone();
     for user in users {
-        if state.frontend.wol_buddies.valid_new(&user, &local) {
-            state.frontend.wol_buddies.append(user);
-            kick_locate(&mut state.frontend);
+        if frontend.wol_buddies.valid_new(&user, &local) {
+            frontend.wol_buddies.append(user);
+            kick_locate(frontend);
         }
     }
-    request_ladder(&mut state.frontend);
-    super::buddy::buddies_changed(state, true);
+    request_ladder(frontend);
+    super::buddy::buddies_changed(frontend, window, process_assets, renderer, true);
 }
 
 /// The find sink while a buddy locate is pending: the answer becomes that
 /// buddy's status, an open `0x116` rebuilds its rows, and the next queued
 /// name is located at once. False when no buddy locate is pending.
-pub(super) fn located(state: &mut AppState, result: &Result<WolChannel, u32>) -> bool {
-    let Some((name, _)) = state.frontend.wol_buddies.locating.take() else {
+pub(super) fn located(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    result: &Result<WolChannel, u32>,
+) -> bool {
+    let Some((name, _)) = frontend.wol_buddies.locating.take() else {
         return false;
     };
-    let games = super::lobby::games(state.frontend.wol.as_ref()).to_vec();
-    state.frontend.wol_buddies.located(name, result, &games);
-    super::buddy::buddies_changed(state, false);
-    kick_locate(&mut state.frontend);
+    let games = super::lobby::games(frontend.wol.as_ref()).to_vec();
+    frontend.wol_buddies.located(name, result, &games);
+    super::buddy::buddies_changed(frontend, window, process_assets, renderer, false);
+    kick_locate(frontend);
     true
 }
 
@@ -322,17 +336,17 @@ const LADDER_TABLE_LIMIT: usize = 2000;
 /// RESIDUAL: the sidebar's ladder-update flag (`0x007A3121`) has no reader
 /// in VERA; the `0x57F` ladder list it fills instead of the player list is
 /// not ported.
-pub(super) fn ladder_received(state: &mut AppState, records: Vec<WolLadderRecord>) {
-    if state
-        .frontend
-        .wol
-        .as_ref()
-        .is_none_or(|visit| visit.in_game)
-        || records.is_empty()
-    {
+pub(super) fn ladder_received(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    records: Vec<WolLadderRecord>,
+) {
+    if frontend.wol.as_ref().is_none_or(|visit| visit.in_game) || records.is_empty() {
         return;
     }
-    let ladder = &mut state.frontend.wol_lobby_globals.ladder;
+    let ladder = &mut frontend.wol_lobby_globals.ladder;
     if ladder.len() > LADDER_TABLE_LIMIT {
         ladder.clear();
     }
@@ -341,16 +355,15 @@ pub(super) fn ladder_received(state: &mut AppState, records: Vec<WolLadderRecord
             continue;
         }
         let name = record.name.clone();
-        state
-            .frontend
+        frontend
             .wol_lobby_globals
             .ladder
             .insert(name.to_ascii_lowercase(), record);
-        super::lobby::rank_changed(&mut state.frontend, &name);
+        super::lobby::rank_changed(frontend, &name);
     }
-    super::lobby::refill_players(&mut state.frontend);
-    request_ladder(&mut state.frontend);
-    super::buddy::stats_changed(state);
+    super::lobby::refill_players(frontend);
+    request_ladder(frontend);
+    super::buddy::stats_changed(frontend, window, process_assets, renderer);
 }
 
 #[cfg(all(test, tests_app))]

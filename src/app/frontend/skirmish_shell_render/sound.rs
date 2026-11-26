@@ -14,12 +14,19 @@ pub(crate) fn render_sound_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::input::sound::sync(state).expect("active B8 geometry");
+    crate::app::input::sound::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    )
+    .expect("active B8 geometry");
     super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let text_of = |id: i32| -> Option<String> {
             let (key, fallback) = sound::caption(u16::try_from(id).ok()?)?;
-            Some(state.csf_label(key, fallback))
+            Some(state.process_assets.csf_label(key, fallback))
         };
         // 609FC7..609FE2/60A330 selects type3. MNBTTN uses native canvas
         // centered on the resource control, not the side column's SIDEBTTN.

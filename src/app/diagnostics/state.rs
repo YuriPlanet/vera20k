@@ -307,16 +307,6 @@ pub(crate) fn radar_presentation_ms(
         .unwrap_or_else(crate::app::match_runtime::frame_pacer::wall_clock_ms)
 }
 
-impl crate::app::AppState {
-    pub(crate) fn diagnostic_presentation_ms(&self) -> Option<u64> {
-        diagnostic_presentation_ms(&self.diag, &self.match_state)
-    }
-
-    pub(crate) fn radar_presentation_ms(&self) -> u64 {
-        radar_presentation_ms(&self.diag, &self.match_state)
-    }
-}
-
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;

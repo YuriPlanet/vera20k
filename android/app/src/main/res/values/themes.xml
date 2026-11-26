@@ -2,9 +2,13 @@
 <resources>
     <!-- The app window: black underneath, so a missing or failed surface shows
          black rather than a white flash, and the brand art while the first
-         frame is still loading. -->
-    <style name="Theme.Vera20k" parent="android:Theme.Black.NoTitleBar.Fullscreen">
+         frame is still loading. GameActivity extends AppCompatActivity, so the
+         parent has to be an AppCompat theme; NoActionBar keeps the decor the
+         platform theme had. -->
+    <style name="Theme.Vera20k" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 
     <!-- One theme per launcher entry. Before Android 12 the launch window is the

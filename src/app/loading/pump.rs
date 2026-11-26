@@ -517,14 +517,10 @@ impl LoadingRequest {
         {
             loaded = loaded.with_mod_additions(&additions)?;
         }
-        let mut loaded = match map_additions {
-            Some(additions) => loaded.with_mod_additions(additions)?,
-            None => loaded,
-        };
-        if !matches!(self.startup(), LoadingStartup::Network(_)) {
-            loaded = loaded.with_ra2_campaign_fixups(map_file)?;
+        match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions),
+            None => Ok(loaded),
         }
-        Ok(loaded)
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
@@ -1294,7 +1290,10 @@ pub(crate) fn cancel_network_loading(state: &mut AppState, text: &str) -> bool {
     // VERA's lobbies say why the load stopped.
     if !state.frontend.native_shell_ui && !state.frontend.external_launch {
         crate::app::shell_lan::append_chat(
-            state,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
             crate::ui::lan_shell::LanChatLine {
                 text: text.encode_utf16().collect(),
                 color: u32::MAX,
@@ -1448,8 +1447,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         request.startup(),
     );
     let mut request = request.with_skirmish_colors(
-        state
-            .rules()
+        crate::app::state::active_rules(&state.frontend, &state.match_state)
             .map(crate::rules::ruleset::RuleSet::skirmish_colors),
     );
     request.the_team_enabled = state
@@ -1465,7 +1463,10 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
         .map(|config| config.paths.ra2_dir.clone());
     // Resolve the backing fill from the live rules `[Colors]` schemes now that
     // `state.rules` is reachable (the native ctor only sees the launch session).
-    if let (Some(native), Some(rules)) = (session.native.as_mut(), state.rules()) {
+    if let (Some(native), Some(rules)) = (
+        session.native.as_mut(),
+        crate::app::state::active_rules(&state.frontend, &state.match_state),
+    ) {
         // ReadScenario68479D..6847C9 projects raw HouseType+BC; ctor-only
         // countries retain -1. Only observer country selection maps to entry0.
         if let Some(launch) = session.stage.startup().launch_session() {
@@ -1781,10 +1782,28 @@ fn pump_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<Loa
         session
     };
     if matches!(session.stage, LoadingStage::ConstructingScenario(_)) {
-        return pump_map_construction(state, session, show_progress);
+        return pump_map_construction(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &state.audio.theme,
+            &state.persistence.options_profile,
+            session,
+            show_progress,
+        );
     }
     if matches!(session.stage, LoadingStage::PreparingPresentation { .. }) {
-        return pump_presentation(state, session, show_progress);
+        return pump_presentation(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            session,
+            show_progress,
+        );
     }
     if matches!(session.stage, LoadingStage::ReadyToInstall { .. }) {
         return finish_network_load(state, session);
@@ -1893,7 +1912,7 @@ fn pump_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<Loa
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         ];
-        let scale = loading_scale(state);
+        let scale = loading_scale(&state.renderer.gpu);
         // The pre-parse swallowed the loader's raw 8 so it could not present
         // before the first frame; hand it over now for either native cadence.
         if let Some(native) = native.as_mut()
@@ -2039,7 +2058,14 @@ fn pump_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<Loa
         match load_result {
             Ok(Some(mut result)) => {
                 if result.pending_atlases.is_none() {
-                    publish_load_complete(state, show_progress, &mut native, &mut result)?;
+                    publish_load_complete(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.match_state,
+                        show_progress,
+                        &mut native,
+                        &mut result,
+                    )?;
                 }
                 result.asset_manager = job.asset_manager.take();
                 Ok(Some(result))
@@ -2120,15 +2146,18 @@ fn pump_loading(state: &mut AppState, show_progress: bool) -> anyhow::Result<Loa
 }
 
 fn pump_map_construction(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    theme: &crate::audio::theme::ThemeRuntime,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
     mut session: LoadingSession,
     show_progress: bool,
 ) -> anyhow::Result<LoadingPump> {
-    let render_size = [
-        state.renderer.gpu.config.width,
-        state.renderer.gpu.config.height,
-    ];
-    let scale = loading_scale(state);
+    let render_size = [renderer.gpu.config.width, renderer.gpu.config.height];
+    let scale = loading_scale(&renderer.gpu);
     let step = (|| {
         let LoadingStage::ConstructingScenario(constructing) = &mut session.stage else {
             unreachable!()
@@ -2138,21 +2167,20 @@ fn pump_map_construction(
             .asset_manager
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("native construction lost its asset lease"))?;
-        let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
+        let shared_cell_dummy = process_assets.shared_cell_dummy.clone();
         let (rules, tile_variant_selector_cache, audio) =
-            state.process_assets.native_rules_mut_with_tile_cache();
+            process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             rules.ok_or_else(|| anyhow::anyhow!("native construction lost its Rules owner"))?;
-        let the_team_enabled = state
-            .frontend
+        let the_team_enabled = frontend
             .main_menu_shell_state
             .typed_codes
             .the_team_enabled();
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
         let network = crate::app::lan_service::LoadingNetworkService::borrow(
-            &mut state.match_state.session,
-            state.match_state.lan_service.as_mut(),
-            state.platform.capture_client_size.is_some(),
+            &mut match_state.session,
+            match_state.lan_service.as_mut(),
+            platform.capture_client_size.is_some(),
         )?;
         #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         let network = None;
@@ -2165,50 +2193,55 @@ fn pump_map_construction(
                 RenderingProgressSink::new(
                     native,
                     network,
-                    &state.renderer.gpu,
-                    &state.renderer.shell_surface_presenter,
-                    &state.renderer.depth_view,
-                    &state.renderer.batch_renderer,
-                    &state.renderer.bit_font,
-                    &state.renderer.performance_overlay,
+                    &renderer.gpu,
+                    &renderer.shell_surface_presenter,
+                    &renderer.depth_view,
+                    &renderer.batch_renderer,
+                    &renderer.bit_font,
+                    &renderer.performance_overlay,
                     render_size,
                     scale,
                 )
             },
         );
         constructing.load.step(init::FreshMapLoadServices {
-            gpu: &state.renderer.gpu,
-            batch: &state.renderer.batch_renderer,
+            gpu: &renderer.gpu,
+            batch: &renderer.batch_renderer,
             asset_manager,
             native_rules_owner,
             the_team_enabled,
             prepared_noncampaign_prefix: &mut constructing.rules_prefix,
             audio,
-            themes: state.audio.theme.catalog(),
+            themes: theme.catalog(),
             shared_cell_dummy,
             tile_variant_selector_cache,
             progress: &mut progress.sink,
-            house_color_strength: state.persistence.options_profile.house_color_strength,
+            house_color_strength: options_profile.house_color_strength,
         })
     })();
     match step {
         Err(error) => {
-            session.retire(&mut state.process_assets);
+            session.retire(process_assets);
             Ok(LoadingPump::Failed(error))
         }
         Ok(None) => {
-            state.frontend.loading_session = Some(session);
+            frontend.loading_session = Some(session);
             Ok(LoadingPump::Pending)
         }
         Ok(Some(mut result)) => {
             if let LoadingStage::ConstructingScenario(constructing) = &mut session.stage {
-                retire_rules_prefix(constructing.rules_prefix.take(), &mut state.process_assets);
+                retire_rules_prefix(constructing.rules_prefix.take(), process_assets);
             }
             if result.pending_atlases.is_none() {
-                if let Err(error) =
-                    publish_load_complete(state, show_progress, &mut session.native, &mut result)
-                {
-                    session.retire(&mut state.process_assets);
+                if let Err(error) = publish_load_complete(
+                    platform,
+                    renderer,
+                    match_state,
+                    show_progress,
+                    &mut session.native,
+                    &mut result,
+                ) {
+                    session.retire(process_assets);
                     return Ok(LoadingPump::Failed(error));
                 }
             }
@@ -2217,17 +2250,16 @@ fn pump_map_construction(
                 session.stage = LoadingStage::PreparingPresentation {
                     result: Box::new(result),
                 };
-                state.frontend.loading_session = Some(session);
+                frontend.loading_session = Some(session);
                 Ok(LoadingPump::Pending)
             } else {
                 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
                 if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
-                    state.frontend.loading_session =
-                        Some(LoadingSession::await_browser_network_peers(
-                            Box::new(result),
-                            session.native,
-                            session.job,
-                        ));
+                    frontend.loading_session = Some(LoadingSession::await_browser_network_peers(
+                        Box::new(result),
+                        session.native,
+                        session.job,
+                    ));
                     return Ok(LoadingPump::Pending);
                 }
                 Ok(LoadingPump::Finished {
@@ -2240,35 +2272,34 @@ fn pump_map_construction(
 }
 
 fn publish_load_complete(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     show_progress: bool,
     native: &mut Option<NativeLoadingScreenState>,
     result: &mut MapLoadResult,
 ) -> anyhow::Result<()> {
-    let render_size = [
-        state.renderer.gpu.config.width,
-        state.renderer.gpu.config.height,
-    ];
-    let scale = loading_scale(state);
+    let render_size = [renderer.gpu.config.width, renderer.gpu.config.height];
+    let scale = loading_scale(&renderer.gpu);
     if let Some(native) = native.as_mut() {
         result.scenario.campaign_names = native.campaign_names.take();
         let terminal_raw_percent = native.progress_cadence.terminal_raw_percent();
         advance_and_present_native_progress(
             show_progress,
-            &state.renderer.gpu,
-            &state.renderer.shell_surface_presenter,
-            &state.renderer.depth_view,
-            &state.renderer.batch_renderer,
-            &state.renderer.bit_font,
-            &state.renderer.performance_overlay,
+            &renderer.gpu,
+            &renderer.shell_surface_presenter,
+            &renderer.depth_view,
+            &renderer.batch_renderer,
+            &renderer.bit_font,
+            &renderer.performance_overlay,
             native,
             terminal_raw_percent,
             render_size,
             scale,
             crate::app::lan_service::LoadingNetworkService::borrow(
-                &mut state.match_state.session,
-                state.match_state.lan_service.as_mut(),
-                state.platform.capture_client_size.is_some(),
+                &mut match_state.session,
+                match_state.lan_service.as_mut(),
+                platform.capture_client_size.is_some(),
             )?,
         )?;
     }
@@ -2276,7 +2307,11 @@ fn publish_load_complete(
 }
 
 fn pump_presentation(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
     mut session: LoadingSession,
     show_progress: bool,
 ) -> anyhow::Result<LoadingPump> {
@@ -2287,22 +2322,29 @@ fn pump_presentation(
         .pending_atlases
         .as_mut()
         .expect("pending presentation owner")
-        .poll(&state.renderer.gpu, &mut result.presentation);
+        .poll(&renderer.gpu, &mut result.presentation);
     match polled {
         Err(error) => {
-            session.retire(&mut state.process_assets);
+            session.retire(process_assets);
             return Ok(LoadingPump::Failed(error));
         }
         Ok(false) => {
-            state.frontend.loading_session = Some(session);
+            frontend.loading_session = Some(session);
             return Ok(LoadingPump::Pending);
         }
         Ok(true) => {
             result.pending_atlases = None;
         }
     }
-    if let Err(error) = publish_load_complete(state, show_progress, &mut session.native, result) {
-        session.retire(&mut state.process_assets);
+    if let Err(error) = publish_load_complete(
+        platform,
+        renderer,
+        match_state,
+        show_progress,
+        &mut session.native,
+        result,
+    ) {
+        session.retire(process_assets);
         return Ok(LoadingPump::Failed(error));
     }
     let LoadingStage::PreparingPresentation { result } = session.stage else {
@@ -2310,7 +2352,7 @@ fn pump_presentation(
     };
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
-        state.frontend.loading_session = Some(LoadingSession::await_browser_network_peers(
+        frontend.loading_session = Some(LoadingSession::await_browser_network_peers(
             result,
             session.native,
             session.job,
@@ -2453,7 +2495,7 @@ fn poll_network_load_wait(
             // Retire the held result and its asset lease through the normal
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
-            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.process_assets.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
@@ -2794,9 +2836,13 @@ pub(crate) fn selected_map_start_assignments(
 /// layers sit after that branch and are drawn for both kinds. Splitting the
 /// snapshot on the branch (as this used to) dropped the country name, the
 /// special-unit line, the briefing and "Loading..." from every random-map load.
-fn ensure_loading_composition_snapshot(state: &mut AppState) {
+fn ensure_loading_composition_snapshot(
+    gpu: &GpuContext,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) {
     let snapshot = {
-        let Some(session) = state.frontend.loading_session.as_ref() else {
+        let Some(session) = frontend.loading_session.as_ref() else {
             return;
         };
         let Some(native) = session.native.as_ref() else {
@@ -2818,18 +2864,15 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         let initial = &prepared.initial;
         let launch_session = context.stock_offline_launch().session();
         let projection = context.stock_offline_projection();
-        let render_size = [
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        ];
-        let scale = loading_scale(state);
+        let render_size = [gpu.config.width, gpu.config.height];
+        let scale = loading_scale(gpu);
         match native.progress_cadence {
             NativeLoadingProgressCadence::SelectedMap => {
                 let assignments = selected_map_start_assignments(launch_session, Some(projection));
                 build_loading_composition(
                     initial.map_data(),
                     launch_session,
-                    state.process_assets.csf.as_ref(),
+                    process_assets.csf.as_ref(),
                     render_size,
                     scale,
                     &assignments,
@@ -2846,7 +2889,7 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
                 let assignments = selected_map_start_assignments(launch_session, Some(projection));
                 build_random_map_loading_composition(
                     launch_session,
-                    state.process_assets.csf.as_ref(),
+                    process_assets.csf.as_ref(),
                     render_size,
                     scale,
                     preview,
@@ -2858,8 +2901,7 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         }
     };
 
-    if let Some(native) = state
-        .frontend
+    if let Some(native) = frontend
         .loading_session
         .as_mut()
         .and_then(|session| session.native.as_mut())
@@ -2867,7 +2909,7 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         let snapshot = {
             let mut snapshot = snapshot;
             if let Some(country) = native.late_country_loading.as_ref() {
-                snapshot.bind_country_loading(country, state.process_assets.csf.as_ref());
+                snapshot.bind_country_loading(country, process_assets.csf.as_ref());
             }
             snapshot
         };
@@ -2905,12 +2947,18 @@ pub(crate) fn theater_ramp_changed_values(runtime_color_scheme_count: usize) -> 
     emitted
 }
 
-pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Result<()> {
-    if !is_native_loading_session(&state.frontend) {
+pub(crate) fn ensure_native_loading_atlas(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+) -> anyhow::Result<()> {
+    if !is_native_loading_session(frontend) {
         return Ok(());
     }
-    if state
-        .frontend
+    if frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -2918,21 +2966,15 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
     {
         return Ok(());
     }
-    if state
-        .frontend
+    if frontend
         .loading_session
         .as_ref()
         .and_then(loading_asset_manager)
         .is_none()
     {
-        ensure_job_asset_manager(
-            &state.platform,
-            &mut state.frontend,
-            &mut state.process_assets,
-        )?;
+        ensure_job_asset_manager(platform, frontend, process_assets)?;
     }
-    let loading_archives_ready = state
-        .frontend
+    let loading_archives_ready = frontend
         .loading_session
         .as_mut()
         .and_then(|session| session.job.asset_manager.as_mut())
@@ -2946,29 +2988,24 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         ));
     }
     prepare_scenario_initial_before_first_frame(
-        &state.platform,
-        &mut state.frontend,
-        &mut state.match_state.sim_runtime,
-        &mut state.process_assets,
-        &mut state.audio,
+        platform,
+        frontend,
+        &mut match_state.sim_runtime,
+        process_assets,
+        audio,
     )?;
-    if state
-        .frontend
+    if frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
         .is_some_and(|native| native.variant == NativeLoadingArt::Campaign)
     {
-        let session = state
-            .frontend
-            .loading_session
-            .as_ref()
-            .expect("native session");
+        let session = frontend.loading_session.as_ref().expect("native session");
         let assets = loading_asset_manager(session)
             .ok_or_else(|| anyhow::anyhow!("campaign loading lost its asset manager"))?;
         let mut metadata = crate::rules::campaign_loading::CampaignLoadingMetadata::default();
-        let mut names = state.match_state.campaign_names.clone();
-        let csf = state.process_assets.csf.as_ref().ok_or_else(|| {
+        let mut names = match_state.campaign_names.clone();
+        let csf = process_assets.csf.as_ref().ok_or_else(|| {
             anyhow::anyhow!("campaign loading requires the initialized CSF table")
         })?;
         // Original Full_Init686D46 opens MISSIONMD for the current filename.
@@ -2996,9 +3033,9 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         // 0x642B30 picks AlliedLoad/SovietLoad by Campaign.CD; no scheme of
         // that name keeps the stock colour. Only when the Rules are read the
         // Ares way.
-        let ares = state.process_assets.reads_ares_way();
+        let ares = process_assets.reads_ares_way();
         let ares_text_rgb = if ares {
-            state.rules().and_then(|rules| {
+            crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
                 let schemes = &rules.color_schemes;
                 scheme_entry_by_name(schemes, metadata.load_text_color())
                     .and_then(|entry| scheme_hsv_by_entry(schemes, entry))
@@ -3010,15 +3047,12 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         let presentation = super::campaign_presentation::CampaignLoadingPresentation::new(
             &metadata,
             csf,
-            [
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            ],
-            loading_scale(state),
+            [renderer.gpu.config.width, renderer.gpu.config.height],
+            loading_scale(&renderer.gpu),
         );
         let atlas = crate::render::loading_screen_chrome::build_campaign_loading_screen_atlas(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
+            &renderer.gpu,
+            &renderer.batch_renderer,
             assets,
             presentation.width,
             &presentation.background_name,
@@ -3030,8 +3064,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 presentation.background_name
             );
         }
-        let native = state
-            .frontend
+        let native = frontend
             .loading_session
             .as_mut()
             .and_then(|session| session.native.as_mut())
@@ -3045,12 +3078,11 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         log::info!("Native campaign loading atlas ready");
         return Ok(());
     }
-    let variant = selected_loading_art_variant(&state.frontend);
-    ensure_loading_composition_snapshot(state);
+    let variant = selected_loading_art_variant(frontend);
+    ensure_loading_composition_snapshot(&renderer.gpu, frontend, process_assets);
     // DrawLoading553311..5533C0 asks the current mode's Cooperative slot,
     // then selects by ScenarioName rather than the active progress record.
-    let cooperative_background = state
-        .frontend
+    let cooperative_background = frontend
         .loading_session
         .as_ref()
         .map(|session| session.stage.startup())
@@ -3060,14 +3092,12 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             })
         })
         .and_then(|startup| {
-            state
-                .frontend
+            frontend
                 .multiplayer_shell_runtime
                 .cooperative_registry()
                 .loading_art(startup.selected_map_file())
         });
-    let Some(assets) = state
-        .frontend
+    let Some(assets) = frontend
         .loading_session
         .as_ref()
         .and_then(loading_asset_manager)
@@ -3080,22 +3110,17 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
     // loads the 800px set and grows it, exactly as the shell family's pages do.
     let width = LoadingScreenWidth::for_render_width(
         loading_authored_size(
-            [
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            ],
-            loading_scale(state),
+            [renderer.gpu.config.width, renderer.gpu.config.height],
+            loading_scale(&renderer.gpu),
         )[0],
     );
-    let progress_ramp = state
-        .frontend
+    let progress_ramp = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
         .map(|native| native.progress_ramp)
         .ok_or_else(|| anyhow::anyhow!("native loading session lost its progress ramp"))?;
-    let prepared_preview = state
-        .frontend
+    let prepared_preview = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3106,8 +3131,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             height: preview.image.height,
             rgba: preview.image.rgba.clone(),
         });
-    let marker_remaps = state
-        .frontend
+    let marker_remaps = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3117,7 +3141,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 .as_ref()
                 .map(|composition| (composition, native.progress_row.skirmish_colors))
         })
-        .zip(state.rules())
+        .zip(crate::app::state::active_rules(frontend, match_state))
         .map(|((composition, skirmish_colors), rules)| {
             composition
                 .markers
@@ -3140,8 +3164,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 preview,
                 marker_remaps: &marker_remaps,
             });
-    let participant_art: Vec<_> = state
-        .frontend
+    let participant_art: Vec<_> = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3153,12 +3176,15 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             |row| crate::render::loading_screen_chrome::LoadingParticipantArtInput {
                 variant: row.variant,
                 ramp: row.ramp,
-                side_icon: loading_row_insignia(state.rules(), row.variant, row.country_index),
+                side_icon: loading_row_insignia(
+                    crate::app::state::active_rules(frontend, match_state),
+                    row.variant,
+                    row.country_index,
+                ),
             },
         )
         .collect();
-    let country_background = state
-        .frontend
+    let country_background = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3185,8 +3211,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
     });
     let background = background.or_else(|| {
         country_background.as_ref().map(|file| {
-            let early = state
-                .frontend
+            let early = frontend
                 .loading_session
                 .as_ref()
                 .and_then(|session| session.native.as_ref())
@@ -3204,8 +3229,8 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         background,
     };
     let atlas = build_loading_screen_atlas_with_composition(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
+        &renderer.gpu,
+        &renderer.batch_renderer,
         assets,
         art,
         width,
@@ -3213,16 +3238,14 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         composition_input,
         &participant_art,
     );
-    if let Some(native) = state
-        .frontend
+    if let Some(native) = frontend
         .loading_session
         .as_mut()
         .and_then(|session| session.native.as_mut())
     {
         native.atlas = atlas;
     }
-    if state
-        .frontend
+    if frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3244,7 +3267,16 @@ pub(crate) fn render_loading_screen(
     destination: &wgpu::Texture,
 ) -> LoadingRenderResult {
     let failure_policy = loading_failure_policy(&state.frontend);
-    match encode_loading_screen(state, encoder, destination) {
+    match encode_loading_screen(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &mut state.audio,
+        encoder,
+        destination,
+    ) {
         Ok(result) => result,
         Err(err) => {
             fail_loading(state, failure_policy, err);
@@ -3254,24 +3286,35 @@ pub(crate) fn render_loading_screen(
 }
 
 fn encode_loading_screen(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<LoadingRenderResult> {
-    if !is_native_loading_session(&state.frontend) {
+    if !is_native_loading_session(frontend) {
         return Ok(LoadingRenderResult::GenericFallback);
     }
-    if state
-        .frontend
+    if frontend
         .loading_session
         .as_ref()
         .is_some_and(|session| session.next_frame == NextLoadingFrame::Blank)
     {
-        render::encode_blank_loading_frame(&state.renderer, encoder, destination);
+        render::encode_blank_loading_frame(renderer, encoder, destination);
         return Ok(LoadingRenderResult::NativeRendered);
     }
-    ensure_native_loading_atlas(state)?;
-    if let Some(session) = state.frontend.loading_session.as_mut()
+    ensure_native_loading_atlas(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+    )?;
+    if let Some(session) = frontend.loading_session.as_mut()
         && session.next_frame == NextLoadingFrame::First
         && let Some(native) = session.native.as_mut()
     {
@@ -3282,8 +3325,7 @@ fn encode_loading_screen(
             .progress
             .advance_progress(native.progress_cadence.effective_percent(3));
     }
-    let Some(native) = state
-        .frontend
+    let Some(native) = frontend
         .loading_session
         .as_ref()
         .and_then(|session| session.native.as_ref())
@@ -3291,13 +3333,13 @@ fn encode_loading_screen(
         return Ok(LoadingRenderResult::GenericFallback);
     };
     if native.suppresses_chrome() {
-        render::encode_blank_loading_frame(&state.renderer, encoder, destination);
+        render::encode_blank_loading_frame(renderer, encoder, destination);
         return Ok(LoadingRenderResult::NativeRendered);
     }
     render::encode_native_loading_frame(
-        &state.renderer,
+        renderer,
         native,
-        loading_scale(state),
+        loading_scale(&renderer.gpu),
         encoder,
         destination,
     )?;
@@ -3329,8 +3371,15 @@ pub(crate) fn advance_hidden_network_loading(state: &mut AppState) {
     if !network_loading_active(&state.frontend) {
         return;
     }
-    if let Err(error) =
-        ensure_native_loading_atlas(state).and_then(|()| advance_loading(state, false))
+    if let Err(error) = ensure_native_loading_atlas(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &mut state.audio,
+    )
+    .and_then(|()| advance_loading(state, false))
     {
         fail_loading(state, LoadingFailurePolicy::RetryNetworkShell, error);
     }
@@ -3575,16 +3624,20 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
 /// After the load gamemd switches to the game mode and shows black until
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
-pub(crate) fn present_game_mode_blank(state: &AppState) {
-    if crate::app::App::online_start_runs_while_hidden(state) {
+pub(crate) fn present_game_mode_blank(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) {
+    if crate::app::App::online_start_runs_while_hidden(platform, match_state) {
         return;
     }
     if let Err(err) = render::present_blank(
-        &state.renderer.gpu,
-        &state.renderer.shell_surface_presenter,
-        &state.renderer.batch_renderer,
-        &state.renderer.performance_overlay,
-        &state.renderer.bit_font,
+        &renderer.gpu,
+        &renderer.shell_surface_presenter,
+        &renderer.batch_renderer,
+        &renderer.performance_overlay,
+        &renderer.bit_font,
     ) {
         log::warn!("Game-mode blank frame failed: {err:#}");
     }
@@ -3663,13 +3716,10 @@ fn normalize_rgb(rgb: [u8; 3]) -> [f32; 3] {
 
 /// The mapping the loading screen composes and paints in: gamemd's centered,
 /// 1:1 art viewport, or that same authored dialog scaled to fit the window.
-fn loading_scale(state: &AppState) -> ShellScale {
+fn loading_scale(gpu: &GpuContext) -> ShellScale {
     loading_screen_scale(
-        crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu),
-        [
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        ],
+        crate::app::frontend::shell_layout::fills_window(gpu),
+        [gpu.config.width, gpu.config.height],
     )
 }
 

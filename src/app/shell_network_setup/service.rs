@@ -7,6 +7,7 @@ use crate::app::match_runtime::session::MatchSession;
 use crate::app::match_runtime::session::PeerChoicesChange;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::{LaunchTeam, SkirmishLaunchSession, SkirmishLocalSlot};
@@ -166,7 +167,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::ParticipantJoined(human) if dialog.wol() => {
             let name = human.name.clone();
             state.match_state.session.add_network_participant(human)?;
-            tell_joined(state, dialog, &name);
+            tell_joined(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                dialog,
+                &name,
+            );
             // Join sink 0x7A6625: every acceptance clears, Accept enables.
             super::wol::clear_guest_acceptance(
                 &mut state.frontend.network_setup_protocol,
@@ -200,7 +208,12 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if dialog.host {
                 // 0x7A6E5A: 0x5E2FA0, the mode's +94 (Cooperative's C0)
                 // before the observer row, names and options.
-                super::cooperative::guest_joined(state)?;
+                super::cooperative::guest_joined(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                )?;
             }
             if dialog.host {
                 // 0x7A6E7D..9E: observer row, slot names, options, then
@@ -238,7 +251,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             }
             let name = human.name.clone();
             state.match_state.session.add_network_participant(human)?;
-            tell_joined(state, dialog, &name);
+            tell_joined(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                dialog,
+                &name,
+            );
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
             // This adapter is the admitted setup (membership>=2); repeated
             // discovery packets never manufacture another participant/cue.
@@ -260,7 +280,12 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .as_mut()
                     .expect("setup owns protocol");
                 protocol.republish_setup();
-                super::cooperative::guest_joined(state)?;
+                super::cooperative::guest_joined(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                )?;
             }
         }
         NetworkSetupEvent::ParticipantLeft { index } => {
@@ -279,7 +304,15 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if !dialog.wol()
                 && let Some(name) = name
             {
-                tell_room(state, dialog, "VERA:PlayerLeftRoom", &name);
+                tell_room(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    dialog,
+                    "VERA:PlayerLeftRoom",
+                    &name,
+                );
             }
             if dialog.wol() {
                 // The part sink 0x785740 played PlayerLeft and clears the
@@ -410,7 +443,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .unwrap_or_default()
                 .to_owned();
                 super::chat_notice(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     key,
                     &[
                         crate::assets::csf_file::CsfArg::Str(&name),
@@ -455,7 +491,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if let Err(error) = &verified {
                 log::info!("Online campaign files refused: {error:#}");
             }
-            campaign_room::report_local_files(state, verified.is_ok())?;
+            campaign_room::report_local_files(
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                verified.is_ok(),
+            )?;
         }
         NetworkSetupEvent::HostSetup(HostOptions {
             launch,
@@ -572,7 +614,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 map_changed,
             )?;
             if !dialog.host {
-                tell_moved(state, mode_changed);
+                tell_moved(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    mode_changed,
+                );
             }
             // 0x5E542B..0x5E5466: a changed mode's +9C/+20, then +7C.
             if mode_changed {
@@ -584,7 +632,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 )?;
             }
             if let Some(admission) = map_admission {
-                apply_local_map_admission(state, admission)?;
+                apply_local_map_admission(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    admission,
+                )?;
             }
             // 0x005E57DA → 0x005E74E0: a material change frees the preview
             // (0x005E74E9..0x005E7513). RESIDUAL: a guest that cannot verify
@@ -676,9 +730,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 protocol.accept_eligible = true;
             }
             if !ready {
-                let text = state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                let text = state
+                    .process_assets
+                    .csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                 crate::app::shell_lan::append_room_chat(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     LanChatLine {
                         text: text.encode_utf16().collect(),
                         color: u32::MAX,
@@ -813,13 +872,27 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     super::commit_back(state);
                     // VERA's notice belongs to the lobby opened after setup is retired.
                     if notice {
-                        crate::app::shell_lan::report_error(state, HOST_LEFT_LABEL);
+                        crate::app::shell_lan::report_error(
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                            HOST_LEFT_LABEL,
+                        );
                     }
                 },
             );
         }
         NetworkSetupEvent::Kicked => {
-            crate::app::shell_lan::report_error(state, "TXT_REQUEST_DENIED");
+            crate::app::shell_lan::report_error(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                "TXT_REQUEST_DENIED",
+            );
             App::leave_shell_dialog(
                 state,
                 crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
@@ -827,7 +900,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             );
         }
         NetworkSetupEvent::GameStarted { users, pings } => {
-            super::wol::game_started(state, users, pings)?;
+            super::wol::game_started(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                users,
+                pings,
+            )?;
         }
         NetworkSetupEvent::VerifyStarted { pairs } => {
             if pairs {
@@ -971,27 +1054,29 @@ pub(super) fn publish_choices(
 /// move (`actions::commit_row`), and a new mode may reset every team, so
 /// neither is told. A guest in the join queue hears its place when it joins
 /// or moves up, and when a seat comes free for it.
-fn tell_moved(state: &mut AppState, mode_changed: bool) {
-    let several = state.match_state.session.network_several_observers();
-    let Some(launch) = state.match_state.session.network_setup() else {
+fn tell_moved(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    mode_changed: bool,
+) {
+    let several = match_state.session.network_several_observers();
+    let Some(launch) = match_state.session.network_setup() else {
         return;
     };
     let local = launch.local_player();
     let place = (local.slot.team, local.is_observer());
-    let queue_place = state
-        .match_state
+    let queue_place = match_state
         .session
         .network_queue_place(launch.local_player_index);
     // Online the user list names the host; on LAN its admission does, and
     // VERA's rooms seat it first.
-    let host_name = state
-        .frontend
+    let host_name = frontend
         .network_setup_protocol
         .as_ref()
         .and_then(|protocol| protocol.wol_host.clone())
-        .or_else(|| {
-            crate::app::lan_service::admitted_host_room(&state.match_state).map(|(name, _)| name)
-        })
+        .or_else(|| crate::app::lan_service::admitted_host_room(match_state).map(|(name, _)| name))
         .or_else(|| {
             launch
                 .humans
@@ -1000,7 +1085,7 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
                 .map(|human| human.name.clone())
         })
         .unwrap_or_default();
-    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
+    let Some(protocol) = frontend.network_setup_protocol.as_mut() else {
         return;
     };
     let moved = protocol
@@ -1018,7 +1103,10 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
             "VERA:HostMovedYouToTeam",
             &[
                 ("name", name),
-                ("letter", &super::view::team_letter(state, team)),
+                (
+                    "letter",
+                    &super::view::team_letter(frontend, match_state, process_assets, team),
+                ),
             ],
         ),
         (Some(HostMove::OffTeam), _) => {
@@ -1033,7 +1121,10 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
         (None, _) => return,
     };
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -1044,13 +1135,24 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
 /// VERA's room tells everyone in it who came in (`VERA:PlayerJoinedRoom`)
 /// and who left (`VERA:PlayerLeftRoom`); gamemd's rooms only play
 /// [AudioVisual] PlayerJoined and PlayerLeft.
-pub(super) fn tell_room(state: &mut AppState, dialog: SetupDialog, key: &str, name: &str) {
+pub(super) fn tell_room(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    dialog: SetupDialog,
+    key: &str,
+    name: &str,
+) {
     if !dialog.modern {
         return;
     }
     let text = crate::i18n::tr_fill(key, &[("name", &name)]);
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -1059,15 +1161,29 @@ pub(super) fn tell_room(state: &mut AppState, dialog: SetupDialog, key: &str, na
 }
 
 /// VERA's room tells a join once it has settled (`quiet_joins_until`).
-fn tell_joined(state: &mut AppState, dialog: SetupDialog, name: &str) {
-    let quiet = state
-        .frontend
+fn tell_joined(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    dialog: SetupDialog,
+    name: &str,
+) {
+    let quiet = frontend
         .network_setup_protocol
         .as_ref()
         .and_then(|protocol| protocol.quiet_joins_until)
         .is_some_and(|until| Instant::now() < until);
     if !quiet {
-        tell_room(state, dialog, "VERA:PlayerJoinedRoom", name);
+        tell_room(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            dialog,
+            "VERA:PlayerJoinedRoom",
+            name,
+        );
     }
 }
 
@@ -1133,8 +1249,8 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
         App::fail_external_launch(state, "the direct start handshake failed");
         return;
     }
-    let message = state.csf_label(label, fallback);
-    let ok = state.csf_label("TXT_OK", "OK");
+    let message = state.process_assets.csf_label(label, fallback);
+    let ok = state.process_assets.csf_label("TXT_OK", "OK");
     state
         .frontend
         .multiplayer_setup
@@ -1252,22 +1368,20 @@ pub(super) fn install_received_preview_image(
 }
 
 fn apply_local_map_admission(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
     admission: crate::app::match_runtime::session::NetworkMapAdmission,
 ) -> anyhow::Result<()> {
     let status = admission.status();
-    let index = state
-        .match_state
+    let index = match_state
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?
         .local_player_index;
-    state
-        .match_state
-        .session
-        .set_network_map_status(index, status)?;
-    let protocol = state
-        .frontend
+    match_state.session.set_network_map_status(index, status)?;
+    let protocol = frontend
         .network_setup_protocol
         .as_mut()
         .expect("setup owns protocol");
@@ -1282,15 +1396,17 @@ fn apply_local_map_admission(
         2 => Some("GUI:JoinerMapTransfer"),
         _ => None,
     } {
-        let map_name =
-            super::map_display_name(&state.frontend.scenario_catalog, &state.match_state.session)
-                .unwrap_or_default();
+        let map_name = super::map_display_name(&frontend.scenario_catalog, &match_state.session)
+            .unwrap_or_default();
         let text = crate::assets::csf_file::format_csf(
-            &state.csf_label(key, key),
+            &process_assets.csf_label(key, key),
             &[crate::assets::csf_file::CsfArg::Str(map_name)],
         );
         crate::app::shell_lan::append_room_chat(
-            state,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
             LanChatLine {
                 text: text.encode_utf16().collect(),
                 color: u32::MAX,
@@ -1316,32 +1432,34 @@ pub(crate) fn set_network_map_progress(
 }
 
 pub(crate) fn accept_network_map_source(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
     source: crate::map::source::LoadedMapSource,
     effective_digest: String,
 ) -> anyhow::Result<()> {
-    state
-        .match_state
+    match_state
         .session
         .accept_verified_network_map_source(source, effective_digest)?;
-    let protocol = state
-        .frontend
+    let protocol = frontend
         .network_setup_protocol
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("no editable network setup"))?;
     protocol.accept_verified_map_source();
     apply_local_map_admission(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         crate::app::match_runtime::session::NetworkMapAdmission::Present,
     )?;
     // VERA: a Quick Match guest accepts with the host's options
     // (`0x007A7F72`), but the online lobby verifies the map after them and
     // VERA's live service refuses an acceptance before then; the verified
     // map accepts again.
-    if super::quick_match(state.frontend.network_setup_protocol.as_ref())
-        && !state.match_state.session.host()
-    {
-        super::wol::quick_match_accept(&mut state.frontend, &state.match_state.session);
+    if super::quick_match(frontend.network_setup_protocol.as_ref()) && !match_state.session.host() {
+        super::wol::quick_match_accept(frontend, &match_state.session);
     }
     Ok(())
 }
@@ -1464,15 +1582,21 @@ fn choices_material(a: &SkirmishLocalSlot, b: &SkirmishLocalSlot) -> bool {
         || a.team != b.team
 }
 
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    auto_accept(state);
-    seat_queue(&mut state.frontend, &mut state.match_state);
-    point_out_briefing(state);
-    let go = poll_go(state.frontend.network_setup_protocol.as_ref());
+pub(crate) fn poll(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) -> Option<Instant> {
+    auto_accept(renderer, frontend, match_state, process_assets);
+    seat_queue(frontend, match_state);
+    point_out_briefing(platform, renderer, frontend, match_state, process_assets);
+    let go = poll_go(frontend.network_setup_protocol.as_ref());
     // A direct spawn's LAN service renews setup leases and waits for its
     // peers before GO; keep the frame loop servicing it.
-    let direct = (super::external(state.frontend.network_setup_protocol.as_ref())
-        && !super::dialog(&state.frontend, &state.match_state).wol())
+    let direct = (super::external(frontend.network_setup_protocol.as_ref())
+        && !super::dialog(frontend, match_state).wol())
     .then(|| Instant::now() + std::time::Duration::from_millis(16));
     go.into_iter().chain(direct).min()
 }
@@ -1481,22 +1605,26 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
 /// whenever the player could, so nobody readies up by hand: after joining,
 /// after every host change, and for the final settings Start publishes.
 /// Quick Match and external launches have no setup dialog.
-fn auto_accept(state: &mut AppState) {
-    let dialog = super::dialog(&state.frontend, &state.match_state);
+fn auto_accept(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let dialog = super::dialog(frontend, match_state);
     if !dialog.modern
         || dialog.host
-        || super::quick_match(state.frontend.network_setup_protocol.as_ref())
-        || super::external(state.frontend.network_setup_protocol.as_ref())
-        || state
-            .frontend
+        || super::quick_match(frontend.network_setup_protocol.as_ref())
+        || super::external(frontend.network_setup_protocol.as_ref())
+        || frontend
             .network_setup_protocol
             .as_ref()
             .is_none_or(|protocol| protocol.locked)
-        || !super::view::accept_enabled(&state.frontend, &state.match_state.session)
+        || !super::view::accept_enabled(frontend, &match_state.session)
     {
         return;
     }
-    if let Err(error) = super::actions::accept(state) {
+    if let Err(error) = super::actions::accept(renderer, frontend, match_state, process_assets) {
         log::warn!("automatic Accept refused: {error:#}");
     }
 }
@@ -1548,39 +1676,40 @@ const BRIEFING_HINT: &str = "VERA:MapHasBriefing";
 /// VERA's game room tells the player in their own chat, once per map, that
 /// the room's map has a briefing: when they enter the room on such a map and
 /// when the room changes to one. Nothing is sent to the others.
-fn point_out_briefing(state: &mut AppState) {
-    if state.frontend.shell_route != ShellRoute::NetworkSetup
-        || !super::dialog(&state.frontend, &state.match_state).modern
-        || super::quick_match(state.frontend.network_setup_protocol.as_ref())
-        || super::external(state.frontend.network_setup_protocol.as_ref())
-        || state.frontend.network_setup_protocol.is_none()
+fn point_out_briefing(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    if frontend.shell_route != ShellRoute::NetworkSetup
+        || !super::dialog(frontend, match_state).modern
+        || super::quick_match(frontend.network_setup_protocol.as_ref())
+        || super::external(frontend.network_setup_protocol.as_ref())
+        || frontend.network_setup_protocol.is_none()
     {
         return;
     }
-    let Some(index) = super::view::local_map_index(&state.frontend, &state.match_state.session)
-    else {
+    let Some(index) = super::view::local_map_index(frontend, &match_state.session) else {
         return;
     };
-    let Some(record) = state.frontend.scenario_catalog.records().get(index) else {
+    let Some(record) = frontend.scenario_catalog.records().get(index) else {
         return;
     };
-    if !state
-        .frontend
+    if !frontend
         .multiplayer_setup
         .as_mut()
         .is_some_and(|ui| ui.first_briefing_check(&record.file_name))
-        || crate::app::map_library::briefing(
-            &state.platform,
-            &state.frontend,
-            &state.process_assets,
-            index,
-        )
-        .is_none()
+        || crate::app::map_library::briefing(platform, frontend, process_assets, index).is_none()
     {
         return;
     }
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: crate::i18n::tr(BRIEFING_HINT).encode_utf16().collect(),
             color: u32::MAX,
