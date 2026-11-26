@@ -4,12 +4,9 @@
   "description": "TypeScript (AssemblyScript) SDK for VERA20K simulation and client modules (rules.wasm, ui.wasm), RFC 0001 preview",
   "type": "module",
   "private": true,
+  "types": "index.ts",
   "bin": {
     "vera20k": "bin/vera20k.js"
-  },
-  "exports": {
-    ".": "./index.ts",
-    "./client": "./client.ts"
   },
   "files": [
     "assembly",
@@ -17,6 +14,7 @@
     "client.ts",
     "bin",
     "tsconfig.base.json",
+    "README.md",
     "template"
   ],
   "dependencies": {

@@ -13,12 +13,13 @@
 //   from the `namedAction("Name", fn)` literals, `vera.vars` and
 //   `vera.notify` from `vera.json`, and `vera.delivery`.
 //
-// Usage: vera20k build [project dir] [--out file] [--debug]
+// Usage: vera20k init <dir> [--ui]
+//        vera20k build [project dir] [--out file] [--debug]
 //        vera20k watch [project dir] [--out file]
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, watch, symlinkSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, watch, symlinkSync, rmSync, cpSync, readdirSync, renameSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import asc from "assemblyscript/asc";
 import { actionKey } from "./keys.js";
@@ -232,6 +233,29 @@ export async function build(dir, options = {}) {
   return out;
 }
 
+// ----------------------------------------------------------------- Init
+
+/** A new project in `dir` from the SDK's template; `ui` makes a client module. */
+export function init(dir, ui) {
+  dir = resolve(dir);
+  if (existsSync(dir) && readdirSync(dir).length) fail(`${dir} is not empty`);
+  cpSync(join(SDK, "template"), dir, { recursive: true });
+  renameSync(join(dir, "gitignore"), join(dir, ".gitignore"));
+  const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  pkg.name = dir.split(/[\\/]/).pop().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+  if (ui) {
+    const config = JSON.parse(readFileSync(join(dir, "vera.json"), "utf8"));
+    config.kind = "ui";
+    delete config.vars;
+    delete config.notify;
+    writeFileSync(join(dir, "vera.json"), JSON.stringify(config, null, 2) + "\n");
+    writeFileSync(join(dir, "src/index.ts"), 'import { Client, onStart } from "@vera20k/sdk/client";\n\n' +
+      "// Runs once when the match interface is ready.\nonStart((): void => {\n  Client.log(\"Hello from my first client module!\");\n});\n");
+  }
+  console.log(`created ${dir}: npm install, then npm run build`);
+}
+
 // ------------------------------------------------------------------ CLI
 
 async function main(argv) {
@@ -253,7 +277,15 @@ async function main(argv) {
       return false;
     }
   };
-  if (command === "build") {
+  if (command === "init") {
+    try {
+      init(rest.find((a) => !a.startsWith("--")) ?? fail("usage: vera20k init <dir> [--ui]"), rest.includes("--ui"));
+    } catch (error) {
+      if (!error.vera) throw error;
+      console.error(`vera20k: ${error.message}`);
+      process.exitCode = 1;
+    }
+  } else if (command === "build") {
     process.exitCode = (await run()) ? 0 : 1;
   } else if (command === "watch") {
     await run();
@@ -267,9 +299,10 @@ async function main(argv) {
     });
     watch(join(resolve(dir), "vera.json"), () => { clearTimeout(timer); timer = setTimeout(run, 100); });
   } else {
-    console.log("usage: vera20k build [dir] [--out file] [--debug]\n       vera20k watch [dir] [--out file]");
+    console.log("usage: vera20k init <dir> [--ui]\n       vera20k build [dir] [--out file] [--debug]\n       vera20k watch [dir] [--out file]");
     process.exitCode = command ? 1 : 0;
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) await main(process.argv.slice(2));
+// Run as a command, also through npm's `node_modules/.bin` symlink.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) await main(process.argv.slice(2));
