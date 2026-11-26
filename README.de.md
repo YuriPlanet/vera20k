@@ -92,13 +92,13 @@ ursprüngliche Engine mit Ghidra, übertragen dann ihr Verhalten nach Rust und p
 
 ## Anpassung
 
-VERA20K verwendet standardmäßig die Spielregeln von Yuri's Revenge. Unter **Options** kannst du
-Ton, Grafik und Steuerung anpassen oder VERA-Funktionen einschalten. Das Spiel speichert deine
-Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt `[VERA]`.
-
 Du kannst eigene Mods, Karten, Musik und mehr hinzufügen. Sie gehören in den VERA20K-Ordner:
 unter Windows der Installationsordner, unter macOS `~/Library/Application Support/VERA20k` und
 unter Linux `~/.local/share/VERA20k`.
+
+VERA20K verwendet standardmäßig die Spielregeln von Yuri's Revenge. Unter **Options** kannst du
+Ton, Grafik und Steuerung anpassen oder VERA-Funktionen einschalten. Das Spiel speichert deine
+Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt `[VERA]`.
 
 - **Mods:** Unter **Options → Mods** installiert **Add Mod** eine heruntergeladene Mod, und **New Mod** beginnt eine eigene. Jede Mod bekommt einen eigenen Ordner in `Mods`.
 - **Karten:** Lege `.map`-, `.mpr`- oder `.yrm`-Dateien in `Maps`, um sie im Gefecht zu spielen. Online heruntergeladene Karten landen ebenfalls dort.
@@ -127,9 +127,22 @@ Auszahlungen an Mitwirkende:
 
 ## Medien
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> stellt VERA20K vor.
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> stellt VERA20K vor.
+</p>
 
-[1 gegen 29 Brutal-KIs auf Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 gegen 29 Brutal-KIs auf Arctic Circle 30</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> stellt VERA20K vor.
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 in VERA20K 0.41</a></li>
+</ul>
 
 ## Danksagung und Rechtliches
 

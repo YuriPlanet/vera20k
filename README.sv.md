@@ -91,12 +91,12 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
+Du kan lägga till egna moddar, kartor, musik och mer. De läggs i VERA20K-mappen: installationsmappen
+på Windows, `~/Library/Application Support/VERA20k` på macOS och `~/.local/share/VERA20k` på Linux.
+
 VERA20K använder som standard samma spelregler som Yuri's Revenge. Under **Options** kan du
 ändra inställningarna för ljud, grafik och kontroller eller slå på VERA-funktioner. Spelet
 sparar dina inställningar i `VERA.INI`, med VERA:s egna alternativ i avsnittet `[VERA]`.
-
-Du kan lägga till egna moddar, kartor, musik och mer. De läggs i VERA20K-mappen: installationsmappen
-på Windows, `~/Library/Application Support/VERA20k` på macOS och `~/.local/share/VERA20k` på Linux.
 
 - **Moddar:** under **Options → Mods** installerar **Add Mod** en modd som du har laddat ner, och **New Mod** startar en egen. Varje modd får en egen mapp i `Mods`.
 - **Kartor:** lägg `.map`-, `.mpr`- eller `.yrm`-filer i `Maps` för att spela dem i Skirmish. Kartor som du laddar ner online sparas där också.
@@ -124,9 +124,22 @@ Utbetalningar till medverkande:
 
 ## Media
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.
+</p>
 
-[1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> visar upp VERA20K.
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 i VERA20K 0.41</a></li>
+</ul>
 
 ## Tack och juridisk information
 

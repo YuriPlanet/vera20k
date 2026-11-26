@@ -90,13 +90,13 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
-ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
-tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
-
 Kendi modlarınızı, haritalarınızı, müziklerinizi ve daha fazlasını ekleyebilirsiniz. Bunlar VERA20K
 klasörüne konur: Windows'ta kurulum klasörü, macOS'te `~/Library/Application Support/VERA20k`,
 Linux'ta `~/.local/share/VERA20k`.
+
+VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
+ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
+tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
 
 - **Modlar:** **Options → Mods** içinde **Add Mod** indirdiğiniz bir modu kurar, **New Mod** ise kendi modunuzu başlatır. Her mod `Mods` içinde kendi klasörünü alır.
 - **Haritalar:** `.map`, `.mpr` veya `.yrm` dosyalarını `Maps` klasörüne koyarak çatışma modunda oynayabilirsiniz. Çevrim içi indirdiğiniz haritalar da oraya kaydedilir.
@@ -125,9 +125,22 @@ Katkıda bulunanlara ödeme yöntemleri:
 
 ## Medya
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> kanalında VERA20K tanıtılıyor.
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> kanalında VERA20K tanıtılıyor.
+</p>
 
-[Arctic Circle 30 haritasında 1 oyuncuya karşı 29 Brutal yapay zekâ](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30 haritasında 1 oyuncuya karşı 29 Brutal yapay zekâ</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> kanalında VERA20K tanıtılıyor.
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">VERA20K 0.41’de Red Alert 2</a></li>
+</ul>
 
 ## Teşekkürler ve yasal bilgiler
 

@@ -91,9 +91,9 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 ## 自定义
 
-VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options** 菜单中调整声音、画面和操作设置，也可以开启 VERA 专属功能。游戏会将设置保存在 `VERA.INI` 中，其中 VERA 专属选项位于 `[VERA]` 节。
-
 你可以添加自己的模组、地图、音乐等内容。这些文件放在 VERA20K 文件夹中：Windows 上是安装文件夹，macOS 上是 `~/Library/Application Support/VERA20k`，Linux 上是 `~/.local/share/VERA20k`。
+
+VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options** 菜单中调整声音、画面和操作设置，也可以开启 VERA 专属功能。游戏会将设置保存在 `VERA.INI` 中，其中 VERA 专属选项位于 `[VERA]` 节。
 
 - **模组：** 在 **Options → Mods** 中，**Add Mod** 可以安装你下载的模组，**New Mod** 可以开始制作你自己的模组。每个模组在 `Mods` 中都有自己的文件夹。
 - **地图：** 把 `.map`、`.mpr` 或 `.yrm` 文件放进 `Maps`，即可在遭遇战中游玩。在线下载的地图也会保存在这里。
@@ -118,9 +118,22 @@ VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options**
 
 ## 媒体
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 频道介绍了 VERA20K。
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 频道介绍了 VERA20K。
+</p>
 
-[Arctic Circle 30：1 对 29 个冷酷 AI](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30：1 对 29 个冷酷 AI</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> 频道介绍了 VERA20K。
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩《红色警戒 2》</a></li>
+</ul>
 
 ## 致谢与法律声明
 

@@ -90,12 +90,12 @@ Ghidra, затем переносят его поведение на Rust и п�
 
 ## Настройка
 
+Можно добавлять свои моды, карты, музыку и не только. Их кладут в папку VERA20K: в Windows это
+папка установки, в macOS — `~/Library/Application Support/VERA20k`, в Linux — `~/.local/share/VERA20k`.
+
 По умолчанию в VERA20K действуют правила оригинальной Yuri's Revenge. В меню **Options** можно
 настроить звук, графику и управление или включить функции VERA. Игра сохраняет настройки в
 `VERA.INI`. Параметры самой VERA находятся в разделе `[VERA]`.
-
-Можно добавлять свои моды, карты, музыку и не только. Их кладут в папку VERA20K: в Windows это
-папка установки, в macOS — `~/Library/Application Support/VERA20k`, в Linux — `~/.local/share/VERA20k`.
 
 - **Моды:** в **Options → Mods** кнопка **Add Mod** устанавливает скачанный мод, а **New Mod** создаёт новый. У каждого мода своя папка в `Mods`.
 - **Карты:** положи файлы `.map`, `.mpr` или `.yrm` в `Maps`, чтобы играть на них в схватке. Карты, скачанные онлайн, тоже сохраняются туда.
@@ -124,9 +124,22 @@ Phobos по-прежнему нужна версия игры, собранна�
 
 ## Медиа
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;Канал <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> показал VERA20K.
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;Канал <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> показал VERA20K.
+</p>
 
-[1 против 29 ИИ уровня Brutal на Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 против 29 ИИ уровня Brutal на Arctic Circle 30</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;Канал <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> показал VERA20K.
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 в VERA20K 0.41</a></li>
+</ul>
 
 ## Благодарности и правовая информация
 

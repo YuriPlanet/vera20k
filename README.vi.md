@@ -91,13 +91,13 @@ thử. Các agent tuân theo [AGENTS.md](AGENTS.md).
 
 ## Tùy biến
 
-Mặc định, VERA20K dùng luật chơi của bản Yuri's Revenge gốc. Trong **Options**, bạn có thể chỉnh
-âm thanh, đồ họa và cách điều khiển hoặc bật các tính năng của VERA. Trò chơi lưu các tùy chọn
-trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
-
 Bạn có thể thêm mod, bản đồ, nhạc của riêng mình và nhiều thứ khác. Chúng được đặt trong thư mục
 VERA20K: thư mục cài đặt trên Windows, `~/Library/Application Support/VERA20k` trên macOS và
 `~/.local/share/VERA20k` trên Linux.
+
+Mặc định, VERA20K dùng luật chơi của bản Yuri's Revenge gốc. Trong **Options**, bạn có thể chỉnh
+âm thanh, đồ họa và cách điều khiển hoặc bật các tính năng của VERA. Trò chơi lưu các tùy chọn
+trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
 
 - **Mod:** trong **Options → Mods**, **Add Mod** cài một mod bạn đã tải về, còn **New Mod** bắt đầu một mod của riêng bạn. Mỗi mod có thư mục riêng trong `Mods`.
 - **Bản đồ:** đặt tệp `.map`, `.mpr` hoặc `.yrm` vào `Maps` để chơi trong Skirmish. Bản đồ bạn tải về khi chơi trực tuyến cũng được lưu ở đó.
@@ -125,9 +125,22 @@ Các hình thức chi trả cho người đóng góp:
 
 ## Truyền thông
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
+</p>
 
-[1 đấu 29 AI độ khó Brutal trên Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 đấu 29 AI độ khó Brutal trên Arctic Circle 30</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a>.
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 trên VERA20K 0.41</a></li>
+</ul>
 
 ## Ghi công và pháp lý
 

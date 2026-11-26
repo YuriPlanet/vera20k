@@ -84,9 +84,9 @@ cargo run --release --bin vera20k
 
 ## การปรับแต่ง
 
-VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉบับเป็นค่าเริ่มต้น คุณปรับเสียง กราฟิก และการควบคุม หรือเปิดฟีเจอร์ของ VERA ได้ในเมนู **Options** เกมจะบันทึกการตั้งค่าไว้ใน `VERA.INI` โดยเก็บตัวเลือกเฉพาะของ VERA ไว้ในส่วน `[VERA]`
-
 คุณเพิ่มม็อด แผนที่ เพลง และอื่น ๆ ของคุณเองได้ โดยวางไว้ในโฟลเดอร์ VERA20K ซึ่งบน Windows คือโฟลเดอร์ที่ติดตั้งเกม บน macOS คือ `~/Library/Application Support/VERA20k` และบน Linux คือ `~/.local/share/VERA20k`
+
+VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉบับเป็นค่าเริ่มต้น คุณปรับเสียง กราฟิก และการควบคุม หรือเปิดฟีเจอร์ของ VERA ได้ในเมนู **Options** เกมจะบันทึกการตั้งค่าไว้ใน `VERA.INI` โดยเก็บตัวเลือกเฉพาะของ VERA ไว้ในส่วน `[VERA]`
 
 - **ม็อด:** ใน **Options → Mods** ปุ่ม **Add Mod** จะติดตั้งม็อดที่คุณดาวน์โหลดมา และ **New Mod** จะเริ่มม็อดของคุณเอง ม็อดแต่ละตัวมีโฟลเดอร์ของตัวเองใน `Mods`
 - **แผนที่:** วางไฟล์ `.map` `.mpr` หรือ `.yrm` ไว้ใน `Maps` เพื่อเล่นในโหมด Skirmish แผนที่ที่ดาวน์โหลดจากออนไลน์ก็จะถูกบันทึกไว้ที่นั่นด้วย
@@ -111,9 +111,22 @@ VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉ�
 
 ## สื่อ
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K
+</p>
 
-[1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;ช่อง <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> นำเสนอ VERA20K
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 ใน VERA20K 0.41</a></li>
+</ul>
 
 ## เครดิตและข้อกฎหมาย
 

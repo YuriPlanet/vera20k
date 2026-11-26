@@ -79,9 +79,9 @@ cargo run --release --bin vera20k
 
 ## カスタマイズ
 
-VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
-
 自分の MOD、マップ、音楽なども追加できます。追加するファイルは VERA20K フォルダーに置きます。Windows ではインストール先のフォルダー、macOS では `~/Library/Application Support/VERA20k`、Linux では `~/.local/share/VERA20k` です。
+
+VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
 
 - **MOD：** **Options → Mods** の **Add Mod** でダウンロードした MOD をインストールでき、**New Mod** で自分の MOD を作り始められます。MOD ごとに `Mods` の中にフォルダーができます。
 - **マップ：** `.map`、`.mpr`、`.yrm` ファイルを `Maps` に置くと、スカーミッシュで遊べます。オンラインでダウンロードしたマップもここに保存されます。
@@ -105,9 +105,22 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 
 ## メディア
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> で VERA20K が紹介されています。
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> で VERA20K が紹介されています。
+</p>
 
-[Arctic Circle 30 で 1 対 29（難易度 Brutal の AI）](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30 で 1 対 29（難易度 Brutal の AI）</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
+</ul>
+
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> で VERA20K が紹介されています。
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">VERA20K 0.41 で遊ぶ Red Alert 2</a></li>
+</ul>
 
 ## 謝辞と法的事項
 
