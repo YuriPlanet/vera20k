@@ -191,10 +191,6 @@ pub fn drop_on_pool<T: Send + 'static>(value: T) {
     drop(value);
 }
 
-/// The stack of the game's own threads: the main thread (`build.rs`) and the
-/// simulation thread.
-pub const GAME_STACK_BYTES: usize = 8 << 20;
-
 /// rayon's global pool as the game starts it: each worker has the game's
 /// stack and a name. A helper's item runs on the calling thread or on a
 /// worker ([`side_by_side`]), so with rayon's default 2 MiB a deep item that
@@ -203,7 +199,7 @@ pub const GAME_STACK_BYTES: usize = 8 << 20;
 #[cfg(not(target_arch = "wasm32"))]
 pub fn worker_pool() -> rayon::ThreadPoolBuilder {
     rayon::ThreadPoolBuilder::new()
-        .stack_size(GAME_STACK_BYTES)
+        .stack_size(crate::util::GAME_STACK_BYTES)
         .thread_name(|index| format!("worker {index}"))
 }
 
@@ -480,6 +476,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     /// Recursion whose frames together take at least `depth` half-KiB.
+    #[cfg(not(target_arch = "wasm32"))]
     fn nest(depth: usize) -> u8 {
         let frame = std::hint::black_box([depth as u8; 512]);
         if depth == 0 {
@@ -490,6 +487,7 @@ mod tests {
 
     /// A worker of the game's pool is named and holds an item of over 3 MiB,
     /// more than rayon's default 2 MiB stack.
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_game_pool_worker_has_the_game_stack_and_a_name() {
         let pool = super::worker_pool()

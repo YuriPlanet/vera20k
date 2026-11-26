@@ -1100,15 +1100,15 @@ fn main() -> Result<(), String> {
             std::process::exit(2);
         }
     };
-    if args.isolation_report.is_some() {
-        return sim_bench_isolation::run(&args);
-    }
     match args.threads {
         Some(threads) => use_worker_threads(threads)?,
         #[cfg(not(target_arch = "wasm32"))]
         None => vera20k_core::sim::parallel::start_worker_pool(),
         #[cfg(target_arch = "wasm32")]
         None => {}
+    }
+    if args.isolation_report.is_some() {
+        return sim_bench_isolation::run(&args);
     }
     let computers = match args.scenario {
         ScenarioKind::March => 0,
