@@ -928,10 +928,13 @@ impl App {
             let _ = state.renderer.gpu.device.poll(wgpu::PollType::Poll);
         }
         state.platform.frame_pacer.clear_render_continuation();
+        // A slow PC's planned picture cost is paid every pass, drawn or not: a
+        // hidden spawn window's passes seldom draw, and a slow GPU never
+        // skips. The fixed switch's is paid by drawn pictures only.
+        let slow = crate::app::cncnet::SpawnSlowPc::of(&state.frontend);
+        crate::app::cncnet::SpawnSlowPc::spend(slow.draw);
         if matches!(pass, FramePass::Draw) {
-            crate::app::cncnet::SpawnSlowPc::spend(
-                crate::app::cncnet::SpawnSlowPc::of(&state.frontend).draw,
-            );
+            crate::app::cncnet::SpawnSlowPc::spend(slow.drawn);
         }
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::synchronize_observer(

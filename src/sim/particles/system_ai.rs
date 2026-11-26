@@ -113,7 +113,9 @@ where
         // but still reaches the shared RemainingEC decrement at62CE86.
         ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
-            tick_smoke_particle(p, pt, sim.session.binary_frame(), &mut sim.scenario_rng);
+            // Scenario's stream, or a presentation particle's own.
+            let frame = sim.session.binary_frame();
+            tick_smoke_particle(p, pt, frame, sim.particle_stream());
             return Ok(()); // The Smoke arm's owner runs the lifetime tail.
         }
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:

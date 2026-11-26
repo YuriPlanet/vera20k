@@ -616,8 +616,11 @@ pub(super) enum RandomMapUpdate {
     /// real generator. Unlike a test-thread counter, this follows the run that
     /// the production receiver actually owns.
     Started,
-    /// The map at one of the boundaries the original redraws its preview at.
-    Progress(Box<crate::map::rmg::build::GenerationSnapshot>),
+    /// Dialog progress, with a map only when the preview has changed.
+    Progress {
+        percent: u8,
+        snapshot: Option<Box<crate::map::rmg::build::GenerationSnapshot>>,
+    },
     /// The completed run, including its MapGen cursor until the shell publishes it.
     Finished(Box<crate::map::rmg::GeneratedMapRun>),
 }
@@ -968,10 +971,17 @@ pub(super) fn spawn_random_map_generation_worker(
                     // A closed receiver means the dialog went away; dropping
                     // what we produce is the correct outcome, not an error.
                     &mut |view| {
-                        if !draws_preview(view.point()) {
-                            return;
+                        if let Some((percent, redraw)) = dialog_milestone(view.point()) {
+                            let snapshot = redraw.then(|| Box::new(view.snapshot()));
+                            let _ = sender.send(RandomMapUpdate::Progress { percent, snapshot });
+                            // Generate reports these pairs around redraws of identical terrain.
+                            if matches!(percent, 55 | 80) {
+                                let _ = sender.send(RandomMapUpdate::Progress {
+                                    percent: percent + 5,
+                                    snapshot: None,
+                                });
+                            }
                         }
-                        let _ = sender.send(RandomMapUpdate::Progress(Box::new(view.snapshot())));
                     },
                 )
             });
@@ -983,6 +993,11 @@ pub(super) fn spawn_random_map_generation_worker(
                     unfilled
                 );
             }
+            // 0x005994AB paints 100 before the completed dialog hides the bar.
+            let _ = sender.send(RandomMapUpdate::Progress {
+                percent: 100,
+                snapshot: None,
+            });
             let _ = sender.send(RandomMapUpdate::Finished(Box::new(run)));
         })?;
     Ok(receiver)
@@ -1203,35 +1218,23 @@ pub(super) fn accept_random_map_setup_owners(
     Some(*options)
 }
 
-/// Whether the original redraws its preview at this generation boundary.
-///
-/// It draws eight times while generating, reporting 55, 60, 70, 80, 85, 90 and
-/// 95 percent on the seven after the first. Two of those pairs have no
-/// generation between them at all — only a progress-report helper runs — so the
-/// 60 and 85 redraws reproduce the image already on screen and are dropped here:
-/// eight calls, six distinct pictures.
-///
-/// The percentages are the anchor the boundaries below were chosen from; they
-/// have no home in the port yet, because the dialog's progress bar is still
-/// drawn empty.
-fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
+/// Generate (0x00598960) reports to the dialog through 0x00643C50.
+/// Map the reports to completed pipeline stages. The initial view follows
+/// preparation (50 at 0x0059A625). Six boundaries also carry distinct previews.
+fn dialog_milestone(point: crate::map::rmg::build::GenerationPoint) -> Option<(u8, bool)> {
     use crate::map::rmg::Stage;
-    use crate::map::rmg::build::GenerationPoint;
-    matches!(
-        point,
-        // Clears the box before any terrain exists.
-        GenerationPoint::Initial
-            // 55 (and again at 60): the water is in.
-            | GenerationPoint::After(Stage::WaterFinalize)
-            // 70: regions, island passes and the green spread.
-            | GenerationPoint::After(Stage::RecalcAfterTerrain)
-            // 80 (and again at 85): starts, tech buildings and tiberium.
-            | GenerationPoint::After(Stage::RecalcAfterTiberium)
-            // 90: the hills.
-            | GenerationPoint::After(Stage::Hills)
-            // 95: LAT patches, trees and rocks.
-            | GenerationPoint::After(Stage::Rocks)
-    )
+    use crate::map::rmg::build::GenerationPoint::{After, Initial};
+    Some(match point {
+        Initial => (50, true),
+        After(Stage::WaterFinalize) => (55, true),
+        After(Stage::Regions) => (65, false),
+        After(Stage::IslandPasses) => (70, true),
+        After(Stage::RecalcAfterTerrain) => (75, false),
+        After(Stage::RecalcAfterTiberium) => (80, true),
+        After(Stage::Hills) => (90, true),
+        After(Stage::Rocks) => (95, true),
+        _ => return None,
+    })
 }
 
 /// An exported map's path as the dialog shows it: from inside the player's
@@ -1446,14 +1449,8 @@ impl App {
         }
     }
 
-    /// Collect whatever the generator has produced since the last frame.
-    ///
-    /// Called every frame while a job is in flight. Returns true when the dialog
-    /// changed, so the caller knows to redraw.
-    ///
-    /// Only the newest of several progress snapshots is rasterised. Colouring is
-    /// the expensive half, and an image the worker overtook before a frame was
-    /// drawn was never on screen to be seen.
+    /// Present one worker update per shell frame. A queued completion must not
+    /// dismiss the progress control before its intermediate fills are painted.
     pub(crate) fn poll_random_map_generation(state: &mut AppState) -> bool {
         if state.frontend.random_map_generation.is_some()
             && state
@@ -1472,110 +1469,89 @@ impl App {
         let Some(job) = state.frontend.random_map_generation.as_ref() else {
             return false;
         };
-        let mut latest_progress = None;
-        let mut finished = None;
-        let mut died = false;
-        loop {
-            match job.receiver.try_recv() {
-                Ok(RandomMapUpdate::Started) => {}
-                Ok(RandomMapUpdate::Progress(snapshot)) => latest_progress = Some(snapshot),
-                Ok(RandomMapUpdate::Finished(run)) => {
-                    finished = Some(run);
-                    break;
+        let run = match job.receiver.try_recv() {
+            Ok(RandomMapUpdate::Started) => return false,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                log::warn!("random map: the generator thread ended without a result");
+                state.frontend.random_map_generation = None;
+                if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
+                    modal.fail_generate();
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    died = true;
-                    break;
+                return true;
+            }
+            Ok(RandomMapUpdate::Progress { percent, snapshot }) => {
+                let preview = snapshot.and_then(|snapshot| {
+                    let job = state.frontend.random_map_generation.take()?;
+                    let preview = Self::rasterise_map(
+                        &state.frontend.frontend_main_rng,
+                        &mut state.process_assets,
+                        &job,
+                        &snapshot.map_file,
+                        &snapshot.start_waypoints,
+                    );
+                    state.frontend.random_map_generation = Some(job);
+                    preview
+                });
+                if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
+                    // A sequential Fair Starts search can begin another candidate.
+                    modal.progress_percent = modal.progress_percent.max(percent);
+                    if let Some(preview) = preview {
+                        modal.show_progress_preview(preview);
+                    }
                 }
+                return true;
             }
-        }
-
-        if let Some(run) = finished {
-            let job = state
-                .frontend
-                .random_map_generation
-                .take()
-                .expect("checked present above");
-            // Persistence belongs to common teardown, not generation completion.
-            let map = run.map();
-            let preview = Self::rasterise_map(
-                &state.frontend.frontend_main_rng,
-                &mut state.process_assets,
-                &job,
-                &map.map_file,
-                &map.start_waypoints,
-            );
-            let accept = {
-                let resident_simulation = state
-                    .match_state
-                    .sim_runtime
-                    .write_sim(SimWrite::Lifecycle)
-                    .map(|runtime| &mut runtime.simulation);
-                let frontend = &mut state.frontend;
-                match frontend
-                    .skirmish_shell_state
-                    .random_map_setup_modal
-                    .as_mut()
-                {
-                    Some(modal) => finish_random_map_generation_owners(
-                        resident_simulation,
-                        &mut frontend.multiplayer_shell_runtime,
-                        &mut frontend.random_map_retention,
-                        modal,
-                        *run,
-                        preview,
-                        job.accept_on_finish,
-                    ),
-                    None => false,
-                }
-            };
-            if accept {
-                // The generate block ran inside Use Map; the dialog then
-                // ends through its teardown slide.
-                Self::leave_shell_dialog(
-                    state,
-                    ShellSlideKind::RandomMap,
-                    App::accept_random_map_setup,
-                );
-            }
-            return true;
-        }
-
-        if died {
-            // The worker ended without a result. Clear the job so the dialog
-            // does not sit disabled forever waiting on it.
-            log::warn!("random map: the generator thread ended without a result");
-            state.frontend.random_map_generation = None;
-            if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state) {
-                modal.fail_generate();
-            }
-            return true;
-        }
-
-        let Some(snapshot) = latest_progress else {
-            return false;
+            Ok(RandomMapUpdate::Finished(run)) => run,
         };
-        // Lifted out and put straight back: rasterising reads the job and the
-        // rest of the app state at once, and the job lives inside that state.
         let job = state
             .frontend
             .random_map_generation
             .take()
             .expect("checked present above");
+        // Persistence belongs to common teardown, not generation completion.
+        let map = run.map();
         let preview = Self::rasterise_map(
             &state.frontend.frontend_main_rng,
             &mut state.process_assets,
             &job,
-            &snapshot.map_file,
-            &snapshot.start_waypoints,
+            &map.map_file,
+            &map.start_waypoints,
         );
-        state.frontend.random_map_generation = Some(job);
-        if let Some(modal) = random_map_dialog(&mut state.frontend.skirmish_shell_state)
-            && let Some(preview) = preview
-        {
-            modal.show_progress_preview(preview);
+        let accept = {
+            let resident_simulation = state
+                .match_state
+                .sim_runtime
+                .write_sim(SimWrite::Lifecycle)
+                .map(|runtime| &mut runtime.simulation);
+            let frontend = &mut state.frontend;
+            match frontend
+                .skirmish_shell_state
+                .random_map_setup_modal
+                .as_mut()
+            {
+                Some(modal) => finish_random_map_generation_owners(
+                    resident_simulation,
+                    &mut frontend.multiplayer_shell_runtime,
+                    &mut frontend.random_map_retention,
+                    modal,
+                    *run,
+                    preview,
+                    job.accept_on_finish,
+                ),
+                None => false,
+            }
+        };
+        if accept {
+            // The generate block ran inside Use Map; the dialog then
+            // ends through its teardown slide.
+            Self::leave_shell_dialog(
+                state,
+                ShellSlideKind::RandomMap,
+                App::accept_random_map_setup,
+            );
         }
+
         true
     }
 
@@ -2384,7 +2360,7 @@ mod tests {
                 .expect("production generation receipt")
             {
                 RandomMapUpdate::Started => entries += 1,
-                RandomMapUpdate::Progress(_) => {}
+                RandomMapUpdate::Progress { .. } => {}
                 RandomMapUpdate::Finished(run) => break run.into_parts(),
             }
         };
@@ -2836,7 +2812,7 @@ mod tests {
                     .iter()
                     .map(|stage| GenerationPoint::After(*stage)),
             )
-            .filter(|point| draws_preview(*point))
+            .filter(|point| dialog_milestone(*point).is_some_and(|(_, redraw)| redraw))
             .collect();
         // Eight redraws in the original, two of them repeats of the image
         // already on screen.

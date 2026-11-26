@@ -171,9 +171,7 @@ pub(crate) fn build_shp_instances_from_inputs(
     ground_order: &NativeDisplayOrder,
 ) {
     let mut visit = shp_visitor(input, ground_order);
-    for (entity, _) in
-        super::helpers::drawn_display_entities(&input.runtime.simulation, input.frame)
-    {
+    for (entity, _) in super::helpers::drawn_display_entities(input.frame) {
         visit(ShpDraw::Member(ground_objects), entity);
     }
 }

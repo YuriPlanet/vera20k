@@ -1156,6 +1156,17 @@ pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
     post_grey_row(state, &text, false, true);
 }
 
+/// VERA's HD art key (`render::hd_switch`): say that HD art is now on or off, or,
+/// for None, that it needs an HD art pack mod. gamemd has no such line.
+pub(crate) fn post_hd_art(state: &mut AppState, on: Option<bool>) {
+    let text = crate::i18n::tr(match on {
+        Some(true) => "VERA:HdArtOnLine",
+        Some(false) => "VERA:HdArtOffLine",
+        None => "VERA:HdLookNeedsPack",
+    });
+    post_grey_row(state, &text, false, true);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
@@ -1287,11 +1298,21 @@ fn sync_view(state: &mut AppState) {
         &state.persistence,
     );
     let top = state.renderer.performance_overlay.message_top();
-    state.match_state.match_presentation.message_list.set_view(
-        x,
-        y.max(tactical_y as i32 + top),
-        width,
-    );
+    // Android: the battle view fills the window, so the screen's rounded
+    // corner and its cutout sit over the lane's first rows. Move the lane in
+    // by what they hide, from screen pixels to the render frame's own units.
+    #[cfg(target_os = "android")]
+    let (x, y) = {
+        let window = state.platform.window.inner_size();
+        let (dx, dy) = crate::util::display_insets::frame_offset(
+            (state.render_width(), state.render_height()),
+            (window.width, window.height),
+        );
+        (x + dx, y.max(tactical_y as i32 + top + dy))
+    };
+    #[cfg(not(target_os = "android"))]
+    let y = y.max(tactical_y as i32 + top);
+    state.match_state.match_presentation.message_list.set_view(x, y, width);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for

@@ -6,6 +6,7 @@
 //! F12 owner tree: options persistence lives here beside the save repository.
 
 pub(crate) mod account;
+pub(crate) mod autosave;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;
@@ -48,6 +49,8 @@ pub(crate) struct PersistenceState {
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
     pub(crate) repository: SaveRepository,
+    /// The opt-in autosave's schedule (`[VERA] AutosaveMinutes=`).
+    pub(crate) autosave: autosave::Autosave,
 }
 
 impl PersistenceState {
@@ -57,6 +60,7 @@ impl PersistenceState {
             pending_load: None,
             options_profile,
             repository: SaveRepository::new(),
+            autosave: autosave::Autosave::default(),
         }
     }
 
@@ -411,6 +415,9 @@ impl PreparedLoad {
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
         self.simulation.publish_scenario_started();
+        // A loaded match draws its turns as a new match does
+        // (`world::turn_streams`): a save does not carry the switch.
+        self.simulation.separate_turn_streams(true);
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -571,6 +578,19 @@ impl SaveRepository {
         let path = self.directory.join(file_name);
         crate::util::file_system::write_new(&path, bytes).map_err(SaveWriteError::write_file)?;
         Ok(path)
+    }
+
+    /// The autosave slot (`autosave::FILE_NAME`): created on the first
+    /// autosave, then replaced through [`Self::overwrite_existing`]'s staged
+    /// rename, so a failed write leaves the previous autosave.
+    pub(crate) fn write_autosave(&self, bytes: &[u8]) -> Result<PathBuf, SaveWriteError> {
+        let path = self.directory.join(autosave::FILE_NAME);
+        if crate::util::file_system::exists(&path) {
+            self.overwrite_existing(&path, bytes)?;
+            Ok(path)
+        } else {
+            self.write_named(autosave::FILE_NAME, bytes)
+        }
     }
 
     /// New saves may not silently replace a timestamp-name collision. Remove
@@ -1321,6 +1341,10 @@ mod tests {
             Some((122, 135))
         );
         let simulation = &mut runtime.simulation;
+        assert!(
+            simulation.turn_streams_separate(),
+            "a loaded match draws its turns from their own streams, as a new one does"
+        );
         let restored_dummy = simulation.effective_shared_cell_dummy();
         assert!(restored_dummy.same_identity(&live_dummy));
         assert_eq!(

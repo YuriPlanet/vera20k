@@ -59,7 +59,9 @@ simulation, session and network command owners.
 
 - [Campaign manifests](campaign-manifest.md) covers stages, roles, carry-over, local checks and room setup.
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
+- [Autosave](autosave.md): `[VERA] AutosaveMinutes=` saves an offline match every few minutes.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
+- [HD art](hd-art.md): the `[VERA] HdArt=` switch, AI-upscaled art over the wheel-zoomed battlefield and an HD sidebar (Page Up flips it).
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.

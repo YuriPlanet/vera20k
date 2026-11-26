@@ -59,10 +59,15 @@ The `8852f7a76` writer's layout `0x9441E8D8` predates the Kratos infantry firing
 offsets. Its saves convert with Kratos off, as those matches played. The
 `bc55c35e7` writer's layout `0x9F1BD701` predates Tiberian Sun webs; its
 infantry convert with no web. The `30e9a0f38` writer's layout `0xF215BF3A`
-predates the Wasm extension modules; its saves convert with no module. The
-`a33fcac81` writer's layout `0xE18EA373` predates the modules' control
-points; its saves convert with no projectile path, push or immunity modifier.
-The `d17e45e42` writer covers direct loading of layout `0x919AB3CD`.
+predates the Wasm extension modules and Phobos ArtImageSwap; its saves convert
+with no module and no swapped image. The `a33fcac81` writer's layout
+`0xE18EA373` predates ArtImageSwap and the modules' control points, and main's
+writer from #5205, layout `0x8C73B1B3`, predates the modules; each converts
+with the other's part empty. No frozen save holds `0x8C73B1B3`. The
+`2e39b88dd` writer's layout `0xB65C0664` predates the control points; its saves
+convert with no projectile path, push or immunity modifier. The `d17e45e42`
+writer's layout `0x919AB3CD` predates ArtImageSwap; its saves convert with no
+swapped image. A writer of the current layout `0x00000000` is not frozen yet.
 
 Run the menu and compatibility tests with this command.
 

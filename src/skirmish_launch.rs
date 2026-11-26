@@ -411,6 +411,19 @@ impl LaunchStartPosition {
             Self::Position(index) => index as i32,
         }
     }
+
+    /// Reads the shell's start item data: -2 or -1 as Auto, and 0..=119 as a
+    /// waypoint index below [`SKIRMISH_MAX_SLOT_COUNT`], the shell's own
+    /// start list. Any other value is outside the domain and is refused.
+    pub fn from_shell_value(value: i32) -> Option<Self> {
+        match value {
+            -2 | -1 => Some(Self::Auto),
+            _ => u8::try_from(value)
+                .ok()
+                .filter(|&index| usize::from(index) < SKIRMISH_MAX_SLOT_COUNT)
+                .map(Self::Position),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -421,11 +434,12 @@ pub enum LaunchTeam {
 }
 
 impl LaunchTeam {
-    pub const fn from_shell_value(value: i32) -> Self {
-        if value < 0 {
-            Self::None
-        } else {
-            Self::Team(value as u8)
+    /// Reads the shell's team item data: -2 or -1 as no team, and 0..=255 as
+    /// a team index. Any other value is outside the domain and is refused.
+    pub fn from_shell_value(value: i32) -> Option<Self> {
+        match value {
+            -2 | -1 => Some(Self::None),
+            _ => u8::try_from(value).ok().map(Self::Team),
         }
     }
     /// The shell's team item data: -2 for no team.

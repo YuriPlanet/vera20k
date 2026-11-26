@@ -306,6 +306,9 @@ pub(crate) struct PaintWrite {
     /// VERA-internal auxiliary depth for existing independently baked part
     /// composition. The native opaque leaf writes no per-pixel Z value.
     pub depth: f32,
+    /// VERA's HD art voxels: the cursor's first fraction bit of X (bit 0)
+    /// and of Y (bit 1), the half pixel the store reached. Native ignores it.
+    pub half: u8,
 }
 
 pub(crate) struct PreparedDraw {
@@ -336,6 +339,14 @@ impl Cursor {
         match self {
             Self::Packed(point) => (((point >> 8) & 0xff) | ((point >> 16) & 0xff00)) as u16,
             Self::Split([x, y, _]) => (y & 0xff00) | (x >> 8),
+        }
+    }
+
+    /// The first fraction bits of X and Y ([`PaintWrite::half`]).
+    fn half(self) -> u8 {
+        match self {
+            Self::Packed(point) => (((point >> 7) & 1) | ((point >> 22) & 2)) as u8,
+            Self::Split([x, y, _]) => (((x >> 7) & 1) | ((y >> 6) & 2)) as u8,
         }
     }
 }
@@ -476,6 +487,7 @@ fn paint_section(
                     });
                     let write = PaintWrite {
                         address: cursor.address(),
+                        half: cursor.half(),
                         color,
                         depth: corner.z
                             + x as f32 * depth_steps[0]
@@ -808,6 +820,7 @@ impl PreparedDraw {
             let start = (row * 256 + x) as usize;
             cropped_depth.extend_from_slice(&depth[start..start + width as usize]);
         }
+        let hd = super::hd_voxels().then(|| std::sync::Arc::new(self.render_hd()));
         Some(super::VxlSprite {
             palette_indices,
             depth: cropped_depth,
@@ -815,7 +828,50 @@ impl PreparedDraw {
             height: height as u32,
             offset_x: offset_x as f32,
             offset_y: offset_y as f32,
+            hd,
         })
+    }
+
+    /// VERA's HD art voxels ([`super::VxlHd`]): the same stores in the same
+    /// order on a 512-square buffer, each two by two pixels at its half
+    /// pixel, cropped to twice this draw's crop.
+    fn render_hd(&self) -> super::VxlHd {
+        const SIDE: usize = 512;
+        let mut visibility = vec![0u8; SIDE * SIDE];
+        let mut depth = vec![f32::NEG_INFINITY; SIDE * SIDE];
+        for write in &self.writes {
+            let x = usize::from(write.address & 0xff) * 2 + usize::from(write.half & 1);
+            let y = usize::from(write.address >> 8) * 2 + usize::from(write.half >> 1);
+            let z = if write.color == 0 {
+                f32::NEG_INFINITY
+            } else {
+                write.depth
+            };
+            for (px, py) in [(x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)] {
+                if px < SIDE && py < SIDE {
+                    visibility[py * SIDE + px] = write.color;
+                    depth[py * SIDE + px] = z;
+                }
+            }
+        }
+        let [_, _, x, y, width, height] = self.rect.map(|v| v.max(0) as usize);
+        let mut palette_indices = Vec::with_capacity(4 * width * height);
+        let mut cropped_depth = Vec::with_capacity(4 * width * height);
+        for row in 2 * y..2 * (y + height) {
+            let start = (row * SIDE + 2 * x).min(SIDE * SIDE);
+            let end = (start + 2 * width).min((row + 1) * SIDE).min(SIDE * SIDE);
+            palette_indices.extend_from_slice(&visibility[start..end]);
+            cropped_depth.extend_from_slice(&depth[start..end]);
+            palette_indices.resize(palette_indices.len() + (2 * width - (end - start)), 0);
+            cropped_depth.resize(
+                cropped_depth.len() + (2 * width - (end - start)),
+                f32::NEG_INFINITY,
+            );
+        }
+        super::VxlHd {
+            palette_indices,
+            depth: cropped_depth,
+        }
     }
 }
 
@@ -823,6 +879,42 @@ impl PreparedDraw {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn hd_picture_places_each_store_on_its_half_pixel() {
+        let write = |x: u16, y: u16, half: u8, color: u8| PaintWrite {
+            address: y << 8 | x,
+            color,
+            depth: 0.0,
+            half,
+        };
+        let draw = PreparedDraw {
+            // Native pixel (1, 1) on its right and lower half, then (0, 0)
+            // on its corner, then a later zero store erasing (3, 3).
+            writes: vec![
+                write(1, 1, 3, 5),
+                write(0, 0, 0, 7),
+                write(3, 3, 0, 9),
+                write(3, 3, 0, 0),
+            ],
+            rect: [0, 0, 0, 0, 4, 4],
+            depth_map: None,
+        };
+        let hd = draw.render_hd();
+        assert_eq!(hd.palette_indices.len(), 64);
+        let at = |x: usize, y: usize| hd.palette_indices[y * 8 + x];
+        for (x, y) in [(3, 3), (4, 3), (3, 4), (4, 4)] {
+            assert_eq!(at(x, y), 5);
+        }
+        for (x, y) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            assert_eq!(at(x, y), 7);
+        }
+        assert_eq!(at(2, 2), 0);
+        assert_eq!(at(5, 5), 0);
+        assert_eq!(at(6, 6), 0);
+        assert_eq!(at(7, 7), 0);
+        assert_eq!(hd.palette_indices.iter().filter(|&&c| c != 0).count(), 8);
+    }
 
     fn bytes(hex: &str) -> Vec<u8> {
         hex.as_bytes()

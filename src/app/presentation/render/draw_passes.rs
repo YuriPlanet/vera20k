@@ -1187,6 +1187,11 @@ pub(super) fn dispatch_draw_passes(
     // Resolve wheel zoom once, after every world/depth/destination operation.
     // Timers, sidebar, messages and cursor then draw in frame pixels.
     drop(pass);
+    // VERA's HD art (`render::hd_switch`): at every wheel zoom, the HD art
+    // replaces the zoomed copy's terrain, overlay, building and voxel pixels
+    // (resampled below 200%). It goes over the finished world only; everything
+    // screen-fixed below stays sharp. Off encodes nothing.
+    let (hd_art_on, hd_debug) = state.hd_art_on();
     let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(
         &state.platform,
         &state.renderer,
@@ -1195,12 +1200,170 @@ pub(super) fn dispatch_draw_passes(
         &state.persistence,
     );
     let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
-        composite_world_with_drag_rect(
-            &state.renderer.gpu.device,
+        let gpu = &state.renderer.gpu;
+        let composition = state.renderer.combat_light_renderer.composition_texture();
+        let frame_tactical = [tac_x, tac_y, tac_w, tac_h];
+        zoom.composite(
+            &gpu.device,
             encoder,
-            state.renderer.combat_light_renderer.composition_texture(),
+            composition,
+            frame_tactical,
+            super::CLEAR_COLOR,
+        );
+        if hd_art_on {
+            if let Some(tiles) = state.match_state.match_presentation.tile_atlas.as_ref()
+                && let Some(terrain) = state
+                    .renderer
+                    .hd_terrain
+                    .get_or_insert_with(crate::render::hd_terrain::HdTerrain::open)
+                    .as_mut()
+            {
+                let camera = state.renderer.batch_renderer.camera_uniform();
+                let clip = zoom.world_clip(frame_tactical);
+                let pieces = hd_terrain_pieces(data.terrain.iter(), camera.camera_pos, clip);
+                let draws =
+                    terrain.prepare(&gpu.device, &gpu.queue, &|uv| tiles.hd_tile(uv), &pieces);
+                terrain.encode(
+                    &gpu.device,
+                    &gpu.queue,
+                    encoder,
+                    zoom.color_texture(),
+                    composition,
+                    &tiles.texture.view,
+                    false,
+                    zoom.scale(),
+                    frame_tactical,
+                    &draws,
+                    hd_debug,
+                );
+                // Ore, gems, walls, rocks and the other overlays, then trees
+                // and the other terrain objects: the overlay atlas's bodies.
+                if let Some(overlays) = state.match_state.match_presentation.overlay_atlas.as_ref()
+                {
+                    let bodies = &state
+                        .match_state
+                        .match_presentation
+                        .cached_cell_body_instances;
+                    let overlay_bodies = bodies
+                        .iter()
+                        .zip(data.cell_body_draws)
+                        .filter(|(_, draw)| draw.atlas == CellBodyAtlas::Overlay)
+                        .map(|(instance, _)| instance);
+                    let terrain_objects = data.object_layers.iter().flat_map(|layer| {
+                        layer
+                            .static_tree_runs
+                            .iter()
+                            .chain(&layer.building_base_runs)
+                            .chain(&layer.runs)
+                            .filter(|run| {
+                                run.target
+                                    == super::draw_plan_lowering::ObjectTexture::TerrainShp(
+                                        crate::render::terrain_draw::TerrainPiece::Body,
+                                    )
+                            })
+                            .flat_map(|run| {
+                                let range = run.start as usize..(run.start + run.count) as usize;
+                                layer.instances.get(range).into_iter().flatten()
+                            })
+                    });
+                    // Smudges (craters, scorch marks) draw first, right after
+                    // the tiles, as the native pass draws them.
+                    let pieces = hd_terrain_pieces(
+                        data.smudge
+                            .iter()
+                            .chain(overlay_bodies)
+                            .chain(terrain_objects),
+                        camera.camera_pos,
+                        clip,
+                    );
+                    let draws = terrain.prepare(
+                        &gpu.device,
+                        &gpu.queue,
+                        &|uv| overlays.hd_sprite(uv),
+                        &pieces,
+                    );
+                    terrain.encode(
+                        &gpu.device,
+                        &gpu.queue,
+                        encoder,
+                        zoom.color_texture(),
+                        composition,
+                        &overlays.texture.view,
+                        true,
+                        zoom.scale(),
+                        frame_tactical,
+                        &draws,
+                        hd_debug,
+                    );
+                }
+            }
+            let art = state
+                .renderer
+                .hd_art
+                .get_or_insert_with(crate::render::hd_art::HdArt::open);
+            if let (Some(art), Some(atlas)) = (
+                art.as_mut(),
+                state.match_state.match_presentation.sprite_atlas.as_ref(),
+            ) {
+                let camera = state.renderer.batch_renderer.camera_uniform();
+                let pieces = hd_art_pieces(
+                    data.object_layers,
+                    camera.camera_pos,
+                    zoom.world_clip(frame_tactical),
+                );
+                art.prepare(&gpu.device, &gpu.queue, atlas, &pieces);
+                let draws: Vec<_> = pieces
+                    .iter()
+                    .filter_map(|piece| art.placement(piece))
+                    .collect();
+                art.encode(
+                    &gpu.device,
+                    &gpu.queue,
+                    encoder,
+                    zoom.color_texture(),
+                    composition,
+                    zoom.scale(),
+                    frame_tactical,
+                    &draws,
+                    hd_debug,
+                );
+            }
+            if let (Some(units), Some(palette_set)) = (
+                state.match_state.match_presentation.unit_atlas.as_ref(),
+                state.match_state.match_presentation.palette_set.as_ref(),
+            ) {
+                let camera = state.renderer.batch_renderer.camera_uniform();
+                let poses = state.renderer.vxl_pose_frame_cache.borrow();
+                let pages = hd_voxel_pages(
+                    units,
+                    &poses,
+                    data.object_layers,
+                    camera.camera_pos,
+                    zoom.world_clip(frame_tactical),
+                );
+                state
+                    .renderer
+                    .hd_voxel
+                    .get_or_insert_with(|| crate::render::hd_voxel::HdVoxelPass::new(&gpu.device))
+                    .encode(
+                        &gpu.device,
+                        &gpu.queue,
+                        encoder,
+                        zoom.color_texture(),
+                        composition,
+                        &palette_set.palette_view,
+                        &palette_set.house_ramp_view,
+                        zoom.scale(),
+                        frame_tactical,
+                        &pages,
+                        hd_debug,
+                    );
+            }
+        }
+        draw_zoomed_drag_rect(
             zoom,
-            [tac_x, tac_y, tac_w, tac_h],
+            encoder,
+            frame_tactical,
             &state.renderer.batch_renderer,
             pool,
             drag_tex,
@@ -1689,25 +1852,170 @@ fn draw_pooled_with_camera(
     }
 }
 
-/// Wheel zoom's boundary between world pixels and the screen-fixed band box.
-fn composite_world_with_drag_rect(
-    device: &wgpu::Device,
-    encoder: &mut wgpu::CommandEncoder,
-    world: &wgpu::Texture,
+/// The band box on the wheel-zoomed frame, after the world went in. Drawn
+/// on the final pixel grid: a 1px border must not become a subpixel span on
+/// the world attachment and disappear before the filtered copy.
+fn draw_zoomed_drag_rect(
     zoom: &crate::render::upscale_pass::WorldZoomPass,
+    encoder: &mut wgpu::CommandEncoder,
     tactical: [u32; 4],
     batch: &BatchRenderer,
     pool: &InstanceBufferPool,
     drag: Option<&BatchTexture>,
 ) {
-    zoom.composite(device, encoder, world, tactical, super::CLEAR_COLOR);
-    // Draw on the final pixel grid: a 1px border must not become a subpixel
-    // span on the world attachment and disappear before the filtered copy.
     if drag.is_some() && pool.get("drag").is_some_and(|(_, count)| count != 0) {
         let mut pass = begin_main_load_pass(encoder, zoom.color_view(), zoom.frame_depth_view());
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
         draw_pooled_ui_passthrough(&mut pass, batch, pool, drag, "drag");
     }
+}
+
+/// VERA's HD art terrain: every tile the terrain pass drew inside the
+/// native rect `clip`, in walk order, placed in native composition pixels.
+fn hd_terrain_pieces<'a>(
+    terrain: impl Iterator<Item = &'a SpriteInstance>,
+    camera: [f32; 2],
+    clip: [u32; 4],
+) -> Vec<crate::render::hd_terrain::HdTerrainPiece> {
+    let [cx, cy, cw, ch] = clip.map(|v| v as f32);
+    terrain
+        .filter_map(|instance| {
+            let origin = [
+                (instance.position[0] - camera[0] + 0.5).floor(),
+                (instance.position[1] - camera[1] + 0.5).floor(),
+            ];
+            let size = instance.size;
+            let outside = origin[0] + size[0] <= cx
+                || origin[1] + size[1] <= cy
+                || origin[0] >= cx + cw
+                || origin[1] >= cy + ch;
+            (!outside).then_some(crate::render::hd_terrain::HdTerrainPiece {
+                uv_origin: instance.uv_origin,
+                origin,
+                size,
+            })
+        })
+        .collect()
+}
+
+/// VERA's HD art: every building body, bib and animation piece drawn
+/// from an SHP atlas page inside the native rect `clip`, placed in native
+/// composition pixels as the SHP blitter places it. Bodies first, then
+/// everything drawn after them: powered and active animations sit in the
+/// ordinary runs. Only frames the art knows give a draw, so the units in
+/// those runs pass through.
+fn hd_art_pieces(
+    layers: &[super::draw_plan_lowering::ObjectLayerPass],
+    camera: [f32; 2],
+    clip: [u32; 4],
+) -> Vec<crate::render::hd_art::HdArtPiece> {
+    let [cx, cy, cw, ch] = clip.map(|v| v as f32);
+    let mut pieces = Vec::new();
+    for layer in layers {
+        for run in layer.building_base_runs.iter().chain(&layer.runs) {
+            let super::draw_plan_lowering::ObjectTexture::ShpPage(page) = run.target else {
+                continue;
+            };
+            let range = run.start as usize..(run.start + run.count) as usize;
+            for instance in layer.instances.get(range).into_iter().flatten() {
+                let origin = [
+                    (instance.position[0] - camera[0] + 0.5).floor(),
+                    (instance.position[1] - camera[1] + 0.5).floor(),
+                ];
+                let size = instance.size;
+                if origin[0] + size[0] <= cx
+                    || origin[1] + size[1] <= cy
+                    || origin[0] >= cx + cw
+                    || origin[1] >= cy + ch
+                {
+                    continue;
+                }
+                pieces.push(crate::render::hd_art::HdArtPiece {
+                    page,
+                    uv_origin: instance.uv_origin,
+                    origin,
+                    size,
+                    source_palette: instance.source_palette,
+                });
+            }
+        }
+    }
+    pieces
+}
+
+/// VERA's HD art voxels: every unit atlas piece inside the native rect
+/// `clip` whose page has an HD page, grouped by page, placed in native
+/// composition pixels as the voxel blitter places it unzoomed.
+fn hd_voxel_pages<'a>(
+    units: &'a crate::render::unit_atlas::UnitAtlas,
+    poses: &'a crate::render::unit_pose_cache::VxlPoseFrameCache,
+    layers: &[super::draw_plan_lowering::ObjectLayerPass],
+    camera: [f32; 2],
+    clip: [u32; 4],
+) -> Vec<crate::render::hd_voxel::HdVoxelPage<'a>> {
+    use super::draw_plan_lowering::ObjectTexture;
+    let [cx, cy, cw, ch] = clip.map(|v| v as f32);
+    let mut pages: Vec<crate::render::hd_voxel::HdVoxelPage<'a>> = Vec::new();
+    // The atlas's pages, then the pose cache's (tilted, crashing, rocking
+    // and tumbling voxels, `unit_pose_cache`).
+    let mut slots: std::collections::HashMap<(bool, usize), Option<usize>> = Default::default();
+    for layer in layers {
+        for run in layer.building_base_runs.iter().chain(&layer.runs) {
+            let key = match run.target {
+                ObjectTexture::UnitAtlasPage(page) => (false, page),
+                ObjectTexture::UnitPosePage(page) => (true, page),
+                _ => continue,
+            };
+            let slot = *slots.entry(key).or_insert_with(|| {
+                let (native, hd) = match key {
+                    (false, page) => (
+                        units.page_texture(page).map(|t| &t.view),
+                        units.hd_page(page),
+                    ),
+                    (true, page) => (
+                        poses.page_texture(page).map(|t| &t.view),
+                        poses.hd_page(page),
+                    ),
+                };
+                let (native, hd) = (native?, hd?);
+                pages.push(crate::render::hd_voxel::HdVoxelPage {
+                    native,
+                    hd,
+                    draws: Vec::new(),
+                });
+                Some(pages.len() - 1)
+            });
+            let Some(slot) = slot else {
+                continue;
+            };
+            let range = run.start as usize..(run.start + run.count) as usize;
+            for instance in layer.instances.get(range).into_iter().flatten() {
+                let origin = [
+                    (instance.position[0] - camera[0] + 0.5).floor(),
+                    (instance.position[1] - camera[1] + 0.5).floor(),
+                ];
+                let size = instance.size;
+                if origin[0] + size[0] <= cx
+                    || origin[1] + size[1] <= cy
+                    || origin[0] >= cx + cw
+                    || origin[1] >= cy + ch
+                {
+                    continue;
+                }
+                pages[slot]
+                    .draws
+                    .push(crate::render::hd_voxel::HdVoxelDraw {
+                        origin,
+                        size,
+                        uv_origin: instance.uv_origin,
+                        uv_size: instance.uv_size,
+                        remap_row: instance.draw_state.remap_row,
+                        source_palette: instance.source_palette,
+                    });
+            }
+        }
+    }
+    pages
 }
 
 /// The wheel-zoomed world, resampled once from world pixels into the window

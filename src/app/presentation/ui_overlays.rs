@@ -752,7 +752,7 @@ pub(crate) fn control_group_status_labels(
     // A digit shows only on a Display member the admission passes, a selected
     // or hovered one, in Display order. The group members are few, so they
     // are put in that order rather than walking every Display member.
-    let order = frame.display_order(sim);
+    let order = frame.display_order();
     let mut labels: Vec<_> = slot_by_id
         .keys()
         .filter_map(|&stable_id| Some((order.position(stable_id)?, labelled(stable_id)?)))
@@ -1042,7 +1042,7 @@ pub(crate) fn build_control_group_status_instances(
     build_control_group_status_render_instances(
         sim,
         frame,
-        &frame.scene.control_groups,
+        frame.control_groups(),
         hovered_entity_id,
         local_owner_id,
         state.match_state.sandbox_full_visibility,

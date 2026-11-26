@@ -13,6 +13,7 @@ use crate::ui::team_tools::{
 };
 
 use super::combos::apply_combo_selection;
+use super::launch::shell_team;
 use super::{
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishShellState, selected_player_rows,
 };
@@ -42,7 +43,7 @@ fn playing_rows(
     maps: &[MapMenuEntry],
 ) -> Vec<(usize, Option<AiDifficulty>, LaunchTeam)> {
     let rows = selected_player_rows(state, maps);
-    let player = (0, None, LaunchTeam::from_shell_value(state.player_team));
+    let player = (0, None, shell_team(state.player_team));
     let ais = state
         .opponents
         .iter()
@@ -53,7 +54,7 @@ fn playing_rows(
             (
                 index + 1,
                 opponent.row_type.difficulty(),
-                LaunchTeam::from_shell_value(opponent.team),
+                shell_team(opponent.team),
             )
         });
     std::iter::once(player).chain(ais).collect()

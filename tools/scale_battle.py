@@ -21,11 +21,11 @@ beside the house's start. A front is the line between two neighbouring
 starts; it has LANES waypoints that both houses use. A squad has a post, a
 front and a lane, and its script patrols (action 16) to its lane's waypoint,
 on to the waypoint two lanes along, and back (action 6). Patrolling, a team's
-leader scans its own threat range every [AI] PatrolScan (14 frames, every
-team on the same frame: actions.rs:1415) and the team attacks what it finds,
-and a computer house's members also acquire targets themselves while they
-move (`Aggressive=yes`). Both houses of a front aim at the same waypoints, so
-they keep meeting.
+leader scans its own threat range every [AI] PatrolScan (14 frames, each team
+at its own phase of them where scans are batched: actions.rs:1491) and the
+team attacks what it finds, and a computer house's members also acquire
+targets themselves while they move (`Aggressive=yes`). Both houses of a front
+aim at the same waypoints, so they keep meeting.
 
 How a death is replaced. Only the marker's team has a Tag: one event, 48
 "destroyed by anything", repeat 0. When the marker dies its Trigger
@@ -48,9 +48,10 @@ after its first death (events.rs:564, lifecycle.rs:449) and then springs at
 every event a member raises, each cell it enters among them. Exact
 replacement therefore takes one team and one live Tag to a unit, and at
 20,000 units their upkeep is most of a frame: every team is visited every
-frame, every death walks every team (sim/team_script_vm.rs:1378), and every
-emptied team that held an infantryman raises event 23 on every live Tag
-(team_ai.rs:355, infantry_action.rs:498, dispatch.rs:159).
+frame (where scans are batched, one in four unless it cannot wait:
+team_ai.rs:216), every death walks every team (sim/team_script_vm.rs:1378),
+and every emptied team that held an infantryman raises event 23 on every
+live Tag (team_ai.rs:486, infantry_action.rs:498, dispatch.rs:159).
 
 Engine facts this relies on. Paths are under src/; lifecycle.rs, dispatch.rs
 and events.rs are in sim/trigger_runtime/, membership.rs, team_ai.rs,
@@ -71,10 +72,10 @@ in sim/movement/, the house_*.rs in sim/ and house_defeat.rs in sim/world/.
   (lifecycle.rs:441). Event 48 is raised on a dying
   object's Tag (sim/combat/record_kill.rs:506 and :636).
 - A team whose script loops never ends; one whose last member dies is
-  destroyed (team_ai.rs:355). Action 16: actions.rs:1388; a leg ends when
-  every member is within [General] Stray of the waypoint (actions.rs:2481),
+  destroyed (team_ai.rs:486). Action 16: actions.rs:1406; a leg ends when
+  every member is within [General] Stray of the waypoint (actions.rs:2534),
   and a squad that cannot gather there holds that waypoint. Aggressive
-  members acquire on the move: sim/world/techno_ai/target_scan.rs:450.
+  members acquire on the move: sim/world/techno_ai/target_scan.rs:451.
 - `Priority=` above every AIMD team's keeps a computer house's own teams
   from recruiting the members (membership.rs:306) and its base defense from
   emptying the team (membership.rs:773); either takes the Tag off them.

@@ -2144,7 +2144,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/runtime.rs",
             "resources_mut",
             "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
-             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+             shared only with a presentation copy the host drops first (docs/sim-thread.md)",
         ),
         (
             "sim/world/frame_channel.rs",

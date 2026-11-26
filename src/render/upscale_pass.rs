@@ -127,6 +127,11 @@ impl WorldZoomPass {
     pub(crate) fn source_size(&self) -> [u32; 2] {
         self.source_size
     }
+
+    /// Frame pixels per world pixel.
+    pub(crate) fn scale(&self) -> f32 {
+        self.scale
+    }
     pub(crate) fn depth_view(&self) -> &wgpu::TextureView {
         &self.world_depth
     }

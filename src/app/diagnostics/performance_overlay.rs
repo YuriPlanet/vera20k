@@ -196,16 +196,33 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
         &state.match_state.match_presentation,
         &state.persistence,
     );
-    let (scale, (left, top)) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
+    let (scale, origin) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
         (zoom.percent as f32 / 100.0, zoom.origin)
     });
+    // Android: the message lane starts at the viewport plus its own 3 px inset,
+    // and that line clears the rounded corner and the cutout. The panel takes
+    // the same line, so its left edge meets the lane's instead of hugging the
+    // arc.
+    #[cfg(target_os = "android")]
+    let (left, top) = {
+        let window = state.platform.window.inner_size();
+        let (_, dy) = crate::util::display_insets::frame_offset(
+            (state.render_width(), state.render_height()),
+            (window.width, window.height),
+        );
+        // The lane holds battlefield-local units the battlefield scales by
+        // `scale`; the panel's placement is in window pixels and adds its own
+        // `EDGE` inside the placement.
+        let lane = state.match_state.match_presentation.message_list.x() as f32;
+        (lane * scale - EDGE * scale, y as f32 * scale + dy as f32)
+    };
+    #[cfg(not(target_os = "android"))]
+    let (left, top) = (
+        origin.0 as f32 + x as f32 * scale,
+        origin.1 as f32 + y as f32 * scale,
+    );
     Some(MatchPanel {
-        placement: PanelPlacement::top_left(
-            left as f32 + x as f32 * scale,
-            top as f32 + y as f32 * scale,
-            width as f32 * scale,
-            scale,
-        ),
+        placement: PanelPlacement::top_left(left, top, width as f32 * scale, scale),
         host: &state.match_state.sim_runtime,
         loop_counts: state.platform.frame_pacer.loop_counts(),
     })
@@ -330,11 +347,22 @@ impl PerformanceOverlay {
         let over_battlefield = in_match.is_some();
         let (placement, source) = match in_match {
             Some(panel) => (panel.placement, Some((panel.host, panel.loop_counts))),
-            // Loading and menu screens: the window's own pixels.
-            None => (
-                PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
-                None,
-            ),
+            // Loading and menu screens: the window's own pixels, at the same
+            // shell scale a match's battlefield uses, moved off the screen's
+            // rounded corner and cutout.
+            None => {
+                #[cfg(target_os = "android")]
+                let (dx, dy) = {
+                    let insets = crate::util::display_insets::get();
+                    (insets.left as f32, insets.top as f32)
+                };
+                #[cfg(not(target_os = "android"))]
+                let (dx, dy) = (0.0, 0.0);
+                let scale =
+                    crate::ui::shell::geom::shell_scale_for_window(size[0] as i32, size[1] as i32)
+                        .factor();
+                (PanelPlacement::top_left(dx, dy, size[0] as f32, scale), None)
+            }
         };
         if frame.stats.due(now) {
             let frame_ms = frame.timer.frame_ms_mean();

@@ -65,11 +65,15 @@ jobs:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
         run: |
           python - <<'EOF'
-          import os, pathlib, sys, urllib.request, zipfile
+          import os, pathlib, shutil, sys, urllib.request, zipfile
           if not os.environ.get('RETAIL_GAME_DATA_URL'):
               print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
               sys.exit(1)
-          urllib.request.urlretrieve(os.environ['RETAIL_GAME_DATA_URL'], 'retail.zip')
+          # Cloudflare refuses Python's default user agent (error 1010).
+          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
+                                           headers={'User-Agent': 'vera20k-ci'})
+          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
+              shutil.copyfileobj(response, out)
           with zipfile.ZipFile('retail.zip') as archive:
               archive.extractall('retail')
           os.remove('retail.zip')
@@ -121,7 +125,8 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: '22'
+          # Node 22 crashes (SIGSEGV) running sim-bench.wasm; 24 and 26 do not.
+          node-version: '24'
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
@@ -133,11 +138,15 @@ jobs:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
         run: |
           python - <<'EOF'
-          import os, pathlib, sys, urllib.request, zipfile
+          import os, pathlib, shutil, sys, urllib.request, zipfile
           if not os.environ.get('RETAIL_GAME_DATA_URL'):
               print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
               sys.exit(1)
-          urllib.request.urlretrieve(os.environ['RETAIL_GAME_DATA_URL'], 'retail.zip')
+          # Cloudflare refuses Python's default user agent (error 1010).
+          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
+                                           headers={'User-Agent': 'vera20k-ci'})
+          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
+              shutil.copyfileobj(response, out)
           with zipfile.ZipFile('retail.zip') as archive:
               archive.extractall('retail')
           os.remove('retail.zip')

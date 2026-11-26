@@ -177,24 +177,29 @@ placement preview, which the passes beside the tick keep: all are one tick
 late at most. An atlas refresh asked beside a tick (a growth published
 then) waits for the tick's tail.
 
-The live world, its presentation copy and the captured frame share
-`SimResources` while the match runs. It holds the rules and the terrain
-template. The rules own the overlay types used by simulation and drawing.
-After an offline Skirmish, the setup dialog writes the current countries
-into the retained world's rules. The host releases both presentation references
-before it returns that world for a write.
+The live world and its presentation copy share `SimResources` while the
+match runs. It holds the rules and the terrain template. The rules own the
+overlay types used by simulation and drawing. After an offline Skirmish, the
+setup dialog writes the current countries into the retained world's rules.
+The host releases the copy's reference before it returns that world for a
+write. The captured frame holds none: it sorts its Display order at capture.
 
 What the snapshot costs the main thread:
 
-- The records are captured on the worker pool while the scene frame is
-  captured on the calling thread. A record asks only what a drawer of that
-  object reads: an action line only for a selected or psychically detected
-  object, the airstrike tint only for a Structure, a Carryall's cargo only
-  for an Aircraft, the mind-control count only for a capture manager.
+- The records, the Display order, the anims' coordinates, the parachutes
+  and the control groups are captured on the worker pool while the scene
+  frame is captured on the calling thread. A record asks only what
+  a drawer of that object reads: an action line only for a selected or
+  psychically detected object, the airstrike tint only for a Structure, a
+  Carryall's cargo only for an Aircraft, the mind-control count only for a
+  capture manager.
+- Before a tick leaves, the pool files the frame's Display members
+  (`PresentationFrame::display_members`), a run at a time, so no draw beside
+  the tick files them.
 - A retired frame's object records and draw caches are freed on the pool
   (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
-- The world copy's syncs run on the pool beside the clone of its other parts
-  and the local player's fog.
+- The world copy's syncs, the local player's fog and the Anim store's clone
+  run on the pool beside the clone of its other parts.
 - The first world copy is a whole one; desktop takes it when a scenario is
   installed (`SimHost::install`), so the first lent tick only syncs it.
 

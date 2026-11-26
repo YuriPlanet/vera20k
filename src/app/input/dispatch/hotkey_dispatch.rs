@@ -564,6 +564,26 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             presentation.relation_colors = !presentation.relation_colors;
             state.match_state.refresh_relation_colors();
         }
+        // VERA: turn HD art on or off at once (the HD art over the world and
+        // the HD sidebar). The same setting as the Options list, saved like
+        // Convenience Help's key, so the next match keeps it. The zoom stays
+        // as it is either way, for comparing. Pure presentation.
+        HotkeyCommand::ToggleHdArt => {
+            // Without an HD art pack there is nothing to show: say what it
+            // needs and change nothing.
+            if !crate::render::hd_art::pack_available() {
+                crate::app::input::messages::post_hd_art(state, None);
+                return;
+            }
+            let on = !crate::app::state::hd_art_on(&state.persistence).0;
+            state.persistence.options_profile.hd_art_on = on;
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
+            crate::app::input::messages::post_hd_art(state, Some(on));
+            log::info!("HD art: {}", if on { "on" } else { "off" });
+        }
     }
 }
 
