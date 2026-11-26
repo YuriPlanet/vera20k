@@ -47,6 +47,7 @@ pub(crate) struct FireSubject<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
     ares: bool,
+    npatch: bool,
     kratos: bool,
     class: FirerClass,
     frame: i32,
@@ -88,6 +89,7 @@ impl FirerPart {
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
             ares: self.ares,
+            npatch: self.npatch,
             kratos: self.kratos,
             class: self.class,
             frame: self.frame,
@@ -426,6 +428,7 @@ impl<'a> FireSubject<'a> {
         let firer_type = FirerTypeFacts {
             natural: obj.natural,
             pushy: obj.pushy,
+            naval_targeting: obj.naval_targeting,
             land_targeting: obj.land_targeting,
             mobile_fire: obj.mobile_fire,
             turret_count: obj.turret_count,
@@ -447,6 +450,7 @@ impl<'a> FireSubject<'a> {
         };
         FirerPart {
             ares: self.rules.ares(),
+            npatch: self.rules.npatch(),
             kratos: self.rules.kratos(),
             class,
             frame: frame as i32,

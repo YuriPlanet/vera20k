@@ -210,6 +210,65 @@ fn click_fire_matches_native() {
     }
 }
 
+/// NPatch (NPExt bug-fix changelog item 11, issue #2936): a warp click whose
+/// paired Sphere is held (low power suspends it after its target was picked)
+/// refuses before Fire_SW's pairing: nothing teleports, and the Sphere keeps
+/// its readiness and paused timer instead of restarting while held.
+#[test]
+fn npatch_held_sphere_refuses_the_pre_selected_warp() {
+    use crate::sim::superweapon::chronosphere_tests::{SOURCE, charge_chronosphere, retail_world};
+    use crate::sim::world::FrameEffects;
+    let Some((mut rules, mut sim, americans)) = retail_world() else {
+        return;
+    };
+    rules.set_npatch_for_test(true);
+    let tank = sim
+        .spawn_object_at_height("MTNK", "Americans", 20, 20, 0, 0, &rules)
+        .unwrap();
+    let sphere = charge_chronosphere(&mut sim, americans);
+    let warp = sim.interner.intern("ChronoWarpSpecial");
+    assert!(sim.fire_super_weapon(
+        &rules,
+        americans,
+        sphere,
+        SOURCE,
+        None,
+        &mut FrameEffects::default(),
+        false
+    ));
+    let frame = sim.session.binary_frame();
+    let held = sim.super_weapons.instance_mut(&americans, &sphere).unwrap();
+    assert!(
+        held.suspend(true, false, frame),
+        "the power drop holds the Sphere"
+    );
+    let state = |sim: &Simulation| {
+        let sphere = &sim.super_weapons[&americans][&sphere];
+        (
+            sphere.is_ready,
+            sphere.is_suspended(),
+            sphere.charge_start_tick,
+            sphere.charge_duration,
+        )
+    };
+    let before = state(&sim);
+    let launched = sim.fire_super_weapon(
+        &rules,
+        americans,
+        warp,
+        (40, 40),
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
+    assert!(!launched, "the held Sphere refuses the warp");
+    assert_eq!(state(&sim), before, "the Sphere keeps its charge and timer");
+    assert!(
+        !sim.entities().get(tank).unwrap().chrono_warp_latch(),
+        "nothing teleports"
+    );
+}
+
 /// The launch alert for one house, with the row's draw answer; the yard
 /// stands where its GetCoords is the row's.
 #[test]

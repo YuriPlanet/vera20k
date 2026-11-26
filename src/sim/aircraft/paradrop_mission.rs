@@ -145,6 +145,7 @@ fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: &mut F
             entity,
             None,
             rules.ares_form(),
+            rules.npatch(),
         );
     }
     sim.assign_aircraft_destination(id, None, rules, frame_effects);

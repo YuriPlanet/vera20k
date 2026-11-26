@@ -276,6 +276,9 @@ fn assert_retail_wall_fire_profile(
     let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    if !crate::test_fixture::RECORDED_STOCK_START_IDS {
+        return;
+    }
     let profile = crate::test_fixture::json(profile_path);
     let native = crate::test_fixture::json(native_path);
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
@@ -1245,6 +1248,9 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
     let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    if !crate::test_fixture::RECORDED_STOCK_START_IDS {
+        return;
+    }
     let profile = crate::test_fixture::json("tools/map_observation.fence-driveover.example.json");
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();

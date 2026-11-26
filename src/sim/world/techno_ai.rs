@@ -285,12 +285,31 @@ impl Simulation {
                     .wave_reversed_against(target_class.unwrap_or(WaveReverseTarget::Other)),
             }
         });
+        // NPATCH (NPExt bug-fix changelog item 85, issue #2986): the magnetic
+        // wave's tracking bound is the owner's weapon 0 range, the slot the
+        // wave code reads (GetWeapon(0) at `0x0075F330`).
+        let magnetic_range_leptons = (rules.npatch() && wave.wave_type() == 3)
+            .then(|| {
+                let entity = owner?;
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                crate::sim::combat::combat_weapon::get_weapon(
+                    entity,
+                    object,
+                    0,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                )
+                .map(|weapon| weapon.range_leptons)
+            })
+            .flatten();
         crate::sim::wave::WaveUpdateContext {
             owner_position,
             owner_fire_coordinate,
             owner_current_target,
             target_position,
             target_is_unit,
+            magnetic_range_leptons,
             ares,
         }
     }

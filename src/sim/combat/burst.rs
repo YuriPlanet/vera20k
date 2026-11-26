@@ -159,7 +159,12 @@ mod tests {
                 .spawn_object("TANK", "Americans", 4, 4, 64, &rules)
                 .unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            represented_assign_target(entity, Some(TargetKind::Cell(5, 4)), rules.ares_form());
+            represented_assign_target(
+                entity,
+                Some(TargetKind::Cell(5, 4)),
+                rules.ares_form(),
+                rules.npatch(),
+            );
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(true);
@@ -187,15 +192,73 @@ mod tests {
             assert!(entity.attack_target.target().is_none(), "{command:?}");
             assert!(!entity.passive_scan.acquired(), "{command:?}");
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
-            // keeps the index through the NULL assignment
-            // (`mission::concrete_effects::represented_assign_target_admitted`).
-            let reset = if rules.ares_form() { 1 } else { 0 };
+            // keeps the index through the NULL assignment; NPATCH keeps a
+            // mid-burst index the same way (issue #2945).
+            let reset = if rules.ares_form() || rules.npatch() {
+                1
+            } else {
+                0
+            };
             assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
             // A later non-null assignment preserves the reset value, so FLH
             // and GetROF start the new burst at its first shot.
-            represented_assign_target(entity, Some(TargetKind::Cell(6, 4)), rules.ares_form());
+            represented_assign_target(
+                entity,
+                Some(TargetKind::Cell(6, 4)),
+                rules.ares_form(),
+                rules.npatch(),
+            );
             assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
         }
+    }
+
+    /// NPATCH (NPExt bug-fix changelog item 54, issue #2945): the resumed
+    /// burst completes and wraps, so a Burst weapon cannot cycle fresh
+    /// bursts through a mid-burst cancellation.
+    #[test]
+    fn npatch_an_interrupted_burst_resumes_instead_of_reloading_free() {
+        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::command::Command;
+        use crate::sim::pathfinding::PathGrid;
+        use crate::sim::world::Simulation;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Animations]\n0=VEHCHUTE\n\
+             [General]\nVehicleParachute=VEHCHUTE\n\
+             [VehicleTypes]\n0=TANK\n[TANK]\nStrength=200\nSpeed=6\nPrimary=Gun\n\
+             [Gun]\nDamage=10\nROF=100\nRange=8\nBurst=2\n",
+        ))
+        .unwrap();
+        assert!(rules.npatch(), "VehicleParachute turns NPatch on");
+        let grid = PathGrid::new(32, 32);
+        let mut sim = Simulation::with_seed(0);
+        sim.install_fixture_path_grid(Some(&grid));
+        let id = sim
+            .spawn_object("TANK", "Americans", 4, 4, 64, &rules)
+            .unwrap();
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        represented_assign_target(
+            entity,
+            Some(TargetKind::Cell(5, 4)),
+            rules.ares_form(),
+            rules.npatch(),
+        );
+        entity.seldom.weapon_burst.complete_shot(2);
+        assert_eq!(entity.seldom.weapon_burst.index(), 1, "mid-burst");
+        assert!(sim.apply_command("Americans", &Command::Stop { entity_id: id }, Some(&rules)));
+        assert_eq!(
+            sim.substrate.entities.get(id).unwrap().seldom.weapon_burst.index(),
+            1,
+            "the interruption keeps the burst slot"
+        );
+        // The resumed burst completes: the next shot wraps back to 0.
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.seldom.weapon_burst.complete_shot(2);
+        assert_eq!(
+            entity.seldom.weapon_burst.index(),
+            0,
+            "the burst wrapped"
+        );
     }
 
     #[test]
@@ -257,6 +320,7 @@ mod tests {
                         actor,
                         Some(TargetKind::Cell(6, 4)),
                         rules.ares_form(),
+                        rules.npatch(),
                     );
                 }
                 actor
@@ -301,11 +365,17 @@ mod tests {
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 assert!(actor.attack_target.target().is_none(), "{command:?}");
                 assert!(!actor.passive_scan.acquired(), "{command:?}");
-                // Ares 0x6FCF53 (1005D320) never resets the index.
-                let kept = i32::from(!had_target || rules.ares_form());
+                // Ares 0x6FCF53 (1005D320) never resets the index; NPATCH
+                // keeps a mid-burst one (issue #2945).
+                let kept = i32::from(!had_target || rules.ares_form() || rules.npatch());
                 assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
                 // The next non-null assignment must retain the observed index.
-                represented_assign_target(actor, Some(TargetKind::Cell(7, 4)), rules.ares_form());
+                represented_assign_target(
+                    actor,
+                    Some(TargetKind::Cell(7, 4)),
+                    rules.ares_form(),
+                    rules.npatch(),
+                );
                 assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
             }
         }
@@ -328,12 +398,12 @@ mod tests {
         // so each native row runs both ways.
         for (row, ares) in rows.iter().flat_map(|row| [(row, false), (row, true)]) {
             let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
-            represented_assign_target(&mut entity, target(&row["previous"]), ares);
+            represented_assign_target(&mut entity, target(&row["previous"]), ares, false);
             entity.seldom.weapon_burst.index = row["index"].as_i64().unwrap() as i32;
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(row["passive"].as_u64().unwrap() != 0);
-            represented_assign_target(&mut entity, target(&row["requested"]), ares);
+            represented_assign_target(&mut entity, target(&row["requested"]), ares, false);
             // Ares 0x6FCF53 (1005D320) keeps the index on every assignment.
             let next_index = if ares {
                 &row["index"]

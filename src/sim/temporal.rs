@@ -377,6 +377,7 @@ impl Simulation {
                                 requested,
                                 stored,
                                 rules.ares_form(),
+                                rules.npatch(),
                             )
                         {
                             self.assign_target_fire_teardown(firer, rules, registry);
@@ -847,7 +848,14 @@ impl Simulation {
         let unit_lost_suppressed = if ares {
             warp_combat.is_some_and(|combat| combat.unit_lost_suppress())
         } else {
-            self.temporal_veterancy(head, target, rules);
+            // NPATCH (NPExt bug-fix changelog item 7, issue #2942): native
+            // pays both — this arm has no alliance gate, so friendly victims
+            // still pay, and enemy victims pay twice. Skipping it leaves the
+            // single, alliance-gated Record_The_Kill award as the whole
+            // payment.
+            if !rules.npatch() {
+                self.temporal_veterancy(head, target, rules);
+            }
             false
         };
         let Some(category) = self

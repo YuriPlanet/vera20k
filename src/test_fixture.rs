@@ -17,6 +17,14 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
+/// Whether a recorded stock-start command script (`tools/map_observation.*`)
+/// still names the objects it meant. NPatch (#2971): un-owned tech buildings
+/// skip their opening anims, which take IDs from the shared counter, so later
+/// objects get other IDs.
+/// Goldens recorded from the stock game: the NPatch arms never overwrite
+/// them, so every build starts from the same IDs.
+pub const RECORDED_STOCK_START_IDS: bool = true;
+
 /// The checkout root that fixture paths start from. This crate's manifest
 /// sits in `src/`, and Cargo runs its tests from there, so tests name checkout
 /// files from this root, never from the working directory.

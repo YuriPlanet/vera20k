@@ -644,7 +644,8 @@ impl Simulation {
     /// 5. A refused Unlimbo steps the stage (`+0xAC`) back one and keeps the
     ///    anim (`0x00424B23`): its next completed frame tries again with a
     ///    new object. The refused one stays in limbo, as it does natively.
-    ///    With Ares the refused one is UnInit and the anim ends (below).
+    ///    With Ares the refused one is UnInit and the anim ends (below);
+    ///    with NPatch it is freed and the retry still happens (below).
     /// 6. Placed where the anim's cell (GetCoords, `0x005657A0`) carries the
     ///    bridge flag (`+0x140 & 0x100`) and the Location is above the cell's
     ///    GetCoords Z (`0x00486840`), it moves onto the deck: Mark(UP),
@@ -755,6 +756,15 @@ impl Simulation {
                     crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
                 return true;
+            }
+            // NPATCH (NPExt bug-fix changelog item 4, issue #2934): natively
+            // the refused creation stays in limbo while the anim retries with
+            // a fresh allocation on every completed frame, so a mutation over
+            // an occupied cell leaks one object per frame until the game
+            // stalls. Under NPatch the failed creation is freed; the anim
+            // still steps back and retries below.
+            if rules.npatch() {
+                self.discard_constructed_limbo(infantry, rules, frame_effects);
             }
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.runtime.current_frame = anim.runtime.current_frame.wrapping_sub(1);

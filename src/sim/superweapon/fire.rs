@@ -190,6 +190,21 @@ impl Simulation {
             .then(|| post_click_source(self))
             .flatten()
             .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
+        // NPATCH (NPExt bug-fix changelog item 11, issue #2936): Fire_SW
+        // 0x004FAE50 launches a PostClick= warp through ClickFire's PostClick
+        // exemption (0x006CB933..0x006CB95F) even while its paired Sphere is
+        // held, then clears that Sphere's readiness and restarts its countdown
+        // (0x004FAEA6..0x004FAEC1) whatever ClickFire returned. The hold is
+        // the Sphere's IsSuspended, which CanFire 0x006CC360 refuses and
+        // Update_Owned_Supers 0x0050AF10 sets on an IsPowered Super for low
+        // power or no online provider. Under NPatch a held Sphere refuses the
+        // warp click before any write: no launch, pairing, timer or alert.
+        if rules.npatch()
+            && let Some((pre_type, _)) = paired
+            && super_instance(self, owner, pre_type).is_some_and(|pre| pre.is_suspended())
+        {
+            return false;
+        }
         // The paid two-stage bindings are Ares': without it they hold their
         // neutral values and every test on them below falls through.
         let paid_source = if ares {

@@ -179,6 +179,11 @@ pub(super) enum HealthCallback {
 /// Short object borrows let the same Object5F5390 body invoke synchronous world
 /// callbacks. The host owns access, not a second health or event algorithm.
 pub(super) trait ObjectHealthHost {
+    /// [`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch); the
+    /// observation-only harness keeps stock.
+    fn npatch(&self) -> bool {
+        false
+    }
     fn object(&self) -> Option<&GameEntity>;
     fn object_mut(&mut self) -> Option<&mut GameEntity>;
     fn current_strength(&self) -> Option<i32>;
@@ -264,7 +269,19 @@ pub(super) fn commit(
     let post = previous.wrapping_sub(*packet);
     let mut result = DamageState::Damaged;
     let yellow = strength >> 1;
-    if yellow <= previous && post < yellow {
+    // NPatch (NPExt bug-fix changelog item 65, issue #2968): native
+    // Object5F5390 answers Yellow only for `yellow <= previous && post <
+    // yellow`, so a hit landing exactly on `strength >> 1` classifies as
+    // merely Damaged and the BuildingClass receiver's result table
+    // (`0x00442476`, requested through `0x00442706`) never reaches its
+    // damaged-building arm. Under npatch the exact boundary is on the yellow
+    // side of both compares, so that hit crosses and the next one does not.
+    let yellow_crossed = if host.npatch() {
+        yellow < previous && post <= yellow
+    } else {
+        yellow <= previous && post < yellow
+    };
+    if yellow_crossed {
         result = DamageState::Yellow;
     }
     let red = X87::mul(

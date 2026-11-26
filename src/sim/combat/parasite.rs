@@ -458,6 +458,7 @@ impl Simulation {
                     entity,
                     None,
                     rules.ares_form(),
+                    rules.npatch(),
                 );
             }
             self.assign_null_destination(owner, rules, Some(rules.overlay_registry()), effects);
@@ -1368,6 +1369,7 @@ impl Simulation {
                     source,
                     None,
                     rules.ares_form(),
+                    rules.npatch(),
                 );
             }
             return;

@@ -1452,6 +1452,11 @@ impl Simulation {
             .filter(|(_, node)| node.victim == victim_id)
             .map(|(index, node)| (index, node.original_owner))
             .collect();
+        let controller_owner = self
+            .substrate
+            .entities
+            .get(controller_id)
+            .map(|controller| controller.owner());
         for (index, original_owner) in matches {
             // The ring goes (`vt+0xF8` UnInit), then MindClearedSound: the
             // type's own, else the global.
@@ -1469,7 +1474,19 @@ impl Simulation {
                     .and_then(|object| object.mind_cleared_sound.as_deref())
                     .or(rules.mind_control.mind_cleared_sound.as_deref());
                 if let Some(sound) = sound {
-                    let event = SimSoundEvent::voc_at(rules.sound_name(sound), &victim.position);
+                    // NPATCH (NPExt bug-fix changelog item 70, issue #2984):
+                    // the removal sound is audible only to the two involved
+                    // parties, the controller and the original owner the
+                    // victim returns to. Native plays it through a plain
+                    // `VocClass::PlayAt`, so every player heard it.
+                    let audience = controller_owner
+                        .filter(|_| rules.npatch())
+                        .map(|controller| [controller, original_owner]);
+                    let event = SimSoundEvent::voc_at_for(
+                        rules.sound_name(sound),
+                        audience,
+                        &victim.position,
+                    );
                     self.sound_events.emit(event);
                 }
             }

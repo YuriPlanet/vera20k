@@ -276,3 +276,68 @@ fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
         "a rider's Transporter is the target whatever +0x82 says"
     );
 }
+
+
+/// NPatch (NPExt bug-fix changelog item 72, issue #2961): a NavalTargeting=6
+/// firer refuses a force-attack on open water, which native T41
+/// (`0x006FC7EB..0x006FC868`) admitted; a NavalTargeting=0 firer still fires
+/// at the same water cell.
+#[test]
+fn npatch_naval_targeting_six_refuses_the_water_surface() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n\
+         [InfantryTypes]\n0=SQUID\n\
+         [SQUID]\nStrength=300\nArmor=light\nPrimary=Tentacle\nNavalTargeting=6\n\
+         [TANK]\nStrength=300\nArmor=heavy\nPrimary=Gun\n\
+         [Tentacle]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    rules.set_npatch_for_test(true);
+    let cells = (0..16u16)
+        .flat_map(|ry| (0..16u16).map(move |rx| (rx, ry)))
+        .map(|(rx, ry)| {
+            let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
+            if (10..=12).contains(&rx) && ry == 10 {
+                cell.land_type = 2;
+            }
+            cell
+        })
+        .collect();
+    let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells);
+    let mut sim = crate::sim::world::Simulation::new();
+    *sim.resolved_terrain = Some(terrain);
+    spawn(
+        &mut sim.substrate.entities,
+        1,
+        "SQUID",
+        EntityCategory::Infantry,
+        "Soviet",
+        (11, 10),
+    );
+    spawn(
+        &mut sim.substrate.entities,
+        2,
+        "TANK",
+        EntityCategory::Unit,
+        "Soviet",
+        (9, 10),
+    );
+    *sim.interner = test_interner();
+    let error = |firer: u64, kind: &str| {
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: &sim,
+            rules: &rules,
+            fog: None,
+            firer: sim.substrate.entities.get(firer).unwrap(),
+            obj: rules.object(kind).unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Cell(12, 10)),
+            weapon_index: 0,
+        }
+        .fire_error(false)
+    };
+    use crate::sim::combat::fire_error::FireError;
+    assert_eq!(error(1, "SQUID"), FireError::Illegal, "NavalTargeting=6");
+    assert_ne!(error(2, "TANK"), FireError::Illegal, "NavalTargeting=0");
+}

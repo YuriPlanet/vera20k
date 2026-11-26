@@ -552,6 +552,7 @@ impl Simulation {
                         target,
                         stored,
                         rules.ares_form(),
+                        rules.npatch(),
                     );
                 }
             }

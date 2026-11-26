@@ -277,3 +277,69 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
         }
     }
 }
+
+/// NPatch (NPExt bug-fix changelog item 84, issue #2948): an arcing
+/// projectile with `SubjectToCliffs=no` may fire at a unit three or more
+/// levels up on a structural bridge; native refuses regardless of the
+/// flag, and a cliff-respecting arcing projectile stays refused.
+#[test]
+fn npatch_arcing_subject_to_cliffs_no_shells_an_elevated_bridge() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::util::lepton::LEPTONS_PER_LEVEL;
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[ProjectileTypes]\n0=FREE\n1=WALL\n[WeaponTypes]\n0=ARC\n1=ARC2\n[VehicleTypes]\n0=HOWI\n[HOWI]\nStrength=300\nSpeed=6\nSight=10\nPrimary=ARC\nSecondary=ARC2\n\
+         [ARC]\nDamage=110\nROF=50\nRange=12\nProjectile=FREE\nWarhead=WH\n\
+         [ARC2]\nDamage=110\nROF=50\nRange=12\nProjectile=WALL\nWarhead=WH\n\
+         [WH]\nCellSpread=0\nVersus.none=100%\nVersus.steel=100%\n\
+         [FREE]\nArcing=yes\nSubjectToCliffs=no\nSubjectToWalls=no\n\
+         [WALL]\nArcing=yes\nSubjectToCliffs=yes\nSubjectToWalls=no\n",
+    ))
+    .unwrap();
+    rules.set_npatch_for_test(true);
+    let interner = test_interner();
+    let mut terrain = flat_terrain(43, 43);
+    let deck = terrain.cell_mut_for_test(12, 10).unwrap();
+    deck.level = 3;
+    deck.bridge_facts.raw_flags = 0x100;
+    terrain.test_set_native_allocated_cells(&[(12, 10)]);
+    let cells = NativeCellQuery::canonical(&terrain);
+    let mut world = Simulation::new();
+    let actor = placed(100, [10 * 256, 10 * 256, 0], true, false);
+    let mut target = placed(
+        200,
+        [
+            12 * 256 + 128,
+            10 * 256 + 128,
+            (3 * LEPTONS_PER_LEVEL) as i32,
+        ],
+        false,
+        true,
+    );
+    target.set_category_for_test(EntityCategory::Unit);
+    world.substrate.entities.insert(target);
+    let target = TargetKind::Entity(200);
+    let deck_z = (3 * LEPTONS_PER_LEVEL) as i32;
+    for (arc_name, projectile_name, expected) in
+        [("ARC", "FREE", true), ("ARC2", "WALL", false)]
+    {
+        let projectile = rules.projectile(projectile_name).unwrap();
+        assert!(projectile.arcing, "{projectile_name} is arcing");
+        let weapon = rules.weapon(arc_name).unwrap();
+        assert_eq!(
+            compute_in_range_in_query(
+                &actor,
+                (10 * 256i64, 10 * 256i64, 0),
+                &target,
+                weapon,
+                &rules,
+                &interner,
+                &world,
+                &cells,
+                &LineOfFireInputs::terrain_only(),
+            ),
+            expected,
+            "{projectile_name}: SubjectToCliffs={}, deck at z={deck_z}",
+            projectile.subject_to_cliffs,
+        );
+    }
+}

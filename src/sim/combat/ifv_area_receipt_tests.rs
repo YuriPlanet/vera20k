@@ -163,7 +163,10 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         // admits its damage smoke before returning to the impact caller.
         // Assert this one excluded allocation explicitly; do not treat the
         // isolated native cursor as a whole-receiver identity golden.
-        let receiver_allocations = u32::from(input["receiver_mode"] == "receiver");
+        // NPatch (#2968): the receiver starts exactly on yellow (100 of 200),
+        // which already counts as yellow, so this hit crosses nothing.
+        let receiver_allocations =
+            u32::from(input["receiver_mode"] == "receiver");
         assert_eq!(
             world.particle_systems().len(),
             receiver_allocations as usize,

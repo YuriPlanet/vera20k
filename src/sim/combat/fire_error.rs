@@ -428,6 +428,7 @@ pub(crate) struct SpawnCounts {
 pub(crate) struct FirerTypeFacts {
     pub natural: bool,        // +0x693
     pub pushy: bool,          // +0x692
+    pub naval_targeting: i32, // +0x600
     pub land_targeting: i32,  // +0x604
     pub mobile_fire: bool,    // +0x6AE
     pub turret_count: i32,    // +0x808
@@ -458,6 +459,7 @@ impl Default for FirerTypeFacts {
         Self {
             natural: false,
             pushy: false,
+            naval_targeting: 0,
             land_targeting: 0,
             mobile_fire: true,
             turret_count: 0,
@@ -583,6 +585,8 @@ impl Default for TargetTypeFacts {
 pub(crate) struct FireFacts {
     /// [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     pub ares: bool,
+    /// [`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch).
+    pub npatch: bool,
     /// [`RuleSet::kratos`](crate::rules::ruleset::RuleSet::kratos).
     pub kratos: bool,
     pub class: FirerClass,
@@ -1195,6 +1199,20 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
             && target.land_type != LAND_WATER
             && target.land_type != LAND_BEACH
             && firer_type.land_targeting == 1
+        {
+            return Illegal;
+        }
+        // NPatch (NPExt bug-fix changelog item 72, issue #2961): a
+        // NavalTargeting=6 firer (Type `+0x600`; SelectNavalTargetingWeapon
+        // @ 0x006F3820 answers -1 for it against every Techno on water)
+        // also refuses a water or beach cell. Native T41 reads only
+        // LandTargeting (`+0x604`), so the force-attack was admitted. The
+        // type is read, not the selector: the selector answers -1 for every
+        // non-Techno target, whatever the firer.
+        if facts.npatch
+            && kind == FireTargetKind::Cell
+            && (target.land_type == LAND_WATER || target.land_type == LAND_BEACH)
+            && firer_type.naval_targeting == 6
         {
             return Illegal;
         }

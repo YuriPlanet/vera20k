@@ -107,6 +107,68 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     (sim, id)
 }
 
+/// NPatch (NPExt bug-fix changelog item 19, issue #2956): a unit the
+/// Magnetron lifts is not self-propelled — held locomotion plays no move
+/// sounds. Stock started the victim's own move-sound tail.
+#[test]
+fn npatch_a_magnetron_lifted_unit_plays_no_move_sounds() {
+    use crate::sim::locomotor_lift::LocomotorLift;
+    let corpus = native();
+    let timeline = &corpus["timelines"][0];
+    let rules = {
+        let mut rules = fixture_rules(&corpus, &timeline["input"]);
+        rules.set_npatch_for_test(true);
+        rules
+    };
+    let before = &timeline["steps"][0]["before"];
+    let input = &timeline["input"];
+    let (mut sim, id) = scene(input, before, &rules);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .lift
+        .set_source_for_test(Some(99));
+    let body_before = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .body_frame_counter
+        .get();
+    // Force the changed arm: the visit reads the counter as advanced by the
+    // (absent) Process step.
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .body_frame_counter
+        .set_for_test(body_before + 1);
+    sim.session
+        .set_binary_frame_for_test(timeline["steps"][0]["frame"].as_u64().unwrap() as u32);
+    sim.sound_events.clear_for_test();
+    Simulation::tick_move_sound_after_process(
+        &sim.interner,
+        &sim.session,
+        &mut sim.main_rng,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.houses,
+        id,
+        body_before,
+        &rules,
+    );
+    assert!(
+        sim.sound_events.iter().all(|event| {
+            !matches!(
+                event,
+                SimSoundEvent::AnimationStarted { .. } | SimSoundEvent::AnimationStopped { .. }
+            )
+        }),
+        "held locomotion plays no move sounds"
+    );
+}
+
 fn native_effects(step: &Value, coordinates: bool) -> Vec<Value> {
     step["events"]
         .as_array()

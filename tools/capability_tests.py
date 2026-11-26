@@ -99,14 +99,6 @@ CAPABILITIES: tuple[Capability, ...] = (
         focus=("autoload",),
     ),
     Capability(
-        "npbug",
-        ("npbug",),
-        "VERA20K's opt-in NPBUG bug-fix extension: gameplay corrections "
-        "adopted from the NPExt changelog, deliberately deviating from "
-        "native behaviour only when compiled in.",
-        focus=("npbug_",),
-    ),
-    Capability(
         "debug-tools",
         ("debug-tools",),
         "Diagnostic builds: the browser dashboard, offline trainer and "
@@ -162,8 +154,8 @@ CAPABILITIES: tuple[Capability, ...] = (
 # compile-covered; each capability is tested on its own so the matrix stays
 # bounded.
 COMBINATIONS: tuple[tuple[str, ...], ...] = (
-    ("phobos", "npbug"),
-    ("debug-tools", "phobos", "npbug"),
+    ("phobos", "debug-tools"),
+    ("debug-tools", "verax"),
 )
 
 BY_NAME = {capability.name: capability for capability in CAPABILITIES}

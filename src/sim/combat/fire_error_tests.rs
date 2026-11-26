@@ -214,6 +214,7 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
     });
     FireFacts {
         ares,
+        npatch: false,
         kratos: flag(&input["kratos"]),
         class,
         frame,
@@ -300,6 +301,11 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
         firer_type: FirerTypeFacts {
             natural: flag(&ft["natural"]),
             pushy: flag(&ft["pushy"]),
+            // The oracle writes no `+0x600` (stock GetFireError reads it only
+            // inside the selector, a verdict here), so every row's firer
+            // holds the constructor 0 and npatch's NavalTargeting=6 arm
+            // (#2961) reaches no row.
+            naval_targeting: 0,
             land_targeting: int(&ft["land_targeting"]),
             mobile_fire: flag(&ft["mobile_fire"]),
             turret_count: int(&ft["turret_count"]),

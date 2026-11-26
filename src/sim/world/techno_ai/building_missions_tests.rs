@@ -1808,6 +1808,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             rules.general.prism_support,
             crate::rules::ruleset::PrismSupportRules {
                 modifier: 150,
+                npatch_modifier: 150,
                 max: 8,
                 delay: 45,
                 duration: 15,

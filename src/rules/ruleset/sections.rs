@@ -283,6 +283,11 @@ pub struct PrismSupportRules {
     /// adds to the shot. Original gamemd uses the scaled integer as the
     /// ReadDouble default; Ares converts that default back to a fraction.
     pub modifier: i32,
+    /// NPATCH (NPExt bug-fix changelog item 5, issue #2928): the modifier a
+    /// keyless `[General]` pass retains, alongside native's compounded
+    /// [`Self::modifier`]. [`RuleSet::prism_support_modifier`] chooses.
+    #[serde(default)]
+    pub npatch_modifier: i32,
     /// `PrismSupportMax=` (`Rules+0x4A0`), the supporters one shot recruits.
     pub max: i32,
     /// `PrismSupportDelay=` (`Rules+0x4A4`), a supporter's downtime in frames.
@@ -298,6 +303,7 @@ impl Default for PrismSupportRules {
     fn default() -> Self {
         Self {
             modifier: 100,
+            npatch_modifier: 100,
             max: 8,
             delay: 100,
             duration: 15,
@@ -334,8 +340,20 @@ impl PrismSupportRules {
             X87::load_f64(NativeF64Bits::from_bits(percent.to_bits())),
             X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
         ));
+        // NPATCH (NPExt bug-fix changelog item 5, issue #2928) without Ares:
+        // a `[General]` pass that omits the key keeps the retained percentage
+        // exactly instead of compounding it. Ares's round trip above still
+        // chops most values by one per keyless pass (a modded 130% reads 129).
+        // The NPatch value travels beside the native one so the switch can be
+        // read after the passes decided it.
+        let npatch_modifier = if general.is_present("PrismSupportModifier") {
+            modifier
+        } else {
+            self.npatch_modifier
+        };
         Self {
             modifier,
+            npatch_modifier,
             max: general.read_int("PrismSupportMax", self.max),
             delay: general.read_int("PrismSupportDelay", self.delay),
             duration: general.read_int("PrismSupportDuration", self.duration),

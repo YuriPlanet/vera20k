@@ -622,8 +622,16 @@ fn base_action(
     // the answer; none turns its 0 into NoMove, as the object is not
     // controllable (vt+0xA0, `0x00700C40`), but a Building's Cell tail still
     // answers its rally.
-    let warping =
-        actor.is_warped_out() || (actor.is_warping_in() && matches!(target, TargetKind::Cell(..)));
+    // NPATCH (NPExt bug-fix changelog item 28, issue #2979): the warp rung
+    // also catches a still-warping-in actor over an entity target. Native
+    // limits the warp-in arm to Cell targets, so a pre-emergence chrono
+    // legionnaire fell through to the attack rung, whose pure weapon-range
+    // alternative showed a force-attack cursor over friendlies.
+    let warping = if rules.npatch() {
+        actor.is_warped_out() || actor.is_warping_in()
+    } else {
+        actor.is_warped_out() || (actor.is_warping_in() && matches!(target, TargetKind::Cell(..)))
+    };
     let mut action = if warping {
         match *target {
             TargetKind::Entity(target_id) if selects(target_id, false) => AttackAction::Select,

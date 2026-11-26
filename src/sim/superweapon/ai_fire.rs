@@ -635,7 +635,7 @@ fn find_best_rally_target(
         .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity, ladder))
         .collect();
     let ares = ladder == RallyLadder::BestRally && rules.ares_form();
-    pick_best_rally_target(&entries, &mut sim.scenario_rng, ares)
+    pick_best_rally_target(&entries, &mut sim.scenario_rng, ares, rules.npatch())
 }
 
 /// VERA's Tiberian Sun Ion Cannon arm: Firestorm 2.0's House AI picker
@@ -1002,15 +1002,22 @@ fn ion_cannon_value(
 /// Scenario draw `RandomRanged(0, picks - 1)` chooses; none is the empty cell.
 /// `ares` is [`RuleSet::ares`] for the BestRally ladder, false for the Ion
 /// Cannon walk.
-fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng, ares: bool) -> (i16, i16) {
+fn pick_best_rally_target(
+    entries: &[RallyEntry],
+    rng: &mut SimRng,
+    ares: bool,
+    npatch: bool,
+) -> (i16, i16) {
     let mut best = 0i32;
     let mut picks: Vec<(i16, i16)> = Vec::new();
     for entry in entries {
         let mut value = if entry.in_playfield { entry.value } else { 0 };
         // Ares 3.0 HouseClass_PickOffensiveSWTarget 10034C50 (hook
         // 0x0050CFAA, size 0, resuming at 0x0050CFC9) replaces the cloaked
-        // entry's draw: its value becomes 0 and it is no candidate.
-        if ares && entry.cloaked {
+        // entry's draw: its value becomes 0 and it is no candidate. NPATCH
+        // (NPExt bug-fix changelog item 9, issue #2935) does the same, so the
+        // AI super weapon no longer aims at submerged subs or stealth tanks.
+        if (ares || npatch) && entry.cloaked {
             continue;
         }
         if entry.cloaked {

@@ -23,6 +23,9 @@ mod expiry_tests;
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_garrison_tests.rs"]
 mod garrison_tests;
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "building_art_npatch_tests.rs"]
+mod npatch_tests;
 #[path = "building_art_power.rs"]
 mod power;
 #[path = "building_art_storage.rs"]
@@ -419,6 +422,13 @@ impl Simulation {
             rules.general.condition_yellow,
         );
         let garrisoned = !entity.passenger_role().occupants().is_empty();
+        let opening_slots_empty = [18, 3, 4, 5, 6]
+            .iter()
+            .all(|&slot| entity.building_art.anim_slots[slot].is_none());
+        let owner_passive = self
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.multiplay_passive());
         // Ares BuildingClass_Place_Academy (hook 0x00446366 -> 10023750),
         // inside the first-opening block: an academy joins its owner's list.
         if ares && first_opening {
@@ -437,7 +447,20 @@ impl Simulation {
             id,
             rules,
         );
-        if first_opening && !refinery {
+        // NPATCH (NPExt bug-fix changelog item 95, issue #2971): a tech
+        // building (`NeedsEngineer=`) starts its active animations once a
+        // non-passive house owns it. Native fills Idle18 + Active3..6 at
+        // first opening (0x0044632E..0x00446374) with no ownership arm, so an
+        // un-owned oil derrick pumps from scenario placement. Under NPatch
+        // that fill skips a MultiplayPassive owner, and the capture's
+        // Grand_Opening re-run (Building 0x00448CEF) fills the slots the skip
+        // left empty once a non-passive house takes it; filled slots stay.
+        let fill_opening_slots = if rules.npatch() && object.needs_engineer {
+            !owner_passive && (first_opening || captured && opening_slots_empty)
+        } else {
+            first_opening
+        };
+        if fill_opening_slots && !refinery {
             for slot in [18, 3, 4, 5, 6] {
                 self.set_building_anim_slot(
                     id,

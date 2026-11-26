@@ -1063,6 +1063,7 @@ fn prism_general_reader_matches_the_original() {
     assert_eq!(reader.len(), 22);
     let rules_of = |native: &Value| PrismSupportRules {
         modifier: native["modifier"].as_i64().unwrap() as i32,
+        npatch_modifier: native["modifier"].as_i64().unwrap() as i32,
         max: native["max"].as_i64().unwrap() as i32,
         delay: native["delay"].as_i64().unwrap() as i32,
         duration: native["duration"].as_i64().unwrap() as i32,
@@ -1465,4 +1466,77 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
     let entity = fixture.sim.substrate.entities.get(loyal).unwrap();
     assert!(entity.building.pending_building_fire.pending().is_none());
     assert!(ares_beams(&fixture).is_empty());
+}
+
+
+/// NPatch (NPExt changelog item 18, issue #2978): a tower in body state 0
+/// (Building+534: under construction, or selling) supplies no support beam;
+/// native's supporter walk (`0x0044B357..0x0044B4BD`) never asks it. The
+/// oracle's `x_range` row recruits tower `a`; the same tower in its
+/// Construction body does not.
+#[test]
+fn npatch_a_tower_in_its_construction_body_supplies_no_support_beam() {
+    let row = rows(golden(), "recruit")
+        .iter()
+        .find(|row| row["input"]["name"] == "x_range")
+        .unwrap();
+    let mut fixture = Fixture::new(&row["input"], "master");
+    fixture.rules.set_npatch_for_test(true);
+    let master = fixture.id("master");
+    let tower = fixture.id("a");
+    let supporter = |fixture: &Fixture| {
+        let master_entity = fixture.sim.substrate.entities.get(master).unwrap();
+        let obj = fixture
+            .sim
+            .interner
+            .object_type(master_entity.type_ref(), &fixture.rules)
+            .unwrap();
+        super::prism_supporter(&fixture.sim, master, &fixture.rules, obj)
+    };
+    assert_eq!(supporter(&fixture), Some(tower));
+    fixture
+        .sim
+        .substrate
+        .entities
+        .get_mut(tower)
+        .unwrap()
+        .begin_building_body(
+            crate::sim::building_construction::BuildingBodyMode::Construction,
+            FRAME,
+        );
+    assert_eq!(supporter(&fixture), None);
+}
+
+/// NPatch (NPExt bug-fix changelog item 5, issue #2928): a `[General]` pass
+/// without `PrismSupportModifier=` keeps the retained percentage exactly —
+/// keyless mode and map layers neither compound it by another 100 nor chop
+/// it (130% is not a multiple of 25, which the Ares round trip would lose 1
+/// from per pass) — and a ruleset never naming it keeps the constructor value.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn npatch_prism_modifier_stays_stable_across_keyless_general_passes() {
+    let rules_layer = || {
+        IniFile::from_str("[General]\nPrismSupportModifier=130%\nVehicleParachute=VEHCHUTE\n")
+    };
+    let modifier = |layers: RulesLayerStack| {
+        let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+        assert!(rules.npatch(), "the fixture key turns NPatch on");
+        rules.prism_support_modifier()
+    };
+    let read_once = modifier(RulesLayerStack::new(rules_layer()));
+    let mut layers = RulesLayerStack::new(rules_layer());
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[General]\nName=Mode without a prism override\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nName=Map without a prism override\n"),
+    );
+    assert_eq!(modifier(layers), read_once);
+
+    let never_named = modifier(RulesLayerStack::new(IniFile::from_str(
+        "[General]\nName=No prism key anywhere\nVehicleParachute=VEHCHUTE\n",
+    )));
+    assert_eq!(never_named, 100);
 }

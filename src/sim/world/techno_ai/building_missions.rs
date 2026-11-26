@@ -1448,7 +1448,9 @@ fn prism_arm(
 /// ftol) is at most the master's weapon 1 range (`vt+0x168(1)`, the Secondary
 /// `PrismSupport`'s 2048 in retail; inclusive, `0x0044B49A`). The nearest
 /// wins; a tie keeps the lower vector index (`0x0044B49E..0x0044B4AA`).
-/// Power, EMP, the tower's own target, a build-up or a sale are not asked.
+/// Power, EMP, the tower's own target, a build-up or a sale are not asked,
+/// except that NPatch refuses a tower in body state 0 (Building+534), which
+/// covers both a build-up and a sale.
 ///
 /// FireAt already started the shooter's actual rearm inside its visit
 /// (`0x006FF2B2..0x006FF2BB`); a zero ROF remains expired, as in native.
@@ -1472,13 +1474,18 @@ fn prism_supporter(
         let Some(candidate) = sim.substrate.entities.get(candidate_id) else {
             continue;
         };
+        // NPatch (NPExt bug-fix changelog item 18, issue #2978): a tower
+        // still under construction (Building+534 == 0) supplies no support
+        // beam. Native's walk asked alive/same-type/rearm/idle-ish but never
+        // the build state.
         let admitted = candidate.lifecycle.object_alive()
             && candidate.type_ref() == master.type_ref()
             && candidate.seldom.rearm_timer.remaining(now) == 0
             && candidate.building.pending_building_fire.remaining_ticks() == 0
             && candidate.drain.draining_me().is_none()
             && candidate.mission.effective() != attack
-            && candidate_id != id;
+            && candidate_id != id
+            && !(rules.npatch() && candidate.in_construction_bstate());
         if !admitted {
             continue;
         }
@@ -1803,7 +1810,7 @@ impl crate::sim::world::ObjectSubstrate {
             return ProjectilePayload::UNSCALED;
         }
         entity.building.prism_support_count.reset();
-        support_multiplier(rules.general.prism_support.modifier, count)
+        support_multiplier(rules.prism_support_modifier(), count)
     }
 }
 

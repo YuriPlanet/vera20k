@@ -167,7 +167,6 @@ fn snapshot_capability_rejects_foreign_mode_before_body_decode() {
         !crate::rules::PHOBOS_ENABLED,
         true,
         !crate::rules::VERAX_ENABLED,
-        !crate::rules::NPBUG_ENABLED,
     );
     // A complete header with no body proves capability admission runs before
     // Simulation deserialization, even without bound scenario resources.

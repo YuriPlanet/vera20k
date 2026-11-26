@@ -36,8 +36,13 @@ use super::*;
 ///
 /// Every cost on both sides is the type's Cost_Of for the VICTIM's house
 /// (`victim_house`; `0x00702ED1`, `0x00702F13`, `0x00702F77`, `0x00702FD4`).
+/// NPATCH deviation (NPExt bug-fix changelog item 55, issue #2981): the
+/// recipient's divisor is Cost_Of for the RECIPIENT's own house instead, so
+/// the victim's industrial plants and country cost ratios stop skewing the
+/// award.
 fn award_kill_experience(
     entities: &mut EntityStore,
+    houses: &crate::sim::houses::Houses,
     rules: &RuleSet,
     interner: &StringInterner,
     killer_id: u64,
@@ -49,6 +54,18 @@ fn award_kill_experience(
         return;
     }
     let cost_of = |object: &ObjectType| rules.cost_of(object, victim_house);
+    let recipient_cost = |recipient_id: u64, object: &ObjectType| -> i32 {
+        if rules.npatch() {
+            let house = entities
+                .get(recipient_id)
+                .map(|entity| entity.owner())
+                .and_then(|owner| houses.get(&owner))
+                .map(crate::sim::house_state::HouseState::cost_factors);
+            rules.cost_of(object, house.as_ref())
+        } else {
+            cost_of(object)
+        }
+    };
     let Some(killer) = entities.get(killer_id) else {
         return;
     };
@@ -57,7 +74,7 @@ fn award_kill_experience(
     };
     let trainable_cost = |id: u64| -> Option<(u64, i32)> {
         let object = interner.object_type(entities.get(id)?.type_ref(), rules)?;
-        object.trainable.then_some((id, cost_of(object)))
+        object.trainable.then_some((id, recipient_cost(id, object)))
     };
     // Branch 1: a passenger firing from an OpenTopped transport pays its
     // transporter (the `+0x82`/`+0x11C` pair).
@@ -66,7 +83,7 @@ fn award_kill_experience(
         Some(transporter)
     } else if killer_type.trainable {
         // Branch 2: the killer itself.
-        Some((killer_id, cost_of(killer_type)))
+        Some((killer_id, recipient_cost(killer_id, killer_type)))
     } else if killer_type.missile_spawn {
         // Branch 3: a spawned missile pays its launcher.
         killer
@@ -78,7 +95,7 @@ fn award_kill_experience(
         // Branch 4: an occupied building pays the occupant at its fire index.
         combat_weapon::firing_occupant_id(killer, killer_type).and_then(|occupant| {
             let occupant_type = interner.object_type(entities.get(occupant)?.type_ref(), rules)?;
-            Some((occupant, cost_of(occupant_type)))
+            Some((occupant, recipient_cost(occupant, occupant_type)))
         })
     };
     let Some((recipient_id, recipient_cost)) = recipient else {
@@ -339,7 +356,8 @@ impl KillSource {
 /// `killer_owner`: the kill/score record and the experience award
 /// ([`award_kill_experience`]). Every cost it reads is Cost_Of for the victim's
 /// house. The victim's base cost is captured before Tag callbacks at702D61;
-/// recipient costs reread the victim's current House at702ED1/702F13/702FD4.
+/// recipient costs reread the victim's current House at702ED1/702F13/702FD4
+/// (under NPatch the recipient's own House, see [`award_kill_experience`]).
 /// One award feeds both the score
 /// (`0x0070300F`) and the experience: the victim's cost, zero when the
 /// killer's house is allied with the victim, else doubled for a veteran or
@@ -440,6 +458,7 @@ fn record_the_kill(
         if let Some(killer_id) = killer_id {
             award_kill_experience(
                 entities,
+                houses,
                 rules,
                 interner,
                 killer_id,

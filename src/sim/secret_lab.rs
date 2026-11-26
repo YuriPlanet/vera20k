@@ -64,8 +64,7 @@ impl Simulation {
                     .is_some_and(|object| object.secret_lab().enabled())
         });
         let lists = rules.general.secret_lab_choices();
-        let total: usize = lists.iter().map(Vec::len).sum();
-        if labs.is_empty() || total < labs.len() {
+        if labs.is_empty() {
             return;
         }
         let choices: Vec<_> = [
@@ -77,6 +76,42 @@ impl Simulation {
         .zip(lists)
         .flat_map(|(category, list)| list.iter().map(move |name| (category, name)))
         .collect();
+        // Native also returns when no Secret list names a type
+        // (`0x0068C069..0x0068C071`).
+        if choices.is_empty() {
+            return;
+        }
+        if rules.npatch() {
+            // NPATCH (NPExt bug-fix changelog item 86, issue #2933): native
+            // 68C112..68C1B5 removes a slot from a temporary index vector but
+            // then uses the drawn POSITION, not its value, against the
+            // original type arrays, so the drawable range shrinks per lab
+            // (strong early bias, duplicate grants) and a lab count above the
+            // type count returns early and grants nothing. The rewrite draws
+            // uniformly over the choices that remain, removes the granted
+            // one, and refills the whole list once it runs out, so excess
+            // labs keep granting. Override types still spend this draw.
+            let mut remaining = choices.clone();
+            for lab in labs {
+                if remaining.is_empty() {
+                    remaining = choices.clone();
+                }
+                let high = (remaining.len() - 1) as u32;
+                let drawn = scenario_rng.next_range_u32_inclusive(0, high) as usize;
+                let (category, name) = remaining.remove(drawn);
+                let id = interner.intern(name);
+                substrate
+                    .entities
+                    .get_mut(lab)
+                    .expect("registered lab")
+                    .assign_secret_lab_fallback((category, id));
+            }
+            return;
+        }
+        let total: usize = choices.len();
+        if total < labs.len() {
+            return;
+        }
         // Native removes a slot from a temporary index vector but then uses
         // the drawn POSITION, not its value, against the original type arrays
         // (68C112..68C1B5). Thus only the shrinking count matters, and duplicate
@@ -211,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn secret_lab_assignment_matches_original_rewards_and_all_three_full_rng_states() {
+        fn secret_lab_assignment_matches_original_rewards_and_all_three_full_rng_states() {
         let corpus = native();
         for row in corpus["assignment"]
             .as_array()
@@ -377,6 +412,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// NPatch (NPExt bug-fix changelog item 86, issue #2933): the rewrite
+    /// draws uniformly over the choices that remain — no duplicate grants
+    /// while types last — and labs outnumbering the types keep granting from
+    /// the refilled list instead of going inert.
+    #[test]
+    fn npatch_secret_labs_grant_distinct_types_and_survive_outnumbering() {
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=LAB\n[LAB]\nStrength=100\nSecretLab=yes\n\
+             [General]\nSecretInfantry=infantry0,infantry1\nVehicleParachute=VEHCHUTE\n",
+        ))
+        .unwrap();
+        rules.set_npatch_for_test(true);
+        let mut sim = world(&rules, &[]);
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+            native()["assignment"][0]["rng_before"]["scenario"]
+                .as_str()
+                .unwrap(),
+        );
+        let labs: Vec<_> = (0..3)
+            .map(|index| {
+                sim.spawn_object("LAB", "H", 10 + index as u16, 10, 0, &rules)
+                    .unwrap()
+            })
+            .collect();
+        let (_, draws) = trace_draws(|| {
+            Simulation::assign_secret_lab_production(
+                &mut sim.interner,
+                &mut sim.scenario_rng,
+                &mut sim.substrate,
+                &rules,
+            );
+        });
+        // Every lab draws, including the refill lab the native early return
+        // would have refused; the singleton range consumes no store draw.
+        assert_eq!(draws.len(), 2);
+        let granted: Vec<Option<String>> = labs
+            .iter()
+            .map(|&lab| {
+                sim.substrate
+                    .entities
+                    .get(lab)
+                    .unwrap()
+                    .secret_lab_fallback()
+                    .map(|(_, id)| sim.interner.resolve(id).to_owned())
+            })
+            .collect();
+        assert!(granted.iter().all(Option::is_some), "{granted:?}");
+        assert_ne!(granted[0], granted[1], "distinct while types remain");
     }
 
     /// Authored map strings can enter the interner before canonical rule IDs.

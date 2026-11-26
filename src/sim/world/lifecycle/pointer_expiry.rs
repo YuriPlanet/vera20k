@@ -977,6 +977,21 @@ impl Simulation {
         context: UninitContext<'_>,
     ) -> ProjectileTarget {
         let entity = self.substrate.entities.get(target_id);
+        // NPATCH (NPExt bug-fix changelog item 99, issue #2951): a dying or
+        // docking aircraft is low, so native's repair substitutes the pad's
+        // ground cell and the missile flew into the airbase. The repair
+        // loses the target instead — the pad takes no stray damage. The dock
+        // test is the home pad (Aircraft+0x6CC), which the factory exit sets
+        // (`0x0044404D`) and only Find_Docking_Bay or PointerExpired clears,
+        // so it covers any padded aircraft not in the air, parked or taking
+        // off too; an aircraft in the air already loses the target below.
+        if context.rules().npatch()
+            && let Some(entity) = entity
+            && entity.category() == crate::map::entities::EntityCategory::Aircraft
+            && (entity.death.is_dying() || entity.ammo().is_some_and(|ammo| ammo.dock().is_some()))
+        {
+            return ProjectileTarget::None;
+        }
         let xy = entity
             .map(crate::sim::movement::ground_pose::object_center_xy)
             .or_else(|| {

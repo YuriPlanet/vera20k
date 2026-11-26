@@ -760,6 +760,33 @@ fn erase_awards_price_each_cost_by_its_house() {
     assert_eq!(sim.houses[&russians].economy().score(), 450);
 }
 
+/// NPatch (NPExt bug-fix changelog item 7, issue #2942): erasing an ally's
+/// tank pays no experience. Native's Update award has no alliance test, so
+/// even a shared-owner victim paid `Add(ownerCost, targetCost)` on top of
+/// the zeroed Record_The_Kill award.
+#[test]
+fn npatch_erasing_an_allied_tank_pays_no_experience() {
+    let mut rules = rules();
+    rules.set_npatch_for_test(true);
+    let mut sim = sim(9);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let before = veterancy(&sim, cleg);
+    chain(&mut sim, &rules, tank, &[cleg], 1);
+    sim.temporal_update_head(
+        cleg,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(erased(&sim, tank));
+    assert_eq!(
+        veterancy(&sim, cleg),
+        before,
+        "an allied victim pays nothing"
+    );
+}
+
 /// An erased building of the current player names the Cell of its
 /// foundation centre for the Spacebar ring (`BuildingClass::
 /// Death_Announcement @ 0x0044D760`, called at `0x0071AA3A`): GAPOWR's 2x2
@@ -1539,7 +1566,8 @@ fn a_warped_object_is_frozen_and_immune() {
 /// by `a_legionnaires_inviso_bullet_warps_after_existing_object_turns`.
 /// Nothing survives, WarpAway plays, the kill is scored
 /// and the legionnaire gains `Add(1500, 900)` twice (the Update's and
-/// Record_The_Kill's).
+/// Record_The_Kill's). NPatch (issue #2942) keeps only Record_The_Kill's
+/// single award.
 #[test]
 fn a_chrono_legionnaire_erases_a_tank() {
     use crate::sim::command::{Command, CommandEnvelope};

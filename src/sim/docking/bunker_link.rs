@@ -1392,6 +1392,7 @@ mod tests {
                 tank,
                 held,
                 rules.ares_form(),
+                rules.npatch(),
             );
             assert_eq!(receiver.attack_target.target(), Some(TargetKind::Entity(2)));
         }

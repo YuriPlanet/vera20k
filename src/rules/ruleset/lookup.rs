@@ -902,6 +902,14 @@ impl RuleSet {
         self.npatch
     }
 
+    /// Test hook for chains whose fixture INI is a captured corpus: turn the
+    /// per-game switch on after loading. `npatch_switch_tests` covers the
+    /// data reading itself.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_npatch_for_test(&mut self, npatch: bool) {
+        self.npatch = npatch;
+    }
+
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
     /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
     /// rules read this one answer; app, asset and INI-root code read the

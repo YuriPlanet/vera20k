@@ -565,7 +565,16 @@ pub(crate) fn compute_range_target(
         // cannon at the bridge's ground level can shell neither.
         let rise = (tz as i32).wrapping_sub(src.2 as i32);
         let cell = cells.lookup_world(tx as i32, ty as i32);
-        if cells.flags(cell) & 0x100 != 0 && i64::from(rise) >= 3 * LEPTONS_PER_LEVEL {
+        // NPatch (NPExt bug-fix changelog item 84, issue #2948): the ceiling
+        // consults the projectile's SubjectToCliffs=. A projectile that
+        // ignores cliffs (the retail Ballistic, Lobbed and GrandCannonBall
+        // shells, not the V3's InvisibleHigh) may shell a deck three or more
+        // levels up; native (0x006F74D7..0x006F7504) refuses regardless of
+        // any flag.
+        if !(rules.npatch() && !projectile.subject_to_cliffs)
+            && cells.flags(cell) & 0x100 != 0
+            && i64::from(rise) >= 3 * LEPTONS_PER_LEVEL
+        {
             return false;
         }
         // The arcing arm is NOT exempt from the line-of-fire walk: 0x006F7519

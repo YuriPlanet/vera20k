@@ -360,7 +360,16 @@ fn mind_control_area(
     let mut bridge_changed = false;
     if let Some(warhead) = rules.warhead(&general.dominator_warhead) {
         let warhead_id = sim.interner.intern(&general.dominator_warhead);
-        let storm_house = sim.lightning_storm.owner();
+        // NPatch (NPExt bug-fix changelog item 80, issue #2938): the strike
+        // books its kills to the Dominator's owner. Native passes the
+        // Lightning Storm's house slot (0x00A9FACC), which is empty whenever
+        // no storm is active, so building kills reached no score and no
+        // destroyed-buildings count.
+        let storm_house = if rules.npatch() {
+            sim.psychic_dominator.owner
+        } else {
+            sim.lightning_storm.owner()
+        };
         let [x, y, z] = coords;
         bridge_changed = crate::sim::combat::world_receiver::apply_area_damage(
             sim,

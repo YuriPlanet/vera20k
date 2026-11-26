@@ -936,11 +936,17 @@ impl ObjectType {
     /// GetCurrentWeapon70E1A0's resolved range; Option already represents the
     /// null WeaponStruct/WeaponType test70E240. No General.GapRadius fallback.
     /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    ///
+    /// NPATCH deviation (issue #2930, NPExt bug-fix changelog item 53): under
+    /// NPatch `SensorArray=` is out of the ring-radius choice, so a plain
+    /// sensor array falls through to the weapon-range arm instead of drawing
+    /// `CloakRadiusInCells=`; the cloak-generator arm stays native.
     pub fn building_sensor_range(
         &self,
         gap_supercharged: bool,
         weapon_range: Option<i32>,
         ares: bool,
+        npatch: bool,
     ) -> i32 {
         // Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook
         // 0x4566B0) answers a set RadialIndicatorRadius at the entry.
@@ -959,7 +965,7 @@ impl ObjectType {
             // Ares GetRangeOfRadial_SensorArray10016D30 (hook4566F9) shows
             // the SensorsSight the array deposits.
             i32::from(self.sensors_sight)
-        } else if self.sensor_array || self.cloak_generator {
+        } else if (self.sensor_array && !npatch) || self.cloak_generator {
             i32::from(self.cloak_radius_in_cells)
         } else {
             weapon_range

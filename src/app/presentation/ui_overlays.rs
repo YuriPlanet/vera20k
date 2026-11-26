@@ -151,6 +151,7 @@ impl HudFacts {
                     )
                     .map(|weapon| weapon.range_leptons),
                     rules.ares(),
+                    rules.npatch(),
                 )
             }),
             foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),

@@ -20,11 +20,26 @@ impl RuleSet {
 
     /// CollectSelectedIDs732D47 -> Ares10041990/10041A3F gates the
     /// DeploysInto/UndeploysInto seeds. A stock game keeps retail behavior.
+    ///
+    /// NPATCH (NPExt bug-fix changelog item 45, issue #2980) drops the seeds:
+    /// native `TypeSelect__BuildSeedTypeIDs @ 0x00732D10` adds each selected
+    /// type's counterpart (Type+0x404/+0x408), so T with an MCV selected also
+    /// gathers Construction Yards and the reverse. Ares's explicit key wins.
     pub fn type_select_uses_deploy(&self) -> bool {
         if self.ares {
             self.ares_global_controls.type_select_use_deploy()
         } else {
-            true
+            !self.npatch()
+        }
+    }
+
+    /// `[General] PrismSupportModifier=`, the percent each supporter adds:
+    /// native's compounded value, or NPATCH's retained one (issue #2928).
+    pub fn prism_support_modifier(&self) -> i32 {
+        if self.npatch() {
+            self.general.prism_support.npatch_modifier
+        } else {
+            self.general.prism_support.modifier
         }
     }
 

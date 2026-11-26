@@ -333,3 +333,42 @@ fn guard_scan_refuses_a_candidate_strictly_below_minus_twenty_leptons() {
         "the gate reads the current height each scan"
     );
 }
+
+/// NPatch (NPExt bug-fix changelog item 41, issue #2937): the passive scan
+/// refuses an invulnerable candidate — native has no such arm, so a guard
+/// dumps its fire into an Iron-Curtained enemy the receiver nullifies.
+#[test]
+fn npatch_passive_scan_refuses_an_invulnerable_candidate() {
+    use crate::rules::ini_parser::IniFile;
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n1=TARGET\n\
+         [InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+         [MTNK]\nStrength=300\nSpeed=6\nSight=8\nPrimary=PRIMARY\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [TARGET]\nStrength=300\nSpeed=6\nSight=8\nPrimary=PRIMARY\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [PRIMARY]\nDamage=101\nROF=30\nRange=6\nProjectile=SHOT\nWarhead=WH\nOmniFire=yes\n\
+         [SHOT]\nInviso=yes\nAG=yes\nAA=no\n\
+         [WH]\nCellSpread=0\nVersus.steel=100%\n",
+    ))
+    .unwrap();
+    rules.set_npatch_for_test(true);
+    let (mut sim, tank, target) = guard_scene(&rules, "TARGET");
+    assert_eq!(
+        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None),
+        Some(crate::sim::combat::TargetKind::Entity(target)),
+        "the uncloaked, uncurtained enemy is a normal candidate"
+    );
+    let frame = sim.session.binary_frame();
+    crate::sim::superweapon::invulnerability::apply_invulnerability(
+        sim.substrate.entities.get_mut(target).unwrap(),
+        frame,
+        100,
+        crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
+    );
+    assert_eq!(
+        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None),
+        None,
+        "the curtained enemy is refused under npatch"
+    );
+}

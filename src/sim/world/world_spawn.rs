@@ -3235,6 +3235,19 @@ impl Simulation {
                 sid,
                 super::UninitContext::new(rules).with_effects(frame_effects),
             );
+            // NPatch (NPExt bug-fix changelog item 6, issue #2965): the refused
+            // conversion's limbo Unit is unreachable — no later code ever
+            // retries its placement — yet its retained Add_Tracking count
+            // (`0x004FF700`) feeds ShortGame's BaseUnit sum, so the defeat
+            // gate (`HouseClass::Update` `0x004F8E92..0x004F8F77`) keeps the
+            // empty house alive forever. Delete the phantom with the
+            // building. Native retains the limbo identity.
+            if rules.npatch() {
+                self.uninit_with_context(
+                    new_sid,
+                    super::UninitContext::new(rules).with_effects(frame_effects),
+                );
+            }
             return;
         }
         Self::initialize_cloak_after_unlimbo(
@@ -3445,3 +3458,7 @@ mod techno_constructor_tests;
 #[cfg(all(test, tests_sim_world_t_z))]
 #[path = "failed_yard_repack_tests.rs"]
 mod failed_yard_repack_tests;
+
+#[cfg(test)]
+#[path = "failed_undeploy_defeat_tests.rs"]
+mod failed_undeploy_defeat_tests;

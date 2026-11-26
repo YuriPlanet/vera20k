@@ -134,6 +134,8 @@ mod prone_damage_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod radiation_beam_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
+mod record_kill_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod railgun_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod screen_shake_tests;

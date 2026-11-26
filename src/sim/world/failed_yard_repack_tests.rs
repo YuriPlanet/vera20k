@@ -137,6 +137,9 @@ fn scene() -> Option<(SimRuntime, u64)> {
     ))
 }
 
+// NPatch #2965 pins this retained-constructor behavior as native; under the
+// capability the refused conversion deletes the limbo Unit instead (see
+// `failed_undeploy_defeat_tests`).
 fn assert_retained(sim: &Simulation, owner: InternedId, id: u64) {
     let unit = sim
         .entities()

@@ -955,3 +955,45 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
     assert!(!attached_anim(&sim, tank, "MINDANIM"));
     assert!(attached_anim(&sim, tank, "MINDANIMR"));
 }
+
+/// NPatch (NPExt bug-fix changelog item 80, issue #2938): the strike's area
+/// damage books its building kills to the Dominator's owner — score and the
+/// destroyed-buildings count — instead of the lightning-storm house slot,
+/// which is empty when no storm is active.
+#[test]
+fn npatch_dominator_strike_kills_book_to_the_owner() {
+    let Some(mut rules) = retail_rules() else {
+        return;
+    };
+    rules.set_npatch_for_test(true);
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let russians: InternedId = sim.interner.intern("Russians");
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
+    let pillbox = spawn(&mut sim, &rules, "GAPILE", "Americans", TARGET);
+    let score_before = sim.houses[&russians].economy().score();
+    let killed_before = sim.houses[&russians].stats().buildings_killed();
+    *sim.psychic_dominator = PsychicDominatorState::for_test(
+        2,
+        (TARGET.0 as i16, TARGET.1 as i16),
+        Some(russians),
+        None,
+    );
+    let mut frames = 0;
+    while sim.psychic_dominator.status_number() != 3 {
+        step(&mut sim, &rules);
+        frames += 1;
+        assert!(frames < 200, "no strike");
+    }
+    assert!(
+        sim.substrate.entities.get(pillbox).is_none(),
+        "the pillbox died"
+    );
+    assert_eq!(
+        sim.houses[&russians].stats().buildings_killed(),
+        killed_before + 1
+    );
+    assert!(sim.houses[&russians].economy().score() > score_before);
+}

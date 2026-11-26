@@ -84,6 +84,7 @@ impl Simulation {
             bounds,
             size,
             self.session.binary_frame(),
+            rules.npatch(),
             &RallyCellClick {
                 clicked: (clicked.0 as i16, clicked.1 as i16),
                 location: crate::sim::movement::ground_pose::position_world_coord(&entity.position),
@@ -198,6 +199,7 @@ fn resolve_rally_cell_click(
     bounds: PlayfieldBounds,
     size: (i32, i32),
     frame: u32,
+    npatch: bool,
     click: &RallyCellClick,
 ) -> Result<Option<(u16, u16)>, String> {
     let (speed_type, movement_zone) = if click.naval {
@@ -245,7 +247,27 @@ fn resolve_rally_cell_click(
         },
         frame,
     )
-    .filter(|cell| *cell != (0, 0)))
+    .filter(|cell| *cell != (0, 0))
+    .filter(|&cell| {
+        // NPatch (NPExt bug-fix changelog item 17, issue #2953): a naval
+        // factory's rally accepts only a water cell. Native `SetRallyPoint`
+        // (`0x00443860`) resolves the click in the Amphibious zone (4), so a
+        // land cell there was accepted and beached the ships. RESIDUAL: a
+        // refused click still plays the new-rally announcement and keeps the
+        // Move cursor, and the opening shipyard rally takes no rally when its
+        // offset cell is not water.
+        !(npatch && click.naval)
+            || land_type(cells, cell)
+                == Some(crate::rules::terrain_rules::LandType::Water.as_index())
+    }))
+}
+
+/// A cell's land type, through the query's terrain.
+fn land_type(cells: &NativeCellQuery<'_>, cell: (u16, u16)) -> Option<u8> {
+    cells
+        .terrain()
+        .cell(cell.0, cell.1)
+        .map(|cell| cell.land_type)
 }
 
 #[cfg(all(test, tests_sim_world_p_s))]
@@ -382,6 +404,7 @@ mod tests {
                 bounds(),
                 (8, 8),
                 input["frame"].as_u64().unwrap_or(100) as u32,
+                false,
                 &RallyCellClick {
                     clicked: (clicked.0 as i16, clicked.1 as i16),
                     location: coord(input.get("source").unwrap_or(&json!([1344, 1344, 0]))),
@@ -396,6 +419,8 @@ mod tests {
             )
             .unwrap();
             let expected = pair(&row["nearby"][0]["result"]);
+            // These native rows pin stock rules; the NPatch naval refusal is
+            // covered by `npatch_a_naval_rally_refuses_a_land_click`.
             assert_eq!(result, (expected != (0, 0)).then_some(expected), "{input}");
             let dummy = pair(&row["nearby"][0]["dummy_at_return"]);
             assert_eq!(
@@ -431,6 +456,7 @@ mod tests {
                     bounds(),
                     (8, 8),
                     100,
+                    false,
                     &click,
                 )
                 .unwrap()
@@ -439,5 +465,36 @@ mod tests {
         let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &[(11, 5)]);
         let answer = resolve(&terrain, Some(&walls)).expect("a neighbour passes");
         assert_ne!(answer, (11, 5));
+    }
+}
+
+#[cfg(test)]
+mod npatch_rally_tests {
+    use serde_json::json;
+
+    use super::super::native_cell_input_test_fixture::{bounds, coord, native_fixture};
+    use super::*;
+
+    /// NPATCH (NPExt bug-fix changelog item 17, issue #2953): a naval
+    /// factory's rally click on a land cell is refused; a water click still
+    /// resolves. Stock resolves the land click through the amphibious zone.
+    #[test]
+    fn npatch_a_naval_rally_refuses_a_land_click() {
+        let (terrain, zones, raw) = native_fixture(&json!({}));
+        let cells = NativeCellQuery::isolated(&terrain);
+        let naval = RallyCellClick {
+            clicked: (11, 5),
+            location: coord(&json!([1344, 1344, 0])),
+            factory: Some(FactoryType::UnitType),
+            naval: true,
+        };
+        let stock =
+            resolve_rally_cell_click(&cells, &zones, &raw, None, bounds(), (8, 8), 100, false, &naval)
+                .unwrap();
+        assert!(stock.is_some(), "stock accepts the land click");
+        let npatch =
+            resolve_rally_cell_click(&cells, &zones, &raw, None, bounds(), (8, 8), 100, true, &naval)
+                .unwrap();
+        assert_eq!(npatch, None, "a land click is refused");
     }
 }

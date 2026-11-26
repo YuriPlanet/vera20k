@@ -1418,6 +1418,7 @@ pub(crate) fn snapshot_get_rof(
     let firer = substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
+            npatch: rules.npatch(),
             // GetROF6FCFA9: a Building with more than one round returns1
             // before weapon queries and the ordinary ROF variation draw.
             building_ammo: firer
@@ -2811,7 +2812,7 @@ fn commit_fire_bookkeeping(
             world.leave_team(drainer_id, true, rules, effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
-            represented_assign_target(drainer, None, rules.ares_form());
+            represented_assign_target(drainer, None, rules.ares_form(), rules.npatch());
         }
     }
 }

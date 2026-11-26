@@ -73,7 +73,6 @@ pub fn log_banner(log_path: Option<&Path>) {
     );
     log::info!("NPatch support: in every build, from the game's data");
     log::info!("VeraX support compiled in: {}", crate::rules::VERAX_ENABLED);
-    log::info!("NPBUG support compiled in: {}", crate::rules::NPBUG_ENABLED);
     if let Some(path) = log_path {
         log::info!("Log file: {}", path.display());
     }

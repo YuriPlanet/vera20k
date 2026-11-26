@@ -11,10 +11,15 @@ fn corpus() -> &'static Value {
 struct LocalHealthHost<'a, F> {
     entity: &'a mut GameEntity,
     strength: &'a Cell<i32>,
+    npatch: bool,
     callback: F,
 }
 
 impl<F: FnMut(&mut GameEntity, HealthCallback)> ObjectHealthHost for LocalHealthHost<'_, F> {
+    fn npatch(&self) -> bool {
+        self.npatch
+    }
+
     fn object(&self) -> Option<&GameEntity> {
         Some(self.entity)
     }
@@ -120,6 +125,7 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
             let mut host = LocalHealthHost {
                 entity: &mut entity,
                 strength: &strength,
+                npatch: false,
                 callback,
             };
             let result = commit(
@@ -270,6 +276,49 @@ fn is_full_matches_the_masked_ratio_compare() {
             assert_eq!(health.is_full(strength), native, "{health:?} / {strength}");
         }
     }
+}
+
+/// NPatch #2968 (NPExt bug-fix changelog item 65): a hit landing exactly on
+/// `strength >> 1` is the yellow crossing, and the next hit from that boundary
+/// does not cross it again, so the yellow Tags (39 with a source, 42) run once.
+#[test]
+fn npatch_exact_yellow_hit_crosses_once() {
+    let strength = Cell::new(100);
+    let mut entity = GameEntity::test_default(1, "X", "Americans", 2, 2);
+    entity.health.set_for_test(100);
+    entity.lifecycle.set_object_alive_for_test(true);
+    let mut results = Vec::new();
+    let mut yellow_tags = Vec::new();
+    for damage in [50, 10] {
+        let mut host = LocalHealthHost {
+            entity: &mut entity,
+            strength: &strength,
+            npatch: true,
+            callback: |_: &mut GameEntity, callback: HealthCallback| {
+                if let HealthCallback::Tag {
+                    kind: kind @ (39 | 42),
+                    ..
+                } = callback
+                {
+                    yellow_tags.push(kind);
+                }
+            },
+        };
+        let mut packet = damage;
+        results.push(commit(
+            &mut host,
+            &mut packet,
+            strength.get(),
+            true,
+            false,
+            0.25,
+            true,
+            false,
+        ));
+    }
+    assert_eq!(results, [DamageState::Yellow, DamageState::Damaged]);
+    assert_eq!(yellow_tags, [39, 42]);
+    assert_eq!(entity.health.current(), 40);
 }
 
 #[path = "object_health_trigger_tests.rs"]

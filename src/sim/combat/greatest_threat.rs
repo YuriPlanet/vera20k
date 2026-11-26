@@ -2571,6 +2571,24 @@ fn evaluate_candidate(
         return None;
     }
 
+    // NPatch (NPExt bug-fix changelog item 41, issue #2937): the passive scan
+    // refuses an invulnerable candidate. Native G1..G13 has no such arm —
+    // the Iron Curtain is enforced receiver-side only — so auto-acquisition
+    // dumps fire into curtained units and every shot is wasted. The capture
+    // and occupy scans (mask `0x200` engineer, `0x8000` occupiable, `0x10000`
+    // tech buildings) fire nothing and keep native.
+    if ctx.rules.npatch() && ctx.mask & 0x18200 == 0 {
+        let frame = ctx
+            .fire_world
+            .map_or(0, |world| world.session.binary_frame());
+        if crate::sim::superweapon::invulnerability::is_invulnerable(
+            candidate.invulnerability.as_ref(),
+            frame,
+        ) {
+            return None;
+        }
+    }
+
     // G8 — `TechnoClass+0x3D5`, the represented-in-the-playfield byte.
     if ctx.require_playfield_membership && !candidate.in_playfield() {
         return None;

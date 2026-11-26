@@ -69,6 +69,9 @@ impl ReceiverHealthHost<'_, '_, '_> {
 }
 
 impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
+    fn npatch(&self) -> bool {
+        self.rules.npatch()
+    }
     fn object(&self) -> Option<&GameEntity> {
         self.world.substrate.entities.get(self.event.target_id)
     }

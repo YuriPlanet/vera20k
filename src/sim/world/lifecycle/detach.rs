@@ -391,6 +391,7 @@ impl Simulation {
                 entity,
                 None,
                 context.rules.ares_form(),
+                context.rules.npatch(),
             );
         }
         self.assign_null_destination(

@@ -715,6 +715,59 @@ fn the_make_infantry_end_matches_native() {
     assert_eq!(compared, 19);
 }
 
+/// NPatch (NPExt bug-fix changelog item 4, issue #2934): a MakeInfantry end
+/// whose Unlimbo the occupied cell refuses frees the failed creation instead
+/// of leaving it in limbo. Natively every completed frame of the mutator's
+/// GENDEATH anim over a blocked cell allocates a fresh brute and never
+/// destroys the refused one, so memory shrinks until the game stalls. The
+/// anim still steps its stage back and retries on the next completed frame,
+/// as natively (`0x00424B23`); the fixture's location and stage come from
+/// the refused `make_infantry` capture row.
+#[test]
+fn npatch_a_refused_make_infantry_creation_is_freed() {
+    let mut rules = rules("");
+    rules.set_npatch_for_test(true);
+    let (rules, mut sim, americans) = world_with(rules, 64, &[((40, 41), 2)]);
+    // The vehicle bit blocks the cell's infantry admission, as the capture's
+    // refused row does.
+    sim.substrate.raw_cell_occupation.mark_ground(
+        40,
+        41,
+        crate::sim::cell_kernel::INFANTRY_OCCUPATION_VEHICLE_BIT,
+    );
+    let anim = super::super::spawn_super_anim(&mut sim, &rules, "GENDEATH", [10340, 10556, 208])
+        .expect("the MakeInfantry anim");
+    sim.substrate.set_anim_owner_house(anim, americans);
+    sim.substrate
+        .anims
+        .get_mut(anim)
+        .unwrap()
+        .runtime_mut_for_test()
+        .current_frame = 11;
+
+    let ends = sim.anim_make_infantry(
+        anim,
+        0,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+
+    assert!(!ends, "the refused Unlimbo keeps the anim for its retry");
+    assert_eq!(
+        sim.anim(anim).unwrap().runtime().current_frame,
+        10,
+        "the stage steps back one for the next completed frame"
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .values()
+            .any(|entity| entity.lifecycle.in_limbo()),
+        "the failed creation is freed, not left in limbo"
+    );
+}
+
 /// `InfantryClass::ReceiveDamage`'s NotHuman rung (`0x005184F7`): a dog
 /// dies with Die1 whatever the warhead's InfDeath, so the mutator leaves no
 /// InfantryMutate anim over it, only a corpse at Health 0. The fixture binds

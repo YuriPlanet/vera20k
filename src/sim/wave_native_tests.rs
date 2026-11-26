@@ -33,6 +33,7 @@ fn context(input: &Value) -> WaveUpdateContext {
         target_position: Some(coord(&input["target_center"])),
         ares: None,
         target_is_unit: true,
+        magnetic_range_leptons: None,
     }
 }
 
@@ -445,6 +446,7 @@ fn original_update_reverses_only_a_unit_target() {
         target_position: Some(coord(&input["target_center"])),
         ares: None,
         target_is_unit: false,
+        magnetic_range_leptons: None,
     };
     let terminal = wave.initialize(context, Some(&terrain));
     assert_state(&wave, &row["after"], !terminal);
@@ -460,4 +462,34 @@ fn vera_only_wave_construction_uses_the_true_square() {
     let wave = Wave::new(3, source, target);
     assert!(!wave.constructor_distance_is_live(false));
     assert!(wave.constructor_distance_is_live(true));
+}
+
+
+/// NPatch (NPExt bug-fix changelog item 85, issue #2986): a magnetic wave
+/// decays once its held target leaves its owner's weapon range — native
+/// skips type 3 in the tracking decay, so the beam followed a drifting
+/// target across any distance. The retail MagneticBeam's `Range=12` bounds
+/// it: a target 10 cells out keeps the beam, one 13 cells out ends it.
+#[test]
+fn npatch_a_magnetic_wave_decays_past_its_weapon_range() {
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(80);
+    let wave_at = |cells: i32| {
+        let mut wave = from_native(&corpus()["birth_rows"][0]["after"]);
+        let owner = ProjectileCoord::new(2560, 2560, 0);
+        let context = WaveUpdateContext {
+            owner_position: Some(owner),
+            owner_fire_coordinate: Some(owner),
+            owner_current_target: wave.target_ref(),
+            target_position: Some(ProjectileCoord::new(2560 + cells * 256, 2560, 0)),
+            target_is_unit: true,
+            ares: None,
+            magnetic_range_leptons: Some(12 * 256),
+        };
+        wave.update_geometry_and_cells(context, Some(&terrain));
+        wave
+    };
+    let near = wave_at(10);
+    assert!(near.active_geometry() && !near.decaying(), "in range");
+    let far = wave_at(13);
+    assert!(far.decaying() && !far.active_geometry(), "past Range=");
 }

@@ -70,7 +70,6 @@ fn browser_admission_rejects_other_build_capability() {
         !crate::rules::PHOBOS_ENABLED,
         true,
         !crate::rules::VERAX_ENABLED,
-        !crate::rules::NPBUG_ENABLED,
     );
     let mut header = serde_json::to_value(header).unwrap();
     header["compatibility"] = serde_json::to_value(other_capability).unwrap();
