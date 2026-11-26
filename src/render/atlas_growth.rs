@@ -1,10 +1,11 @@
 //! Shelf allocation and sub-rectangle uploads for atlas pages that grow.
 //!
-//! The entity atlases pack everything the map starts with once, at load.
-//! Sprites that appear later — the first building or vehicle of a new type
-//! mid-match, a slope-transition frame — go into free shelf space on a page
-//! sized to the refresh that opened it, and upload only the rows they occupy
-//! in bands, so adding sprites never repacks or re-uploads the resident ones.
+//! The entity and map atlases pack everything the map starts with once, at
+//! load, through [`plan_initial_shelves`]. Sprites that appear later — the
+//! first building or vehicle of a new type mid-match, a slope-transition
+//! frame — go into free shelf space on a fixed-size page and upload only the
+//! rows they occupy, so adding sprites never repacks or re-uploads the sprites
+//! already resident. Both paths place through [`ShelfCursor`].
 
 /// Gap between neighbouring sprites so sampling never bleeds across them.
 pub(crate) const SPRITE_PADDING: u32 = 1;
@@ -14,6 +15,7 @@ pub(crate) const SPRITE_PADDING: u32 = 1;
 pub(crate) struct ShelfCursor {
     width: u32,
     height: u32,
+    padding: u32,
     x: u32,
     y: u32,
     shelf_height: u32,
@@ -21,9 +23,15 @@ pub(crate) struct ShelfCursor {
 
 impl ShelfCursor {
     pub(crate) fn new(width: u32, height: u32) -> Self {
+        Self::with_padding(width, height, SPRITE_PADDING)
+    }
+
+    /// A page whose sprites and shelves sit `padding` pixels apart.
+    pub(crate) fn with_padding(width: u32, height: u32, padding: u32) -> Self {
         Self {
             width,
             height,
+            padding,
             x: 0,
             y: 0,
             shelf_height: 0,
@@ -34,7 +42,7 @@ impl ShelfCursor {
     /// earlier sprite occupies.
     pub(crate) fn start_new_shelf(&mut self) {
         if self.x > 0 {
-            self.y = self.y.saturating_add(self.shelf_height + SPRITE_PADDING);
+            self.y = self.y.saturating_add(self.shelf_height + self.padding);
             self.x = 0;
             self.shelf_height = 0;
         }
@@ -49,17 +57,152 @@ impl ShelfCursor {
         }
         let (mut x, mut y, mut shelf_height) = (self.x, self.y, self.shelf_height);
         if x.saturating_add(width) > self.width {
-            y = y.saturating_add(shelf_height + SPRITE_PADDING);
+            y = y.saturating_add(shelf_height + self.padding);
             x = 0;
             shelf_height = 0;
         }
         if y.saturating_add(height) > self.height {
             return None;
         }
-        self.x = x + width + SPRITE_PADDING;
+        self.x = x + width + self.padding;
         self.y = y;
         self.shelf_height = shelf_height.max(height);
         Some([x, y])
+    }
+
+    /// Rows down to the bottom of the open shelf.
+    pub(crate) fn used_height(&self) -> u32 {
+        self.y.saturating_add(self.shelf_height)
+    }
+}
+
+/// How an atlas packs the sprites it starts with.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct InitialShelfPolicy {
+    /// Gap between neighbouring sprites and shelves.
+    pub(crate) padding: u32,
+    /// GPU texture limit. Pages never grow wider than this.
+    pub(crate) max_dim: u32,
+    /// Open another page when the shelves outgrow `max_dim` rows. Without it
+    /// the single page reports its full height and the caller clamps or
+    /// refuses it.
+    pub(crate) split_pages: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ShelfPlacement {
+    /// Position of the sprite in the planned `sizes`.
+    pub(crate) index: usize,
+    pub(crate) page: usize,
+    pub(crate) origin: [u32; 2],
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct InitialShelfPlan {
+    /// Width of every page.
+    pub(crate) width: u32,
+    /// Each page's used rows: the bottom edge of its lowest sprite.
+    pub(crate) page_heights: Vec<u32>,
+    /// Tallest first, so each page's shelves come top to bottom.
+    pub(crate) placements: Vec<ShelfPlacement>,
+}
+
+impl InitialShelfPlan {
+    /// Height of a single-page plan; 1 when nothing was placed.
+    pub(crate) fn single_page_height(&self) -> u32 {
+        self.page_heights.first().copied().unwrap_or(1)
+    }
+}
+
+const MIN_INITIAL_PAGE_WIDTH: u32 = 64;
+
+/// Shelf-pack `sizes` (`[width, height]`) for an atlas's initial load.
+///
+/// Sprites go tallest first; equal heights keep their order in `sizes`, so a
+/// caller sets its tie order by ordering its input. The page width starts at
+/// the square root of the padded area, at least 64 px and never narrower than
+/// the widest sprite, and doubles until one page's shelves fit `max_dim` rows
+/// or the width reaches `max_dim`. A sprite wider than `max_dim` (or, with
+/// `split_pages`, taller) is left out; callers that must not drop sprites
+/// reject them first.
+pub(crate) fn plan_initial_shelves(
+    sizes: &[[u32; 2]],
+    policy: InitialShelfPolicy,
+) -> InitialShelfPlan {
+    let InitialShelfPolicy {
+        padding,
+        max_dim,
+        split_pages,
+    } = policy;
+    let mut order: Vec<usize> = (0..sizes.len()).collect();
+    order.sort_by(|&a, &b| sizes[b][1].cmp(&sizes[a][1]));
+
+    let padded_area: u64 = sizes
+        .iter()
+        .map(|&[width, height]| {
+            (u64::from(width) + u64::from(padding)) * (u64::from(height) + u64::from(padding))
+        })
+        .sum();
+    let widest = sizes.iter().map(|&[width, _]| width).max().unwrap_or(0);
+    // A page narrower than its widest sprite would place it partly outside.
+    let mut width = ((padded_area as f64).sqrt().ceil() as u32)
+        .max(MIN_INITIAL_PAGE_WIDTH.min(max_dim))
+        .max(widest)
+        .min(max_dim);
+    let one_page_height = |width: u32| {
+        let mut shelf = ShelfCursor::with_padding(width, u32::MAX, padding);
+        for &index in &order {
+            let [sprite_width, sprite_height] = sizes[index];
+            shelf.place(sprite_width, sprite_height);
+        }
+        shelf.used_height()
+    };
+    while one_page_height(width) > max_dim && width < max_dim {
+        width = width.saturating_mul(2).min(max_dim);
+    }
+
+    let page_rows = if split_pages { max_dim } else { u32::MAX };
+    let mut shelf: Option<ShelfCursor> = None;
+    let mut page_heights: Vec<u32> = Vec::new();
+    let mut placements = Vec::with_capacity(sizes.len());
+    for &index in &order {
+        let [sprite_width, sprite_height] = sizes[index];
+        if sprite_width > width || sprite_height > page_rows {
+            continue;
+        }
+        let origin = match shelf
+            .as_mut()
+            .and_then(|shelf| shelf.place(sprite_width, sprite_height))
+        {
+            Some(origin) => origin,
+            None => {
+                let mut page = ShelfCursor::with_padding(width, page_rows, padding);
+                let origin = page
+                    .place(sprite_width, sprite_height)
+                    .expect("a fresh page holds a sprite within its limits");
+                shelf = Some(page);
+                page_heights.push(0);
+                origin
+            }
+        };
+        let page = page_heights.len() - 1;
+        page_heights[page] = page_heights[page].max(origin[1] + sprite_height);
+        placements.push(ShelfPlacement {
+            index,
+            page,
+            origin,
+        });
+    }
+    if placements.len() < sizes.len() {
+        log::warn!(
+            "{} sprites exceed the {max_dim} px texture limit and are left out of the atlas",
+            sizes.len() - placements.len()
+        );
+    }
+    InitialShelfPlan {
+        width,
+        page_heights,
+        placements,
     }
 }
 
@@ -70,8 +213,7 @@ pub(crate) struct GrowthShelf {
 }
 
 /// One refresh's sprites on one page. Their rows hold no earlier sprite, so
-/// each texture of the page can upload them in one or more [`write_band`]s
-/// without overwriting resident sprites.
+/// each texture of the page takes them in a single [`gather_band`].
 pub(crate) struct PagePlacements<T> {
     pub(crate) page: usize,
     pub(crate) sprites: Vec<([u32; 2], T)>,
@@ -79,17 +221,14 @@ pub(crate) struct PagePlacements<T> {
 
 /// Place one refresh's sprites, tallest first, on the current growth page,
 /// opening a page with `open_page` whenever it is full. `open_page` gets the
-/// [`suggested_page_size`] for the sprites that still need room — at least the
-/// one being placed, between `floor` and `cap` — and returns the new page's
-/// index and size. The refresh starts on a fresh shelf, so the rows it fills
-/// hold no resident sprite. Sprites wider or taller than `max_dim` are
-/// returned unplaced.
+/// size the page must at least have and returns the new page's index and
+/// size. The refresh starts on a fresh shelf, so the rows it fills hold no
+/// resident sprite. Sprites wider or taller than `max_dim` are returned
+/// unplaced.
 pub(crate) fn place_on_growth_pages<T>(
     growth: &mut Option<GrowthShelf>,
     mut sprites: Vec<T>,
     size: impl Fn(&T) -> [u32; 2],
-    floor: u32,
-    cap: u32,
     max_dim: u32,
     mut open_page: impl FnMut([u32; 2]) -> (usize, [u32; 2]),
 ) -> (Vec<PagePlacements<T>>, Vec<T>) {
@@ -99,13 +238,10 @@ pub(crate) fn place_on_growth_pages<T>(
         return (placed, unplaced);
     }
     sprites.sort_by_key(|sprite| std::cmp::Reverse(size(sprite)[1]));
-    // The shelves fill tallest first, so the rows a new page still has to
-    // hold are exactly the sprites from the current one onward.
-    let sizes: Vec<[u32; 2]> = sprites.iter().map(&size).collect();
     if let Some(growth) = growth.as_mut() {
         growth.shelf.start_new_shelf();
     }
-    for (index, sprite) in sprites.into_iter().enumerate() {
+    for sprite in sprites {
         let [width, height] = size(&sprite);
         if width > max_dim || height > max_dim {
             unplaced.push(sprite);
@@ -117,8 +253,7 @@ pub(crate) fn place_on_growth_pages<T>(
         let (page, origin) = match spot {
             Some(spot) => spot,
             None => {
-                let (page, [page_width, page_height]) =
-                    open_page(suggested_page_size(&sizes[index..], floor, cap, max_dim));
+                let (page, [page_width, page_height]) = open_page([width, height]);
                 let mut shelf = ShelfCursor::new(page_width, page_height);
                 let origin = shelf.place(width, height);
                 *growth = Some(GrowthShelf { page, shelf });
@@ -142,138 +277,13 @@ pub(crate) fn place_on_growth_pages<T>(
     (placed, unplaced)
 }
 
-/// Page size for a refresh that still has to place `sizes`, tallest sprite
-/// first as [`place_on_growth_pages`] does.
-///
-/// A growth page used to be one fixed square edge — 8192 for the unit atlas,
-/// 64 MiB of R8 texels — whatever the refresh needed: a campaign's 32-sprite
-/// refresh paid the same as a 21,000-sprite one, and the allocation with its
-/// zero-fill landed on the frame that triggered the refresh. The estimate here
-/// is the area the sprites need plus half again, so later refreshes find free
-/// shelves and keep appending instead of each opening a page. The edge is that
-/// area's square side, widened until the shelves fit, as the map-load pack
-/// does, and the rows are what the shelves then hold.
-///
-/// `floor_side` and `cap_side` bound it. The floor keeps many small refreshes
-/// sharing one page, which bounds the page count an atlas's entries index.
-/// The cap keeps a large refresh at the page the game already allocated, so
-/// sizing can only shrink a page. A sprite bigger than either still raises the
-/// edge to what it needs, and past `max_dim` the placer reports it as before.
-pub(crate) fn suggested_page_size(
-    sizes: &[[u32; 2]],
-    floor_side: u32,
-    cap_side: u32,
-    max_dim: u32,
-) -> [u32; 2] {
-    if sizes.is_empty() || max_dim == 0 {
-        return [0, 0];
-    }
-    // A sprite no page could hold is unplaced by the caller; it must not
-    // inflate the page for the sprites that do fit.
-    let sizes: Vec<[u32; 2]> = sizes
-        .iter()
-        .filter(|[width, height]| *width <= max_dim && *height <= max_dim)
-        .copied()
-        .collect();
-    if sizes.is_empty() {
-        return [0, 0];
-    }
-    let widest = sizes.iter().map(|size| size[0]).max().unwrap_or(0) as u64;
-    let tallest = sizes.iter().map(|size| size[1]).max().unwrap_or(0) as u64;
-    // Each sprite costs its rows plus one padded column beside it.
-    let area = sizes
-        .iter()
-        .map(|[width, height]| (u64::from(*width) + u64::from(SPRITE_PADDING)) * u64::from(*height))
-        .sum::<u64>();
-    let ceiling = u64::from(cap_side)
-        .max(widest.max(tallest))
-        .min(u64::from(max_dim));
-    let with_room = area + area / 2;
-    let mut width = with_room
-        .isqrt()
-        .max(widest)
-        .max(u64::from(floor_side))
-        .min(ceiling)
-        .max(1);
-    let mut rows = shelf_height(&sizes, width);
-    while rows > width && width < ceiling {
-        width = (width * 2).min(ceiling);
-        rows = shelf_height(&sizes, width);
-    }
-    let width = width.min(ceiling) as u32;
-    // Rows past the ceiling spill to the next page the placer opens.
-    let height = rows.max(tallest).min(ceiling) as u32;
-    [width, height].map(|edge| edge.max(floor_side).min(max_dim))
-}
-
-/// Shelf height `sizes` reach at `page_width`, filled left to right and
-/// tallest first, exactly as [`place_on_growth_pages`] places them.
-fn shelf_height(sizes: &[[u32; 2]], page_width: u64) -> u64 {
-    let pad = u64::from(SPRITE_PADDING);
-    let (mut x, mut y, mut shelf) = (0u64, 0u64, 0u64);
-    for &[width, height] in sizes {
-        let (width, height) = (u64::from(width), u64::from(height));
-        if x + width > page_width {
-            y += shelf + pad;
-            x = 0;
-            shelf = 0;
-        }
-        x += width + pad;
-        shelf = shelf.max(height);
-    }
-    y + shelf
-}
-
-/// Split one page group's placements into bands of whole shelves, each
-/// staging no more than `band_bytes` of texels, and pass every band's sprites
-/// to `write`. `sprites` runs shelf by shelf from the top, as
-/// [`place_on_growth_pages`] returns it. Gathering a whole refresh in one pass
-/// stages every row it spans at once — tens of megabytes for a large one —
-/// the same allocation stall the fixed-size page used to cause. `row_bytes` is
-/// the destination stride: [`gather_band`] writes from column 0 to the band's
-/// rightmost texel, so a band costs its rows times that stride.
-pub(crate) fn write_group_bands<T>(
-    sprites: &[([u32; 2], T)],
-    size: impl Fn(&T) -> [u32; 2],
-    row_bytes: u64,
-    band_bytes: u64,
-    mut write: impl FnMut(&[([u32; 2], &T)]),
-) {
-    debug_assert!(
-        sprites.windows(2).all(|pair| pair[0].0[1] <= pair[1].0[1]),
-        "placements must run shelf by shelf from the top"
-    );
-    let mut start = 0usize;
-    while start < sprites.len() {
-        let top = sprites[start].0[1];
-        let (mut end, mut bottom) = (start, top);
-        while end < sprites.len() {
-            // Take one whole shelf, so a band never splits a shelf's rows.
-            let shelf_y = sprites[end].0[1];
-            let mut next = end;
-            while next < sprites.len() && sprites[next].0[1] == shelf_y {
-                bottom = bottom.max(sprites[next].0[1] + size(&sprites[next].1)[1]);
-                next += 1;
-            }
-            if end > start && u64::from(bottom - top) * row_bytes > band_bytes {
-                break;
-            }
-            end = next;
-        }
-        let band: Vec<_> = sprites[start..end]
-            .iter()
-            .map(|(origin, sprite)| (*origin, sprite))
-            .collect();
-        write(&band);
-        start = end;
-    }
-}
-
 /// Rectangles `(origin, size)` gathered into the band of rows they span, from
 /// column 0 to the rightmost texel: returns the band's origin, size and
 /// tightly packed texels. `texels(i)` gives rectangle `i`'s tightly packed
 /// texels as it is copied in, so a caller can produce them one at a time.
-/// Texels no rectangle covers are zero.
+/// Texels no rectangle covers are zero, so a band is only written over rows
+/// no resident sprite occupies (a fresh shelf, see
+/// [`ShelfCursor::start_new_shelf`]).
 pub(crate) fn gather_band<T: AsRef<[u8]>>(
     rects: &[([u32; 2], [u32; 2])],
     bytes_per_texel: u32,
@@ -302,21 +312,6 @@ pub(crate) fn gather_band<T: AsRef<[u8]>>(
         }
     }
     Some(([0, top], [right, bottom - top], band))
-}
-
-/// Upload rectangles placed on rows no resident sprite occupies (a fresh
-/// shelf, see [`ShelfCursor::start_new_shelf`]) with one write, however many
-/// there are; per-rectangle writes cost a staging allocation each.
-pub(crate) fn write_band<T: AsRef<[u8]>>(
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    bytes_per_texel: u32,
-    rects: &[([u32; 2], [u32; 2])],
-    texels: impl FnMut(usize) -> T,
-) {
-    if let Some((origin, size, band)) = gather_band(rects, bytes_per_texel, texels) {
-        write_texels(queue, texture, origin, size, bytes_per_texel, &band);
-    }
 }
 
 /// Upload one tightly packed rectangle of texels into `texture` at `origin`.
@@ -362,7 +357,7 @@ pub(crate) fn write_texels(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 
@@ -429,96 +424,6 @@ mod tests {
     }
 
     #[test]
-    fn a_small_refresh_asks_for_a_page_its_sprites_actually_need() {
-        // One vehicle type's every-slope sprite set: the unit atlas used to
-        // answer this with a fixed 8192 edge, 64 MiB of R8 texels plus their
-        // zero-fill, on the frame that first drew the type.
-        let sprites = [[120u32, 130u32]; 32 * 17];
-        let [width, height] = suggested_page_size(&sprites, 2048, 8192, 16384);
-        assert!(
-            u64::from(width) * u64::from(height) < 8192 * 8192 / 2,
-            "32x17 sprites of 120x130 ask for {width}x{height}"
-        );
-        // The page still holds them: shelves tallest first inside `width`.
-        assert!(shelf_height(&sprites, u64::from(width)) <= u64::from(height.max(width)));
-        assert!(width >= height, "a page is never a column of shelves");
-
-        // A refresh smaller than the floor gets the floor, so many of them
-        // share one page instead of each opening one.
-        assert_eq!(
-            suggested_page_size(&[[32, 40]], 2048, 8192, 16384),
-            [2048, 2048]
-        );
-    }
-
-    #[test]
-    fn a_large_refresh_never_asks_for_more_than_the_old_fixed_page() {
-        // A cap of 8192 is the edge every unit growth page used to have, so
-        // sizing only shrinks a page: a refresh bigger than that still gets
-        // the whole old page, and a sprite bigger than the cap but admissible
-        // still raises the edge to what it needs.
-        let many = [[400u32, 400u32]; 400];
-        let [width, height] = suggested_page_size(&many, 2048, 8192, 16384);
-        assert_eq!(width, 8192, "a refresh past the cap gets the old edge");
-        assert!(
-            u64::from(width) * u64::from(height) <= 8192 * 8192,
-            "never more texels than the old page: {width}x{height}"
-        );
-        assert_eq!(
-            suggested_page_size(&[[12000, 40]], 2048, 8192, 16384),
-            [12000, 2048],
-            "a wide sprite is never squeezed below its own width"
-        );
-        // Sprites the device cannot hold at all are left to the placer, which
-        // reports them; they do not size the page for the rest.
-        assert_eq!(
-            suggested_page_size(&[[12000, 40], [100, 100]], 2048, 8192, 8192),
-            [2048, 2048],
-            "only admissible sprites count"
-        );
-        assert_eq!(suggested_page_size(&[], 2048, 8192, 16384), [0, 0]);
-    }
-
-    #[test]
-    fn growth_bands_take_whole_shelves_and_stay_inside_their_budget() {
-        // Three shelves of eight 100x100 sprites on a page 1000 texels wide.
-        let placed: Vec<([u32; 2], [u32; 2])> = (0..3)
-            .flat_map(|shelf| {
-                (0..8).map(move |column| ([column * 100, shelf * 101], [100u32, 100u32]))
-            })
-            .collect();
-        let mut bands: Vec<Vec<[u32; 2]>> = Vec::new();
-        // One shelf spans 100 rows of a 1000-texel stride: 100 KB staged.
-        write_group_bands(
-            &placed,
-            |s| *s,
-            1000,
-            250_000,
-            |band| {
-                bands.push(band.iter().map(|(origin, _)| *origin).collect());
-            },
-        );
-        assert_eq!(
-            bands.iter().map(|band| band.len()).collect::<Vec<_>>(),
-            [16, 8],
-            "two shelves, then the one that would not fit: {bands:?}"
-        );
-        let written: usize = bands.iter().map(|band| band.len()).sum();
-        assert_eq!(written, placed.len(), "every placement is written once");
-        assert!(
-            bands.iter().all(|band| band
-                .windows(2)
-                .all(|p| p[0][1] == p[1][1] || p[0][1] < p[1][1])),
-            "a band holds whole shelves in page order"
-        );
-        // A budget smaller than one shelf still writes it, so a band is never
-        // empty and the loop always advances.
-        let mut single = 0;
-        write_group_bands(&placed, |s| *s, 1000, 1, |_| single += 1);
-        assert_eq!(single, 3, "one band per shelf");
-    }
-
-    #[test]
     fn a_refresh_band_never_reaches_rows_an_earlier_refresh_filled() {
         let mut growth = None;
         let mut opened = Vec::new();
@@ -530,8 +435,6 @@ mod tests {
             &mut growth,
             vec![[5, 2], [3, 4]],
             |s| *s,
-            0,
-            64,
             64,
             &mut open_page,
         );
@@ -540,7 +443,7 @@ mod tests {
         // The earlier shelf still has room for a 3x1 sprite at x = 10; a
         // refresh must not use it, since its band would zero those rows.
         let (second, _) =
-            place_on_growth_pages(&mut growth, vec![[3, 1]], |s| *s, 0, 64, 64, &mut open_page);
+            place_on_growth_pages(&mut growth, vec![[3, 1]], |s| *s, 64, &mut open_page);
         let top = second[0]
             .sprites
             .iter()
@@ -555,8 +458,8 @@ mod tests {
         assert_eq!(second[0].page, first[0].page);
         assert_eq!(
             opened,
-            vec![[12, 4]],
-            "the first refresh asked for the page its sprites need, not a 64 MiB square"
+            vec![[3, 4]],
+            "the first refresh opened the only page"
         );
     }
 
@@ -568,8 +471,6 @@ mod tests {
             &mut growth,
             vec![[8, 8], [8, 8], [20, 1]],
             |s| *s,
-            0,
-            16,
             16,
             |_| {
                 pages += 1;
@@ -583,11 +484,106 @@ mod tests {
             &mut growth,
             Vec::<[u32; 2]>::new(),
             |s| *s,
-            0,
-            16,
             16,
             |_| unreachable!(),
         );
         assert!(none.is_empty() && unplaced.is_empty());
+    }
+
+    fn placed(plan: &InitialShelfPlan) -> Vec<(usize, usize, [u32; 2])> {
+        plan.placements
+            .iter()
+            .map(|placed| (placed.index, placed.page, placed.origin))
+            .collect()
+    }
+
+    /// Expected plans come from running the former per-atlas loops on these
+    /// inputs: `unit_atlas::plan_sprite_pages` and `sprite_atlas::
+    /// plan_shp_pages` (identical here) for split pages, and
+    /// `sidebar_cameo_atlas::pack_cameos` for one page with 2 px gaps. Both
+    /// widen the page once; equal heights keep their input order.
+    #[test]
+    fn initial_shelves_keep_the_former_loops_rectangles() {
+        let sprites = [
+            [35, 50],
+            [20, 12],
+            [35, 50],
+            [35, 50],
+            [10, 30],
+            [35, 50],
+            [64, 5],
+            [12, 12],
+        ];
+        let paged = plan_initial_shelves(
+            &sprites,
+            InitialShelfPolicy {
+                padding: 1,
+                max_dim: 100,
+                split_pages: true,
+            },
+        );
+        assert_eq!((paged.width, &paged.page_heights[..]), (100, &[50, 63][..]));
+        assert_eq!(
+            placed(&paged),
+            [
+                (0, 0, [0, 0]),
+                (2, 0, [36, 0]),
+                (3, 1, [0, 0]),
+                (5, 1, [36, 0]),
+                (4, 1, [72, 0]),
+                (1, 1, [0, 51]),
+                (7, 1, [21, 51]),
+                (6, 1, [34, 51]),
+            ]
+        );
+
+        let cameos = [
+            [60, 48],
+            [40, 20],
+            [60, 48],
+            [25, 48],
+            [90, 10],
+            [40, 20],
+            [60, 48],
+            [8, 8],
+        ];
+        let single = plan_initial_shelves(
+            &cameos,
+            InitialShelfPolicy {
+                padding: 2,
+                max_dim: 160,
+                split_pages: false,
+            },
+        );
+        assert_eq!((single.width, single.single_page_height()), (160, 110));
+        assert_eq!(
+            placed(&single),
+            [
+                (0, 0, [0, 0]),
+                (2, 0, [62, 0]),
+                (3, 0, [124, 0]),
+                (6, 0, [0, 50]),
+                (1, 0, [62, 50]),
+                (5, 0, [104, 50]),
+                (4, 0, [0, 100]),
+                (7, 0, [92, 100]),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sprite_wider_than_the_estimated_page_widens_it() {
+        // The padded area alone suggests a 175 px page; the former loops
+        // placed this sprite at (0, 1), running 125 px past the page edge.
+        let plan = plan_initial_shelves(
+            &[[300, 100]],
+            InitialShelfPolicy {
+                padding: 1,
+                max_dim: 4096,
+                split_pages: false,
+            },
+        );
+        assert_eq!(plan.width, 300);
+        assert_eq!(placed(&plan), [(0, 0, [0, 0])]);
     }
 }

@@ -12,7 +12,7 @@ use super::event_packet::{
 };
 use super::lockstep::NetworkSendPolicy;
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "command_exchange_tests.rs"]
 mod tests;
 
@@ -29,7 +29,6 @@ pub struct CommandPeerProgress {
     response_elapsed_buckets: u32,
     ///Peer+14: raw timeGetTime at Wait entry (648881..64889E).
     bar_reference_millis: u32,
-    lag_frames: i32,
 }
 
 impl CommandPeerProgress {
@@ -42,7 +41,6 @@ impl CommandPeerProgress {
             initial_response: false,
             response_elapsed_buckets: 0,
             bar_reference_millis: 0,
-            lag_frames: 0,
         }
     }
 
@@ -57,10 +55,6 @@ impl CommandPeerProgress {
     }
     pub const fn received_commands(&self) -> u64 {
         self.received_commands
-    }
-
-    pub const fn lag_frames(&self) -> i32 {
-        self.lag_frames
     }
 
     ///64A861..64A927: keep the unsigned bucket lag separate from the
@@ -193,18 +187,6 @@ impl CommandExchange {
         })
     }
 
-    /// UpdatePeerFrameLag652187..6521B2: only after a source advances its
-    /// authenticated frame. The measured Logic rate belongs to MainThrottle,
-    /// and RTT to the existing private connection response history.
-    pub fn record_peer_lag(&mut self, source: i8, frame: u32, logic_rate: u32, response: u32) {
-        if let Some(peer) = self.peers.iter_mut().find(|peer| peer.house_id == source) {
-            let transit_frames = logic_rate.wrapping_mul(response >> 1) / 60;
-            peer.lag_frames = (frame as i32)
-                .wrapping_sub(transit_frames as i32)
-                .wrapping_sub(peer.frame);
-        }
-    }
-
     ///647825..6478CB resets progress and all packet caches. Reconnection after
     /// a terminal decode failure requires this reset, not a retry of its prefix.
     pub fn reset(&mut self) {
@@ -264,7 +246,7 @@ impl CommandExchange {
                 event_frame: policy.execute_frame(frame, max_ahead) as i32,
                 checksum: initial_checksum,
                 timing_word: frontier as u16,
-                delay: max_ahead as u8,
+                delay: policy.delay(frame, max_ahead),
             },
             frontier,
         )?)
@@ -307,12 +289,12 @@ impl CommandExchange {
                     event_frame: policy.execute_frame(frame, max_ahead) as i32,
                     checksum,
                     timing_word: frontier as u16,
-                    delay: max_ahead as u8,
+                    delay: policy.delay(frame, max_ahead),
                 },
             });
         }
         loop {
-            let sending = self.sending.expect("retained frame");
+            let mut sending = self.sending.expect("set above, or already this frame's");
             if sending.remaining > queues.mirror_allowance() {
                 return Ok(SendPoll::Backpressure);
             }
@@ -337,14 +319,15 @@ impl CommandExchange {
                 .sent_commands
                 .checked_add(count as u64)
                 .ok_or(CommandExchangeError::CounterOverflow)?;
-            self.sending.as_mut().unwrap().remaining -= count;
+            sending.remaining -= count;
+            self.sending = Some(sending);
             if let Some(reason) = encoded
                 .blocked
                 .filter(|reason| *reason != EncodeBlock::Capacity)
             {
                 return Err(CommandExchangeError::UnsupportedLocalEvent(reason));
             }
-            if self.sending.as_ref().unwrap().remaining == 0 {
+            if sending.remaining == 0 {
                 self.sending = None;
                 return Ok(SendPoll::Complete {
                     commands: sending.total,
@@ -367,7 +350,7 @@ impl CommandExchange {
         initial_checksum: u32,
         queues: &mut NetworkCommandQueues<'_>,
         wait_elapsed_buckets: u32,
-    ) -> Result<bool, CommandExchangeError> {
+    ) -> Result<(), CommandExchangeError> {
         let peer = self
             .peers
             .iter_mut()
@@ -388,8 +371,7 @@ impl CommandExchange {
         let frontier = live_command_frontier(packet).ok_or(CommandExchangeError::InvalidHeader)?;
         peer.advertised_commands = peer.advertised_commands.max(frontier);
         let reported_frame = info.event_frame.wrapping_sub(i32::from(info.delay));
-        let advanced = reported_frame > peer.frame;
-        if advanced {
+        if reported_frame > peer.frame {
             peer.initial_response |= peer.frame == -1;
             peer.frame = reported_frame;
         }
@@ -404,7 +386,7 @@ impl CommandExchange {
             //64A606..64A60D, after the seed comparison. Ordinary FRAMEINFO
             //does not refresh this field. Router MEGAFRAMEINFO is separate.
             peer.response_elapsed_buckets = wait_elapsed_buckets;
-            return Ok(advanced);
+            return Ok(());
         }
         let decoded = self
             .codec
@@ -413,7 +395,7 @@ impl CommandExchange {
             .received_commands
             .checked_add(decoded.command_count(packet) as u64)
             .ok_or(CommandExchangeError::CounterOverflow)?;
-        Ok(advanced)
+        Ok(())
     }
 
     /// Wait_For_Players648710's two independent gates at649595..64961F.

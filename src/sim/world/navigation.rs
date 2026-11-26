@@ -16,6 +16,7 @@ use crate::sim::intern::StringInterner;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::util::forked::Forked;
 
 /// The cells one marked structure blocks for movement: its base foundation
 /// with the bib edge relaxed. Every structure-presence reader uses this rule.
@@ -26,39 +27,40 @@ use crate::sim::pathfinding::zone_map::ZoneGrid;
 /// BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md. Held factory objects and
 /// retained attached upgrades have no independent marked footprint. A dying
 /// structure still blocks until the lifecycle owner unmarks it.
-pub(super) fn marked_structure_movement_cells(
-    entity: &GameEntity,
+pub(super) fn marked_structure_movement_cells<'a>(
+    entity: &'a GameEntity,
     interner: &StringInterner,
-    rules: &RuleSet,
-) -> Vec<(u16, u16)> {
-    if entity.category() != EntityCategory::Structure || !entity.lifecycle.cell_marked() {
-        return Vec::new();
-    }
-    let object_type = interner.object_type(entity.type_ref(), rules);
-    let foundation = object_type
-        .map(|object| &object.foundation)
-        .unwrap_or_else(|| entity.type_facts.foundation());
-    let has_bib = object_type.is_some_and(|object| object.bib);
-    let foundation_cells = crate::sim::production::building_base_foundation_cells(
-        entity.position.rx(),
-        entity.position.ry(),
-        foundation,
-    );
-    crate::sim::production::building_movement_blocking_cells(&foundation_cells, has_bib)
+    rules: &'a RuleSet,
+) -> impl Iterator<Item = (u16, u16)> + 'a {
+    let marked = entity.category() == EntityCategory::Structure && entity.lifecycle.cell_marked();
+    marked
+        .then(|| {
+            let object_type = interner.object_type(entity.type_ref(), rules);
+            let foundation = object_type
+                .map(|object| &object.foundation)
+                .unwrap_or_else(|| entity.seldom.type_facts.foundation());
+            let has_bib = object_type.is_some_and(|object| object.bib);
+            crate::sim::production::building_movement_blocking_cells(
+                (entity.position.rx(), entity.position.ry()),
+                foundation,
+                has_bib,
+            )
+        })
+        .into_iter()
+        .flatten()
 }
 
 /// Structure presence over every marked structure. Consumers are
-/// order-insensitive (cell blocks, sets and presence tests).
+/// order-insensitive (cell blocks, sets and presence tests). The store's
+/// category column picks the structures, so no other object is loaded.
 fn visit_structure_movement_cells(
     entities: &EntityStore,
     interner: &StringInterner,
     rules: &RuleSet,
     mut visit: impl FnMut((u16, u16)),
 ) {
-    for entity in entities.values() {
-        for cell in marked_structure_movement_cells(entity, interner, rules) {
-            visit(cell);
-        }
+    for entity in entities.values_of_category(EntityCategory::Structure) {
+        marked_structure_movement_cells(entity, interner, rules).for_each(&mut visit);
     }
 }
 
@@ -95,9 +97,12 @@ pub(super) fn structure_blocked_among(
     blocked
 }
 
+/// The world's zone and path caches are its fields as they are
+/// (`util::forked`), so a publication that finds a cell current only reads
+/// them.
 pub(super) struct NavigationCaches<'a> {
-    pub(super) zones: &'a mut Option<ZoneGrid>,
-    pub(super) path: &'a mut Option<Arc<PathGrid>>,
+    pub(super) zones: &'a mut Forked<Option<ZoneGrid>>,
+    pub(super) path: &'a mut Forked<Option<Arc<PathGrid>>>,
     /// The live overlay surface the path projection reads for bridge sprites.
     pub(super) overlays: Option<&'a OverlayGrid>,
     /// Current operation's world bounds; this borrowed view is never retained.
@@ -116,19 +121,25 @@ impl NavigationCaches<'_> {
         let cell = terrain
             .cell(coord.0, coord.1)
             .ok_or("Recalc cell is outside terrain")?;
-        if let Some(zones) = self.zones.as_mut() {
+        // Only a changed cell rewrites the grid, and only it takes the grid
+        // for writing.
+        if self
+            .zones
+            .as_ref()
+            .is_some_and(|zones| !zones.base_cell_attributes_current(terrain, coord.0, coord.1))
+            && let Some(zones) = self.zones.as_mut()
+        {
             zones.refresh_base_cell_attributes_at(terrain, coord.0, coord.1);
         }
-        if let Some(path) = self.path.as_mut() {
+        if let Some(path) = self.path.as_ref() {
             if path.width() != terrain.width() || path.height() != terrain.height() {
                 return Err("path dimensions differ from terrain".into());
             }
-            if !path.resolved_cell_is_current(cell, self.overlays, structure_blocked)
-                && !Arc::make_mut(path).refresh_resolved_cell(
-                    cell,
-                    self.overlays,
-                    structure_blocked,
-                )
+            let overlays = self.overlays;
+            if !path.resolved_cell_is_current(cell, overlays, structure_blocked)
+                && !self.path.as_mut().is_some_and(|path| {
+                    Arc::make_mut(path).refresh_resolved_cell(cell, overlays, structure_blocked)
+                })
             {
                 return Err("current path cell could not be published".into());
             }
@@ -163,9 +174,9 @@ impl NavigationCaches<'_> {
                     .unwrap_or(&[]),
                 self.playfield_bounds,
             )?;
-            *self.path = Some(Arc::new(grid));
+            **self.path = Some(Arc::new(grid));
         } else {
-            self.rebuild_zones(&grid, terrain, bridges);
+            self.rebuild_zones(Arc::new(grid), terrain, bridges);
         }
         Ok(structure_cells)
     }
@@ -233,9 +244,10 @@ impl NavigationCaches<'_> {
         Ok(())
     }
 
+    /// Publish `path_grid` and the zones for it.
     pub(super) fn rebuild_zones(
         &mut self,
-        path_grid: &PathGrid,
+        path_grid: Arc<PathGrid>,
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
@@ -256,13 +268,13 @@ impl NavigationCaches<'_> {
         // repairs go through `repair_zone_cell` at their mutation owners).
         if let (Some(prev), Some(zones)) = (self.path.as_deref(), self.zones.as_ref())
             && prev
-                .diff_cells(path_grid)
+                .diff_cells(&path_grid)
                 .is_some_and(|changed| changed.is_empty())
             && zones.movement_classes_match(terrain)
         {
             // PathGrid does not carry CellClass reduced zone type.
             // Both path state and retained base classes must match.
-            *self.path = Some(Arc::new(path_grid.clone()));
+            **self.path = Some(path_grid);
             return;
         }
         self.rebuild_zones_full(path_grid, terrain, bridges);
@@ -272,19 +284,22 @@ impl NavigationCaches<'_> {
     /// though boolean walkability remains identical (e.g. OccupationBits=0).
     pub(super) fn rebuild_zones_full(
         &mut self,
-        path_grid: &PathGrid,
+        path_grid: Arc<PathGrid>,
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
-        *self.zones = Some(ZoneGrid::build_with_native_map_context(
-            path_grid,
-            terrain,
-            bridges
-                .map(BridgeRuntimeState::endpoint_records)
-                .unwrap_or(&[]),
-            bridges.and_then(BridgeRuntimeState::native_zone_source_size),
-            self.playfield_bounds,
-        ));
-        *self.path = Some(Arc::new(path_grid.clone()));
+        **self.zones = Some(
+            ZoneGrid::build_with_native_map_context(
+                &path_grid,
+                terrain,
+                bridges
+                    .map(BridgeRuntimeState::endpoint_records)
+                    .unwrap_or(&[]),
+                bridges.and_then(BridgeRuntimeState::native_zone_source_size),
+                self.playfield_bounds,
+            )
+            .into(),
+        );
+        **self.path = Some(path_grid);
     }
 }

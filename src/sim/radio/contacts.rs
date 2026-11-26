@@ -5,8 +5,8 @@
 //! slot in place (no compaction, so slot positions are stable). A HELLO sender
 //! with no free slot first sends OVER_OUT to slot 0 and then reuses it
 //! (`0x0065AA1F..0x0065AA34`). Capacity is `max(NumberOfDocks, 1)` for
-//! buildings, else 1. Navigation uses the contact slot index to select a
-//! docking offset; admission queries actual slots through `has_free_or`. Sparse slot
+//! buildings, up to VERA's `DOCK_CONTACT_LIMIT`, else 1. Navigation uses the
+//! contact slot index to select a docking offset; admission queries actual slots through `has_free_or`. Sparse slot
 //! positions are therefore hash-relevant.
 //! sim/ only — never render/ui/audio/net.
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ impl Contacts {
     /// Receiver-side first-null insert. Returns the slot used. Idempotent — an
     /// id already present returns its existing slot. `None` when full: a
     /// saturated receiver denies without evicting (the dock idiom).
-    pub fn insert(&mut self, id: u64) -> Option<usize> {
+    pub(crate) fn admit(&mut self, id: u64, _: crate::sim::game_entity::NameNote) -> Option<usize> {
         if let Some(existing) = self.find_slot(id) {
             return Some(existing);
         }
@@ -86,16 +86,28 @@ impl Contacts {
         Some(slot)
     }
 
+    /// [`Self::admit`] for a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn insert(&mut self, id: u64) -> Option<usize> {
+        self.admit(id, crate::sim::game_entity::NameNote::fixture())
+    }
+
     /// First null slot, the one a HELLO fills (`0x0065AA02..0x0065AA0C`).
     pub fn first_free(&self) -> Option<usize> {
         self.slots.iter().position(|s| s.is_none())
     }
 
     /// Store `id` in slot `i` (a HELLO sender's ROGER, `0x0065AA5A`).
-    pub fn set_slot(&mut self, i: usize, id: u64) {
+    pub(crate) fn fill(&mut self, i: usize, id: u64, _: crate::sim::game_entity::NameNote) {
         if let Some(slot) = self.slots.get_mut(i) {
             *slot = Some(id);
         }
+    }
+
+    /// [`Self::fill`] for a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_slot(&mut self, i: usize, id: u64) {
+        self.fill(i, id, crate::sim::game_entity::NameNote::fixture());
     }
 
     /// `RadioClass @ 0x0065ADF0`: some slot is null or already holds `id`.
@@ -137,7 +149,7 @@ impl Contacts {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

@@ -118,9 +118,9 @@ fn holds_what_rebinds_on_every_reached_pass() {
     };
 
     assert_eq!(holds_what("KEPT"), rules.p_type_id_by_name("Smoke2"));
-    for system in ["OMITTED", "CLEARED"] {
-        assert_eq!(holds_what(system), None, "{system}");
-    }
+    assert_eq!(holds_what("OMITTED"), rules.p_type_id_by_name(""));
+    assert!(holds_what("OMITTED").is_some());
+    assert_eq!(holds_what("CLEARED"), None);
     let named_none = rules.p_type_id_by_name("none");
     assert!(named_none.is_some());
     assert_eq!(holds_what("NAMEDNONE"), named_none);
@@ -149,6 +149,39 @@ fn spawns_particle_allocates_through_the_particle_factory() {
         .section("Particles")
         .expect("SpawnsParticle=none allocates a ParticleType");
     assert_eq!(particles.registry_ids(), ["none"]);
+}
+
+/// AnimType ReadINI resolves `StartSound=` through VocClass::FindIndex
+/// (`0x007514D0`) and reads `Report=` while the slot is still -1
+/// (`0x00428344..0x004283BC`): an unknown StartSound gives way to Report, and
+/// a known StartSound wins.
+#[test]
+fn an_unknown_anim_start_sound_gives_way_to_report() {
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Boom\n1=Bang\n",
+    ));
+    let art = IniFile::from_str(
+        "[MISS]\nStartSound=NoSuchSound\nReport=Boom\nStopSound=NoSuchSound\n\
+         [HIT]\nStartSound=Bang\nReport=Boom\nStopSound=Boom\n",
+    );
+    let processed = RulesLayerStack::new(IniFile::from_str("[Animations]\n0=MISS\n1=HIT\n"))
+        .process_with_fixed_art_and_registry_state_recovering(
+            &art,
+            NativeRulesRegistryState::default(),
+            RulesProcessContext::Ordinary,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+            &sounds,
+        )
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let sounds = |name: &str| {
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        (config.start_sound.clone(), config.stop_sound.clone())
+    };
+    // 0x004283C2..0x00428415: an unknown StopSound= keeps the -1 slot.
+    assert_eq!(sounds("MISS"), (Some("BOOM".into()), None));
+    assert_eq!(sounds("HIT"), (Some("BANG".into()), Some("BOOM".into())));
 }
 
 /// BuildingType's ToOverlay read finds its fixed ART section by ObjectType+1F8
@@ -280,6 +313,17 @@ fn occupy_weapons_are_infantry_keys() {
 /// read and keeps the constructor's -1.
 #[test]
 fn retail_particle_systems_bind_registered_particles() {
+    assert_retail_unbound_particle_systems(&["SmallGreySmokeSys"]);
+}
+
+/// [`retail_particle_systems_bind_registered_particles`] read the Ares way.
+#[test]
+fn retail_particle_systems_bind_registered_particles_read_the_ares_way() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    assert_retail_unbound_particle_systems(&[]);
+}
+
+fn assert_retail_unbound_particle_systems(expected: &[&str]) {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
         return;
     };
@@ -294,7 +338,10 @@ fn retail_particle_systems_bind_registered_particles() {
         .filter(|system| system.holds_what.is_none())
         .map(|system| system.name.as_str())
         .collect();
-    assert_eq!(unbound, ["SmallGreySmokeSys"]);
+    // Retail names SmallGreySmokeSys only in DamageParticleSystems=, which
+    // Ares reads Find-only (TechnoTypeClass_LoadFromINI_ListLength 1005BF90,
+    // hook 0x7125DF), so read the Ares way it allocates no such system.
+    assert_eq!(unbound, expected);
 }
 
 #[test]
@@ -483,7 +530,9 @@ fn retail_references_publish_their_authored_names() {
 #[test]
 fn techno_references_read_none_as_null() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[BuildingTypes]\n0=YARD\n[YARD]\nFreeUnit=none\n\
+        // The listed types are registered for Ares's Find-only lists.
+        "[Animations]\n0=BOOM\n[VoxelAnims]\n0=TIRE\n[ParticleSystems]\n0=SMOKE\n\
+         [BuildingTypes]\n0=YARD\n[YARD]\nFreeUnit=none\n\
          [VehicleTypes]\n0=TANK\n\
          [TANK]\nUnloadingClass=none\nEnslaves=<none>\nNaturalParticleSystem=none\n\
          RefinerySmokeParticleSystem=<none>\nExplosion=none,BOOM\nDestroyAnim=<none>,BOOM\n\
@@ -514,7 +563,7 @@ fn techno_references_read_none_as_null() {
 #[test]
 fn warhead_debris_types_read_none_as_null() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[Warheads]\n0=WH\n[WH]\nDebrisTypes=none,TIRE,<none>\n",
+        "[VoxelAnims]\n0=TIRE\n[Warheads]\n0=WH\n[WH]\nDebrisTypes=none,TIRE,<none>\n",
     ))
     .unwrap();
 
@@ -531,7 +580,7 @@ fn warhead_debris_types_read_none_as_null() {
 #[test]
 fn weapon_anims_read_none_as_null() {
     let mut layers = RulesLayerStack::new(IniFile::from_str(
-        "[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\nSecondary=ZAP\n\
+        "[Animations]\n0=GUNFIRE\n[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\nSecondary=ZAP\n\
          [GUN]\nAnim=none,GUNFIRE\nOccupantAnim=none\nOpenToppedAnim=<none>\n\
          AttachedParticleSystem=SPARKS\n\
          [ZAP]\nAttachedParticleSystem=none\n",
@@ -758,6 +807,7 @@ fn after_rules_class_references(context: RulesProcessContext) -> RuleSet {
             trace.into_registry_state_discarding_events(),
             context,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     RuleSet::from_processed_rules(&processed).unwrap()
@@ -789,7 +839,7 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
     assert_eq!(rules.general.warp_in.name, "WARPA");
     assert_eq!(rules.general.dead_bodies, ["BODYA"]);
     assert_eq!(rules.general.metallic_debris, ["DEBRISA"]);
-    assert_eq!(rules.build_const_types, ["GACNST"]);
+    assert_eq!(rules.build_const_types(), ["GACNST"]);
     assert_eq!(rules.crate_rules.crate_img.as_deref(), Some("CRATEA"));
     assert_eq!(rules.crate_rules.unit_crate_type.as_deref(), Some("UNITA"));
     assert_eq!(rules.crate_rules.maximum, 7);
@@ -801,6 +851,46 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
     assert_eq!(v3.damage, 5);
 }
 
+/// ReadCombatDamage66C2A1..66C2CF retains the `FlameDamage=` Warhead at
+/// Rules+F84 (retail authors `FlameDamage=Fire`), beside FlameDamage2 at +F88;
+/// the crate Napalm arm reads the former (`0x00482803`, `0x00482827`). An
+/// omitted key keeps the constructor null, and `none` keeps it null too.
+#[test]
+fn combat_damage_flame_warhead_pointer_publishes() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nFlameDamage=Fire\nFlameDamage2=Fire2\n[Warheads]\n0=Fire\n1=Fire2\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        rules
+            .combat_damage
+            .flame_damage()
+            .map(str::to_ascii_uppercase)
+            .as_deref(),
+        Some("FIRE")
+    );
+    assert_eq!(
+        rules
+            .combat_damage
+            .flame_damage2()
+            .map(str::to_ascii_uppercase)
+            .as_deref(),
+        Some("FIRE2")
+    );
+
+    let absent = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nFlameDamage2=Fire2\n[Warheads]\n0=Fire2\n",
+    ))
+    .unwrap();
+    assert_eq!(absent.combat_damage.flame_damage(), None);
+
+    let none = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nFlameDamage=none\n[Warheads]\n0=Fire\n",
+    ))
+    .unwrap();
+    assert_eq!(none.combat_damage.flame_damage(), None);
+}
+
 /// Full_Init's reset (`0x006686C0`) deletes the Types and leaves RulesClass
 /// alone, so its scalars are the next scenario's defaults while its Type
 /// pointers dangle. VERA clears every pointer and list there, the crate and
@@ -808,16 +898,17 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
 /// restarted from the constructor.
 #[test]
 fn scenario_reset_clears_the_rules_class_type_pointers_and_keeps_the_scalars() {
-    let rules = after_rules_class_references(RulesProcessContext::ScenarioReset(
-        crate::rules::object_image::ImageTheater::Temperate,
-    ));
+    let rules = after_rules_class_references(RulesProcessContext::ScenarioReset {
+        theater: crate::rules::object_image::ImageTheater::Temperate,
+        skip_root_color_add_and_mode: false,
+    });
 
     assert_eq!(rules.combat_damage.ivan_warhead, None);
     assert_eq!(rules.bridge_warheads.c4_name, "");
     assert_eq!(rules.general.warp_in.name, "");
     assert!(rules.general.dead_bodies.is_empty());
     assert!(rules.general.metallic_debris.is_empty());
-    assert!(rules.build_const_types.is_empty());
+    assert!(rules.build_const_types().is_empty());
     assert_eq!(rules.crate_rules.crate_img, None);
     assert_eq!(rules.crate_rules.unit_crate_type, None);
     assert_eq!(rules.crate_rules.maximum, 7);
@@ -833,7 +924,8 @@ fn scenario_reset_clears_the_rules_class_type_pointers_and_keeps_the_scalars() {
 #[test]
 fn general_type_references_read_none_as_null() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nOreTwinkle=none\nBarrelParticle=<none>\nNukeTakeOff=none\nWake=none\n\
+        // MCV is registered for Ares's Find-only BaseUnit read.
+        "[VehicleTypes]\n0=MCV\n[General]\nOreTwinkle=none\nBarrelParticle=<none>\nNukeTakeOff=none\nWake=none\n\
          DominatorWarhead=none\nChronoBlast=<none>\nWarpIn=none\nIronCurtainInvokeAnim=none\n\
          InfantryExplode=none\nMoveFlash=<none>\nParachute=none\nEngineer=none\n\
          AlliedCrew=<none>\nDamageFireTypes=none,FIRE1\nDeadBodies=<none>,BODY1\n\
@@ -909,17 +1001,23 @@ fn general_type_references_start_null() {
 /// reads kept the authored token.
 #[test]
 fn type_lists_name_the_type_the_factory_found() {
-    let long = "LONGBUILDINGNAMEOVER24BYTESX";
-    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[BuildingTypes]\n0=GACNST\n1={long}\n[GACNST]\nFoundation=1x1\n\
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let long = "LONGBUILDINGNAMEOVER24BYTESX";
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=GACNST\n1={long}\n[GACNST]\nFoundation=1x1\n\
          [{long}]\nFoundation=1x1\n\
          [General]\nShipyard=gacnst\n[AI]\nBuildConst=gacnst\nBuildPower={long}\n"
-    )))
-    .unwrap();
+        )))
+        .unwrap();
 
-    assert_eq!(rules.shipyard_types, ["GACNST"]);
-    assert_eq!(rules.build_const_types, ["GACNST"]);
-    assert_eq!(rules.build_power_types, [&long[..24]]);
+        assert_eq!(rules.shipyard_types, ["GACNST"]);
+        assert_eq!(rules.build_const_types(), ["GACNST"]);
+        // Ares's Find-only Buf_AI read (1005B830, hook 0x672B0E) compares the
+        // whole token with the stored 24-byte ID, so the long name finds none.
+        let long_type: &[&str] = if ares_way { &[] } else { &[&long[..24]] };
+        assert_eq!(rules.build_power_types, long_type);
+    }
 }
 
 /// Retail RULESMD over ARTMD, alone and under each of the nine mode INIs
@@ -929,6 +1027,8 @@ fn type_lists_name_the_type_the_factory_found() {
 /// deleted typed reads published, taken once on the base build. Each stack
 /// also runs after Full_Init's reset of the previous one's live state, as a
 /// later scenario does, and publishes the same references.
+// Read the stock way: Ares reads these lists Find-only through ParseList
+// (Misc/Bugfixes.Buffer.cpp).
 #[test]
 fn retail_published_references_are_pinned() {
     use crate::rules::retail_ini_fixture::{art_registry, retail_ini, retail_rules_and_art};
@@ -936,6 +1036,10 @@ fn retail_published_references_are_pinned() {
     let Some((rulesmd, artmd)) = retail_rules_and_art() else {
         return;
     };
+    let Some(soundmd) = retail_ini("soundmd.ini") else {
+        return;
+    };
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&soundmd);
     let modes = [
         None,
         Some("MPBattleMD.ini"),
@@ -951,6 +1055,10 @@ fn retail_published_references_are_pinned() {
     let publish = |processed: &ProcessedRulesLayers| {
         let mut rules = RuleSet::from_processed_rules(processed).unwrap();
         rules.install_art_data(art_registry(&artmd));
+        assert_eq!(
+            rules.crate_rules.heal_crate_sound.as_deref(),
+            Some("HealCrate")
+        );
         published_references(&rules, processed)
     };
     let mut digest = FNV1A64_OFFSET_BASIS;
@@ -964,7 +1072,15 @@ fn retail_published_references_are_pinned() {
             };
             layers.push(RulesLayerKind::GameMode, mode_ini);
         }
-        let processed = layers.process_with_fixed_art(&artmd).unwrap();
+        let processed = layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &artmd,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::Ordinary,
+                &crate::rules::sound_ini::EvaRegistry::default(),
+                &sounds,
+            )
+            .unwrap();
         let published = publish(&processed);
         let processed = match live.take() {
             None => processed,
@@ -973,10 +1089,12 @@ fn retail_published_references_are_pinned() {
                     .process_with_fixed_art_and_registry_state_recovering(
                         &artmd,
                         state,
-                        RulesProcessContext::ScenarioReset(
-                            crate::rules::object_image::ImageTheater::Temperate,
-                        ),
+                        RulesProcessContext::ScenarioReset {
+                            theater: crate::rules::object_image::ImageTheater::Temperate,
+                            skip_root_color_add_and_mode: false,
+                        },
                         &crate::rules::sound_ini::EvaRegistry::default(),
+                        &sounds,
                     )
                     .unwrap();
                 assert_eq!(publish(&reset), published, "{mode:?} after a reset");
@@ -1125,7 +1243,13 @@ fn published_references(rules: &RuleSet, processed: &ProcessedRulesLayers) -> Ve
             &general.mutate_explosion_warhead,
         )
     ));
-    lines.push(format!("CrateRules {:?}", rules.crate_rules));
+    // The original reference digest used folded Voc IDs. Keep that
+    // case-insensitive identity while the real catalog supplies its binding.
+    let mut crates = rules.crate_rules.clone();
+    crates.heal_crate_sound = crates
+        .heal_crate_sound
+        .map(|name| name.to_ascii_uppercase());
+    lines.push(format!("CrateRules {crates:?}"));
     lines.push(format!("Rockets {:?}", rules.missile_spawn));
     lines.push(format!(
         "General {:?}",
@@ -1183,7 +1307,7 @@ fn published_references(rules: &RuleSet, processed: &ProcessedRulesLayers) -> Ve
         "AI {:?}",
         (
             (
-                &rules.build_const_types,
+                rules.build_const_types(),
                 &rules.build_power_types,
                 &rules.build_refinery_types,
                 &rules.build_barracks_types,

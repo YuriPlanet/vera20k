@@ -1,7 +1,8 @@
 //! A war factory's unload art (`BuildingClass::DrawIt @ 0x0043D290`): the
-//! retail art keys, the art an unloading factory selects, and the under-door
-//! piece. The atlas half is synthetic; real pixels come from captures.
+//! retail art keys, the art an unloading factory selects, the under-door
+//! piece and the bib. The atlas half is synthetic; real pixels come from captures.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::draw_state::DrawDecision;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::rules::ruleset::RuleSet;
@@ -75,7 +76,7 @@ fn unloading_factory(rules: &RuleSet, product: &str, unload: bool) -> (Simulatio
         rules,
         factory,
         product,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     if unload {
         sim.queue_order_mission(factory, MissionType::Unload, rules);
@@ -85,13 +86,18 @@ fn unloading_factory(rules: &RuleSet, product: &str, unload: bool) -> (Simulatio
 }
 
 fn selected_art(sim: &Simulation, rules: &RuleSet, factory: u64) -> Option<[Option<String>; 2]> {
-    let entity = sim.entities().get(factory).unwrap();
     let object = rules.object("GAWEAP").unwrap();
     let art = rules
         .art()
         .resolve_metadata_entry("GAWEAP", &object.image)
         .unwrap();
-    factory_unload_art(sim, rules, entity, art).map(|art| {
+    factory_unload_art(
+        sim,
+        rules,
+        &ObjectRecord::of_test_sim(sim, rules, factory),
+        art,
+    )
+    .map(|art| {
         assert_eq!(art.palette, ShpPaletteContext::SelectedScheme);
         [
             art.body.map(|(name, z)| format!("{name} {z}")),
@@ -163,8 +169,7 @@ fn the_under_door_draws_its_damage_frame_and_shadow_after_the_bib() {
     let object = rules.object("GAWEAP").unwrap();
     for (health, frame) in [(object.strength, 0), (object.strength / 2, 1)] {
         let (mut sim, factory) = unloading_factory(rules, "MTNK", true);
-        sim.entities_mut_for_test()
-            .get_mut(factory)
+        sim.entity_mut_for_test(factory)
             .unwrap()
             .health
             .set_for_test(health);
@@ -174,7 +179,7 @@ fn the_under_door_draws_its_damage_frame_and_shadow_after_the_bib() {
             &atlas,
             rules,
             Some(object),
-            sim.entities().get(factory).unwrap(),
+            &ObjectRecord::of_test_sim(&sim, rules, factory),
             key(0),
             [100.0, 50.0],
             0,
@@ -213,12 +218,102 @@ fn the_under_door_draws_its_damage_frame_and_shadow_after_the_bib() {
     }
 }
 
+/// The bib draws at GetCurrentFrame (`0x0043D8D4`), so a damaged factory
+/// draws its damaged pad, at `-1 - AdjustForZ(Z)`; DrawSHP follows it with
+/// that frame's shadow half (`0x00705E00`).
+#[test]
+fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let object = rules.object("GAWEAP").unwrap();
+    let art = rules
+        .art()
+        .resolve_metadata_entry("GAWEAP", &object.image)
+        .unwrap();
+    assert_eq!(art.bib_shape.as_deref(), Some("GAWEAPBB"));
+    let key = |frame| ShpSpriteKey {
+        palette_context: crate::render::sprite_atlas::building_art_palette_context(art),
+        type_id: "GAWEAPBB".into(),
+        facing: 0,
+        frame,
+        house_color: HouseColorIndex(1),
+    };
+    // Retail GAWEAPBB: frames 0 and 1, then their shadows 2 and 3.
+    let mut atlas = SpriteAtlas::from_test_entries(HashMap::from(
+        [0, 1, 2, 3].map(|frame| (key(frame), entry(frame as u8))),
+    ));
+    atlas.set_object_shp_frame_count_for_test("GAWEAPBB", 4);
+    for (health, frame) in [(object.strength, 0), (object.strength / 2, 1)] {
+        let (mut sim, factory) = unloading_factory(rules, "MTNK", false);
+        sim.entity_mut_for_test(factory)
+            .unwrap()
+            .health
+            .set_for_test(health);
+        let entity = sim.entities().get(factory).unwrap();
+        let current = crate::sim::building_art::current_body_frame(
+            entity,
+            object,
+            rules,
+            sim.object_tech_level(object),
+        );
+        let mut pieces = Vec::new();
+        emit_building_bib(
+            &mut pieces,
+            &atlas,
+            Some(object),
+            Some(art),
+            BibDraw {
+                entity: &ObjectRecord::of_test_sim(&sim, rules, factory),
+                cells: None,
+                decision: DrawDecision {
+                    visible: true,
+                    state: DrawState::default(),
+                    native_visual_state: 0,
+                },
+                frame: u16::try_from(current).unwrap(),
+            },
+            HouseColorIndex(1),
+            100.0,
+            50.0,
+            0,
+            0.5,
+            [1.0; 3],
+            crate::render::palette_light::PaletteLight::default(),
+            0,
+            DrawState::default(),
+        );
+        assert_eq!(
+            pieces
+                .iter()
+                .map(|piece| (piece.kind, piece.target))
+                .collect::<Vec<_>>(),
+            [
+                (BuildingPieceKind::Bib, ObjectTexture::ShpPage(frame)),
+                (
+                    BuildingPieceKind::BibShadow,
+                    ObjectTexture::SpriteAtlasEdit(
+                        frame + 2,
+                        crate::render::terrain_draw::TerrainPiece::Shadow
+                    )
+                ),
+            ],
+            "health {health}"
+        );
+        assert_eq!(
+            pieces[0].instance.z_adjust,
+            lifted_z_adjust(0, SHP_DRAW_Z_ADJUST_PX - 1)
+        );
+    }
+}
+
 /// An unloading factory redraws the product its tether holds, and the
 /// product refuses its own Display slot (`0x0043DAA0`, `0x0073B0B0`); a
 /// factory in another mission does neither.
 #[test]
 fn an_unloading_factory_takes_over_its_products_draw() {
-    use crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance;
+    use crate::app::presentation::render::draw_plan_lowering::PlannedObjects;
     use crate::render::tactical_draw_plan::{
         BlitPolicy, ObjectDraw, SpriteEncoding, TacticalLayer,
     };
@@ -232,6 +327,7 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             .entities()
             .get(factory)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .expect("the product stays in contact");
@@ -241,11 +337,12 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             display_order: 0,
             policy: BlitPolicy::z_read(SpriteEncoding::Voxel),
         };
-        let mut planned = vec![
-            PlannedObjectInstance::building(parent(factory), Vec::new()),
-            PlannedObjectInstance::object(parent(product), Vec::new()),
-        ];
-        crate::app::presentation::instances::assign_tether_redraws(&sim, &mut planned);
+        let mut planned = PlannedObjects::default();
+        planned.building(parent(factory), []);
+        planned.object(parent(product), []);
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
+        crate::app::presentation::instances::assign_tether_redraws(&frame, &mut planned);
+        let planned = planned.into_owned();
         let expected: Vec<u64> = if unload { vec![product] } else { Vec::new() };
         assert_eq!(planned[0].tether_redraws, expected, "unload {unload}");
         assert_eq!(planned[1].drawn_by_tether, unload, "unload {unload}");

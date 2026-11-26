@@ -37,17 +37,16 @@ fn shoreline_runtime(loaded: &crate::headless_scenario::HeadlessScenario) -> Sim
     assert!(sim.rebuild_dynamic_navigation(rules));
     SimRuntime {
         simulation: sim,
-        resources: SimResources {
-            overlay_registry: loaded.runtime.resources.overlay_registry.clone(),
-            terrain_template: Some(terrain.clone()),
+        resources: std::sync::Arc::new(SimResources {
             rules: rules.clone(),
-        },
+            terrain_template: Some(terrain.clone()),
+        }),
     }
 }
 
 fn ordinary_frame(runtime: &mut SimRuntime) {
     let output = runtime
-        .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
         .expect("ordinary bound-resource shoreline frame");
     assert!(output.tick.frame_committed);
 }
@@ -108,7 +107,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
             !cell.outside_playfield
                 && !cell.ground_walk_blocked
                 && cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index()
-                && cell.speed_costs.track.is_some_and(|cost| cost > 0)
+                && cell.speed_costs.track.is_some_and(|cost| !cost.is_zero())
         })
         .max_by_key(|cell| cell.rx.abs_diff(SOURCE_CELL.0) + cell.ry.abs_diff(SOURCE_CELL.1))
         .map(|cell| (cell.rx, cell.ry))
@@ -120,7 +119,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
         safe.1,
         0,
         rules,
-        &resources.overlay_registry,
+        resources.rules.overlay_registry(),
     )
     .expect("ordinary MCV Unlimbo");
     let miner = sim
@@ -131,7 +130,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
             SOURCE_CELL.1,
             0,
             rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("ordinary HARV Unlimbo on the physical shore");
     let owner = sim.entities().get(miner).unwrap().owner();
@@ -139,12 +138,12 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
     // Fixed pre-death component cursor, admitted by a finite fixture search.
     // The real receiver and constructors consume every subsequent draw; no
     // duration, velocity, location or bounce outcome is overwritten.
-    sim.scenario_rng = SimRng::new(2);
+    *sim.scenario_rng = SimRng::new(2);
     sim.receive_own_health_c4(
         miner,
         rules,
-        Some(&resources.overlay_registry),
-        FrameEffects::default(),
+        Some(resources.rules.overlay_registry()),
+        &mut FrameEffects::default(),
     );
     let pieces = sim.voxel_anims().ids();
     assert_eq!(
@@ -306,7 +305,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
             !cell.outside_playfield
                 && !cell.ground_walk_blocked
                 && cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index()
-                && cell.speed_costs.track.is_some_and(|cost| cost > 0)
+                && cell.speed_costs.track.is_some_and(|cost| !cost.is_zero())
         })
         .max_by_key(|cell| cell.rx.abs_diff(source.0) + cell.ry.abs_diff(source.1))
         .map(|cell| (cell.rx, cell.ry))
@@ -318,16 +317,16 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
         safe.1,
         0,
         rules,
-        &resources.overlay_registry,
+        resources.rules.overlay_registry(),
     )
     .expect("ordinary House survivor");
-    sim.scenario_rng = SimRng::new(2);
+    *sim.scenario_rng = SimRng::new(2);
     let origin = glam::IVec3::new(
         i32::from(source.0) * 256 + 128,
         i32::from(source.1) * 256 + 128,
         launch_z,
     );
-    sim.emit_debris_voxel(kind_id, kind, None, origin, true, &mut Vec::new())
+    sim.emit_debris_voxel(kind_id, kind, None, origin, true, &mut Vec::new(), rules)
         .unwrap();
     let piece_id = sim.voxel_anims().ids()[0];
     let piece = sim.voxel_anims().get(piece_id).unwrap();
@@ -378,7 +377,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
                 cell.1,
                 0,
                 rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )
         })
         .expect("ordinary receiver on the natural dry landing cell");

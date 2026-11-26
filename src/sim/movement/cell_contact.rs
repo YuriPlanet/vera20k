@@ -51,11 +51,14 @@ impl Simulation {
                     .get(id)
                     .ok_or("cell contact has retired receiver")?;
                 if actor.cloak.is_some() {
-                    let speed = self
+                    let object = self
                         .interner
                         .object_type(actor.type_ref(), rules)
-                        .ok_or("cell contact lacks TechnoType")?
-                        .cloaking_speed;
+                        .ok_or("cell contact lacks TechnoType")?;
+                    let (speed, stages) = (
+                        object.cloaking_speed,
+                        object.cloaking_stages(rules.general.cloaking_stages),
+                    );
                     // Cell483480 calls the ground-list receiver+FC
                     // (Techno703850, a plain `StartUncloaking(0)` wrapper),
                     // then loads its next link. Walk75BBAE and Drive/Ship
@@ -69,13 +72,19 @@ impl Simulation {
                         .cloak
                         .as_mut()
                         .expect("same contact receiver")
-                        .start_uncloaking(now, speed, rules.general.cloaking_stages, false);
+                        .start_uncloaking(now, speed, stages, false);
                     if result.play_sound {
+                        let object =
+                            self.substrate.entities.get(id).and_then(|actor| {
+                                self.interner.object_type(actor.type_ref(), rules)
+                            });
                         emit_configured_cloak_sound(
                             &self.substrate,
                             &mut self.sound_events,
                             id,
                             rules,
+                            object,
+                            true,
                         );
                     }
                 }

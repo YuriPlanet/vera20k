@@ -87,7 +87,9 @@ fn load_campaign(
         .load_initial_with_assets(
             root.to_owned(),
             assets,
-            process.native_rules(),
+            process.native_rules_mut_with_tile_cache().0,
+            None,
+            None,
             &mut SilentProgress,
         )
         .unwrap();
@@ -95,8 +97,7 @@ fn load_campaign(
         request,
         initial,
         context,
-        #[cfg(feature = "ares")]
-            rules_prefix: mut prepared_rules_prefix,
+        rules_prefix: mut prepared_rules_prefix,
     } = request.prepare_initial(initial).unwrap();
     let dummy = process.shared_cell_dummy.clone();
     let (rules, cache, audio) = process.native_rules_mut_with_tile_cache();
@@ -109,22 +110,24 @@ fn load_campaign(
         context,
         false,
         8,
+        false,
         rules.unwrap(),
-        #[cfg(feature = "ares")]
         &mut prepared_rules_prefix,
         audio,
+        None,
         dummy,
         cache,
         &mut SilentProgress,
+        crate::rules::house_colors::STRENGTH_RETAIL,
     )
     .unwrap();
     crate::sim::runtime::SimRuntime {
         simulation: result.scenario.simulation.take().unwrap(),
         resources: crate::sim::runtime::SimResources {
             rules: result.scenario.rules.take().unwrap(),
-            overlay_registry: result.scenario.overlay_registry,
             terrain_template: result.scenario.resolved_terrain.take(),
-        },
+        }
+        .into(),
     }
 }
 
@@ -138,7 +141,7 @@ fn dispatch(runtime: &mut crate::sim::runtime::SimRuntime, miner: u64) -> Option
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = runtime.simulation.entities().get(miner).unwrap();
@@ -167,6 +170,7 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
         sim.entities()
             .get(id)
             .unwrap()
+            .seldom
             .discovery
             .owned_by_current_house(),
         sim.entities().get(id).unwrap().owner() == current,
@@ -177,8 +181,8 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
 
 fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u16) -> bool) {
     let sim = &mut runtime.simulation;
-    let registry = &runtime.resources.overlay_registry;
-    let mut grid = sim.take_overlay_grid_for_load().unwrap();
+    let registry = runtime.resources.rules.overlay_registry();
+    let mut grid = sim.overlay_grid_mut_for_test().take().unwrap();
     let remove: Vec<_> = grid
         .iter_occupied()
         .filter(|(x, y, cell)| {
@@ -197,12 +201,12 @@ fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u1
             (x, y),
         );
     }
-    sim.install_overlay_grid_for_load(grid);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
 }
 
 #[test]
 #[ignore = "slow; requires retail assets, an X11 display and GPU for full campaign loading"]
-#[allow(
+#[expect(
     deprecated,
     reason = "test creates an X11 loading surface without an app event loop"
 )]
@@ -237,7 +241,14 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
             )
             .unwrap(),
     );
-    let gpu = GpuContext::new(window, events.owned_display_handle(), true).unwrap();
+    let gpu = GpuContext::new(
+        window,
+        events.owned_display_handle(),
+        true,
+        wgpu::Backends::PRIMARY,
+        |_| {},
+    )
+    .unwrap();
     let batch = BatchRenderer::new(&gpu);
     // Ask the production mission to select an actually reachable distant
     // stock ore cell; distance is fixture admission, not another scan port.
@@ -249,8 +260,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
     let owner = probe.simulation.session().current_house().unwrap();
     probe
         .simulation
-        .fog_mut_for_test()
-        .reveal_all_for_owner(owner);
+        .set_map_explored_for_test(owner, true, &probe.resources.rules);
     let target = dispatch(&mut probe, id).expect("ALL05 must offer reachable distant ore");
     eprintln!("retail campaign miner selected reachable control cell {target:?}");
     let computer_owner = probe
@@ -289,10 +299,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
         if computer {
             assert!(!sim.houses()[&miner_owner].is_human());
         }
-        sim.fog_mut_for_test().reset_explored_for_owner(owner);
-        if visible {
-            sim.fog_mut_for_test().reveal_all_for_owner(owner);
-        }
+        sim.set_map_explored_for_test(owner, visible, &runtime.resources.rules);
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
             sim.resolved_terrain().unwrap(),
         );

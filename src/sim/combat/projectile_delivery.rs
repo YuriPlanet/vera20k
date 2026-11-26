@@ -68,10 +68,8 @@ pub(super) fn bullet_type<'r>(
     weapon: &crate::rules::weapon_type::WeaponType,
     rules: &'r RuleSet,
 ) -> &'r crate::rules::projectile_type::ProjectileType {
-    weapon
-        .projectile
-        .as_deref()
-        .and_then(|projectile_id| rules.projectile(projectile_id))
+    rules
+        .weapon_projectile(weapon)
         .unwrap_or_else(|| missing_projectile_fallback())
 }
 
@@ -148,10 +146,14 @@ fn classify_projectile_type(
             flak_scatter: projectile.flak_scatter,
             anti_air: projectile.aa,
             airburst: projectile.airburst,
+            explodes_airburst: Some(projectile.airburst_arm()),
             inaccurate: projectile.inaccurate,
             floater: projectile.floater,
+            #[cfg(feature = "phobos")]
+            gravity: projectile.gravity(),
             elasticity_bits: projectile.elasticity.to_bits(),
             arcing: projectile.arcing,
+            subject_to_solid: rules.ares() && projectile.bullet_type_ext.subject_to_solid,
         },
         ballistic,
         vertical: projectile
@@ -271,7 +273,7 @@ impl FiredBullet {
         // types have ROT=0; Execute96's ChemMissile has ROT=4 and requires it.
         let velocity = if payload
             .projectile_type()
-            .and_then(|id| rules.projectile(world.interner.resolve(id)))
+            .and_then(|id| world.interner.projectile_type(id, rules))
             .is_some_and(|projectile| projectile.rot > 0)
         {
             crate::sim::projectile::launch::bullet_fire_homing_velocity(velocity)
@@ -368,10 +370,38 @@ pub(crate) fn admit_fired_bullet(
     bullet_id: u64,
     bullet: FiredBullet,
 ) {
+    let _ = admit_bullet(world, rules, weapon, bullet_id, bullet, false);
+}
+
+/// [`admit_fired_bullet`] for TechnoClass::Fire's own shot, whose Ares
+/// TechnoClass_Fire_FSW (`10024C00`, hooks `0x6FF008` and `0x6FF860`) runs
+/// between the construction and BulletClass::Fire
+/// ([`Simulation::ares_fire_at_firestorm`]). False when BulletClass::Fire
+/// refuses: a firestorm wall burnt the `Inviso=` bullet (Ares `1001A940`
+/// UnInits it, so Fire answers its cleared IsAlive, `0x00468B5D`), and the
+/// shot resumes as a failed launch (`0x006FF01E`).
+pub(crate) fn admit_techno_fired_bullet(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    bullet_id: u64,
+    bullet: FiredBullet,
+) -> bool {
+    admit_bullet(world, rules, weapon, bullet_id, bullet, true)
+}
+
+fn admit_bullet(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    bullet_id: u64,
+    bullet: FiredBullet,
+    techno_fire: bool,
+) -> bool {
     let projectile_type = bullet
         .payload
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)));
+        .and_then(|id| world.interner.projectile_type(id, rules));
     let delivery = classify_projectile_type(
         projectile_type.unwrap_or_else(|| missing_projectile_fallback()),
         bullet.max_speed,
@@ -379,9 +409,11 @@ pub(crate) fn admit_fired_bullet(
     );
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
     world.admit_projectile(bullet_id, spawn);
+    world.unlimbo_alpha_shape(bullet_id, crate::sim::world::ObjectKind::Projectile, rules);
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,
+        &world.houses,
         &mut world.projectiles,
         bullet_id,
         rules,
@@ -391,6 +423,9 @@ pub(crate) fn admit_fired_bullet(
         fixture
             .admitted_spawns
             .push((bullet_id, delivery.inviso, spawn));
+    }
+    if rules.ares() && techno_fire {
+        world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
     }
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;
@@ -402,9 +437,122 @@ pub(crate) fn admit_fired_bullet(
             bullet.origin,
             bullet.target_position,
         );
+        // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way burns
+        // the bullet before the obstacle walk.
+        let placement = if rules.ares() {
+            if world.ares_inviso_firestorm(bullet_id, placement, rules) {
+                return false;
+            }
+            world.ares_inviso_obstacle(bullet_id, placement, rules)
+        } else {
+            placement
+        };
         world
             .projectiles
             .fire_inviso(bullet_id, placement, on_bridge);
+    }
+    true
+}
+
+impl Simulation {
+    /// SpawnShrapnel's Fire of an Ares child, which holds its shrapnel
+    /// weapon (`1001ABF0`, hooks `0x46A5B2`/`0x46AA27`): a `FlakScatter=`
+    /// Inviso child takes Fire's flak placement with that weapon's `Range=`
+    /// ([`inviso_fire_placement`]), two Scenario draws.
+    pub(crate) fn ares_shrapnel_flak_placement(
+        &mut self,
+        bullet_id: u64,
+        placement: ProjectileCoord,
+        rules: &RuleSet,
+    ) -> ProjectileCoord {
+        let Some(bullet) = self.projectiles.get(bullet_id) else {
+            return placement;
+        };
+        let origin = bullet.position();
+        let payload = bullet.payload();
+        let flak_scatter = payload
+            .projectile_type()
+            .and_then(|id| self.interner.projectile_type(id, rules))
+            .is_some_and(|kind| kind.flak_scatter);
+        let Some(weapon) = payload
+            .installed_weapon()
+            .and_then(|id| self.interner.weapon_type(id, rules))
+        else {
+            return placement;
+        };
+        inviso_fire_placement(
+            &mut self.scenario_rng,
+            rules,
+            flak_scatter,
+            weapon,
+            origin,
+            placement,
+        )
+    }
+
+    /// Ares `BulletClass_SetMovement_Obstacle @ 1001A940` (hook `0x4688BD`),
+    /// `BulletClass::Fire`'s Inviso arm: the bullet stands on the first
+    /// obstacle between the coordinate Fire was given (its Unlimbo location)
+    /// and `placement`, at that cell's GetCoords (vt+0x48), else on
+    /// `placement` (`FindFirstObstacle 1006E2B0`, with the bullet's Owner
+    /// and Target as GetObstacle's pSource/pTarget). Fire's original walk
+    /// result is overwritten (`0x0046897D`), so a game without Ares stands it
+    /// on `placement` even through a wall.
+    ///
+    /// Its firestorm arm, which runs first, is
+    /// [`Simulation::ares_inviso_firestorm`].
+    pub(crate) fn ares_inviso_obstacle(
+        &self,
+        bullet_id: u64,
+        placement: ProjectileCoord,
+        rules: &RuleSet,
+    ) -> ProjectileCoord {
+        use crate::sim::combat::line_of_fire::{
+            CellBuildings, LineOfFireInputs, LineOfFireParties, LineOfFireShot,
+            walk_line_for_blocking_cell,
+        };
+        let (Some(bullet), Some(terrain)) = (
+            self.projectiles.get(bullet_id),
+            self.resolved_terrain.as_ref(),
+        ) else {
+            return placement;
+        };
+        let projectile_type = bullet
+            .payload()
+            .projectile_type()
+            .and_then(|id| self.interner.projectile_type(id, rules));
+        let owner = self.substrate.entities.get(bullet.source_id());
+        let point =
+            |coord: ProjectileCoord| (i64::from(coord.x), i64::from(coord.y), i64::from(coord.z));
+        walk_line_for_blocking_cell(
+            point(bullet.position()),
+            point(placement),
+            LineOfFireShot::of(
+                projectile_type,
+                LineOfFireParties {
+                    firing_house: owner.map(|owner| owner.owner()),
+                    source_object: owner.map(|owner| owner.stable_id()),
+                    target_object: match bullet.target() {
+                        crate::sim::projectile::ProjectileTarget::Entity(id) => Some(id),
+                        _ => None,
+                    },
+                },
+                rules.ares(),
+            ),
+            rules,
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            &self.interner,
+            &LineOfFireInputs {
+                overlay_grid: self.overlay_grid.as_ref(),
+                overlay_registry: Some(rules.overlay_registry()),
+                alliances: Some(&self.house_alliances),
+                buildings: Some(CellBuildings::of(self)),
+            },
+        )
+        .map_or(placement, |cell| {
+            let coord = cell.get_coords();
+            ProjectileCoord::new(coord.x, coord.y, coord.z)
+        })
     }
 }
 
@@ -416,9 +564,12 @@ pub(crate) fn admit_fired_bullet(
 /// FireAt sets to its fired weapon at `0x006FE573`) and `origin` the
 /// coordinate Fire was given.
 /// SpawnShrapnel's Fire leaves its children on their target
-/// (`Simulation::admit_projectile_spawns`).
+/// (`Simulation::admit_projectile_spawns`), unless Ares gave them their
+/// weapon (`Simulation::ares_shrapnel_flak_placement`).
+/// The Scenario stream is the world's field (`util::forked`), written only
+/// by a flak scatter's draws.
 fn inviso_fire_placement(
-    scenario_rng: &mut crate::sim::rng::SimRng,
+    scenario_rng: &mut crate::util::forked::Forked<crate::sim::rng::SimRng>,
     rules: &RuleSet,
     flak_scatter: bool,
     weapon: &WeaponType,

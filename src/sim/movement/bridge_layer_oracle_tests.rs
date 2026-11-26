@@ -221,13 +221,13 @@ pub(crate) fn zones(terrain: &ResolvedTerrainGrid, row: &Value) -> ZoneGrid {
         let (x, y) = pair(&cell["xy"]);
         base.zone_ids_mut_for_test()
             [usize::from(y) * usize::from(terrain.width()) + usize::from(x)] =
-            cell["group"].as_u64().unwrap() as u16;
+            cell["group"].as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId;
     }
     let labels: Vec<_> = supplied["raw_labels"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v.as_u64().unwrap() as u16)
+        .map(|v| v.as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId)
         .collect();
     for raw in base.raw_zone_ids_by_row_mut_for_test() {
         *raw = labels.clone();
@@ -268,8 +268,8 @@ fn native_bridge_fresh_drive_ship_queries_survive_snapshot() {
         let context = input["name"].as_str().unwrap();
         let terrain = terrain(input);
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
-        sim.resolved_terrain = Some(terrain.clone());
+        *sim.interner = crate::sim::intern::test_interner();
+        *sim.resolved_terrain = Some(terrain.clone());
         let mut entity = candidate(input, 1, "DEFENDER");
         // Drive4AF540/Ship69EC50, including base55A6C0, initialize a null
         // retained head. The Rust owner stores that fresh payload lazily.
@@ -336,7 +336,7 @@ fn native_bridge_layers_match_all_416_original_rows() {
             super::foot_coordinate::head_or_current(Some(coord(&input["stored_head"])), current)
         } else {
             let mut sim = Simulation::new();
-            sim.resolved_terrain = Some(terrain.clone());
+            *sim.resolved_terrain = Some(terrain.clone());
             sim.substrate
                 .entities
                 .insert(candidate(input, 1, "DEFENDER"));

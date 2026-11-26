@@ -33,15 +33,14 @@
 //! - Storage preserves native type identity and slot order, using whole
 //!   bales rather than native fractional float amounts. Payment reads each
 //!   slot's current signed32 type value and the native income/bonus floats.
-//! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
-//!   answered by a refinery in its Selling mission) is not wired. Frequency:
-//!   zero today — VERA's sale is synchronous, so no refinery is ever seen
-//!   mid-sell-down; the sale's RUN_AWAY broadcast carries the miner instead.
 //!
 //! A refinery sold (`BuildingClass::Mission_Selling`) or destroyed (the
 //! NowDead contact loop, `Simulation::building_now_dead_contacts`) under an
 //! unloading miner sends it RUN_AWAY (0x17): the latch drops and Harvest takes
-//! over (`radio::receive`, Unit `0x00737A98`).
+//! over (`radio::receive`, Unit `0x00737A98`). A tethered miner on Enter that
+//! reaches the pad of a refinery in its Selling mission sends DOCK_NOW, gets
+//! NEGATORY and calls Scatter (Per_Cell `0x0073A5CE..0x0073A5E4`,
+//! `Simulation::unit_dock_now`), which moves it only when it has no NavCom.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — sim/radio, sim/mission, sim/movement, sim/world.
@@ -98,24 +97,34 @@ pub(crate) fn mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };
     // A 0x0073DEE0: without any radio contact the unload is abandoned.
-    if entity.radio_contacts.is_empty() {
+    if entity.seldom.radio_contacts.is_empty() {
         sim.unit_enter_idle_mode(id, rules, false, effects);
         set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
-        stop_if_moving(&mut sim.substrate, id);
+        stop_if_moving(sim, rules, id, effects);
         commence_if_ready(sim, rules, id);
         return 1;
     }
     // B 0x0073DF56: the hull must sit in the 8-bit East window
     // (raw 0x3F80..=0x407F); otherwise turn (unless the turret is mid-swing).
     let raw = entity.body_facing_current(now);
-    if (((u32::from(raw) >> 7) + 1) & 0x1FE) != 0x80 {
+    if rules.ares_form() {
+        // Ares 3.0 10014910 (hook 0x0073DF66): the hull must face the dock's
+        // DockUnloadFacing exactly, and a mid-swing turret counts as facing it.
+        let facing = crate::sim::radio::receive::dock_unload_facing(sim, id, rules);
+        if raw != facing && !entity.turret_rotation_latch.is_set() {
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                crate::sim::movement::drive_do_turn(entity, facing, now);
+            }
+            return 5;
+        }
+    } else if (((u32::from(raw) >> 7) + 1) & 0x1FE) != 0x80 {
         if !entity.turret_rotation_latch.is_set()
             && let Some(entity) = sim.substrate.entities.get_mut(id)
         {
@@ -152,7 +161,7 @@ fn unload_dumping(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(building) = unload_building(sim, id) else {
@@ -224,7 +233,7 @@ fn unload_finishing(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     if let Some(building) = unload_building(sim, id)
@@ -238,7 +247,7 @@ fn unload_finishing(
     }
     set_unload_latch(&mut sim.interner, &mut sim.substrate, rules, id, false);
     if new_order_pending(sim, id) {
-        stop_if_moving(&mut sim.substrate, id);
+        stop_if_moving(sim, rules, id, effects);
         commence_if_ready(sim, rules, id);
     } else {
         let _ = sim.mission_queue_exact(
@@ -276,7 +285,7 @@ pub(crate) fn per_cell_release_dock_contact(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let unload = MissionId::from_known(MissionType::Unload);
     let enter = MissionId::from_known(MissionType::Enter);
@@ -303,6 +312,7 @@ pub(crate) fn per_cell_release_dock_contact(
                 .is_some_and(|miner| miner.unload_active);
         let dock = armed
             && entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| sim.substrate.entities.get(contact))
@@ -349,7 +359,7 @@ fn set_unload_latch(
     if let Some(miner) = entity.miner.as_mut() {
         miner.unload_active = true;
     }
-    entity.display_type_override.image = image;
+    entity.seldom.display_type_override.image = image;
 }
 
 /// Drop Unit+0x6D1: the ordinary image returns. The StageClass keeps
@@ -364,7 +374,7 @@ pub(crate) fn clear_unload_latch(substrate: &mut ObjectSubstrate, id: u64) -> bo
     };
     let was_set = miner.unload_active;
     miner.unload_active = false;
-    entity.display_type_override.image = None;
+    entity.seldom.display_type_override.image = None;
     was_set
 }
 
@@ -429,11 +439,13 @@ fn new_order_pending(sim: &Simulation, id: u64) -> bool {
 }
 
 /// `vt+0x500` when the locomotor still moves (`0x0073DF1C` / `0x0073E22C`).
-fn stop_if_moving(substrate: &mut ObjectSubstrate, id: u64) {
-    if let Some(entity) = substrate.entities.get_mut(id)
+fn stop_if_moving(sim: &mut Simulation, rules: &RuleSet, id: u64, effects: &mut FrameEffects<'_>) {
+    if let Some(entity) = sim.entities().get(id)
         && crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false)
+        && let Err(cause) =
+            sim.locomotor_stop_moving(id, rules, Some(rules.overlay_registry()), effects)
     {
-        crate::sim::movement::track_stop_moving(entity);
+        log::warn!("Harvester {id} could not stop: {cause}");
     }
 }
 
@@ -479,13 +491,19 @@ pub(crate) fn drain_first_slot(
 }
 
 /// The two `HouseClass::Add_Tiberium_Credits` calls (`0x004F9610`, at
-/// `0x0073E4A9` and `0x0073E4C9`) for one drained slot, paid to the unload
-/// building's owner (`vt+0x3C`): the slot's amount, then the purifier bonus
+/// `0x0073E4A9` and `0x0073E4C9`, [`Simulation::give_tiberium`]) for one
+/// drained slot, paid to the unload building's owner (`vt+0x3C`): the
+/// slot's amount, then the purifier bonus
 /// `P × PurifierBonus × amount` when it is above zero, where P counts the
 /// owner's purifiers plus `AIVirtualPurifiers[difficulty]` for a computer
 /// house outside the campaign (`0x0073E3D5..0x0073E408`). A slave's deposit
 /// pays its master the same way (`0x00522D71..0x00522E36`). The unloader's
 /// `Weeder=` arm (`0x0073E474`) is not ported; no retail unit sets it.
+///
+/// In a game read the Ares way (`RuleSet::ares_form`) both payments are
+/// replaced with `TechnoExt::DepositTiberium` (`10044230`; hooks `0x73E4A2`
+/// and `0x522D75`, which zero the stock amounts so the stock calls pay
+/// nothing): [`Simulation::ares_deposit_tiberium`].
 pub(crate) fn pay_refinery_owner(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -493,33 +511,24 @@ pub(crate) fn pay_refinery_owner(
     slot: crate::rules::tiberium_type::TiberiumTypeId,
     bales: i32,
 ) {
-    use crate::sim::house_state::income_mult_for_owner;
-    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
     let Some(owner) = sim.substrate.entities.get(building).map(|b| b.owner()) else {
         return;
     };
-    let owner_name = sim.interner.resolve(owner).to_string();
-    let income = income_mult_for_owner(&sim.houses, &sim.interner, rules, &owner_name);
-    let purifiers = super::miner_system::effective_purifier_count(sim, rules, &owner_name);
+    let purifiers = super::miner_system::effective_purifier_count(sim, rules, owner);
     let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
     //73E42B..73E441 /522DCD..522DE3: count * bonus * amount,
     //stored to float BEFORE the base payment and positive-bonus test.
     let bonus = purifier_bonus_amount(amount, purifiers, rules.general.purifier_bonus);
-    let value = rules
-        .tiberium_types
-        .get(slot)
-        .expect("native refinery payment requires its live Tiberium slot")
-        .value;
-    let Some(house) = sim.houses.get_mut(&owner) else {
-        return;
-    };
-    house
-        .economy_mut()
-        .add_tiberium_credits(value, amount, income);
-    if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
-        house
-            .economy_mut()
-            .add_tiberium_credits(value, bonus, income);
+    if rules.ares_form() {
+        sim.ares_deposit_tiberium(building, slot, amount, bonus, rules);
+    } else {
+        use crate::util::native_x87::MaskedX87Ordering;
+        let slot = usize::from(slot.0);
+        sim.give_tiberium(owner, amount, slot, rules);
+        if X87::compare(X87::load_f32(bonus), X87::load_i32(0)) == MaskedX87Ordering::Greater {
+            sim.give_tiberium(owner, bonus, slot, rules);
+        }
     }
 }
 
@@ -535,7 +544,7 @@ fn purifier_bonus_amount(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod income_tests {
     use super::purifier_bonus_amount;
     use crate::util::native_x87::NativeF32Bits;

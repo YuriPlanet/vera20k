@@ -5,7 +5,7 @@ use crate::sim::scenario_session::ScenarioDescriptor;
 fn action(sim: &mut Simulation, kind: i32, value: i32) -> Vec<TriggerEffect> {
     let ini = IniFile::from_str(&format!("[Actions]\nA=1,{kind},0,{value},0,0,0,0,Z\n"));
     let entry = crate::map::actions::parse_actions(&ini)["A"].entries()[0].clone();
-    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     let mut effects = Vec::new();
     assert!(sim.apply_live_trigger_action(
         &action,
@@ -17,7 +17,7 @@ fn action(sim: &mut Simulation, kind: i32, value: i32) -> Vec<TriggerEffect> {
         &mut effects,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     effects
 }
@@ -141,13 +141,14 @@ fn counted_logic_tag_emits_pause_requests_in_authored_order() {
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
         None,
         None,
+        None,
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
     let effects = sim.advance_triggers(
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         effects,
@@ -237,7 +238,7 @@ fn scenario_services_replay_between_production_frames() {
         let map = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).unwrap();
         let runtime = || {
             let mut sim = Simulation::with_seed(0);
-            sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+            sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
             sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
             sim.session.publish_started();
             sim.hash_state_every(std::num::NonZeroU64::MIN);
@@ -246,10 +247,10 @@ fn scenario_services_replay_between_production_frames() {
         let mut live = runtime();
         let mut replay = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: live.simulation.session.pixel_conversion_bounds(),
-            version: 2,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 15,
             seed: 0,
-            map_name: String::new(),
+            map_name: live.simulation.session().map_name().to_owned(),
             rules_hash: 0,
         });
         // Movie service may precede the first world frame. Its ordering survives JSON.
@@ -257,7 +258,7 @@ fn scenario_services_replay_between_production_frames() {
         replay.apply_scenario_service(&mut live.simulation, ScenarioServiceInput::Resume);
         for _ in 0..64 {
             let frame = live
-                .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
                 .unwrap();
             replay.record_tick(frame.tick.tick, Vec::new(), frame.tick.state_hash);
             if live.simulation.session.scenario_paused() {
@@ -285,7 +286,7 @@ fn scenario_services_replay_between_production_frames() {
         assert!(!live.simulation.session.scenario_paused());
         assert_eq!(live.simulation.session.tick(), paused_tick);
         let resumed = live
-            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         replay.record_tick(resumed.tick.tick, Vec::new(), resumed.tick.state_hash);
         // Also retain a service input after the last frame without inventing a tick.
@@ -307,7 +308,7 @@ fn scenario_services_replay_between_production_frames() {
                 &replay,
                 Some(&fixture.resources.rules),
                 None,
-                Some(&fixture.resources.overlay_registry),
+                Some(fixture.resources.rules.overlay_registry()),
                 67,
                 true,
             ),

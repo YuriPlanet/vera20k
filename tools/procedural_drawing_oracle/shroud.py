@@ -53,6 +53,7 @@ from tools.procedural_drawing_oracle import rally
 from tools.sidebar_oracle import stock
 from tools.spatial_oracle.crate_speed_effect import VTABLES
 from tools.spatial_oracle.bridge_damage_admission import call, words, MEM, TABLE, SP, MAP
+from tools.native_oracle import require
 
 SHP, SCRATCH, CELL_BASE = MEM + 0xB0000, MEM + 0xD0000, 0x32000000
 NEIGHBORS = ((-1,-1,64),(0,-1,128),(1,-1,1),(-1,0,32),(1,0,2),
@@ -3528,7 +3529,7 @@ def generate_primary_factory_status(*, power=False):
             _status_reader_block(m,0x461225,0x46125D,
                 {UC_X86_REG_EBP:typ,UC_X86_REG_EBX:typ+0x24,
                  UC_X86_REG_ESI:INI,UC_X86_REG_EDI:typ+0x1F8})
-            assert m.invoke(0x45EC90,typ)==1
+            require(m.invoke(0x45EC90,typ)==1, 'native 0x45EC90 returned an unexpected result')
         for index,pointer in enumerate(actors):
             u.mem_write(pointer,actor_templates[index])
             u.mem_write(pointer+0x99,b'\0')
@@ -4942,8 +4943,8 @@ def generate_infantry_berserk_body():
                          timeout_us=120000000, instruction_limit=10000000)
                 assert expected_entries <= reached and len(draws) == 2
                 body, shadow = (dict(draw) for draw in draws)
-                assert body.pop('return_pc') == 0x70645D and body['frame'] == frame
-                assert shadow.pop('return_pc') == 0x706602
+                require(body.pop('return_pc') == 0x70645D and body['frame'] == frame, 'body draw did not return to 0x70645D')
+                require(shadow.pop('return_pc') == 0x706602, 'shadow draw did not return to 0x706602')
                 final = shadow.pop('rgb565_le_hex')
                 invariants = dict(
                     source_unchanged=bytes(u.mem_read(shp, len(assets['GI.SHP']))) == assets['GI.SHP'],

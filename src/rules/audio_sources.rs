@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::audio_bag::AudioIndex;
-use crate::rules::retail_sources::{IniSourceIdentity, select_ini};
+use crate::rules::retail_sources::{IniSourceIdentity, select_game_ini};
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
 #[derive(Debug)]
@@ -37,7 +37,23 @@ impl AudioDefinitions {
     /// against the process sample index, selected before these readers as
     /// startup does (`406CE8` before `52C796`).
     pub fn select_admitting(assets: &AssetManager, index: Option<&AudioIndex>) -> Self {
-        let sound = select_ini(assets, "soundmd.ini")
+        Self::select_for_game(assets, index, assets.ships_ares())
+    }
+
+    /// [`Self::select_admitting`] for a game that ships `ares.mix` or not,
+    /// whatever the archives `assets` mounted: Ares reads both its own way in
+    /// such a game (`ares_switch::ares_way`). A fixture that reads a stock
+    /// install as an Ares game says so here.
+    pub(crate) fn select_for_game(
+        assets: &AssetManager,
+        index: Option<&AudioIndex>,
+        ships_ares: bool,
+    ) -> Self {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+        // `[ini] sound`/`eva` override the profile's shared SOUNDMD/EVAMD names;
+        // both readers stay presentation-only and unlayered.
+        let roots = assets.ini_roots();
+        let sound = select_game_ini(assets, roots.sound(), ships_ares)
             .map_err(|error| log::warn!("Audio definitions: {error}"))
             .ok();
         let sounds = Arc::new(
@@ -47,7 +63,7 @@ impl AudioDefinitions {
                     SoundRegistry::from_ini_admitting(&selected.ini, index)
                 }),
         );
-        let eva = select_ini(assets, "evamd.ini")
+        let eva = select_game_ini(assets, roots.eva(), ships_ares)
             .map_err(|error| log::warn!("Audio definitions: {error}"))
             .ok();
         let eva_registry = eva.as_ref().map_or_else(EvaRegistry::default, |selected| {
@@ -78,7 +94,7 @@ impl AudioDefinitions {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;
@@ -130,6 +146,45 @@ mod tests {
         assert_eq!(source.logical_name, "evamd.ini");
         assert_eq!(source.payload_len, evamd.len());
         assert_eq!(source.source_sha256, sha256_hex(evamd));
+    }
+
+    #[test]
+    fn selected_audio_roots_replace_the_shared_sound_and_eva_names() {
+        let directory = TestDirectory::new("custom-audio-roots");
+        let sound = b"[SoundList]\n0=Alt\n[Alt]\nSounds=alt\n";
+        let eva = b"[DialogList]\n0=EVA_Alt\n[EVA_Alt]\nAllied=cevaAlt\n";
+        directory.write("my-sound.ini", sound);
+        directory.write("my-eva.ini", eva);
+        directory.write(
+            "soundmd.ini",
+            b"[SoundList]\n0=Default\n[Default]\nSounds=default\n",
+        );
+        directory.write(
+            "evamd.ini",
+            b"[DialogList]\n0=EVA_Default\n[EVA_Default]\nAllied=cevaDefault\n",
+        );
+        let config = crate::util::ini_roots::IniRootConfig {
+            sound: Some("my-sound.ini".into()),
+            eva: Some("my-eva.ini".into()),
+            ..Default::default()
+        };
+        let assets = AssetManager::from_loose_root_for_test(directory.path())
+            .with_ini_roots(&config)
+            .unwrap();
+        let definitions = AudioDefinitions::select(&assets);
+
+        assert!(definitions.sounds().get("Alt").is_some());
+        assert!(definitions.sounds().get("Default").is_none());
+        assert_eq!(
+            definitions.eva().get("EVA_Alt", EvaSide::Allied),
+            Some("cevaAlt")
+        );
+        assert!(definitions.eva().entry("EVA_Default").is_none());
+        assert_eq!(
+            definitions.sound_source().unwrap().logical_name,
+            "my-sound.ini"
+        );
+        assert_eq!(definitions.eva_source().unwrap().logical_name, "my-eva.ini");
     }
 
     #[test]
@@ -228,9 +283,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_eva_reads_retain_catalog_matches_through_layers_and_save() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::ProcessedRulesLayers;
         use crate::rules::process_owner::NativeScenarioRulesPrefix;
 
@@ -327,9 +382,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_eva_keeps_startup_catalog_after_files_change() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::process_owner::NativeScenarioRulesPrefix;
         use crate::rules::retail_sources::RetailRulesSources;
 
@@ -340,7 +395,7 @@ mod tests {
             "evamd.ini",
             b"[DialogList]\n0=EVA_InsufficientFunds\n1=Known\n",
         );
-        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let assets = AssetManager::from_loose_root_with_ares_for_test(directory.path());
         let definitions = AudioDefinitions::select(&assets);
         let (startup, _, mut owner) = RetailRulesSources::select(&assets)
             .unwrap()

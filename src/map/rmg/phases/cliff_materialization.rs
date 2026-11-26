@@ -224,9 +224,7 @@ pub(in crate::map::rmg) fn materialize(
     rng: &mut RmgRng,
     region: i32,
 ) -> bool {
-    for record in scratch.cells_mut() {
-        record.shore_enable = true;
-    }
+    scratch.enable_all_shores();
     for (x, y) in grid.native_cells() {
         if !raise_pinched(grid, scratch, ids, x, y, region) {
             return false;

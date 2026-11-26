@@ -21,6 +21,7 @@
 //! the production gate.
 
 use super::ObjectAiCtx;
+use super::scan_batch::ScanCall;
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -33,6 +34,7 @@ use crate::sim::mission::timer::MissionTimer;
 use crate::sim::rng::SimRng;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 
 /// Committed mission id of Area Guard (`+0xAC == 0xB`, `0x0070983A`).
 const AREA_GUARD_MISSION: i32 = 0xB;
@@ -84,7 +86,9 @@ impl PassiveScan {
         }
     }
 
-    /// The targeting timer.
+    /// The targeting timer (`+0x180` start, `+0x188` duration). Its `due` is
+    /// TechnoClass::TargetingTimerFinished (`0x0070F7E0`): an unarmed timer
+    /// is due only with a zero duration.
     pub const fn timer(self) -> MissionTimer {
         self.timer
     }
@@ -112,6 +116,13 @@ impl PassiveScan {
 
     /// The passive block changed the target (`0x006FA6EE`).
     fn mark_acquired(&mut self) {
+        self.acquired = true;
+    }
+
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) stores the same byte (YRpp's
+    /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
+    /// so its next passive scan may drop the target.
+    pub(crate) fn ares_lose_target_now(&mut self) {
         self.acquired = true;
     }
 
@@ -253,7 +264,7 @@ pub(crate) fn scan(
     id: u64,
     rules: &RuleSet,
     mask: ScanMission,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     scan_coord: Option<[i32; 3]>,
 ) -> bool {
     if !sim.substrate.entities.contains(id) {
@@ -264,7 +275,7 @@ pub(crate) fn scan(
             sim,
             rules,
             id,
-            ctx,
+            ctx: ctx.reborrow(),
             scan_coord,
         },
         mask,
@@ -287,7 +298,7 @@ pub(super) fn passive_acquire_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -320,7 +331,12 @@ pub(super) fn targeting_slot(
     if !entity.passive_scan.timer().due(now) {
         return TargetingSlot::Skip;
     }
-    if entity.mega_mission.is_attack_move() {
+    targeting_slot_when_due(entity)
+}
+
+/// [`targeting_slot`] once the targeting timer has run out.
+fn targeting_slot_when_due(entity: &crate::sim::game_entity::GameEntity) -> TargetingSlot {
+    if entity.seldom.mega_mission.is_attack_move() {
         return TargetingSlot::ArrivalHandler;
     }
     let mission = entity.passive_acquire_mission();
@@ -331,6 +347,28 @@ pub(super) fn targeting_slot(
         return TargetingSlot::Skip;
     }
     TargetingSlot::PassiveAcquire
+}
+
+/// Whether the passive block acts for `id` when its targeting timer runs out:
+/// an attack-mover's arrival handler, or a scan [`passive_acquire_gate`]
+/// admits. On Guard and Area Guard every term reads `id`'s own state and
+/// type and its owner's control, so it holds while those stay as they are
+/// (`world::idle_sleep`).
+pub(in crate::sim::world) fn passive_block_acts(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    match targeting_slot_when_due(entity) {
+        TargetingSlot::Skip => false,
+        TargetingSlot::ArrivalHandler => true,
+        TargetingSlot::PassiveAcquire => {
+            passive_acquire_gate(sim, id, rules, entity.passive_acquire_mission())
+        }
+    }
 }
 
 /// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
@@ -344,7 +382,7 @@ pub(crate) fn passive_target_acquire(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) -> bool {
     let Some(mission) = sim
         .substrate
@@ -434,7 +472,7 @@ pub(super) fn passive_acquire_gate(
     }
     let (slot, _) = combat_weapon::deploy_weapon(obj, entity.veterancy.rank());
     let target = entity.attack_target.target();
-    let area_fire = fire_subject(sim, rules, id, target, slot, None)
+    let area_fire = fire_subject(sim, rules, id, target, slot)
         .and_then(|subject| subject.weapon_at(slot).map(|weapon| weapon.area_fire))
         .unwrap_or(false);
     !(area_fire && select_weapon(sim, rules, id, target) == slot)
@@ -519,7 +557,11 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     if entity.temporal.is_warping_someone() {
         return false;
     }
-    if entity.slave.owner().is_some() {
+    // Ares7091D6 ->10049F70 returns70927D before the remaining passive gates.
+    if rules.ares() && entity.driver_killed() {
+        return false;
+    }
+    if entity.seldom.slave.owner().is_some() {
         return false;
     }
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
@@ -530,15 +572,11 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     }
     if entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
-        && entity.passenger_role.occupants().is_empty()
+        && entity.passenger_role().occupants().is_empty()
     {
         return false;
     }
-    if entity
-        .capture_manager
-        .as_ref()
-        .is_some_and(|manager| manager.is_full())
-    {
+    if sim.capture_manager_is_full(entity.stable_id(), rules) {
         return false;
     }
     if entity.category() == EntityCategory::Infantry
@@ -547,7 +585,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     {
         return false;
     }
-    combat_weapon::is_armed(entity, obj)
+    combat_weapon::is_armed(entity, obj, &sim.substrate.entities, rules, &sim.interner)
 }
 
 fn fire_subject<'a>(
@@ -556,15 +594,13 @@ fn fire_subject<'a>(
     id: u64,
     target: Option<TargetKind>,
     weapon_index: i32,
-    overlay_registry: Option<&'a OverlayTypeRegistry>,
 ) -> Option<FireSubject<'a>> {
     let firer = sim.substrate.entities.get(id)?;
     let obj = sim.interner.object_type(firer.type_ref(), rules)?;
     Some(FireSubject {
         world: sim,
         rules,
-        overlay_registry,
-        fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+        fog: Some(sim.fog.fire_view(&sim.house_alliances)),
         firer,
         obj,
         target,
@@ -580,10 +616,18 @@ pub(crate) fn weapon_at_index<'r>(
     id: u64,
     index: i32,
 ) -> Option<&'r WeaponType> {
-    let subject = fire_subject(sim, rules, id, None, index, None)?;
-    // `weapon_at` borrows the subject; re-resolve through the rules so the
-    // weapon outlives it.
-    rules.weapon(&subject.weapon_at(index)?.id)
+    // The record `FireSubject::weapon_at` reads, taken here so the weapon
+    // keeps the rules' lifetime rather than the subject's.
+    let firer = sim.substrate.entities.get(id)?;
+    let obj = sim.interner.object_type(firer.type_ref(), rules)?;
+    combat_weapon::get_weapon(
+        firer,
+        obj,
+        index,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    )
 }
 
 /// SelectWeapon (vt+0x2E4) for `target`.
@@ -614,7 +658,7 @@ pub(super) fn select_weapon(
         sim,
         &sim.interner,
         cells.as_ref(),
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
     )
     .unwrap_or(0)
 }
@@ -627,9 +671,8 @@ pub(crate) fn can_fire_at(
     id: u64,
     target: TargetKind,
     weapon_index: i32,
-    overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
-    fire_subject(sim, rules, id, Some(target), weapon_index, overlay_registry)
+    fire_subject(sim, rules, id, Some(target), weapon_index)
         .is_some_and(|subject| subject.in_range())
 }
 
@@ -643,12 +686,10 @@ pub(super) fn fire_error_at(
     target: Option<TargetKind>,
     weapon_index: i32,
     check_range: bool,
-    overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> FireError {
-    fire_subject(sim, rules, id, target, weapon_index, overlay_registry)
-        .map_or(FireError::Illegal, |subject| {
-            subject.fire_error(check_range)
-        })
+    fire_subject(sim, rules, id, target, weapon_index).map_or(FireError::Illegal, |subject| {
+        subject.fire_error(check_range)
+    })
 }
 
 impl Simulation {
@@ -665,18 +706,9 @@ impl Simulation {
         id: u64,
         target: TargetKind,
         check_range: bool,
-        overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> FireError {
         let weapon = select_weapon(self, rules, id, Some(target));
-        fire_error_at(
-            self,
-            rules,
-            id,
-            Some(target),
-            weapon,
-            check_range,
-            overlay_registry,
-        )
+        fire_error_at(self, rules, id, Some(target), weapon, check_range)
     }
 }
 
@@ -752,15 +784,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     fn fire_error(&mut self, target: Option<TargetKind>, weapon: i32) -> FireError {
         // Original7098DA PUSH1 before7098E6 GetFireError(vt+3C0): the
         // held passive target must pass the live wall-aware range query.
-        fire_error_at(
-            self.sim,
-            self.rules,
-            self.id,
-            target,
-            weapon,
-            true,
-            self.ctx.overlay_registry,
-        )
+        fire_error_at(self.sim, self.rules, self.id, target, weapon, true)
     }
 
     /// The SpawnManager `+0x2D0` that `Retaliate_And_Scan @ 0x00709820` tests.
@@ -773,37 +797,30 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             self.sim,
             self.id,
             self.rules,
-            None,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
     fn assign_target(&mut self, target: Option<TargetKind>) {
-        let _ = self.sim.assign_target_represented(
-            self.id,
-            target,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        let _ =
+            self.sim
+                .assign_target_represented(self.id, target, self.rules, &mut self.ctx.effects);
     }
 
-    /// Through the object's live `+0x3C4` override. Hunt4D5392,
-    /// AreaGuard4D6F06 and passive/arrival acquisition709820 observe all
-    /// earlier object turns, including newly admitted candidates. Reusing a
-    /// frame-start result would omit their ranking and query/RNG effects.
+    /// Through the object's `+0x3C4` override, or this pass's batched answer
+    /// ([`super::scan_batch`]). Natively Hunt (`0x004D5392`), Area Guard
+    /// (`0x004D6F06`) and the targeting slot all scan the world as the
+    /// object's turn finds it; an answer scanned it as the pass began, a
+    /// sim-scale deviation.
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
-        let (rules, registry) = (self.rules, self.ctx.overlay_registry);
-        let outcome = self
-            .sim
-            .threat_scan(rules, registry, self.id, mask, self.scan_coord);
-        Simulation::commit_threat_scan(
-            &mut self.sim.scenario_rng,
-            &mut self.sim.substrate,
+        self.sim.batched_greatest_threat(
+            ScanCall::Turn,
+            self.rules,
+            self.ctx.overlay_registry,
             self.id,
-            outcome,
+            mask,
+            self.scan_coord,
         )
-        .map(TargetKind::Entity)
     }
 
     fn distributed_fire(&mut self) -> bool {
@@ -832,10 +849,8 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn inaccurate(&self, weapon: &'r WeaponType) -> bool {
-        weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| self.rules.projectile(id))
+        self.rules
+            .weapon_projectile(weapon)
             .is_some_and(|projectile| projectile.inaccurate)
     }
 
@@ -874,9 +889,42 @@ impl Simulation {
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord);
         Self::commit_threat_scan(&mut self.scenario_rng, &mut self.substrate, id, result)
+    }
+
+    /// [`Self::greatest_threat_represented`] for a scan the batch answers:
+    /// the answer made for `call`'s scan when it takes one
+    /// ([`Self::take_batched_scan`]), else the live scan.
+    fn batched_greatest_threat(
+        &mut self,
+        call: ScanCall,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        id: u64,
+        mask: ScanMission,
+        scan_coord: Option<[i32; 3]>,
+    ) -> Option<TargetKind> {
+        let result = match self.take_batched_scan(call, rules, id, mask, scan_coord) {
+            Some(answer) => answer,
+            None => self.threat_scan(rules, overlay_registry, id, mask, scan_coord),
+        };
+        Self::commit_threat_scan(&mut self.scenario_rng, &mut self.substrate, id, result)
+    }
+
+    /// The coordinate a direct Greatest_Threat call ([`direct_greatest_threat`])
+    /// scans around: a copy of the object's Location (`Object+0x9C..0xA4`),
+    /// not its virtual GetCoords.
+    pub(super) fn direct_scan_coord(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> [i32; 3] {
+        let coord = crate::sim::movement::ground_pose::object_location(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        [coord.x, coord.y, coord.z]
     }
 
     /// `id`'s Greatest_Threat
@@ -890,6 +938,7 @@ impl Simulation {
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
     ) -> crate::sim::combat::greatest_threat::ThreatScanOutcome {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
         crate::sim::combat::combat_targeting::greatest_threat_for_entity(
             &self.substrate.entities,
             &self.substrate.occupancy,
@@ -904,7 +953,8 @@ impl Simulation {
             crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
-                alliances: Some(self.house_alliances.as_map()),
+                alliances: Some(&self.house_alliances),
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(self)),
             },
             Some(self),
             scan_coord,
@@ -912,17 +962,18 @@ impl Simulation {
     }
 
     /// A scan's writes to its scanner, in the order the adapter commits them,
-    /// and its pick.
+    /// and its pick. The Scenario stream is written only by a scan that drew
+    /// (`util::forked`).
     fn commit_threat_scan(
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut Forked<SimRng>,
         substrate: &mut ObjectSubstrate,
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         // The computer's disguise detection draws during the scan
         // (Evaluate_Candidate 0x006F851C).
         if let Some(rng) = result.take_scenario_rng() {
-            *scenario_rng = rng;
+            **scenario_rng = rng;
         }
         if let Some(collected) = result.take_collected()
             && let Some(entity) = substrate.entities.get_mut(id)
@@ -933,6 +984,7 @@ impl Simulation {
             && let Some(entity) = substrate.entities.get_mut(id)
         {
             entity
+                .seldom
                 .foot_retarget_after_stop
                 .finish_scan(result.target().is_some());
         }
@@ -945,30 +997,31 @@ impl Simulation {
 /// a team leader's for script actions 0,16 and 57 (`0x006ED15E`,
 /// `0x006ECE06`, `0x006F0253`),
 /// and an aircraft's own for Mission_Hunt (`0x00414B24`, `0x00414B64`).
+/// It takes a batched answer made for a direct call with that mask and
+/// coordinate ([`ScanCall::Direct`]), which only the team step makes, for its
+/// patrolling leaders (`scan_batch`).
 pub(crate) fn direct_greatest_threat(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     scanner: u64,
     mask: ScanMission,
-) -> Option<u64> {
+) -> Option<TargetKind> {
     // These callers explicitly copy Object+9C..A4, not virtual GetCoords.
     // Preserve the shared direct-call owner for all of them. Original Steam
     // gamemd:6ED132,6ECDEF,6F0222 and414B3D.
-    let coord = crate::sim::movement::ground_pose::object_location(
-        sim.substrate.entities.get(scanner)?,
-        sim.resolved_terrain.as_ref(),
-    );
-    sim.greatest_threat_represented(
+    let coord = sim.direct_scan_coord(sim.substrate.entities.get(scanner)?);
+    sim.batched_greatest_threat(
+        ScanCall::Direct,
         rules,
         overlay_registry,
         scanner,
         mask,
-        Some([coord.x, coord.y, coord.z]),
+        Some(coord),
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     use super::*;
     use serde_json::Value;
@@ -1006,6 +1059,8 @@ mod tests {
             let victim = sim
                 .spawn_object("E1", "Russians", 15, 12, 0, rules)
                 .unwrap();
+            // The player has seen the enemy: the campaign scan gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, victim);
             let owner = sim.substrate.entities.get(scanner).unwrap().owner();
             sim.fog.mark_visible_for_owner(owner, 15, 12);
             sim.session.set_binary_frame_for_test(100);
@@ -1016,11 +1071,11 @@ mod tests {
                 .passive_scan
                 .timer_mut_for_test()
                 .clear();
-            let ctx = ObjectAiCtx {
+            let mut ctx = ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..ObjectAiCtx::default()
             };
-            passive_acquire_step(&mut sim, scanner, rules, ctx);
+            passive_acquire_step(&mut sim, scanner, rules, &mut ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(
                 actor.attack_target.target(),
@@ -1035,13 +1090,12 @@ mod tests {
             if blocked {
                 overlays.place_overlay(13, 12, wall, 0);
             }
-            sim.overlay_grid = Some(overlays);
+            *sim.overlay_grid = Some(overlays);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             let subject = FireSubject {
                 world: &sim,
                 rules,
-                overlay_registry: Some(&registry),
-                fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+                fog: Some(sim.fog.fire_view(&sim.house_alliances)),
                 firer: actor,
                 obj: rules.object("E1").unwrap(),
                 target: Some(TargetKind::Entity(victim)),
@@ -1063,7 +1117,7 @@ mod tests {
             let jitter = expected_scenario.next_range_u32_inclusive(0, 2);
             let main = sim.main_rng.state();
             let mapgen = sim.mapgen_rng.state();
-            passive_acquire_step(&mut sim, scanner, rules, ctx);
+            passive_acquire_step(&mut sim, scanner, rules, &mut ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(actor.passive_scan.last_scan_frame(), 100);
             assert_eq!(actor.passive_scan.timer().start_frame(), 100);
@@ -1081,7 +1135,7 @@ mod tests {
             );
             assert_eq!(actor.passive_scan.acquired(), !blocked);
             let after_scan = sim.scenario_rng.state();
-            passive_acquire_step(&mut sim, scanner, rules, ctx);
+            passive_acquire_step(&mut sim, scanner, rules, &mut ctx);
             assert_eq!(
                 sim.scenario_rng.state(),
                 after_scan,
@@ -1138,6 +1192,7 @@ mod tests {
                 .entities
                 .get_mut(scanner)
                 .unwrap()
+                .seldom
                 .foot_retarget_after_stop
                 .mark_stopped_cannot_fire();
             let held = scan(
@@ -1145,7 +1200,7 @@ mod tests {
                 scanner,
                 &rules,
                 mask,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 None,
             );
             let entity = sim.substrate.entities.get(scanner).unwrap();

@@ -192,6 +192,18 @@ impl Simulation {
         }
     }
 
+    /// Ares survivor placement10044762/100447F3 stores retained Cell+24
+    /// directly, without a neighbor-count increment/decrement.
+    pub(crate) fn foot_neighbors_store_retained_cell(
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        cell: (i16, i16),
+    ) {
+        if let Some(entity) = substrate.entities.get_mut(id) {
+            entity.navigation.neighbor_state_mut().cell = cell;
+        }
+    }
+
     /// Aircraft DropPayload415E26..415E6E samples the selected Cell's center,
     /// then truncates /256; it does not change Cell+122 in this suffix.
     pub(crate) fn foot_neighbors_after_payload_drop(
@@ -242,7 +254,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
@@ -252,7 +264,7 @@ mod tests {
 
     fn fixture(width: u16, seed: u8) -> Simulation {
         let mut sim = Simulation::with_seed(31);
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             width,
             width,
             (0..width)
@@ -261,7 +273,7 @@ mod tests {
         ));
         let mut grid = OverlayGrid::new(width, width);
         grid.seed_neighbor_counts_for_tests(seed);
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         for _ in 0..seed {
             sim.resolved_terrain
                 .as_ref()
@@ -491,7 +503,7 @@ mod tests {
             .navigation
             .neighbor_state_mut()
             .cell = (3, 3);
-        restored.resolved_terrain = sim.resolved_terrain.clone();
+        *restored.resolved_terrain = (*sim.resolved_terrain).clone();
         restored.techno_limbo(1);
         assert!(
             restored

@@ -5,6 +5,7 @@ use crate::rules::ini_parser::IniFile;
 
 #[test]
 fn planned_prerequisites_match_executed_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_prerequisites.json");
     for row in data["controls"]
         .as_array()
@@ -67,6 +68,7 @@ fn planned_prerequisites_match_executed_controls() {
 
 #[test]
 fn generic_stock_groups_replace_ai_families_and_ignore_alternates() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=MEMBER\n1=AI_POWER\n2=ALTERNATE\n3=Q\n\
          [AI]\nBuildPower=AI_POWER\n\
@@ -86,6 +88,7 @@ fn generic_stock_groups_replace_ai_families_and_ignore_alternates() {
 
 #[test]
 fn planned_group_keeps_same_pass_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=A\n1=B\n2=Q\n\
          [GenericPrerequisites]\ncustom=B\n[Q]\nPrerequisite=custom\n",
@@ -105,6 +108,7 @@ fn planned_group_keeps_same_pass_boundary() {
 
 #[test]
 fn planned_members_do_not_recurse_into_another_group() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=A\n1=Q\n\
          [GenericPrerequisites]\ninner=A\nouter=inner\n[Q]\nPrerequisite=outer\n",
@@ -115,4 +119,20 @@ fn planned_members_do_not_recurse_into_another_group() {
         &[rules.object("A").unwrap()],
         &rules
     ));
+}
+
+/// Hook 0x505360 -> `PrerequisitesListed @ 10021C50`: any one of the
+/// candidate's lists among the planned types admits it.
+#[test]
+fn planner_admits_any_prerequisite_list() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=A\n1=B\n2=Q\n\
+         [Q]\nPrerequisite=A\nPrerequisite.Lists=1\nPrerequisite.List1=B\n",
+    ))
+    .unwrap();
+    let candidate = rules.object("Q").unwrap();
+    let planned = rules.object("B").unwrap();
+    assert!(prerequisites_satisfied(candidate, &[planned], &rules));
+    assert!(!prerequisites_satisfied(candidate, &[], &rules));
 }

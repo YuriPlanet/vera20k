@@ -99,7 +99,7 @@ fn firing_fixture(case: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         signed(&words[3]),
         signed(&words[4]),
     ));
-    actor.rearm_timer.set_for_test(CdTimer::from_raw(
+    actor.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
         signed(&before["rearm_timer_words"][0]),
         signed(&before["rearm_timer_words"][2]),
     ));
@@ -277,8 +277,8 @@ fn assert_source(fixture: &SuppliedFootFixture, expected: &Value, name: &str) {
     );
     assert_eq!(
         (
-            actor.rearm_timer.start_frame(),
-            actor.rearm_timer.duration()
+            actor.seldom.rearm_timer.start_frame(),
+            actor.seldom.rearm_timer.duration()
         ),
         (
             signed(&expected["rearm_timer_words"][0]),
@@ -327,8 +327,7 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
             fixture.actor,
             target,
             rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let queue = &case["input"]["attack_queue"];
@@ -354,7 +353,6 @@ fn recorded_fire_error(fixture: &SuppliedFootFixture, case: &Value, rules: &Rule
     FireSubject {
         world: &fixture.sim,
         rules,
-        overlay_registry: None,
         fog: None,
         firer: actor,
         obj: fixture
@@ -369,7 +367,7 @@ fn recorded_fire_error(fixture: &SuppliedFootFixture, case: &Value, rules: &Rule
 }
 
 fn source_ai_visit(sim: &mut Simulation, actor: u64, rules: &RuleSet) {
-    sim.advance_live_object_turn(actor, rules, ObjectAiCtx::default())
+    sim.advance_live_object_turn(actor, rules, &mut ObjectAiCtx::default())
         .unwrap();
 }
 
@@ -593,12 +591,15 @@ fn assert_memberships(sim: &Simulation, expected: &Value, ids: &BTreeMap<String,
         "{name}: physical Bullet vector"
     );
     for (index, layer) in expected["display"].as_array().unwrap().iter().enumerate() {
-        assert_eq!(
-            sim.display_layers()
-                .members(DisplayLayer::from_index(index as u8).unwrap()),
-            recorded_ids(ids, layer),
-            "{name}: ordered Display layer{index}"
-        );
+        let layer_id = DisplayLayer::from_index(index as u8).unwrap();
+        let mut members = sim.display_layers().members(layer_id).to_vec();
+        let mut native = recorded_ids(ids, layer);
+        // VERA keeps Ground as an unordered set (`DisplayLayers::submit`).
+        if layer_id == DisplayLayer::GROUND {
+            members.sort_unstable();
+            native.sort_unstable();
+        }
+        assert_eq!(members, native, "{name}: Display layer{index}");
     }
 }
 
@@ -945,8 +946,7 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
                     Some(owner),
                     PointerExpiryControl::Uninit,
                     &rules,
-                    None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert_source(&fixture, &expiry["after"], name);
                 assert_rng(&fixture.sim, &expiry["rng_after"], name);
@@ -980,6 +980,11 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
 
 #[test]
 fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_native() {
+    // Stock oracle; Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the rearm
+    // jitter.
+    if cfg!(feature = "phobos") {
+        return;
+    }
     let Some(rules) = emission_rules() else {
         return;
     };
@@ -1058,7 +1063,7 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
                 case["original_actor_prefix"]["count"].as_u64().unwrap() + 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_emission_boundary(&fixture, &suffix["after_pass"], &ids, name);
             let start = suffix["event_range"][0].as_u64().unwrap() as usize;
@@ -1076,14 +1081,11 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
             );
             // The original caller increments A8ED84 before725C70. Object AI
             // and both clocks saw the previous absolute frame throughout.
-            fixture
-                .sim
-                .session
-                .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
+            let session = &mut *fixture.sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
                 &rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );

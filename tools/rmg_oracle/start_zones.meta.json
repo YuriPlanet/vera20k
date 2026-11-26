@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "7 controls of RecalcZoneType on every fixture Cell, then CreateStartingPoints 594B50..594C47 with the original RebuildZoneConnectivity, FloodFillBaseZoneScanline and GetZoneID: open ground, water and beach under Amphibious (row 5) and Normal (row 0), plateaus of two, three and four levels and a sloped edge, a Rock wall split, a water channel crossed by a low-bridge deck, a bridge-repair hut; every Cell zone class, base zone id, the returned largest zone, the requested derived row, the rebuilt region ids and sizes",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture, StartPointsFixture and CreateStartsFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration and the guarded arena; bounds 16..48, MapClass +F4/+F8 size 16x16, +FC local rect (2, 5, 12, 12).",
+    "Declared Cell state as the last RecalcAttributes 47D2B0 leaves it: land type +EC (Clear unless declared Water, Beach, Rock or Road), overlay +44 (-1, or the deck overlay 5C whose type Land +298 is Road), first object +E4, level/slope +11B. Declared Wheel row floats at 89EA48: 0 for Water, Rock, Wall and Beach, 1.0 for the rest.",
+    "The class and level bytes RecalcZoneType leaves are written to each MapClass +68 record as 47D2B0 publishes them; records without a Cell start class 7. Edge buckets are empty with 512 slots each; the 13 rows start null; no bridge records (+60 count 0). Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged.",
+    "The hut is a zeroed object whose vtable +2C answers Building (6) and whose type +520 is zeroed (FirestormWall +16C0 and LaserFence +16BF clear), not a constructed CABHUT."
+  ],
+  "entry_points": {
+    "recalc_zone_type": "0x00483C80",
+    "is_cell_in_playfield": "0x00578460",
+    "create_starting_points": "0x00594B50",
+    "rebuilt": "0x00594C47",
+    "rebuild_zones": "0x0056C510",
+    "flood": "0x0056CB90",
+    "get_zone": "0x0056D230"
+  },
+  "replay_command": "python -m tools.rmg_oracle.start_zones",
+  "payload_sha256": "25450d98d536b902196a1b0b83dca98018810dc8fe2149d67e45481e7e826bc6"
+}

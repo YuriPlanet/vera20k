@@ -8,7 +8,7 @@ use crate::map::houses::is_allied_with;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
@@ -136,20 +136,44 @@ pub fn placement_preview_for_owner_with_overlays(
     if !foundation_visible && reason.is_none() {
         reason = Some(BuildingPlacementError::BlockedTerrain);
     }
-    let wall_coords = match (owner_id, wall_overlay_id, overlay_registry) {
-        (Some(owner_id), Some(overlay_id), Some(registry)) if obj.wall => {
-            wall_placement::autofill_cells(
-                sim,
-                rules,
-                registry,
-                obj,
-                (rx, ry),
-                owner_id,
-                overlay_id,
-                native_cells.as_ref(),
-            )
+    // Ares sub_6D5030 (10015140, hook 0x6D5455): a non-LaserFencePost
+    // linkable type (a firestorm wall or a trench, IsLinkable 1000D770)
+    // draws the firestorm shadow in place of the wall's.
+    let firestorm_shadow: Option<Vec<(u16, u16)>> = if rules.ares_form() {
+        (!obj.laser_fence_post && obj.building_type_ext().is_linkable())
+            .then(|| owner_id.zip(native_cells.as_ref()))
+            .flatten()
+            .map(|(owner_id, query)| {
+                sim.ares_firestorm_placement_shadow(
+                    obj,
+                    (rx, ry),
+                    owner_id,
+                    rules,
+                    overlay_registry,
+                    query,
+                )
+            })
+    } else {
+        None
+    };
+    let wall_coords = if let Some(cells) = firestorm_shadow {
+        cells
+    } else {
+        match (owner_id, wall_overlay_id, overlay_registry) {
+            (Some(owner_id), Some(overlay_id), Some(registry)) if obj.wall => {
+                wall_placement::autofill_cells(
+                    sim,
+                    rules,
+                    registry,
+                    obj,
+                    (rx, ry),
+                    owner_id,
+                    overlay_id,
+                    native_cells.as_ref(),
+                )
+            }
+            _ => Vec::new(),
         }
-        _ => Vec::new(),
     };
     // Wall filler is derived by the same production/terrain owners, refreshed
     // with the active preview. Rendering needs no cross-owner raw Cell access.
@@ -182,33 +206,16 @@ pub fn placement_preview_for_owner_with_overlays(
     })
 }
 
-pub fn active_producer_for_owner_category(
-    sim: &Simulation,
-    rules: &RuleSet,
-    owner: &str,
-    category: ProductionCategory,
-) -> Option<ProducerFocusView> {
-    let candidates = producer_candidates_for_owner_category(
-        &sim.substrate.entities,
-        rules,
-        owner,
-        category,
-        true,
-        &sim.interner,
-    );
-    (!candidates.is_empty()).then_some(ProducerFocusView { category })
-}
-
-pub fn cycle_active_producer_for_owner_category(
+pub fn cycle_active_producer_for_owner_category<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     category: ProductionCategory,
 ) -> bool {
     let candidates = producer_candidates_for_owner_category(
         &sim.substrate.entities,
         rules,
-        owner,
+        sim.interner.key_name(owner.into()),
         category,
         true,
         &sim.interner,
@@ -233,20 +240,21 @@ pub fn cycle_active_producer_for_owner_category(
 /// One HouseClass::Place_Production4FB0E0 owner. A building PLACE uses
 /// its clicked type/cell; mobile type_index=-1 resolves the current category
 /// head when the queued event executes, not the object held when Strip issued it.
-pub(crate) fn place_production_with_overlays(
+pub(crate) fn place_production_with_overlays<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     request: ProductionPlacement<'_>,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
+    let owner = owner.into();
     //4FB0FE..4FB191 uses the requested type only to choose a Factory slot.
     // The completed object in that slot supplies the actual placement type;
     // there is no requested-type/held-type equality test.
     let (category, cell, selection) = match request {
         ProductionPlacement::Building { type_id, cell } => {
-            let Some(object) = rules.object(type_id) else {
+            let Some(object) = sim.interner.key_object_type(type_id, rules) else {
                 return false;
             };
             if object.category != ObjectCategory::Building {
@@ -270,7 +278,7 @@ pub(crate) fn place_production_with_overlays(
             (category, cell, Some(selection))
         }
     };
-    let Some(owner_id) = sim.interner.get(owner) else {
+    let Some(owner_id) = sim.interner.key_id(owner) else {
         return false;
     };
     let Some(complete) = sim
@@ -281,142 +289,136 @@ pub(crate) fn place_production_with_overlays(
     else {
         return false;
     };
-    let actual_type = sim.interner.resolve(complete.type_id).to_owned();
+    let type_id = complete.type_id;
     // Empty Cell and Cell(-1,-1) take the same producer-exit arm4FB520,
     // regardless of the requested RTTI. Keep that decision in this owner.
-    let request = if matches!(cell, (0, 0) | (u16::MAX, u16::MAX)) {
-        ProductionPlacement::Mobile { category }
-    } else {
-        ProductionPlacement::Building {
-            type_id: &actual_type,
-            cell,
-        }
-    };
-    let (type_id, (rx, ry)) = match request {
-        ProductionPlacement::Building { type_id, cell } => (type_id, cell),
-        ProductionPlacement::Mobile { category } => {
-            use crate::sim::ai_base_building::BuildingExit;
-            //4FB5B5 and4FB663 retain the original event selector even after
-            // Complete clears the product. Only legacy semantic callers have
-            // no selector and request the category's wildcard cleanup.
-            let cancellation = selection.map_or(
-                super::ProductionCancellation::Category(category),
-                super::ProductionCancellation::Selected,
-            );
-            let Some(owner_id) = sim.interner.get(owner) else {
-                return false;
-            };
-            let Some(object) = sim
-                .production
-                .factories()
-                .view(owner_id, category)
-                .and_then(|factory| factory.complete_object())
-            else {
-                return false;
-            };
-            let Some(entity_id) = object.entity_id else {
-                return false;
-            };
-            let Some(obj) = sim
-                .substrate
-                .entities
-                .get(entity_id)
-                .and_then(|entity| sim.entity_object_type(entity, rules))
-            else {
-                return false;
-            };
-            let is_building = obj.category == ObjectCategory::Building;
-            // Native wrapper5F5C20 -> TypeFindFactory5F7900 with (0,1); an
-            // aircraft (`What_Am_I` 2) alone retries with the busy-airfield
-            // gate skipped (1,1) (0x004FB524..0x004FB54C). A null producer
-            // leaves the head and queue untouched.
-            let producer =
-                super::object_find_factory(sim, rules, entity_id, false, true).or_else(|| {
-                    (obj.category == ObjectCategory::Aircraft)
-                        .then(|| super::object_find_factory(sim, rules, entity_id, true, true))
-                        .flatten()
-                });
-            let Some(producer) = producer else {
-                return false;
-            };
-            let exit = super::production_queue::exit_produced_object(
+    let (rx, ry) = if matches!(cell, (0, 0) | (u16::MAX, u16::MAX)) {
+        use crate::sim::ai_base_building::BuildingExit;
+        //4FB5B5 and4FB663 retain the original event selector even after
+        // Complete clears the product. Only legacy semantic callers have
+        // no selector and request the category's wildcard cleanup.
+        let cancellation = selection.map_or(
+            super::ProductionCancellation::Category(category),
+            super::ProductionCancellation::Selected,
+        );
+        let Some(owner_id) = sim.interner.key_id(owner) else {
+            return false;
+        };
+        let Some(object) = sim
+            .production
+            .factories()
+            .view(owner_id, category)
+            .and_then(|factory| factory.complete_object())
+        else {
+            return false;
+        };
+        let product_type_id = object.type_id;
+        let Some(entity_id) = object.entity_id else {
+            return false;
+        };
+        let Some(obj) = sim
+            .substrate
+            .entities
+            .get(entity_id)
+            .and_then(|entity| sim.entity_object_type(entity, rules))
+        else {
+            return false;
+        };
+        let is_building = obj.category == ObjectCategory::Building;
+        // Native wrapper5F5C20 -> TypeFindFactory5F7900 with (0,1); an
+        // aircraft (`What_Am_I` 2) alone retries with the busy-airfield
+        // gate skipped (1,1) (0x004FB524..0x004FB54C). A null producer
+        // leaves the head and queue untouched.
+        let producer =
+            super::object_find_factory(sim, rules, entity_id, false, true).or_else(|| {
+                (obj.category == ObjectCategory::Aircraft)
+                    .then(|| super::object_find_factory(sim, rules, entity_id, true, true))
+                    .flatten()
+            });
+        let Some(producer) = producer else {
+            return false;
+        };
+        let exit = super::production_queue::exit_produced_object(
+            sim,
+            rules,
+            producer,
+            entity_id,
+            (0, 0),
+            overlay_registry,
+            effects,
+        );
+        let accepted = exit == BuildingExit::Placed
+            || exit == BuildingExit::TryLater
+                && sim
+                    .production
+                    .factories()
+                    .building_factory(producer)
+                    .is_some();
+        // House4FB57F's +524 is a producer Factory pointer, not a
+        // product pointer. The Exit1/+524 exception is instruction-established
+        // only; no human/AI held-pointer alias transfer is invented here.
+        if accepted {
+            // House4FB5FB queries the selected producer's GetCoords447AC0,
+            // then4FB600..FB622 truncates XY into packed CellStruct words.
+            // Source: factory_infantry_output native notification controls;
+            // a fallback GI can occupy14,15 while radar6 names15,15.
+            if sim.owner_is_human(owner_id)
+                && let Some(factory_entity) = sim.substrate.entities.get(producer)
+            {
+                let coords = crate::sim::movement::ground_pose::object_get_coords(
+                    factory_entity,
+                    sim.resolved_terrain.as_ref(),
+                );
+                sim.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::UnitComplete {
+                        owner: owner_id,
+                        type_id: product_type_id,
+                        radar: crate::sim::radar::RadarEventRequest::new(
+                            crate::sim::radar::RadarEventType::UnitReady,
+                            crate::util::lepton::lepton_to_cell_packed(coords.x) as u16,
+                            crate::util::lepton::lepton_to_cell_packed(coords.y) as u16,
+                        ),
+                    });
+            }
+            super::factory_lifecycle::release_delivered_mobile(
                 sim,
                 rules,
-                producer,
-                entity_id,
-                (0, 0),
-                overlay_registry,
+                owner_id,
+                category,
+                cancellation,
                 effects,
             );
-            let accepted = exit == BuildingExit::Placed
-                || exit == BuildingExit::TryLater
-                    && sim
-                        .production
-                        .factories()
-                        .building_factory(producer)
-                        .is_some();
-            // House4FB57F's +524 is a producer Factory pointer, not a
-            // product pointer. The Exit1/+524 exception is instruction-established
-            // only; no human/AI held-pointer alias transfer is invented here.
-            if accepted {
-                // House4FB5FB queries the selected producer's GetCoords447AC0,
-                // then4FB600..FB622 truncates XY into packed CellStruct words.
-                // Source: factory_infantry_output native notification controls;
-                // a fallback GI can occupy14,15 while radar6 names15,15.
-                if sim.owner_is_human(owner_id)
-                    && let Some(factory_entity) = sim.substrate.entities.get(producer)
-                {
-                    let coords = crate::sim::movement::ground_pose::object_get_coords(
-                        factory_entity,
-                        sim.resolved_terrain.as_ref(),
-                    );
-                    sim.sound_events
-                        .emit(crate::sim::world::SimSoundEvent::UnitComplete {
-                            owner: owner_id,
-                            radar: crate::sim::radar::RadarEventRequest::new(
-                                crate::sim::radar::RadarEventType::UnitReady,
-                                crate::util::lepton::lepton_to_cell_packed(coords.x) as u16,
-                                crate::util::lepton::lepton_to_cell_packed(coords.y) as u16,
-                            ),
-                        });
-                }
-                super::factory_lifecycle::release_delivered_mobile(
-                    sim,
-                    rules,
-                    owner_id,
-                    category,
-                    cancellation,
-                    effects,
-                );
-            } else if is_building {
-                // House4FB5BA returns immediately for a refused building
-                // exit (RTTI6). The completed product stays paid and held;
-                // only refused mobile products enter the refund tail.
-                return false;
-            } else {
-                // Exit0 or Exit1 with producer+524zero: the original selector
-                // decides whether Abandon refunds/disposes the held object.
-                super::factory_lifecycle::refund_failed_delivery(
-                    sim,
-                    rules,
-                    owner_id,
-                    cancellation,
-                    effects,
-                );
-            }
-            return accepted;
+        } else if is_building {
+            // House4FB5BA returns immediately for a refused building
+            // exit (RTTI6). The completed product stays paid and held;
+            // only refused mobile products enter the refund tail.
+            return false;
+        } else {
+            // Exit0 or Exit1 with producer+524zero: the original selector
+            // decides whether Abandon refunds/disposes the held object.
+            super::factory_lifecycle::refund_failed_delivery(
+                sim,
+                rules,
+                owner_id,
+                cancellation,
+                effects,
+            );
         }
-        ProductionPlacement::Selected { .. } => unreachable!("normalized the selector above"),
+        return accepted;
+    } else {
+        cell
     };
-    let Some(obj) = rules.object_in_category(category.object_category(), type_id) else {
+    let Some(obj) =
+        sim.interner
+            .object_type_in_category(type_id, category.object_category(), rules)
+    else {
         return false;
     };
     if obj.category != ObjectCategory::Building {
         return false;
     }
 
-    let owner_id = sim.interner.intern(owner);
-    let type_interned = sim.interner.intern(type_id);
+    let type_interned = type_id;
     // Retain the selected Factory even if its held type's own category differs.
     let Some(held) = super::factory_lifecycle::ready_object(sim, owner_id, category, type_interned)
     else {
@@ -441,7 +443,7 @@ pub(crate) fn place_production_with_overlays(
         if evaluate_resolved_building_placement(
             sim,
             rules,
-            owner,
+            sim.interner.key_name(owner),
             Some(obj),
             rx,
             ry,
@@ -481,14 +483,17 @@ pub(crate) fn place_production_with_overlays(
         }
         wall_placement::autofill_walls(sim, rules, registry, obj, (rx, ry), owner_id, effects);
         // The native4FB240..4FB2C7 completion/radio/abandon tail also runs
-        // for an UnInit'ed object; only local selection tests its alive byte.
+        // for an UnInit'ed object. RESIDUAL (invisible): PlayerPtr's
+        // 4FB2DE..4FB2F7 vt+0x198 call (44D5D0 -> 6F4960) is not ported; in
+        // multiplayer Unlimbo made it already (440D25..440D61), and its House
+        // writes repeat Record_Last_Built's and Unlimbo's.
         held.entity_id()
     } else {
         let foundation = &obj.foundation;
         let z: u8 = sim.terrain_cell_level(rx, ry).unwrap_or(0);
         log::info!(
             "Placing building {} at ({},{}) z={} foundation={}",
-            type_id,
+            sim.interner.resolve(type_id),
             rx,
             ry,
             z,
@@ -500,7 +505,7 @@ pub(crate) fn place_production_with_overlays(
         if evaluate_resolved_building_placement(
             sim,
             rules,
-            owner,
+            sim.interner.key_name(owner),
             Some(obj),
             rx,
             ry,
@@ -564,6 +569,18 @@ pub(crate) fn place_production_with_overlays(
     // House4FB240..4FB252 tests RTTI, not the alive byte: the common
     // successful tail includes a temporary consumed by an upgrade or wall.
     sim.slave_manager_hand_off(new_sid, rules, effects);
+    // Ares HouseClass_UnitFromFactory_Firewall (10014D50, hook 0x4FB257):
+    // a firestorm wall section fills the gaps to the sections it links to.
+    if rules.ares_form() {
+        sim.ares_build_lines(
+            new_sid,
+            (rx, ry),
+            owner_id,
+            rules,
+            overlay_registry,
+            effects,
+        );
+    }
     held.complete_placement(&mut sim.production, &sim.session);
     crate::sim::radio::transmit(
         sim,
@@ -583,7 +600,10 @@ pub(crate) fn place_production_with_overlays(
     // `0x004FB2CC..0x004FB314`: BuildingSlam follows every successful
     // Unlimbo, before the yard's FirstContact BREAK, whatever the release.
     sim.sound_events
-        .emit(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
+        .emit(crate::sim::world::SimSoundEvent::BuildingPlaced {
+            owner: owner_id,
+            building_type: type_interned,
+        });
     sim.lifecycle_outputs
         .emit(crate::sim::world::LifecycleOutput::BuildingPlacementSucceeded { owner: owner_id });
     crate::sim::radio::transmit_to_contact(
@@ -616,7 +636,7 @@ fn failed_building_unlimbo(
     rules: &RuleSet,
     owner: InternedId,
     yard: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     sim.sound_events
         .emit(crate::sim::world::SimSoundEvent::CannotDeployHere { owner });
@@ -744,44 +764,11 @@ fn evaluate_resolved_building_placement(
                 BuildingPlacementError::BlockedTerrain
             });
         }
+        // The cursor's preview asks this on every pass while a building is
+        // armed, so a refusal here is ordinary play, not a fault to log.
         if in_build_area {
             Ok(())
         } else {
-            // Preview and AI probes can reject this cell every Logic frame.
-            // Build the diagnostic inventory only when explicitly requested.
-            if log::log_enabled!(log::Level::Debug) {
-                let (width, height) = obj.foundation.dimensions();
-                let providers: Vec<String> = sim
-                    .substrate
-                    .entities
-                    .values()
-                    .filter(|e| {
-                        e.category() == EntityCategory::Structure
-                            && sim.interner.resolve(e.owner()).eq_ignore_ascii_case(owner)
-                    })
-                    .map(|e| {
-                        let type_str = sim.interner.resolve(e.type_ref());
-                        let bn = rules.object(type_str).is_some_and(|o| o.base_normal);
-                        format!(
-                            "{}@({},{}) bn={}",
-                            type_str,
-                            e.position.rx(),
-                            e.position.ry(),
-                            bn
-                        )
-                    })
-                    .collect();
-                log::debug!(
-                    "Placement rejected: ({},{}) {}x{} outside build area for {} adj={} providers=[{}]",
-                    rx,
-                    ry,
-                    width,
-                    height,
-                    owner,
-                    obj.adjacent,
-                    providers.join(", "),
-                );
-            }
             Err(BuildingPlacementError::OutOfBuildArea)
         }
     })()
@@ -815,6 +802,7 @@ pub fn is_within_build_area(
     if placed_adjacent < 0 {
         return false;
     }
+    let ares = rules.ares_form();
     for e in sim.substrate.entities.values() {
         // A dying structure provides no build-area adjacency during its window.
         if e.death.is_dying() || e.lifecycle.in_limbo() {
@@ -823,14 +811,34 @@ pub fn is_within_build_area(
         if e.category() != EntityCategory::Structure {
             continue;
         }
-        if !e.unit_delivery_provides_base_space() {
+        if !ares && !e.unit_delivery_provides_base_space() {
             continue;
         }
         let provider_owner = sim.interner.resolve(e.owner());
         let Some(existing) = sim.entity_object_type(e, rules) else {
             continue;
         };
-        if provider_owner.eq_ignore_ascii_case(owner) {
+        // Ares 3.0 MapClass_CanBuildingTypeBePlacedHere_Ignore 10014890
+        // (hook 0x004A8FF5): an own `Deliver.BaseNormal=no` delivery skips
+        // only the own-base flag; the BuildOffAlly test after it (0x004A8FFA)
+        // still reads it, and IsAlliedWith answers true for the house itself
+        // (`0x004F9A10`).
+        if ares {
+            let own = provider_owner.eq_ignore_ascii_case(owner);
+            if own && e.unit_delivery_provides_base_space() {
+                if !existing.base_normal {
+                    continue;
+                }
+            } else if !(sim.session.game_options().build_off_ally
+                && existing.eligibile_for_ally_building
+                && (own || is_allied_with(sim.house_alliances.as_map(), provider_owner, owner)))
+            {
+                continue;
+            }
+        } else if provider_owner.eq_ignore_ascii_case(owner) {
+            // RESIDUAL (dormant, the retail EligibileForAllyBuilding= types keep
+            // BaseNormal=yes): native sends an own BaseNormal=no building on to the
+            // BuildOffAlly test (`0x004A8FE4` -> `0x004A8FFA`), where it can still count.
             if !existing.base_normal {
                 continue;
             }
@@ -860,6 +868,16 @@ pub fn is_within_build_area(
         }
     }
     false
+}
+
+/// How far, in cells from its origin cell, a provider can sit and still admit
+/// a placed `obj`: `Adjacent=` + 1 past its foundation's longer side. That is
+/// the ring [`is_within_build_area`] tests, so an external builder walks the
+/// engine's own admission ring, not a hand-picked spacing.
+pub fn build_area_reach_cells(obj: &ObjectType) -> i32 {
+    let (width, height) = obj.foundation.dimensions();
+    let span = i32::from(width.max(height)).saturating_sub(1);
+    obj.adjacent.saturating_add(1).saturating_add(span)
 }
 
 fn cell_in_build_area_ring(

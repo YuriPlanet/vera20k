@@ -5,6 +5,7 @@
 use super::*;
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
+use crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::anim_class::AnimWorldCoord;
@@ -18,24 +19,25 @@ fn render(
     atlas: &SpriteAtlas,
     detail: &RefCell<DetailState>,
     id: u64,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     let coord = sim.anim_absolute_coord(id).unwrap();
     let center = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let lighting = crate::map::lighting::CellLightGrid::new();
     let colors = Default::default();
     let hidden = Default::default();
     let before = (sim.state_hash(), sim.rng_state());
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,
             camera: [center.0 - 80., center.1 - 60.],
             render_size: [160, 120],
             tactical: [0, 0, 160, 120],
             zoom: 1.,
             axis: crate::render::batch::DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail,
             detail_level: 2,
@@ -48,9 +50,10 @@ fn render(
             observe_particles: false,
         },
         &mut parents,
-        &NativeDisplayOrder::from_display(sim.display_layers()),
+        &NativeDisplayOrder::from_world(&sim, None),
         Default::default(),
     );
+    let parents = parents.into_owned();
     assert_eq!((sim.state_hash(), sim.rng_state()), before);
     parents
 }
@@ -106,7 +109,7 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
                 (
                     ShpSpriteKey {
                         palette_context: ShpPaletteContext::GlobalAnim,
-                        type_id: "LOOP".to_owned(),
+                        type_id: "LOOP".into(),
                         facing: 0,
                         frame,
                         house_color: HouseColorIndex(0),
@@ -137,7 +140,8 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
     for _ in 0..16 {
         frame += 1;
         sim.session_mut_for_test().set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, FrameEffects::default());
+        sim.visit_anim(id, &rules, None, &mut FrameEffects::default())
+            .unwrap();
         if sim.anim(id).unwrap().runtime().delay_remaining != 0 {
             break;
         }
@@ -161,7 +165,8 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
         );
         frame += 1;
         sim.session_mut_for_test().set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, FrameEffects::default());
+        sim.visit_anim(id, &rules, None, &mut FrameEffects::default())
+            .unwrap();
     }
     assert_eq!(sim.anim(id).unwrap().runtime().delay_remaining, 0);
     assert_eq!(sim.display_layers().layer_of(id), Some(display));

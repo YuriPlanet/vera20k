@@ -26,7 +26,7 @@ fn advance(sim: &mut Simulation, rules: Option<&RuleSet>, lane: TickLane) {
             67,
             lane,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -44,12 +44,12 @@ fn house_anger_decay_uses_binary_frame_not_rust_tick() {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(1);
         sim.houses
             .get_mut(&peer)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(1);
         sim.houses
             .get_mut(&owner)

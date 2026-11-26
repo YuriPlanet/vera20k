@@ -21,11 +21,8 @@ use crate::render::draw_state::DrawState;
 use crate::render::gpu::GpuContext;
 use crate::render::loading_screen_chrome::{LoadingScreenAtlas, LoadingScreenEntry};
 use crate::render::shell_surface_present::ShellSurfacePresenter;
-use crate::render::shell_text::{
-    ScissorRect, ShellAlign, ShellTextDraw, TextRect, draw_in_rect_scaled,
-};
-use crate::rules::color_scheme::scheme_entry_for_priority;
-use crate::ui::shell::geom::ShellScale;
+use crate::render::shell_text::{ScissorRect, ShellTextDraw, TextRect, draw_in_rect_scaled};
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 
 const BACKGROUND_DEPTH: f32 = 0.90;
 const PREVIEW_DEPTH: f32 = 0.80;
@@ -68,7 +65,7 @@ fn encode_blank(
         depth_stencil_attachment: None,
         timestamp_writes: None,
         occlusion_query_set: None,
-
+        multiview_mask: None,
     });
     presenter.encode_present(encoder, destination);
 }
@@ -88,7 +85,8 @@ pub(super) fn present_blank(
     gpu: &GpuContext,
     presenter: &ShellSurfacePresenter,
     batch: &BatchRenderer,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
+    font: &BitFont,
 ) -> anyhow::Result<()> {
     let Some(output) = gpu
         .acquire_frame()
@@ -102,105 +100,13 @@ pub(super) fn present_blank(
             label: Some("Game Mode Blank"),
         });
     encode_blank(presenter, &mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
-    crate::render::present::present(output);
+    output.present(&gpu.queue);
     Ok(())
-}
-
-///6941A0/694Cxx share ProgressScreen's row/span/text paint. Counts are unique
-/// received/sent192-byte chunks, including the final short chunk. The session
-/// protocol owns these counts; this returns only derived presentation.
-pub(crate) fn transfer_progress_draws(
-    state: &mut crate::app::AppState,
-    completed: u32,
-    total: u32,
-) -> anyhow::Result<(Vec<SpriteInstance>, Vec<ShellTextDraw>)> {
-    use crate::rules::house_colors::{HouseColorIndex, house_text_rgb};
-    let local = state
-        .match_state
-        .session
-        .network_setup()
-        .map(|launch| &launch.humans[launch.local_player_index])
-        .ok_or_else(|| anyhow::anyhow!("map transfer has no local participant"))?;
-    let priority = if local.is_observer() {
-        -2
-    } else {
-        i32::from(local.slot.color_index)
-    };
-    let color = HouseColorIndex(scheme_entry_for_priority(priority) as u8);
-    let rules = state
-        .rules()
-        .ok_or_else(|| anyhow::anyhow!("map transfer has no color schemes"))?;
-    let rgb = house_text_rgb(&rules.color_schemes, color).map(|byte| f32::from(byte) / 255.0);
-    let ramp = *rules.house_color_ramps.ramp(color);
-    if state.frontend.loading_screen_atlas.is_none() {
-        let assets = state
-            .process_assets
-            .manager()
-            .ok_or_else(|| anyhow::anyhow!("map transfer has no assets"))?;
-        state.frontend.loading_screen_atlas =
-            crate::render::loading_screen_chrome::build_transfer_progress_atlas(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                assets,
-                &ramp,
-            );
-    }
-    let atlas = state
-        .frontend
-        .loading_screen_atlas
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("map transfer PROGBARM is unavailable"))?;
-    let font = &state.renderer.bit_font;
-    let scale = ShellScale::RETAIL;
-    let size = [state.render_width(), state.render_height()];
-    let layout = layout_loading_progress_row(
-        LoadingProgressRowPlacement::AutoCentered(size),
-        atlas.progress_frame0.pixel_size.map(|value| value as i32),
-        None,
-        [
-            font.text_width(PROGRESS_ROW_MEASURE_TEXT) as i32,
-            font.cell_height() as i32,
-        ],
-        scale,
-        0,
-    );
-    let mut progress = LoadingProgressState::standard_skirmish();
-    if total != 0 {
-        progress
-            .advance_progress((u64::from(completed.min(total)) * 100 / u64::from(total)) as u32);
-    }
-    let mut instances = Vec::new();
-    push_loading_participant_row(
-        &mut instances,
-        atlas.progress_frame0,
-        None,
-        atlas.solid_texel,
-        &progress,
-        Some(rgb),
-        &layout,
-        scale,
-    );
-    let label = state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get("GUI:MapTransfer"))
-        .unwrap_or("GUI:MapTransfer");
-    let draws = build_native_loading_text_draws(
-        font,
-        atlas.solid_texel,
-        None,
-        None,
-        label,
-        Some(&layout),
-        rgb,
-        rgb,
-        size,
-        scale,
-    );
-    Ok((instances, draws.into_iter().map(|draw| draw.text).collect()))
 }
 
 /// Encode the prepared native frame into the caller's existing frame submission.
@@ -466,6 +372,9 @@ fn build_native_loading_text_draw(
         glyph_scale,
     );
     let mut backing = Vec::new();
+    // Text that lays out no glyph gets no backing, in every build: what Ares'
+    // LoadProgressMgr_Draw_SkipShadowOnNullString3 (1002F850, hook 0x55403D)
+    // does for an empty GUI:LoadingEx, where stock still blends the box.
     if let Some(padding) = backing_padding
         && !text_draw.instances.is_empty()
     {
@@ -523,6 +432,7 @@ fn build_native_loading_instances(
     campaign: Option<&CampaignLoadingPresentation>,
     base_origin: [i32; 2],
     scale: ShellScale,
+    skirmish_colors: crate::rules::skirmish_colors::SkirmishColorMode,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::with_capacity(12);
     if let Some(campaign) = campaign {
@@ -577,7 +487,8 @@ fn build_native_loading_instances(
         // region-sized surface before blitting it.
         if let Some(prepared) = composition.preview.as_ref() {
             for marker in &composition.markers {
-                let color_key = scheme_entry_for_priority(i32::from(marker.color_priority)) as u8;
+                let color_key =
+                    skirmish_colors.entry_for_priority(i32::from(marker.color_priority)) as u8;
                 let Some(entry) = atlas.mmpb_markers.get(&color_key).copied() else {
                     continue;
                 };
@@ -632,7 +543,6 @@ fn push_loading_participant_row(
 /// DrawLoading552F65..553057: unscaled frame0 at the three executed rectangle
 /// origins. Missing title/bar shapes fill the original black background
 /// (4E8120 initializesA83CD9..DB), with no country layers.
-#[allow(clippy::too_many_arguments)]
 fn push_campaign_loading_chrome(
     out: &mut Vec<SpriteInstance>,
     layout: &CampaignLoadingLayout,
@@ -749,6 +659,7 @@ fn build_native_loading_frame_plan(
         campaign,
         loading_base_origin(authored),
         scale,
+        progress_row.skirmish_colors,
     );
     let mut text_draws = build_native_loading_text_draws(
         font,
@@ -763,6 +674,11 @@ fn build_native_loading_frame_plan(
         scale,
     );
     if campaign.is_some() {
+        // Redraw643BB9 hands this row the AlliedLoad/SovietLoad scheme, which
+        // Ares ProgressScreenClass_UpdateSingleProgressBar (1002F890, hook
+        // 0x643BB9) swaps for the cached load text colour. Nothing here shows
+        // a scheme: DrawFill643400 uses the +0x74 SPLDBR convert, +0x71 draws
+        // no outline in mode 0 and the row's label is empty.
         if let Some(layout) = native_loading_row_layout(
             font,
             atlas.progress_frame0,
@@ -851,7 +767,7 @@ pub(super) fn present_native_loading(
     depth_view: &wgpu::TextureView,
     batch: &BatchRenderer,
     font: &BitFont,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
     campaign: Option<&CampaignLoadingPresentation>,
@@ -897,9 +813,12 @@ pub(super) fn present_native_loading(
         &mut encoder,
         &output.texture,
     )?;
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // Synchronous repaints present outside the frame loop: the shared filter
+    // keeps the loading screen corrected like every other presented frame.
+    gpu.encode_color_vision(&mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
-    crate::render::present::present(output);
+    output.present(&gpu.queue);
     Ok(())
 }
 
@@ -964,7 +883,7 @@ fn encode_native_loading_plan(
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
-
+            multiview_mask: None,
         });
         batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, &buffer, count);
         for ((draw, backing_buffer), text_buffer) in text_draws
@@ -1112,7 +1031,7 @@ fn push_progress_fill(
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use serde_json::Value;
@@ -1193,7 +1112,7 @@ mod tests {
                     Some(title),
                     Some(bar),
                     solid,
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 );
                 assert_eq!(instances.len(), 3, "{filename} {size:?}");
                 for ((draw, entry), role) in instances
@@ -1250,7 +1169,7 @@ mod tests {
                 pair("bar_size"),
                 None,
                 pair("font_size"),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 0,
             );
             let mut progress = LoadingProgressState::standard_skirmish();
@@ -1263,7 +1182,7 @@ mod tests {
                 &progress,
                 layout.bar_origin.map(|value| value as f32),
                 None,
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
             );
             let clip = row["clip_rect"].as_array().unwrap();
             let clip_width = clip[2].as_i64().unwrap() as f32;
@@ -1359,7 +1278,7 @@ mod tests {
             entry,
             [24.0, 332.0],
             100,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             PROGRESS_DEPTH,
         );
 
@@ -1381,7 +1300,7 @@ mod tests {
             [707, 376],
             MARKER_DEPTH,
             clip,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
 
         assert_eq!(instances.len(), 1);
@@ -1405,7 +1324,7 @@ mod tests {
             [715, 400],
             MARKER_DEPTH,
             clip,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
         push_entry_clipped(
             &mut instances,
@@ -1413,7 +1332,7 @@ mod tests {
             [520, 367],
             MARKER_DEPTH,
             clip,
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
 
         assert!(instances.is_empty());

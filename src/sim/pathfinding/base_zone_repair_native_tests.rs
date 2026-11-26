@@ -39,7 +39,7 @@ fn retained_base_repair_matches_native_selectors_and_adoption_without_live_publi
             let i = (ny * i32::from(width) + nx) as usize;
             classes[i] = values[0].as_u64().unwrap() as u8;
             levels[i] = values[1].as_u64().unwrap() as u8;
-            ids[i] = values[2].as_u64().unwrap() as u16;
+            ids[i] = values[2].as_u64().unwrap() as ZoneId;
         };
         put(target, &input["target"]);
         for ((dx, dy), value) in crate::util::direction::DIRECTION_DELTAS
@@ -64,7 +64,7 @@ fn retained_base_repair_matches_native_selectors_and_adoption_without_live_publi
             .as_array()
             .unwrap()
             .iter()
-            .map(|value| value.as_u64().unwrap() as u16)
+            .map(|value| value.as_u64().unwrap() as ZoneId)
             .collect();
         for row in &mut base.raw_zone_ids_by_row {
             *row = row0.clone();
@@ -110,7 +110,7 @@ fn retained_base_repair_matches_native_selectors_and_adoption_without_live_publi
             assert_eq!(outcome, ZoneRepairOutcome::FullRebuild, "{label}");
             continue; // Native golden stops before the separate full rebuild.
         }
-        let cluster = case["target_after"][2].as_u64().unwrap() as u16;
+        let cluster = case["target_after"][2].as_u64().unwrap() as ZoneId;
         let expected = if input["target"][0] == zone_class::OUTSIDE {
             ZoneRepairOutcome::SentinelNoOp
         } else {

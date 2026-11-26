@@ -6,7 +6,6 @@
 
 use super::{FrameEffects, SimFireEvent, SimSoundEvent, Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{DeathEffects, UnderAttackEvent};
 
@@ -129,13 +128,66 @@ impl DamageConsequences {
         }
     }
 
+    /// Whether every step of [`Self::commit`] would find its input empty. The
+    /// effects are listed whole, so a new one needs a decision here; those
+    /// bound to `_` are records no delivery reads.
+    fn carries_nothing(&self) -> bool {
+        let DeathEffects {
+            despawned_ids: _,
+            immediate_uninit_ids,
+            structure_destroyed,
+            explosion_effects,
+            voxel_debris,
+            combat_light_requests,
+            bridge_state_changed,
+            #[cfg(any(test, feature = "test-support"))]
+                wall_mutations: _,
+            #[cfg(any(test, feature = "test-support"))]
+                cell_target_detaches: _,
+            #[cfg(any(test, feature = "test-support"))]
+            tiberium_reduction_requests,
+            death_sounds,
+            smudge_spawn_requests,
+            rad_detonations,
+            under_attack_events,
+            unit_lost_events,
+            #[cfg(any(test, feature = "test-support"))]
+                receiver_stage_trace: _,
+        } = &self.effects;
+        #[cfg(any(test, feature = "test-support"))]
+        if !tiberium_reduction_requests.is_empty() {
+            return false;
+        }
+        immediate_uninit_ids.is_empty()
+            && !structure_destroyed
+            && explosion_effects.is_empty()
+            && voxel_debris.is_empty()
+            && combat_light_requests.is_empty()
+            && !bridge_state_changed
+            && death_sounds.is_empty()
+            && smudge_spawn_requests.is_empty()
+            && rad_detonations.is_empty()
+            && under_attack_events.is_empty()
+            && unit_lost_events.is_empty()
+            && self.terrain_navigation_changed_cells.is_empty()
+            && match &self.delivery {
+                DamageDelivery::Immediate => true,
+                DamageDelivery::Ordinary { fire_events } => fire_events.is_empty(),
+            }
+    }
+
     pub(super) fn commit(
         self,
         world: &mut Simulation,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> DamageCommitReceipt {
+        // A commit that carries nothing, with no navigation receipt or smudge
+        // dirt pending, writes nothing (VERA-only, results unchanged); most
+        // fire visits fire nothing.
+        if self.carries_nothing() && !world.commit_work_pending() {
+            return DamageCommitReceipt::default();
+        }
         let Self {
             mut effects,
             terrain_navigation_changed_cells,
@@ -143,23 +195,9 @@ impl DamageConsequences {
         } = self;
         let ordinary = matches!(&delivery, DamageDelivery::Ordinary { .. });
         for &dead_id in &effects.immediate_uninit_ids {
-            if world
-                .substrate
-                .entities
-                .get(dead_id)
-                .and_then(|building| building.bunker.occupant())
-                .is_some()
-            {
-                crate::sim::docking::bunker_link::release_sell_destroy(
-                    world,
-                    dead_id,
-                    rules,
-                    frame_effects,
-                );
-            }
             world.uninit_with_context(
                 dead_id,
-                UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                UninitContext::new(rules).with_effects(frame_effects),
             );
         }
 
@@ -182,7 +220,7 @@ impl DamageConsequences {
 
         world.finish_terrain_navigation_changes(rules, &terrain_navigation_changed_cells);
 
-        world.admit_death_debris(std::mem::take(&mut effects.voxel_debris));
+        world.admit_death_debris(std::mem::take(&mut effects.voxel_debris), rules);
         // Explicit callback-disabled fixtures retain their effect packets;
         // production death producers already admitted each birth inline.
         // Remaining effects are `AnimClass` instances, not legacy world effects: only the real
@@ -192,16 +230,21 @@ impl DamageConsequences {
         for fx in std::mem::take(&mut effects.explosion_effects) {
             admit_explosion_effect(world, rules, fx);
         }
-        world
-            .combat_light_requests
-            .emit_all(effects.combat_light_requests.drain(..));
+        // A channel is written only for a fact it takes (`util::forked`).
+        if !effects.combat_light_requests.is_empty() {
+            world
+                .combat_light_requests
+                .emit_all(effects.combat_light_requests.drain(..));
+        }
         // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
         // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: its 24
         // constant-type call sites never pass type 0 (the 25th,
         // `TriggerAction::Execute`, takes its type from map data), and the one
         // in `BulletClass::AI` (`0x00467EA7`) is the silent type 13 of the
         // `NUKE` payload (`sim::superweapon::nuke::impact`).
-        if let DamageDelivery::Ordinary { fire_events, .. } = delivery {
+        if let DamageDelivery::Ordinary { fire_events, .. } = delivery
+            && !fire_events.is_empty()
+        {
             world.fire_events.emit_all(fire_events);
         }
         for (die_sound_id, location) in effects.death_sounds.drain(..) {
@@ -232,6 +275,21 @@ impl DamageConsequences {
     }
 }
 
+impl Simulation {
+    /// Whether a commit that carries nothing still has work: every commit
+    /// publishes the overlay grid's pending navigation receipts, and an
+    /// ordinary one the smudge grid's dirty cells.
+    pub(super) fn commit_work_pending(&self) -> bool {
+        self.overlay_grid
+            .as_ref()
+            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
+            || self
+                .smudge_grid
+                .as_ref()
+                .is_some_and(|grid| grid.has_dirty())
+    }
+}
+
 /// One constructor authority for immediate native tails and deferred receiver
 /// packets. Bullet469C40 calls this before its next Cluster draw469057.
 pub(crate) fn admit_explosion_effect(
@@ -244,7 +302,7 @@ pub(crate) fn admit_explosion_effect(
             world.admit_death_anim(rules, fx.shp_name, spawn);
         }
         None => {
-            world.spawn_combat_explosion_anim(
+            world.spawn_combat_explosion_anim_with_z_adjust(
                 rules,
                 fx.shp_name,
                 fx.rx,
@@ -253,6 +311,10 @@ pub(crate) fn admit_explosion_effect(
                 fx.sub_y,
                 fx.z,
                 fx.world_z,
+                fx.z_adjust,
+                fx.owner_house,
+                // The impact packet keeps no hold on its anim.
+                false,
             );
         }
     }
@@ -303,7 +365,14 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
             type_name, rx, ry, sub_x, sub_y, level,
         )
     };
-    if let Err(error) = world.spawn_anim_at_world(rules, descriptor, coord) {
+    let constructor = world.effect_anim_constructor(rules, type_name);
+    if let Err(error) = world.spawn_anim_at_world_with_constructor(
+        rules,
+        descriptor,
+        coord,
+        constructor,
+        &mut FrameEffects::default(),
+    ) {
         log::debug!(
             "muzzle anim [{}] did not construct: {error}",
             world.interner.resolve(type_name)
@@ -311,7 +380,7 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod muzzle_anim_tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;
@@ -320,14 +389,20 @@ mod muzzle_anim_tests {
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::world::display_layers::DisplayLayer;
 
     fn fixture(category: EntityCategory) -> (Simulation, RuleSet, u64) {
         let mut rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=TANK\n[BuildingTypes]\n0=TOWER\n[TANK]\nStrength=100\n[TOWER]\nStrength=100\n",
         ))
         .expect("rules");
-        let mut art = ArtRegistry::from_ini(&IniFile::from_str("[GUNFIRE]\nRate=900\n"));
+        // FLASH is a presentation anim; Scorch= keeps GUNFIRE an ordinary
+        // one (its Middle never runs here).
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[GUNFIRE]\nRate=900\nScorch=yes\n[FLASH]\nRate=900\n",
+        ));
         art.bind_anim_frame_count_for_test("GUNFIRE", 6);
+        art.bind_anim_frame_count_for_test("FLASH", 6);
         // Synthetic fixture supplies ART directly, without native read-admission replay.
         rules.install_art_fixture(art);
 
@@ -396,5 +471,41 @@ mod muzzle_anim_tests {
             "expiry preserves the stored delta after clearing the owner"
         );
         assert_eq!(sim.substrate.display.layer_of(id), None);
+    }
+
+    /// A flash of a presentation type rides its firer outside Display and
+    /// Logic, spends no unique id, leaves the firer's Object+84 alone and
+    /// ends with the firer's UnInit.
+    #[test]
+    fn a_presentation_flash_rides_its_firer_outside_display_and_ends_with_it() {
+        let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        sim.present_effect_anims();
+        sim.reveal(tank);
+        let unique_before = sim.next_native_runtime_id();
+        let mut event = shot(&mut sim, tank, EntityCategory::Unit);
+        event.muzzle_anim = Some(sim.interner.intern("FLASH"));
+        admit_muzzle_anim(&mut sim, &rules, &event);
+
+        assert_eq!(
+            sim.substrate.anims.iter().count(),
+            0,
+            "not in the Anim array"
+        );
+        let drawn: Vec<_> = sim.presentation_anims().collect();
+        assert_eq!(drawn.len(), 1);
+        let (id, layer) = drawn[0];
+        assert_eq!(
+            layer,
+            DisplayLayer::GROUND,
+            "an attached anim draws in Ground"
+        );
+        assert_eq!(sim.substrate.display.layer_of(id), None);
+        assert_eq!(sim.anim(id).unwrap().owner_entity(), Some(tank));
+        assert!(!sim.substrate.entities.get(tank).unwrap().is_parachuted());
+        assert_eq!(sim.next_native_runtime_id(), unique_before + 1);
+        assert!(!sim.presentation_anim_orphaned(id));
+
+        sim.uninit_with_rules(tank, &rules);
+        assert!(sim.presentation_anim_orphaned(id));
     }
 }

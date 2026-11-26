@@ -14,7 +14,7 @@ use crate::map::overlay_mark::{
 use crate::rules::locomotor_type::SpeedType;
 use crate::sim::world::load_object_lifecycle::LoadOverlayHandle;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_constructor_publication_tests.rs"]
 mod tests;
 
@@ -30,9 +30,7 @@ impl LivePublication<'_> {
                 "bridge reconstruction requires native type24/25/237/238 and frame-1".into(),
             );
         }
-        let registry = self
-            .registry
-            .ok_or("missing live bridge OverlayType registry")?;
+        let registry = self.rules.overlay_registry();
         let flags = registry
             .flags(overlay)
             .ok_or("missing bridge OverlayType")?;
@@ -135,6 +133,11 @@ struct BridgeMarkHost<'p, 'a> {
 
 impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
     type Error = String;
+    type CellAnim = crate::sim::overlay_mark_host::OverlayCellAnimHandle;
+
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+        error.to_string()
+    }
 
     fn cell(&mut self, coord: (i16, i16)) -> Cell {
         self.publication.lookup(coord)
@@ -150,6 +153,19 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
 
     fn slope(&self, cell: Cell) -> u8 {
         self.publication.terrain().native_cell_ground_fields(cell).1
+    }
+
+    fn admits_authored_bridge_grade(&self, anchor: Cell) -> bool {
+        let Cell::Real(index) = anchor else {
+            return false;
+        };
+        // Reuse the authored exception at Mark's 0x005FC5CD slope gate.
+        // A collapsed anchor keeps its fixed height after its flags are cleared.
+        self.publication
+            .terrain()
+            .cells()
+            .get(index)
+            .is_some_and(|cell| cell.retained_high_bridge_base_level().is_some())
     }
 
     fn identity(&self, cell: Cell) -> i32 {
@@ -236,7 +252,7 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
         Err("bridge reconstruction hosts no wall Mark".into())
     }
 
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), String> {
+    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<Self::CellAnim, String> {
         let rules = self.publication.rules;
         let ground = crate::sim::overlay_mark_host::OverlayCellAnimGround::read(
             self.publication.terrain(),
@@ -248,9 +264,19 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
             request,
             ground,
             crate::sim::anim_class::AnimConstructorInput::Runtime,
+            &mut self.publication.frame_effects,
         )
-        .map(|_| ())
         .map_err(|error| error.to_string())
+    }
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        self.publication
+            .sim
+            .tint_overlay_cell_anim(self.publication.rules, anim, tiberium);
     }
 
     fn recalc(&mut self, cell: Cell) -> Result<(), String> {

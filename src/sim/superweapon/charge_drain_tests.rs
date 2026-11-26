@@ -15,6 +15,11 @@ use crate::util::save_codec;
 
 const SHIELD: &str = "DrainShield";
 
+/// A full charge's AnimStage: the stock clamp, or Ares 100354C0's 54.
+fn full_stage(rules: &RuleSet) -> i32 {
+    if rules.ares() { 54 } else { 53 }
+}
+
 fn layers() -> RulesLayerStack {
     RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n\
@@ -86,7 +91,7 @@ fn world(rules: &RuleSet) -> (Simulation, InternedId, InternedId, InternedId, u6
     sim.spawn_object("TARGET", "Russians", 20, 20, 0, rules)
         .unwrap();
     sim.assess_power_for_test(rules);
-    sim.recheck_house_tech_tree(local, rules);
+    sim.recheck_house_tech_tree(local, rules, &mut Default::default());
     let id = sim.interner.get(SHIELD).unwrap();
     (sim, local, remote, id, provider)
 }
@@ -194,7 +199,14 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
             .any(|event| matches!(event, SimSoundEvent::SuperWeaponReady { .. }))
     );
     assert_eq!(sim.super_weapons[&owner][&id].ready_tick(), -100);
-    display(&sim, &rules, owner, 53, SuperWeaponStatus::Ready, true);
+    display(
+        &sim,
+        &rules,
+        owner,
+        full_stage(&rules),
+        SuperWeaponStatus::Ready,
+        true,
+    );
 
     // SPECIAL_PLACE at the ordinary frame tail, with no ready/state/timer
     // override. Native6CB9D9 converts (900-0)*q before actual case10.
@@ -206,7 +218,7 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         provider: u64,
     }
     impl crate::sim::world::SoundBoundary for ActivationBoundary {
-        fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if let SimSoundEvent::SuperWeaponActivation { sw_type, world } = event
                     && *sw_type == self.id
@@ -249,7 +261,7 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
             self.delivered.get()
         }
     }
-    let boundary = ActivationBoundary {
+    let mut boundary = ActivationBoundary {
         delivered: std::cell::Cell::new(0),
         activations: std::cell::Cell::new(0),
         owner,
@@ -270,10 +282,9 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         .advance_app_frame(
             &commands,
             &rules,
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::for_sound(&boundary),
+            &mut FrameEffects::for_sound(&mut boundary),
         )
         .unwrap();
     assert_eq!(boundary.activations.get(), 1);
@@ -437,7 +448,14 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
             .iter()
             .any(|event| matches!(event, SimSoundEvent::SuperWeaponReady { .. }))
     );
-    display(&sim, &rules, owner, 53, SuperWeaponStatus::Ready, true);
+    display(
+        &sim,
+        &rules,
+        owner,
+        full_stage(&rules),
+        SuperWeaponStatus::Ready,
+        true,
+    );
 }
 
 #[test]
@@ -451,6 +469,9 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
     // Actual map action33 gives one-time Grant->ForcedCharge6CC080. The
     // remote owner's human byte, not current-house identity, selects6CB93D.
     for human in [true, false] {
+        // Ares ClickFire10035130 drops the computer's FirestormActive arm:
+        // every House converts the timer and toggles.
+        let toggles = human || rules.ares();
         let (mut sim, local, remote, id, _) = world(&rules);
         sim.houses
             .get_mut(&remote)
@@ -467,15 +488,17 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
             None,
             None,
+            None,
         );
         sim.classify_map_triggers(&rules);
-        sim.advance_triggers(&rules, None, FrameEffects::default());
+        sim.advance_triggers(&rules, None, &mut FrameEffects::default());
         let instance = &sim.super_weapons[&remote][&id];
         assert!(instance.is_active() && instance.is_ready() && instance.one_time);
         assert_eq!(instance.charge_drain_state(), 1);
         let original_timer = (instance.charge_start_tick(), instance.charge_duration());
         sim.sound_events.clear_for_test();
         assert!(sim.apply_command_with_overlays(
+            None,
             "Russians",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,
@@ -484,11 +507,11 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             },
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         let instance = &sim.super_weapons[&remote][&id];
         assert!(instance.is_active() && instance.is_ready() && instance.one_time);
-        if human {
+        if toggles {
             assert_eq!(
                 (
                     instance.charge_drain_state(),
@@ -499,6 +522,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             );
             sim.session.set_binary_frame_for_test(4200);
             assert!(!sim.apply_command_with_overlays(
+                None,
                 "Russians",
                 &Command::LaunchSuperWeapon {
                     sw_type_id: id,
@@ -507,7 +531,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
                 },
                 &rules,
                 None,
-                FrameEffects::default()
+                &mut FrameEffects::default()
             ));
             assert_eq!(sim.super_weapons[&remote][&id].charge_drain_state(), 1);
         } else {
@@ -540,6 +564,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
         let anims = invoke_count(&sim);
         sim.sound_events.clear_for_test();
         sim.apply_command_with_overlays(
+            None,
             "Russians",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,
@@ -548,11 +573,11 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             },
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let instance = &sim.super_weapons[&remote][&id];
-        assert_eq!(instance.charge_drain_state(), if human { 2 } else { 1 });
-        assert_eq!(instance.charge_duration(), if human { 0 } else { 900 });
+        assert_eq!(instance.charge_drain_state(), if toggles { 2 } else { 1 });
+        assert_eq!(instance.charge_duration(), if toggles { 0 } else { 900 });
         assert!(instance.one_time && instance.is_active() && !instance.is_ready());
         assert_eq!(instance.fade(), fade);
         assert_eq!(

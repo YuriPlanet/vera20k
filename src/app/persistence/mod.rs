@@ -5,37 +5,48 @@
 //!
 //! F12 owner tree: options persistence lives here beside the save repository.
 
+pub(crate) mod account;
 pub(crate) mod commands;
+pub(crate) mod intro_play;
 pub(crate) mod options;
 pub(crate) mod options_profile;
+#[cfg(feature = "phobos")]
+pub(crate) mod phobos_settings;
 pub(crate) mod profile_file;
 mod resource_load;
 pub(crate) mod rules_profile;
+mod save_migration;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) mod startup_backend;
 pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
-use std::path::{Path, PathBuf};
 #[cfg(any(feature = "dev-overlays", test))]
-use std::time::SystemTime;
+use crate::util::time::SystemTime;
+use std::path::{Path, PathBuf};
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::snapshot::{
     GameSnapshot, GameSnapshotHeader, SnapshotError, SnapshotMapRestoreOutput, SnapshotRestoreError,
 };
 use crate::sim::world::Simulation;
 
-#[cfg(target_os = "horizon")]
-const DEFAULT_SAVES_DIRECTORY: &str = "vera20k-user:/saves";
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 #[cfg(not(target_os = "horizon"))]
 const DEFAULT_SAVES_DIRECTORY: &str = "saves";
+#[cfg(target_os = "horizon")]
+const DEFAULT_SAVES_DIRECTORY: &str = "vera20k-user:/saves";
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+const DEFAULT_SAVES_DIRECTORY: &str = "/saves";
 
 /// Process-lifetime save-game state owned by the app persistence domain.
 pub(crate) struct PersistenceState {
     /// MainTick55DBCD's process-global ABCE08. It is deliberately outside
     /// the saved Scenario and survives a same-mission restart.
     initial_campaign_save_attempted: bool,
+    /// The one UI load awaiting its loading frame and subsequent redraw.
+    pub(crate) pending_load: Option<commands::PendingSavedGameLoad>,
     /// The process-lifetime retail Options/Video/Audio profile. UI, window,
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
@@ -46,6 +57,7 @@ impl PersistenceState {
     pub(crate) fn new(options_profile: options_profile::RetailOptionsProfile) -> Self {
         Self {
             initial_campaign_save_attempted: false,
+            pending_load: None,
             options_profile,
             repository: SaveRepository::new(),
         }
@@ -74,6 +86,74 @@ impl PersistenceState {
         campaign && !self.initial_campaign_save_attempted
     }
 
+    /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
+    /// the simulation never reads it.
+    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
+        self.options_profile.health_bars
+    }
+
+    /// `[VERA] ColorVisionMode=`: the final-frame colour filter. Presentation
+    /// only; the simulation never reads it, and the frame reads it live.
+    pub(crate) fn color_vision_mode(
+        &self,
+    ) -> crate::ui::main_menu_dialogs::options::ColorVisionMode {
+        self.options_profile.color_vision
+    }
+
+    /// This frame's matrix for the shared frame-output filter.
+    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
+        crate::app::state::color_vision_matrix_for(self.color_vision_mode())
+    }
+
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`PlatformState::capture_choices`).
+    pub(crate) fn hd_radar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.hd_radar, |capture| capture.hd_radar)
+    }
+
+    /// Whether VERA's smooth sidebar is on (`[VERA] SmoothSidebar=`); a
+    /// capture takes its profile's choice.
+    pub(crate) fn smooth_sidebar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.smooth_sidebar, |capture| {
+            capture.smooth_sidebar
+        })
+    }
+
+    /// The Sidebar size the match frame uses; a capture takes its own,
+    /// Normal unless its profile says.
+    pub(crate) fn sidebar_size(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> crate::ui::main_menu_dialogs::options::SidebarSize {
+        capture.map_or(self.options_profile.sidebar, |capture| capture.sidebar)
+    }
+
+    /// Whether the setup screens show VERA's own map pictures
+    /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
+    /// `[PreviewPack]` picture, which retail comparisons check, and the
+    /// browser build cannot start the hidden run that draws one.
+    pub(crate) fn hd_map_previews(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        crate::ui::main_menu_dialogs::options::HAS_HD_MAP_PREVIEWS
+            && capture.is_none()
+            && self.options_profile.hd_map_previews
+    }
+
+    /// Whether VERA's online client draws its enlarged art smoothed
+    /// (`[VERA] SmoothOnlineMenus=`). The native-UI diagnostics, the only
+    /// sessions without that client, keep their art's own pixels.
+    pub(crate) fn smooth_online_menus(&self, native_shell_ui: bool) -> bool {
+        self.options_profile.smooth_online_menus && !native_shell_ui
+    }
+
     /// A one-shot production capture uses its own new directory, so the
     /// ordinary save command cannot replace a player's existing saves.
     pub(crate) fn isolate_capture_saves(&mut self, directory: &Path) -> std::io::Result<()> {
@@ -91,7 +171,9 @@ impl PersistenceState {
 pub(crate) enum PreparedLoadError {
     #[error("could not read save file: {0}")]
     ReadFile(#[source] std::io::Error),
-    // The four `#[cfg(test)]` variants belong to the headless same-content
+    #[error("a network match cannot load a saved game")]
+    NetworkMatch,
+    // The three `#[cfg(test)]` variants belong to the headless same-content
     // fixture route; saved-resource preparation rebuilds those inputs.
     #[cfg(test)]
     #[error("no active simulation to restore")]
@@ -104,13 +186,10 @@ pub(crate) enum PreparedLoadError {
     #[cfg(test)]
     #[error("no resolved_terrain available")]
     MissingTerrainTemplate,
-    #[cfg(test)]
-    #[error("active overlay registry is unavailable")]
-    MissingOverlayRegistry,
     #[error(transparent)]
     Snapshot(#[from] SnapshotError),
     #[error(transparent)]
-    Restore(#[from] SnapshotRestoreError),
+    Restore(SnapshotRestoreError),
     #[error(transparent)]
     FactoryState(#[from] crate::sim::production::FactoryRestoreError),
     #[error("invalid saved sidebar order: {0}")]
@@ -127,6 +206,15 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
+}
+
+impl From<SnapshotRestoreError> for PreparedLoadError {
+    fn from(error: SnapshotRestoreError) -> Self {
+        match error {
+            SnapshotRestoreError::Factory(source) => Self::FactoryState(source),
+            other => Self::Restore(other),
+        }
+    }
 }
 
 /// Fully validated, cache-rebuilt replacement state ready for one infallible commit.
@@ -160,7 +248,6 @@ pub(crate) struct LoadPreparationView<'a> {
     expected_map_hash: Option<u64>,
     rules: Option<&'a RuleSet>,
     terrain_template: Option<&'a ResolvedTerrainGrid>,
-    overlay_registry: Option<&'a OverlayTypeRegistry>,
 }
 
 #[cfg(test)]
@@ -179,7 +266,6 @@ impl<'a> LoadPreparationView<'a> {
             rules: runtime.map(|runtime| &runtime.resources.rules),
             terrain_template: runtime
                 .and_then(|runtime| runtime.resources.terrain_template.as_ref()),
-            overlay_registry: runtime.map(|runtime| &runtime.resources.overlay_registry),
         }
     }
 
@@ -191,7 +277,6 @@ impl<'a> LoadPreparationView<'a> {
         expected_map_hash: Option<u64>,
         rules: Option<&'a RuleSet>,
         terrain_template: Option<&'a ResolvedTerrainGrid>,
-        overlay_registry: Option<&'a OverlayTypeRegistry>,
     ) -> Self {
         Self {
             repository,
@@ -199,7 +284,6 @@ impl<'a> LoadPreparationView<'a> {
             expected_map_hash,
             rules,
             terrain_template,
-            overlay_registry,
         }
     }
 }
@@ -222,7 +306,6 @@ impl PreparedLoad {
             view.expected_map_hash,
             view.rules,
             view.terrain_template,
-            view.overlay_registry,
         )
     }
 
@@ -236,7 +319,6 @@ impl PreparedLoad {
         expected_map_hash: Option<u64>,
         rules: Option<&RuleSet>,
         terrain_template: Option<&ResolvedTerrainGrid>,
-        overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Self, PreparedLoadError> {
         let current_simulation =
             current_simulation.ok_or(PreparedLoadError::MissingCurrentSimulation)?;
@@ -257,31 +339,21 @@ impl PreparedLoad {
             crate::sim::world::SnapshotProcessState::Live(current_simulation),
             rules,
             terrain_template,
-            current_simulation.terrain_speed_config().clone(),
-            overlay_registry.ok_or(PreparedLoadError::MissingOverlayRegistry)?,
-            None,
-            None,
+            *current_simulation.terrain_speed_config(),
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
         )
     }
 
     /// One world restore for production resource loads and headless fixtures.
     /// The caller supplies the incoming bound resources and only lends the
     /// current process RNG owners; no fresh scenario construction is replayed.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "bound resources and explicit user-file Cell values"
-    )]
     fn prepare_snapshot(
-        snapshot: GameSnapshot,
+        mut snapshot: GameSnapshot,
         process: crate::sim::world::SnapshotProcessState<'_>,
         rules: &RuleSet,
         terrain_template: ResolvedTerrainGrid,
         terrain_speed_config: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
-        overlay_registry: &OverlayTypeRegistry,
-        prepare_terrain_assets: Option<
-            &mut crate::sim::snapshot::SnapshotTerrainAssetPreparation<'_>,
-        >,
-        saved_land: Option<crate::map::resolved_terrain::SavedCellLandValues>,
+        cells: crate::sim::snapshot::PlayerSaveCells<'_, '_>,
     ) -> Result<Self, PreparedLoadError> {
         let saved_sidebar_order = snapshot.sidebar_order().cloned();
         let tactical_view = snapshot.tactical_view().cloned();
@@ -289,43 +361,20 @@ impl PreparedLoad {
             crate::app::input::camera::validate_saved_tactical_view(saved)
                 .map_err(PreparedLoadError::TacticalView)?;
         }
-        let mut simulation = snapshot.sim;
-        simulation.retain_process_state_for_load(process);
-        // Native MouseLoad->Resize reconstructs the dummy before subsequent
-        // LoadContent67E8CD hierarchy reads. The fallible candidate must see
-        // that state without touching the running match's retained identity.
-        simulation.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
-        simulation.restore_after_snapshot_load()?;
-        crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
-        simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
-
-        let map_restore = match saved_land {
-            Some(saved_land) => simulation.restore_map_authority_after_user_load(
-                rules,
-                overlay_registry,
-                prepare_terrain_assets,
-                saved_land,
-            )?,
-            None => simulation.restore_map_authority_after_snapshot_load(
-                rules,
-                overlay_registry,
-                prepare_terrain_assets,
-            )?,
-        };
-        // Older headless saves may omit types that had never spawned. Add
-        // those canonical names without changing any saved ID, then build
-        // the handle table; a missing name must never become sidebar ID zero.
-        simulation.intern_rule_type_ids(rules);
-        simulation.resolve_type_handles(rules);
-        simulation.rebuild_lighting_sources_after_load(rules);
+        let mut sinking_waterlines = std::mem::take(&mut snapshot.sinking_waterlines);
+        let mut anim_intensities = std::mem::take(&mut snapshot.anim_intensities);
+        let (simulation, map_restore) = snapshot.restore_player_world(
+            process,
+            rules,
+            terrain_template,
+            terrain_speed_config,
+            cells,
+        )?;
 
         // A render cache can retain an outgoing ID until its next sweep. Only
         // restored entity identities may re-enter the new presentation owner;
         // do not infer +3CA from current height or from the sinking byte.
-        let mut sinking_waterlines = snapshot.sinking_waterlines;
         sinking_waterlines.retain(|(id, _)| simulation.entities().contains(*id));
-        let mut anim_intensities = snapshot.anim_intensities;
         anim_intensities.retain(|(id, _)| simulation.anim(*id).is_some());
         // MouseLoad5BDF70 preserves the four strip lists; no-init5BE9B0
         // resets their progress only. Hydration is fallible and borrows no
@@ -365,6 +414,9 @@ impl PreparedLoad {
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
         self.simulation.publish_scenario_started();
+        // A loaded match draws its turns as a new match does
+        // (`world::turn_streams`): a save does not carry the switch.
+        self.simulation.separate_turn_streams(true);
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -382,9 +434,11 @@ impl PreparedLoad {
         self,
         runtime: &mut crate::sim::runtime::SimRuntime,
     ) -> CommittedLoadPresentation {
+        // These fixtures keep no app process cell: the install writes a
+        // stand-in one that nothing reads.
         let (simulation, presentation) = self.into_committed(
             runtime.simulation.effective_shared_cell_dummy(),
-            runtime.simulation.main_rng(),
+            &crate::sim::rng::MainRng::new(0),
         );
         runtime.replace_simulation(simulation);
         presentation
@@ -448,9 +502,16 @@ pub(crate) struct SaveRepository {
 
 impl SaveRepository {
     fn new() -> Self {
-        Self {
-            directory: PathBuf::from(DEFAULT_SAVES_DIRECTORY),
+        #[cfg(target_os = "horizon")]
+        {
+            static RECOVER: std::sync::Once = std::sync::Once::new();
+            RECOVER.call_once(|| {
+                if let Err(error) = recover_horizon_saves(Path::new(DEFAULT_SAVES_DIRECTORY)) {
+                    log::error!("Could not recover interrupted saves: {error}");
+                }
+            });
         }
+        Self::at(DEFAULT_SAVES_DIRECTORY)
     }
 
     pub(crate) fn at(directory: impl Into<PathBuf>) -> Self {
@@ -465,7 +526,47 @@ impl SaveRepository {
     }
 
     pub(crate) fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
-        std::fs::read(path)
+        crate::util::file_system::read(path)
+    }
+
+    /// A slot's display description is stored verbatim. Only its generated
+    /// filename trims whitespace, replaces reserved characters and caps length.
+    fn filename_part(description: &str) -> Option<String> {
+        let trimmed = description.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some(
+            trimmed
+                .chars()
+                .take(64)
+                .map(|ch| match ch {
+                    '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                    ch if ch.is_control() => '_',
+                    ch => ch,
+                })
+                .collect(),
+        )
+    }
+
+    /// Shared destination policy for ordinary saves and converted saves.
+    fn write_player_slot(
+        &self,
+        overwrite: Option<&Path>,
+        filename_part: Option<&str>,
+        tick: u64,
+        timestamp: u64,
+        bytes: &[u8],
+    ) -> Result<PathBuf, SaveWriteError> {
+        if let Some(path) = overwrite {
+            self.overwrite_existing(path, bytes)?;
+            return Ok(path.to_owned());
+        }
+        let filename = match filename_part {
+            Some(name) => format!("save_{name}_tick{tick}_{timestamp}.bin"),
+            None => format!("save_tick{tick}_{timestamp}.bin"),
+        };
+        self.write_named(&filename, bytes)
     }
 
     pub(crate) fn write_named(
@@ -473,32 +574,42 @@ impl SaveRepository {
         file_name: &str,
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
-        std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
-            #[cfg(any(feature = "dev-overlays", test))]
-            stage: SaveWriteStage::CreateDirectory,
-            source,
+        crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
+            SaveWriteError {
+                #[cfg(any(feature = "dev-overlays", test))]
+                stage: SaveWriteStage::CreateDirectory,
+                source,
+            }
         })?;
         let path = self.directory.join(file_name);
-        self.create_new_file(&path, bytes)?;
+        crate::util::file_system::write_new(&path, bytes).map_err(SaveWriteError::write_file)?;
+        commit_save_storage(&path).map_err(SaveWriteError::write_file)?;
         Ok(path)
     }
 
     /// New saves may not silently replace a timestamp-name collision. Remove
     /// only our newly created partial file if writing fails.
     fn create_new_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(SaveWriteError::write_file)?;
-        let result = file.write_all(bytes).and_then(|()| file.sync_all());
-        drop(file);
-        if let Err(source) = result {
-            let _ = std::fs::remove_file(path);
-            return Err(SaveWriteError::write_file(source));
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            crate::util::file_system::write_new(path, bytes).map_err(SaveWriteError::write_file)
         }
-        commit_save_storage(path).map_err(SaveWriteError::write_file)
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(SaveWriteError::write_file)?;
+            let result = file.write_all(bytes).and_then(|()| file.sync_all());
+            drop(file);
+            if let Err(source) = result {
+                let _ = crate::util::file_system::remove_file(path);
+                return Err(SaveWriteError::write_file(source));
+            }
+            Ok(())
+        }
     }
 
     /// Only an explicit existing repository row can be replaced. Stage the
@@ -509,51 +620,85 @@ impl SaveRepository {
         path: &Path,
         bytes: &[u8],
     ) -> Result<(), SaveWriteError> {
-        if path.parent() != Some(self.directory.as_path()) || !Self::is_save_file(path) {
+        if !self.contains_save_path(path) {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "overwrite target is not a save in this repository",
             )));
         }
-        self.validate_existing_save(path)?;
-        self.replace_file(path, bytes)
+        self.replace_file(path, bytes, GameSnapshotHeader::is_compatible)
     }
 
-    fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
-        let previous = self.read(path).map_err(SaveWriteError::write_file)?;
-        GameSnapshot::read_header(&previous).map_err(|error| {
-            SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-        })?;
-        Ok(())
-    }
-
-    fn replace_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
-        static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let directory = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let stage = loop {
-            let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stage = directory.join(format!(".save-{}-{id}.tmp", std::process::id()));
-            match self.create_new_file(&stage, bytes) {
-                Ok(()) => break stage,
-                Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
+    fn replace_file(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        eligible: impl FnOnce(&GameSnapshotHeader) -> bool,
+    ) -> Result<(), SaveWriteError> {
+        // Re-read the selected row immediately before publishing. It may
+        // have changed while the dialog was open or the snapshot was staged.
+        #[cfg(not(target_os = "horizon"))]
+        let validate = || {
+            if eligible(&Self::file_header(path)?) {
+                Ok(())
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "the selected save is no longer compatible",
+                ))
             }
         };
-        let result = replace_published_file(&stage, path);
-        if result.is_err() {
-            let _ = std::fs::remove_file(&stage);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            validate().map_err(SaveWriteError::write_file)?;
+            crate::util::file_system::write(path, bytes).map_err(SaveWriteError::write_file)
         }
-        result
-            .and_then(|()| commit_save_storage(path))
-            .map_err(SaveWriteError::write_file)
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            // A process-unique serial for staging file names.
+            static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let directory = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            let stage = loop {
+                let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let stage = directory.join(format!(".save-{}-{id}.tmp", std::process::id()));
+                match self.create_new_file(&stage, bytes) {
+                    Ok(()) => break stage,
+                    Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
+            #[cfg(not(target_os = "horizon"))]
+            let result = validate().and_then(|()| std::fs::rename(&stage, path));
+            #[cfg(target_os = "horizon")]
+            let result = replace_horizon_slot(path, &stage, |backup| {
+                if eligible(&Self::file_header(backup)?) {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "the selected save is no longer compatible",
+                    ))
+                }
+            });
+            if result.is_err() {
+                let _ = crate::util::file_system::remove_file(&stage);
+            }
+            #[cfg(not(target_os = "horizon"))]
+            let result = result.and_then(|()| commit_save_storage(path));
+            result.map_err(SaveWriteError::write_file)
+        }
     }
 
     /// The game's one retained initial save per mission. Native67CF13..67CF42
-    /// forwards the entire filename to StgCreateDocfile(CREATE). Relative paths
-    /// use VERA's save root; absolute paths retain their selected location.
+    /// forwards the entire filename to StgCreateDocfile(CREATE), wherever it
+    /// points. VERA: the name is the mission's map name, which a mod, a map or
+    /// a saved game supplies, so only a logical name is written, under the save
+    /// root; a name that would leave it (a drive, a root, `..`) is refused.
     /// Missing subdirectories fail, and an existing VERA automatic slot is replaced.
     /// The Rust-format boundary preserves foreign/native SAV files rather than
     /// replacing them with an incompatible snapshot. The attempt still consumes
@@ -565,27 +710,28 @@ impl SaveRepository {
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
         let file = Path::new(filename);
-        if file.file_name().is_none()
+        if !crate::map::source::is_logical_name(filename)
             || file.extension().and_then(|ext| ext.to_str()) != Some("sav")
         {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "initial campaign save must name a .sav file",
+                "initial campaign save must name a .sav file in the save folder",
             )));
         }
-        if file.is_relative() {
-            std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
+        crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
+            SaveWriteError {
                 #[cfg(any(feature = "dev-overlays", test))]
                 stage: SaveWriteStage::CreateDirectory,
                 source,
-            })?;
-        }
+            }
+        })?;
         let path = self.directory.join(file);
-        if path.exists() {
-            self.validate_existing_save(&path)?;
-            self.replace_file(&path, bytes)?;
+        if crate::util::file_system::exists(&path) {
+            // SaveGame67CF42 can replace this mission's own older VERA slot.
+            self.replace_file(&path, bytes, |_| true)?;
         } else {
             self.create_new_file(&path, bytes)?;
+            commit_save_storage(&path).map_err(SaveWriteError::write_file)?;
         }
         Ok(path)
     }
@@ -597,13 +743,17 @@ impl SaveRepository {
         )
     }
 
+    fn contains_save_path(&self, path: &Path) -> bool {
+        path.parent() == Some(self.directory.as_path()) && Self::is_save_file(path)
+    }
+
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {
-        std::fs::remove_file(path)?;
+        crate::util::file_system::remove_file(path)?;
         commit_save_storage(path)
     }
 
     pub(crate) fn exists(&self, path: &Path) -> bool {
-        path.exists()
+        crate::util::file_system::exists(&path)
     }
 
     /// Native5596A0 browser metadata with each file's write time. The shared
@@ -613,16 +763,48 @@ impl SaveRepository {
         self.readable_entries().collect()
     }
 
-    /// Whether any compatible save reads: the scan stops at the first one, like
-    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`.
+    /// Whether any save reads: the scan stops at the first one, like
+    /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`. VERA-only: a save
+    /// another build wrote counts too, because Load lists it (marked, not
+    /// loadable) where gamemd hides it.
     pub(crate) fn has_browser_entry(&self) -> bool {
-        self.readable_entries()
-            .any(|(entry, _)| entry.header.is_compatible())
+        self.readable_entries().next().is_some()
+    }
+
+    fn file_header(path: &Path) -> std::io::Result<GameSnapshotHeader> {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let reader = std::fs::File::open(path)?;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let reader = std::io::Cursor::new(crate::util::file_system::read_shared(path)?);
+        Self::read_browser_metadata(reader)
+    }
+
+    /// SaveInfo681840/559ED0 needs metadata, not the simulation body. Reuse
+    /// the one snapshot parser with a growing prefix: strings can exceed a
+    /// fixed page, but ordinary headers must not read a 200 MB saved world.
+    fn read_browser_metadata(
+        mut reader: impl std::io::Read,
+    ) -> std::io::Result<GameSnapshotHeader> {
+        use std::io::Read;
+        let mut prefix = Vec::new();
+        let mut next = 64;
+        loop {
+            let added = reader.by_ref().take(next).read_to_end(&mut prefix)?;
+            match GameSnapshot::read_metadata(&prefix) {
+                Ok(header) => return Ok(header),
+                Err(SnapshotError::DeserializeFailed(
+                    crate::util::save_codec::Error::UnexpectedEnd,
+                )) if added != 0 => next = prefix.len() as u64,
+                Err(error) => {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, error));
+                }
+            }
+        }
     }
 
     /// Saves whose header reads, with their file time, in directory order.
     fn readable_entries(&self) -> impl Iterator<Item = (SaveEntry, u64)> + '_ {
-        std::fs::read_dir(&self.directory)
+        crate::util::file_system::read_dir(&self.directory)
             .into_iter()
             .flatten()
             .filter_map(|item| {
@@ -635,8 +817,7 @@ impl SaveRepository {
                 if !metadata.is_file() {
                     return None;
                 }
-                let bytes = self.read(&path).ok()?;
-                let header = GameSnapshot::read_metadata(&bytes).ok()?;
+                let header = Self::file_header(&path).ok()?;
                 let ticks = crate::map::rmg::saved_seeds::system_time_to_file_time(
                     metadata.modified().ok()?,
                 );
@@ -648,7 +829,7 @@ impl SaveRepository {
     /// modification time without reading or validating its snapshot header.
     #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn quickload_path_by_modified_time(&self) -> Option<PathBuf> {
-        let directory = std::fs::read_dir(&self.directory).ok()?;
+        let directory = crate::util::file_system::read_dir(&self.directory).ok()?;
         newest_modified_path(directory.filter_map(|item| {
             let item = item.ok()?;
             let path = item.path();
@@ -660,73 +841,137 @@ impl SaveRepository {
     }
 }
 
-/// Desktop rename replaces an existing file atomically.
-#[cfg(not(target_os = "horizon"))]
-fn replace_published_file(stage: &Path, path: &Path) -> std::io::Result<()> {
-    std::fs::rename(stage, path)
-}
-
-#[cfg(target_os = "horizon")]
-fn replace_published_file(stage: &Path, path: &Path) -> std::io::Result<()> {
-    // Horizon rename cannot replace a file. Keep the old snapshot until the
-    // staged one is published, and commit only after both renames complete.
-    let mut backup_name = path.as_os_str().to_os_string();
-    backup_name.push(".backup");
-    let backup = PathBuf::from(backup_name);
-    match std::fs::symlink_metadata(&backup) {
-        Ok(_) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "save replacement backup already exists; preserve it for recovery",
-            ));
+/// Horizon's filesystem cannot rename over an existing file. Preserve a
+/// committed backup until the new slot has itself been committed.
+#[cfg(any(target_os = "horizon", all(test, tests_app)))]
+fn replace_horizon_slot(
+    target: &Path,
+    stage: &Path,
+    validate: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    static NEXT_BACKUP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let parent = target.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "save has no parent directory",
+        )
+    })?;
+    let backup_dir = loop {
+        let id = NEXT_BACKUP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let directory = parent.join(format!(".save-backup-{}-{id}", std::process::id()));
+        match std::fs::create_dir(&directory) {
+            Ok(()) => break directory,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    std::fs::rename(path, &backup)?;
-    if let Err(error) = std::fs::rename(stage, path) {
-        std::fs::rename(&backup, path).map_err(|restore| {
-            std::io::Error::other(format!(
-                "save publication failed: {error}; restore failed: {restore}; old save retained at {}",
-                backup.display()
-            ))
-        })?;
+    };
+    let backup = backup_dir.join(target.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "save has no file name")
+    })?);
+    if let Err(error) = std::fs::rename(target, &backup) {
+        let _ = std::fs::remove_dir(&backup_dir);
         return Err(error);
     }
-    std::fs::remove_file(backup)
-}
-
-/// libnx requires fsFsCommit after write/delete/rename operations, which
-/// newlib's std::fs does not expose. Match persistence to the user save device.
-#[cfg(target_os = "horizon")]
-fn commit_save_storage(path: &Path) -> std::io::Result<()> {
-    unsafe extern "C" {
-        fn platform_commit_user_save() -> u32;
-        fn platform_commit_sdmc() -> u32;
+    let result = commit_save_storage(&backup)
+        .and_then(|()| validate(&backup))
+        .and_then(|()| std::fs::rename(stage, target));
+    if let Err(error) = result {
+        if let Err(restore_error) =
+            std::fs::rename(&backup, target).and_then(|()| commit_save_storage(target))
+        {
+            log::warn!(
+                "Could not restore {}: {restore_error}. Previous slot retained at {}",
+                target.display(),
+                backup.display()
+            );
+        } else {
+            let _ = std::fs::remove_dir(&backup_dir);
+        }
+        return Err(error);
     }
-    let device = path.to_string_lossy();
-    let result = if device.starts_with("vera20k-user:/") {
-        unsafe { platform_commit_user_save() }
-    } else if device.starts_with("sdmc:/") || !device.contains(':') {
-        unsafe { platform_commit_sdmc() }
-    } else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "unsupported save storage device",
-        ));
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!(
-            "save storage commit failed: {result:#010x}"
-        )))
+    // A failed commit leaves both the original backup and the new slot on disk.
+    commit_save_storage(target)?;
+    if let Err(error) = std::fs::remove_file(&backup)
+        .and_then(|()| std::fs::remove_dir(&backup_dir))
+        .and_then(|()| commit_save_storage(target))
+    {
+        log::warn!("Could not retire save backup {}: {error}", backup.display());
     }
-}
-
-#[cfg(not(target_os = "horizon"))]
-fn commit_save_storage(_path: &Path) -> std::io::Result<()> {
     Ok(())
+}
+
+/// Restore a committed old slot left by an interrupted Horizon replacement.
+/// A slot created in the meantime is preserved, and the old file is instead
+/// returned to the browser under a fresh recovered name.
+#[cfg(any(target_os = "horizon", all(test, tests_app)))]
+fn recover_horizon_saves(directory: &Path) -> std::io::Result<()> {
+    fn recover_entries(
+        directory: &Path,
+        backup_parent: &Path,
+        prefix: &str,
+    ) -> std::io::Result<()> {
+        let entries = match std::fs::read_dir(backup_parent) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir()
+                || !entry.file_name().to_string_lossy().starts_with(prefix)
+            {
+                continue;
+            }
+            let backup_dir = entry.path();
+            for backup in std::fs::read_dir(&backup_dir)? {
+                let backup = backup?;
+                if !backup.file_type()?.is_file() || !SaveRepository::is_save_file(&backup.path()) {
+                    continue;
+                }
+                let name = backup.file_name();
+                let original = directory.join(&name);
+                match crate::util::file_system::persist_noclobber(&backup.path(), &original) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        let mut recovered = false;
+                        for serial in 0..10000 {
+                            let name = format!("recovered-{serial}-{}", name.to_string_lossy());
+                            let destination = directory.join(name);
+                            match crate::util::file_system::persist_noclobber(
+                                &backup.path(),
+                                &destination,
+                            ) {
+                                Ok(()) => {
+                                    recovered = true;
+                                    break;
+                                }
+                                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                                }
+                                Err(error) => return Err(error),
+                            }
+                        }
+                        if !recovered {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::AlreadyExists,
+                                "no available name for recovered save",
+                            ));
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
+                commit_save_storage(directory)?;
+            }
+            match std::fs::remove_dir(&backup_dir) {
+                Ok(()) => commit_save_storage(directory)?,
+                Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
+    recover_entries(directory, directory, ".save-backup-")?;
+    recover_entries(directory, &directory.join("backups/replaced"), ".pending-")
 }
 
 #[cfg(any(feature = "dev-overlays", test))]
@@ -738,7 +983,7 @@ fn newest_modified_path(
         .map(|(path, _)| path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::match_runtime::frame_pacer::LocalFramePacer;
@@ -757,6 +1002,96 @@ mod tests {
     };
     use crate::ui::game_screen::GameScreen;
 
+    #[test]
+    fn horizon_replacement_publishes_the_new_slot_after_validating_the_backup() {
+        let directory = isolated_directory("horizon-replace");
+        std::fs::create_dir_all(&directory)
+            .unwrap_or_else(|error| panic!("{}: {error}", directory.display()));
+        let target = directory.join("save.bin");
+        let stage = directory.join(".stage");
+        std::fs::write(&target, b"previous").unwrap();
+        std::fs::write(&stage, b"replacement").unwrap();
+
+        replace_horizon_slot(&target, &stage, |backup| {
+            assert_eq!(std::fs::read(backup)?, b"previous");
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"replacement");
+        assert!(!stage.exists());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn horizon_replacement_restores_the_previous_slot_when_validation_fails() {
+        let directory = isolated_directory("horizon-restore");
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("save.bin");
+        let stage = directory.join(".stage");
+        std::fs::write(&target, b"previous").unwrap();
+        std::fs::write(&stage, b"replacement").unwrap();
+
+        let error = replace_horizon_slot(&target, &stage, |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "changed",
+            ))
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&target).unwrap(), b"previous");
+        assert_eq!(std::fs::read(&stage).unwrap(), b"replacement");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 2);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn horizon_recovery_restores_an_interrupted_slot() {
+        let directory = isolated_directory("horizon-recover");
+        std::fs::create_dir_all(&directory).unwrap();
+        let backup = directory.join(".save-backup-1-0");
+        std::fs::create_dir(&backup).unwrap();
+        std::fs::write(backup.join("save.bin"), b"previous").unwrap();
+
+        recover_horizon_saves(&directory).unwrap();
+        recover_horizon_saves(&directory).unwrap();
+
+        assert_eq!(
+            std::fs::read(directory.join("save.bin")).unwrap(),
+            b"previous"
+        );
+        assert!(!backup.exists());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn horizon_recovery_preserves_a_new_slot_and_the_interrupted_conversion_backup() {
+        let directory = isolated_directory("horizon-recover-conflict");
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("save.bin");
+        std::fs::write(&target, b"new").unwrap();
+        std::fs::write(directory.join("recovered-0-save.bin"), b"another").unwrap();
+        let backup = directory.join("backups/replaced/.pending-attempt");
+        std::fs::create_dir_all(&backup).unwrap();
+        std::fs::write(backup.join("save.bin"), b"previous").unwrap();
+
+        recover_horizon_saves(&directory).unwrap();
+
+        assert_eq!(std::fs::read(target).unwrap(), b"new");
+        assert_eq!(
+            std::fs::read(directory.join("recovered-0-save.bin")).unwrap(),
+            b"another"
+        );
+        assert_eq!(
+            std::fs::read(directory.join("recovered-1-save.bin")).unwrap(),
+            b"previous"
+        );
+        assert!(!backup.exists());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
     const LOAD_FIXTURE_MAP_HASH: u64 = 0x1234_5678_9ABC_DEF0;
     const LOAD_FIXTURE_MAP_NAME: &str = "TRANSACTION.MAP";
     const LOAD_FIXTURE_SEED: u32 = 0x1234_5678;
@@ -778,8 +1113,8 @@ mod tests {
     }
 
     fn load_fixture_launch() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode {
                 class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
@@ -790,8 +1125,8 @@ mod tests {
                 allies_allowed: true,
                 must_ally: false,
             },
-            selected_map_file: Some(LOAD_FIXTURE_MAP_NAME.into()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            Some(LOAD_FIXTURE_MAP_NAME.into()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".into(),
                 slot: SkirmishLocalSlot {
@@ -804,9 +1139,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -816,10 +1150,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     fn startup_authority(seed: u32) -> MatchStartup {
@@ -881,7 +1213,7 @@ mod tests {
 
             let startup = startup_authority(LOAD_FIXTURE_SEED);
             let mut frame_pacer = LocalFramePacer::new();
-            frame_pacer.record_admitted_frame(32, 1);
+            frame_pacer.record_admitted_frame(32);
             let mut lighting_grid = CellLightGrid::new();
             lighting_grid.set_compat_tint((3, 4), [0.25, 0.5, 0.75]);
 
@@ -955,6 +1287,9 @@ mod tests {
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
     }
 
+    mod animated_tiberium_restore_tests;
+    mod building_repair_restore_tests;
+    mod cloak_restore_tests;
     mod factory_restore_tests;
     mod infantry_death_restore_tests;
     mod rule_cache_restore_tests;
@@ -1016,7 +1351,6 @@ mod tests {
         expected_map_hash: Option<u64>,
         rules: Option<&RuleSet>,
         terrain_template: Option<&ResolvedTerrainGrid>,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         expected_error: impl FnOnce(&PreparedLoadError) -> bool,
     ) {
         // Capture every represented running-match owner before the production
@@ -1029,7 +1363,6 @@ mod tests {
                 expected_map_hash,
                 rules,
                 terrain_template,
-                overlay_registry,
             ),
             path,
         );
@@ -1064,7 +1397,6 @@ mod tests {
     #[test]
     fn failed_load_preserves_complete_running_match_transaction() {
         let rules = load_fixture_rules();
-        let registry = OverlayTypeRegistry::empty();
         let terrain = load_fixture_terrain();
         let state = RunningMatchTestState::running(&rules);
         let directory = isolated_directory("load-transaction-failures");
@@ -1103,7 +1435,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| matches!(error, PreparedLoadError::Snapshot(_)),
         );
         assert_transaction_failure(
@@ -1113,7 +1444,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH ^ 1),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| {
                 matches!(
                     error,
@@ -1128,7 +1458,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             None,
             Some(&terrain),
-            Some(&registry),
             |error| matches!(error, PreparedLoadError::MissingRules),
         );
         assert_transaction_failure(
@@ -1138,18 +1467,7 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             None,
-            Some(&registry),
             |error| matches!(error, PreparedLoadError::MissingTerrainTemplate),
-        );
-        assert_transaction_failure(
-            &state,
-            &repository,
-            &valid_path,
-            Some(LOAD_FIXTURE_MAP_HASH),
-            Some(&rules),
-            Some(&terrain),
-            None,
-            |error| matches!(error, PreparedLoadError::MissingOverlayRegistry),
         );
         assert_transaction_failure(
             &state,
@@ -1158,7 +1476,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| {
                 matches!(
                     error,
@@ -1173,7 +1490,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| {
                 matches!(
                     error,
@@ -1192,7 +1508,6 @@ mod tests {
     #[test]
     fn successful_same_content_load_preserves_admission_and_bound_resources() {
         let rules = load_fixture_rules();
-        let registry = OverlayTypeRegistry::empty();
         let terrain = load_fixture_terrain();
         let mut state = RunningMatchTestState::running(&rules);
         let directory = isolated_directory("load-transaction-startup");
@@ -1220,9 +1535,8 @@ mod tests {
 
         let startup_before = state.startup.clone();
         let baseline = state.baseline();
-        state.runtime.resources.rules = rules;
-        state.runtime.resources.overlay_registry = registry;
-        state.runtime.resources.terrain_template = Some(terrain);
+        state.runtime.resources_mut().rules = rules;
+        state.runtime.resources_mut().terrain_template = Some(terrain);
         let rules_before = state.runtime.resources.rules.simulation_config_hash();
         let prepared = PreparedLoad::from_repository(
             LoadPreparationView::from_runtime(
@@ -1261,6 +1575,10 @@ mod tests {
             Some((122, 135))
         );
         let simulation = &mut runtime.simulation;
+        assert!(
+            simulation.turn_streams_separate(),
+            "a loaded match draws its turns from their own streams, as a new one does"
+        );
         let restored_dummy = simulation.effective_shared_cell_dummy();
         assert!(restored_dummy.same_identity(&live_dummy));
         assert_eq!(
@@ -1285,7 +1603,7 @@ mod tests {
             .base_reservations_mut_for_test()
             .reserve(None, -1, 0, 6);
         assert_ne!(simulation.state_hash(), accepted_hash);
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
+        simulation.reconstruct_map_dummy_for_test();
         assert_eq!(simulation.base_reservations().dummy_mask(), 0);
         assert_eq!(
             simulation.state_hash(),
@@ -1298,7 +1616,7 @@ mod tests {
                 &[],
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(runtime.simulation.session().tick(), tick_before + 1);
@@ -1311,7 +1629,6 @@ mod tests {
     fn current_house_survives_prepared_load_and_first_headless_frame() {
         let rules = load_fixture_rules();
         let terrain = load_fixture_terrain();
-        let registry = OverlayTypeRegistry::empty();
         let mut saved = load_fixture_simulation(true);
         let roster_ini = IniFile::from_str(
             "[Houses]\n0=SavedPlayer\n1=OutgoingPlayer\n[SavedPlayer]\n[OutgoingPlayer]\n[Basic]\nPlayer=SavedPlayer\n",
@@ -1344,9 +1661,8 @@ mod tests {
         assert_eq!(current.session().current_house(), Some(outgoing_owner));
         assert!(!current.houses()[&saved_owner].is_human());
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
-        runtime.resources.rules = rules;
-        runtime.resources.overlay_registry = registry;
-        runtime.resources.terrain_template = Some(terrain);
+        runtime.resources_mut().rules = rules;
+        runtime.resources_mut().terrain_template = Some(terrain);
         let outgoing_hash = runtime.simulation.state_hash();
         let outgoing_rng = runtime.simulation.rng_state();
         let prepared = PreparedLoad::from_repository(
@@ -1383,7 +1699,7 @@ mod tests {
                 &[],
                 1,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored current-house frame");
         assert_eq!(runtime.simulation.session().tick(), tick + 1);
@@ -1422,14 +1738,15 @@ mod tests {
             let path = repository
                 .write_named(&format!("collision-{case_index}.bin"), &bytes)
                 .unwrap();
-            let mut outgoing = GameSnapshot::load(&bytes).unwrap().sim;
+            let mut outgoing = GameSnapshot::load(&bytes)
+                .unwrap()
+                .into_simulation_for_test();
             outgoing
                 .session_mut_for_test()
                 .set_current_house_for_test(Some(ai));
             let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(outgoing);
-            runtime.resources.rules = load_fixture_rules();
-            runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-            runtime.resources.terrain_template = Some(load_fixture_terrain());
+            runtime.resources_mut().rules = load_fixture_rules();
+            runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
             let prepared = PreparedLoad::from_repository(
                 LoadPreparationView::from_runtime(
                     &repository,
@@ -1454,7 +1771,7 @@ mod tests {
                     &[],
                     1,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("restored collision-safe current-house frame");
             assert_eq!(runtime.simulation.session().tick(), tick + 1);
@@ -1476,7 +1793,6 @@ mod tests {
         assert_eq!(compatibility.translate_legacy_map_tile_index(5), 8);
 
         let rules = load_fixture_rules();
-        let registry = OverlayTypeRegistry::empty();
         let translated_template =
             ResolvedTerrainGrid::from_cells(1, 1, vec![compatibility_snapshot_cell(8)]);
         let mut runtime_actual = compatibility_snapshot_cell(5);
@@ -1498,7 +1814,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&translated_template),
-            Some(&registry),
         )
         .expect("full persistence prepare/serde/rebuild/restore route")
         .simulation;
@@ -1609,12 +1924,45 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "tests/save_write_tests.rs"]
 mod save_write_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "tests/save_browser_tests.rs"]
 mod save_browser_tests;
 
 pub(crate) mod keyboard;
+
+/// libnx requires fsFsCommit after write/delete/rename operations, which
+/// newlib's std::fs does not expose. Match persistence to the user save device.
+#[cfg(target_os = "horizon")]
+fn commit_save_storage(path: &Path) -> std::io::Result<()> {
+    unsafe extern "C" {
+        fn platform_commit_user_save() -> u32;
+        fn platform_commit_sdmc() -> u32;
+    }
+    let device = path.to_string_lossy();
+    let result = if device.starts_with("vera20k-user:/") {
+        unsafe { platform_commit_user_save() }
+    } else if device.starts_with("sdmc:/") || !device.contains(':') {
+        unsafe { platform_commit_sdmc() }
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "unsupported save storage device",
+        ));
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "save storage commit failed: {result:#010x}"
+        )))
+    }
+}
+
+#[cfg(not(target_os = "horizon"))]
+fn commit_save_storage(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}

@@ -1,5 +1,7 @@
 //! Active gamemd narrow/wide string boundary helpers.
 
+use std::borrow::Cow;
+
 /// Zero-extend each narrow byte to one Unicode scalar.
 ///
 /// This is the engine's ordinary internal conversion. It is deliberately not
@@ -19,6 +21,55 @@ pub fn narrow_widened(text: &str) -> Vec<u8> {
     text.chars()
         .map(|scalar| u8::try_from(u32::from(scalar)).unwrap_or(b'?'))
         .collect()
+}
+
+/// VERA: widened `text` as the characters its bytes spell when they are valid
+/// UTF-8, so a map that saves a Chinese or Russian name that way shows it.
+/// gamemd has no such step: it widens those bytes like any others
+/// (`SessionClass__ParseMultiplayerMapHeader` `0x006994F0` through
+/// `NativeString__WidenBytes` `0x00735060`) and shows accented Latin letters.
+///
+/// A last character a native buffer cut short is dropped. Text that is not
+/// UTF-8 comes back as it is: CP1252, GBK and the like look alike as bytes, so
+/// a name saved in GBK still shows as gamemd widens it.
+pub fn decode_widened_utf8(text: &str) -> Cow<'_, str> {
+    if text.is_ascii() {
+        return Cow::Borrowed(text);
+    }
+    let mut bytes = narrow_widened(text);
+    if let Err(error) = std::str::from_utf8(&bytes) {
+        // `error_len` is `None` when the text only ends too early.
+        if error.error_len().is_some() {
+            return Cow::Borrowed(text);
+        }
+        bytes.truncate(error.valid_up_to());
+    }
+    // Nothing but ASCII before a cut: a last high byte, not a UTF-8 name.
+    if bytes.is_ascii() {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(String::from_utf8(bytes).expect("checked as UTF-8 above"))
+}
+
+/// `f` applied to `text` with its ASCII letters upper-cased, as
+/// `str::to_ascii_uppercase` gives: borrowed when no letters need folding,
+/// otherwise built on the stack when it fits. For keys
+/// folded on every lookup, where a heap key per query showed in profiles.
+pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
+    if !text.bytes().any(|byte| byte.is_ascii_lowercase()) {
+        return f(text);
+    }
+    let mut buffer = [0u8; 64];
+    match buffer.get_mut(..text.len()) {
+        Some(key) => {
+            key.copy_from_slice(text.as_bytes());
+            key.make_ascii_uppercase();
+            f(std::str::from_utf8(key).expect("ASCII uppercasing keeps UTF-8"))
+        }
+        // A name longer than the buffer is rare in rules data; folding it on
+        // the heap answers the same.
+        None => f(&text.to_ascii_uppercase()),
+    }
 }
 
 /// Encode UTF-16 text through the Windows active ANSI code page.
@@ -81,6 +132,7 @@ pub fn acp_encode(text: &str) -> Vec<u8> {
     }
 }
 
+/// VERA: off Windows there is no code page; text is stored as UTF-8.
 #[cfg(not(windows))]
 pub fn acp_encode(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
@@ -137,9 +189,13 @@ pub fn acp_decode(bytes: &[u8]) -> String {
     }
 }
 
+/// VERA: off Windows [`acp_encode`] writes UTF-8, so this reads UTF-8 back.
+/// Bytes that are not UTF-8, which another code page wrote, widen one to one,
+/// and a last character that a byte cut split is dropped
+/// ([`decode_widened_utf8`]).
 #[cfg(not(windows))]
 pub fn acp_decode(bytes: &[u8]) -> String {
-    widen_bytes(bytes)
+    decode_widened_utf8(&widen_bytes(bytes)).into_owned()
 }
 
 /// Round-trip edit-control text through the Windows active ANSI code page.
@@ -176,4 +232,186 @@ pub fn narrow_utf16_c_string(units: impl IntoIterator<Item = u16>) -> Vec<u8> {
 pub fn crt_strcmpi(left: &str, right: &str) -> std::cmp::Ordering {
     let fold = |c: char| (c as u32 as u8).to_ascii_lowercase();
     left.chars().map(fold).cmp(right.chars().map(fold))
+}
+
+/// `A..Z` folded to lower case: the C-locale branch of the wide CRT
+/// comparisons below.
+fn wide_ascii_lower(unit: u16) -> u16 {
+    if (0x41..0x5B).contains(&unit) {
+        unit + 0x20
+    } else {
+        unit
+    }
+}
+
+/// CRT `_wcsicmp(left, right) == 0` (`0x007DD0F8`) in the C locale.
+pub fn wcs_eq_ignore_case(left: &[u16], right: &[u16]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(a, b)| wide_ascii_lower(*a) == wide_ascii_lower(*b))
+}
+
+/// CRT `_wcsnicmp(text, prefix, wcslen(prefix)) == 0` (`0x007DDE80`) in the
+/// C locale.
+pub fn wcs_starts_with_ignore_case(text: &[u16], prefix: &[u16]) -> bool {
+    text.len() >= prefix.len() && wcs_eq_ignore_case(&text[..prefix.len()], prefix)
+}
+
+/// WWLib's wide `strtrim` (`wcstrim` `0x00727D60`), as the text it leaves.
+///
+/// Leading units up to `0x20` are removed by copying the rest down; trailing
+/// ones are then cleared from the end while the unit now at the old first
+/// kept index is not NUL. So when `lead` leading units are removed from a
+/// string with at least `lead` kept units, the trailing trim stops at kept
+/// index `lead` (with exactly `lead`, nothing trailing is trimmed).
+pub fn wcstrim(units: &[u16]) -> &[u16] {
+    let lead = units.iter().take_while(|unit| **unit <= 0x20).count();
+    let kept = &units[lead..];
+    let trimmed = kept
+        .iter()
+        .rposition(|unit| *unit > 0x20)
+        .map_or(0, |i| i + 1);
+    let end = if lead == 0 || lead > kept.len() {
+        trimmed
+    } else {
+        trimmed.max(lead)
+    };
+    &kept[..end]
+}
+
+/// CRT `wcstoxl` (`0x007CB9CF`), the body of `wcstol` and `wcstoul`: leading
+/// wide whitespace, an optional sign, then digits of `base` (0 picks 8, 10 or
+/// 16 from a `0`/`0x` prefix). No digits gives 0; overflow gives `ULONG_MAX`
+/// unsigned and `LONG_MAX`/`LONG_MIN` signed; a negative value is negated.
+fn crt_wcstoxl(units: &[u16], mut base: u32, unsigned: bool) -> u32 {
+    let unit_at = |index: usize| units.get(index).copied().unwrap_or(0);
+    let mut index = 0;
+    while matches!(unit_at(index), 0x09..=0x0D | 0x20) {
+        index += 1;
+    }
+    let negative = unit_at(index) == u16::from(b'-');
+    if negative || unit_at(index) == u16::from(b'+') {
+        index += 1;
+    }
+    if base == 1 || base > 36 {
+        return 0;
+    }
+    let hex_prefix = unit_at(index) == u16::from(b'0') && matches!(unit_at(index + 1), 0x58 | 0x78);
+    if base == 0 {
+        base = if unit_at(index) != u16::from(b'0') {
+            10
+        } else if hex_prefix {
+            16
+        } else {
+            8
+        };
+    }
+    if base == 16 && hex_prefix {
+        index += 2;
+    }
+    let mut value: u32 = 0;
+    let mut overflow = false;
+    while let Some(digit) = char::from_u32(u32::from(unit_at(index)))
+        .and_then(|c| c.to_digit(36))
+        .filter(|digit| *digit < base)
+    {
+        match value.checked_mul(base).and_then(|v| v.checked_add(digit)) {
+            Some(next) => value = next,
+            None => overflow = true,
+        }
+        index += 1;
+    }
+    let limit = if negative { 0x8000_0000 } else { 0x7FFF_FFFF };
+    if overflow || (!unsigned && value > limit) {
+        return if unsigned {
+            u32::MAX
+        } else if negative {
+            0x8000_0000
+        } else {
+            0x7FFF_FFFF
+        };
+    }
+    if negative {
+        value.wrapping_neg()
+    } else {
+        value
+    }
+}
+
+/// CRT `wcstol(text, NULL, base)` (`0x007CB9B8`).
+pub fn crt_wcstol(units: &[u16], base: u32) -> i32 {
+    crt_wcstoxl(units, base, false) as i32
+}
+
+/// CRT `wcstoul(text, NULL, base)` (`0x007CBB76`).
+pub fn crt_wcstoul(units: &[u16], base: u32) -> u32 {
+    crt_wcstoxl(units, base, true)
+}
+
+#[cfg(all(test, tests_util))]
+mod tests {
+    use super::*;
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().collect()
+    }
+
+    #[test]
+    fn wcstrim_stops_its_trailing_pass_at_the_old_first_kept_index() {
+        let trim = |text: &str| String::from_utf16(wcstrim(&wide(text))).unwrap();
+        assert_eq!(trim(" a b \t"), "a b");
+        // Two leading units and two kept ones: the unit at kept index 2 is
+        // the copied terminator, so nothing trailing is cleared.
+        assert_eq!(trim("  a "), "a ");
+        // Trailing clearing may not go below kept index `lead`.
+        assert_eq!(trim("   ab    "), "ab ");
+        assert_eq!(trim("    "), "");
+    }
+
+    #[test]
+    fn wcstol_reads_the_base_prefix_sign_and_overflow_as_the_crt() {
+        assert_eq!(crt_wcstol(&wide(" \t-12x"), 10), -12);
+        assert_eq!(crt_wcstol(&wide("0x1F"), 0), 31);
+        assert_eq!(crt_wcstol(&wide("017"), 0), 15);
+        assert_eq!(crt_wcstol(&wide("99999999999"), 10), i32::MAX);
+        assert_eq!(crt_wcstol(&wide("-2147483648"), 10), i32::MIN);
+        assert_eq!(crt_wcstoul(&wide("-1"), 10), u32::MAX);
+        assert_eq!(crt_wcstoul(&wide("x"), 10), 0);
+    }
+
+    #[test]
+    fn only_valid_utf8_is_decoded_from_widened_text() {
+        // CP1252, GBK (大仙), and a high last byte after nothing but ASCII.
+        for bytes in [
+            &b"D\xE9fense"[..],
+            &b"\xB4\xF3\xCF\xC9"[..],
+            &b"Francais\xE9"[..],
+        ] {
+            let widened = widen_bytes(bytes);
+            assert_eq!(decode_widened_utf8(&widened), widened);
+        }
+    }
+
+    /// The stack fold and the heap fallback past 64 bytes answer
+    /// `to_ascii_uppercase`, leaving non-ASCII letters as they are.
+    #[test]
+    fn ascii_uppercase_fold_matches_the_heap_answer_on_both_sides_of_the_buffer() {
+        let long = "r".repeat(65);
+        for text in ["Americans", "\u{e9}t\u{e9}", &long[..64], long.as_str()] {
+            assert_eq!(
+                with_ascii_uppercase(text, str::to_owned),
+                text.to_ascii_uppercase()
+            );
+        }
+    }
+
+    #[test]
+    fn ascii_uppercase_borrows_names_that_need_no_folding() {
+        let long = "T".repeat(65);
+        for text in ["TREE01", long.as_str()] {
+            with_ascii_uppercase(text, |key| assert!(std::ptr::eq(key, text)));
+        }
+    }
 }

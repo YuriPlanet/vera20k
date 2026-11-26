@@ -259,12 +259,12 @@ impl RadiationTypeCatalog {
             level_factor: entry.level_factor.unwrap_or(rules.level_factor),
             // The global readers widen the scanned double through f32 into
             // the stored fixed value; a type read takes the same path.
-            light_factor: SimFixed::from_num(
+            light_factor: SimFixed::saturating_from_num(
                 entry
                     .light_factor
                     .unwrap_or(rules.light_factor.to_num::<f64>()) as f32,
             ),
-            tint_factor: SimFixed::from_num(
+            tint_factor: SimFixed::saturating_from_num(
                 entry
                     .tint_factor
                     .unwrap_or(rules.tint_factor.to_num::<f64>()) as f32,
@@ -349,11 +349,14 @@ impl RadiationTypeCatalog {
             if section.is_present("RadLevelMax") {
                 entry.level_max = Some(section.read_int("RadLevelMax", 0));
             }
+            // Both are divisors (`RadSiteClass::Activate @ 0x0065B726`); the
+            // global reader clamps them to 1 and a type's own value gets the
+            // same floor, where gamemd would divide by zero.
             if section.is_present("RadLevelDelay") {
-                entry.level_delay = Some(section.read_int("RadLevelDelay", 0));
+                entry.level_delay = Some(section.read_int("RadLevelDelay", 0).max(1));
             }
             if section.is_present("RadLightDelay") {
-                entry.light_delay = Some(section.read_int("RadLightDelay", 0));
+                entry.light_delay = Some(section.read_int("RadLightDelay", 0).max(1));
             }
             if section.is_present("RadLevelFactor") {
                 entry.level_factor = Some(section.read_double("RadLevelFactor", 0.0));
@@ -420,6 +423,6 @@ pub(crate) fn effective_radiation<'a>(
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_radiation_tests.rs"]
 mod tests;

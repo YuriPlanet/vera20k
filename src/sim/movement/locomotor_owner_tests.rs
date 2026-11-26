@@ -129,6 +129,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, 2);
     }
@@ -137,7 +138,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
         crate::sim::components::NavTargetRef::cell(12, 8),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -187,7 +188,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
                 DriveCoord::cell(9, 8, 731),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         }
 
@@ -211,7 +212,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
             entity.navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::cell(12, 8))
         );
-        assert!(entity.setter_force_reassign.is_raised());
+        assert!(entity.seldom.setter_force_reassign.is_raised());
         assert_eq!(
             entity.mission.current(),
             crate::sim::mission::MissionId::NONE
@@ -265,7 +266,7 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
         DriveCoord::cell(9, 8, 731),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let before = owned_state(entity);
@@ -344,51 +345,22 @@ fn refused_installation_and_absent_stash_preserve_instance_and_foot_state() {
     }
 }
 
+/// Event IDLE (`0x004C74CB..0x004C76BB`) leaves the installed locomotor
+/// alone: Stop keeps the Chrono Miner's Drive, and the next object pass's
+/// FootClass::AI tail (`0x004DAE5F..0x004DAEC3`) retires it once
+/// Is_Ok_To_End allows.
 #[test]
-fn stop_command_retires_only_the_drive_admitted_by_its_existing_gate() {
-    // Stop's existing swap policy is VERA-specific. This checks the changed
-    // transfer lifetime and preserves its prior admission timing.
-    for head_ahead in [false, true] {
-        let (mut sim, rules) = fixture();
-        let entity = sim.substrate.entities.get_mut(1).unwrap();
-        activate_drive(entity);
-        if head_ahead {
-            entity
-                .locomotor
-                .as_mut()
-                .unwrap()
-                .store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(9, 8, 731)));
-        }
-        assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules),));
+fn stop_command_leaves_the_drive_to_the_foot_ai_tail() {
+    let (mut sim, rules) = fixture();
+    activate_drive(sim.substrate.entities.get_mut(1).unwrap());
+    assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
+    let locomotor = sim.substrate.entities.get(1).unwrap().locomotor.as_ref();
+    assert_eq!(locomotor.unwrap().active_kind(), LocomotorKind::Drive);
 
-        let entity = sim.substrate.entities.get(1).unwrap();
-        if head_ahead {
-            assert_eq!(
-                entity.locomotor.as_ref().unwrap().active_kind(),
-                LocomotorKind::Drive
-            );
-            assert_eq!(
-                entity
-                    .locomotor
-                    .as_ref()
-                    .unwrap()
-                    .track_head(TrackFamily::Drive),
-                Some(DriveCoord::cell(9, 8, 731))
-            );
-            assert_eq!(
-                entity
-                    .locomotor
-                    .as_ref()
-                    .unwrap()
-                    .track_progress(TrackFamily::Drive)
-                    .unwrap()
-                    .residual(),
-                971
-            );
-        } else {
-            assert_retired(entity);
-        }
-    }
+    // The next frame's object pass reaches the FootClass::AI tail.
+    sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
+        .expect("object pass");
+    assert_retired(sim.substrate.entities.get(1).unwrap());
 }
 
 /// Unit741970's class refusals return before its Teleporter swap (0x7423CD),
@@ -416,15 +388,14 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
         let mut grid = PathGrid::test_all_blocked(16, 16);
         grid.set_blocked(8, 8, false);
         grid.set_blocked(12, 8, false);
-        sim.path_grid = Some(std::sync::Arc::new(grid));
+        *sim.path_grid = Some(std::sync::Arc::new(grid));
 
         crate::sim::miner::miner_system::assign_miner_cell_destination(
             &mut sim,
             &rules,
             1,
             (12, 8),
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -466,7 +437,7 @@ fn foot_speed_without_class_payload_roundtrips_and_hashes_each_field() {
     let (mut sim, _) = fixture();
     // Scenario RNG is deliberately reset by the production deserializer.
     // Normalize this fixture to that load state before comparing whole hashes.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let mut expected = crate::sim::components::FootSpeedState::default();
     expected.set_speed_fraction(SimFixed::lit("0.625"));
     assert!(
@@ -777,7 +748,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
         let (mut sim, _) = fixture();
         // Production load resets Scenario RNG; normalize the fixture before
         // comparing whole hashes, as in the Foot speed roundtrip above.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         activate_drive(entity);
         entity

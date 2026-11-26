@@ -66,18 +66,17 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         )
         .unwrap();
     sim.fog_mut_for_test().reveal_all_for_owner(owner);
-    sim.entities_mut_for_test()
-        .get_mut(actor)
+    sim.entity_mut_for_test(actor)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     (sim, actor, target)
 }
 
 fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
-    let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
-        sim.entities().get(target).unwrap(),
-    );
+    let (x, y) =
+        crate::render::locomotor_visual::screen_position(sim.entities().get(target).unwrap());
     let hover =
         crate::app::input::entity_pick::hover_target_at_point(sim, x, y, "Americans", false)
             .expect("revealed ordinary tank is picked");
@@ -87,6 +86,16 @@ fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
 
 #[test]
 fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
+    no_manual_fire_object_click(false);
+}
+
+#[test]
+fn ares_no_manual_fire_object_click_follows_the_key_in_an_ares_game() {
+    no_manual_fire_object_click(true);
+}
+
+fn no_manual_fire_object_click(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
     let rows = corpus["rows"].as_array().unwrap();
     for setting in [false, true] {
@@ -111,7 +120,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 && case["alt"] == false
                 && row["no_manual_fire_native_reader_value"] == u64::from(setting)
         }) {
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if ares_way {
                 row
             } else {
                 rows.iter()
@@ -161,7 +170,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
             }
         }
         let (sim, actor, _) = object_pair(&battle.rules, "MTNK", "enemy");
-        let effective = setting && crate::rules::ARES_ENABLED;
+        let effective = setting && ares_way;
         let native_cell = rows
             .iter()
             .find(|row| {
@@ -197,7 +206,6 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 crate::app::input::commands::ordinary_cell_move_goal(
                     &sim,
                     &battle.rules,
-                    Some(&overlays),
                     owner,
                     actor,
                     (12, 10),
@@ -285,6 +293,7 @@ fn allied_object_ivan_cursor_consumes_the_canonical_grant() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan"),
     );
@@ -296,7 +305,8 @@ fn allied_object_ivan_click_consumes_the_canonical_grant() {
         return;
     };
     assert_eq!(
-        friendly_bomb_ivans(&sim, &battle.rules, &[actor], 1, target, None).contains(&actor),
+        friendly_ivans(&sim, &battle.rules, &[actor], 1, target, false, None)
+            .contains(&(actor, FriendlyIvanAction::Bomb)),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan")
             == crate::app::types::CursorFeedbackKind::IvanBomb,
     );
@@ -453,13 +463,13 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "ally");
         if input["infested"] == true {
             crate::sim::arena_fixture::install_action_infestation(
-                sim.entities_mut_for_test().get_mut(target).unwrap(),
+                sim.entity_mut_for_test(target).unwrap(),
                 actor,
             );
         }
         let before = sim.state_hash();
         assert_eq!(
-            friendly_attack_is_admitted(&sim, &battle.rules, actor, target),
+            object_attack_is_admitted(&sim, &battle.rules, actor, target),
             row["action"] == 5,
             "{}: Techno admission boundary only",
             input["name"]
@@ -493,6 +503,7 @@ fn allied_object_cursor_does_not_offer_selection_for_another_allied_house() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     let corpus = crate::test_fixture::json("tools/spatial_oracle/allied_object_action.json");
     let native = corpus["action_controls"]
@@ -600,6 +611,7 @@ fn allied_object_infantry_and_building_owners_answer_their_own_tails() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -656,9 +668,9 @@ fn a_building_over_another_selected_building_does_nothing() {
     let other = sim
         .spawn_object("GAPILL", "Americans", 10, 14, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(other)
+    sim.entity_mut_for_test(other)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     let selected = [pillbox, other];
@@ -678,6 +690,7 @@ fn a_building_over_another_selected_building_does_nothing() {
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(
         crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -809,10 +822,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
         let tree = sim.intern("TREE01");
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, Some(tree), None);
-        sim.entities_mut_for_test()
-            .get_mut(target)
-            .unwrap()
-            .disguise = Some(disguise);
+        sim.entity_mut_for_test(target).unwrap().seldom.disguise = Some(disguise);
         assert_eq!(
             attack_action(
                 &sim,
@@ -835,6 +845,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -910,4 +921,169 @@ fn a_pillbox_clicking_an_enemy_out_of_range_selects_it() {
             );
         }
     }
+}
+
+/// Ctrl+Alt on a member of the group: Techno's guard rung has no identity
+/// test (`0x00700191`, `Is_Ally_ByObject @ 0x004F9A90`), so the tank guards
+/// itself, and Foot's AreaGuard case asks IsActive first (`0x004D7543`), so
+/// the unarmed MCV beside it orders nothing.
+#[test]
+fn ctrl_alt_on_a_member_guards_it_and_skips_an_unarmed_receiver() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, tank, other) = object_pair(&battle.rules, "MTNK", "own");
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 10, 12, 0, &battle.rules)
+        .unwrap();
+    let owner = sim.entities().get(tank).unwrap().owner();
+    let guard = |actor, target| {
+        object_attack_click_command(
+            &sim,
+            &battle.rules,
+            &overlays,
+            owner,
+            OrderMode::Move,
+            OrderModifier::GuardArea,
+            true,
+            actor,
+            target,
+        )
+    };
+    let guards = |actor, target| {
+        Some(Command::Guard {
+            entity_id: actor,
+            target: Some(TargetKind::Entity(target)),
+        })
+    };
+    assert_eq!(guard(tank, other), guards(tank, other));
+    assert_eq!(guard(tank, tank), guards(tank, tank));
+    assert_eq!(guard(mcv, other), None);
+}
+
+/// A receiver the player may not control (vt+0xA0; here a bunkered tank)
+/// fails both key rungs (`0x00700191..0x00700217`) and answers the attack
+/// rung (`0x0070021A`): unforced under Alt, where the controllable tank
+/// moves instead, and forced under Ctrl+Alt, so it attacks the player's own
+/// tank and the cursor shows Ctrl's.
+#[test]
+fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, tank, enemy) = object_pair(&battle.rules, "MTNK", "enemy");
+    let bunkered = sim
+        .spawn_object("MTNK", "Americans", 10, 12, 0, &battle.rules)
+        .unwrap();
+    sim.entity_mut_for_test(bunkered)
+        .unwrap()
+        .bunker
+        .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(3));
+    let owner = sim.entities().get(tank).unwrap().owner();
+    let click = |actor, modifier, target| {
+        object_attack_click_command(
+            &sim,
+            &battle.rules,
+            &overlays,
+            owner,
+            OrderMode::Move,
+            modifier,
+            true,
+            actor,
+            target,
+        )
+    };
+    let alt = OrderModifier::ForceMove;
+    assert!(
+        matches!(
+            click(tank, alt, enemy),
+            Some(Command::Move { .. } | Command::MoveToObject { .. })
+        ),
+        "Alt's Move rung admits the controllable tank"
+    );
+    assert_eq!(
+        click(bunkered, alt, enemy),
+        Some(Command::Attack {
+            attacker_id: bunkered,
+            target_id: enemy,
+        })
+    );
+    assert_eq!(
+        click(bunkered, OrderModifier::GuardArea, tank),
+        Some(Command::Attack {
+            attacker_id: bunkered,
+            target_id: tank,
+        })
+    );
+    let cursor = |modifier| {
+        crate::app::input::cursor::capability_cursor_for_hover(
+            &sim,
+            &[bunkered],
+            Some(bunkered),
+            &picked_target(&sim, tank),
+            Some(&battle.rules),
+            Some(&overlays),
+            modifier,
+            true,
+            false,
+            &mut Default::default(),
+        )
+    };
+    assert_ne!(
+        cursor(OrderModifier::ForceFire),
+        cursor(OrderModifier::Normal)
+    );
+    assert_eq!(
+        cursor(OrderModifier::GuardArea),
+        cursor(OrderModifier::ForceFire)
+    );
+}
+
+/// What_Action_OnObject's unforced rung also takes a type that is not
+/// `LegalTarget=` when vt+0x398 answers (`0x00700438`): with a map giving
+/// the Grizzly's 105mm `TerrainFire=` and clearing its `LegalTarget=`, an
+/// enemy Grizzly worn as a tree with no worn house
+/// (`0x0070EF8C..0x0070EFB2`) is attacked, and a plain one is not.
+#[test]
+fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[105mm]\nTerrainFire=yes\n[MTNK]\nLegalTarget=no\n",
+    );
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &patch,
+    ) else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "enemy");
+    let action = |sim: &Simulation| {
+        attack_action(
+            sim,
+            &battle.rules,
+            actor,
+            &TargetKind::Entity(target),
+            false,
+            Some(&overlays),
+        )
+    };
+    assert_ne!(action(&sim), AttackAction::Attack, "not LegalTarget=");
+    let tree = sim.intern("TREE01");
+    let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
+    disguise.acquire(0, Some(tree), None);
+    sim.entity_mut_for_test(target).unwrap().seldom.disguise = Some(disguise);
+    assert_eq!(action(&sim), AttackAction::Attack);
 }

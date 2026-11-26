@@ -8,6 +8,8 @@ lang: sv
 
 **Svenska** · [简体中文](../zh-CN/) · [Deutsch](../de/) · [العربية](../ar/) · [Русский](../ru/) · [ไทย](../th/) · [Türkçe](../tr/) · [English](../)
 
+[Kampanjmanifest](campaign-manifest.md)
+
 Red Alert 2: Yuri's Revenge — omskrivet från grunden i Rust.
 
 En kort karta över koden. Om den säger emot koden är det koden som gäller. Kommentaren `//!` i början av varje modul beskriver vad modulen gör och vad den får bero på.
@@ -30,6 +32,8 @@ En kort karta över koden. Om den säger emot koden är det koden som gäller. K
 Allt föränderligt speltillstånd ligger i en enda struct, `Simulation` (`src/sim/world/mod.rs`). `SimRuntime::advance_frame()` kör en bildruta i samma ordning som originalspelet.
 
 Appen gör om spelarens inmatning till kommandon för simuleringen. Efter varje bildruta lämnar den det nya tillståndet till renderaren och spelar upp ljuden som bildrutan gav upphov till. Renderingen läser bara simuleringens tillstånd, och `sim/` är aldrig beroende av `render/`, `ui/`, `audio/` eller `net/`.
+
+![Applikationen skickar kommandon till simuleringen, som returnerar världstillståndet; applikationen skickar renderingsdata till renderingen.](../images/architecture.sv.png)
 
 ## Determinism
 

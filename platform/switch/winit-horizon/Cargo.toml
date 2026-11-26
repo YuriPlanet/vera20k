@@ -1,6 +1,6 @@
 [package]
 name = "winit"
-version = "0.30.12"
+version = "0.30.13"
 edition = "2021"
 license = "Apache-2.0"
 publish = false
@@ -10,6 +10,13 @@ default = ["rwh_06"]
 rwh_06 = ["dep:rwh_06"]
 rwh_04 = []
 rwh_05 = []
+# Cargo resolves features for the whole client manifest before selecting the
+# Horizon target. The standalone Switch build uses its native backend only.
+x11 = []
+wayland = []
+wayland-dlopen = []
+wayland-csd-adwaita-notitle = []
+android-native-activity = []
 serde = ["dep:serde", "cursor-icon/serde", "smol_str/serde", "dpi/serde"]
 mint = ["dpi/mint"]
 

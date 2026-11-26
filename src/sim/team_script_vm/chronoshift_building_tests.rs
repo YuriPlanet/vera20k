@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use super::{OWNER, Replay, replay};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::house_state::HouseState;
 use crate::sim::superweapon::SuperWeaponInstance;
@@ -18,9 +19,9 @@ use crate::util::save_codec;
 
 const NEAREST_PLANT: i32 = 2 << 16;
 
-#[cfg(feature = "ares")]
 #[test]
 fn action56_paid_pair_settles_the_shared_wallet_once_after_destination() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let mut scene = scene(NEAREST_PLANT, true);
         scene
@@ -82,7 +83,8 @@ fn scene_with_members(argument: i32, plant: bool, members: Value) -> Replay {
     let ini = IniFile::from_str(&format!(
         "[ScriptTypes]\n0=SCRIPT\n[SCRIPT]\n0=56,{argument}\n1=5,10\n"
     ));
-    let parsed = TeamAiIniRegistry::from_sources(&ini, &IniFile::from_str(""), false);
+    let parsed =
+        TeamAiIniRegistry::from_sources(&ini, &IniFile::from_str(""), RulePolicy::stock_campaign());
     assert!(parsed.diagnostics.is_empty());
     let script = scene.sim.team_script_vm.teams[&scene.team].script_id;
     scene
@@ -114,7 +116,7 @@ fn step(scene: &mut Replay) -> Vec<(String, (u16, u16))> {
     AI_FIRE_LOG.set(Some(Vec::new()));
     scene
         .sim
-        .team_step_script(scene.team, &scene.rules, None, FrameEffects::default());
+        .team_step_script(scene.team, &scene.rules, None, &mut FrameEffects::default());
     AI_FIRE_LOG
         .take()
         .unwrap()
@@ -297,7 +299,7 @@ fn action56_a_waiting_script_roundtrips_without_extra_action_state() {
         restored.team(scene.team),
         scene.sim.team_script_vm.team(scene.team)
     );
-    scene.sim.team_script_vm = restored;
+    *scene.sim.team_script_vm = restored;
     source(&mut scene).set_is_ready_for_test(true);
     assert_eq!(step(&mut scene).len(), 2);
     assert!(scene.sim.team_script_vm.teams[&scene.team].advance_pending);
@@ -310,7 +312,7 @@ fn action56_does_not_require_a_weapon_or_revealed_target() {
         true,
         json!([{"live": true, "joined": true, "aircraft": false, "rating": 0, "unarmed": true}]),
     );
-    scene.sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *scene.sim.fog = crate::sim::vision::FogState::new(32, 32);
     assert_eq!(step(&mut scene).last(), Some(&("SW4".into(), (20, 21))));
     assert_eq!(
         scene.sim.team_script_vm.teams[&scene.team].mission_target,

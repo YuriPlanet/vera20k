@@ -35,9 +35,12 @@ fn a_due_overload_component_replaces_its_rate_without_erasing_natural_roll() {
     let rules = scene.rules().clone();
     let mind = scene.mind();
     for _ in 0..=rules.mind_control.overload_frames[1] {
-        scene
-            .simulation_mut()
-            .capture_manager_update(mind, &rules, None, FrameEffects::default());
+        scene.simulation_mut().capture_manager_update(
+            mind,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
         let current = scene
             .simulation()
             .entities()

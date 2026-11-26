@@ -4,7 +4,7 @@
 //! its words.
 
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, OwnedPlannedObject, lower_object_instances,
 };
 use crate::app::presentation::render::merge_passes::draw_native_object_pass;
 use crate::render::batch::BatchRenderer;
@@ -62,14 +62,14 @@ fn tail_stores_reach_the_gpu_over_any_z_without_writing_it() {
         terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
         terrain.begin_surface_lines();
         let mut display = DisplayLayers::default();
-        assert!(display.submit(7, Some(DisplayLayer::GROUND), &|_| 0));
+        assert!(display.submit(7, Some(DisplayLayer::GROUND)));
         let order = NativeDisplayOrder::from_display(&display);
-        let mut unit = PlannedObjectInstance::object(
+        let mut unit = OwnedPlannedObject::object(
             order.object_draw(7, SpriteEncoding::Plain).unwrap(),
             Vec::new(),
         );
         unit.tail_draws = draws.clone();
-        let mut layers = lower_object_instances(vec![unit]);
+        let mut layers = lower_object_instances(vec![unit].into());
         let ground = &mut layers[2];
         assert_eq!(ground.surface_draws, [draws.clone()]);
         for stores in &ground.surface_draws {
@@ -88,7 +88,6 @@ fn tail_stores_reach_the_gpu_over_any_z_without_writing_it() {
                     zoom: 1.,
                 },
                 |_| false,
-                |_| panic!("opaque stores never query A"),
             ));
         }
         let initial = std::iter::repeat_n(encoded(BACKGROUND, format), z.len())

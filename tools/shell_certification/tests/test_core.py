@@ -30,6 +30,7 @@ from tools.shell_certification.core import (
     sha256_bytes,
     validate_capture_bundle,
     validate_guard,
+    write_json_exclusive,
 )
 
 
@@ -346,6 +347,22 @@ class ValidationTests(unittest.TestCase):
             (capture / "frame.bgra").write_bytes(_frame())
             with self.assertRaisesRegex(ValidationError, "duplicate JSON object key"):
                 validate_capture_bundle(capture)
+
+    def test_overflowing_numbers_are_rejected_on_read_and_never_written(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            capture = Path(temporary) / "capture"
+            capture.mkdir()
+            valid = json.dumps(_capture_manifest(), separators=(",", ":"))
+            (capture / "capture.json").write_text(
+                valid[:-1] + ',"value":1e999}', encoding="utf-8"
+            )
+            (capture / "frame.bgra").write_bytes(_frame())
+            with self.assertRaisesRegex(ValidationError, "non-finite"):
+                validate_capture_bundle(capture)
+            output = Path(temporary) / "report.json"
+            with self.assertRaises(ValueError):
+                write_json_exclusive(output, {"value": float("inf")})
+            self.assertFalse(output.exists())
 
     def test_capture_rejects_wrong_raw_length(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

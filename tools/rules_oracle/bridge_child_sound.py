@@ -11,6 +11,7 @@ from unicorn.x86_const import *
 from tools.rules_oracle.bridge_anim_inputs import Reader,crc,physical_sections
 from tools.spatial_oracle.building_body_rules import INI,SP,dwords
 from tools.native_oracle import run_checked,RET_MAGIC,finish_vectors,provenance
+from tools.native_oracle import require
 ROOT=Path(os.environ.get('VERA20K_BRIDGE_CHILD_SOUND_ASSETS',str(Path(os.environ.get('CARGO_TARGET_DIR','target'))/'asset/bridge-child-sound/extract')))
 def sections(raw):
  # A last line without LF is not loaded: ReadINITextLine 65D5C0 flags the end
@@ -89,7 +90,7 @@ def generate():
  m.assets.update({p.name.upper():p.read_bytes() for p in art_root.glob('*') if p.is_file()})
  m.make_ini(physical_sections(art));anims=[]
  for name in ['SMOKEY2','TWLT026','TWLT036']:
-  ptr=m.alloc(0x400);m.invoke(0x427530,ptr,(m.cstring(name),));assert m.invoke(0x427d00,ptr,(INI,))
+  ptr=m.alloc(0x400);m.invoke(0x427530,ptr,(m.cstring(name),));require(m.invoke(0x427d00,ptr,(INI,)), 'native 0x427D00 returned an unexpected result')
   report=struct.unpack('<i',m.u.mem_read(ptr+0x2f8,4))[0]
   report_name=None
   if report>=0:report_name=m.string(m.read32(m.read32(m.read32(0xb1d37c)+report*4))+0x6c)

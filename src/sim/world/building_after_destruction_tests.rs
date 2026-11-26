@@ -119,22 +119,22 @@ fn sim() -> Simulation {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_clear_cell,
     ));
     // A playfield and map size the crate placer reads (as the crate tests'
     // fixture installs them).
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 20,
         off_fc: -128,
         off_100: -128,
         off_104: 256,
         off_108: 256,
     });
-    sim.playfield_size_height = Some(20);
+    *sim.playfield_size_height = Some(20);
     sim
 }
 
@@ -162,7 +162,7 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
             .health
             .set(input["health"].as_i64().unwrap() as i32);
         if let Some(timer) = input["timer_override"].as_array() {
-            building.pending_c4_detonation.set_for_test(Some(
+            building.building.pending_c4_detonation.set_for_test(Some(
                 crate::sim::c4_plant::PendingC4Detonation::new(
                     crate::sim::timer::CdTimer::from_raw(
                         timer[0].as_i64().unwrap() as i32,
@@ -177,7 +177,7 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
         sim.object_ai_visit_one(
             id,
             Some(&rules),
-            super::techno_ai::ObjectAiCtx {
+            &mut super::techno_ai::ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..Default::default()
             },
@@ -208,4 +208,40 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
             row["name"]
         );
     }
+}
+
+/// Building `0x00440072..0x004400F1` retires a zero-health map building
+/// (Limbo, SpawnSurvivors, UnInit, AfterDestruction) without RecordKill, so
+/// its House books no loss. Retail campaign maps place ten, in ALL01, ALL02,
+/// ALL04, SOV01 and SOV07 (health 0 in `[Structures]`).
+#[test]
+fn zero_health_map_building_retires_without_a_loss() {
+    let rules = rules();
+    let registry = registry();
+    let mut sim = sim();
+    let id = sim
+        .spawn_object_at_height("PLAIN", "Americans", 10, 12, 0, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .health
+        .set_for_test(0);
+    sim.object_ai_visit_one(
+        id,
+        Some(&rules),
+        &mut super::techno_ai::ObjectAiCtx {
+            overlay_registry: Some(&registry),
+            ..Default::default()
+        },
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(id)
+            .is_none_or(|e| !e.lifecycle.object_alive())
+    );
+    let owner = sim.interner.intern("Americans");
+    assert_eq!(sim.houses[&owner].stats().buildings_lost(), 0);
 }

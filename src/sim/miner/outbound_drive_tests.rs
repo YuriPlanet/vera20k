@@ -49,6 +49,7 @@ fn outbound_contract_inputs() -> (IniFile, IniFile) {
 
 fn outbound_contract_oracle() -> OutboundContractOracle {
     let (rules_ini, art_ini) = outbound_contract_inputs();
+    let rules_ini = crate::rules::tiberium_type::with_tiberium_image_slots(&rules_ini);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
         .expect("outbound contract rules");
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
@@ -65,7 +66,10 @@ fn outbound_contract_oracle() -> OutboundContractOracle {
         .expect("merged [Tiberium]")
         .speed_costs;
 
-    assert_eq!(tiberium_speed_costs.track, Some(70));
+    assert_eq!(
+        tiberium_speed_costs.track,
+        Some(crate::rules::terrain_rules::test_speed_percent(70))
+    );
     assert!(overlays.flags(tib01).is_some_and(|flags| flags.tiberium));
     for (type_id, expected_locomotor, teleporter) in [
         ("HARV", LocomotorKind::Drive, false),
@@ -177,8 +181,8 @@ fn install_world(
     // Map-load authority retains Size height beside the bounds (the shared
     // Foot zone precheck reads both).
     sim.set_playfield_size_height_for_test(Some(i32::from(terrain.height())));
-    sim.resolved_terrain = Some(terrain);
-    sim.overlay_grid = Some(OverlayGrid::new(GRID_SIZE, GRID_SIZE));
+    *sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(OverlayGrid::new(GRID_SIZE, GRID_SIZE));
     for &(rx, ry) in ore_cells {
         sim.overlay_grid
             .as_mut()
@@ -187,18 +191,18 @@ fn install_world(
     }
     // Map load publishes the canonical PathGrid the frame and the Drive
     // destination search read.
-    sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
+    *sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     if install_zones {
         sim.rebuild_zone_grid(grid);
         assert!(sim.zone_grid.is_some());
     } else {
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
     }
     for &(rx, ry) in ore_cells {
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(rx, ry).unwrap();
         assert_eq!(
             cell.speed_costs.cost_for_speed_type(SpeedType::Track),
-            Some(70)
+            Some(crate::rules::terrain_rules::test_speed_percent(70))
         );
     }
 }
@@ -210,13 +214,14 @@ fn install_world(
 /// land; their occupant answers for them.
 fn rock_where_grid_blocks(sim: &mut Simulation, grid: &PathGrid) {
     let rock = SpeedCostProfile {
-        foot: Some(0),
-        track: Some(0),
-        wheel: Some(0),
-        float: Some(0),
-        amphibious: Some(0),
-        float_beach: Some(0),
-        hover: Some(0),
+        foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     for ry in 0..GRID_SIZE {
         for rx in 0..GRID_SIZE {
@@ -256,7 +261,7 @@ fn spawn_stock_miner(
     assert!(entity.lifecycle.object_alive());
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(entity.in_logic_vector.is_member());
+    assert!(entity.seldom.in_logic_vector.is_member());
     assert!(sim.live_object_order_snapshot().contains(&id));
     assert_eq!(
         entity.miner.as_ref().expect("miner component").kind,
@@ -302,11 +307,10 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
     if !sim.houses.contains_key(&owner_id) {
         seed_human_house(sim, "Americans");
     }
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         INERT_DOCK_ID,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
     if sim.next_stable_object_id() <= INERT_DOCK_ID {
         sim.set_next_stable_object_id_for_test(INERT_DOCK_ID + 1);
@@ -335,7 +339,7 @@ fn spawn_stock_refinery(
     assert!(entity.lifecycle.object_alive());
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(entity.in_logic_vector.is_member());
+    assert!(entity.seldom.in_logic_vector.is_member());
     assert!(sim.live_object_order_snapshot().contains(&id));
     id
 }
@@ -444,8 +448,8 @@ fn assert_command_state(sim: &Simulation, entity_id: u64, target: (u16, u16)) {
     assert!(drive.track().cursor() >= 0);
     assert!(!drive.track().reversed());
     assert!(!entity.navigation.path_replay().directions().is_empty());
-    // The Harvest handler dispatches BEFORE Phase-1 ground movement (the
-    // native handler→locomotion order), so by observation time the drive has
+    // The Harvest handler dispatches BEFORE the miner's own ground movement
+    // (the native handler→locomotion order), so by observation time the drive has
     // already begun accelerating in the same tick the command was issued.
     assert!(entity.foot_speed.applied_fraction() > SIM_ZERO);
     assert_eq!(
@@ -796,7 +800,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
         .expect("Drive runtime");
     assert_eq!(entity.miner_state().unwrap(), MinerState::ReturnToRefinery);
     assert!(
-        !entity.radio_contacts.contains(refinery_id),
+        !entity.seldom.radio_contacts.contains(refinery_id),
         "beyond HarvesterTooFarDistance the return sends no HELLO"
     );
     assert_eq!(
@@ -944,7 +948,7 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         );
         // The far return sends no HELLO; it stages at the QueueingCell.
         let entity = sim.substrate.entities.get(miner_id).expect("miner");
-        assert!(!entity.radio_contacts.contains(refinery_id));
+        assert!(!entity.seldom.radio_contacts.contains(refinery_id));
         (sim, miner_id)
     };
 
@@ -1051,8 +1055,8 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
                 .clone(),
             miner.cargo.clone(),
             *entity.native_stage(),
-            entity.radio_contacts.clone(),
-            entity.tether.partner(),
+            entity.seldom.radio_contacts.clone(),
+            entity.seldom.tether.partner(),
         )
     };
     let refinery_contacts_before = sim
@@ -1060,6 +1064,7 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
         .entities
         .get(refinery_id)
         .expect("GAREFN")
+        .seldom
         .radio_contacts
         .clone();
     let sound_count_before = sim.sound_events.len();
@@ -1087,13 +1092,14 @@ fn production_stock_harv_far_return_preserves_existing_navcom_owner() {
     );
     assert_eq!(miner.cargo, cargo_before);
     assert_eq!(timers_after, timers_before);
-    assert_eq!(entity.radio_contacts, miner_contacts_before);
-    assert_eq!(entity.tether.partner(), dock_entered_before);
+    assert_eq!(entity.seldom.radio_contacts, miner_contacts_before);
+    assert_eq!(entity.seldom.tether.partner(), dock_entered_before);
     assert_eq!(
         sim.substrate
             .entities
             .get(refinery_id)
             .expect("GAREFN")
+            .seldom
             .radio_contacts,
         refinery_contacts_before,
     );
@@ -1367,7 +1373,7 @@ fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
             assert_eq!(locomotor.active_kind(), LocomotorKind::Teleport);
             assert!(locomotor.piggyback().is_none(), "the arrival Drive ended");
             assert_eq!(e.navigation.nav_com(), None);
-            assert_eq!(e.radio_contacts.slot(0), Some(refinery_id));
+            assert_eq!(e.seldom.radio_contacts.slot(0), Some(refinery_id));
         }
         if e.miner.as_ref().expect("miner comp").cargo.is_empty() {
             deposited_at = Some(tick);
@@ -1399,7 +1405,7 @@ fn cmin_full_close_return_warps_onto_the_pad_and_deposits() {
     assert!(m.cargo.is_empty());
     assert!(!m.unload_active);
     assert!(
-        e.radio_contacts.is_empty(),
+        e.seldom.radio_contacts.is_empty(),
         "OVER_OUT at the end of the unload"
     );
     assert!(

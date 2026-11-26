@@ -45,7 +45,7 @@ fn zone_entry_arrival_runs_same_zone_action_and_retires_one_shot_tag() {
         PerCellReason::TurnComplete,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -54,7 +54,7 @@ fn zone_entry_arrival_runs_same_zone_action_and_retires_one_shot_tag() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -93,7 +93,7 @@ fn zone_entry_infantry_arrival_reaches_the_same_live_tag_owner() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -109,7 +109,7 @@ fn zone_entry_country_predicate_rejects_another_house() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -133,7 +133,10 @@ fn separate_zone(sim: &mut Simulation, cell: (u16, u16)) {
     let zones = sim.zone_grid.as_mut().unwrap();
     let index = y as usize * 33 + x as usize;
     let topology = zones.base_topology_mut_for_test();
-    let cluster = u16::try_from(topology.raw_zone_ids_by_row()[0].len()).unwrap();
+    let cluster = crate::sim::pathfinding::zone_map::ZoneId::try_from(
+        topology.raw_zone_ids_by_row()[0].len(),
+    )
+    .unwrap();
     topology.zone_ids_mut_for_test()[index] = cluster;
     for row in topology.raw_zone_ids_by_row_mut_for_test() {
         row.push(1234);
@@ -152,7 +155,7 @@ fn zone_entry_rejects_distinct_supplied_native_zone_labels() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -202,7 +205,7 @@ fn zone_entry_uses_tag_as_source_for_the_asymmetric_fringe_shortcut() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -235,7 +238,7 @@ fn zone_entry_uses_retained_navigation_head_instead_of_location() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -259,7 +262,7 @@ fn zone_entry_live_removal_skips_shifted_tag_until_the_next_arrival() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([7]));
@@ -268,7 +271,7 @@ fn zone_entry_live_removal_skips_shifted_tag_until_the_next_arrival() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([7, 9]));
@@ -321,6 +324,142 @@ fn zone_entry_from_an_ordinary_move_publishes_the_authored_camera_action() {
 }
 
 #[test]
+fn last_reference_line_tag_preserves_the_arrival_cells_independent_tag() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("[TAGUNIT]\nROT=5\n");
+    let owner = sim.houses.get_mut(&houses[0]).unwrap();
+    owner.set_is_human_for_test(true);
+    owner.set_player_control_for_test(true);
+    let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (17, 14));
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nOTHER=Country0,<none>,Other,0,1,1,1,0\nLINE=Country0,<none>,Line,0,1,1,1,0\n\
+         [Events]\nOTHER=1,59,0,-1\nLINE=1,25,0,-1\n\
+         [Actions]\nOTHER=1,28,0,8,0,0,0,0,A\nLINE=2,28,0,7,0,0,0,0,A,29,0,8,0,0,0,0,A\n\
+         [Tags]\nOTHER_TAG=2,Other,OTHER\nLINE_TAG=1,Line,LINE\n\
+         [CellTags]\n15017=OTHER_TAG\n15019=LINE_TAG\n",
+    );
+    let mut terrain = sim.resolved_terrain.take().unwrap();
+    let bounds = crate::sim::scenario_bootstrap::NativeStartBounds::from_session(&sim, &terrain);
+    let (width, height) = (terrain.width(), terrain.height());
+    sim.trigger_runtime.initialize_cell_trigger_lines(
+        bounds,
+        &mut terrain,
+        (1..height).flat_map(|y| (1..width).map(move |x| (i32::from(x), i32::from(y)))),
+    );
+    *sim.resolved_terrain = Some(terrain);
+    let arrival_cell = Simulation::trigger_cell_identity(&sim.resolved_terrain, (17, 15));
+    let line_cell = Simulation::trigger_cell_identity(&sim.resolved_terrain, (19, 15));
+    let other_tag = sim.trigger_runtime.cell_tags[&arrival_cell];
+    let line_tag = sim.trigger_runtime.cell_tags[&line_cell];
+    assert_eq!(sim.trigger_runtime.tag(other_tag).unwrap().refs, 1);
+    assert_eq!(sim.trigger_runtime.tag(line_tag).unwrap().refs, 1);
+
+    for (leg, (target_rx, target_ry)) in [(17, 15), (17, 14), (17, 15)].into_iter().enumerate() {
+        sim.queue_command(CommandEnvelope::new(
+            houses[0],
+            sim.session.tick() + 1,
+            Command::Move {
+                entity_id: actor,
+                target_rx,
+                target_ry,
+            },
+        ));
+        for _ in 0..120 {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), None, Some(&overlays), 33);
+        }
+        let position = &sim.substrate.entities.get(actor).unwrap().position;
+        assert_eq!((position.rx(), position.ry()), (target_rx, target_ry));
+        if leg == 0 {
+            // Foot4D8AD4 supplies the arriving Cell to remote line Tag6E53A0.
+            // Repeat1/refs1 springs and detaches that Tag, skipping source
+            // cleanup at6E5463; the independent CellTag must survive.
+            assert!(sim.trigger_runtime.globals_set.contains(&7));
+            assert!(!sim.trigger_runtime.globals_set.contains(&8));
+            assert!(!sim.trigger_runtime.cell_tags.contains_key(&line_cell));
+            assert!(sim.trigger_runtime.tag(line_tag).is_none());
+            assert_eq!(
+                sim.trigger_runtime.cell_tags.get(&arrival_cell),
+                Some(&other_tag)
+            );
+            assert_eq!(sim.trigger_runtime.tag(other_tag).unwrap().refs, 1);
+        }
+    }
+    assert!(
+        sim.trigger_runtime.globals_set.contains(&8),
+        "ordinary re-entry must still spring the preserved CellTag's Event59"
+    );
+}
+
+#[test]
+fn vanilla_event_fallback_reaches_actions_from_an_ordinary_cell_entry() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    // HasOccurred71E950's unsigned range dispatch admits unknown kinds to
+    // its true tail. Explicit kind0 and kind18 retain their own predicates.
+    for (kind, fires) in [(-1, true), (62, true), (0, false), (18, false)] {
+        let (mut sim, rules, overlays, houses) =
+            event_ingress_fixture_with_rules("[TAGUNIT]\nROT=5\n");
+        let owner = sim.houses.get_mut(&houses[0]).unwrap();
+        owner.set_is_human_for_test(true);
+        owner.set_player_control_for_test(true);
+        let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
+        let map = install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nENTRY=Country0,<none>,Entry,0,1,1,1,0\n\
+                 [Events]\nENTRY=2,59,0,-1,{kind},0,0\n\
+                 [Actions]\nENTRY=1,112,0,0,0,0,0,0,A\n\
+                 [Tags]\nTAG=2,Entry,ENTRY\n[CellTags]\n15017=TAG\n\
+                 [Waypoints]\n0=17017\n"
+            ),
+        );
+        assert_eq!(sim.trigger_runtime.cell_tags.len(), 1);
+        sim.session.install_waypoints(&map.waypoints);
+        sim.queue_command(CommandEnvelope::new(
+            houses[0],
+            sim.session.tick() + 1,
+            Command::Move {
+                entity_id: actor,
+                target_rx: 17,
+                target_ry: 15,
+            },
+        ));
+        let mut camera = Vec::new();
+        for _ in 0..120 {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), None, Some(&overlays), 33);
+            camera.extend(sim.drain_trigger_effects());
+        }
+        let unit = sim.entities().get(actor).unwrap();
+        assert_eq!((unit.position.rx(), unit.position.ry()), (17, 15));
+        assert!(
+            sim.trigger_runtime
+                .dispatch_trace
+                .iter()
+                .any(|call| call.1 == 1)
+        );
+        assert!(
+            sim.trigger_runtime
+                .dispatch_trace
+                .iter()
+                .any(|call| call.1 == 59)
+        );
+        let expected = if fires {
+            vec![TriggerEffect::CameraAtCoord {
+                coord: [4480, 4480, 0],
+                velocity: None,
+            }]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(camera, expected, "vanilla event kind {kind}");
+    }
+}
+
+#[test]
 fn zone_entry_observes_destructor_changes_to_the_shared_map_cursor() {
     let (mut sim, rules, overlays, houses) = event_ingress_fixture();
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
@@ -353,7 +492,7 @@ fn zone_entry_observes_destructor_changes_to_the_shared_map_cursor() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let calls: Vec<_> = sim

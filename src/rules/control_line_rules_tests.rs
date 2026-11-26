@@ -4,6 +4,66 @@ use crate::rules::ruleset::RuleSet;
 use crate::util::save_codec;
 
 #[test]
+fn drain_money_defaults_layers_and_saved_process_lifetime() {
+    let pair = |rules: &RuleSet| {
+        (
+            rules.general.drain_money_frame_delay,
+            rules.general.drain_money_amount,
+        )
+    };
+    let defaults = RuleSet::from_ini(&IniFile::empty()).unwrap();
+    assert_eq!(pair(&defaults), (100, 0));
+    let wrong_keys = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nDrainMoneyFrameDelay=9\nDrainMoneyAmount=90\n\
+         [combatdamage]\nDrainMoneyFrameDelay=8\n\
+         [CombatDamage]\ndrainmoneyamount=80\n",
+    ))
+    .unwrap();
+    assert_eq!(pair(&wrong_keys), (100, 0));
+
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[CombatDamage]\nDrainMoneyFrameDelay=17tail\nDrainMoneyAmount=13\n",
+    ));
+    layers.push(
+        RulesLayerKind::LangRule,
+        IniFile::from_str("[CombatDamage]\nDrainMoneyAmount=-5\n"),
+    );
+    assert_eq!(
+        pair(&RuleSet::from_rules_layers(&layers).unwrap()),
+        (17, -5)
+    );
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[CombatDamage]\nDrainMoneyFrameDelay=bad\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[CombatDamage]\nDrainMoneyFrameDelay=$Z\nDrainMoneyAmount=$Z\n"),
+    );
+    let processed = layers.process().unwrap();
+    assert_eq!(
+        pair(&RuleSet::from_processed_rules(&processed).unwrap()),
+        (0, -5)
+    );
+    let restored: ProcessedRulesLayers =
+        save_codec::deserialize(&save_codec::serialize(&processed).unwrap()).unwrap();
+    let (_, trace) = restored.into_ini_and_native_type_construction_trace();
+    let state = trace
+        .into_registry_state_discarding_events()
+        .destructive_reset();
+    let next = RulesLayerStack::new(IniFile::empty())
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), state)
+        .unwrap();
+    let retained = RuleSet::from_processed_rules(&next).unwrap();
+    assert_eq!(pair(&retained), (0, -5));
+    assert_eq!(defaults.source_ini_hash(), retained.source_ini_hash());
+    assert_ne!(
+        defaults.simulation_config_hash(),
+        retained.simulation_config_hash()
+    );
+}
+
+#[test]
 fn control_line_defaults_exact_keys_and_signed_values() {
     for (text, frames) in [
         ("", 15),
@@ -95,6 +155,8 @@ fn retail_control_line_values_use_the_production_battle_readers() {
         return;
     };
     assert_eq!(battle.rules.mind_control.attack_line_frames, 20);
+    assert_eq!(battle.rules.general.drain_money_frame_delay, 30);
+    assert_eq!(battle.rules.general.drain_money_amount, 30);
     for name in ["YURI", "YURIPR", "MIND", "YAPSYT", "HTNK", "E1"] {
         assert_eq!(
             battle

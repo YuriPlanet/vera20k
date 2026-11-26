@@ -1,20 +1,33 @@
 //! BuildingLightClass435820/4361D0/436BE0/436A00, RTTI19, VT7E3AD0.
+//! Members: Constructor435820, ScalarDeletingDestructor4370C0, Draw_It435BE0,
+//! AI4361D0, GetType4369E0, GetLayer4369F0, PointerExpired436A00,
+//! SetBehaviour436BE0, DistanceToIntensity436E80, Limbo437030, Unlimbo437050.
+//! RecalcArcPositions436A40 and the plain Destructor435B50 have no call, jump
+//! or data reference in the exe, so the game never runs them.
 //! Independent ObjectClass child of Building+600. The global8B4190 vector
-//! retains construction order; D8 is assigned from its constructor index and
-//! never recomputed after removal. No RNG or timer writes. Parent Limbo deletes
-//! immediately; an orphan's AI uses ObjectUnInit5F65F0/deferred destruction.
+//! retains construction order; D8 is its constructor index's parity
+//! (435B0F..435B3F), never recomputed after removal. No RNG or timer writes.
+//! Native parent Limbo (Building445D75..445D81, which the building destructor
+//! reaches at 43BD6E) calls the light's vt+0xF8, ObjectUnInit5F65F0 (VT slot
+//! 7E3BC8): expiry broadcast, Limbo437030, Object+90 cleared and a deferred
+//! delete, so the light stays in 8B4190 until that frame's drain (725C70)
+//! runs 4370C0; an orphan's AI (4368E1) retires the same way. gamemd deletes
+//! a light directly only at scenario teardown (5345A2).
 use super::display_layers::DisplayLayer;
 use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::{RuleSet, SpotlightRules};
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
-use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X, X87Value};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
+    X87Chop53 as X, X87Value,
+};
 use crate::util::retail_trig::TrigTable;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Spotlight {
     stable_id: u64,
     native_id: i32,
@@ -72,18 +85,30 @@ impl SpotlightStore {
             self.order.hash(h);
             // The derived +98 flag is rebuilt from Logic after load.
             for id in &self.order {
-                let mut light = self.objects[id].clone();
+                let mut light = self.objects[id];
                 light.in_logic_vector = false;
                 light.hash(h);
             }
         }
     }
 }
+/// A geometry double: a native constant or an Asin table angle.
 fn d(value: NativeF64Bits) -> X87Value {
-    X::load_f64(value).expect("finite spotlight input")
+    X::load_f64(value).expect("spotlight geometry doubles are finite constants or table angles")
 }
 fn save(value: X87Value) -> NativeF64Bits {
-    X::store_f64(value).expect("finite spotlight state")
+    X::store_f64(value).expect("a spotlight geometry angle is a bounded table or facing product")
+}
+/// The light's angle and rate and the Rules doubles that drive them
+/// (`SpotlightSpeed=`, `SpotlightAcceleration=`, `SpotlightAngle=`), under
+/// masked exceptions: each is ReadDouble into binary64, so an INI value of
+/// about `1.8e308` and up (e.g. `1e309`) loads as infinity, and
+/// the sums and compares carry it as the FPU does.
+fn state(value: NativeF64Bits) -> MaskedX87Value {
+    M::load_f64(value)
+}
+fn save_state(value: MaskedX87Value) -> NativeF64Bits {
+    M::store_f64_masked_chop(value)
 }
 fn integer(value: X87Value) -> i32 {
     X::ftol_i32_low_masked(value)
@@ -96,11 +121,26 @@ fn coords(entity: &crate::sim::game_entity::GameEntity, sim: &Simulation) -> [i3
     let c = ground_pose::object_get_coords(entity, sim.resolved_terrain.as_ref());
     [c.x, c.y, c.z]
 }
+/// BuildingLightClass::Constructor @ 0x00435820's BeamCoords/PivotCoords.
+/// The unreferenced RecalcArcPositions @ 0x00436A40 repeats this body.
 fn initial_endpoint(parent: [i32; 3], facing: u16, radius: i32) -> [i32; 3] {
     //435988..435AA9: signed facing minus3FFF; double spill before table calls.
+    endpoint_for_facing(
+        parent,
+        facing,
+        radius,
+        NativeF64Bits::from_bits(0xbf19222d989f5e57),
+    )
+}
+fn endpoint_for_facing(
+    parent: [i32; 3],
+    facing: u16,
+    radius: i32,
+    scale: NativeF64Bits,
+) -> [i32; 3] {
     let a = save(X::mul(
         X::load_i32(i32::from(facing as i16) - 0x3fff),
-        d(NativeF64Bits::from_bits(0xbf19222d989f5e57)),
+        d(scale),
     ));
     let t = TrigTable::embedded();
     [
@@ -119,7 +159,7 @@ fn rotate(endpoint: [i32; 3], pivot: [i32; 3], angle: NativeF64Bits) -> Option<[
     use crate::util::native_affine as a;
     //436384/436534 spills angle to float, then shared MatrixRotateZ5AF1A0
     //and TransformPoint5AFB80, vector floats, add pivot and ftol.
-    let angle = X::load_f32(X::store_f32(d(angle)).ok()?).ok()?;
+    let angle = M::load_f32(M::store_f32_masked_chop(state(angle)));
     let t = TrigTable::embedded();
     let sin = a::store(t.sin_from_table(angle))?;
     let cos = a::store(t.cos_from_table(angle))?;
@@ -135,35 +175,48 @@ fn rotate(endpoint: [i32; 3], pivot: [i32; 3], angle: NativeF64Bits) -> Option<[
     }
     Some(result)
 }
+/// AI4361D0's sweep (`0x00436439..0x0043652E`). Each compare's flag test
+/// decides its unordered (NaN) case: `TEST AH,0x41` passes only Greater,
+/// `TEST AH,0x1` passes Less and unordered alike.
 fn advance_angle(light: &mut Spotlight, rules: SpotlightRules) {
-    light.angle = save(X::add(d(light.angle), d(light.rate)));
-    let angle = d(light.angle);
-    let rate = d(light.rate);
-    let half = X::mul(
-        d(rules.angle),
-        d(NativeF64Bits::from_bits(0x3fe0000000000000)),
+    use MaskedX87Ordering::{Greater, Less, Unordered};
+    let less = |lhs, rhs| matches!(M::compare(lhs, rhs), Less | Unordered);
+    let angle = M::add(state(light.rate), state(light.angle));
+    light.angle = save_state(angle);
+    let rate = state(light.rate);
+    let half = M::mul(
+        state(rules.angle),
+        state(NativeF64Bits::from_bits(0x3fe0000000000000)),
     );
-    use crate::util::native_x87::X87Ordering::{Greater, Less};
     if light.increasing {
-        if X::compare(angle, half) == Greater {
-            light.rate = save(X::sub(rate, d(rules.acceleration)));
-            if X::compare(d(light.rate), X::load_i32(0)) == Less {
+        // 0x00436469 (`TEST AH,0x41`).
+        if M::compare(angle, half) == Greater {
+            let lowered = M::sub(rate, state(rules.acceleration));
+            light.rate = save_state(lowered);
+            // 0x00436484 (`TEST AH,0x1`).
+            if less(lowered, M::load_i32(0)) {
                 light.rate = NativeF64Bits::from_bits(0);
                 light.increasing = false;
             }
-        } else if X::compare(rate, d(rules.speed)) == Less {
-            light.rate = save(X::add(d(rules.acceleration), rate));
+        // 0x004364AD (`TEST AH,0x1`).
+        } else if less(rate, state(rules.speed)) {
+            light.rate = save_state(M::add(state(rules.acceleration), rate));
         }
-    } else if X::compare(angle, X::neg(half)) == Less {
-        light.rate = save(X::add(d(rules.acceleration), rate));
-        if X::compare(d(light.rate), X::load_i32(0)) == Greater {
+    // 0x004364D0 (`TEST AH,0x1`).
+    } else if less(angle, M::neg(half)) {
+        let raised = M::add(state(rules.acceleration), rate);
+        light.rate = save_state(raised);
+        // 0x004364EB (`TEST AH,0x41`).
+        if M::compare(raised, M::load_i32(0)) == Greater {
             light.rate = NativeF64Bits::from_bits(0);
             light.increasing = true;
         }
-    } else if X::compare(X::neg(d(rules.speed)), rate) == Less {
-        light.rate = save(X::sub(rate, d(rules.acceleration)));
+    // 0x00436515 (`TEST AH,0x1`).
+    } else if less(M::neg(state(rules.speed)), rate) {
+        light.rate = save_state(M::sub(rate, state(rules.acceleration)));
     }
 }
+/// BuildingLightClass::DistanceToIntensity @ 0x00436E80; AI4361D0 inlines it.
 fn bucket(parent: [i32; 3], light: [i32; 3], rules: SpotlightRules) -> i32 {
     let dist = crate::util::native_x87::distance_3d_leptons(parent, light);
     if dist < rules.location_radius {
@@ -181,6 +234,7 @@ fn bucket(parent: [i32; 3], light: [i32; 3], rules: SpotlightRules) -> i32 {
 pub struct BuildingSpotlight {
     pub coord: [i32; 3],
     pub glow_stage: u8,
+    pub glow_flags: u32,
     pub beam_origin: [i32; 3],
     pub beam_edges: Option<[[i32; 3]; 2]>,
     pub beam_z_adjust: [i32; 2],
@@ -190,19 +244,65 @@ pub struct BuildingSpotlight {
 impl Simulation {
     /// BuildingLightDraw435BE0 uses the child's coordinates, the parent's
     /// virtual center/operational state, and the retained rules. No draw query
-    /// mutates gameplay, RNG or timers. Native +6E7's represented constructor
-    /// state is false; foreign native save bytes are not imported by this engine.
-    pub fn building_spotlight(&self, id: u64, rules: &RuleSet) -> Option<BuildingSpotlight> {
+    /// mutates gameplay, RNG or timers. `viewer` is the player whose map draws
+    /// it: a parent the FoggedObject constructor (`0x004D10D5`) fogged on that
+    /// map (`+0x6E7`) draws nothing (`0x00435C44..0x00435C4C`).
+    pub fn building_spotlight(
+        &self,
+        id: u64,
+        viewer: Option<crate::sim::intern::InternedId>,
+        rules: &RuleSet,
+    ) -> Option<BuildingSpotlight> {
         let light = self.substrate.spotlights.get(id)?;
         let parent = light.parent.and_then(|p| self.substrate.entities.get(p))?;
         if !light.alive
             || light.mode == 0
             || !parent.lifecycle.object_alive()
-            || parent.category() != EntityCategory::Structure
-            || self.building_operational_state(parent.stable_id(), rules) != Some(true)
+            || (parent.category() != EntityCategory::Structure && !rules.ares())
+            || (parent.category() == EntityCategory::Structure
+                && self.building_operational_state(parent.stable_id(), rules) != Some(true))
+            || viewer.is_some_and(|viewer| self.fog.is_object_fogged(viewer, parent.stable_id()))
         {
             return None;
         }
+        if rules.ares()
+            && (parent
+                .cloak
+                .as_ref()
+                .is_some_and(|cloak| cloak.state() >= 2)
+                || parent.deactivated.is_offline()
+                || parent.is_warped_out()
+                || crate::sim::movement::air_movement::current_fly_height(
+                    parent,
+                    self.resolved_terrain.as_ref(),
+                ) < -10)
+        {
+            // BuildingLightDraw_Start1004EB42..1004EB96 (hook 0x435BFA) hides the beam,
+            // retaining its child through cloak, EMP and underground travel.
+            return None;
+        }
+        let (start_height, middle_height, edge_height, glow_flags) = (430, 400, 250, 0);
+        // Ares BuildingLightClass_Draw_430/_400/_250 (1004EAA0, 1004EA70,
+        // 1004EA40; hooks 0x436072, 0x4360D8, 0x4360FF) offset the three
+        // heights from `Spotlight.StartHeight`; Draw_Spotlight (1004EAC0,
+        // hook 0x435CD3) sets the colour flags.
+        let (start_height, middle_height, edge_height, glow_flags) = if rules.ares() {
+            self.entity_object_type(parent, rules).map_or(
+                (start_height, middle_height, edge_height, glow_flags),
+                |object| {
+                    let options = object.spotlight_rules();
+                    let height = options.start_height();
+                    (
+                        height.max(0),
+                        height.wrapping_sub(30).max(400),
+                        height.wrapping_sub(180).max(250),
+                        options.glow_flags(),
+                    )
+                },
+            )
+        } else {
+            (start_height, middle_height, edge_height, glow_flags)
+        };
         let p = coords(parent, self);
         let coord = light.coord;
         let params = rules.general.spotlight;
@@ -234,16 +334,23 @@ impl Simulation {
         Some(BuildingSpotlight {
             coord,
             glow_stage: stage as u8,
-            beam_origin: [p[0], p[1], p[2].wrapping_add(430)],
+            glow_flags,
+            beam_origin: [p[0], p[1], p[2].wrapping_add(start_height)],
             beam_edges,
             beam_z_adjust: [
-                crate::util::native_x87::adjust_for_z_standard(p[2].wrapping_add(400))
+                crate::util::native_x87::adjust_for_z_standard(p[2].wrapping_add(middle_height))
                     .wrapping_neg(),
-                crate::util::native_x87::adjust_for_z_standard(coord[2].wrapping_add(250))
+                crate::util::native_x87::adjust_for_z_standard(coord[2].wrapping_add(edge_height))
                     .wrapping_neg(),
             ],
             beam_amount: 75_i32.wrapping_sub(6_i32.wrapping_mul(b)),
         })
+    }
+
+    /// Every stored spotlight's id, ascending: what
+    /// [`Self::building_spotlight`] answers.
+    pub fn spotlight_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.substrate.spotlights.iter().map(|(&id, _)| id)
     }
 
     pub(super) fn spotlight_alive(&self, id: u64) -> Option<bool> {
@@ -279,6 +386,7 @@ impl Simulation {
         }
         for entity in self.substrate.entities.values() {
             if entity
+                .building
                 .building_light
                 .light()
                 .is_some_and(|id| !self.substrate.spotlights.contains_key(id))
@@ -289,13 +397,17 @@ impl Simulation {
         Ok(())
     }
 
-    pub(super) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
+    /// BuildingClass::Unlimbo @ 0x00441163..0x00441190 constructs one for a
+    /// HasSpotlight type (BuildingLightClass::Constructor @ 0x00435820).
+    pub(crate) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
         let Some(parent) = self.substrate.entities.get(parent_id).filter(|e| {
-            e.category() == EntityCategory::Structure
+            (e.category() == EntityCategory::Structure || (rules.ares() && e.category().is_foot()))
                 && self
-                    .object_type(e.type_ref(), rules)
-                    .map_or(e.building_light.spotlight_capable(), |o| o.has_spotlight)
-                && e.building_light.light().is_none()
+                    .entity_object_type(e, rules)
+                    .map_or(e.building.building_light.spotlight_capable(), |o| {
+                        o.has_spotlight
+                    })
+                && e.building.building_light.light().is_none()
         }) else {
             return;
         };
@@ -304,7 +416,7 @@ impl Simulation {
         let params = rules.general.spotlight;
         let coord = initial_endpoint(p, facing, params.location_radius);
         // ObjectUnlimbo5F4F34 queries the coordinate before entry1AC. This
-        // class inherits4264C0 (always0) and GetType4369E0 (null), so it
+        // class inherits4264C0 (always0) and GetType @ 0x004369E0 (null), so it
         // has no terrain placement rejection/height rewrite or cell footprint.
         if !self.object_placement_scope_active() {
             if let Some(terrain) = self.resolved_terrain.as_ref() {
@@ -335,32 +447,62 @@ impl Simulation {
         };
         self.substrate.spotlights.objects.insert(id, light);
         self.substrate.spotlights.order.push(id);
-        self.substrate
-            .entities
-            .get_mut(parent_id)
-            .unwrap()
-            .building_light
-            .attach(id);
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            id,
-            DisplayLayer::AIR,
-            rules,
-        );
+        let parent = self.substrate.entities.get_mut(parent_id).unwrap();
+        let note = parent.note_names();
+        parent.building.building_light.attach(id, note);
+        // BuildingLightClass::GetLayer @ 0x004369F0 returns Air (3).
+        Self::submit_object_display(&mut self.substrate, id, DisplayLayer::AIR);
+        // BuildingLightClass::Unlimbo @ 0x00437050 registers it with Logic;
+        // Limbo @ 0x00437030 is `conceal_spotlight_logic`.
         self.register_spotlight_logic(id);
     }
-    pub(super) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {
+    /// BuildingClass::Limbo @ 0x00445D75..0x00445D81, in its not-yet-in-Limbo
+    /// block (0x004458C6): the light's vt+0xF8, ObjectClass::UnInit @
+    /// 0x005F65F0. The expiry broadcast clears Building+0x600
+    /// (BuildingClass::PointerExpired @ 0x0044E93A); the light leaves Display
+    /// and Logic, dies and keeps its 8B4190 slot until the drain deletes it.
+    /// A Foot's light is Ares' own and keeps its direct delete. So does a
+    /// building's while Ares plays: its hook 0x441163 skips the stock
+    /// construction that stores Building+0x600 and Ares owns the light, so
+    /// whether this stock arm still runs there is not established (Ares'
+    /// 1004EDE0 was not read). RESIDUAL only while Ares plays: the light is
+    /// deleted at once, which decides the sweep direction of a light
+    /// constructed before that frame's drain.
+    pub(super) fn uninit_spotlight_for_parent_limbo(
+        &mut self,
+        parent: u64,
+        context: UninitContext<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(parent) else {
+            return;
+        };
+        match entity.building.building_light.light() {
+            Some(id)
+                if entity.category() == EntityCategory::Structure && !context.rules().ares() =>
+            {
+                self.uninit_with_context(id, context)
+            }
+            Some(_) => self.destroy_spotlight_for_parent(parent, context),
+            None => {}
+        }
+    }
+    /// The direct delete of a parent's light: Ares' Deactivate and type
+    /// conversion, and a parent destroyed without its Limbo.
+    pub(crate) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {
         if let Some(id) = self
             .substrate
             .entities
-            .get_mut(parent)
-            .and_then(|e| e.building_light.take())
+            .get_mut_if(parent, |e| e.building.building_light.light().is_some())
+            .and_then(|e| e.building.building_light.take())
         {
             self.destroy_spotlight(id, context);
         }
     }
+    /// BuildingLightClass::ScalarDeletingDestructor @ 0x004370C0 (it inlines
+    /// the unreferenced Destructor @ 0x00435B50): Limbo and Logic unregister
+    /// (nothing for a light UnInit already limboed), removal from the 8B4190
+    /// vector, then ObjectClass's destructor. The drain calls it for a dead
+    /// queued light (0x00725D7A).
     pub(super) fn destroy_spotlight(&mut self, id: u64, context: UninitContext<'_>) {
         let Some(parent) = self.substrate.spotlights.get(id).map(|s| s.parent) else {
             return;
@@ -372,9 +514,12 @@ impl Simulation {
         self.substrate
             .pending_delete
             .remove(super::substrate::DeferredDeleteTicket::Object(id));
+        // Ares BuildingLightClass_SDDTOR (1004EBE0, hook 0x4370C0) clears
+        // TechnoExt::Spotlight; BuildingLightClass_CTOR (1004EA20, hook
+        // 0x435820) set it. The parent's one owned pointer is both fields.
         if let Some(parent) = parent.and_then(|p| self.substrate.entities.get_mut(p)) {
-            if parent.building_light.light() == Some(id) {
-                parent.building_light.take();
+            if parent.building.building_light.light() == Some(id) {
+                parent.building.building_light.take();
             }
         }
     }
@@ -416,7 +561,7 @@ impl Simulation {
                             EntityCategory::Unit | EntityCategory::Infantry
                         )
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(self.house_alliances.as_map()),
+                            Some(&self.house_alliances),
                             &self.interner,
                             owner,
                             e.owner(),
@@ -438,6 +583,7 @@ impl Simulation {
         self.substrate.spotlights.get(id).map(|l| l.coord)
     }
 
+    /// BuildingLightClass::SetBehaviour @ 0x00436BE0.
     pub(crate) fn set_spotlight_behavior(&mut self, id: u64, mode: i32) {
         let Some(light) = self.substrate.spotlights.get_mut(id) else {
             return;
@@ -471,8 +617,17 @@ impl Simulation {
             self.substrate.spotlights.get_mut(id).unwrap().target = target;
         }
     }
-    pub(super) fn visit_spotlight(&mut self, id: u64, rules: &RuleSet, context: UninitContext<'_>) {
-        let Some(mut light) = self.substrate.spotlights.get(id).cloned() else {
+    /// BuildingLightClass::AI @ 0x004361D0.
+    pub(super) fn visit_spotlight(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        mut context: UninitContext<'_>,
+    ) {
+        // Changed on a copy and committed below only once the mode arm
+        // finds its coordinate: an arm whose rotate fails returns and leaves
+        // the light as it was.
+        let Some(mut light) = self.substrate.spotlights.get(id).copied() else {
             return;
         };
         let Some(parent) = light
@@ -488,24 +643,40 @@ impl Simulation {
         let parent_coord = coords(parent, self);
         let owner = parent.owner();
         let params = rules.general.spotlight;
-        // Authored exponent overflow can survive the native floating reader.
-        // Motion's finite numeric owner cannot represent it: retain the last
-        // drawable pose instead of panicking or clamping the retained INI.
-        // Parent expiry above still follows the ordinary cleanup path.
-        if [
-            params.speed,
-            params.acceleration,
-            params.angle,
-            light.angle,
-            light.rate,
-        ]
-        .into_iter()
-        .any(|value| !f64::from_bits(value.bits()).is_finite())
-        {
-            return;
-        }
+        let mut lost_target = false;
         match light.mode {
             1 => {
+                let params = if rules.ares() && parent.category().is_foot() {
+                    // BuildingLight_AI1004EC10..1004EDD2: both endpoint
+                    // and pivot follow the current Foot facing, not its old
+                    // construction cell; the native angle bound becomes0.
+                    if let Some(object) = self.entity_object_type(parent, rules) {
+                        let options = object.spotlight_rules();
+                        let frame = self.session.binary_frame();
+                        let facing = if options.follows_secondary() {
+                            parent
+                                .barrel_facing
+                                .as_ref()
+                                .map_or(0, |facing| facing.current(frame))
+                        } else {
+                            parent.body_facing_current(frame)
+                        };
+                        let endpoint = endpoint_for_facing(
+                            parent_raw,
+                            facing,
+                            options.distance(),
+                            NativeF64Bits::from_bits(0xbf1922147658a371),
+                        );
+                        light.endpoint = endpoint;
+                        light.pivot = endpoint;
+                    }
+                    SpotlightRules {
+                        angle: NativeF64Bits::POSITIVE_ZERO,
+                        ..params
+                    }
+                } else {
+                    params
+                };
                 advance_angle(&mut light, params);
                 let Some(coord) = rotate(light.endpoint, light.pivot, light.angle) else {
                     return;
@@ -513,15 +684,18 @@ impl Simulation {
                 light.coord = coord;
             }
             2 => {
-                let angle = X::add(X::mul(d(params.speed), X::load_i32(4)), d(light.angle));
-                let tau = d(NativeF64Bits::from_bits(0x401921fb54442d18));
-                light.angle = save(
-                    if X::compare(angle, tau) == crate::util::native_x87::X87Ordering::Greater {
-                        X::sub(angle, tau)
-                    } else {
-                        angle
-                    },
+                // 0x0043634F..0x0043637A: `TEST AH,0x41` wraps only an
+                // ordered angle past 2π.
+                let angle = M::add(
+                    M::mul(state(params.speed), M::load_i32(4)),
+                    state(light.angle),
                 );
+                let tau = state(NativeF64Bits::from_bits(0x401921fb54442d18));
+                light.angle = save_state(if M::compare(angle, tau) == MaskedX87Ordering::Greater {
+                    M::sub(angle, tau)
+                } else {
+                    angle
+                });
                 let Some(coord) = rotate(light.endpoint, parent_raw, light.angle) else {
                     return;
                 };
@@ -546,17 +720,21 @@ impl Simulation {
                     //436321 resets mode then submits uninitialized stack XYZ.
                     //Keep last coordinates for this transition; native undefined
                     //stack contents are not a portable gameplay contract.
-                    light.mode = 1;
-                    light.angle = NativeF64Bits::from_bits(0);
+                    lost_target = true;
                 }
             }
             _ => {}
         }
-        let scan = light.mode == 1
+        let scan = (light.mode == 1 || lost_target)
             && self.object_has_trigger_tag(parent_id)
-            && self.building_operational_state(parent_id, rules) == Some(true);
+            && (self.building_operational_state(parent_id, rules) == Some(true)
+                || (rules.ares() && parent.category().is_foot()));
         let coord = light.coord;
         self.substrate.spotlights.objects.insert(id, light);
+        if lost_target {
+            //436321: SetBehaviour(1), so the scan below sees behaviour 1.
+            self.set_spotlight_behavior(id, 1);
+        }
         if scan {
             let b = bucket(parent_coord, coord, params);
             let threshold = params.radius.wrapping_add(30).wrapping_add(integer(X::mul(
@@ -573,17 +751,40 @@ impl Simulation {
                     ) < threshold
                 });
             if seen {
-                self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+                self.dispatch_object_tag_event(
+                    parent_id,
+                    35,
+                    Some(parent_id),
+                    None,
+                    context.reborrow(),
+                );
+                // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
+                // 0x4368C9): then 66 (in spotlight) on the same object while
+                // it is alive.
+                if rules.ares()
+                    && self
+                        .substrate
+                        .entities
+                        .get(parent_id)
+                        .is_some_and(|parent| parent.lifecycle.object_alive())
+                {
+                    self.dispatch_object_tag_event(parent_id, 66, Some(parent_id), None, context);
+                }
             }
         }
     }
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    pub(super) fn spotlights_pointer_expired(&mut self, id: u64) {
-        //436A00 always nulls matching parent/target, regardless of control flag.
+    /// BuildingLightClass::PointerExpired @ 0x00436A00 for every light.
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(super) fn spotlights_pointer_expired(&mut self, id: u64, removed: bool, ares: bool) {
+        //436A00 clears the target for either control. Ares1004EBC0 at
+        //436A25 skips only the parent clear on DetachAll(false), allowing
+        //the beam to reappear after its parent uncloaks. Real removal clears it.
+        let clear_parent = removed || !ares;
         for light in self.spotlights.values_mut() {
-            if light.parent == Some(id) {
+            if clear_parent && light.parent == Some(id) {
                 light.parent = None;
             }
             if light.target == Some(id) {
@@ -593,6 +794,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "spotlight_tests.rs"]
 mod tests;

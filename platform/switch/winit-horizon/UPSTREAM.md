@@ -19,6 +19,9 @@ mouse buttons produce mouse input. D-pad Up/Down select teams 1/2 (keys 1/2),
 Left guards (G), and Right holds Planning Mode (Z) until released. R + Up/Down
 creates teams 1/2 through the existing Ctrl + 1/2 shortcuts. X/Y map to D/A,
 L/R to Shift/Ctrl, ZL/ZR to Tab/Space, and Plus/Minus to Escape/F10.
+When a text edit owns input focus, controller Plus opens the libnx software
+keyboard and is not synthesized as Escape; confirmed UTF-8 text is delivered
+through `WindowEvent::Ime(Ime::Commit)`.
 
 USB keyboard and mouse are enabled only in docked/TV mode and polled through `hidGetKeyboardStates` and
 `hidGetMouseStates`; the backend translates HID usages into the same winit key

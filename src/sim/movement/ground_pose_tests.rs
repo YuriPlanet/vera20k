@@ -244,8 +244,8 @@ fn walk_rules() -> RuleSet {
 fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGrid, frame: u32) {
     let rules = walk_rules();
     let (width, height) = (terrain.width(), terrain.height());
-    sim.resolved_terrain = Some(terrain.clone());
-    sim.zone_grid = Some(
+    *sim.resolved_terrain = Some(terrain.clone());
+    *sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_native_bridge_geometry(
             grid,
             terrain,
@@ -253,7 +253,8 @@ fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGri
             width,
             height,
             Some((i32::from(width), i32::from(height))),
-        ),
+        )
+        .into(),
     );
     crate::sim::arena_fixture::supply_native_map(sim);
     sim.install_fixture_path_grid(Some(grid));
@@ -274,7 +275,7 @@ fn tick_with_rules(
     frame: u32,
     rules: Option<&RuleSet>,
 ) {
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     sim.install_fixture_path_grid(Some(grid));
     sim.session.set_tick_for_test(u64::from(frame));
     sim.session.set_binary_frame_for_test(frame);
@@ -514,14 +515,14 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
 
         // Native load resets Scenario RNG. Keep the original at that same
         // canonical point, while retaining the independent process streams.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 0, 0, "moving-ramp-residual", 0);
         let mut restored = GameSnapshot::load(&bytes)
             .expect("moving ramp snapshot")
             .sim;
         // The original and restored controls run as independent test processes.
-        restored.main_rng = sim.main_rng.snapshot_for_test().into();
-        restored.mapgen_rng = sim.mapgen_rng.clone();
+        *restored.main_rng = (*sim.main_rng).clone();
+        *restored.mapgen_rng = (*sim.mapgen_rng).clone();
         restored
             .restore_after_snapshot_load()
             .expect("moving ramp identities and occupation");
@@ -542,8 +543,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
                 .count_on_layer(3, 2, MovementLayer::Bridge),
             1
         );
-        let restored_terrain = restored
-            .resolved_terrain
+        let restored_terrain = (*restored.resolved_terrain)
             .clone()
             .expect("restored terrain cache");
 
@@ -960,7 +960,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
     let mut sim = Simulation::new();
     let entity = mover(&mut sim, LocomotorKind::Drive);
     insert(&mut sim, entity);
-    sim.resolved_terrain = Some(terrain.clone());
+    *sim.resolved_terrain = Some(terrain.clone());
     assert!(sim.force_track(
         1,
         0x47,
@@ -971,10 +971,10 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
         },
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     if sim.path_grid.is_none() {
-        sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
+        *sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     }
     for frame in 0..64 {
         sim.session.set_binary_frame_for_test(frame);
@@ -1032,7 +1032,7 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
                 crate::sim::components::NavTargetRef::cell(destination.0, destination.1),
                 &rules,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ));
             for frame in 0..128 {
                 sim.session.set_binary_frame_for_test(frame);
@@ -1086,11 +1086,12 @@ fn cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         // Every row the Drive/Ship fixtures use admits, so the native
         // Unit+1AC (the chain query) answers from occupancy alone.
         speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         },
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
@@ -1253,6 +1254,7 @@ fn getcoords_xy_is_the_location_or_a_buildings_foundation_centre() {
         ("not-a-native-foundation", raw),
     ] {
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test(foundation.to_string().into());
         assert_eq!(
@@ -1281,7 +1283,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
         "[BuildingTypes]\n0=TEST\n[TEST]\nFoundation=1x1\n",
     ))
     .unwrap();
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let mut building = GameEntity::test_default_of_category(
         1,
         "TEST",
@@ -1326,7 +1328,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
 /// Two Drive units marked into cell (4, 4), 1 before 2, so 2 heads the list.
 fn two_marked_units() -> Simulation {
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     for id in [1, 2] {
         let mut entity = GameEntity::test_default(id, "ACTOR", "Americans", 4, 4);
         entity.lifecycle.set_in_limbo_for_test(false);
@@ -1338,7 +1340,7 @@ fn two_marked_units() -> Simulation {
             id,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     }
     sim
@@ -1360,8 +1362,7 @@ fn set_height_on_a_marked_object_re_marks_it_at_the_head_of_its_cell() {
         1,
         30,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(next_in_cell(&sim, 1), Some(Entity(2)));
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -1391,14 +1392,13 @@ fn set_height_on_an_unmarked_object_writes_z_without_marking_it() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.set_object_height(
         1,
         60,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(!entity.lifecycle.cell_marked());
@@ -1456,9 +1456,9 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
     transport.position.set_exact_z_leptons_for_test(Some(0));
     let mut cargo = PassengerCargo::new(5, 2.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
-    transport.passenger_role = PassengerRole::transport(cargo);
+    transport.set_passenger_role_for_test(PassengerRole::transport(cargo));
     let mut rider = GameEntity::test_default(2, "E1", "Americans", 3, 0);
-    rider.passenger_role = PassengerRole::inside_for_test(1, true);
+    rider.set_passenger_role_for_test(PassengerRole::inside_for_test(1, true));
     entities.insert(transport);
     entities.insert(rider);
     let interner = crate::sim::intern::test_interner();

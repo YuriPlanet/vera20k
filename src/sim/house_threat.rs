@@ -9,7 +9,6 @@
 //! tools/spatial_oracle/astar_threat_inputs.json, spatial controls.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::houses::Houses;
@@ -48,10 +47,11 @@ impl SpatialThreat {
     }
 }
 
-const SIDE: i32 = 130;
-const LENGTH: usize = 130 * 130;
-// Original retail dwords8243C8/8243EC: row-major surrounding coarse cells.
-const OFFSETS: [i32; 9] = [-131, -130, -129, -1, 0, 1, 129, 130, 131];
+// One coarse cell covers four map cells; retain the native one-cell border.
+// Large maps use the same kernel with a larger map-selected plane.
+pub(crate) const THREAT_GRID_SIDE: i32 = 130;
+const SIDE: i32 = THREAT_GRID_SIDE;
+const LENGTH: usize = (SIDE * SIDE) as usize;
 const SHIFTS: [u32; 9] = [2, 1, 2, 1, 0, 1, 2, 1, 2];
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -70,30 +70,94 @@ impl<'de> serde::Deserialize<'de> for HouseSpatialThreat {
         if crate::util::save_codec::layout::describing() {
             return Ok(Self::default());
         }
-        if values.len() != LENGTH {
-            return Err(serde::de::Error::custom(
-                "native House threat grid must contain 16900 dwords",
-            ));
+        if values.len() != LENGTH && values.len() != 258 * 258 {
+            return Err(serde::de::Error::custom(format!(
+                "House threat grid must contain {LENGTH} or 66564 dwords"
+            )));
         }
         Ok(Self(values.into_boxed_slice()))
     }
 }
 
 impl HouseSpatialThreat {
+    fn grid(&self) -> crate::map::cell_index::CellGrid {
+        if self.0.len() == LENGTH {
+            crate::map::cell_index::CellGrid::Retail
+        } else {
+            crate::map::cell_index::CellGrid::Extended
+        }
+    }
+
+    /// No grid at all: what a house holds in the presentation copy of the
+    /// world, which never runs a tick or answers a threat query
+    /// (`Simulation::presentation_copy`).
+    pub(crate) fn none() -> Self {
+        Self(Box::new([]))
+    }
+
+    pub(crate) fn configure(&mut self, grid: crate::map::cell_index::CellGrid) {
+        let old_side = usize::from(self.grid().side()) / 4 + 2;
+        let side = usize::from(grid.side()) / 4 + 2;
+        if old_side == side {
+            return;
+        }
+        let mut resized = vec![0; side * side];
+        for y in 0..old_side.min(side) {
+            for x in 0..old_side.min(side) {
+                resized[y * side + x] = self.0[y * old_side + x];
+            }
+        }
+        self.0 = resized.into_boxed_slice();
+    }
+
+    pub(crate) fn index_for_grid(grid: crate::map::cell_index::CellGrid, cell: (i16, i16)) -> i32 {
+        let side = i32::from(grid.side()) / 4 + 2;
+        side + 1 + i32::from(cell.0) / 4 + side * (i32::from(cell.1) / 4)
+    }
+
+    /// The padded index `0x0056BC50` answers its callers: Cell UpdateThreat
+    /// (`0x00481884`), Foot PerCellProcess (`0x004D8657`, `0x004D8664`) and
+    /// House AI_BuildThreatMap (`0x005094BE`, `0x0050957C`). The readers
+    /// `0x0056BCD0` and `0x00585F40` and the hierarchy seeds (`0x00581F90`,
+    /// `0x00584550`) inline the stock arithmetic, [`Self::index_for_grid`].
+    ///
+    /// Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook `0x0056BC54`)
+    /// replaces the body for these callers only: -1 when either axis is
+    /// outside `[0, 512)`, else `(130 * Y) / 4 + X / 4 + 131`, the row scaled
+    /// before its division. Off every fourth row the writes then land away
+    /// from the slot the inline readers read for that cell. VERA-only: the
+    /// large-map grid takes its own side and stride for Ares's 512 and 130.
+    ///
+    /// `ares` is the caller's `rules.ares_form()`; the grid holds no rules.
+    fn caller_index(grid: crate::map::cell_index::CellGrid, cell: (i16, i16), ares: bool) -> i32 {
+        if ares {
+            let side = i32::from(grid.side());
+            let stride = side / 4 + 2;
+            let (x, y) = (i32::from(cell.0), i32::from(cell.1));
+            if !(0..side).contains(&x) || !(0..side).contains(&y) {
+                return -1;
+            }
+            stride * y / 4 + x / 4 + stride + 1
+        } else {
+            Self::index_for_grid(grid, cell)
+        }
+    }
+
     pub(super) fn values(&self) -> &[i32] {
         &self.0
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn index(cell: (i16, i16)) -> i32 {
         // 56BC50 writer includes the 131-dword padding. 56BCD0's +59F0 base
         // is exactly +57E4 +131*4. Hierarchy581F90/584550/585F40 uses the
         // same signed packed-cell mapping; all consumers share this owner.
         // Rust signed division truncates toward zero.
-        131 + i32::from(cell.0) / 4 + SIDE * (i32::from(cell.1) / 4)
+        Self::index_for_grid(crate::map::cell_index::CellGrid::Retail, cell)
     }
 
     pub(super) fn at(&self, cell: (i16, i16)) -> Result<i32, String> {
-        let index = Self::index(cell);
+        let index = Self::index_for_grid(self.grid(), cell);
         self.at_padded_index(index)
     }
 
@@ -111,13 +175,29 @@ impl HouseSpatialThreat {
         self.0.fill(0);
     }
 
-    pub(super) fn adjust(&mut self, cell: (i16, i16), delta: i32) -> Result<(), String> {
-        let base = Self::index(cell);
+    /// The nine-slot kernel both `0x0056BC50` callers that write apply: Cell
+    /// UpdateThreat through `HouseClass::Adjust_Threat @ 0x004FA2E0`, and
+    /// AI_BuildThreatMap inline (`0x0050954B`, `0x0050959A`).
+    pub(super) fn adjust(
+        &mut self,
+        cell: (i16, i16),
+        delta: i32,
+        ares: bool,
+    ) -> Result<(), String> {
+        let base = Self::caller_index(self.grid(), cell, ares);
         // Validate dependencies before the first write. Extreme scalar
         // coordinates may alias unrelated native House bytes; no invented zero.
-        let first = base + OFFSETS[0];
-        let last = base + OFFSETS[8];
-        if first < 0 || last >= LENGTH as i32 {
+        let first = base - (i32::from(self.grid().side()) / 4 + 3);
+        let last = base + (i32::from(self.grid().side()) / 4 + 3);
+        if first < 0 || last >= self.0.len() as i32 {
+            // Ares 3.0 HouseClass_SetThreat_Bounds 1005CC10 (hook
+            // 0x004FA2E0) skips Adjust_Threat for its -1 index. VERA-only:
+            // the rebuild's inline kernel, and the rows past 508 whose
+            // scaled index runs off the grid, write outside the grid
+            // natively; both are skipped too.
+            if ares {
+                return Ok(());
+            }
             return Err(format!(
                 "native House threat kernel outside retained grid at {cell:?}"
             ));
@@ -125,7 +205,19 @@ impl HouseSpatialThreat {
         // 4FA2E7 tests sign BEFORE NEG. MIN remains negative after wrapped NEG;
         // each SAR and ADD/SUB is signed32, followed by its own zero clamp.
         let magnitude = delta.wrapping_abs();
-        for (offset, shift) in OFFSETS.into_iter().zip(SHIFTS) {
+        let side = i32::from(self.grid().side()) / 4 + 2;
+        let offsets = [
+            -side - 1,
+            -side,
+            -side + 1,
+            -1,
+            0,
+            1,
+            side - 1,
+            side,
+            side + 1,
+        ];
+        for (offset, shift) in offsets.into_iter().zip(SHIFTS) {
             let value = &mut self.0[(base + offset) as usize];
             let part = magnitude >> shift;
             *value = if delta < 0 {
@@ -187,6 +279,9 @@ impl Simulation {
 
     /// Cell481870: each receiver excludes the source House and its directional
     /// allies. Unlike509400's rebuild, this applies to every concrete class.
+    /// Every other House takes the write, clamp included. The walk goes in
+    /// id order, not the House array's (0x00A8022C); each House writes only
+    /// its own grid, so the results are the same.
     fn cell_update_spatial_threat(
         interner: &StringInterner,
         house_alliances: &HouseAlliances,
@@ -194,20 +289,17 @@ impl Simulation {
         source: InternedId,
         cell: (i16, i16),
         delta: i32,
+        ares: bool,
     ) {
-        let source_name = interner.resolve(source);
+        // Each receiver asks its own IsAlliedWith(source): the index overload
+        // 0x004F9A10, called at 0x004818B7.
+        let friendly = house_alliances.allied_to(interner, source);
         for (&owner, house) in &mut *houses {
-            if owner == source
-                || is_allied_with(
-                    house_alliances.as_map(),
-                    interner.resolve(owner),
-                    source_name,
-                )
-            {
+            if friendly(owner) {
                 continue;
             }
             house
-                .adjust_spatial_threat(cell, delta)
+                .adjust_spatial_threat(cell, delta, ares)
                 .expect("native Cell UpdateThreat requires an addressable House kernel");
         }
     }
@@ -226,6 +318,7 @@ impl Simulation {
             owner,
             cell,
             value,
+            rules.ares_form(),
         );
     }
 
@@ -236,6 +329,7 @@ impl Simulation {
         houses: &mut Houses,
         id: u64,
         cell: (i16, i16),
+        ares: bool,
     ) {
         let actor = substrate.entities.get(id).unwrap();
         let owner = actor.owner();
@@ -249,6 +343,7 @@ impl Simulation {
             owner,
             cell,
             value.wrapping_neg(),
+            ares,
         );
         substrate
             .entities
@@ -310,13 +405,18 @@ impl Simulation {
                 &mut self.houses,
                 id,
                 cell,
+                rules.ares_form(),
             );
         }
     }
 
     /// Techno701701..701719, after detach and before writing the new owner.
     /// Return the retained Cell so the post-owner half cannot resample it.
-    pub(crate) fn spatial_threat_before_owner_change(&mut self, id: u64) -> Option<(i16, i16)> {
+    pub(crate) fn spatial_threat_before_owner_change(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+    ) -> Option<(i16, i16)> {
         let actor = self.substrate.entities.get(id)?;
         if actor.lifecycle.in_limbo() {
             return None;
@@ -337,6 +437,7 @@ impl Simulation {
             &mut self.houses,
             id,
             cell,
+            rules.ares_form(),
         );
         Some(cell)
     }
@@ -368,7 +469,10 @@ impl Simulation {
             return;
         }
         let current = (actor.position.rx() as i16, actor.position.ry() as i16);
-        if HouseSpatialThreat::index(old) == HouseSpatialThreat::index(current) {
+        let ares = rules.ares_form();
+        if HouseSpatialThreat::caller_index(self.cell_grid(), old, ares)
+            == HouseSpatialThreat::caller_index(self.cell_grid(), current, ares)
+        {
             return;
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
@@ -382,6 +486,7 @@ impl Simulation {
             &mut self.houses,
             id,
             old,
+            ares,
         );
         if let Some(current) = self.spatial_threat_current_cell(id, None) {
             self.add_spatial_threat_at(id, current, rules);
@@ -404,6 +509,7 @@ impl Simulation {
                 &mut self.houses,
                 id,
                 cell,
+                rules.ares_form(),
             );
             self.add_spatial_threat_at(id, cell, rules);
         }
@@ -414,13 +520,13 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return;
         };
-        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero());
+        let controlled = house.is_controlled_by_human(self.session.rule_policy());
         let contributions = self.spatial_threat_contributions(owner, controlled, rules);
         let house = self.houses.get_mut(&owner).unwrap();
         house.clear_spatial_threat();
         for (cell, value) in contributions {
             house
-                .adjust_spatial_threat(cell, value)
+                .adjust_spatial_threat(cell, value, rules.ares_form())
                 .expect("native diplomacy rebuild requires an addressable House kernel");
         }
     }
@@ -455,11 +561,9 @@ impl Simulation {
                 if cell == (0, 0)
                     || actor.owner() == owner
                     || (controlled
-                        && is_allied_with(
-                            self.house_alliances.as_map(),
-                            self.interner.resolve(owner),
-                            self.interner.resolve(actor.owner()),
-                        ))
+                        && self
+                            .house_alliances
+                            .is_allied(&self.interner, owner, actor.owner()))
                 {
                     return None;
                 }
@@ -499,6 +603,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_threat_tests.rs"]
 mod tests;

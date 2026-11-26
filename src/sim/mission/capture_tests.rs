@@ -85,8 +85,7 @@ fn head_for(sim: &mut Simulation, rules: &RuleSet, id: u64, building: u64) {
         id,
         Some(NavTargetRef::object(building)),
         rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -104,7 +103,7 @@ fn mission(sim: &Simulation, id: u64) -> (MissionId, MissionId) {
 }
 
 fn capture(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
-    mission_capture(sim, rules, None, id, FrameEffects::default())
+    mission_capture(sim, rules, None, id, &mut FrameEffects::default())
 }
 
 const CAPTURE: MissionId = MissionId::from_known(MissionType::Capture);
@@ -155,13 +154,19 @@ fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
                     timer_before[1].as_i64().unwrap() as i32,
                 ),
             });
-        sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             control["rng_before"]["native_state_hex"].as_str().unwrap(),
         );
         let main_before = sim.main_rng.logical_state();
         let mapgen_before = sim.mapgen_rng.logical_state();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
-            crate::sim::world::dispatch_foot_mission(&mut sim, gi, rules, ObjectAiCtx::default())
+            crate::sim::world::dispatch_foot_mission(
+                &mut sim,
+                gi,
+                rules,
+                &mut ObjectAiCtx::default(),
+            )
+            .unwrap()
         });
 
         assert_eq!(heading(&sim, gi), Some(building), "{name}");
@@ -234,8 +239,7 @@ fn a_capturing_infantryman_heads_for_its_building_target() {
             id,
             Some(TargetKind::Entity(plant)),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     }

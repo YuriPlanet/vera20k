@@ -40,6 +40,10 @@ pub(crate) struct DefenceDivisors {
     pub house_type_armor: NativeF32Bits,
     /// `Techno+0x158`, the per-object ArmorMultiplier.
     pub unit_armor: NativeF64Bits,
+    /// Phobos `TechnoClass_ReceiveDamage_ArmorMultiplier` (`0x00701966`, 6
+    /// bytes replaced): the active AttachEffect armor product, divided as its
+    /// own step after the stock divide and before the STRONGER rank divide.
+    pub ae_armor: f64,
     /// `Rules+0x688` `VeteranArmor=` when the target's rank holds STRONGER.
     pub rank_armor: Option<NativeF64Bits>,
 }
@@ -49,6 +53,7 @@ impl Default for DefenceDivisors {
         Self {
             house_type_armor: NativeF32Bits::from_bits(1.0_f32.to_bits()),
             unit_armor: NativeF64Bits::ONE,
+            ae_armor: 1.0,
             rank_armor: None,
         }
     }
@@ -84,6 +89,9 @@ pub(crate) struct ImmunityInputs {
     pub affects_allies: bool,
     /// Attacker owner IsAlliedWith target owner (AffectsAllies operand).
     pub attacker_is_allied: bool,
+    /// Ares replaces the stock attacker-only ally gate with WarheadExt's
+    /// House policy, including a house-only source. None keeps stock behavior.
+    pub ares_house_damage_allowed: Option<bool>,
     /// Target owner IsAlliedWith sourceHouse (Psychedelic operand).
     pub source_house_is_allied: bool,
     /// Warhead Psychedelic/MindControl (warhead+0x16d).
@@ -102,6 +110,11 @@ pub(crate) struct TargetDamageView {
     pub current_hp: i32,
     /// ObjectType `Immune=` entry gate in ObjectClass::ReceiveDamage.
     pub object_immune: bool,
+    /// Ares `RelativeDamage=yes`: WarheadTypeExt::GetRelativeDamage
+    /// (installed 10051C50) for this victim, which
+    /// ObjectClass_ReceiveDamage_Relative (10053A80, hook 0x5F53E5)
+    /// substitutes for the packet with its sign. `None` without the key.
+    pub relative_damage: Option<i32>,
 }
 
 /// What the receiver-side gates decide before the kernel runs.
@@ -109,7 +122,9 @@ pub(crate) struct TargetDamageView {
 pub(crate) enum DamageGate {
     Pass,
     /// Short-circuit to 0 HP delta, no state change.
-    Nullified { clear_damage: bool },
+    Nullified {
+        clear_damage: bool,
+    },
     /// Active IronCurtain/ForceShield short-circuit. Kept distinct because
     /// TechnoClass emits its transient combat-light before returning.
     Invulnerable,

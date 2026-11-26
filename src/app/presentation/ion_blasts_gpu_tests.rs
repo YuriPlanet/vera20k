@@ -84,13 +84,13 @@ fn seed_depth(
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -106,7 +106,7 @@ fn seed_depth(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
-
+        multiview_mask: None,
     });
     pass.set_pipeline(&pipeline);
     pass.draw(0..3, 0..1);
@@ -180,8 +180,10 @@ fn production_ripple_matches_original_draw_all() {
             let draws = ion_blast_draws(
                 blasts.into_iter(),
                 [int(&origin[0]) as f32, (int(&origin[1]) + 15) as f32],
+                [0.0, 0.0],
                 VIEW.map(|v| v as f32),
                 int(&row["detail"]) as u32,
+                crate::render::native_z::DEFAULT_Z,
             );
             terrain.prepare_ion_blasts(&gpu.device, &gpu.queue, &draws, 1.0);
             let mut encoder = gpu.device.create_command_encoder(&Default::default());

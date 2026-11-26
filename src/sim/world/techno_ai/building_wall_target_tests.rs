@@ -12,6 +12,13 @@ use crate::sim::house_state::HouseState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::util::fixed_math::SimFixed;
 
+/// The fixture's burst word (7) after a NULL target: Assign_Target resets it
+/// (`0x006FCF5B`); Ares TechnoClass_SetTarget_Burst (1005D320, hook
+/// 0x6FCF53) keeps it.
+fn cleared(rules: &RuleSet) -> i32 {
+    if rules.ares() { 7 } else { 0 }
+}
+
 struct WallScene {
     sim: Simulation,
     rules: RuleSet,
@@ -31,7 +38,7 @@ impl WallScene {
         terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
         sim.install_resolved_terrain_for_new_map(terrain);
         crate::sim::arena_fixture::supply_native_map(&mut sim);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
         for (name, side) in [("Americans", 0), ("Russians", 1)] {
             let owner = sim.intern(name);
             sim.houses
@@ -93,7 +100,7 @@ impl WallScene {
             .attack_target
             .set_for_test(Some(TargetKind::Entity(self.target)));
         for _ in 0..7 {
-            entity.weapon_burst.advance();
+            entity.seldom.weapon_burst.advance();
         }
     }
 
@@ -135,7 +142,8 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
             .entities
             .get(scene.building)
             .unwrap()
-            .mission;
+            .mission
+            .clone();
         let rng = (
             scene.sim.main_rng.logical_state(),
             scene.sim.scenario_rng.logical_state(),
@@ -147,8 +155,7 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
                 scene.building,
                 Some(requested),
                 &scene.rules,
-                Some(&scene.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let blocked = wall_owner.is_some() && !endpoint;
@@ -158,7 +165,10 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
             "{wall_owner:?} endpoint={endpoint}"
         );
         let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
-        assert_eq!(entity.weapon_burst.index(), if blocked { 0 } else { 7 });
+        assert_eq!(
+            entity.seldom.weapon_burst.index(),
+            if blocked { cleared(&scene.rules) } else { 7 }
+        );
         assert_eq!(
             entity.mission, before,
             "the setter does not change mission/timer state"
@@ -183,6 +193,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
     scene.wall("Russians", (12, 20));
     scene.old_target();
     assert!(scene.sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Attack {
             attacker_id: scene.building,
@@ -190,7 +201,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
         },
         &scene.rules,
         Some(&scene.registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
@@ -209,9 +220,10 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
             .entities
             .get(scene.building)
             .unwrap()
+            .seldom
             .weapon_burst
             .index(),
-        0
+        cleared(&scene.rules)
     );
     scene
         .sim
@@ -251,8 +263,7 @@ fn generic_retaliation_archives_and_overrides_before_wall_target_admission() {
             scene.building,
             scene.target,
             &scene.rules,
-            Some(&scene.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
         assert_eq!(
@@ -264,14 +275,17 @@ fn generic_retaliation_archives_and_overrides_before_wall_target_admission() {
             MissionId::from_known(MissionType::Guard)
         );
         assert_eq!(
-            entity.suspended_attack_target.target(),
+            entity.seldom.suspended_attack_target.target(),
             Some(TargetKind::Entity(scene.target))
         );
         assert_eq!(
             entity.attack_target.target(),
             (!blocked).then_some(TargetKind::Entity(scene.target))
         );
-        assert_eq!(entity.weapon_burst.index(), if blocked { 0 } else { 7 });
+        assert_eq!(
+            entity.seldom.weapon_burst.index(),
+            if blocked { cleared(&scene.rules) } else { 7 }
+        );
     }
 }
 
@@ -285,8 +299,7 @@ fn canonical_restore_rechecks_a_wall_added_after_the_target_was_archived() {
         scene.building,
         scene.target,
         &scene.rules,
-        Some(&scene.registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     scene.wall("Russians", (12, 20));
     assert!(
@@ -295,14 +308,13 @@ fn canonical_restore_rechecks_a_wall_added_after_the_target_was_archived() {
             .mission_restore_represented(
                 scene.building,
                 &scene.rules,
-                Some(&scene.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
     );
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
-    assert_eq!(entity.weapon_burst.index(), 0);
+    assert_eq!(entity.seldom.weapon_burst.index(), cleared(&scene.rules));
     assert_eq!(
         entity.mission.current(),
         MissionId::from_known(MissionType::Guard)
@@ -331,6 +343,7 @@ fn damage_retaliation_keeps_wall_geometry_through_the_mission_override() {
         None,
         &scene.rules,
         Some(&scene.registry),
+        &mut Vec::new(),
     );
     assert_eq!(
         scene.target(),

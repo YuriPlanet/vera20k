@@ -32,6 +32,7 @@
 //! Saved campaigns retain their Scenario index and incoming carry-over;
 //! their wins enter this same continuation after saved-world admission.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::VecDeque;
 
 use super::{App, AppState};
@@ -113,6 +114,17 @@ fn map_select_stages(mapsel: &IniFile, side: &str) -> Vec<String> {
         .map(|stage: u32| section.read_string(&stage.to_string(), "", MAP_SELECT_VALUE_CAPACITY))
         .take_while(|name| !name.is_empty())
         .collect()
+}
+
+/// The index of `side`'s MAPSELMD stage whose `Scenario=` is `scenario`, as
+/// `0x005CF760` finds the current stage.
+pub(crate) fn map_select_stage_of(mapsel: &IniFile, side: &str, scenario: &str) -> Option<u16> {
+    map_select_stages(mapsel, side)
+        .iter()
+        .position(|stage| {
+            map_select_value(mapsel, stage, "Scenario").eq_ignore_ascii_case(scenario)
+        })
+        .and_then(|index| u16::try_from(index).ok())
 }
 
 fn map_select_value(mapsel: &IniFile, section: &str, key: &str) -> String {
@@ -235,9 +247,13 @@ fn victory_plan(
 impl App {
     /// Read everything the victory tail needs while the won Simulation is
     /// still resident. Only a won mission of an installed campaign qualifies.
-    pub(super) fn take_campaign_victory(state: &mut AppState) -> Option<CampaignVictory> {
-        let campaign = state.match_state.startup.installed_campaign()?;
-        let runtime = state.match_state.sim_runtime.as_mut()?;
+    pub(super) fn take_campaign_victory(
+        match_state: &mut crate::app::match_runtime::state::MatchState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
+        profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    ) -> Option<CampaignVictory> {
+        let campaign = match_state.startup.installed_campaign()?;
+        let runtime = match_state.sim_runtime.write_sim(SimWrite::Lifecycle)?;
         let sim = &mut runtime.simulation;
         let owner = sim.session().current_house()?;
         let won = sim.ready_outcome_for_owner(owner).is_some_and(|outcome| {
@@ -246,12 +262,9 @@ impl App {
         if !won {
             return None;
         }
-        let movies = state
-            .process_assets
-            .native_rules()
-            .map(|rules| rules.movies());
+        let movies = process_assets.native_rules().map(|rules| rules.movies());
         let (queue, branch) = victory_plan(
-            &state.match_state.map_basic,
+            &match_state.map_basic,
             |name| {
                 let movies = movies?;
                 movies.name(movies.find_index(name)).map(str::to_owned)
@@ -266,8 +279,8 @@ impl App {
             VictoryBranch::Shell => VictoryEnd::Shell,
             VictoryBranch::Credits => VictoryEnd::Credits,
             VictoryBranch::MapSelect => {
-                let mapsel = state.process_assets.manager().and_then(|assets| {
-                    crate::rules::retail_sources::select_ini(assets, "MAPSELMD.INI")
+                let mapsel = process_assets.manager().and_then(|assets| {
+                    crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mapsel())
                         .map_err(|error| log::warn!("MapSelect: {error}"))
                         .ok()
                 });
@@ -281,14 +294,9 @@ impl App {
                             ))
                     });
                 let current = sim.session().map_name();
-                // Victory685A38..685A5C selects +108 with Global0, otherwise +4.
-                let skip = state.match_state.map_basic.skip_map_select.unwrap_or(false);
-                let next = if sim.global_variables()[0] {
-                    state.match_state.map_basic.alt_next_scenario.as_deref()
-                } else {
-                    state.match_state.map_basic.next_scenario.as_deref()
-                }
-                .unwrap_or("");
+                let skip = match_state.map_basic.skip_map_select.unwrap_or(false);
+                let next =
+                    skip_map_select_destination(&match_state.map_basic, &sim.global_variables());
                 let pick = map_select(
                     mapsel.as_ref().map(|selected| &selected.ini),
                     side,
@@ -314,26 +322,25 @@ impl App {
                         None
                     }
                 };
-                match (scenario, sim.session().campaign_mission_counter()) {
-                    (Some(scenario), Some(counter)) => {
-                        let startup = Box::new(campaign.next_mission(
-                            scenario,
-                            counter + 1,
-                            state.persistence.options_profile.difficulty,
-                            sim.session().game_options().game_speed,
-                            sim.save_campaign_carry_over(),
-                            &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
-                        ));
-                        if init_failed {
-                            VictoryEnd::MapSelectFailed(startup)
-                        } else {
-                            VictoryEnd::NextMission {
-                                startup,
-                                rearm_initial_save: !skip,
-                            }
-                        }
-                    }
-                    _ => VictoryEnd::Shell,
+                // A name that is no map name starts nothing, as a MapSelect fault.
+                let startup = match (scenario, sim.session().campaign_mission_counter()) {
+                    (Some(scenario), Some(counter)) => campaign.next_mission(
+                        scenario,
+                        counter + 1,
+                        profile.difficulty,
+                        sim.session().game_options().game_speed,
+                        sim.save_campaign_carry_over(),
+                        &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
+                    ),
+                    _ => None,
+                };
+                match startup.map(Box::new) {
+                    Some(startup) if init_failed => VictoryEnd::MapSelectFailed(startup),
+                    Some(startup) => VictoryEnd::NextMission {
+                        startup,
+                        rearm_initial_save: !skip,
+                    },
+                    None => VictoryEnd::Shell,
                 }
             }
         };
@@ -370,27 +377,28 @@ impl App {
                 // ShellMessageBox5D3490 with MSG:UnableMapSelect/TXT_OK.
                 // Victory685A56 ignores its result and proceeds after any
                 // dismissal. Failed Init never reaches5AE126's ABCE08 write.
-                let labels =
-                    crate::ui::main_menu_dialogs::ShellMessageBoxLabels::map_select_failure(
-                        &|key, fallback| Self::csf_label(state, key, fallback),
-                    );
+                let shell_box =
+                    crate::ui::main_menu_dialogs::map_select_failure(&|key, fallback| {
+                        state.csf_label(key, fallback)
+                    });
                 Self::destroy_current_shell_dialog(state);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::open_shell_message_box(
-                    state,
-                    crate::app::frontend::state::ShellMessageBox {
-                        labels,
-                        purpose:
-                            crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(
-                                Box::new(CampaignVictory {
-                                    movies: VecDeque::new(),
-                                    then: VictoryEnd::NextMission {
-                                        startup,
-                                        rearm_initial_save: false,
-                                    },
-                                }),
-                            ),
-                    },
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    shell_box,
+                    crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(Box::new(
+                        CampaignVictory {
+                            movies: VecDeque::new(),
+                            then: VictoryEnd::NextMission {
+                                startup,
+                                rearm_initial_save: false,
+                            },
+                        },
+                    )),
                 );
             }
             VictoryEnd::NextMission {
@@ -411,7 +419,24 @@ impl App {
     }
 }
 
-#[cfg(test)]
+/// `GameExit::Victory @ 0x00685A38..0x00685A5C`: with `[Basic]
+/// SkipMapSelect=yes`, global variable 1 picks AltNextScenario (`+0x108`),
+/// otherwise NextScenario (`+0x4`). The byte tested at `0x00685A42` is
+/// Scenario+0x1CD9: GetGlobalVariable `0x00689760` reads the value of global
+/// `index` at `+0x1CB0 + 41 * index`, so +0x1CD9 is global 1.
+fn skip_map_select_destination<'a>(
+    basic: &'a crate::map::basic::BasicSection,
+    globals: &[bool; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+) -> &'a str {
+    if globals[1] {
+        basic.alt_next_scenario.as_deref()
+    } else {
+        basic.next_scenario.as_deref()
+    }
+    .unwrap_or("")
+}
+
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -453,6 +478,23 @@ Scenario=ALL03umd.MAP
                 scenario: "ALL03umd.MAP".into(),
                 stage: 2
             }
+        );
+    }
+
+    #[test]
+    fn skip_map_select_destination_reads_global_one() {
+        let basic =
+            basic("SkipMapSelect=yes\nNextScenario=all02UMD.map\nAltNextScenario=all03UMD.map");
+        let mut globals = [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT];
+        globals[0] = true;
+        assert_eq!(
+            skip_map_select_destination(&basic, &globals),
+            "all02UMD.map"
+        );
+        globals[1] = true;
+        assert_eq!(
+            skip_map_select_destination(&basic, &globals),
+            "all03UMD.map"
         );
     }
 
@@ -707,14 +749,16 @@ Scenario=ALL03umd.MAP
                             next.eq_ignore_ascii_case(&format!("{}.MAP", pair[1])),
                             "{current} -> {next}"
                         );
-                        startup = startup.next_mission(
-                            next,
-                            startup.mission_counter() + 1,
-                            1,
-                            3,
-                            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-                            &mut clock,
-                        );
+                        startup = startup
+                            .next_mission(
+                                next,
+                                startup.mission_counter() + 1,
+                                1,
+                                3,
+                                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                                &mut clock,
+                            )
+                            .expect("a retail mission name");
                         let mut metadata =
                             crate::rules::campaign_loading::CampaignLoadingMetadata::default();
                         metadata.apply_ini(&mission.ini, startup.scenario());

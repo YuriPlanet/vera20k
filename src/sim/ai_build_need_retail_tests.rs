@@ -74,6 +74,11 @@ fn stock_scene(root: &std::path::Path) -> HeadlessScenario {
         multi_engineer: false,
         harvester_truce: false,
         ally_change_allowed: true,
+        bans: Default::default(),
+        teams: None,
+        auto_balance: false,
+        queue: Vec::new(),
+        host_rules: Default::default(),
     };
     load_session(root, "XMP03T4.MAP", 0x1234_5678, launch).expect("stock Battle loads")
 }
@@ -261,7 +266,12 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 .is_some_and(|miner| !miner.cargo().is_empty());
             scene
                 .runtime
-                .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    &commands,
+                    22,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .expect("ordinary bound-resource frame");
             let sim = scene.sim();
             let rules = &scene.runtime.resources.rules;

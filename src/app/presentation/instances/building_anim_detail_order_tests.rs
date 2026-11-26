@@ -5,6 +5,7 @@
 use super::*;
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
+use crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::render::tactical_compat::welding_tests as native;
 use crate::rules::ruleset::DetailRules;
@@ -14,6 +15,8 @@ use crate::sim::world::display_layers::DisplayLayer;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+// Ares simulates WeldingSys itself (hooks 0x62DF05, 0x62FD60) and builds no
+// ParticleClass children for this stock draw path.
 #[test]
 fn retail_building_slot_preserves_mixed_display_detail_query_order() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -82,7 +85,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
     let rank = |id| ground.iter().position(|&value| value == id).unwrap();
     assert!(rank(system) < rank(free) && rank(free) < rank(slot));
 
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let center = crate::util::lepton::absolute_leptons_to_screen(at.x, at.y, at.z);
     let camera = [center.0 - 80., center.1 - 60.];
     let size = [640, 480];
@@ -95,7 +98,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         .iter()
         .find(|row| row["input"]["name"] == "unsigned_threshold_wrap")
         .unwrap();
-    let has = |parents: &[PlannedObjectInstance], id| {
+    let has = |parents: &[OwnedPlannedObject], id| {
         parents.iter().any(|parent| {
             parent.parent.id == id && (parent.body_draw.is_some() || !parent.pieces.is_empty())
         })
@@ -106,7 +109,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             HashMap::from([(
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: "GAPOWR_A".to_owned(),
+                    type_id: "GAPOWR_A".into(),
                     facing: 0,
                     frame: 0,
                     house_color: HouseColorIndex(0),
@@ -130,8 +133,9 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         // remains between System and slot; here the FPS gate rejects it first.
         let atlas = SpriteAtlas::from_test_entries(entries);
         let before = (sim.state_hash(), sim.rng_state());
-        let mut prepared = Vec::new();
-        let building = sim.entities().get(plant).unwrap();
+        let mut prepared = PlannedObjects::default();
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
+        let building = frame.object(plant).unwrap();
         emit_building_anims(
             &mut prepared,
             &order,
@@ -145,14 +149,28 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             &lighting,
             (building.position.rx(), building.position.ry()),
             &sim,
+            &frame,
+            Some(building.owner()),
             building,
+            &super::admitted_slot_anims(
+                &sim,
+                &frame,
+                building,
+                crate::app::presentation::instances::TacticalAdmission {
+                    corner: camera,
+                    size: [size[0] as f32, size[1] as f32],
+                },
+            ),
+            &mut super::super::overlays::AnimTypeArts::new(&rules, &atlas),
             &|_| 0,
             0.,
             10000.,
             [camera[0], camera[1], size[0] as f32, size[1] as f32],
             DrawState::default(),
+            0,
             2,
         );
+        let prepared = prepared.into_owned();
         // The shared body/shadow emitter retains an empty parent when neither
         // source frame is available. That parent still reaches admission.
         assert_eq!(prepared.len(), 1);
@@ -169,17 +187,18 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         });
         detail.throttle_tail(0);
         let detail = RefCell::new(detail);
-        let mut parents = Vec::new();
+        let mut parents = PlannedObjects::default();
         build_display_effect_instances(
             &DisplayEffectInputs {
-                interpolation: None,
                 sim: &sim,
+                frame: &frame,
                 rules: &rules,
                 camera,
                 render_size: size,
                 tactical: [0, 0, size[0], size[1]],
                 zoom: 1.,
                 axis: crate::render::batch::DepthAxis::NONE,
+                z_seed: crate::render::native_z::DEFAULT_Z,
                 atlas: Some(&atlas),
                 detail: &detail,
                 detail_level: 2,
@@ -193,11 +212,9 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             },
             &mut parents,
             &order,
-            prepared
-                .into_iter()
-                .map(|parent| (parent.parent.id, parent))
-                .collect(),
+            prepared.into(),
         );
+        let parents = parents.into_owned();
         assert_eq!(
             has(&parents, system),
             control["draws"][0]["performance_passed"]

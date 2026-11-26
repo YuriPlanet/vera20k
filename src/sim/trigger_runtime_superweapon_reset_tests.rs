@@ -92,7 +92,7 @@ fn execute(
     entry: ActionEntry,
     owner_present: bool,
 ) -> bool {
-    let resolved = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let resolved = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     let context = TriggerActionContext {
         live_index: None,
         incoming_house: owner_present.then_some(owner),
@@ -106,7 +106,7 @@ fn execute(
             &mut effects,
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     });
     assert!(draws.is_empty() && effects.is_empty());
@@ -258,7 +258,7 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
         id,
         (10, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     let held = sim.super_placement_anims();

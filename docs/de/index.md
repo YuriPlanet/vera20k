@@ -8,6 +8,8 @@ lang: de
 
 [Svenska](../sv/) · [简体中文](../zh-CN/) · **Deutsch** · [العربية](../ar/) · [Русский](../ru/) · [ไทย](../th/) · [Türkçe](../tr/) · [English](../)
 
+[Kampagnenmanifeste](campaign-manifest.md)
+
 Red Alert 2: Yuri's Revenge — in Rust von Grund auf neu entwickelt.
 
 Eine kurze Übersicht über den Code. Wenn sie dem Code widerspricht, hat der Code recht. Der `//!`-Kommentar am Anfang jedes Moduls beschreibt, was es tut und wovon es abhängen darf.
@@ -30,6 +32,8 @@ Eine kurze Übersicht über den Code. Wenn sie dem Code widerspricht, hat der Co
 Der gesamte veränderliche Spielzustand liegt in einer einzigen Struktur, `Simulation` (`src/sim/world/mod.rs`). `SimRuntime::advance_frame()` führt einen Frame in der Reihenfolge des Originalspiels aus.
 
 Die App setzt Spielereingaben in Befehle für die Simulation um. Nach jedem Frame übergibt sie den neuen Zustand an den Renderer und spielt die Sounds ab, die der Frame erzeugt hat. Das Rendering liest den Simulationszustand nur, und `sim/` hängt nie von `render/`, `ui/`, `audio/` oder `net/` ab.
+
+![Die Anwendung sendet Befehle an die Simulation, die den Weltzustand zurückgibt; die Anwendung sendet Zeichendaten an das Rendering.](../images/architecture.de.png)
 
 ## Determinismus
 

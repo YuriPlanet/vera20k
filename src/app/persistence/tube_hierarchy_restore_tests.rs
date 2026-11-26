@@ -8,7 +8,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         ZonePrecheckExclusions, ZonePrecheckOutcome, zone_precheck_flat,
     };
     let rules = load_fixture_rules();
-    let registry = OverlayTypeRegistry::empty();
     let cells = (0..32)
         .flat_map(|y| {
             (0..32).map(move |x| {
@@ -110,7 +109,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
     let sidebar = crate::sim::snapshot::SavedSidebarOrder::new(
         missing_owner,
         std::array::from_fn(|_| Vec::new()),
-        [0; 4],
     );
     let failing_bytes = GameSnapshot::save_validated_with_presentation(
         &failing,
@@ -124,7 +122,8 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     // The independent fixture shares the immutable template's dummy; restore
     // the live witness after fixture setup, before testing the transaction.
     live.set_level_slope(-7, 11);
@@ -136,7 +135,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&template),
-        Some(&registry),
     );
     assert!(
         matches!(failure, Err(PreparedLoadError::SidebarOrder(_))),
@@ -158,7 +156,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(&rules),
         Some(&template),
-        Some(&registry),
     )
     .unwrap();
     assert!(

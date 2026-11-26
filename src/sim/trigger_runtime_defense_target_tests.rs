@@ -46,7 +46,7 @@ fn apply(sim: &mut Simulation, owner: Option<InternedId>, kind: i32, tail: &str)
         .unwrap()
         .entries()[0]
         .clone();
-    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     sim.apply_live_trigger_action(
         &action,
         TriggerActionContext {
@@ -57,7 +57,7 @@ fn apply(sim: &mut Simulation, owner: Option<InternedId>, kind: i32, tail: &str)
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -132,7 +132,13 @@ fn ai_fire_cells(
     owner: InternedId,
 ) -> Vec<(u16, u16)> {
     AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
-    crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, None, FrameEffects::default());
+    crate::sim::superweapon::ai_fire::try_fire(
+        sim,
+        rules,
+        owner,
+        None,
+        &mut FrameEffects::default(),
+    );
     AI_FIRE_LOG.with(|log| {
         log.borrow_mut()
             .take()

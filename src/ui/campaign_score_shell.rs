@@ -3,29 +3,38 @@
 //! Campaign victory reaches `0x6C8E80` from `0x685960`; that body selects
 //! dialog `0x103` and the dialog proc `0x6C8FF0`. Its `RT_DIALOG` template is
 //! the campaign score page, not the skirmish results dialog `0x108`. The
-//! control ids, captions, template DLU rectangles and style bits below come
-//! from retail `gamemd.exe`'s `RT_DIALOG 0x103`. The tooltip keys and kind-1
-//! reveal parameters were read by executing the existing
-//! `shell_help_keys.help_label` and `shell_static_timers.run_getter` helpers
-//! against that retail executable. The control windows are the executed
-//! WM_INITDIALOG relayout (`shell_relayout.py`), not the template rects: at
-//! 800x600 the text statics move 50 pixels up and `0x72B` takes the
-//! `0x00608500` art override.
+//! control ids, captions and style bits below come from retail `gamemd.exe`'s
+//! `RT_DIALOG 0x103`; the templates are `shell_layout.ini`'s `[0x103]`. The
+//! tooltip keys and kind-1 reveal parameters were read by executing the
+//! existing `shell_help_keys.help_label` and `shell_static_timers.run_getter`
+//! helpers against that retail executable. The control windows are the
+//! executed WM_INITDIALOG relayout (`shell_relayout.py`): at 800x600 the text
+//! statics move 50 pixels up and `0x72B` takes the `0x00608500` art override.
 //!
 //! The page opens with its statics hidden and the emblem timer unarmed; the
 //! shell slide's SHOW completion (`0x4EC`) starts both and plays
 //! `ScoreAnimSound`. The app supplies already-resolved display strings. This
 //! module owns no score calculation, campaign progression or asset lookup.
+//!
+//! The same module drives the LAN Cooperative campaign-end dialog `0xBC7`
+//! (`CampaignEndScoreClass vt+4` `0x00471420`, proc `0x00470D30`): it loads
+//! the same side art, slides the same way and animates `0x72B` on the same
+//! timer, with its own controls, monitor `0x71C` and score cells. Its
+//! template, kind-1 groups, help keys and relayout were executed the same
+//! way; its body statics keep their template windows at every retail size.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{self, RectPx, RightPanelRects, ShellScale, child_window};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
-use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
+use crate::ui::score_shell::{ScoreRow, ScoreStatic, ScoreStatics};
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::geom::{self, RectPx, fit_window};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::static_reveal::{HEADING_KIND1, Kind1Params, STATUS_LINE_KIND1};
 
-pub const CAMPAIGN_SCORE_DIALOG: DialogId = DialogId(0x0103);
+pub const CAMPAIGN_SCORE_DIALOG: DialogResourceId = DialogResourceId(0x0103);
 
 pub const CONTINUE_BUTTON: u16 = 0x0423;
 pub const TITLE_STATIC: u16 = 0x0694;
@@ -55,189 +64,214 @@ pub const CAMPAIGN_SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: CAMPAIGN_SCORE_DIALOG,
     title_key: "GUI:StandaloneScore",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CONTINUE_BUTTON,
-        dlu_top: 346,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:StandScoreButtonReturn",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(
+        CONTINUE_BUTTON,
+        346,
+        "GUI:Continue",
+        "STT:StandScoreButtonReturn",
+    ),
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CampaignScoreControlKind {
-    Button,
-    Static,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CampaignScoreAction {
-    Continue,
-}
-
-/// Executed kind-1 timing from `0x602490`, `0x600CA0`, `0x6015E0` and
-/// `0x601D20` for the campaign page's controls.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CampaignScoreRevealSpec {
-    pub interval_ms: u64,
-    pub step: u32,
-    pub highlight_range: u32,
-}
-
-const TEXT_REVEAL: CampaignScoreRevealSpec = CampaignScoreRevealSpec {
-    interval_ms: 30,
-    step: 1,
-    highlight_range: 8,
-};
-
-const LONG_TEXT_REVEAL: CampaignScoreRevealSpec = CampaignScoreRevealSpec {
-    interval_ms: 15,
-    step: 3,
-    highlight_range: 16,
-};
-
-/// One control from retail `RT_DIALOG 0x103`. `template_dlu` preserves the
-/// resource's raw 6x13 dialog units; `native_style` is its original Win32
-/// style word. A `None` reveal marks controls which do not use kind-1 text.
+/// One kind-1 static or the Continue button of a template: its id, alignment
+/// (the low two bits of its Win32 style), template caption, status help and
+/// kind-1 reveal (`None` for Continue).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CampaignScoreControlSpec {
     pub id: u16,
-    pub kind: CampaignScoreControlKind,
-    pub template_dlu: RectPx,
-    pub native_style: u32,
+    pub align: ShellAlign,
     pub caption_key: Option<&'static str>,
     pub tooltip_key: Option<&'static str>,
-    pub action: Option<CampaignScoreAction>,
-    pub reveal: Option<CampaignScoreRevealSpec>,
+    pub reveal: Option<Kind1Params>,
 }
 
-/// Controls are in the order stored in the retail `RT_DIALOG 0x103` template.
-/// `0x72B` is the kind-4 static whose client rect `0x00608500` sizes to the
-/// current SCRA frame; its 100 ms interval is `ShellStatic__AnimationInterval`
-/// `0x006033F0`'s `0x103`/`0x72B` branch. The art itself is owned by the
-/// renderer (`SCRT` panel plus the `SCRA` sequence), not by this layout module.
-pub const CAMPAIGN_SCORE_CONTROLS: [CampaignScoreControlSpec; 12] = [
+/// Executed kind-1 timing from `0x602490`, `0x600CA0`, `0x6015E0` and
+/// `0x601D20`: the short texts take the heading's, the commendation and the
+/// status line the status line's.
+const TEXT_REVEAL: Option<Kind1Params> = Some(HEADING_KIND1);
+const LONG_TEXT_REVEAL: Option<Kind1Params> = Some(STATUS_LINE_KIND1);
+
+const fn kind1(interval_ms: u64, range: u32) -> Option<Kind1Params> {
+    Some(Kind1Params {
+        interval: Duration::from_millis(interval_ms),
+        step: 1,
+        range,
+    })
+}
+
+const fn control(
+    id: u16,
+    align: ShellAlign,
+    caption_key: Option<&'static str>,
+    tooltip_key: Option<&'static str>,
+    reveal: Option<Kind1Params>,
+) -> CampaignScoreControlSpec {
     CampaignScoreControlSpec {
-        id: CONTINUE_BUTTON,
-        kind: CampaignScoreControlKind::Button,
-        template_dlu: RectPx::new(425, 346, 108, 23),
-        native_style: 0x5000_000B,
-        caption_key: Some("GUI:Continue"),
-        tooltip_key: Some("STT:StandScoreButtonReturn"),
-        action: Some(CampaignScoreAction::Continue),
-        reveal: None,
-    },
-    CampaignScoreControlSpec {
-        id: PAR_TIME_LABEL_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(125, 266, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:ParTime"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: YOUR_TIME_LABEL_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(242, 266, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:YourTime"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: PAR_TIME_VALUE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(125, 277, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreParTime"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: YOUR_TIME_VALUE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(242, 277, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreYourTime"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: RANK_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(85, 35, 257, 10),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreTitle"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: COMMENDATION_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(85, 50, 257, 40),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreMessage"),
-        action: None,
-        reveal: Some(LONG_TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: ENEMIES_DESTROYED_LABEL_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(85, 100, 110, 10),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:HeadsTaken"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: ENEMIES_DESTROYED_VALUE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(200, 100, 142, 10),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreKills"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: STATUS_HELP_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(10, 357, 303, 12),
-        native_style: 0x5000_0200,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(LONG_TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: SCORE_ART_REGION_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(72, 115, 282, 141),
-        native_style: 0x5000_0007,
-        caption_key: None,
-        tooltip_key: None,
-        action: None,
-        reveal: None,
-    },
-    CampaignScoreControlSpec {
-        id: TITLE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(425, 1, 108, 10),
-        native_style: 0x5002_0001,
-        caption_key: Some("GUI:StandaloneScore"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
+        id,
+        align,
+        caption_key,
+        tooltip_key,
+        reveal,
+    }
+}
+
+const L: ShellAlign = ShellAlign::NONE;
+const C: ShellAlign = ShellAlign::H_CENTER;
+const R: ShellAlign = ShellAlign::H_RIGHT;
+const BLANK: Option<&str> = Some("GUI:Blank");
+
+/// `0x103`'s Continue and kind-1 statics in template order. `0x72B` is the
+/// kind-4 static whose client rect `0x00608500` sizes to the current SCRA
+/// frame; its 100 ms interval is `ShellStatic__AnimationInterval`
+/// `0x006033F0`'s `0x103`/`0x72B` branch.
+#[rustfmt::skip]
+pub const CAMPAIGN_SCORE_CONTROLS: [CampaignScoreControlSpec; 11] = [
+    control(CONTINUE_BUTTON, L, Some("GUI:Continue"), Some("STT:StandScoreButtonReturn"), None),
+    control(PAR_TIME_LABEL_STATIC, C, Some("GUI:ParTime"), None, TEXT_REVEAL),
+    control(YOUR_TIME_LABEL_STATIC, C, Some("GUI:YourTime"), None, TEXT_REVEAL),
+    control(PAR_TIME_VALUE_STATIC, C, BLANK, Some("STT:StandScoreParTime"), TEXT_REVEAL),
+    control(YOUR_TIME_VALUE_STATIC, C, BLANK, Some("STT:StandScoreYourTime"), TEXT_REVEAL),
+    control(RANK_STATIC, L, BLANK, Some("STT:StandScoreTitle"), TEXT_REVEAL),
+    control(COMMENDATION_STATIC, L, BLANK, Some("STT:StandScoreMessage"), LONG_TEXT_REVEAL),
+    control(ENEMIES_DESTROYED_LABEL_STATIC, L, Some("GUI:HeadsTaken"), None, TEXT_REVEAL),
+    control(ENEMIES_DESTROYED_VALUE_STATIC, L, BLANK, Some("STT:StandScoreKills"), TEXT_REVEAL),
+    control(STATUS_HELP_STATIC, L, BLANK, None, LONG_TEXT_REVEAL),
+    control(TITLE_STATIC, C, Some("GUI:StandaloneScore"), None, TEXT_REVEAL),
 ];
+
+/// The LAN Cooperative campaign-end dialog `0xBC7`
+/// (`CampaignEndScoreClass vt+4` `0x00471420`, proc `0x00470D30`).
+pub const CAMPAIGN_END_DIALOG: DialogResourceId = DialogResourceId(0x0BC7);
+pub const CAMPAIGN_END_CONTINUE: u16 = 0x06D1;
+pub const CAMPAIGN_END_NAME: u16 = 0x0733;
+pub const CAMPAIGN_END_NUMBER: u16 = 0x0735;
+pub const CAMPAIGN_END_DIFFICULTY: u16 = 0x0732;
+pub const CAMPAIGN_END_TIME: u16 = 0x03EA;
+/// First place's name and score, then second place's (`0x00470F73..`).
+pub const CAMPAIGN_END_PLACES: [(u16, u16); 2] = [(0x073A, 0x073B), (0x0739, 0x0738)];
+/// The right-panel warning monitor static.
+pub const CAMPAIGN_END_MONITOR: u16 = 0x071C;
+
+pub const CAMPAIGN_END_PAGE: MenuPageSpec = MenuPageSpec {
+    dialog: CAMPAIGN_END_DIALOG,
+    title_key: "GUI:CampaignResults",
+    stacked: &[],
+    back: MenuPageButtonSpec::new(
+        CAMPAIGN_END_CONTINUE,
+        346,
+        "GUI:Continue",
+        "STT:MPScoreButtonContinue",
+    ),
+};
+
+/// `0xBC7`'s kind-1 groups, executed from the same getters as `0x103`'s.
+const PLACE_LABEL_REVEAL: Option<Kind1Params> = Some(Kind1Params {
+    interval: Duration::from_millis(15),
+    step: 1,
+    range: 8,
+});
+const PLACE_REVEAL: Option<Kind1Params> = kind1(60, 32);
+const HEADER_REVEAL: Option<Kind1Params> = kind1(30, 16);
+
+/// Retail `RT_DIALOG 0xBC7`'s Continue and kind-1 statics in template order.
+/// Its score cells `0x781..0x78A` share `0xBC6`'s table `0x0081B1EC` and are
+/// not kind-1 ([`CampaignScoreCell`]).
+#[rustfmt::skip]
+pub const CAMPAIGN_END_CONTROLS: [CampaignScoreControlSpec; 18] = [
+    control(0x06D1, L, Some("GUI:Continue"), Some("STT:MPScoreButtonContinue"), None),
+    control(0x0736, C, Some("GUI:FirstPlace"), None, PLACE_LABEL_REVEAL),
+    control(0x0737, C, Some("GUI:SecondPlace"), None, PLACE_LABEL_REVEAL),
+    control(0x073A, C, BLANK, Some("STT:MPScoreLabelPlayer"), PLACE_REVEAL),
+    control(0x0739, C, BLANK, Some("STT:MPScoreLabelPlayer"), PLACE_REVEAL),
+    control(0x0733, C, BLANK, Some("STT:MPScoreLabelCampaignName"), TEXT_REVEAL),
+    control(0x0735, L, BLANK, Some("STT:MPCampEndCampaignNumber"), TEXT_REVEAL),
+    control(STATUS_HELP_STATIC, L, BLANK, None, LONG_TEXT_REVEAL),
+    control(TITLE_STATIC, C, Some("GUI:CampaignResults"), None, TEXT_REVEAL),
+    control(0x0732, C, BLANK, Some("STT:MPScoreLabelDifficulty"), TEXT_REVEAL),
+    control(0x03EA, R, BLANK, Some("STT:MPCampEndTime"), TEXT_REVEAL),
+    control(0x0738, C, BLANK, Some("STT:MPScoreLabelScore"), PLACE_REVEAL),
+    control(0x073B, C, BLANK, Some("STT:MPScoreLabelScore"), PLACE_REVEAL),
+    control(0x073C, L, Some("GUI:Player"), None, HEADER_REVEAL),
+    control(0x073D, R, Some("GUI:Kills"), None, HEADER_REVEAL),
+    control(0x073E, R, Some("GUI:Losses"), None, HEADER_REVEAL),
+    control(0x073F, R, Some("GUI:Built"), None, HEADER_REVEAL),
+    control(0x0740, R, Some("GUI:Score"), None, HEADER_REVEAL),
+];
+
+/// The dialogs this module drives. Both load the side's SCRBK/SCRT/SCRA
+/// (`0x0072D300`), slide with SCRT frames and animate `0x72B` every
+/// 100 ms, and both handle `0x72B`'s frame-zero `0x4D8` by selecting frame
+/// 29 (`0x006C93C9`, `0x00470E8E`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CampaignScoreDialog {
+    /// Campaign victory StandaloneScore `0x103`.
+    #[default]
+    Victory,
+    /// The LAN co-op campaign end `0xBC7`.
+    CampaignEnd,
+}
+
+impl CampaignScoreDialog {
+    pub const fn id(self) -> DialogResourceId {
+        self.page().dialog
+    }
+
+    pub const fn page(self) -> &'static MenuPageSpec {
+        match self {
+            Self::Victory => &CAMPAIGN_SCORE_PAGE,
+            Self::CampaignEnd => &CAMPAIGN_END_PAGE,
+        }
+    }
+
+    pub fn controls(self) -> &'static [CampaignScoreControlSpec] {
+        match self {
+            Self::Victory => &CAMPAIGN_SCORE_CONTROLS,
+            Self::CampaignEnd => &CAMPAIGN_END_CONTROLS,
+        }
+    }
+
+    pub const fn continue_button(self) -> u16 {
+        self.page().back.id
+    }
+
+    /// The controls as nodes in the order they paint: Continue presses,
+    /// each kind-1 static is a `Text` node that only hovers, and only when
+    /// it has status help; then `0xBC7`'s score cells (row by row, the name
+    /// left and the numbers right) and the art window `0x72B`.
+    pub fn nodes(self) -> vera20k_gui::NodeSpec {
+        use crate::ui::score_shell::static_node;
+        use vera20k_gui::{NodeKind, NodeSpec};
+        let node = |c: &CampaignScoreControlSpec| {
+            if c.id == self.continue_button() {
+                return NodeSpec::new(NodeKind::Button)
+                    .id(i32::from(c.id))
+                    .label(c.caption_key.unwrap_or_default());
+            }
+            let text = static_node(c.id, c.align);
+            match c.tooltip_key {
+                Some(key) => text.tooltip(key),
+                None => text,
+            }
+        };
+        let rows: &[[u16; 5]] = match self {
+            Self::Victory => &[],
+            Self::CampaignEnd => &crate::ui::coop_score_shell::ROW_CELLS,
+        };
+        let cells = rows.iter().flat_map(|ids| {
+            let align = |column| if column == 0 { L } else { R };
+            ids.iter()
+                .enumerate()
+                .map(move |(column, id)| static_node(*id, align(column)))
+        });
+        NodeSpec::new(NodeKind::Dialog)
+            .children(self.controls().iter().map(node))
+            .children(cells)
+            .child(NodeSpec::new(NodeKind::Image).id(i32::from(SCORE_ART_REGION_STATIC)))
+    }
+
+    pub fn control(self, id: u16) -> Option<&'static CampaignScoreControlSpec> {
+        self.controls().iter().find(|control| control.id == id)
+    }
+}
 
 /// Already-resolved text from the campaign victory path. The app owns all
 /// value formatting and sends these strings to the page unchanged.
@@ -247,6 +281,14 @@ pub struct CampaignScoreScreenModel {
     /// It selects the `0x72B` art window's 220- or 230-pixel height, the
     /// `0x00608500` x by one pixel, and the small/large asset tables.
     pub side: i32,
+    /// Whether the elapsed time exceeded the par time at `0x6C9231`, the same
+    /// comparison that selects the over-par rank strings and that
+    /// `ScoreDialog_Handle_ScoreThemeA` uses to pick the theme.
+    pub over_par: bool,
+    /// The theme dialog `0x103` starts on its `WM_INIT`: the side's
+    /// `CampaignScore.UnderParTheme` / `.OverParTheme` under Ares, `None` for
+    /// gamemd's literal `SCORE`.
+    pub theme: Option<String>,
     pub par_time: String,
     pub your_time: String,
     pub enemies_destroyed: String,
@@ -254,26 +296,32 @@ pub struct CampaignScoreScreenModel {
     pub commendation: String,
 }
 
-/// CSF strings resolved by the app for the fixed labels and the Continue
-/// status line. The status text is installed only when the controller reports
-/// the corresponding hover/help action.
+/// The texts `0xBC7`'s init (`0x00470D30`, `WM_INITDIALOG`) writes, resolved
+/// by the app: the campaign name `0x733`, `GUI:CampaignLabel` over the
+/// campaign's number `0x735`, `GUI:DifficultyString` `0x732`, the time
+/// `0x3EA`, and the two partners' rows as `0x00471420` sorted them.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct CampaignScoreTexts {
-    pub title: String,
-    pub continue_label: String,
-    pub continue_status: String,
-    pub par_time_label: String,
-    pub your_time_label: String,
-    pub enemies_destroyed_label: String,
+pub struct CampaignEndModel {
+    /// Scenario `+0x34B8`, which picks the score art (`0x0072D300`).
+    pub side: i32,
+    pub campaign_name: String,
+    pub campaign_number: String,
+    pub difficulty: String,
+    pub time: String,
+    pub rows: Vec<ScoreRow>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CampaignScoreControlRect {
+/// One of `0xBC7`'s plain score cells (`0x781..0x78A`): its text, alignment
+/// and the row colour `0x498` set. They paint whole, with no reveal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CampaignScoreCell {
     pub id: u16,
-    pub rect: RectPx,
+    pub text: String,
+    pub align: ShellAlign,
+    pub rgb: [u8; 3],
 }
 
-/// Geometry for the campaign score dialog at one window size. The control
+/// Geometry for a campaign score dialog at one window size. The control
 /// windows are the executed WM_INITDIALOG relayout of `0x103`
 /// (`tools/storage_oracle/shell_relayout.py`): the authored template at
 /// 640x480, its upper 50 pixels at 800x600 and the right-panel anchors of
@@ -281,126 +329,74 @@ pub struct CampaignScoreControlRect {
 /// `0x00608500` override, not the template rect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CampaignScoreLayout {
-    pub scale: ShellScale,
-    pub screen: RectPx,
+    pub page: MenuPageLayout,
     /// `SCRBK` at its native SHP size: 472x448 at width 640, 632x568 else.
     /// Its top-left is the native dialog origin `[0x00B0FC1C]`.
     pub background: RectPx,
     /// `SCRT` frame 0: 472x448, centred in `SCRBK` (x + 80 from width 800).
     pub panel: RectPx,
-    pub right_panel: RightPanelRects,
-    pub lower_strip: RectPx,
-    pub title: RectPx,
-    pub status_help: RectPx,
-    pub continue_button: RectPx,
-    pub controls: [CampaignScoreControlRect; CAMPAIGN_SCORE_CONTROLS.len()],
+    /// The body statics, the art window `0x72B` and the heading.
+    pub controls: RectTable,
 }
 
-/// Root window width the campaign score page was authored for.
-const SCORE_PAGE_W: i32 = 800;
-/// Root window height the campaign score page was authored for.
-const SCORE_PAGE_H: i32 = 600;
-/// `0x00601360`'s template rect for status line `0x695`; `0x0060B550`
-/// anchors its converted 456x21 window to `dx + 10` and the bottom edge.
-const STATUS_LINE_DLU: RectPx = RectPx::new(10, 357, 303, 12);
 /// `0x0060B950` moves `0x103`'s eight text statics up by
 /// `10 - (600 - 480) / 2` when the screen is at least 800 wide.
 const TEXT_UPPER_SHIFT: i32 = 50;
 
-impl CampaignScoreLayout {
-    /// Retail window placement for the allied side (side 0).
-    pub fn compute_layout(screen_w: u32, screen_h: u32) -> Self {
-        Self::compute_layout_for_side(screen_w, screen_h, 0)
-    }
+/// The SCRBK rectangle in the unscaled shell. The background overlay
+/// (`0x0072E730`) uses the dialog origin, and `0x0072D460` selects the
+/// small score art at width 640.
+pub(crate) fn campaign_score_background_rect(screen_w: i32, screen_h: i32) -> RectPx {
+    let (x, y) = geom::dialog_origin(screen_w, screen_h);
+    let (w, h) = if screen_w == 640 {
+        (472, 448)
+    } else {
+        (632, 568)
+    };
+    RectPx::new(x, y, w, h)
+}
 
-    /// Retail window placement for one campaign side.
-    pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
-        let page = menu_page::compute_layout(&CAMPAIGN_SCORE_PAGE, screen_w, screen_h);
-        let screen_w = screen_w as i32;
-        let screen_h = screen_h as i32;
-        let continue_button = page
-            .button_rect(CONTINUE_BUTTON)
-            .expect("campaign score page lays out Continue");
-        let status_help = status_line_rect(STATUS_LINE_DLU, screen_w, screen_h);
-        let (origin_x, origin_y) = geom::dialog_origin(screen_w, screen_h);
-        let small = screen_w == 640;
-        let background = RectPx::new(
-            origin_x,
-            origin_y,
-            if small { 472 } else { 632 },
-            if small { 448 } else { 568 },
+impl CampaignScoreLayout {
+    /// Retail window placement of either dialog for one campaign side.
+    pub fn compute(dialog: CampaignScoreDialog, screen_w: u32, screen_h: u32, side: i32) -> Self {
+        let (w, h) = (screen_w as i32, screen_h as i32);
+        let section = match dialog {
+            CampaignScoreDialog::Victory => "0x103",
+            CampaignScoreDialog::CampaignEnd => "0xBC7",
+        };
+        let (page, placed) = layout_data::menu_page(
+            dialog.page(),
+            section,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            w,
+            h,
         );
-        let panel = RectPx::new(
-            origin_x + if screen_w >= 800 { 80 } else { 0 },
-            origin_y,
-            472,
-            448,
-        );
-        let art = campaign_score_art_rect(screen_w, screen_h, side);
-        let text_shift = if screen_w >= 800 { TEXT_UPPER_SHIFT } else { 0 };
-        let controls = std::array::from_fn(|index| {
-            let spec = CAMPAIGN_SCORE_CONTROLS[index];
-            let rect = match spec.id {
-                TITLE_STATIC => page.title,
-                STATUS_HELP_STATIC => status_help,
-                CONTINUE_BUTTON => continue_button,
-                SCORE_ART_REGION_STATIC => art,
-                _ => {
-                    let template = spec.template_dlu;
-                    let rect = child_window(template.x, template.y, template.w, template.h);
-                    RectPx::new(rect.x, rect.y - text_shift, rect.w, rect.h)
-                }
-            };
-            CampaignScoreControlRect { id: spec.id, rect }
-        });
+        let shift = match dialog {
+            CampaignScoreDialog::Victory if w >= 800 => TEXT_UPPER_SHIFT,
+            _ => 0,
+        };
+        let mut controls: RectTable = placed
+            .iter()
+            .map(|(id, r)| (id, RectPx::new(r.x, r.y - shift, r.w, r.h)))
+            .collect();
+        controls.insert(TITLE_STATIC, page.title);
+        controls.insert(STATUS_HELP_STATIC, page.status_help);
+        controls.insert(SCORE_ART_REGION_STATIC, campaign_score_art_rect(w, h, side));
+        let background = campaign_score_background_rect(w, h);
+        let panel_x = background.x + if w >= 800 { 80 } else { 0 };
         Self {
-            scale: page.scale,
-            screen: page.screen,
+            panel: RectPx::new(panel_x, background.y, 472, 448),
+            page,
             background,
-            panel,
-            right_panel: page.right_panel,
-            lower_strip: page.lower_strip,
-            title: page.title,
-            status_help,
-            continue_button,
             controls,
         }
     }
 
-    /// Uniformly scale the 800x600 campaign score page into the supplied
-    /// window. This is the app's fill-window path; it keeps the large art.
-    pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> Self {
-        Self::compute_responsive_layout_for_side(screen_w, screen_h, 0)
-    }
-
-    /// Uniformly scale the 800x600 page for one campaign side.
-    pub fn compute_responsive_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
-        let base = Self::compute_layout_for_side(SCORE_PAGE_W as u32, SCORE_PAGE_H as u32, side);
-        let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-        base.scaled(scale)
-    }
-
-    fn scaled(mut self, scale: ShellScale) -> Self {
-        self.scale = scale;
-        self.screen = RectPx::new(0, 0, scale.window().w, scale.window().h);
-        self.title = scale.scale_rect(self.title);
-        self.status_help = scale.scale_rect(self.status_help);
-        self.continue_button = scale.scale_rect(self.continue_button);
-        self.background = scale.scale_rect(self.background);
-        self.panel = scale.scale_rect(self.panel);
-        self.right_panel = scale.scale_panel(self.right_panel);
-        self.lower_strip = scale.scale_rect(self.lower_strip);
-        for control in &mut self.controls {
-            control.rect = scale.scale_rect(control.rect);
-        }
-        self
-    }
-
     pub fn control_rect(&self, id: u16) -> Option<RectPx> {
-        self.controls
-            .iter()
-            .find(|control| control.id == id)
-            .map(|control| control.rect)
+        match id {
+            CAMPAIGN_END_MONITOR => Some(self.page.warning_monitor),
+            id => self.controls.get(id).or_else(|| self.page.button_rect(id)),
+        }
     }
 }
 
@@ -411,94 +407,30 @@ impl CampaignScoreLayout {
 fn campaign_score_art_rect(screen_w: i32, screen_h: i32, side: i32) -> RectPx {
     let (origin_x, origin_y) = geom::dialog_origin(screen_w, screen_h);
     // `0x00608500` tests `DAT_007f5be4` (800), not the 640 asset switch.
-    let compact = screen_w < 800;
-    let (x, y, height) = match (side == 0, compact) {
-        (true, true) => (24, 142, 220),
-        (true, false) => (104, 142, 220),
-        (false, true) => (23, 130, 230),
-        (false, false) => (103, 130, 230),
+    let x = if screen_w < 800 { 24 } else { 104 };
+    let (x, y, height) = if side == 0 {
+        (x, 142, 220)
+    } else {
+        (x - 1, 130, 230)
     };
     RectPx::new(origin_x + x, origin_y + y, 424, height)
 }
 
-/// Module-level retail layout entry point for callers which keep page layouts
-/// alongside their sibling shell functions.
-pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_layout(screen_w, screen_h)
-}
+vera20k_gui::scaled_rects!(CampaignScoreLayout {
+    page,
+    background,
+    panel,
+    controls
+});
 
-/// Module-level retail layout entry point for one campaign side.
-pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_layout_for_side(screen_w, screen_h, side)
-}
-
-/// Module-level responsive layout entry point.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_responsive_layout(screen_w, screen_h)
-}
-
-/// Module-level responsive layout entry point for one campaign side.
-pub fn compute_responsive_layout_for_side(
-    screen_w: u32,
-    screen_h: u32,
-    side: i32,
-) -> CampaignScoreLayout {
-    CampaignScoreLayout::compute_responsive_layout_for_side(screen_w, screen_h, side)
-}
-
-fn reveal_params(spec: CampaignScoreRevealSpec) -> Kind1Params {
-    Kind1Params {
-        interval: Duration::from_millis(spec.interval_ms),
-        step: spec.step,
-        range: spec.highlight_range,
-    }
-}
-
-/// A resolved campaign score static with native kind-1 paint/reveal state.
-#[derive(Debug, Clone)]
-pub struct CampaignScoreStatic {
-    pub id: u16,
-    reveal_spec: CampaignScoreRevealSpec,
-    reveal: PresentedKind1Static,
-}
-
-impl CampaignScoreStatic {
-    fn new(
-        spec: &CampaignScoreControlSpec,
-        text: &str,
-        reveal_spec: CampaignScoreRevealSpec,
-        now: Instant,
-    ) -> Self {
-        let mut reveal = PresentedKind1Static::new(reveal_params(reveal_spec));
-        reveal.set_text(text, now);
-        Self {
-            id: spec.id,
-            reveal_spec,
-            reveal,
-        }
-    }
-
-    pub fn text(&self) -> &str {
-        self.reveal.text()
-    }
-
-    pub fn reveal_spec(&self) -> CampaignScoreRevealSpec {
-        self.reveal_spec
-    }
-
-    /// Reveal window for this composition. The app acknowledges a presented
-    /// frame through [`CampaignScorePage::commit_presented`].
-    pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
-        self.reveal.paint(now)
-    }
-}
-
-/// The open campaign victory score dialog `0x103`.
+/// The open campaign score dialog, `0x103` or `0xBC7`.
 #[derive(Debug, Clone)]
 pub struct CampaignScorePage {
-    pub model: CampaignScoreScreenModel,
-    pub texts: CampaignScoreTexts,
-    statics: Vec<CampaignScoreStatic>,
+    pub dialog: CampaignScoreDialog,
+    /// Scenario `+0x34B8`, which picks the art window (`0x00608500`).
+    pub side: i32,
+    pub statics: ScoreStatics,
+    cells: Vec<CampaignScoreCell>,
     emblem_animation: Option<CampaignScoreEmblemAnimation>,
     /// The native SHOW completion (`0x4EC`) has started reveals and the
     /// kind-4 timer. False until then, including a page whose slide was
@@ -517,14 +449,6 @@ struct CampaignScoreEmblemAnimation {
 }
 
 impl CampaignScoreEmblemAnimation {
-    fn new(frame_count: usize, now: Instant) -> Option<Self> {
-        (frame_count > 0).then_some(Self {
-            frame_count,
-            frame: 0,
-            next_tick_at: now + CAMPAIGN_SCORE_EMBLEM_INTERVAL,
-        })
-    }
-
     /// A due native `WM_TIMER` advances exactly one frame; overdue timer
     /// periods coalesce instead of jumping through unpainted frames. On the
     /// SCRA wrap to zero the parent immediately selects frame 29 again.
@@ -544,54 +468,140 @@ impl CampaignScoreEmblemAnimation {
         }
         self.frame
     }
-
-    fn next_tick_at(&self) -> Instant {
-        self.next_tick_at
-    }
 }
 
 impl CampaignScorePage {
-    /// Install the app-resolved values into the native `0x103` controls.
-    pub fn open(model: CampaignScoreScreenModel, texts: CampaignScoreTexts, now: Instant) -> Self {
-        let mut statics = Vec::with_capacity(10);
-        for spec in CAMPAIGN_SCORE_CONTROLS {
-            let Some(reveal) = spec.reveal else {
-                continue;
+    /// The init of `dialog`: each kind-1 static gets the text and colour
+    /// `value` gives its id, else its template caption resolved by `caption`.
+    fn open_dialog(
+        dialog: CampaignScoreDialog,
+        side: i32,
+        value: impl Fn(u16) -> Option<(String, Option<[u8; 3]>)>,
+        caption: impl Fn(&'static str) -> String,
+        now: Instant,
+    ) -> Self {
+        let statics = dialog.controls().iter().filter_map(|spec| {
+            let reveal = spec.reveal?;
+            let (text, rgb) = match spec.id {
+                STATUS_HELP_STATIC => (String::new(), None),
+                id => value(id)
+                    .unwrap_or_else(|| (spec.caption_key.map(&caption).unwrap_or_default(), None)),
             };
-            let text: &str = match spec.id {
-                TITLE_STATIC => &texts.title,
-                STATUS_HELP_STATIC => "",
-                PAR_TIME_LABEL_STATIC => &texts.par_time_label,
-                YOUR_TIME_LABEL_STATIC => &texts.your_time_label,
-                PAR_TIME_VALUE_STATIC => &model.par_time,
-                YOUR_TIME_VALUE_STATIC => &model.your_time,
-                RANK_STATIC => &model.rank,
-                COMMENDATION_STATIC => &model.commendation,
-                ENEMIES_DESTROYED_LABEL_STATIC => &texts.enemies_destroyed_label,
-                ENEMIES_DESTROYED_VALUE_STATIC => &model.enemies_destroyed,
-                _ => continue,
-            };
-            statics.push(CampaignScoreStatic::new(&spec, text, reveal, now));
-        }
+            Some(ScoreStatic::new(
+                spec.id, spec.align, rgb, reveal, &text, now,
+            ))
+        });
         Self {
-            model,
-            texts,
-            statics,
+            dialog,
+            side,
+            statics: ScoreStatics(statics.collect()),
+            cells: Vec::new(),
             emblem_animation: None,
             presentation_started: false,
         }
     }
 
+    /// Install the app-resolved values into the native `0x103` controls; the
+    /// labels keep their template captions, resolved by `caption`.
+    pub fn open(
+        model: &CampaignScoreScreenModel,
+        caption: impl Fn(&'static str) -> String,
+        now: Instant,
+    ) -> Self {
+        let value = |id| {
+            let text = match id {
+                PAR_TIME_VALUE_STATIC => &model.par_time,
+                YOUR_TIME_VALUE_STATIC => &model.your_time,
+                RANK_STATIC => &model.rank,
+                COMMENDATION_STATIC => &model.commendation,
+                ENEMIES_DESTROYED_VALUE_STATIC => &model.enemies_destroyed,
+                _ => return None,
+            };
+            Some((text.clone(), None))
+        };
+        Self::open_dialog(
+            CampaignScoreDialog::Victory,
+            model.side,
+            value,
+            caption,
+            now,
+        )
+    }
+
+    /// `0xBC7`'s `WM_INITDIALOG` (`0x00470D30`): the campaign texts, then
+    /// per row its five cells (table `0x0081B1EC`) and, for the first two
+    /// rows, the place's name and score, each in the row's colour. Statics
+    /// it does not write keep their template captions, resolved by
+    /// `caption`.
+    pub fn open_campaign_end(
+        model: CampaignEndModel,
+        caption: impl Fn(&'static str) -> String,
+        now: Instant,
+    ) -> Self {
+        let value =
+            |id| {
+                let place = CAMPAIGN_END_PLACES.iter().zip(&model.rows).find_map(
+                    |(&(name, score), row)| {
+                        let text = (id == name).then(|| row.name.clone());
+                        let text = text.or_else(|| (id == score).then(|| row.score.to_string()));
+                        text.map(|text| (text, Some(row.rgb)))
+                    },
+                );
+                let text = match id {
+                    _ if place.is_some() => return place,
+                    CAMPAIGN_END_NAME => &model.campaign_name,
+                    CAMPAIGN_END_NUMBER => &model.campaign_number,
+                    CAMPAIGN_END_DIFFICULTY => &model.difficulty,
+                    CAMPAIGN_END_TIME => &model.time,
+                    _ => return None,
+                };
+                Some((text.clone(), None))
+            };
+        let dialog = CampaignScoreDialog::CampaignEnd;
+        let mut page = Self::open_dialog(dialog, model.side, value, caption, now);
+        let rows = model
+            .rows
+            .iter()
+            .zip(crate::ui::coop_score_shell::ROW_CELLS);
+        for (row, ids) in rows {
+            for (column, (id, text)) in ids.into_iter().zip(row.cells()).enumerate() {
+                let align = if column == 0 { L } else { R };
+                page.cells.push(CampaignScoreCell {
+                    id,
+                    text,
+                    align,
+                    rgb: row.rgb,
+                });
+            }
+        }
+        page
+    }
+
+    /// `0xBC7`'s score cells; empty on `0x103`.
+    pub fn cells(&self) -> &[CampaignScoreCell] {
+        &self.cells
+    }
+
+    /// `0xBC7`'s score cell `id`.
+    pub fn cell(&self, id: u16) -> Option<&CampaignScoreCell> {
+        self.cells.iter().find(|cell| cell.id == id)
+    }
+
     /// Native SHOW completion (`0x4EC`): start every kind-1 static and the
-    /// kind-4 emblem timer. Idempotent, so a repeated completion or a
-    /// wave-less fallback cannot restart a running reveal.
+    /// kind-4 emblem timer when the SCRA frames have been loaded for control
+    /// `0x72B`. Idempotent, so a repeated completion or a wave-less fallback
+    /// cannot restart a running reveal.
     pub fn start_presentation(&mut self, frame_count: usize, now: Instant) {
         if self.presentation_started {
             return;
         }
         self.presentation_started = true;
-        self.start_reveals(now);
-        self.start_emblem_animation(frame_count, now);
+        self.statics.start(now);
+        self.emblem_animation = (frame_count > 0).then_some(CampaignScoreEmblemAnimation {
+            frame_count,
+            frame: 0,
+            next_tick_at: now + CAMPAIGN_SCORE_EMBLEM_INTERVAL,
+        });
     }
 
     pub fn presentation_started(&self) -> bool {
@@ -601,21 +611,12 @@ impl CampaignScorePage {
     /// Geometry this page instance uses at the live window size. The retail
     /// path is unscaled; the app's fill-window path scales the 800x600 page.
     pub fn layout(&self, screen_w: u32, screen_h: u32, fills_window: bool) -> CampaignScoreLayout {
+        let layout = |w, h| CampaignScoreLayout::compute(self.dialog, w, h, self.side);
         if fills_window {
-            CampaignScoreLayout::compute_responsive_layout_for_side(
-                screen_w,
-                screen_h,
-                self.model.side,
-            )
+            fit_window(screen_w, screen_h, layout)
         } else {
-            CampaignScoreLayout::compute_layout_for_side(screen_w, screen_h, self.model.side)
+            layout(screen_w, screen_h)
         }
-    }
-
-    /// Start the campaign emblem's native 100 ms kind-4 timer when the SCRA
-    /// frames have been loaded for control `0x72B`.
-    pub fn start_emblem_animation(&mut self, frame_count: usize, now: Instant) {
-        self.emblem_animation = CampaignScoreEmblemAnimation::new(frame_count, now);
     }
 
     /// Current SCRA frame to draw after applying any due native timer tick.
@@ -637,154 +638,65 @@ impl CampaignScorePage {
     pub fn next_emblem_animation_tick(&self) -> Option<Instant> {
         self.emblem_animation
             .as_ref()
-            .map(CampaignScoreEmblemAnimation::next_tick_at)
-    }
-
-    pub fn static_text(&self, control_id: u16) -> Option<&str> {
-        self.statics
-            .iter()
-            .find(|static_text| static_text.id == control_id)
-            .map(CampaignScoreStatic::text)
-    }
-
-    pub fn statics(&self) -> &[CampaignScoreStatic] {
-        &self.statics
-    }
-
-    pub fn statics_mut(&mut self) -> &mut [CampaignScoreStatic] {
-        &mut self.statics
-    }
-
-    /// Apply the common dialog's hover/help text to static `0x695`.
-    pub fn set_status_help(&mut self, text: &str, now: Instant) {
-        if let Some(status) = self
-            .statics
-            .iter_mut()
-            .find(|static_text| static_text.id == STATUS_HELP_STATIC)
-        {
-            status.reveal.set_text(text, now);
-        }
-    }
-
-    /// The shell's SHOW completion starts each kind-1 static.
-    pub fn start_reveals(&mut self, now: Instant) {
-        for static_text in &mut self.statics {
-            static_text.reveal.start(now);
-        }
-    }
-
-    /// The latest recomposition was presented by the renderer.
-    pub fn commit_presented(&mut self) {
-        for static_text in &mut self.statics {
-            static_text.reveal.commit_presented();
-        }
-    }
-
-    pub fn reveals_terminal(&self) -> bool {
-        self.statics
-            .iter()
-            .all(|static_text| static_text.reveal.is_terminal())
+            .map(|animation| animation.next_tick_at)
     }
 }
 
-impl CampaignScoreControlSpec {
-    pub fn for_id(id: u16) -> Option<&'static Self> {
-        CAMPAIGN_SCORE_CONTROLS
-            .iter()
-            .find(|control| control.id == id)
-    }
-
-    pub fn action_for_id(id: u16) -> Option<CampaignScoreAction> {
-        Self::for_id(id).and_then(|control| control.action)
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
-    fn spec(id: u16) -> &'static CampaignScoreControlSpec {
-        CampaignScoreControlSpec::for_id(id).unwrap_or_else(|| panic!("0x103/{id:#x}"))
+    fn layout(width: u32, height: u32, side: i32) -> CampaignScoreLayout {
+        CampaignScoreLayout::compute(CampaignScoreDialog::Victory, width, height, side)
+    }
+
+    fn open(at: Instant) -> CampaignScorePage {
+        let model = CampaignScoreScreenModel::default();
+        CampaignScorePage::open(&model, |key| key.to_owned(), at)
     }
 
     #[test]
     fn campaign_emblem_timer_advances_one_frame_and_native_wrap_selects_29() {
         let opened = Instant::now();
-        let mut page = CampaignScorePage::open(
-            CampaignScoreScreenModel::default(),
-            CampaignScoreTexts::default(),
-            opened,
-        );
+        let ms = |ms| opened + Duration::from_millis(ms);
+        let mut page = open(opened);
         assert_eq!(page.poll_emblem_animation(opened), None);
-        page.start_emblem_animation(0, opened);
-        assert_eq!(page.poll_emblem_animation(opened), None);
-        assert_eq!(page.next_emblem_animation_tick(), None);
-
-        page.start_emblem_animation(44, opened);
+        page.start_presentation(44, opened);
         assert_eq!(page.emblem_animation_frame(), Some(0));
-        assert_eq!(
-            page.next_emblem_animation_tick(),
-            Some(opened + Duration::from_millis(100))
-        );
-        assert_eq!(
-            page.poll_emblem_animation(opened + Duration::from_millis(99)),
-            Some(0)
-        );
-        assert_eq!(
-            page.poll_emblem_animation(opened + Duration::from_millis(100)),
-            Some(1)
-        );
-
+        assert_eq!(page.next_emblem_animation_tick(), Some(ms(100)));
+        assert_eq!(page.poll_emblem_animation(ms(99)), Some(0));
+        assert_eq!(page.poll_emblem_animation(ms(100)), Some(1));
         for tick in 2..=43 {
-            let at = opened + Duration::from_millis(tick * 100);
-            assert_eq!(page.poll_emblem_animation(at), Some(tick as usize));
+            assert_eq!(
+                page.poll_emblem_animation(ms(tick * 100)),
+                Some(tick as usize)
+            );
         }
-        assert_eq!(
-            page.poll_emblem_animation(opened + Duration::from_millis(4_400)),
-            Some(29)
-        );
-        assert_eq!(
-            page.poll_emblem_animation(opened + Duration::from_millis(4_500)),
-            Some(30)
-        );
+        assert_eq!(page.poll_emblem_animation(ms(4_400)), Some(29));
+        assert_eq!(page.poll_emblem_animation(ms(4_500)), Some(30));
 
         // A stalled event loop coalesces to one WM_TIMER callback.
-        let mut stalled = CampaignScorePage::open(
-            CampaignScoreScreenModel::default(),
-            CampaignScoreTexts::default(),
-            opened,
-        );
-        stalled.start_emblem_animation(44, opened);
-        assert_eq!(
-            stalled.poll_emblem_animation(opened + Duration::from_millis(5_000)),
-            Some(1)
-        );
-        assert_eq!(stalled.emblem_animation_frame(), Some(1));
-        assert_eq!(
-            stalled.next_emblem_animation_tick(),
-            Some(opened + Duration::from_millis(5_100))
-        );
+        let mut stalled = open(opened);
+        stalled.start_presentation(44, opened);
+        assert_eq!(stalled.poll_emblem_animation(ms(5_000)), Some(1));
+        assert_eq!(stalled.next_emblem_animation_tick(), Some(ms(5_100)));
+        // Without SCRA frames there is no timer.
+        let mut bare = open(opened);
+        bare.start_presentation(0, opened);
+        assert_eq!(bare.next_emblem_animation_tick(), None);
     }
 
     #[test]
     fn campaign_emblem_timer_remains_scheduled_after_text_reveals_finish() {
         let opened = Instant::now();
-        let mut page = CampaignScorePage::open(
-            CampaignScoreScreenModel::default(),
-            CampaignScoreTexts::default(),
-            opened,
-        );
-        page.start_emblem_animation(44, opened);
-        page.start_reveals(opened);
-
+        let mut page = open(opened);
+        page.start_presentation(44, opened);
         for elapsed_ms in (0..10_000).step_by(15) {
             let now = opened + Duration::from_millis(elapsed_ms);
             page.poll_emblem_animation(now);
-            for static_text in page.statics_mut() {
-                static_text.paint(now);
-            }
-            page.commit_presented();
-            if page.reveals_terminal() {
+            page.statics.paint(now, true);
+            page.statics.commit_presented();
+            if page.statics.is_terminal() {
                 assert!(
                     page.next_emblem_animation_tick()
                         .is_some_and(|due| due > now)
@@ -804,48 +716,39 @@ mod tests {
             "tools/storage_oracle/shell_static_timers.json",
         ))
         .unwrap();
-        for spec in CAMPAIGN_SCORE_CONTROLS {
+        let cases = fixture["cases"].as_array().unwrap();
+        let case = |dialog: u16, id: u16| {
+            cases
+                .iter()
+                .find(|case| case["dialog_id"] == dialog && case["control_id"] == id)
+                .unwrap_or_else(|| panic!("no {dialog:#x} timer case for {id:#x}"))
+        };
+        for spec in &CAMPAIGN_SCORE_CONTROLS {
             let Some(reveal) = spec.reveal else {
                 continue;
             };
-            let case = fixture["cases"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|case| case["dialog_id"] == 0x103 && case["control_id"] == spec.id)
-                .unwrap_or_else(|| panic!("no 0x103 timer case for {:#x}", spec.id));
+            let case = case(0x103, spec.id);
             assert_eq!(case["kind1"], 1, "{:#x}", spec.id);
-            assert_eq!(case["interval_ms"], reveal.interval_ms, "{:#x}", spec.id);
+            assert_eq!(case["interval_ms"], reveal.interval.as_millis() as u64);
             assert_eq!(case["step"], reveal.step, "{:#x}", spec.id);
-            assert_eq!(case["range"], reveal.highlight_range, "{:#x}", spec.id);
+            assert_eq!(case["range"], reveal.range, "{:#x}", spec.id);
         }
         // 0x72B is the only kind-4 static; `ShellStatic__AnimationInterval`
         // 0x006033F0 selects 100 ms for dialog 0x103's 0x72B.
-        let art_case = fixture["cases"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|case| case["dialog_id"] == 0x103 && case["control_id"] == 0x72B)
-            .expect("0x103 0x72B timer case");
+        let art_case = case(0x103, SCORE_ART_REGION_STATIC);
         assert_eq!(art_case["kind1"], 0);
         assert_eq!(art_case["kind4_interval_ms"], 100);
-        assert_eq!(spec(SCORE_ART_REGION_STATIC).reveal, None);
         assert_eq!(CAMPAIGN_SCORE_EMBLEM_INTERVAL, Duration::from_millis(100));
     }
 
     #[test]
     fn presentation_start_is_single_shot_and_arms_reveals_and_timer() {
         let opened = Instant::now();
-        let mut page = CampaignScorePage::open(
-            CampaignScoreScreenModel::default(),
-            CampaignScoreTexts::default(),
-            opened,
-        );
+        let mut page = open(opened);
         assert!(!page.presentation_started());
         assert_eq!(page.emblem_animation_frame(), None);
         page.start_presentation(44, opened);
         assert!(page.presentation_started());
-        assert_eq!(page.emblem_animation_frame(), Some(0));
         let deadline = page.next_emblem_animation_tick();
         assert_eq!(deadline, Some(opened + Duration::from_millis(100)));
         // A repeated SHOW completion must not restart the epoch.
@@ -857,16 +760,17 @@ mod tests {
     /// (`tools/storage_oracle/shell_relayout.py`), for both campaign sides.
     #[test]
     fn control_windows_match_executed_0x103_relayout_at_each_retail_size() {
-        use crate::ui::shell::layout::tests::executed_child_window_for_side as executed;
+        use crate::ui::shell::native_fixtures::executed_child_window_for_side as executed;
+        let ids = CAMPAIGN_SCORE_CONTROLS.iter().map(|spec| spec.id);
+        let ids: Vec<u16> = ids.chain([SCORE_ART_REGION_STATIC]).collect();
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             for side in [0, 1] {
-                let layout = compute_layout_for_side(width, height, side);
-                for spec in CAMPAIGN_SCORE_CONTROLS {
+                let layout = layout(width, height, side);
+                for &id in &ids {
                     assert_eq!(
-                        layout.control_rect(spec.id),
-                        Some(executed(0x103, spec.id, width as i32, height as i32, side)),
-                        "{width}x{height} side {side} control {:#x}",
-                        spec.id
+                        layout.control_rect(id),
+                        Some(executed(0x103, id, width as i32, height as i32, side)),
+                        "{width}x{height} side {side} control {id:#x}",
                     );
                 }
             }
@@ -893,7 +797,7 @@ mod tests {
                 RectPx::new(104, 142, 424, 220),
             ),
         ] {
-            let layout = compute_layout_for_side(width, height, 0);
+            let layout = layout(width, height, 0);
             assert_eq!(layout.background, background, "{width}");
             assert_eq!(layout.panel, panel, "{width}");
             assert_eq!(
@@ -903,17 +807,17 @@ mod tests {
             );
         }
         assert_eq!(
-            compute_layout_for_side(800, 600, 1).control_rect(SCORE_ART_REGION_STATIC),
+            layout(800, 600, 1).control_rect(SCORE_ART_REGION_STATIC),
             Some(RectPx::new(103, 130, 424, 230))
         );
         assert_eq!(
-            compute_layout_for_side(640, 480, 2).control_rect(SCORE_ART_REGION_STATIC),
+            layout(640, 480, 2).control_rect(SCORE_ART_REGION_STATIC),
             Some(RectPx::new(23, 130, 424, 230))
         );
         // 0x00608500 switches at 800, not at the 640-wide asset branch.
         for (width, x) in [(641, 24), (700, 24), (799, 24), (800, 104)] {
             assert_eq!(
-                compute_layout_for_side(width, 600, 0)
+                layout(width, 600, 0)
                     .control_rect(SCORE_ART_REGION_STATIC)
                     .map(|rect| rect.x),
                 Some(x),
@@ -923,62 +827,131 @@ mod tests {
     }
 
     #[test]
-    fn page_binds_only_resolved_values_and_uses_native_reveal_groups() {
+    fn page_binds_only_resolved_values_to_its_statics() {
         let model = CampaignScoreScreenModel {
-            side: 0,
             par_time: "00:10:00".into(),
             your_time: "00:08:31".into(),
             enemies_destroyed: "17".into(),
             rank: "Major".into(),
             commendation: "Mission commendation".into(),
+            ..Default::default()
         };
-        let texts = CampaignScoreTexts {
-            title: "Mission Score".into(),
-            continue_label: "Continue".into(),
-            continue_status: "Continue to the next scenario.".into(),
-            par_time_label: "Par Time".into(),
-            your_time_label: "Your Time".into(),
-            enemies_destroyed_label: "Enemies Destroyed".into(),
+        let page = CampaignScorePage::open(&model, |key| key.to_owned(), Instant::now());
+        let text = |id| page.statics.text(id);
+        assert_eq!(text(TITLE_STATIC), Some("GUI:StandaloneScore"));
+        assert_eq!(text(PAR_TIME_LABEL_STATIC), Some("GUI:ParTime"));
+        assert_eq!(text(PAR_TIME_VALUE_STATIC), Some("00:10:00"));
+        assert_eq!(text(YOUR_TIME_VALUE_STATIC), Some("00:08:31"));
+        assert_eq!(text(RANK_STATIC), Some("Major"));
+        assert_eq!(text(COMMENDATION_STATIC), Some("Mission commendation"));
+        assert_eq!(text(ENEMIES_DESTROYED_VALUE_STATIC), Some("17"));
+        assert_eq!(text(STATUS_HELP_STATIC), Some(""));
+        assert_eq!(page.statics.0.len(), 10);
+    }
+
+    /// `0xBC7`'s executed WM_INITDIALOG relayout (side 0): the right-panel
+    /// anchors and the `0x72B` override move with the screen while the body
+    /// statics keep their template windows.
+    #[test]
+    fn campaign_end_windows_match_the_executed_0xbc7_relayout() {
+        let cases: [(u32, u32, [(u16, [i32; 4]); 6]); 2] = [
+            (
+                800,
+                600,
+                [
+                    (CAMPAIGN_END_CONTINUE, [644, 535, 156, 42]),
+                    (STATUS_HELP_STATIC, [10, 578, 456, 21]),
+                    (SCORE_ART_REGION_STATIC, [104, 142, 424, 220]),
+                    (TITLE_STATIC, [635, 9, 163, 18]),
+                    (CAMPAIGN_END_MONITOR, [670, 47, 93, 55]),
+                    (0x0789, [440, 65, 63, 14]),
+                ],
+            ),
+            (
+                1024,
+                768,
+                [
+                    (CAMPAIGN_END_CONTINUE, [756, 619, 156, 42]),
+                    (STATUS_HELP_STATIC, [122, 662, 456, 21]),
+                    (SCORE_ART_REGION_STATIC, [216, 226, 424, 220]),
+                    (TITLE_STATIC, [747, 93, 163, 18]),
+                    (CAMPAIGN_END_MONITOR, [782, 131, 93, 55]),
+                    (0x0733, [125, 7, 387, 17]),
+                ],
+            ),
+        ];
+        for (width, height, expected) in cases {
+            let layout =
+                CampaignScoreLayout::compute(CampaignScoreDialog::CampaignEnd, width, height, 0);
+            for (id, [x, y, w, h]) in expected {
+                assert_eq!(
+                    layout.control_rect(id),
+                    Some(RectPx::new(x, y, w, h)),
+                    "{width}x{height} {id:#x}"
+                );
+            }
+        }
+    }
+
+    /// `0x00470D30`'s init: each row's cells in its colour, the first two
+    /// rows' places, and the template captions elsewhere.
+    #[test]
+    fn campaign_end_binds_rows_to_cells_and_places() {
+        let row = |name: &str, rgb, score| crate::ui::score_shell::ScoreRow {
+            name: name.into(),
+            rgb,
+            kills: 7,
+            losses: 2,
+            built: 30,
+            score,
         };
-        let now = Instant::now();
-        let mut page = CampaignScorePage::open(model, texts, now);
-
-        assert_eq!(page.static_text(TITLE_STATIC), Some("Mission Score"));
-        assert_eq!(page.static_text(PAR_TIME_VALUE_STATIC), Some("00:10:00"));
-        assert_eq!(page.static_text(YOUR_TIME_VALUE_STATIC), Some("00:08:31"));
-        assert_eq!(page.static_text(RANK_STATIC), Some("Major"));
+        let model = CampaignEndModel {
+            side: 1,
+            campaign_name: "Soviet Campaign".into(),
+            campaign_number: "Campaign 2".into(),
+            difficulty: "Difficulty: Medium".into(),
+            time: "01:02:03".into(),
+            rows: vec![
+                row("Host", [10, 20, 30], 900),
+                row("Guest", [40, 50, 60], 400),
+            ],
+        };
+        let page =
+            CampaignScorePage::open_campaign_end(model, |key| key.to_owned(), Instant::now());
+        assert_eq!(page.dialog, CampaignScoreDialog::CampaignEnd);
         assert_eq!(
-            page.static_text(COMMENDATION_STATIC),
-            Some("Mission commendation")
+            page.statics.text(CAMPAIGN_END_NAME),
+            Some("Soviet Campaign")
         );
-        assert_eq!(page.static_text(ENEMIES_DESTROYED_VALUE_STATIC), Some("17"));
-        assert_eq!(page.static_text(STATUS_HELP_STATIC), Some(""));
-        assert_eq!(page.statics().len(), 10);
+        assert_eq!(page.statics.text(CAMPAIGN_END_TIME), Some("01:02:03"));
+        assert_eq!(page.statics.text(0x0736), Some("GUI:FirstPlace"));
+        assert_eq!(page.statics.text(TITLE_STATIC), Some("GUI:CampaignResults"));
+        let place = |id| {
+            page.statics
+                .0
+                .iter()
+                .find(|text| text.id == id)
+                .map(|text| (text.text().to_owned(), text.rgb))
+        };
+        assert_eq!(place(0x073A), Some(("Host".into(), Some([10, 20, 30]))));
+        assert_eq!(place(0x073B), Some(("900".into(), Some([10, 20, 30]))));
+        assert_eq!(place(0x0739), Some(("Guest".into(), Some([40, 50, 60]))));
+        assert_eq!(place(0x0738), Some(("400".into(), Some([40, 50, 60]))));
+        let cells: Vec<_> = page
+            .cells()
+            .iter()
+            .map(|cell| (cell.id, cell.text.as_str(), cell.rgb))
+            .collect();
         assert_eq!(
-            spec(COMMENDATION_STATIC).reveal,
-            Some(CampaignScoreRevealSpec {
-                interval_ms: 15,
-                step: 3,
-                highlight_range: 16,
-            })
+            cells[..5],
+            [
+                (0x0781, "Host", [10, 20, 30]),
+                (0x0783, "7", [10, 20, 30]),
+                (0x0785, "2", [10, 20, 30]),
+                (0x0787, "30", [10, 20, 30]),
+                (0x0789, "900", [10, 20, 30]),
+            ]
         );
-        assert_eq!(spec(RANK_STATIC).reveal, Some(TEXT_REVEAL));
-
-        page.set_status_help(
-            "Continue to the next scenario.",
-            now + Duration::from_millis(1),
-        );
-        assert_eq!(
-            page.static_text(STATUS_HELP_STATIC),
-            Some("Continue to the next scenario.")
-        );
-        page.start_reveals(now);
-        assert!(
-            page.statics_mut()
-                .iter_mut()
-                .all(|static_text| static_text.paint(now).is_some())
-        );
-        assert!(!page.reveals_terminal());
-        page.commit_presented();
+        assert_eq!(cells[5], (0x0782, "Guest", [40, 50, 60]));
     }
 }

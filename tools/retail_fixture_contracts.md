@@ -54,5 +54,5 @@ the connection from loaded theater data to the random-map tile IDs.
 
 These checks do not replace the [full decoder corpus](retail_corpus.md),
 [headless and production captures](map_observation.md), or native gameplay
-comparisons. Other integration diagnostics and ignored tests still require
-individual evaluation; this does not close issue #752 as a whole.
+comparisons. The ignored retail-backed tests have their own routine run,
+[`python -m tools.retail_tests run`](README.md#retail-backed-ignored-tests).

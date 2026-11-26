@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 
 use crate::map::entities::EntityCategory;
-use crate::sim::cell_map::CellMap;
+use crate::sim::cell_map::{CellMap, CellWrites};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -66,7 +66,25 @@ pub(crate) fn air_spatial_query_bucket_order(
     radius_cells: i32,
     map_width: u16,
     map_height: u16,
-) -> Vec<u16> {
+) -> impl Iterator<Item = u16> {
+    /// The query's buckets, held inline: an AA scan or an airborne AoE asks
+    /// for them each time it runs. Each cardinal run steps from a bucket on
+    /// the center's row or column to the center, at most `SIDE - 1` steps,
+    /// and each corner run takes at most the shorter of its two cardinal
+    /// runs plus two, so the center and eight runs hold at most `1 + 8 *
+    /// SIDE` buckets.
+    struct BucketOrder {
+        buckets: [u16; 1 + 8 * AIR_SPATIAL_BUCKET_SIDE as usize],
+        len: usize,
+    }
+
+    impl BucketOrder {
+        fn push(&mut self, bucket: u16) {
+            self.buckets[self.len] = bucket;
+            self.len += 1;
+        }
+    }
+
     fn step_bucket(bucket: u16, dx: i16, dy: i16) -> u16 {
         let side = i32::from(AIR_SPATIAL_BUCKET_SIDE);
         let bx = (i32::from(bucket % AIR_SPATIAL_BUCKET_SIDE) + i32::from(dx)).clamp(0, side - 1);
@@ -75,7 +93,7 @@ pub(crate) fn air_spatial_query_bucket_order(
     }
 
     fn push_cardinal(
-        order: &mut Vec<u16>,
+        order: &mut BucketOrder,
         mut bucket: u16,
         center: u16,
         step_dx: i16,
@@ -91,7 +109,7 @@ pub(crate) fn air_spatial_query_bucket_order(
     }
 
     fn push_corner(
-        order: &mut Vec<u16>,
+        order: &mut BucketOrder,
         center: u16,
         x_count: usize,
         y_count: usize,
@@ -114,7 +132,11 @@ pub(crate) fn air_spatial_query_bucket_order(
 
     let radius = if radius_cells < 2 { 1 } else { radius_cells };
     let center = air_spatial_bucket_index(center_rx, center_ry, map_width, map_height);
-    let mut order = vec![center];
+    let mut order = BucketOrder {
+        buckets: [0; 1 + 8 * AIR_SPATIAL_BUCKET_SIDE as usize],
+        len: 0,
+    };
+    order.push(center);
     let endpoint = |dx: i32, dy: i32| {
         let rx = (i32::from(center_rx) + dx).clamp(0, i32::from(u16::MAX)) as u16;
         let ry = (i32::from(center_ry) + dy).clamp(0, i32::from(u16::MAX)) as u16;
@@ -130,7 +152,7 @@ pub(crate) fn air_spatial_query_bucket_order(
     push_corner(&mut order, center, west, south, -1, 1);
     push_corner(&mut order, center, east, north, 1, -1);
     push_corner(&mut order, center, east, south, 1, 1);
-    order
+    order.buckets.into_iter().take(order.len)
 }
 
 /// The cell list Mark addresses for this object now: none unless its layer
@@ -178,7 +200,7 @@ pub(crate) fn infantry_raw_occupation_mask(sub_x: SimFixed, sub_y: SimFixed) -> 
 /// producers still use native destructive OR/clear semantics; owner identity is
 /// the separate `InfantryOwnerIndex`/`AltInfantryOwnerIndex` projection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct RawCellOccupation {
+pub(crate) struct RawCellOccupation {
     ground: u8,
     deck: u8,
     #[serde(default)]
@@ -239,18 +261,50 @@ impl RawCellKey {
 /// removed eagerly, so serialization and deterministic hashing have one
 /// representation for an unoccupied cell. This state is independent of the
 /// CellClass-style object lists.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+///
+/// A fork ([`Self::fork`]) keeps its own copy of the fallback cell, which
+/// lives beside the map: its writes of that cell cannot be merged.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RawCellOccupationGrid {
     cells: CellMap<RawCellOccupation>,
     // The process-global fallback Cell is not Scenario save payload. Map
     // Resize reconstructs it: Cell47BC2D/30 owners=-1,47BD95/9B raw bytes=0.
     #[serde(skip)]
     dummy: RawCellOccupation,
+    /// A fork's: its base's fallback cell, which a reset restores. Never
+    /// saved, compared or printed.
+    #[serde(skip)]
+    base_dummy: Option<RawCellOccupation>,
 }
+
+/// The derived form, without a fork's `base_dummy`.
+impl std::fmt::Debug for RawCellOccupationGrid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawCellOccupationGrid")
+            .field("cells", &self.cells)
+            .field("dummy", &self.dummy)
+            .finish()
+    }
+}
+
+/// Equal cells and fallback cell: what the grid reads.
+impl PartialEq for RawCellOccupationGrid {
+    fn eq(&self, other: &Self) -> bool {
+        self.cells == other.cells && self.dummy == other.dummy
+    }
+}
+
+impl Eq for RawCellOccupationGrid {}
 
 impl RawCellOccupationGrid {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// The fallback cell, for a write a fork's commit cannot carry.
+    fn dummy_mut(&mut self) -> &mut RawCellOccupation {
+        self.cells.note_unmergeable_write();
+        &mut self.dummy
     }
 
     pub(crate) fn bits_at(&self, key: RawCellKey, layer: MovementLayer) -> u8 {
@@ -300,16 +354,36 @@ impl RawCellOccupationGrid {
             RawCellKey::Real(x, y) => {
                 self.update_and_prune(x, y, |cell| cell.write(layer, mask, None, false));
             }
-            RawCellKey::Dummy => self.dummy.write(layer, mask, owner, put),
+            RawCellKey::Dummy => self.dummy_mut().write(layer, mask, owner, put),
         }
     }
 
     pub(crate) fn retain_process_dummy_from(&mut self, live: &Self) {
-        self.dummy = live.dummy;
+        *self.dummy_mut() = live.dummy;
+    }
+
+    pub(crate) fn saved_fallback_cell(&self) -> RawCellOccupation {
+        self.dummy
+    }
+
+    pub(crate) fn restore_saved_fallback_cell(
+        &mut self,
+        cell: RawCellOccupation,
+        houses: &crate::sim::houses::Houses,
+    ) -> Result<(), &'static str> {
+        if [cell.ground_infantry_owner, cell.deck_infantry_owner]
+            .into_iter()
+            .flatten()
+            .any(|house| !houses.contains_key(&house))
+        {
+            return Err("fallback occupation names an unknown House");
+        }
+        *self.dummy_mut() = cell;
+        Ok(())
     }
 
     pub(crate) fn reconstruct_dummy_for_map_resize(&mut self) {
-        self.dummy = RawCellOccupation::default();
+        *self.dummy_mut() = RawCellOccupation::default();
     }
 
     pub(crate) fn dummy_for_hash(
@@ -340,7 +414,7 @@ impl RawCellOccupationGrid {
                     .get_or_insert_with((rx, ry), Default::default)
                     .ground |= mask;
             }
-            RawCellKey::Dummy => self.dummy.ground |= mask,
+            RawCellKey::Dummy => self.dummy_mut().ground |= mask,
         }
     }
 
@@ -356,7 +430,7 @@ impl RawCellOccupationGrid {
             RawCellKey::Real(rx, ry) => {
                 self.update_and_prune(rx, ry, |cell| cell.ground &= !mask);
             }
-            RawCellKey::Dummy => self.dummy.ground &= !mask,
+            RawCellKey::Dummy => self.dummy_mut().ground &= !mask,
         }
     }
 
@@ -479,12 +553,14 @@ impl HiddenOccupationGrid {
     }
 
     /// Apply the post-object-list enter contribution for one building.
+    /// `ares` is the caller's `rules.ares_form()`, for the guarded decrement.
     pub(crate) fn enter_building(
         &mut self,
         origin: (u16, u16),
         foundation: &crate::rules::foundation::Foundation,
         profile: crate::rules::object_type::BuildingHiddenOccupancyProfile,
         map_size: Option<(u16, u16)>,
+        ares: bool,
     ) -> bool {
         if !profile.can_hide_things {
             return false;
@@ -502,31 +578,33 @@ impl HiddenOccupationGrid {
             if let Some(offset) = profile.remove_occupy[slot]
                 && let Some(cell) = hidden_offset_cell(origin, offset, map_size)
             {
-                self.decrement_guarded(cell);
+                self.decrement_guarded(cell, ares);
             }
         }
         true
     }
 
     /// Reverse the post-object-list contribution for one building. RemoveOccupy
-    /// slots deliberately have no exit-side inverse.
+    /// slots deliberately have no exit-side inverse. `ares` is the caller's
+    /// `rules.ares_form()`, for the guarded decrement.
     pub(crate) fn exit_building(
         &mut self,
         origin: (u16, u16),
         foundation: &crate::rules::foundation::Foundation,
         profile: crate::rules::object_type::BuildingHiddenOccupancyProfile,
         map_size: Option<(u16, u16)>,
+        ares: bool,
     ) -> bool {
         if !profile.can_hide_things {
             return false;
         }
 
         for cell in hidden_diagonal_cells(origin, foundation, profile.occupy_height, map_size) {
-            self.decrement_guarded(cell);
+            self.decrement_guarded(cell, ares);
         }
         for offset in profile.add_occupy.into_iter().flatten() {
             if let Some(cell) = hidden_offset_cell(origin, offset, map_size) {
-                self.decrement_guarded(cell);
+                self.decrement_guarded(cell, ares);
             }
         }
         true
@@ -541,14 +619,13 @@ impl HiddenOccupationGrid {
         }
     }
 
-    fn decrement_guarded(&mut self, cell: (u16, u16)) {
+    fn decrement_guarded(&mut self, cell: (u16, u16), ares: bool) {
         let Some(current) = self.cells.get_mut(&cell) else {
             return;
         };
         // Installed Ares10015504 uses signed JLE; the original568A97 only
         // tests zero. Both share this counter owner, not separate grids.
-        #[cfg(feature = "ares")]
-        if (*current as i32) <= 0 {
+        if ares && (*current as i32) <= 0 {
             return;
         }
         if *current == 1 {
@@ -608,6 +685,15 @@ impl AirSlotGrid {
     }
 }
 
+/// The OccupyHeight diagonals, exactly deduplicated. Ares 3.0
+/// MapClass_AddContentAt_Foundation_OccupyHeight 10015420 (hook
+/// `0x00568565`) and _RemoveContentAt_ 100154B0 (hook `0x00568997`) build
+/// them with BuildingExt::GetCoveredCells (sort and unique over the whole
+/// foundation) where gamemd dedupes through a 16x16 bitmap of foundation
+/// offsets, which only a custom foundation of 16 or more cells across could
+/// alias; the foundation is the full list (Ares 10015490 / 10015520, hooks
+/// `0x00568411` / `0x00568841`, lift Place_Down's and Pick_Up's 32-cell
+/// copy), as [`crate::rules::foundation::Foundation::cell_offsets`] is.
 fn hidden_diagonal_cells(
     origin: (u16, u16),
     foundation: &crate::rules::foundation::Foundation,
@@ -766,15 +852,38 @@ impl CellOccupancy {
 /// A grounded Jumpjet remains on its Cell list after initial Process changes its
 /// phase to1. Rebuilding from the flight adapter would silently drop that member.
 /// See tools/spatial_oracle/jumpjet_entry_discovery.{py,json,meta.json}.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct OccupancyGrid {
     cells: CellMap<CellOccupancy>,
+    /// VERA-only: the emptied list of a cell an object last left, kept for
+    /// the next vacant cell an object enters, so a cell crossing and a
+    /// blocked mover's lift and put-back free and allocate nothing. Always
+    /// empty; only its capacity is kept. Never saved, hashed or read.
+    #[serde(skip)]
+    spare_list: Vec<CellOccupant>,
     /// Monotonic counter bumped on every cell-membership mutation, so tests can
     /// tell whether membership changed between two points. Never serialized,
     /// never part of the state hash.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     generation: u64,
+    /// A fork's `generation` at its making or last take or reset: its base's.
+    /// Never serialized or printed.
+    #[cfg(any(test, feature = "test-support"))]
+    #[serde(skip)]
+    fork_generation: u64,
+}
+
+/// The derived form, without a fork's `fork_generation`.
+impl std::fmt::Debug for OccupancyGrid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut grid = f.debug_struct("OccupancyGrid");
+        grid.field("cells", &self.cells)
+            .field("spare_list", &self.spare_list);
+        #[cfg(any(test, feature = "test-support"))]
+        grid.field("generation", &self.generation);
+        grid.finish()
+    }
 }
 
 impl Default for OccupancyGrid {
@@ -898,7 +1007,7 @@ impl OccupancyGrid {
                 continue;
             }
             // Entities inside transports don't occupy cells.
-            if entity.passenger_role.is_inside_transport() {
+            if entity.passenger_role().is_inside_transport() {
                 continue;
             }
             let Some(layer) = cell_list_layer_for_entity(entity, None) else {
@@ -937,6 +1046,7 @@ pub(crate) fn entity_occupancy_cells(entity: &GameEntity) -> Vec<(u16, u16)> {
         return vec![(entity.position.rx(), entity.position.ry())];
     }
     entity
+        .seldom
         .type_facts
         .foundation()
         .cell_offsets()
@@ -955,8 +1065,11 @@ impl OccupancyGrid {
     pub fn new() -> Self {
         Self {
             cells: CellMap::new(),
+            spare_list: Vec::new(),
             #[cfg(any(test, feature = "test-support"))]
             generation: 0,
+            #[cfg(any(test, feature = "test-support"))]
+            fork_generation: 0,
         }
     }
 
@@ -995,7 +1108,10 @@ impl OccupancyGrid {
             sub_cell,
             is_building: insertion == CellListInsertion::AppendBuilding,
         };
-        let occ = self.cells.get_or_insert_with((rx, ry), Default::default);
+        let spare = &mut self.spare_list;
+        let occ = self.cells.get_or_insert_with((rx, ry), || CellOccupancy {
+            occupants: std::mem::take(spare),
+        });
         match insertion {
             CellListInsertion::PrependNonBuilding => {
                 let index = occ
@@ -1046,8 +1162,11 @@ impl OccupancyGrid {
         if let Some(occ) = self.cells.get_mut(&(rx, ry)) {
             occ.occupants
                 .retain(|o| !(o.entity_id == entity_id && o.layer == layer));
-            if occ.occupants.is_empty() {
-                self.cells.remove(&(rx, ry));
+            if occ.occupants.is_empty()
+                && let Some(emptied) = self.cells.remove(&(rx, ry))
+                && self.spare_list.capacity() == 0
+            {
+                self.spare_list = emptied.occupants;
             }
         }
     }
@@ -1205,7 +1324,245 @@ impl OccupancyGrid {
     }
 }
 
-#[cfg(test)]
+impl OccupancyGrid {
+    /// Bring `mirror`, the presentation copy of the world's grid, up to
+    /// this one (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cells,
+            spare_list: _,
+            #[cfg(any(test, feature = "test-support"))]
+            generation,
+            #[cfg(any(test, feature = "test-support"))]
+                fork_generation: _,
+        } = self;
+        cells.sync_into(&mut mirror.cells);
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            mirror.generation = *generation;
+        }
+    }
+}
+
+impl RawCellOccupationGrid {
+    /// Bring `mirror`, the presentation copy, up to this grid.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cells,
+            dummy,
+            base_dummy: _,
+        } = self;
+        cells.sync_into(&mut mirror.cells);
+        mirror.dummy = dummy.clone();
+    }
+}
+
+/// One object's turn's writes in a fork of the grid
+/// ([`OccupancyGrid::take_fork_writes`]), for [`OccupancyGrid::commit_writes`].
+#[derive(Debug)]
+pub(crate) struct OccupancyWrites {
+    cells: CellWrites<CellOccupancy>,
+    /// The membership changes the turn made, which the test-support
+    /// generation counts.
+    #[cfg(any(test, feature = "test-support"))]
+    bumps: u64,
+}
+
+#[cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(dead_code, reason = "no pass runs object turns on forks yet")
+)]
+impl OccupancyWrites {
+    /// The turn met a write a commit cannot carry ([`CellWrites::structural`]).
+    pub(crate) fn structural(&self) -> bool {
+        self.cells.structural()
+    }
+
+    /// The cells the turn wrote, each once, in the order first written
+    /// ([`CellWrites::cells`]).
+    pub(crate) fn cells(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
+        self.cells.cells()
+    }
+}
+
+/// Forks (VERA-only, sim-scale): the cell map's ([`CellMap::share`] and on),
+/// for object turns run side by side. A fork starts with an empty spare
+/// list, and its generation reads as its base's plus its own changes.
+#[cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(dead_code, reason = "no pass runs object turns on forks yet")
+)]
+impl OccupancyGrid {
+    /// Make this grid the frozen base its [`Self::fork`]s read.
+    pub(crate) fn share(&mut self) {
+        self.cells.share();
+    }
+
+    /// Own the cells again; panics while a fork of them is alive.
+    pub(crate) fn unshare(&mut self) {
+        self.cells.unshare();
+    }
+
+    /// A grid that reads this shared one and keeps its own writes.
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            cells: self.cells.fork(),
+            spare_list: Vec::new(),
+            #[cfg(any(test, feature = "test-support"))]
+            generation: self.generation,
+            #[cfg(any(test, feature = "test-support"))]
+            fork_generation: self.generation,
+        }
+    }
+
+    /// What this fork wrote since its last take or reset, leaving it as
+    /// [`Self::reset_fork`] does.
+    pub(crate) fn take_fork_writes(&mut self) -> OccupancyWrites {
+        let writes = OccupancyWrites {
+            cells: self.cells.take_fork_writes(),
+            #[cfg(any(test, feature = "test-support"))]
+            bumps: self.generation.wrapping_sub(self.fork_generation),
+        };
+        self.reset_generation();
+        writes
+    }
+
+    /// Drop what this fork wrote: it reads its base again.
+    pub(crate) fn reset_fork(&mut self) {
+        self.cells.reset_fork();
+        self.reset_generation();
+    }
+
+    /// A fork's generation goes back to its base's.
+    fn reset_generation(&mut self) {
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            self.generation = self.fork_generation;
+        }
+    }
+
+    /// Apply one turn's writes from a fork to this grid, unshared since, as
+    /// the turn's adds and removals would have left it: the same lists in
+    /// the same order, and a generation bumped as often. A cell the commit
+    /// empties gives its list to the spare when the spare holds none, as
+    /// [`Self::remove_on_layer`] does. Structural writes are refused.
+    pub(crate) fn commit_writes(&mut self, writes: OccupancyWrites) {
+        let OccupancyWrites {
+            cells,
+            #[cfg(any(test, feature = "test-support"))]
+            bumps,
+        } = writes;
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            if !cells.structural() {
+                self.generation = self.generation.wrapping_add(bumps);
+            }
+        }
+        let spare = &mut self.spare_list;
+        self.cells.commit_writes(cells, |emptied| {
+            if spare.capacity() == 0 {
+                *spare = emptied.occupants;
+                spare.clear();
+            }
+        });
+    }
+
+    /// Begin a pass for [`Self::written_this_pass`].
+    pub(crate) fn begin_pass(&mut self) {
+        self.cells.begin_pass();
+    }
+
+    /// Whether `cell`'s list was written since [`Self::begin_pass`], directly
+    /// or by a commit ([`CellMap::written_this_pass`]).
+    pub(crate) fn written_this_pass(&self, cell: (u16, u16)) -> bool {
+        self.cells.written_this_pass(cell)
+    }
+}
+
+/// Forks (VERA-only, sim-scale): the cell map's ([`CellMap::share`] and on).
+/// A fork's write of the fallback cell, which lives beside the map, cannot
+/// be merged ([`CellWrites::structural`]).
+#[cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(dead_code, reason = "no pass runs object turns on forks yet")
+)]
+impl RawCellOccupationGrid {
+    /// Make this grid the frozen base its [`Self::fork`]s read.
+    pub(crate) fn share(&mut self) {
+        self.cells.share();
+    }
+
+    /// Own the cells again; panics while a fork of them is alive.
+    pub(crate) fn unshare(&mut self) {
+        self.cells.unshare();
+    }
+
+    /// A grid that reads this shared one and keeps its own writes.
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            cells: self.cells.fork(),
+            dummy: self.dummy,
+            base_dummy: Some(self.dummy),
+        }
+    }
+
+    /// What this fork wrote since its last take or reset, leaving it as
+    /// [`Self::reset_fork`] does.
+    pub(crate) fn take_fork_writes(&mut self) -> CellWrites<RawCellOccupation> {
+        let writes = self.cells.take_fork_writes();
+        self.reset_dummy();
+        writes
+    }
+
+    /// Drop what this fork wrote: it reads its base again.
+    pub(crate) fn reset_fork(&mut self) {
+        self.cells.reset_fork();
+        self.reset_dummy();
+    }
+
+    /// A fork's fallback cell goes back to its base's.
+    fn reset_dummy(&mut self) {
+        self.dummy = self
+            .base_dummy
+            .expect("a fork keeps its base's fallback cell");
+    }
+
+    /// Apply one turn's writes from a fork to this grid, unshared since, as
+    /// the turn's writes would have left it. Structural writes are refused.
+    pub(crate) fn commit_writes(&mut self, writes: CellWrites<RawCellOccupation>) {
+        self.cells.commit_writes(writes, drop);
+    }
+
+    /// Begin a pass for [`Self::written_this_pass`].
+    pub(crate) fn begin_pass(&mut self) {
+        self.cells.begin_pass();
+    }
+
+    /// Whether `cell`'s bytes were written since [`Self::begin_pass`],
+    /// directly or by a commit ([`CellMap::written_this_pass`]). The fallback
+    /// cell has none: a fork's write of it is structural.
+    pub(crate) fn written_this_pass(&self, cell: (u16, u16)) -> bool {
+        self.cells.written_this_pass(cell)
+    }
+}
+
+impl HiddenOccupationGrid {
+    /// Bring `mirror`, the presentation copy, up to this grid.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self { cells } = self;
+        cells.sync_into(&mut mirror.cells);
+    }
+}
+
+impl AirSlotGrid {
+    /// Bring `mirror`, the presentation copy, up to this grid.
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self { cells } = self;
+        cells.sync_into(&mut mirror.cells);
+    }
+}
+
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 
@@ -1299,6 +1656,42 @@ mod tests {
         assert!(grid.generation() > g2, "remove must bump generation");
     }
 
+    /// The list of a cell an object left is kept, empty, and becomes the list
+    /// of the next vacant cell an object enters. The cells and what is saved
+    /// are those of a grid that never kept one.
+    #[test]
+    fn an_emptied_cells_list_serves_the_next_vacant_cell() {
+        let enter = |grid: &mut OccupancyGrid, cell: (u16, u16), id| {
+            grid.add(
+                cell.0,
+                cell.1,
+                id,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::PrependNonBuilding,
+            );
+        };
+        let mut grid = OccupancyGrid::new();
+        enter(&mut grid, (3, 4), 7);
+        grid.remove_on_layer(3, 4, 7, MovementLayer::Ground);
+        assert!(grid.get(3, 4).is_none());
+        assert!(grid.spare_list.is_empty() && grid.spare_list.capacity() > 0);
+        assert_eq!(
+            serde_json::to_string(&grid).unwrap(),
+            serde_json::to_string(&OccupancyGrid::new()).unwrap()
+        );
+
+        enter(&mut grid, (5, 6), 9);
+        assert_eq!(grid.spare_list.capacity(), 0);
+        assert_eq!(
+            grid.get(5, 6)
+                .unwrap()
+                .snapshot_layer(MovementLayer::Ground),
+            [9]
+        );
+        assert_eq!(grid.occupied_cell_count(), 1);
+    }
+
     #[test]
     fn gsi_04_05_hidden_garefn_exact_counter_contribution() {
         let mut grid = HiddenOccupationGrid::new();
@@ -1310,14 +1703,232 @@ mod tests {
         profile.add_occupy[1] = Some((-1, -1));
         profile.remove_occupy[0] = Some((3, 1));
 
-        assert!(grid.enter_building((10, 10), &"4x3".into(), profile, Some((32, 32))));
+        assert!(grid.enter_building((10, 10), &"4x3".into(), profile, Some((32, 32)), false));
         assert_eq!(grid.entry_count(), 13);
         assert_eq!(grid.count(10, 10), 1);
         assert_eq!(grid.count(13, 11), 0);
         assert_eq!(grid.count(9, 10), 1);
         assert_eq!(grid.count(9, 9), 1);
 
-        assert!(grid.exit_building((10, 10), &"4x3".into(), profile, Some((32, 32))));
+        assert!(grid.exit_building((10, 10), &"4x3".into(), profile, Some((32, 32)), false));
         assert_eq!(grid.entry_count(), 0);
+    }
+
+    fn put(grid: &mut OccupancyGrid, cell: (u16, u16), id: u64) {
+        let insertion = CellListInsertion::PrependNonBuilding;
+        grid.add(cell.0, cell.1, id, MovementLayer::Ground, None, insertion);
+    }
+
+    fn lift(grid: &mut OccupancyGrid, cell: (u16, u16), id: u64) {
+        grid.remove_on_layer(cell.0, cell.1, id, MovementLayer::Ground);
+    }
+
+    fn save<T: serde::Serialize>(value: &T) -> Vec<u8> {
+        crate::util::save_codec::serialize(value).unwrap()
+    }
+
+    /// Lists of one and two objects, and the raw bytes of two vehicles and
+    /// an infantryman among them.
+    fn grids() -> (OccupancyGrid, RawCellOccupationGrid) {
+        let mut grid = OccupancyGrid::new();
+        for (cell, id) in [((3, 4), 2), ((3, 4), 1), ((5, 6), 3), ((7, 8), 4)] {
+            put(&mut grid, cell, id);
+        }
+        let mut raw = RawCellOccupationGrid::new();
+        raw.mark_ground(3, 4, VEHICLE_OCCUPATION_BIT);
+        raw.mark_ground(5, 6, VEHICLE_OCCUPATION_BIT);
+        raw.mark_ground_infantry(7, 8, 1 << 2, InternedId::from_index(41));
+        (grid, raw)
+    }
+
+    /// One turn's writes: a lift and put-back that reorders a list, a move
+    /// that empties one cell and makes another, a cell emptied and refilled,
+    /// and cells of an extended map's array and beyond the largest one.
+    fn turn(grid: &mut OccupancyGrid, raw: &mut RawCellOccupationGrid) {
+        lift(grid, (3, 4), 2);
+        put(grid, (3, 4), 2);
+        raw.clear_ground(3, 4, VEHICLE_OCCUPATION_BIT);
+        raw.mark_ground(3, 4, VEHICLE_OCCUPATION_BIT);
+        lift(grid, (5, 6), 3);
+        put(grid, (9, 9), 3);
+        raw.clear_ground(5, 6, VEHICLE_OCCUPATION_BIT);
+        raw.mark_ground(9, 9, VEHICLE_OCCUPATION_BIT);
+        lift(grid, (7, 8), 4);
+        put(grid, (7, 8), 4);
+        raw.clear_ground_infantry(7, 8, 1 << 2);
+        put(grid, (600, 2), 5);
+        put(grid, (2000, 3), 6);
+        raw.mark_deck(600, 2, OBJECT_OCCUPATION_BIT);
+    }
+
+    const TURN_CELLS: [(u16, u16); 6] = [(3, 4), (5, 6), (9, 9), (7, 8), (600, 2), (2000, 3)];
+
+    /// A fork reads as a copy making the same writes does, cell by cell and
+    /// whole; its base and a sibling fork read as before.
+    #[test]
+    fn a_forks_writes_reach_neither_its_base_nor_a_sibling() {
+        let (mut grid, mut raw) = grids();
+        let mut copy = (grid.clone(), raw.clone());
+        let before = (format!("{grid:?}"), format!("{raw:?}"));
+        grid.share();
+        raw.share();
+        let mut fork = (grid.fork(), raw.fork());
+        let sibling = (grid.fork(), raw.fork());
+        turn(&mut fork.0, &mut fork.1);
+        turn(&mut copy.0, &mut copy.1);
+        for (x, y) in TURN_CELLS {
+            let list = |grid: &OccupancyGrid| {
+                grid.get(x, y)
+                    .map(|list| list.snapshot_layer(MovementLayer::Ground))
+            };
+            assert_eq!(list(&fork.0), list(&copy.0), "list at {:?}", (x, y));
+            let bytes = |raw: &RawCellOccupationGrid| {
+                [MovementLayer::Ground, MovementLayer::Bridge]
+                    .map(|layer| raw.occupant_at(RawCellKey::Real(x, y), layer))
+            };
+            assert_eq!(bytes(&fork.1), bytes(&copy.1), "bytes at {:?}", (x, y));
+        }
+        assert_eq!(format!("{:?}", fork.0), format!("{:?}", copy.0));
+        assert_eq!(format!("{:?}", fork.1), format!("{:?}", copy.1));
+        assert_eq!(fork.0.occupied_cell_count(), copy.0.occupied_cell_count());
+        for (grid, raw) in [(&grid, &raw), (&sibling.0, &sibling.1)] {
+            assert_eq!((format!("{grid:?}"), format!("{raw:?}")), before);
+        }
+    }
+
+    /// A fork's writes, taken and committed to its unshared base, leave both
+    /// grids as the same writes made directly do: the same lists, bytes,
+    /// counts, generation and saved form, the extended cells included.
+    #[test]
+    fn committed_writes_leave_the_grids_as_the_same_writes_made_directly() {
+        let (mut grid, mut raw) = grids();
+        let mut copy = (grid.clone(), raw.clone());
+        turn(&mut copy.0, &mut copy.1);
+        grid.share();
+        raw.share();
+        let mut fork = (grid.fork(), raw.fork());
+        turn(&mut fork.0, &mut fork.1);
+        let writes = (fork.0.take_fork_writes(), fork.1.take_fork_writes());
+        assert!(!writes.0.structural() && !writes.1.structural());
+        assert_eq!(writes.0.cells().collect::<Vec<_>>(), TURN_CELLS);
+        drop(fork);
+        grid.unshare();
+        raw.unshare();
+        grid.commit_writes(writes.0);
+        raw.commit_writes(writes.1);
+        assert_eq!(format!("{grid:?}"), format!("{:?}", copy.0));
+        assert_eq!(grid.occupied_cell_count(), copy.0.occupied_cell_count());
+        assert_eq!(save(&grid), save(&copy.0));
+        assert_eq!(raw, copy.1);
+        assert_eq!(raw.entry_count(), copy.1.entry_count());
+        assert_eq!(save(&raw), save(&copy.1));
+    }
+
+    /// `written_this_pass` is false before a pass's first write of a cell and
+    /// true after a direct write or a commit of it, an extended map's growth
+    /// in between, until the next pass; reads, a fork and a copy say false.
+    #[test]
+    fn written_this_pass_follows_direct_writes_and_commits() {
+        let (mut grid, mut raw) = grids();
+        lift(&mut grid, (3, 4), 1);
+        assert!(!grid.written_this_pass((3, 4)), "before the first pass");
+        grid.begin_pass();
+        raw.begin_pass();
+        assert!(!grid.written_this_pass((3, 4)), "written before the pass");
+        let _ = (
+            grid.get(5, 6),
+            raw.bits_at(RawCellKey::Real(3, 4), MovementLayer::Ground),
+        );
+        put(&mut grid, (3, 4), 1);
+        raw.mark_ground(5, 6, VEHICLE_OCCUPATION_BIT);
+        put(&mut grid, (600, 2), 5);
+        assert_eq!(
+            [(3, 4), (5, 6), (600, 2)].map(|cell| grid.written_this_pass(cell)),
+            [true, false, true]
+        );
+        assert_eq!(
+            [(3, 4), (5, 6)].map(|cell| raw.written_this_pass(cell)),
+            [false, true]
+        );
+        grid.share();
+        raw.share();
+        let mut fork = (grid.fork(), raw.fork());
+        lift(&mut fork.0, (7, 8), 4);
+        put(&mut fork.0, (7, 8), 4);
+        put(&mut fork.0, (11, 11), 6);
+        lift(&mut fork.0, (11, 11), 6);
+        fork.1.clear_ground(3, 4, VEHICLE_OCCUPATION_BIT);
+        assert!(!fork.0.written_this_pass((7, 8)), "a fork says false");
+        let writes = (fork.0.take_fork_writes(), fork.1.take_fork_writes());
+        drop(fork);
+        grid.unshare();
+        raw.unshare();
+        assert!(!grid.written_this_pass((7, 8)));
+        grid.commit_writes(writes.0);
+        raw.commit_writes(writes.1);
+        assert_eq!(
+            [(7, 8), (11, 11)].map(|cell| grid.written_this_pass(cell)),
+            [true, true],
+            "a commit stamps what it writes, a cell made and emptied too"
+        );
+        assert!(raw.written_this_pass((3, 4)));
+        let loaded: OccupancyGrid = crate::util::save_codec::deserialize(&save(&grid)).unwrap();
+        for copy in [grid.clone(), loaded] {
+            assert!(!copy.written_this_pass((3, 4)), "a copy starts unstamped");
+        }
+        grid.begin_pass();
+        assert!(!grid.written_this_pass((3, 4)));
+    }
+
+    /// The fallback cell lives beside the map: a fork reads its own write of
+    /// it, but the write cannot be merged, and a take returns the fork to its
+    /// base.
+    #[test]
+    fn a_fallback_cell_write_makes_a_forks_writes_structural() {
+        let (_, mut raw) = grids();
+        raw.share();
+        let mut fork = raw.fork();
+        fork.clear_ground(5, 6, VEHICLE_OCCUPATION_BIT);
+        fork.mark_ground_at(RawCellKey::Dummy, VEHICLE_OCCUPATION_BIT);
+        let dummy =
+            |raw: &RawCellOccupationGrid| raw.bits_at(RawCellKey::Dummy, MovementLayer::Ground);
+        assert_eq!((dummy(&fork), dummy(&raw)), (VEHICLE_OCCUPATION_BIT, 0));
+        let writes = fork.take_fork_writes();
+        assert!(writes.structural() && writes.cells().next().is_none());
+        assert_eq!(dummy(&fork), 0);
+        assert_eq!(fork.ground_bits(5, 6), VEHICLE_OCCUPATION_BIT);
+    }
+
+    /// A reset drops a fork's writes, the fallback cell's too: it reads its
+    /// base and starts the next turn's writes afresh.
+    #[test]
+    fn a_reset_returns_a_fork_to_its_base() {
+        let (mut grid, mut raw) = grids();
+        let before = (format!("{grid:?}"), format!("{raw:?}"));
+        grid.share();
+        raw.share();
+        let mut fork = (grid.fork(), raw.fork());
+        turn(&mut fork.0, &mut fork.1);
+        fork.1
+            .mark_ground_at(RawCellKey::Dummy, VEHICLE_OCCUPATION_BIT);
+        fork.0.reset_fork();
+        fork.1.reset_fork();
+        assert_eq!((format!("{:?}", fork.0), format!("{:?}", fork.1)), before);
+        assert!(fork.0.take_fork_writes().cells().next().is_none());
+        assert!(!fork.1.take_fork_writes().structural());
+        lift(&mut fork.0, (5, 6), 3);
+        assert_eq!(
+            fork.0.take_fork_writes().cells().collect::<Vec<_>>(),
+            [(5, 6)]
+        );
+    }
+
+    /// A shared grid and a fork live only inside an object pass.
+    #[test]
+    #[should_panic(expected = "save of a shared or forked cell map")]
+    fn a_fork_is_never_saved() {
+        let (mut grid, _) = grids();
+        grid.share();
+        save(&grid.fork());
     }
 }

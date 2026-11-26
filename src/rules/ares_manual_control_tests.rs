@@ -8,66 +8,73 @@ use crate::util::save_codec;
 
 #[test]
 fn ares_no_manual_fire_native_physical_layers_reach_every_techno_family() {
-    let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
-    for family in [
-        "BuildingTypes",
-        "VehicleTypes",
-        "AircraftTypes",
-        "InfantryTypes",
-    ] {
-        let mut layers =
-            RulesLayerStack::new(IniFile::from_str(&format!("[{family}]\n0=CONTROL\n")));
-        let initial = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
-        assert_eq!(
-            initial.object("CONTROL").unwrap().no_manual_fire(),
-            corpus["physical_readers"]["constructor_default"] == 1,
-        );
-        for row in corpus["physical_readers"]["rows"].as_array().unwrap() {
-            layers.push(
-                RulesLayerKind::Scenario,
-                IniFile::from_str(row["physical_ini"].as_str().unwrap()),
-            );
-            let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
+        for family in [
+            "BuildingTypes",
+            "VehicleTypes",
+            "AircraftTypes",
+            "InfantryTypes",
+        ] {
+            let mut layers =
+                RulesLayerStack::new(IniFile::from_str(&format!("[{family}]\n0=CONTROL\n")));
+            let initial = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
             assert_eq!(
-                rules.object("CONTROL").unwrap().no_manual_fire(),
-                crate::rules::ARES_ENABLED && row["after"] == 1,
-                "{family}: {}",
-                row["file"],
+                initial.object("CONTROL").unwrap().no_manual_fire(),
+                corpus["physical_readers"]["constructor_default"] == 1,
             );
+            for row in corpus["physical_readers"]["rows"].as_array().unwrap() {
+                layers.push(
+                    RulesLayerKind::Scenario,
+                    IniFile::from_str(row["physical_ini"].as_str().unwrap()),
+                );
+                let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+                assert_eq!(
+                    rules.object("CONTROL").unwrap().no_manual_fire(),
+                    ares_way && row["after"] == 1,
+                    "{family}: {}",
+                    row["file"],
+                );
+            }
         }
     }
 }
 
 #[test]
 fn ares_no_manual_fire_registry_save_retains_policy_and_configuration_identity() {
-    let continue_policy = |setting| {
-        let initial = RulesLayerStack::new(IniFile::from_str(&format!(
-            "[VehicleTypes]\n0=CONTROL\n[CONTROL]\nNoManualFire={setting}\n"
-        )))
-        .process()
-        .unwrap();
-        let (_, trace) = initial.into_ini_and_native_type_construction_trace();
-        let registry = trace.into_registry_state_discarding_events();
-        let registry = save_codec::deserialize(&save_codec::serialize(&registry).unwrap()).unwrap();
-        let resumed = RulesLayerStack::new(IniFile::from_str(
-            "[VehicleTypes]\n0=CONTROL\n[CONTROL]\nNoManualFire=invalid\n",
-        ))
-        .process_with_fixed_art_and_registry_state(&IniFile::empty(), registry)
-        .unwrap();
-        RuleSet::from_processed_rules(&resumed).unwrap()
-    };
-    let enabled = continue_policy("yes");
-    let disabled = continue_policy("no");
-    assert_eq!(
-        enabled.object("CONTROL").unwrap().no_manual_fire(),
-        crate::rules::ARES_ENABLED,
-    );
-    assert!(!disabled.object("CONTROL").unwrap().no_manual_fire());
-    assert_eq!(
-        enabled.simulation_config_hash() != disabled.simulation_config_hash(),
-        crate::rules::ARES_ENABLED,
-        "identical current source stacks must retain effective policy identity",
-    );
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let continue_policy = |setting| {
+            let initial = RulesLayerStack::new(IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=CONTROL\n[CONTROL]\nNoManualFire={setting}\n"
+            )))
+            .process()
+            .unwrap();
+            let (_, trace) = initial.into_ini_and_native_type_construction_trace();
+            let registry = trace.into_registry_state_discarding_events();
+            let registry =
+                save_codec::deserialize(&save_codec::serialize(&registry).unwrap()).unwrap();
+            let resumed = RulesLayerStack::new(IniFile::from_str(
+                "[VehicleTypes]\n0=CONTROL\n[CONTROL]\nNoManualFire=invalid\n",
+            ))
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), registry)
+            .unwrap();
+            RuleSet::from_processed_rules(&resumed).unwrap()
+        };
+        let enabled = continue_policy("yes");
+        let disabled = continue_policy("no");
+        assert_eq!(
+            enabled.object("CONTROL").unwrap().no_manual_fire(),
+            ares_way,
+        );
+        assert!(!disabled.object("CONTROL").unwrap().no_manual_fire());
+        assert_eq!(
+            enabled.simulation_config_hash() != disabled.simulation_config_hash(),
+            ares_way,
+            "identical current source stacks must retain effective policy identity",
+        );
+    }
 }
 
 #[test]

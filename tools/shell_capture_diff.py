@@ -35,6 +35,8 @@ import sys
 import zlib
 from pathlib import Path
 
+from tools.shell_certification.core import _read_regular_bytes, absolute_path, parse_json_bytes
+
 SCHEMA = "vera20k.shell-capture-diff.v1"
 CAMPAIGN_SCHEMA = "vera20k.campaign-start-capture.v1"
 CAMPAIGN_CHECKPOINTS = {
@@ -60,6 +62,8 @@ for phase in ("opening-locked", "opening-pan", "opening-flash", "opening-arrows"
               "opening-unlocked", "opening-restore-unlocked",
               "opening-timer-running", "opening-timer-expired"):
     CAMPAIGN_CHECKPOINTS[f"campaign-sov1-{phase}"] = ("sov1", phase)
+# Campaign receipts carry per-step observations; long ones pass 100 MiB.
+MAX_MANIFEST_BYTES = 128 * 1024 * 1024
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 TILE = 50
 
@@ -587,9 +591,14 @@ def read_png_rgb(data):
 
 
 def write_png_rgb(path, width, height, pixels):
+    """Write an 8-bit RGB PNG of `pixels`: (r, g, b) tuples or packed RGB bytes, row by row."""
     rows = bytearray()
+    packed = isinstance(pixels, (bytes, bytearray, memoryview))
     for y in range(height):
         rows.append(0)
+        if packed:
+            rows += pixels[y * width * 3 : (y + 1) * width * 3]
+            continue
         for r, g, b in pixels[y * width : (y + 1) * width]:
             rows.extend((r, g, b))
 
@@ -607,16 +616,26 @@ def write_png_rgb(path, width, height, pixels):
 
 
 def read_capture(directory):
-    """Read a shell-capture bundle as (manifest, SHA256, width, height, RGB pixels)."""
-    directory = Path(directory)
-    manifest = json.loads((directory / "capture.json").read_text(encoding="utf-8"))
+    """Read a shell-capture bundle as (manifest, SHA256, width, height, RGB pixels).
+
+    The shell owner's stable non-link reads and the shared strict JSON parser
+    (unique keys, finite numbers) apply; the frame must be a file in the bundle.
+    """
+    directory = absolute_path(directory)
+    manifest_raw = _read_regular_bytes(directory / "capture.json", "capture manifest",
+                                       maximum_length=MAX_MANIFEST_BYTES)
+    manifest = parse_json_bytes(manifest_raw, "capture manifest", maximum_length=MAX_MANIFEST_BYTES)
     validate_campaign_capture(manifest)
     surface = manifest["surface"]
     frame = manifest["frame"]
     if surface.get("pixel_layout") != "BGRA8" or surface.get("row_order") != "top-left":
         raise InputError("capture frame is not top-left BGRA8")
     width, height, stride = surface["width"], surface["height"], surface["row_stride"]
-    raw = (directory / frame["path"]).read_bytes()
+    name = frame["path"]
+    _require(isinstance(name, str) and name not in ("", ".", "..")
+             and not any(char in name for char in "/\\:"),
+             "capture frame path must name a file in the bundle")
+    raw = _read_regular_bytes(directory / name, "capture frame")
     if "sha256" in frame and hashlib.sha256(raw).hexdigest() != frame["sha256"]:
         raise InputError("capture frame does not match its manifest SHA-256")
     if "byte_length" in frame and len(raw) != frame["byte_length"]:

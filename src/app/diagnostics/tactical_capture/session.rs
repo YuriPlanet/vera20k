@@ -5,8 +5,9 @@
 //! the real renderer, and publishes one transactional final readback. It does
 //! not focus the window, inject desktop input, or grant simulation state.
 
+use crate::app::match_runtime::sim_host::SimWrite;
+use crate::util::time::{Duration, Instant};
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -38,6 +39,7 @@ use crate::sim::command::Command;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::production;
 use crate::ui::game_screen::GameScreen;
+use crate::ui::sidebar::SidebarPart;
 
 #[path = "map_observation.rs"]
 mod map_observation;
@@ -181,32 +183,36 @@ impl TacticalCaptureSession {
                 // owns the unique start-staging token. Drive that owner before
                 // launch regeneration; never reconstruct starts from map cells.
                 ensure!(
-                    seed_name == crate::app::shell_random_map::RANDMAP_SED_FILE,
+                    seed_name == crate::map::skirmish_scenarios::RANDMAP_SED,
                     "generated capture requires the normal accepted RandMap.Sed record"
                 );
-                let path = state
-                    .platform
-                    .game_config
-                    .as_ref()
-                    .unwrap()
-                    .paths
-                    .ra2_dir
-                    .join(seed_name);
+                let path = crate::map::source::random_map_dir(
+                    &state.platform.game_config.as_ref().unwrap().paths.ra2_dir,
+                )
+                .join(seed_name);
                 let bytes = std::fs::read(&path).context("read capture setup seed")?;
                 let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
                     .context("parse capture setup seed")?;
+                let ares = state.process_assets.reads_ares_way();
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&ini);
+                options.apply_sed(&ini, ares);
                 options.normalize();
                 let mut modal = crate::ui::skirmish_shell::RandomMapSetupModalState::open(
                     options.clone(),
                     None,
                     false,
                 );
+                modal.ares = ares;
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
                 ensure!(
-                    crate::app::App::start_random_map_generation(state, &options, false),
+                    crate::app::App::start_random_map_generation(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                        &options,
+                        false
+                    ),
                     "cannot start normal random-map setup generation"
                 );
                 self.preparing_random_map = true;
@@ -218,6 +224,7 @@ impl TacticalCaptureSession {
             return Ok(());
         }
         let profile = self.request.profile()?;
+        profile.check_roster_mode(&state.frontend.skirmish_modes)?;
         let capture = &profile.capture;
         ensure!(
             state.renderer.gpu.config.width == capture.output_width
@@ -243,13 +250,6 @@ impl TacticalCaptureSession {
                 .usage
                 .contains(wgpu::TextureUsages::COPY_SRC),
             "tactical swapchain lacks COPY_SRC readback usage"
-        );
-        ensure!(
-            (state.match_state.match_presentation.ui_scale - capture.app_ui_scale as f32).abs()
-                <= f32::EPSILON,
-            "app UI scale {} differs from sealed {}",
-            state.match_state.match_presentation.ui_scale,
-            capture.app_ui_scale
         );
         ensure!(
             state.match_state.configured_input_delay_ticks
@@ -317,8 +317,7 @@ impl TacticalCaptureSession {
         state.match_state.input.cursor_x = capture.post_load_cursor.x as f32;
         state.match_state.input.cursor_y = capture.post_load_cursor.y as f32;
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        let game_speed = crate::app::match_runtime::sim_tick::current_game_speed(state);
-        state.platform.frame_pacer.reanchor(now_ms, game_speed);
+        state.platform.frame_pacer.reanchor(now_ms);
         self.begin_accepted_loading(state)?;
         self.failure_stage = "loading".to_owned();
         Ok(())
@@ -332,7 +331,6 @@ impl TacticalCaptureSession {
                 bail!("sealed tactical launch was not accepted: {reason:?}")
             }
         };
-        #[cfg(feature = "ares")]
         crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
             &mut state.process_assets,
             &launch,
@@ -358,10 +356,6 @@ impl TacticalCaptureSession {
             "classification": "AcceptedExplicitFixedBattle",
         }));
 
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;
@@ -478,7 +472,7 @@ impl TacticalCaptureSession {
                     let sim = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .map(|rt| &mut rt.simulation)
                         .context("queue action requires live simulation")?;
                     sim.intern(&type_id)
@@ -502,7 +496,7 @@ impl TacticalCaptureSession {
                     let sim = state
                         .match_state
                         .sim_runtime
-                        .as_mut()
+                        .write_sim(SimWrite::Debug)
                         .map(|rt| &mut rt.simulation)
                         .context("placement action requires live simulation")?;
                     sim.intern(&choice.type_id)
@@ -557,7 +551,11 @@ impl TacticalCaptureSession {
         owner: &str,
         command: Command,
     ) -> Result<()> {
-        let execute_tick = crate::app::input::commands::try_schedule_command(state, owner, command);
+        let execute_tick = crate::app::input::commands::try_schedule_command(
+            &mut state.match_state,
+            owner,
+            command,
+        );
         let script = self
             .controller
             .script_mut()
@@ -588,7 +586,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("Rust L0 requires live simulation")?;
         let rules = state.rules().context("Rust L0 requires live rules")?;
@@ -765,7 +763,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("Rust L0 simulation is absent")?;
         ensure!(
@@ -870,7 +868,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("tactical observation requires live simulation")?;
         let rules = state
@@ -1046,10 +1044,21 @@ impl TacticalCaptureSession {
         output: &GameRenderOutput,
     ) -> Result<(bool, Value)> {
         let profile = self.request.profile()?;
+        // The profile seals the original sidebar geometry, which a layout
+        // file in the game folder or a mod MIX would move.
+        ensure!(
+            state
+                .match_state
+                .match_presentation
+                .match_layouts
+                .is_original(),
+            "tactical capture requires the original interface: remove {} from the game files",
+            crate::ui::match_layout::FILE_NAME
+        );
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("render readiness requires live simulation")?;
         let owner = &profile.launch.player_name;
@@ -1082,23 +1091,27 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_content_insets
             .context("radar content insets are absent")?;
+        let drawn_sidebar = output.drawn_sidebar_view(&state.match_state.match_presentation);
         let render_evidence = SidebarRenderEvidence::from_render_output(
             output,
+            drawn_sidebar,
             aperture,
             insets,
             [state.render_width(), state.render_height()],
         )?;
-        let sidebar = output
-            .sidebar_view
-            .as_ref()
-            .context("production render emitted no SidebarView")?;
+        let sidebar = drawn_sidebar.context("production render emitted no SidebarView")?;
+        let spec = state.match_state.match_presentation.sidebar_layout_spec;
+        let top_of = |part: SidebarPart| sidebar.layout.origin(&spec, part)[1];
         let panel_contains_aperture = aperture.x >= sidebar.panel_rect.x
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
             && aperture.y + aperture.h <= state.render_height() as f32;
-        let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(state)
-            .and_then(crate::app::input::cursor::cursor_id_for_feedback)
-            .unwrap_or(CursorId::Default);
+        let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(
+            state,
+            &crate::app::input::cursor::CursorTargets::read(state),
+        )
+        .and_then(crate::app::input::cursor::cursor_id_for_feedback)
+        .unwrap_or(CursorId::Default);
         let cursor_ready = state.use_software_cursor()
             && cursor_id == CursorId::Default
             && state.match_state.input.cursor_x == profile.capture.post_load_cursor.x as f32
@@ -1126,7 +1139,7 @@ impl TacticalCaptureSession {
                 .keys_held
                 .iter()
                 .all(|key| state.match_state.input.planning.owns_key(*key))
-            && !state.match_state.input.minimap_dragging
+            && !state.match_state.input.minimap_press_active()
             && !state
                 .match_state
                 .match_presentation
@@ -1168,7 +1181,7 @@ impl TacticalCaptureSession {
             && radar_phase_online
             && actual_theme == expected_theme
             && source_matches_owner
-            && output.sidebar_view.is_some()
+            && drawn_sidebar.is_some()
             && panel_contains_aperture
             && counts_ready
             && sidebar_values_ready
@@ -1203,9 +1216,9 @@ impl TacticalCaptureSession {
                     "low_power": sidebar.low_power,
                     "layout": {
                         "sidebar_x": sidebar.layout.sidebar_x,
-                        "radar_y": sidebar.layout.radar_y,
-                        "side1_y": sidebar.layout.side1_y,
-                        "tabs_y": sidebar.layout.tabs_y,
+                        "radar_y": top_of(SidebarPart::Radar),
+                        "side1_y": top_of(SidebarPart::Middle),
+                        "tabs_y": top_of(SidebarPart::Tabs),
                         "cameo_grid_top": sidebar.layout.cameo_grid_top,
                         "cameo_grid_bottom": sidebar.layout.cameo_grid_bottom,
                         "side3_y": sidebar.layout.side3_y,
@@ -1224,7 +1237,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("structure readiness requires live simulation")?;
         let bindings = script.structure_bindings();
@@ -1290,7 +1303,7 @@ impl TacticalCaptureSession {
         let sim = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation)
             .context("fingerprint requires live simulation")?;
         let owner_id = sim.interner().get(owner).unwrap_or_default();
@@ -1348,9 +1361,15 @@ impl TacticalCaptureSession {
             "cursor": {
                 "x": state.match_state.input.cursor_x,
                 "y": state.match_state.input.cursor_y,
-                "id": format!("{:?}", crate::app::input::cursor::current_cursor_feedback_kind(state)
+                "id": format!(
+                    "{:?}",
+                    crate::app::input::cursor::current_cursor_feedback_kind(
+                        state,
+                        &crate::app::input::cursor::CursorTargets::read(state),
+                    )
                     .and_then(crate::app::input::cursor::cursor_id_for_feedback)
-                    .unwrap_or(CursorId::Default)),
+                    .unwrap_or(CursorId::Default)
+                ),
             }
         }))
     }
@@ -1474,7 +1493,6 @@ impl TacticalCaptureSession {
                 state.renderer.gpu.config.width,
                 state.renderer.gpu.config.height,
             ],
-            state.match_state.match_presentation.ui_scale,
             bitmap_font,
         )?;
         let script = self
@@ -1607,7 +1625,7 @@ fn validate_loaded_resources(state: &AppState) -> Result<()> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("simulation is absent")?
         .simulation;
     ensure!(
@@ -1615,7 +1633,6 @@ fn validate_loaded_resources(state: &AppState) -> Result<()> {
             && state.match_state.match_presentation.tile_atlas.is_some()
             && state.match_state.match_presentation.terrain_grid.is_some()
             && state.terrain_template().is_some()
-            && state.match_state.match_presentation.unit_atlas.is_some()
             && state.match_state.match_presentation.palette_set.is_some()
             && state.match_state.match_presentation.sprite_atlas.is_some()
             && state.match_state.match_presentation.overlay_atlas.is_some()
@@ -1779,7 +1796,7 @@ fn validate_houses_and_slots(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::derive_rate;
 

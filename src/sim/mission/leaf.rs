@@ -94,6 +94,12 @@ pub struct BuildingMissionLeaf {
     /// `Type=`. Constructor -1 (`0x0043B7B9`).
     #[serde(default = "no_firing_super_weapon")]
     firing_super_weapon: i32,
+    /// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`): the cell the last
+    /// launch gave this silo, so silos opening together each strike their own
+    /// target. gamemd's silos all read the house's one NukeTarget, which a
+    /// silo without the key still does (None).
+    #[serde(default)]
+    own_nuke_target: Option<(u16, u16)>,
 }
 
 const fn no_firing_super_weapon() -> i32 {
@@ -143,7 +149,16 @@ impl MissionLeafState {
                 ready_latch: 0,
                 repair_progress: crate::sim::stage::StageClass::constructed(now),
                 firing_super_weapon: no_firing_super_weapon(),
+                own_nuke_target: None,
             }),
+        }
+    }
+
+    /// BuildingLoad453ECF -> NoInit43B68D..43B6C3 reconstructs only this
+    /// independent Stage. Internal snapshot continuations retain its progress.
+    pub(crate) fn reconstruct_building_repair_progress_after_player_load(&mut self, now: i32) {
+        if let Self::Building(leaf) = self {
+            leaf.repair_progress = crate::sim::stage::StageClass::constructed(now);
         }
     }
 
@@ -252,10 +267,11 @@ impl MissionLeafState {
         }
     }
 
-    /// Write only values accepted by the verified 42-entry Doing table.
+    /// Write only values accepted by the verified 42-entry Doing table, plus
+    /// Firestorm's Struggle that VERA appends as action 42.
     pub fn set_infantry_doing_verified(&mut self, doing: i32) -> Result<(), InvalidInfantryDoing> {
         let leaf = self.expect_infantry_mut();
-        if doing != -1 && !(0..=41).contains(&doing) {
+        if doing != -1 && !(0..=crate::rules::infantry_sequence::DO_STRUGGLE).contains(&doing) {
             return Err(InvalidInfantryDoing(doing));
         }
         leaf.doing = doing;
@@ -320,6 +336,12 @@ impl MissionLeafState {
     /// Building `+0x5F8`, written by `SuperClass::Launch` (`0x006CDDD7`).
     pub(crate) fn set_building_firing_super_weapon(&mut self, super_weapon_type: i32) {
         self.expect_building_mut().firing_super_weapon = super_weapon_type;
+    }
+
+    /// VERA's own nuke target ([`BuildingMissionLeaf::own_nuke_target`]),
+    /// written by a launch from a `SuperWeaponPerBuilding=` silo.
+    pub(crate) fn set_building_own_nuke_target(&mut self, cell: (u16, u16)) {
+        self.expect_building_mut().own_nuke_target = Some(cell);
     }
 
     #[track_caller]
@@ -519,9 +541,14 @@ impl BuildingMissionLeaf {
     pub(crate) const fn firing_super_weapon(&self) -> i32 {
         self.firing_super_weapon
     }
+
+    /// See the field.
+    pub(crate) const fn own_nuke_target(&self) -> Option<(u16, u16)> {
+        self.own_nuke_target
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 
@@ -553,7 +580,7 @@ mod tests {
 
     #[test]
     fn mission_leaf_invalid_doing_does_not_mutate() {
-        for invalid in [i32::MIN, -2, 42, i32::MAX] {
+        for invalid in [i32::MIN, -2, 43, i32::MAX] {
             let mut leaf = MissionLeafState::infantry_raw_for_test(7, 5);
             let before = leaf;
             assert_eq!(

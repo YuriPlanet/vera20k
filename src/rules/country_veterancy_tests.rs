@@ -2,10 +2,8 @@
 //! supplement original reader/starting-rank evidence in country_veterancy.md.
 
 use crate::rules::ini_parser::IniFile;
-#[cfg(not(feature = "ares"))]
 use crate::rules::ini_parser::IniSection;
 use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
-#[cfg(not(feature = "ares"))]
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::util::save_codec;
@@ -36,7 +34,6 @@ fn continue_process(processed: ProcessedRulesLayers, pass: IniFile) -> Processed
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn country_veteran_list_histories_match_original_reached_reader() {
     let corpus = crate::test_fixture::json("tools/rules_oracle/country_veterancy.json");
     let mut processed = RulesLayerStack::new(IniFile::from_str("[Countries]\n0=SYNTHCOUNTRY\n"))
@@ -127,7 +124,6 @@ fn country_veteran_lists_save_handoff_hash_and_destructive_reset_keep_one_author
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn country_veteran_references_allocate_types_in_original_reader_order() {
     let processed = RulesLayerStack::new(IniFile::from_str(
         "[Countries]\n0=Alpha\n[Alpha]\nVeteranInfantry=LAZY_I, SECOND\nVeteranUnits=LAZY_U\nVeteranAircraft=LAZY_A\n",

@@ -32,11 +32,6 @@ const MOORE_NEIGHBORS: [(i32, i32); 8] = [
 #[derive(Debug, Default)]
 pub struct TileVariantSelectorCache {
     selector: TileVariantSelector,
-    /// `g_ClearTile`/`g_WaterSet` survive scenario loads. Both executable BSS
-    /// values start at zero; each completed theater registry load publishes
-    /// values for a later map's pre-IsoMapPack Fill pass.
-    cached_clear_tile_base: i32,
-    cached_water_set_base: i32,
 }
 
 /// Shared identity of the native process table at89E620/initialized89E7C7.
@@ -115,8 +110,6 @@ impl TileVariantSelectorCache {
     pub fn detached(&self) -> Self {
         Self {
             selector: TileVariantSelector::from_table(self.selector.initialized_table()),
-            cached_clear_tile_base: self.cached_clear_tile_base,
-            cached_water_set_base: self.cached_water_set_base,
         }
     }
 
@@ -137,8 +130,6 @@ impl TileVariantSelectorCache {
             (None, None) => {}
             _ => return Err("terrain selector diverged after saved-load preparation"),
         }
-        self.cached_clear_tile_base = prepared.cached_clear_tile_base;
-        self.cached_water_set_base = prepared.cached_water_set_base;
         Ok(())
     }
 
@@ -150,7 +141,6 @@ impl TileVariantSelectorCache {
     pub fn initialized_for_test(table: [u8; TABLE_LEN]) -> Self {
         Self {
             selector: TileVariantSelector::from_initialized(table),
-            ..Self::default()
         }
     }
 
@@ -159,38 +149,13 @@ impl TileVariantSelectorCache {
         &'cache mut self,
         raw_draw: &'draw mut dyn FnMut() -> u32,
     ) -> TileVariantSelectionContext<'cache, 'draw> {
-        let clear_fill_tile_base = self.cached_clear_tile_base;
-        let water_fill_tile_base = self.cached_water_set_base;
         TileVariantSelectionContext {
             cache: self,
             raw_draw,
-            clear_fill_tile_base,
-            water_fill_tile_base,
             generated_table: false,
             map_fill_scenario_advance_count: 0,
             raw_draw_count: 0,
         }
-    }
-
-    /// Publish the current theater registry after this map's Fill pass. `None`
-    /// maps to the native unresolved/reset sentinel `-1`.
-    pub fn complete_theater_registry_load(
-        &mut self,
-        clear_tile: Option<u16>,
-        water_set: Option<u16>,
-    ) {
-        self.cached_clear_tile_base = clear_tile.map_or(-1, i32::from);
-        self.cached_water_set_base = water_set.map_or(-1, i32::from);
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn cached_clear_tile_base(&self) -> i32 {
-        self.cached_clear_tile_base
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn cached_water_set_base(&self) -> i32 {
-        self.cached_water_set_base
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -204,8 +169,6 @@ impl TileVariantSelectorCache {
 pub struct TileVariantSelectionContext<'cache, 'draw> {
     cache: &'cache mut TileVariantSelectorCache,
     raw_draw: &'draw mut dyn FnMut() -> u32,
-    clear_fill_tile_base: i32,
-    water_fill_tile_base: i32,
     generated_table: bool,
     map_fill_scenario_advance_count: usize,
     raw_draw_count: usize,
@@ -215,18 +178,31 @@ impl TileVariantSelectionContext<'_, '_> {
     /// Resolve one pre-IsoMapPack Fill cell. The callback owns Scenario RNG:
     /// Water calls `RandomRanged(0,3)` and advances once; every other value
     /// calls equal-bound `RandomRanged(0,0)` and leaves the cursor unchanged.
+    ///
+    /// Native (`Read_Map_Section_And_IsoMapPacks` `0x004ACE70`, reads at
+    /// `0x004ACF22`/`0x004ACF6D`) adds the process globals
+    /// `g_ClearTile`/`g_WaterSet` (zero BSS), which the theater registry load
+    /// (`0x00545150`) writes at `0x00545D27`/`0x00545E17` after this map's
+    /// Fill: the theater of the process's previous map, RMG preview or saved
+    /// game. VERA adaptation: no match start, save or replay records that
+    /// history, so every load fills as a process's first load does, over a
+    /// zero base.
+    /// RESIDUAL: every retail theater sets `ClearTile=0`, so Clear fills match.
+    /// After an earlier load, native gives a `Fill=Water` map's cells outside
+    /// IsoMapPack5 water tiles, where VERA gives land tiles 0..3, so
+    /// passability differs there. No retail map sets `Fill=`.
     pub fn draw_fill_tile_index(
         &mut self,
         is_water: bool,
         scenario_ranged_draw: &mut dyn FnMut(u32, u32) -> u32,
     ) -> i32 {
-        let (base, high) = if is_water {
+        let high = if is_water {
             self.map_fill_scenario_advance_count += 1;
-            (self.water_fill_tile_base, 3)
+            3
         } else {
-            (self.clear_fill_tile_base, 0)
+            0
         };
-        base + scenario_ranged_draw(0, high) as i32
+        scenario_ranged_draw(0, high) as i32
     }
 
     /// Select the final file index (`0` pristine, `1..` suffix siblings).
@@ -357,7 +333,7 @@ pub(crate) fn select_from_initialized_table(
     raw % total_file_count
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -439,7 +415,6 @@ mod tests {
         let mut live = TileVariantSelectorCache::default();
         let retained = live.selector();
         let mut candidate = live.detached();
-        candidate.complete_theater_registry_load(Some(23), Some(41));
         let mut main = SimRng::new(0);
         {
             let mut draw = || main.next_u32();
@@ -450,8 +425,6 @@ mod tests {
         let expected = candidate.selector.initialized_table();
         live.adopt_prepared(candidate).unwrap();
         assert_eq!(retained.initialized_table(), expected);
-        assert_eq!(live.cached_clear_tile_base(), 23);
-        assert_eq!(live.cached_water_set_base(), 41);
         let mut no_draw = || panic!("adopted process selector is warm");
         let mut next_load = live.begin_load(&mut no_draw);
         assert_eq!(next_load.select_variant(1, 2, 0, 1, 1, 8), 4);

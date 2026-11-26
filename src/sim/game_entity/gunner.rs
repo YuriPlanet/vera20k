@@ -33,67 +33,90 @@ impl TurretSelection {
 
 impl GameEntity {
     pub fn current_weapon_number(&self) -> i32 {
-        self.turret_selection.current_weapon_number
+        self.seldom.turret_selection.current_weapon_number
     }
 
     pub fn current_turret_index(&self) -> i32 {
-        self.turret_selection.current_turret_index
+        self.seldom.turret_selection.current_turret_index
     }
 
-    /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0.
+    /// Ares TechnoClass_Update (Ares.dll 1004B320, hook 0x6F9E50, `#1208`):
+    /// a `PassengerTurret=` type's current turret (`+0x124`) is its passenger
+    /// count, at most 17 and `TurretCount - 1`.
+    pub(crate) fn update_passenger_turret(&mut self, object: &ObjectType) {
+        if object.techno_combat().movement().passenger_turret() {
+            let passengers =
+                i32::try_from(self.passenger_role().passenger_count()).unwrap_or(i32::MAX);
+            self.seldom.turret_selection.current_turret_index =
+                passengers.min(17).min(object.turret_count.wrapping_sub(1));
+        }
+    }
+
+    /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0 (Ares
+    /// TechnoClass_SwitchGunner 10042480 reads indices from 18 on).
     /// Charge types retain both words; out-of-range signed modes select mode0.
     /// This changes no timer, attachment or RNG state.
-    pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType, ares: bool) {
         if object.gunner_turrets.is_charge_turret() {
             return;
         }
-        let mode = if (0..WEAPON_SLOT_COUNT as i32).contains(&mode) {
-            mode
+        // SwitchGunner hook10042480 validates against WeaponCount when Ares
+        // plays; stock retains the original eighteen-record boundary.
+        let limit = if ares {
+            object.weapon_count
         } else {
-            0
+            WEAPON_SLOT_COUNT as i32
         };
-        self.turret_selection.current_weapon_number = mode;
-        self.turret_selection.current_turret_index = object.gunner_turrets.turret_for_weapon(mode);
+        let mode = if (0..limit).contains(&mode) { mode } else { 0 };
+        self.seldom.turret_selection.current_weapon_number = mode;
+        self.seldom.turret_selection.current_turret_index =
+            object.gunner_turrets.turret_for_weapon(mode);
     }
 
     /// FireAt6FE4A4/6FF29E retains GetROF's final duration in +2F8 as well
     /// as starting +2EC. Other rearm writers do not change this saved word.
     pub(crate) fn rearm_after_fire(&mut self, frame: i32, duration: i32) {
-        self.turret_selection.charge_turret_delay = duration;
-        self.rearm_timer.start(frame, duration);
+        self.seldom.turret_selection.charge_turret_delay = duration;
+        self.seldom.rearm_timer.start(frame, duration);
+    }
+
+    /// Whether [`Self::update_charge_turret`] runs for `object`'s type: a
+    /// charge turret with turrets, not a Gattling. Others keep their index.
+    pub(crate) fn charges_turret(object: &ObjectType) -> bool {
+        object.gunner_turrets.is_charge_turret() && object.turret_count > 0 && !object.is_gattling
     }
 
     /// TechnoAI6FA4FB..6FA5BE, after target validity and before missions.
     /// The signed wrapping product precedes IDIV, then the result is clamped.
     /// Only drawing reads this index; no weapon, timer or RNG is changed.
     pub(crate) fn update_charge_turret(&mut self, frame: i32, object: &ObjectType) {
-        if !object.gunner_turrets.is_charge_turret()
-            || object.turret_count <= 0
-            || object.is_gattling
-        {
+        if !Self::charges_turret(object) {
             return;
         }
-        let selection = &mut self.turret_selection;
-        selection.current_turret_index = if selection.charge_turret_delay <= 0 {
+        let rearm_remaining = self.seldom.rearm_timer.remaining(frame);
+        let selection = &self.seldom.turret_selection;
+        let index = if selection.charge_turret_delay <= 0 {
             0
         } else {
-            (object
-                .turret_count
-                .wrapping_mul(self.rearm_timer.remaining(frame))
-                / selection.charge_turret_delay)
+            (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
+        // An unchanged index writes nothing.
+        if selection.current_turret_index != index {
+            self.seldom.turret_selection.current_turret_index = index;
+        }
     }
 
     /// Raw native state for component oracle inputs; production uses the
     /// constructor, SetGunnerWeapon and charge AI above.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_gunner_selection_for_test(&mut self, weapon: i32, turret: i32) {
-        self.turret_selection.current_weapon_number = weapon;
-        self.turret_selection.current_turret_index = turret;
+        self.seldom.turret_selection.current_weapon_number = weapon;
+        self.seldom.turret_selection.current_turret_index = turret;
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "gunner_tests.rs"]
 mod tests;

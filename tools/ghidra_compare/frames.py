@@ -146,7 +146,11 @@ def signed(hexstr):
     return v - (1 << 32) if v & 0x80000000 else v
 
 
-def pcode_frame(d, image):
+def key(v):
+    return (v['space'], v['offset'], v['size'])
+
+
+def pcode_frame(blocks, image):
     """Map checked stack expressions, including an aggregate base plus member.
 
     Resolve only constant expressions connected by unique varnodes at one
@@ -154,10 +158,35 @@ def pcode_frame(d, image):
     A base used solely to form a member address is intermediate, not the
     address passed by the native LEA (Cell rehearsal 0x425713, 0x5F6A85,
     0x75B5BF; native/p-code fixtures in cellclass/session).
+
+    `blocks` is [(stop address, ops), ...]. Returns (frame, edges). A COPY the
+    decompiler inserts to feed a successor's MULTIEQUAL carries its
+    predecessor block's stop address (Ghidra Merge::trimOpInput), not an
+    operand of the native instruction there: 0x41028C `mov ebx,[esp+0x10]`
+    reads Stack+4 while its block ends with a COPY of Stack+8 for the next
+    REPE CMPSD (fixtures/query_interface_410260.json). Such a COPY - at its
+    block's stop, into a temporary defined once and read only by MULTIEQUALs
+    - stays out of the frame; `edges` keeps its stack inputs by address.
     """
-    groups = {}
-    for op in d['high_pcodes']:
-        groups.setdefault(op['seq']['address'], []).append(op)
+    defined, readers = {}, {}
+    for _, ops in blocks:
+        for op in ops:
+            if op.get('output'):
+                defined[key(op['output'])] = defined.get(key(op['output']), 0) + 1
+            for v in op.get('inputs', []):
+                readers.setdefault(key(v), []).append(op['mnemonic'])
+    groups, edges = {}, {}
+    for stop, ops in blocks:
+        for op in ops:
+            address, v = op['seq']['address'], op.get('output')
+            use = readers.get(key(v), []) if v else []
+            if (op['mnemonic'] == 'COPY' and address == stop and v and v['space'] == 'unique'
+                    and defined[key(v)] == 1 and use and all(m == 'MULTIEQUAL' for m in use)):
+                edges.setdefault(address, set()).update(
+                    (signed(i['offset']), i['size']) for i in op['inputs'] if i['space'] == 'stack')
+            else:
+                groups.setdefault(address, []).append(op)
+    edges = {a: sorted(list(o) for o in values) for a, values in edges.items() if values}
     out = {}
     for address, ops in groups.items():
         native = image.instruction(int(address, 16))
@@ -168,9 +197,6 @@ def pcode_frame(d, image):
             and operands[0].type == X.X86_OP_MEM and not operands[0].mem.index
             and native.reg_name(operands[0].mem.base) in ('esp', 'ebp')
             and operands[1].type in (X.X86_OP_REG, X.X86_OP_IMM))
-        def key(v):
-            return (v['space'], v['offset'], v['size'])
-
         definitions, users = {}, {}
         for n, op in enumerate(ops):
             v = op.get('output')
@@ -242,7 +268,7 @@ def pcode_frame(d, image):
             # This covers present high instructions; entirely absent high
             # instructions remain outside this mapping's declared coverage.
             out[address] = sorted([list(o) for o in offs], key=lambda o: (o[0], o[1] or 0))
-    return out
+    return out, edges
 
 
 def fits(c, d):
@@ -282,11 +308,12 @@ def read_frame(client, addr, image):
         blocks = data['basic_blocks']
         if not isinstance(blocks, list) or not blocks:
             raise ReadError('Missing or empty decoded high p-code blocks')
-        ops = []
+        ops, decoded = [], []
         for block in blocks:
             if not isinstance(block, dict) or not isinstance(block.get('pcodes'), list):
                 raise ReadError('Incomplete decoded high p-code block')
             ops.extend(block['pcodes'])
+            decoded.append((address(block['stop']['address'])[2:].lower(), block['pcodes']))
         if not ops:
             raise ReadError('Empty decoded high p-code')
         for op in ops:
@@ -299,7 +326,7 @@ def read_frame(client, addr, image):
                 if not isinstance(var['space'], str) or not isinstance(var['size'], int) or var['size'] <= 0:
                     raise ReadError('Malformed p-code varnode')
                 var['offset'] = format(int(var['offset'], 16), 'x')
-        return pcode_frame({'high_pcodes': ops}, image)
+        return pcode_frame(decoded, image)
     except (KeyError, TypeError, ValueError, OSError) as error:
         raise ReadError(f'{addr}: unreadable high p-code: {error}') from error
 
@@ -308,10 +335,10 @@ def compare_frames(before, after, addresses, native_frames):
     report = dict(kind='frames', before=before.identity(), after=after.identity(),
                   attempted=len(addresses), compared=0, read_errors=[], analysis_limits=[], functions=[])
     for addr in addresses:
-        maps, failure = {}, {'addr': addr}
+        maps, edges, failure = {}, {}, {'addr': addr}
         for side, client in (('before', before), ('after', after)):
             try:
-                maps[side] = read_frame(client, addr, native_frames.image)
+                maps[side], edges[side] = read_frame(client, addr, native_frames.image)
             except ReadError as error:
                 failure[side] = str(error)
         if len(maps) != 2:
@@ -323,6 +350,7 @@ def compare_frames(before, after, addresses, native_frames):
             report['read_errors'].append({'addr': addr, 'native': str(error)})
             continue
         fb, fa = maps['before'], maps['after']
+        eb, ea = edges['before'], edges['after']
         gb, ga = agreement(fb, real), agreement(fa, real)
         wb, wa = {x[0] for x in gb['wrong']}, {x[0] for x in ga['wrong']}
         common = sorted(set(fb) & set(fa))
@@ -334,13 +362,19 @@ def compare_frames(before, after, addresses, native_frames):
                    wrong_to_right=sorted(site for site in wb - wa if site in fa),
                    code=dict(unsolved=unsolved, notes=result['notes'], conflicts=result['conflicts']),
                    native_accesses=len(real), unmapped_before=sorted(set(real) - set(fb)),
-                   unmapped_after=sorted(set(real) - set(fa)))
+                   unmapped_after=sorted(set(real) - set(fa)),
+                   # Phi-edge stack copies at a native access: [site, native, before, after].
+                   edges=[[site, real[site], eb.get(site, []), ea.get(site, [])]
+                          for site in sorted(set(real) & (set(eb) | set(ea)))],
+                   edge_changed=[[site, eb[site], ea[site]]
+                                 for site in sorted(set(eb) & set(ea)) if eb[site] != ea[site]])
         report['functions'].append(row)
         report['compared'] += 1
         if unsolved or result['notes'] or result['conflicts']:
             report['analysis_limits'].append(dict(addr=addr, **row['code']))
     report['complete'] = not report['read_errors']
-    has_findings = any(row['changed'] or row['after']['wrong'] for row in report['functions'])
+    has_findings = any(row['changed'] or row['edge_changed'] or row['after']['wrong']
+                       for row in report['functions'])
     report['status'] = ('incomplete' if not report['complete'] or report['analysis_limits'] else
                         'findings' if has_findings else 'ok')
     return report

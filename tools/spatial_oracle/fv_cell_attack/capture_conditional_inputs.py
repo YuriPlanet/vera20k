@@ -10,6 +10,7 @@ from pathlib import Path
 import argparse,hashlib,json
 from tools.cargo_run import source_identity
 from tools.native_oracle import first_difference
+from tools.native_oracle import require
 from tools.spatial_oracle.fv_cell_attack.paid_conditional_input_tools import REPO,schedule,selected_logic_ids
 
 sha=lambda raw:hashlib.sha256(raw).hexdigest()
@@ -89,7 +90,7 @@ if __name__=='__main__':
     result=extract(a.production_dir,a.manifest,declarations,historical=historical,source_root=a.source_repo)
     if historical:
         actual=json.loads(json.dumps(result))
-        assert (difference:=first_difference(historical,actual)) is None, difference
+        require((difference:=first_difference(historical,actual)) is None, difference)
         print('PASS historical constructor inputs/outside schedule and sealed build/source receipts; no files written')
     else:
         a.out.write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')

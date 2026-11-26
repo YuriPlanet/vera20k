@@ -98,7 +98,7 @@ fn retail_world(rules: &RuleSet, terrain_rules: &TerrainRules) -> Simulation {
     let terrain = ResolvedTerrainGrid::from_cells(128, 128, cells);
     let path = PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&path));
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -128,
         off_100: -128,
@@ -157,7 +157,7 @@ fn assert_actor(sim: &Simulation, id: u64, native: &Value, name: &str) {
         ("marked", u8::from(actor.lifecycle.cell_marked())),
         (
             "logic_registered",
-            u8::from(actor.in_logic_vector.is_member()),
+            u8::from(actor.seldom.in_logic_vector.is_member()),
         ),
     ] {
         assert_eq!(json!(actual), native[label], "{name}: {label}");
@@ -302,13 +302,13 @@ fn assert_radio_pair(sim: &Simulation, ids: (u64, u64), native: &Value, name: &s
             "{name}: {role} Location"
         );
         assert_eq!(
-            json!(endpoint.radio_contacts.capacity()),
+            json!(endpoint.seldom.radio_contacts.capacity()),
             expected["contact_capacity"],
             "{name}: {role} sparse contact capacity"
         );
-        let actual_contacts: Vec<_> = (0..endpoint.radio_contacts.capacity())
+        let actual_contacts: Vec<_> = (0..endpoint.seldom.radio_contacts.capacity())
             .map(|slot| {
-                endpoint.radio_contacts.slot(slot).map(|target| {
+                endpoint.seldom.radio_contacts.slot(slot).map(|target| {
                     if target == ids.0 {
                         "unit"
                     } else {
@@ -329,7 +329,7 @@ fn assert_radio_pair(sim: &Simulation, ids: (u64, u64), native: &Value, name: &s
             "{name}: {role} Contacts"
         );
         assert_eq!(
-            endpoint.tether.partner(),
+            endpoint.seldom.tether.partner(),
             (expected["tether"] == 1).then_some(peer),
             "{name}: {role} tether owner"
         );
@@ -453,7 +453,7 @@ fn compare_factory_radio_call(
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         } else {
             // The caller-CMP control stops after Unit73A943's original CMP
@@ -465,7 +465,7 @@ fn compare_factory_radio_call(
                 ids.0,
                 RadioMessage::RequestClearance,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         assert_eq!(
@@ -514,7 +514,7 @@ fn retail_unit_unlimbo_matches_original_admission_and_caller_pose() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_actor(&sim, id, &row["before"]["actor"], name);
@@ -547,7 +547,7 @@ fn retail_unit_unlimbo_matches_original_admission_and_caller_pose() {
                     PlacementEvidence::EvaluateMark,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             },
         );
@@ -624,10 +624,13 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
         );
         let id = if input["scope"] == 2 {
             projected += 1;
-            let entities = parse_map_entities(&IniFile::from_str(&format!(
-                "[Units]\n0=Americans,MTNK,256,{},{},128,Guard,None,0,-1,{},-1,1,1\n",
-                cell.0, cell.1, input["parsed_high"],
-            )));
+            let entities = parse_map_entities(
+                &IniFile::from_str(&format!(
+                    "[Units]\n0=Americans,MTNK,256,{},{},128,Guard,None,0,-1,{},-1,1,1\n",
+                    cell.0, cell.1, input["parsed_high"],
+                )),
+                4,
+            );
             assert_eq!(entities.len(), 1);
             assert_eq!(entities[0].high, input["parsed_high"] != 0);
             let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
@@ -667,7 +670,7 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_actor(&sim, id, &row["before"], name);
@@ -684,7 +687,7 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
                 PlacementEvidence::EvaluateMark,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 json!(u8::from(result.is_some())),
@@ -754,7 +757,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let on_bridge = case["on_bridge"].as_bool().unwrap();
@@ -786,7 +789,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
                     PlacementEvidence::EvaluateMark,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .is_some()
             }),
@@ -921,7 +924,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
                 0,
                 0,
                 &base_rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let initial = &row["initial_placement"];
@@ -937,14 +940,14 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
                 PlacementEvidence::EvaluateMark,
                 &base_rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );
         assert_stage(&sim, id, &initial["stage_after"], name);
         assert_stage(&sim, id, &row["limbo"]["stage_before"], name);
         assert_eq!(
-            sim.techno_limbo_with_rules(id, &base_rules, Some(&registry)),
+            sim.techno_limbo_with_rules(id, &base_rules),
             super::ConcealOutcome::Concealed,
             "{name}: shared Limbo owner prepares the reused object"
         );
@@ -963,12 +966,11 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
             ));
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
-            .unwrap()
-            .into();
-        sim.scenario_rng =
+        *sim.main_rng =
+            serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
+        *sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
         apply_cell_inputs(&mut sim, cell, input);
         assert_stage(&sim, id, &row["stage_before"], name);
@@ -981,7 +983,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
             PlacementEvidence::EvaluateMark,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             json!(u8::from(result.is_some())),
@@ -1108,7 +1110,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let producer_coord = coord(&input["producer_xyz"]);
@@ -1216,7 +1218,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 id,
                 (0, 0),
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.object_placement_scope_active(),
@@ -1257,8 +1259,8 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         );
         assert_eq!(
             json!([
-                actor.rearm_timer.start_frame(),
-                actor.rearm_timer.duration()
+                actor.seldom.rearm_timer.start_frame(),
+                actor.seldom.rearm_timer.duration()
             ]),
             row["after"]["rearm"],
             "{name}: original ExitObject rearm timer"
@@ -1278,7 +1280,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             "{name}: Radio HELLO contact"
         );
         assert_eq!(
-            actor.tether.partner(),
+            actor.seldom.tether.partner(),
             Some(producer_id),
             "{name}: Radio TETHER receiver"
         );
@@ -1324,7 +1326,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             owner,
             ProductionCategory::Vehicle,
             production::ProductionCancellation::Category(ProductionCategory::Vehicle),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.production
@@ -1379,7 +1381,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let producer = sim
@@ -1391,7 +1393,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let ids = (unit, producer);
@@ -1429,7 +1431,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 PlacementEvidence::EvaluateMark,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         }));
@@ -1449,7 +1451,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 RadioMessage::Hello,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .code(),
             1,
@@ -1463,7 +1465,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 RadioMessage::Tether,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .code(),
             1,
@@ -1479,6 +1481,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 .entities
                 .get_mut(unit)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .remove(producer);
         }
@@ -1509,10 +1512,10 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
             "{} scope{} mode{}",
             input["kind"], input["scenario_init_counter"], input["actual_game_mode"]
         );
-        let (mut sim, rules, registry) = entry_test_fixture::fixture_with_rules(
+        let (mut sim, rules, _registry) = entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\n[O0]\nCrate=yes\n",
         );
-        sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
+        *sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
         let owner = sim.interner.intern("Americans");
         sim.houses
             .register(HouseState::new(owner, 0, None, false, 0, 10));
@@ -1527,7 +1530,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
             .mission_assign_exact(90, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
         let bounds = &input["fixture"]["bounds"];
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: int(&bounds[0]),
             off_fc: int(&bounds[1]),
             off_100: int(&bounds[2]),
@@ -1553,7 +1556,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
             &mut |sim| {
                 let cell = NativeCellQuery::canonical(sim.resolved_terrain.as_ref().unwrap())
                     .lookup((11, 10));
-                sim.foot_can_enter(90, cell, InfantryEntryArgs::REPAIR, &rules, Some(&registry))
+                sim.foot_can_enter(90, cell, InfantryEntryArgs::REPAIR, &rules)
                     .unwrap()
             },
         );
@@ -1587,7 +1590,7 @@ fn nested_placement_scope_restores_the_caller_after_failed_reveal() {
                 0,
                 PlacementEvidence::RejectedEarly,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
         assert!(result.is_none());

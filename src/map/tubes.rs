@@ -4,6 +4,12 @@
 //! path-step buffer. Automatic low-bridge shell tubes are constructed later in
 //! resolved terrain from final land type and theater tile identity.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use crate::map::tube_facts::TubeFact;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok};
@@ -47,14 +53,14 @@ impl RawTubeSection {
 }
 
 /// Native constructor identity retained beside the successful Tube fact.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TubeNativeInit {
     pub source_entry_ordinal: usize,
     pub native_unique_id: i32,
 }
 
 /// One successfully allocated, assigned, and parsed authored Tube record.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstructedMapTube {
     pub fact: TubeFact,
     pub native_init: TubeNativeInit,
@@ -63,19 +69,19 @@ pub struct ConstructedMapTube {
 /// Consumed-once successful/partial receipt for the raw Tube boundary. `Some`
 /// with zero entries distinguishes an empty section whose reservation ran from
 /// a load that never reached the boundary.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct NativeMapTubeReceipt {
     pub entries: Vec<ConstructedMapTube>,
 }
 
 /// Consumed-once ownership of the raw `[Tubes]` boundary: a fresh map read
 /// installs one receipt, and terrain binding takes it once.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct NativeMapTubes {
     state: NativeMapTubesState,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 enum NativeMapTubesState {
     #[default]
     Unconstructed,
@@ -107,16 +113,12 @@ impl NativeMapTubes {
 
     /// Terrain binding's one take of the constructed receipt.
     pub(crate) fn take_receipt(&mut self) -> Result<NativeMapTubeReceipt, NativeMapTubesTakeError> {
-        match &self.state {
-            NativeMapTubesState::Unconstructed => Err(NativeMapTubesTakeError::NotConstructed),
+        match std::mem::replace(&mut self.state, NativeMapTubesState::Bound) {
+            NativeMapTubesState::Pending(receipt) => Ok(receipt),
             NativeMapTubesState::Bound => Err(NativeMapTubesTakeError::AlreadyBound),
-            NativeMapTubesState::Pending(_) => {
-                let NativeMapTubesState::Pending(receipt) =
-                    std::mem::replace(&mut self.state, NativeMapTubesState::Bound)
-                else {
-                    unreachable!("matched Pending above")
-                };
-                Ok(receipt)
+            NativeMapTubesState::Unconstructed => {
+                self.state = NativeMapTubesState::Unconstructed;
+                Err(NativeMapTubesTakeError::NotConstructed)
             }
         }
     }
@@ -235,7 +237,7 @@ fn parse_allocated_tube_entry(value: &str) -> Result<TubeFact, AllocatedTubePars
     Ok(TubeFact::explicit(entry, exit, direction, path_steps))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

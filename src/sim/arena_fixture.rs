@@ -57,6 +57,35 @@ pub fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulatio
     sim
 }
 
+/// The player has discovered `id` (Techno `+0x41B`), as a campaign object in
+/// explored ground is from its first AI tick (`update_techno_discovery_from_shroud`).
+/// The arena runs the campaign without a current player, so nothing is
+/// discovered there, and a human player's unit acquires only what the player
+/// owns or has discovered (Evaluate_Candidate `0x006F81BE..0x006F81F4`).
+pub fn discover(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("discovered object")
+        .seldom
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
+}
+
+/// The player owns `id` (Techno `+0x41A`), as every object of the campaign
+/// player's house does (InitManagers `0x006F3F40`): a human player's healer
+/// or repairer takes its own side's units only with it, for the reason
+/// [`discover`] gives.
+pub fn own(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("owned object")
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+}
+
 /// The rival-house arena with flat Water cells and the production rules'
 /// land semantics. Ships enter through ordinary Unlimbo; no movement tuning
 /// or missing-terrain placement bypass is needed.
@@ -176,8 +205,8 @@ fn install_empty_arena_navigation(
             probe_dummy.adopt_prepared_load_state(&dummy);
             assert!(probe.rebuild_dynamic_navigation(rules));
             Some((
-                probe.zone_grid?,
-                probe.path_grid?,
+                probe.zone_grid.into_inner()?,
+                probe.path_grid.into_inner()?,
                 probe_dummy.fork_query_identity(),
             ))
         })
@@ -190,13 +219,16 @@ fn install_empty_arena_navigation(
 /// A `size` x `size` grid of clear ground cells.
 fn clear_ground(size: u16) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
     let clear = crate::rules::terrain_rules::SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
         float: None,
-        amphibious: Some(80),
+        amphibious: Some(crate::rules::terrain_rules::test_speed_percent(80)),
         float_beach: None,
-        hover: Some(50),
+        hover: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            0x3f00_0000,
+        )),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let cell = |x, y| {
         let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
@@ -235,13 +267,16 @@ pub fn supply_native_map(sim: &mut Simulation) {
         // Every supplied clear ground has the same zones; a fixture builds
         // them once per test process and installs a copy.
         static CLEAR_GROUND_ZONES: std::sync::OnceLock<ZoneGrid> = std::sync::OnceLock::new();
-        sim.zone_grid = Some(if supplies_ground {
-            CLEAR_GROUND_ZONES
-                .get_or_init(|| native_zones(&grid, terrain))
-                .clone()
-        } else {
-            native_zones(&grid, terrain)
-        });
+        *sim.zone_grid = Some(
+            if supplies_ground {
+                CLEAR_GROUND_ZONES
+                    .get_or_init(|| native_zones(&grid, terrain))
+                    .clone()
+            } else {
+                native_zones(&grid, terrain)
+            }
+            .into(),
+        );
     }
     if sim.playfield_bounds().is_none() {
         let span = size.0.max(size.1);
@@ -274,7 +309,7 @@ pub fn supply_native_map_keyed<K: Ord + Send + 'static>(sim: &mut Simulation, te
             })
             .expect("keyed fixture zones");
         dummy.adopt_prepared_load_state(&built);
-        sim.zone_grid = Some(zones);
+        *sim.zone_grid = Some(zones.into());
     }
     supply_native_map(sim);
 }
@@ -332,7 +367,7 @@ pub fn install_status_miner_cargo(
             .chain(std::iter::repeat_with(|| bale(1, ResourceType::Gem)).take(gems))
             .collect(),
     );
-    entity.miner = Some(miner);
+    entity.miner = Some(Box::new(miner));
 }
 
 /// Explicit Foot+694 prior for an object-action consumer comparison. Actual
@@ -350,11 +385,11 @@ pub fn install_status_capture_count(
     count: u32,
 ) {
     let victims: Vec<_> = (0..count).map(|index| u64::from(index) + 10_000).collect();
-    entity.capture_manager = Some(
+    entity.capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
             capacity, infinite, &victims,
         ),
-    );
+    ));
 }
 
 /// One physical retail scene shared by the flight/rearm and presentation tests.
@@ -465,6 +500,8 @@ pub fn retail_harrier_dock_scene_on_map(
 /// Explicit status-consumer ammo prior. Construction, pending release/debit
 /// and rearm use their existing owner methods. These bounded transitions do
 /// not substitute for the physical Attack/return/dock production fixture.
+/// A "reloading" stage starts the reload clock at frame 0 once the count is
+/// installed (`GameEntity::start_reloading_ammo`).
 /// Returns (initialized Ammo, current Ammo, pending release).
 pub fn install_status_ammo_state(
     entity: &mut crate::sim::game_entity::GameEntity,
@@ -476,7 +513,7 @@ pub fn install_status_ammo_state(
     let ammo = entity.ammo_mut().expect("Foot ammo initialization");
     let initialized = ammo.current();
     match stage {
-        "full" => {}
+        "full" | "reloading" => {}
         "depleted" | "rearmed" => {
             ammo.begin_release();
             ammo.consume_release(false);
@@ -489,9 +526,13 @@ pub fn install_status_ammo_state(
     if let Some(current) = current {
         ammo.set_current_for_test(current);
     }
-    (initialized, ammo.current(), ammo.release_pending())
+    let installed = (initialized, ammo.current(), ammo.release_pending());
+    if stage == "reloading" {
+        entity.start_reloading_ammo(object, 0);
+    }
+    installed
 }
 /// Explicit DrawExtras consumer prior; repair lifecycle tests use ToggleRepair.
 pub fn install_status_repair(entity: &mut crate::sim::game_entity::GameEntity, repairing: bool) {
-    entity.repairing.set_for_test(repairing);
+    entity.building.repairing.set_for_test(repairing);
 }

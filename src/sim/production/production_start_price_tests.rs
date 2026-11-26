@@ -56,7 +56,7 @@ fn scene() -> Option<(SimRuntime, InternedId)> {
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     frame(&mut runtime, owner);
     frame(&mut runtime, owner);
@@ -74,7 +74,7 @@ fn frame(runtime: &mut SimRuntime, owner: InternedId) {
             &[],
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .expect("ordinary bound-resource production frame");
 }
@@ -115,7 +115,7 @@ fn create_distinct_plants(runtime: &mut SimRuntime, owner: InternedId) {
     let map = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).unwrap();
     let sim = &mut runtime.simulation;
     sim.session.install_waypoints(&map.waypoints);
-    sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
     sim.classify_map_triggers(&runtime.resources.rules);
     frame(runtime, owner);
     // Removing the first one-shot Tag compacts the forward live walk. Let the
@@ -166,7 +166,7 @@ fn begin_refinery(runtime: &mut SimRuntime, owner: InternedId) -> u64 {
         &runtime.resources.rules,
         OWNER,
         "GAREFN",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     runtime
@@ -274,11 +274,11 @@ fn finish_history(start_before_plants: bool) {
         &runtime.resources.rules,
         OWNER,
         ProductionPlacement::Building {
-            type_id: "GAREFN",
+            type_id: "GAREFN".into(),
             cell: (12, 13)
         },
-        Some(&runtime.resources.overlay_registry),
-        FrameEffects::default(),
+        Some(runtime.resources.rules.overlay_registry()),
+        &mut FrameEffects::default(),
     ));
     for _ in 0..600 {
         if runtime

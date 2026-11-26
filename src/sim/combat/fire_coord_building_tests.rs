@@ -94,6 +94,7 @@ fn building_aim_directions_match_the_original() {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(input["foundation"].as_str().unwrap().to_string().into());
         let target = &input["target"];
@@ -108,6 +109,7 @@ fn building_aim_directions_match_the_original() {
                     .entities
                     .get_mut(2)
                     .unwrap()
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(target["foundation"].as_str().unwrap_or("1x1").into());
             }
@@ -125,6 +127,7 @@ fn building_aim_directions_match_the_original() {
         let current = building.body_facing.current(frame);
         let (flh, fire) = building_fire_facings(
             &sim,
+            &rules,
             &FireSource::of_entity(building),
             obj,
             firer_art(&rules, obj),
@@ -170,11 +173,6 @@ fn building_primary_pixel_and_selected_flh_match_original_slot_and_burst_control
     for row in rows {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nTurret=no\n\
-             Primary=GUN\nSecondary=SUPPORT\n[GUN]\nDamage=1\n[SUPPORT]\nDamage=1\n",
-        ))
-        .unwrap();
         let triplet = |key: &str, fallback: [i32; 3]| -> [i32; 3] {
             input[key].as_array().map_or(fallback, |v| {
                 std::array::from_fn(|axis| v[axis].as_i64().unwrap() as i32)
@@ -186,6 +184,18 @@ fn building_primary_pixel_and_selected_flh_match_original_slot_and_burst_control
             (v[0].as_i64().unwrap(), v[1].as_i64().unwrap())
         });
         let dual = input["primary_dual"].as_bool().unwrap();
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nTurret=no\n\
+             Primary=GUN\nSecondary=SUPPORT\n[GUN]\nDamage=1\n[SUPPORT]\nDamage=1\n",
+            ),
+            &IniFile::from_str(&format!(
+                "[BLD]\nFoundation=1x1\nPrimaryFirePixelOffset={px},{py}\n\
+             PrimaryFireDualOffset={dual}\nPrimaryFireFLH={forward},{lateral},{height}\n\
+             SecondaryFireFLH={sf},{sl},{sh}\n",
+            )),
+        )
+        .unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
             "[BLD]\nFoundation=1x1\nPrimaryFirePixelOffset={px},{py}\n\
              PrimaryFireDualOffset={dual}\nPrimaryFireFLH={forward},{lateral},{height}\n\
@@ -252,9 +262,14 @@ fn building_identity_matrix_matches_original_get_flh() {
         let input = &row["input"];
         let [forward, lateral, height] = triple(&input["flh"]);
         let offset = input["turret_offset"].as_i64().unwrap();
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nPrimary=GUN\n[GUN]\nDamage=1\n",
-        ))
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nPrimary=GUN\n[GUN]\nDamage=1\n",
+            ),
+            &IniFile::from_str(&format!(
+                "[BLD]\nTurretOffset={offset}\nPrimaryFireFLH={forward},{lateral},{height}\n",
+            )),
+        )
         .unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
             "[BLD]\nTurretOffset={offset}\nPrimaryFireFLH={forward},{lateral},{height}\n",
@@ -291,13 +306,14 @@ fn building_identity_matrix_matches_original_get_flh() {
 
 /// The reader inputs one `building_voxel_flh.json` row writes: `[BLD]`'s type
 /// keys and the `[BLD]` ART section the merged FLH and pixel offset come from.
-/// The row's `barrel_anim_is_voxel` byte has no reader (`+0x16C6` is the arm
-/// VERA does not port) and every row leaves it clear. `primary` supplies the
-/// laser weapon its consumer re-reads; these fixtures retain the same ART
-/// coordinate inputs with `TurretCount=` at its default of 0.
+/// The barrel keys are RULES-layer reads (`BarrelAnimIsVoxel=` and the four
+/// `VoxelBarrelOffsetTo*` triples through `Read3Int`), the pixel offset and
+/// FLH are ART reads. `primary` supplies the weapon its consumer re-reads,
+/// carrying the row's `weapon_burst` as `Burst=`; these fixtures retain the
+/// same ART coordinate inputs with `TurretCount=` at its default of 0.
 fn voxel_rules_with(input: &Value, primary: Option<&str>) -> RuleSet {
     let flag = |key: &str| {
-        if input[key].as_i64().unwrap() != 0 {
+        if input[key].as_i64().unwrap_or(0) != 0 {
             "yes"
         } else {
             "no"
@@ -308,25 +324,51 @@ fn voxel_rules_with(input: &Value, primary: Option<&str>) -> RuleSet {
         format!("{},{}", value[0], value[1])
     };
     let triple_text = |key: &str| {
-        let value = input[key].as_array().unwrap();
-        format!("{},{},{}", value[0], value[1], value[2])
+        input[key]
+            .as_array()
+            .map_or(String::from("0,0,0"), |value| {
+                format!("{},{},{}", value[0], value[1], value[2])
+            })
     };
+    let burst = input["weapon_burst"].as_i64().unwrap_or(1);
     let (primary_key, primary_section) = match primary {
         Some(name) => (
             format!("Primary={name}\n"),
-            format!("[{name}]\nIsLaser=yes\nIsHouseColor=yes\nLaserDuration=15\nDamage=1\n"),
+            format!(
+                "[{name}]\nIsLaser=yes\nIsHouseColor=yes\nLaserDuration=15\n\
+             Damage=1\nBurst={burst}\n"
+            ),
         ),
         None => (String::new(), String::new()),
     };
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[BuildingTypes]\n0=BLD\n\
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=BLD\n\
          [BLD]\nStrength=500\nTurret=yes\nTurretAnimIsVoxel={}\n\
-         TurretAnimX={}\nTurretAnimY={}\n{primary_key}{primary_section}",
-        flag("turret_anim_is_voxel"),
-        input["turret_anim_x"].as_i64().unwrap(),
-        input["turret_anim_y"].as_i64().unwrap(),
-    )))
-    .expect("rules");
+         TurretAnimX={}\nTurretAnimY={}\nBarrelAnimIsVoxel={}\n\
+         VoxelBarrelOffsetToPitchPivotPoint={}\n\
+         VoxelBarrelOffsetToRotatePivotPoint={}\n\
+         VoxelBarrelOffsetToBuildingPivotPoint={}\n\
+         VoxelBarrelOffsetToBarrelEnd={}\n{primary_key}{primary_section}",
+            flag("turret_anim_is_voxel"),
+            input["turret_anim_x"].as_i64().unwrap(),
+            input["turret_anim_y"].as_i64().unwrap(),
+            flag("barrel_anim_is_voxel"),
+            triple_text("voxel_barrel_pitch_pivot"),
+            triple_text("voxel_barrel_rotate_pivot"),
+            triple_text("voxel_barrel_building_pivot"),
+            triple_text("voxel_barrel_end"),
+        )),
+        &IniFile::from_str(&format!(
+            "[BLD]\nPrimaryFirePixelOffset={}\nPrimaryFireDualOffset={}\n\
+         PrimaryFireFLH={}\nSecondaryFireFLH={}\n",
+            pair("primary_pixel_offset"),
+            flag("primary_dual"),
+            triple_text("primary_flh"),
+            triple_text("secondary_flh"),
+        )),
+    )
+    .unwrap();
     rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(&format!(
         "[BLD]\nPrimaryFirePixelOffset={}\nPrimaryFireDualOffset={}\n\
          PrimaryFireFLH={}\nSecondaryFireFLH={}\n",
@@ -348,11 +390,17 @@ fn voxel_rules(input: &Value) -> RuleSet {
 /// with its `+0x388` facing snapped to the row's heading. Every row states
 /// those inputs explicitly and records the addresses the arm reached, so the
 /// `voxel_disabled` control shows the original converting pixels in one row
-/// and the base GetFLH arm in the other.
+/// and the base GetFLH arm in the other. The `BarrelAnimIsVoxel` rows are
+/// [`building_voxel_barrel_shot_origin_matches_the_original_flh`]'s.
 #[test]
 fn building_voxel_turret_shot_origin_matches_the_original_flh() {
     let native = voxel_native();
-    let rows = native["voxel_flh"].as_array().unwrap();
+    let rows: Vec<&Value> = native["voxel_flh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["input"]["barrel_anim_is_voxel"].as_i64() == Some(0))
+        .collect();
     assert_eq!(rows.len(), 13);
     for row in rows {
         let input = &row["input"];
@@ -415,6 +463,103 @@ fn building_voxel_turret_shot_origin_matches_the_original_flh() {
     assert_eq!(triple(&voxel_row(&native, "gtgcan_burst1")["source"]), with);
 }
 
+/// The `BarrelAnimIsVoxel=` rows run the original `+0x16C6` arm: the whole
+/// coordinate is `GetTurretDrawPosition @ 0x00453BF0` — the `0x00458810`
+/// pivot chain, whose uninitialized `+0x1728` scale the rows hold at VERA's
+/// 0.0, removing the burst-signed barrel end, plus the tail's own
+/// `TurretAnimX`/`TurretAnimY` add — with no weapon FLH and no base GetFLH.
+/// The rows vary heading, elevation, and the burst-selected barrel index
+/// (`CurrentBurstIndex - 1`, or, at zero, the weapon's `Burst - 1`).
+/// `barrel_pixel_precedence` keeps the primary-pixel arm in front,
+/// `barrel_voxel_turret_pixels` shows a `TurretAnimIsVoxel` type losing to
+/// the barrel arm with its pixels still added.
+#[test]
+fn building_voxel_barrel_shot_origin_matches_the_original_flh() {
+    let native = voxel_native();
+    let rows: Vec<&Value> = native["voxel_flh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["input"]["barrel_anim_is_voxel"].as_i64() == Some(1))
+        .collect();
+    assert_eq!(rows.len(), 7);
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let rules = voxel_rules_with(input, Some("BLDLaser"));
+        let mut sim = Simulation::new();
+        place(
+            &mut sim,
+            1,
+            "BLD",
+            EntityCategory::Structure,
+            &input["location"],
+        );
+        let heading = input["heading"].as_u64().unwrap() as u16;
+        let elevation = input["elevation"].as_u64().unwrap() as u16;
+        let building = sim.substrate.entities.get_mut(1).unwrap();
+        building.body_facing = FacingClass::new(heading, 0);
+        building.set_barrel_elevation_for_test(FacingClass::new(elevation, 0));
+        for _ in 0..input["burst"].as_u64().unwrap() {
+            building.seldom.weapon_burst.advance();
+        }
+        let building = sim.substrate.entities.get(1).unwrap();
+        let obj = sim.object_type(building.type_ref(), &rules).unwrap();
+        let before = sim.state_hash();
+        let shot = fire_coordinate(
+            &sim,
+            &rules,
+            &FireSource::of_entity(building),
+            obj,
+            input["weapon_index"].as_i64().unwrap() as i32,
+            0,
+            Flh::default(),
+        );
+        assert_eq!(sim.state_hash(), before, "{name} read-only fire coordinate");
+        assert_eq!(shot.coord, native_coord(&row["source"]), "{name}");
+        assert_eq!(
+            shot.offset_y,
+            row["source"][1].as_i64().unwrap() as i32
+                - row["object_coordinate"][1].as_i64().unwrap() as i32,
+            "{name} offset_y"
+        );
+        let getters: Vec<&str> = row["getters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|getter| getter.as_str().unwrap())
+            .collect();
+        assert!(getters.contains(&"0x453840"), "{name} entered GetFLH");
+        // `0x453BF0`/`0x458810` exactly when the primary-pixel arm does not
+        // take the shot first; the base GetFLH never runs on this path.
+        let pixel_arm = pair(&input["primary_pixel_offset"]) != [0xFFFF, 0xFFFF];
+        assert_eq!(
+            getters.contains(&"0x453bf0"),
+            !pixel_arm,
+            "{name} barrel arm"
+        );
+        assert_eq!(getters.contains(&"0x458810"), !pixel_arm, "{name} chain");
+        assert!(!getters.contains(&"0x6f3ad0"), "{name} skipped base GetFLH");
+        assert!(getters.contains(&"0x6d2070"), "{name} tail pixel add");
+        assert!(row["rng_unchanged"].as_bool().unwrap(), "{name} RNG");
+    }
+    // The zero scale removes the barrel end: the +Y, -Y and unsigned
+    // barrels all fire from the same pivot point.
+    let positive = triple(&voxel_row(&native, "barrel_burst1_positive")["source"]);
+    let wrap = triple(&voxel_row(&native, "barrel_burst0_wrap")["source"]);
+    let beyond = triple(&voxel_row(&native, "barrel_burst3_beyond")["source"]);
+    assert_eq!(positive, wrap);
+    assert_eq!(positive, beyond);
+    // The barrel arm wins over a voxel-turret type and its tail already
+    // carries the TurretAnimX/Y add: the only difference from the bare
+    // barrel row is the (251, 226) iso(3, 28), its authored FLH inert.
+    let with_pixels = triple(&voxel_row(&native, "barrel_voxel_turret_pixels")["source"]);
+    assert_eq!(
+        (with_pixels[0] - positive[0], with_pixels[1] - positive[1]),
+        (251, 226)
+    );
+}
+
 /// The beam consumer of the same owner: `laser::fired` (FireAt's IsLaser arm
 /// `0x006FF4CC` through `SpawnLaser 0x006FD210`) emits the laser's source as
 /// [`fire_coordinate`]'s coordinate, and a stock voxel-turret type can fire a
@@ -452,6 +597,7 @@ fn a_voxel_turrets_laser_birth_uses_the_original_get_flh_coordinate() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("1x1".to_string().into());
         let heading = input["heading"].as_u64().unwrap() as u16;
@@ -531,6 +677,57 @@ fn an_occupied_voxel_building_keeps_its_muzzle_port_precedence() {
     assert_eq!(shot.offset_y, 0);
 }
 
+/// An armed `BarrelAnimIsVoxel=` type keeps the occupied arm in front of the
+/// barrel arm (`0x00453849..0x004538C2` returns before the `0x004539A1`
+/// flag test): the firing port's pixel conversion, building Z, and the
+/// missing-ART fallback to the bare coordinate.
+#[test]
+fn an_occupied_barrel_building_keeps_its_muzzle_port_precedence() {
+    let native = voxel_native();
+    let input = &voxel_row(&native, "barrel_burst1_positive")["input"];
+    let mut rules = voxel_rules_with(input, Some("BLDLaser"));
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[BLD]\nMuzzleFlash0=6,-4\n",
+    )));
+    let mut sim = Simulation::new();
+    place(
+        &mut sim,
+        1,
+        "BLD",
+        EntityCategory::Structure,
+        &input["location"],
+    );
+    let heading = input["heading"].as_u64().unwrap() as u16;
+    sim.substrate.entities.get_mut(1).unwrap().body_facing = FacingClass::new(heading, 0);
+    let building = sim.substrate.entities.get(1).unwrap();
+    let obj = sim.object_type(building.type_ref(), &rules).unwrap();
+    let mut source = FireSource::of_entity(building);
+    source.garrison_fire_index = Some(0);
+    let shot = fire_coordinate(&sim, &rules, &source, obj, 0, 0, Flh::default());
+    // The port's iso(6, -4) on the bare coordinate is exactly what the
+    // recorded pixel-precedence row executed natively.
+    assert_eq!(
+        shot.coord,
+        native_coord(&voxel_row(&native, "barrel_pixel_precedence")["source"]),
+        "the occupied port outranks the barrel arm"
+    );
+    assert_eq!(
+        shot.source_z, shot.coord.z,
+        "the occupied port keeps building Z"
+    );
+    // Without ART the zero-port fallback still answers, and the barrel
+    // arm's pivots never surface.
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str("")));
+    let obj = sim.object_type(building.type_ref(), &rules).unwrap();
+    let shot = fire_coordinate(&sim, &rules, &source, obj, 0, 0, Flh::default());
+    assert_eq!(
+        shot.coord,
+        native_coord(&voxel_row(&native, "barrel_pixel_precedence")["object_coordinate"]),
+        "an occupied barrel building without ART keeps its base coordinate"
+    );
+    assert_eq!(shot.offset_y, 0);
+}
+
 /// The corpus' stock rows are the values retail authors for the two types the
 /// issue names, read through the production layers: a later layer could
 /// override them, so the fixture's recorded inputs are compared with the
@@ -556,16 +753,21 @@ fn retail_voxel_turret_inputs_match_the_native_rows() {
             obj.turret_anim_y,
             input["turret_anim_y"].as_i64().unwrap() as i32
         );
+        // The checked stock layers arm no `BarrelAnimIsVoxel=` type (the
+        // constructor zeroes the flag at 0x0045E16F) and set no pivot triple.
+        assert!(!obj.barrel_anim_is_voxel, "{type_id}");
+        assert_eq!(
+            obj.barrel_voxel,
+            crate::rules::object_type::BarrelVoxelOffsets::default(),
+            "{type_id} barrel pivots"
+        );
         let art_entry = firer_art(&rules, obj);
         assert_eq!(
             primary_fire_pixel_offset(art_entry),
             None,
             "{type_id} takes no alternative pixel arm"
         );
-        let flh =
-            art_entry
-                .expect(type_id)
-                .weapon_flh(obj.turret_count, obj.weapon_count, 0, false);
+        let flh = obj.weapon_flh(0, false);
         assert_eq!(
             [flh.forward, flh.lateral, flh.height],
             triple(&input["primary_flh"]),

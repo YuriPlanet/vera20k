@@ -24,6 +24,7 @@ from tools.spatial_oracle.shrapnel_repair.map_facts import decode_cells
 from tools.spatial_oracle.tmp_clear_render import theater_tile_files, load_tmp_files, profile, execute as draw_tmp
 from tools.spatial_oracle.trigger_action_values import DiscoveryFixture, initialize_discovery_geometry
 from tools.procedural_drawing_oracle.shroud import Shroud
+from tools.native_oracle import require
 
 SOURCE_CELL = (109, 27)
 MATERIAL_CELL = (111, 22)
@@ -476,7 +477,7 @@ def moving_history(f, drawing, initial, startup, lighting):
     assert idle['state']['cache']==stop['state']['cache']==histories[-3]['state']['cache']
     final_output=next(row['output'] for row in histories if row['name']=='arrival_2')
     for row in (stop,idle):
-        assert row.pop('output')==final_output
+        require(row.pop('output')==final_output, 'output differs from the shared value')
         row['output_reference']=dict(history='arrival_2')
     return dict(surface=initial['surface'],inputs=initial['inputs'],
         initial_fixture='shroud_frontier.json',moving_startup=startup,

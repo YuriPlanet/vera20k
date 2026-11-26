@@ -33,6 +33,7 @@ use crate::asset_tools::identify;
 use crate::asset_tools::names::NameDict;
 use crate::asset_tools::palette;
 use crate::asset_tools::report::{ErrorReport, RenderOutputs, RenderReport};
+use crate::asset_tools::sanitise_name;
 use crate::asset_tools::verb_render::RenderOptions;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
@@ -356,7 +357,7 @@ pub fn run(
         ));
     }
 
-    let sanitised = sanitise_name(name);
+    let sanitised = sanitise_name(name, FALLBACK_DIR_NAME);
     let dir = render_dir(&opts.out, &sanitised);
     std::fs::create_dir_all(&dir).map_err(|err| ErrorReport {
         error: format!("could not create {}: {err}", dir.display()),
@@ -883,26 +884,6 @@ fn index_tsv(rows: &[FacingRow]) -> String {
 // Output paths
 // ---------------------------------------------------------------------------
 
-/// Replace every character outside `[A-Za-z0-9._-]` so the name is safe as a
-/// directory and filename component on any platform.
-fn sanitise_name(name: &str) -> String {
-    let sanitised: String = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitised.is_empty() {
-        FALLBACK_DIR_NAME.to_string()
-    } else {
-        sanitised
-    }
-}
-
 /// `<out>/render/<sanitised>/`, absolutised so the reported paths do not depend
 /// on the reader's working directory.
 fn render_dir(out: &Path, sanitised: &str) -> PathBuf {
@@ -1004,7 +985,7 @@ fn summarise_facings(facings: &[u8]) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

@@ -66,7 +66,35 @@ impl TileIds {
     pub fn resolve(theater: &TheaterData) -> Self {
         let mut ids = Self::from_keys(&theater.rmg_tiles);
         ids.cliffs = theater.cliff_ranges;
+        ids.drop_empty_waterfall_sets(theater);
         ids
+    }
+
+    /// VERA extension: a waterfall set the theater authors with no tiles
+    /// (DESERT's four) is absent to the generator, so it stamps no waterfall
+    /// there rather than the next set's tiles. The original's dialog offers
+    /// only TEMPERATE and SNOW, whose waterfall sets all hold tiles, so this
+    /// changes nothing it can reach.
+    fn drop_empty_waterfall_sets(&mut self, theater: &TheaterData) {
+        let Ok(ini) = crate::rules::ini_parser::IniFile::from_bytes(&theater.ini_data) else {
+            return;
+        };
+        let general = ini.section_or_empty("General");
+        let bounds = theater.lookup.bounds();
+        for (key, base) in [
+            ("WaterfallNorth", &mut self.cliffs.waterfall_north),
+            ("WaterfallEast", &mut self.cliffs.waterfall_east),
+            ("WaterfallSouth", &mut self.cliffs.waterfall_south),
+            ("WaterfallWest", &mut self.cliffs.waterfall_west),
+        ] {
+            let empty = usize::try_from(general.read_int(key, -1))
+                .ok()
+                .and_then(|ordinal| bounds.get(ordinal))
+                .is_some_and(|set| set.count == 0);
+            if empty {
+                *base = None;
+            }
+        }
     }
 
     pub fn from_keys(keys: &crate::map::theater::RmgTileKeys) -> Self {
@@ -102,6 +130,15 @@ impl TileIds {
         tile == 0 || tile == TILE_UNASSIGNED
     }
 
+    /// VERA extension: open ground, clear or one of the rough, sand and
+    /// green patches the LAT stage lays over it.
+    pub fn is_open_ground(&self, tile: i32) -> bool {
+        self.is_clear(tile)
+            || base_or_lat(tile, self.rough, self.rough_lat)
+            || base_or_lat(tile, self.sand, self.sand_lat)
+            || base_or_lat(tile, self.green, self.green_lat)
+    }
+
     /// Green-terrain membership: the green base tile or its LAT range.
     pub fn is_green_lat(&self, tile: i32) -> bool {
         base_or_lat(tile, self.green, self.green_lat)
@@ -134,6 +171,14 @@ impl TileIds {
                 .waterfall_bases()
                 .into_iter()
                 .any(|base| tile_in_native_window(tile, base, WATERFALL_SPAN))
+    }
+
+    /// The WaterSet family alone, without the shore pieces and waterfalls
+    /// [`Self::is_water_shore_or_waterfall`] adds. A shore piece is walkable
+    /// beach, so a water-only unit (`SpeedType=Float`) needs this stricter
+    /// test to stand on open sea.
+    pub fn is_water(&self, tile: i32) -> bool {
+        tile_in_native_window(tile, self.water_base, WATER_FAMILY_SPAN)
     }
 
     /// Paved-road range used by the start 6x6 passability gate.
@@ -172,7 +217,7 @@ fn tile_in_native_window(tile: i32, base: i32, span: i32) -> bool {
     tile >= base && tile < base.wrapping_add(span)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::{RmgTileKeys, parse_tileset_ini};

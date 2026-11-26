@@ -4,6 +4,17 @@
 //! shell controls, plus the runtime-written 3-plane direct RGB preview form.
 //! The parser keeps embedded VGA palettes in 8-bit RGB.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::error::AssetError;
 
 #[derive(Debug, Clone)]
@@ -17,17 +28,26 @@ pub struct PcxFile {
 
 impl PcxFile {
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        Self::from_bytes_with_policy(data, false)
+        Self::from_bytes_with_policy(data, false, None)
+    }
+
+    /// Bound the decompressed scan data of a presentation asset.
+    pub fn from_bytes_bounded(data: &[u8], max_scan_bytes: usize) -> Result<Self, AssetError> {
+        Self::from_bytes_with_policy(data, false, Some(max_scan_bytes))
     }
 
     /// Network previews may contain their encoded scan and optional VGA
     /// palette, but no ignored stream suffix or oversized final RLE run.
     /// Local/retail asset decoding retains its existing permissive behavior.
     pub(crate) fn from_transfer_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        Self::from_bytes_with_policy(data, true)
+        Self::from_bytes_with_policy(data, true, None)
     }
 
-    fn from_bytes_with_policy(data: &[u8], transferred: bool) -> Result<Self, AssetError> {
+    fn from_bytes_with_policy(
+        data: &[u8],
+        transferred: bool,
+        max_scan_bytes: Option<usize>,
+    ) -> Result<Self, AssetError> {
         if data.len() < 128 {
             return Err(pcx_error("PCX too short"));
         }
@@ -62,6 +82,11 @@ impl PcxFile {
             .checked_mul(planes as usize)
             .and_then(|v| v.checked_mul(height as usize))
             .ok_or_else(|| pcx_error("PCX scan data too large"))?;
+        if max_scan_bytes.is_some_and(|maximum| expected_scan > maximum) {
+            return Err(pcx_error(
+                "Decoded scan exceeds the presentation byte budget",
+            ));
+        }
         let mut palette = [[0u8; 3]; 256];
         let has_trailing_palette = data.len() >= 128 + 769 && data[data.len() - 769] == 0x0C;
         let encoded = if planes == 1 {
@@ -231,6 +256,19 @@ fn decode_pcx_rle(
     expected_scan: usize,
     transferred: bool,
 ) -> Result<Vec<u8>, AssetError> {
+    // One input byte produces at most one literal, and a 2-byte run at most
+    // 63 pixels, so a stream of `n` bytes can never expand past
+    // `63 * n/2 + n%2` scan bytes. A header claiming more than that has no
+    // payload behind it: reject before the capacity reflects the claim.
+    let max_scan = 63 * (encoded.len() / 2) + encoded.len() % 2;
+    if expected_scan > max_scan {
+        return Err(pcx_error(format!(
+            "PCX scan needs {} bytes but {} encoded bytes cannot expand past {}",
+            expected_scan,
+            encoded.len(),
+            max_scan
+        )));
+    }
     let mut scan = Vec::with_capacity(expected_scan);
     let mut i = 0usize;
     while i < encoded.len() && scan.len() < expected_scan {
@@ -296,14 +334,14 @@ fn decode_direct_rgb_scanlines(
     pixels
 }
 
-fn pcx_error(detail: &str) -> AssetError {
+fn pcx_error(detail: impl Into<String>) -> AssetError {
     AssetError::ParseError {
         format: "PCX".to_string(),
-        detail: detail.to_string(),
+        detail: detail.into(),
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::PcxFile;
 
@@ -326,6 +364,23 @@ mod tests {
         data[65] = planes;
         data[66..68].copy_from_slice(&bytes_per_line.to_le_bytes());
         data
+    }
+
+    #[test]
+    fn a_huge_header_scan_cannot_reserve_past_the_encoded_expansion() {
+        // 65535x65535 at three planes claims a 12.9 GB scan behind one encoded
+        // byte; the RLE expansion cap must reject before the capacity
+        // reflects the claim.
+        let mut bytes = pcx_header(0, 0, 65534, 65534, 3, 65535);
+        bytes.push(0xAA);
+        let err = PcxFile::from_bytes(&bytes).expect_err("no payload behind the scan");
+        let crate::assets::error::AssetError::ParseError { detail, .. } = err else {
+            panic!("expected a PCX parse error: {err:?}");
+        };
+        assert!(
+            detail.contains("cannot expand past"),
+            "unexpected detail: {detail}"
+        );
     }
 
     #[test]
@@ -455,7 +510,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod direct_rgb_roundtrip_tests {
     use super::*;
 

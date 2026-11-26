@@ -15,10 +15,9 @@ fn ordinary_frame(sim: &mut Simulation, rules: &RuleSet) -> Vec<super::SimFireEv
         .advance_app_frame(
             &commands,
             rules,
-            None,
             33,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary retail Drone combat frame");
     assert!(output.tick.frame_committed);
@@ -88,7 +87,7 @@ impl DroneScene {
         {
             let (rx, ry, facing) = if let Some(input) = native {
                 let prior = &input["actor_admissions"][index];
-                sim.native_unique_ids = Some(
+                *sim.native_unique_ids = Some(
                     crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
                         (prior["native_id"].as_u64().unwrap() as u32).wrapping_sub(1),
                     ),
@@ -248,8 +247,12 @@ impl DroneScene {
                 arg6: true,
             },
         );
-        self.sim
-            .commit_direct_damage_receiver(&self.rules, None, event, FrameEffects::default());
+        self.sim.commit_direct_damage_receiver(
+            &self.rules,
+            None,
+            event,
+            &mut FrameEffects::default(),
+        );
     }
 
     fn assert_linked_and_mobile(&self) {
@@ -565,13 +568,13 @@ fn stock_terror_drone_internal_restore_keeps_rock_and_restarts_its_bite_timer() 
         .sim;
     // Explicit process-stream continuation input for this internal Rust
     // state test; no app/native SaveGame or RNG persistence claim.
-    loaded.scenario_rng = scene.sim.scenario_rng.clone();
-    loaded.main_rng = scene.sim.main_rng.snapshot_for_test().into();
-    loaded.mapgen_rng = scene.sim.mapgen_rng.clone();
+    *loaded.scenario_rng = (*scene.sim.scenario_rng).clone();
+    *loaded.main_rng = (*scene.sim.main_rng).clone();
+    *loaded.mapgen_rng = (*scene.sim.mapgen_rng).clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.rebuild_caches_after_load(
-        scene.sim.resolved_terrain.clone().unwrap(),
-        scene.sim.terrain_speed_config.clone(),
+        (*scene.sim.resolved_terrain).clone().unwrap(),
+        (*scene.sim.terrain_speed_config).clone(),
         &scene.rules,
     );
     loaded.resolve_type_handles(&scene.rules);
@@ -767,10 +770,10 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
     assert_eq!(initial["model_input"]["joined_is_voxel_al"], 1);
     let mtnk = scene.rules.type_handle("MTNK").unwrap();
     assert!(scene.rules.object_has_loaded_voxel(mtnk));
-    let (body, _) =
-        crate::rules::voxel_asset_catalog::load_main_voxel(&assets, "MTNK", Some(&scene.rules))
+    let model =
+        crate::rules::voxel_asset_catalog::load_voxel_model(&assets, "MTNK", Some(&scene.rules))
             .unwrap();
-    let section = &body.vxl().limbs[0];
+    let section = &model.main().unwrap().vxl().limbs[0];
     assert_eq!(
         json!([section.size_x, section.size_y, section.size_z]),
         initial["model_input"]["first_section_size"]
@@ -783,12 +786,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
             format!("{:016x}", object.weight.to_num::<f64>().to_bits()),
             expected["weight_bits"].as_str().unwrap()
         );
-        let flh = scene.rules.art().get(&object.image).unwrap().weapon_flh(
-            object.turret_count,
-            object.weapon_count,
-            0,
-            false,
-        );
+        let flh = object.weapon_flh(0, false);
         assert_eq!(
             json!([flh.forward, flh.lateral, flh.height]),
             expected["primary_flh"]
@@ -866,7 +864,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.drone,
-        super::UninitContext::with_rules(&scene.rules).with_effects(FrameEffects::default()),
+        super::UninitContext::new(&scene.rules).with_effects(&mut FrameEffects::default()),
     );
     for (index, id) in [(0, scene.drone), (1, scene.tank)] {
         compare_drone_actor(
@@ -885,7 +883,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         scene.drone,
         Some(scene.tank),
         &scene.rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for (index, id) in [(0, scene.drone), (1, scene.tank)] {
         compare_drone_actor(
@@ -896,15 +894,14 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         );
     }
     let rows = corpus["rows"].as_array().unwrap();
-    scene.sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *scene.sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         initial["native_cursor"].as_u64().unwrap() as u32,
     ));
-    scene.sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap())
-            .into();
-    scene.sim.scenario_rng =
+    *scene.sim.main_rng =
+        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap());
+    *scene.sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["scenario"].as_str().unwrap());
-    scene.sim.mapgen_rng =
+    *scene.sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["mapgen"].as_str().unwrap());
     let mut compared = 0;
     for frame in 0..=corpus["visits_end"].as_u64().unwrap() as u32 {
@@ -938,7 +935,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
                 scene.tank,
                 &scene.rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         });
         let births: Vec<_> = scene

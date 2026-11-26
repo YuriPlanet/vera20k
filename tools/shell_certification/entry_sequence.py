@@ -14,7 +14,7 @@ from .core import (
     ALLOWED_SURFACE_FORMATS,
     OutputExistsError,
     ValidationError,
-    _parse_json_bytes,
+    parse_json_bytes,
     _read_regular_bytes,
     _require_array,
     _require_bool,
@@ -214,7 +214,7 @@ def validate_entry_sequence_bundle(
         "entry-sequence manifest",
         maximum_length=MAX_MANIFEST_BYTES,
     )
-    manifest = _parse_json_bytes(manifest_bytes, "entry-sequence manifest")
+    manifest = parse_json_bytes(manifest_bytes, "entry-sequence manifest")
     generation, frames = _validate_manifest(manifest)
     payload = _read_regular_bytes(
         directory / PAYLOAD_FILENAME,

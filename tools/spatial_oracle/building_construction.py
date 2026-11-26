@@ -54,7 +54,7 @@ import sys
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP
-from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, require, run_checked
 from tools.spatial_oracle import building_body_rules as body_rules
 from tools.spatial_oracle import slave_manager as sm
 from tools.spatial_oracle.map_queries import dwords
@@ -421,7 +421,9 @@ def joined_inputs(root, *, layers=None, building_names=JOINED_NAMES,
     m.invoke(0x4072C0, 0x87E250)
     u.mem_write(0xB1D378, dwords(0x7EB6D4, m.alloc(64), 16, 1, 0, 10))
     m.invoke(0x7510D0, INI)
-    assert m.invoke(0x7514D0, m.cstring('Dummy')) == 0
+    # The lookup allocates; keep it outside a check that `python -O` drops.
+    dummy = m.invoke(0x7514D0, m.cstring('Dummy'))
+    require(dummy == 0, f'Dummy sound index {dummy}')
     m.rules = m.alloc(0x5000)
     u.mem_write(0x8871E0, dwords(m.rules))
     m.invoke(0x665650, m.rules)

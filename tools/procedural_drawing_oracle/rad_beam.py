@@ -22,6 +22,7 @@ from tools.projectile_oracle.bridge_render_inputs import BulletReader, assets_ro
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.spatial_oracle import building_prism as prism
 from tools.spatial_oracle.building_body_rules import INI, RULES, SP
+from tools.native_oracle import require
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -448,7 +449,7 @@ class PhysicalBirth(BulletReader):
             art[self.type_name]['PrimaryFireFLH'] = case['art_flh_control']
         self.make_ini(art)
         self.rules_cache({self.type_name: dict(self.latest_type)})
-        assert self.invoke(0x5240A0, self.type, (RULES,)) & 255
+        require(self.invoke(0x5240A0, self.type, (RULES,)) & 255, 'native 0x5240A0 returned an unexpected result')
         u = self.u
         for p, xyz in ((self.source, case['location']), (self.target, case['target'])):
             u.mem_write(p + 0x9C, words(*xyz))

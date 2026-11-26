@@ -35,10 +35,8 @@ fn scene_with(
     let (mut sim, _, registry) = crate::sim::world::entry_test_fixture::fixture();
     let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
     let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
-    let roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &registry, &[]);
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, theater.extension, "TEMPERATE")
-        .unwrap();
+    let roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
+    rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, "TEMPERATE");
     let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     rules.bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");
     sim.intern_rule_type_ids(&rules);
@@ -73,7 +71,13 @@ fn scene_with(
         )
         .unwrap();
     let actor = sim.substrate.entities.get(engineer).unwrap();
-    assert!(is_armed(actor, object));
+    assert!(is_armed(
+        actor,
+        object,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner
+    ));
     Some((sim, rules, registry, engineer, building))
 }
 
@@ -82,13 +86,15 @@ fn retail_ai_engineer_takes_a_critically_damaged_own_building() {
     let Some((mut sim, rules, registry, engineer, building)) = scene() else {
         return;
     };
-    let pick = sim.greatest_threat_represented(
-        &rules,
-        Some(&registry),
-        engineer,
-        super::super::ScanMission::AreaGuard,
-        None,
-    );
+    let pick = sim
+        .greatest_threat_represented(
+            &rules,
+            Some(&registry),
+            engineer,
+            super::super::ScanMission::AreaGuard,
+            None,
+        )
+        .and_then(crate::sim::combat::TargetKind::object_id);
     assert_eq!(pick, Some(building));
 }
 
@@ -105,13 +111,15 @@ fn retail_ai_engineer_refuses_a_friendly_building_above_condition_red() {
         .health
         .set_for_test(strength / 2);
     assert!(rules.general.condition_red < 0.5);
-    let pick = sim.greatest_threat_represented(
-        &rules,
-        Some(&registry),
-        engineer,
-        super::super::ScanMission::AreaGuard,
-        None,
-    );
+    let pick = sim
+        .greatest_threat_represented(
+            &rules,
+            Some(&registry),
+            engineer,
+            super::super::ScanMission::AreaGuard,
+            None,
+        )
+        .and_then(crate::sim::combat::TargetKind::object_id);
     assert_eq!(pick, None);
 }
 
@@ -138,7 +146,8 @@ fn all_retail_engineers_obey_the_condition_red_boundary() {
                     engineer,
                     super::super::ScanMission::AreaGuard,
                     None,
-                ),
+                )
+                .and_then(crate::sim::combat::TargetKind::object_id),
                 (health <= 100).then_some(building),
                 "{engineer_type}: health {health}"
             );
@@ -168,7 +177,8 @@ fn engineer_allied_cost_gate_is_nonzero_not_positive() {
                 engineer,
                 super::super::ScanMission::AreaGuard,
                 None,
-            ),
+            )
+            .and_then(crate::sim::combat::TargetKind::object_id),
             (cost != 0).then_some(building),
             "cost {cost}"
         );
@@ -195,7 +205,8 @@ fn enemy_buildings_bypass_engineer_allied_health_and_cost_gates() {
             engineer,
             super::super::ScanMission::AreaGuard,
             None,
-        ),
+        )
+        .and_then(crate::sim::combat::TargetKind::object_id),
         Some(building)
     );
 }
@@ -225,7 +236,8 @@ fn engineer_gate_applies_to_other_allied_houses_too() {
                 engineer,
                 super::super::ScanMission::AreaGuard,
                 None,
-            ),
+            )
+            .and_then(crate::sim::combat::TargetKind::object_id),
             (health <= 100).then_some(building)
         );
     }
@@ -236,7 +248,7 @@ fn retail_ai_engineer_hunt_acquires_enters_repairs_and_is_consumed() {
     let Some((mut sim, rules, registry, engineer, building)) = scene() else {
         return;
     };
-    let path = sim.path_grid.clone().unwrap();
+    let path = (*sim.path_grid).clone().unwrap();
     let full = rules.object("GAPOWR").unwrap().strength;
     // Original Hunt4D53BA..53F4/4D548F..54B9 assigns the building as destination and
     // queues Capture. AreaGuard4D6F32 instead calls ordinary Approach;

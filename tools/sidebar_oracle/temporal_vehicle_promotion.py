@@ -9,6 +9,7 @@ import hashlib
 import struct
 
 from tools.native_oracle import finish_vectors, provenance
+from tools.native_oracle import require
 from tools.sidebar_oracle import cameo_order as c, factory_loss as loss
 from tools.spatial_oracle import building_construction as bc
 from tools.spatial_oracle.factory_cadence import state as factory_state
@@ -39,7 +40,7 @@ def history(m, backup):
         second = loss.sale_queue_building(m, 'GAWEAP', (25, 20))
         m.f.house_prior(m.er.HOUSE, (m.yard, m.bar, second), native_building_counts=True)
     for name in ('MTNK', 'FV'):
-        assert m.invoke(0x4FA350, m.er.HOUSE, 40, get(m.f.types[name] + 0xDF8), 0, 0) == 0
+        require(m.invoke(0x4FA350, m.er.HOUSE, 40, get(m.f.types[name] + 0xDF8), 0, 0) == 0, 'native 0x4FA350 returned an unexpected result')
     factory = m.invoke(0x500510, m.er.HOUSE, 40, 0, 0)
     assert factory
     loss.advance_factory_to_stage(m, factory, 1)

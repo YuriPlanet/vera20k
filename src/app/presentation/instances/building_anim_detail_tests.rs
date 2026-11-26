@@ -24,7 +24,7 @@ fn step(scene: &mut HeadlessScenario) {
             &[],
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary bound frame");
     assert!(
@@ -63,7 +63,8 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
             .object("GAPOWR")
             .unwrap()
             .foundation
-            .cell_offsets();
+            .cell_offsets()
+            .collect::<Vec<_>>();
         terrain
             .cells()
             .iter()
@@ -91,14 +92,13 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
     let plant = candidates
         .into_iter()
         .find_map(|(x, y)| {
-            scene.runtime.simulation.spawn_object_with_overlay_registry(
+            scene.runtime.simulation.spawn_object_with_map_overlays(
                 "GAPOWR",
                 OWNER,
                 x,
                 y,
                 0,
                 &scene.runtime.resources.rules,
-                &scene.runtime.resources.overlay_registry,
             )
         })
         .expect("a clear physical foundation admits the stock power plant");
@@ -134,7 +134,13 @@ fn emit(
     let before = (sim.state_hash(), sim.rng_state());
     let before_runtime = serde_json::to_value(sim.anim(id).unwrap().runtime()).unwrap();
     let building = sim.entities().get(plant).unwrap();
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let frame = crate::app::presentation::frame::PresentationFrame::capture(
+        &scene.runtime,
+        &Default::default(),
+        false,
+    );
+    let record = frame.object(plant).unwrap();
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let light = CellLightGrid::new();
     let cell = (building.position.rx(), building.position.ry());
     let coord = sim.anim_absolute_coord(id).unwrap();
@@ -156,7 +162,7 @@ fn emit(
     );
     observer.drawn_voxel = Some(false);
     let material = DrawState::for_building_slot_anims(
-        building,
+        record,
         sim.session().binary_frame(),
         super::super::units::house_color_to_remap_row(HouseColorIndex(0)),
         observer,
@@ -165,7 +171,7 @@ fn emit(
     let mut house_colors = crate::map::houses::HouseColorMap::new();
     house_colors.insert(OWNER.to_owned(), HouseColorIndex(0));
     let hidden = Default::default();
-    let mut prepared = Vec::new();
+    let mut prepared = PlannedObjects::default();
     // Use the application's binding/material preparation and one shared Display
     // admission walk. Preparing a slot neither consumes the FPS latch nor makes
     // the prepared piece visible before its actual retained encounter.
@@ -182,29 +188,39 @@ fn emit(
         &light,
         cell,
         sim,
-        building,
+        &frame,
+        local_owner,
+        record,
+        &super::admitted_slot_anims(
+            sim,
+            &frame,
+            record,
+            crate::app::presentation::instances::TacticalAdmission {
+                corner: camera,
+                size: [800.0, 600.0],
+            },
+        ),
+        &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
         &|_| 0,
         crate::render::batch::DepthAxis::NONE.origin_y,
         crate::render::batch::DepthAxis::NONE.world_height,
         viewport,
         material.state,
+        0,
         detail_level as i32,
     );
-    let prepared = prepared
-        .into_iter()
-        .map(|parent| (parent.parent.id, parent))
-        .collect();
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
-            interpolation: None,
             sim,
+            frame: &frame,
             rules,
             camera,
             render_size: [800, 600],
             tactical: [0, 0, 800, 600],
             zoom: 1.0,
             axis: crate::render::batch::DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail,
             detail_level,
@@ -319,7 +335,7 @@ fn retail_power_plant_slot_obeys_detail_without_pausing_its_ai() {
             (
                 ShpSpriteKey {
                     palette_context: context,
-                    type_id: "GAPOWR_A".to_owned(),
+                    type_id: "GAPOWR_A".into(),
                     facing: 0,
                     frame: frame as u16,
                     house_color: HouseColorIndex(0),

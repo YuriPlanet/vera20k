@@ -35,15 +35,24 @@ pub const PRIORITY_TO_SCHEME_INDEX: [usize; 9] = [3, 11, 21, 29, 13, 25, 17, 15,
 pub const RANDOM_PRIORITY_SCHEME_INDEX: usize = 5;
 
 /// Map a color priority to a runtime scheme-array index, matching gamemd's
-/// SessionClass priority→scheme conversion: `-2` → a fixed default, `0..=8` go
-/// through the table, anything higher passes through unchanged.
+/// SessionClass priority→scheme conversion (`Game_GetLinkedColor`
+/// `0x0069A310`): `-2` → a fixed default, then [`linked_color_tail`].
 pub fn scheme_index_for_priority(priority: i32) -> usize {
     if priority == -2 {
         RANDOM_PRIORITY_SCHEME_INDEX
-    } else if (0..PRIORITY_TO_SCHEME_INDEX.len() as i32).contains(&priority) {
-        PRIORITY_TO_SCHEME_INDEX[priority as usize]
     } else {
-        priority.max(0) as usize
+        linked_color_tail(priority)
+    }
+}
+
+/// The conversion's tail (`0x0069A328..0x0069A334`): a value below 9
+/// (unsigned) reads the table, anything else passes through unchanged. A
+/// negative pass-through addresses no scheme, so it clamps to 0.
+pub fn linked_color_tail(value: i32) -> usize {
+    if (0..PRIORITY_TO_SCHEME_INDEX.len() as i32).contains(&value) {
+        PRIORITY_TO_SCHEME_INDEX[value as usize]
+    } else {
+        value.max(0) as usize
     }
 }
 
@@ -150,7 +159,7 @@ pub fn backing_rgb_for_priority(schemes: &[ColorSchemeEntry], priority: i32) -> 
     scheme_for_priority(schemes, priority).map(|scheme| hsv_to_rgb(scheme.hsv))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 

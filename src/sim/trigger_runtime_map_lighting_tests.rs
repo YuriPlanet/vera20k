@@ -13,7 +13,7 @@ fn native() -> &'static Value {
 }
 
 fn run(sim: &mut Simulation, rules: &RuleSet, entry: crate::map::actions::ActionEntry) -> bool {
-    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     sim.apply_live_trigger_action(
         &action,
         TriggerActionContext {
@@ -24,7 +24,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, entry: crate::map::actions::Action
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -53,7 +53,7 @@ fn ambient_action_matches_native_controller_writes_without_resetting_timer_or_ti
         let storm = input["storm"].as_bool().unwrap();
         if storm {
             let owner = sim.interner.intern("LightingControlOwner");
-            sim.lightning_storm = LightningStorm::raging_for_test(owner, (0, 0));
+            *sim.lightning_storm = LightningStorm::raging_for_test(owner, (0, 0));
         }
         let light = sim.session.lighting_mut();
         light.normal_mut_for_test().ambient_percent = 87;
@@ -731,7 +731,7 @@ fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
         .lighting_mut()
         .set_transition_timer_for_test(CdTimer::started(12, 8));
     sim.session.set_binary_frame_for_test(20);
-    sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(&overlays), &mut FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime
             .action_trace

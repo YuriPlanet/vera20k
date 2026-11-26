@@ -101,9 +101,6 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                     )
                     .unwrap();
                     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
-                    rules.bind_animation_sequences(
-                        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-                    );
                     Some(rules)
                 })?;
             Some((raw, rules.with_fresh_serial()))
@@ -161,7 +158,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
             false,
         );
         actor.lifecycle.set_in_limbo_for_test(false);
-        actor.tesla_charger = crate::sim::tesla_charging::TeslaCharger::for_test(
+        actor.seldom.tesla_charger = crate::sim::tesla_charging::TeslaCharger::for_test(
             before["byte68e"].as_u64().unwrap() != 0,
         );
         let doing = before["doing"].as_i64().unwrap() as i32;
@@ -237,7 +234,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
         };
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_before"],
@@ -266,8 +263,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         1,
                         requested,
                         rules,
-                        None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -284,7 +280,11 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                             sim.session.binary_frame(),
                         )
                         .unwrap();
-                    sim.reset_orders_to_guard(1, rules, crate::sim::world::FrameEffects::default());
+                    sim.reset_orders_to_guard(
+                        1,
+                        rules,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    );
                     let actor = sim.substrate.entities.get(1).unwrap();
                     assert_eq!(actor.archive_target(), None, "{name}: Guard archive");
                     assert_eq!(
@@ -313,14 +313,13 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         0,
                         true,
                     );
-                    transport.passenger_role = PassengerRole::transport(cargo);
+                    transport.set_passenger_role_for_test(PassengerRole::transport(cargo));
                     sim.substrate.entities.insert(transport);
                     sim.open_topped_passengers_take_target(
                         4,
                         requested,
                         rules,
-                        None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 TargetConsumer::OwnerChange => {
@@ -334,7 +333,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         new_owner,
                         rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                     assert_eq!(
                         sim.substrate.entities.get(1).unwrap().owner(),
@@ -350,7 +349,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
         let actor = sim.substrate.entities.get(1).unwrap();
         let leaf = actor.mission_leaf.as_infantry().unwrap();
         assert_eq!(
-            actor.tesla_charger.is_active(),
+            actor.seldom.tesla_charger.is_active(),
             after["byte68e"].as_u64().unwrap() != 0,
             "{name}: native Foot+68E through {consumer:?}",
         );

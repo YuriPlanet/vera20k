@@ -12,10 +12,9 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
     sim.advance_app_frame(
         &due,
         rules,
-        None,
         67,
         TickLane::Ordinary,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("ordinary authoritative frame")
 }
@@ -199,10 +198,9 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         );
         let offline_item = sidebar_item(&sim, &rules, owner, name);
         assert!(offline_item.is_ready);
-        assert_eq!(
-            offline_item.enabled, !sw.is_powered,
-            "{name}: draw availability"
-        );
+        // StripDraw clears the darken flag for a Super (6A99B5); held, it
+        // cannot fire, so Ares's hook (10034EF0) leaves it clear too.
+        assert!(offline_item.enabled, "{name}: draw availability");
         for item in [&cached_online_item, &offline_item] {
             let outcome = click(&sim, &rules, owner, item, &mut input, &mut gadgets, false);
             if sw.is_powered {
@@ -369,20 +367,21 @@ fn authored_stock_action_case_and_unknown_layer_drive_cursor_and_press() {
         .entry(owner)
         .or_default()
         .insert(id, instance);
-    for (kind, raw, canonical, expected, cursor) in [
+    for (kind, raw, stock_way, ares_way) in [
         (
             RulesLayerKind::GameMode,
             "nUkE",
-            "Nuke",
-            SuperWeaponClick::Target,
-            Some(CursorId::Nuke),
+            ("Nuke", SuperWeaponClick::Target, Some(CursorId::Nuke)),
+            ("Nuke", SuperWeaponClick::Target, Some(CursorId::Nuke)),
         ),
+        // When the Rules were read the Ares way (`RuleSet::ares_form`), Ares
+        // gives the redirected MultiMissile its custom action whatever
+        // Action= says (SW_NuclearMissile::Initialize 10073360).
         (
             RulesLayerKind::Scenario,
             "UnknownAction",
-            "None",
-            SuperWeaponClick::Launch(id),
-            None,
+            ("None", SuperWeaponClick::Launch(id), None),
+            ("Nuke", SuperWeaponClick::Target, Some(CursorId::Nuke)),
         ),
     ] {
         layers.push(
@@ -391,6 +390,11 @@ fn authored_stock_action_case_and_unknown_layer_drive_cursor_and_press() {
         );
         let processed = layers.process_with_fixed_art(&art).unwrap();
         let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let (canonical, expected, cursor) = if rules.ares_form() {
+            ares_way
+        } else {
+            stock_way
+        };
         let action = rules.super_weapon("NukeSpecial").unwrap().action.as_deref();
         assert_eq!(action, Some(canonical));
         assert_eq!(

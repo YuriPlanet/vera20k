@@ -10,6 +10,7 @@ from unicorn.x86_const import *
 from tools.rules_oracle.bridge_landing_inputs import Landing,WH
 from tools.spatial_oracle.building_body_rules import TYPE,INI,SP,dwords
 from tools.native_oracle import run_checked,RET_MAGIC,finish_vectors,provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.estimated_damage import CLASSES
 RAW='100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%'
 def execute(frame=16,cell=(6,5),armor=5,category='unit', *, field=None):
@@ -192,7 +193,7 @@ def concrete_dogs(packets):
   actor=m.alloc(0x1000);m.invoke(0x517A50,actor,(typ,0))
   u.mem_write(actor+0x21C,dwords(q.house));u.mem_write(actor+0x14C,dwords(q.house))
   m.invoke(0x486840,q.resident.ptrs[(86,49)],(q.coord,))
-  assert m.invoke(0x51DFF0,actor,(q.coord,0x80))&255
+  require(m.invoke(0x51DFF0,actor,(q.coord,0x80))&255, 'native 0x51DFF0 returned an unexpected result')
   m.invoke(0x51D6F0,actor,(0,0,0));q.phase='logic'
   damage=m.alloc(4);u.mem_write(damage,dwords(base_damage));seen=[]
   def observe(uc,a,size,data):

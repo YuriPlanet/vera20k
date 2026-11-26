@@ -42,6 +42,8 @@ pub enum CooperativeError {
     TooManyHumans(usize),
     #[error("the Cooperative {role} country list has no country present in the global roster")]
     NoEligibleCountries { role: &'static str },
+    #[error("no Multiplay country has a positive Ares random-selection weight")]
+    NoEligibleRandomCountries,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +175,40 @@ impl CooperativeRegistry {
 
     pub fn campaign(&self, campaign_type: usize) -> Option<&CooperativeCampaign> {
         self.campaigns.get(campaign_type)
+    }
+
+    /// VERA: the first campaign with a stage whose map variant `scenario`
+    /// names (`<token>.MAP`, compared as `+0x4C` compares). Retail lists
+    /// these maps for Cooperative only (missionsmd.pkt
+    /// `GameMode=cooperative`), so the modern WOL list reads a room on one
+    /// as a Cooperative room.
+    pub fn campaign_for_scenario(&self, scenario: &str) -> Option<usize> {
+        self.campaigns.iter().position(|campaign| {
+            campaign
+                .stages
+                .iter()
+                .flat_map(|stage| &stage.map_variants)
+                .any(|token| scenario_is_map(scenario, token))
+        })
+    }
+
+    /// DrawLoading552D60 calls CoopCampaignDefs49E400: the first campaign
+    /// with any case-insensitive map-token prefix of the logical ScenarioName.
+    /// Its55334C..55336A gate requires both authored names; they are literal,
+    /// including LS800 names at640 pixels. An unmatched custom scenario uses
+    /// VERA's safe ordinary-art fallback rather than native's unchecked pointer.
+    pub(crate) fn loading_art(&self, scenario: &str) -> Option<(&str, &str)> {
+        let campaign = self.campaigns.iter().find(|campaign| {
+            campaign
+                .stages
+                .iter()
+                .flat_map(|stage| &stage.map_variants)
+                .any(|token| scenario_starts_with(scenario, token))
+        })?;
+        (!campaign.load_screen.is_empty() && !campaign.load_screen_pallet.is_empty()).then_some((
+            campaign.load_screen.as_str(),
+            campaign.load_screen_pallet.as_str(),
+        ))
     }
 }
 
@@ -539,6 +575,24 @@ impl CooperativeProgressRecord {
         true
     }
 
+    /// `0x0049BCE0`, the campaign-end rows: each of the first two human
+    /// Houses' tallies `[kills, built, lost, score]`, then the time. The
+    /// first House takes the first name's tallies when its narrowed UI name
+    /// equals it (case-sensitive `strcmp`), else the second's. `None` on an
+    /// invalid record, which yields no rows.
+    pub fn campaign_end_tallies(&self, first_house_name: &[u8]) -> Option<([[i32; 4]; 2], i32)> {
+        if !self.valid {
+            return None;
+        }
+        let [first, second] = self.tallies;
+        let tallies = if first_house_name == self.partner_names[0] {
+            [first, second]
+        } else {
+            [second, first]
+        };
+        Some((tallies, self.time))
+    }
+
     /// `0x0049D070` with -1: the chosen map at `CurrentMap`, `None` past the
     /// last stage or on an invalid record.
     pub fn next_scenario_token(&self) -> Option<&str> {
@@ -605,7 +659,84 @@ impl CooperativeProgressRecord {
         }
         CoopSave::Write { section, values }
     }
+
+    /// The pair's coopsave.ini section, both names `=HH`-encoded as
+    /// `0x0049C5A0` writes it; `None` while either name is empty.
+    fn save_section(&self) -> Option<String> {
+        let [first, second] = &self.partner_names;
+        (!first.is_empty() && !second.is_empty())
+            .then(|| format!("{}{}", encode_name(first), encode_name(second)))
+    }
+
+    /// `CoopSaveEntry__SectionExists` (`0x0049D120`): both names are set
+    /// and coopsave.ini holds their section.
+    pub fn saved_section_exists(&self, save: &IniFile) -> bool {
+        self.save_section()
+            .is_some_and(|section| save.section(&section).is_some())
+    }
+
+    /// `0x0049D390`: the saved campaign's next map, `Map<CurrentMap+1>`
+    /// (default `undefined`), which the callers look up as `<token>.MAP`.
+    pub fn saved_map(&self, save: &IniFile) -> Option<String> {
+        let section = save.section_or_empty(&self.save_section()?);
+        let current = section.read_int("CurrentMap", 0);
+        Some(section.read_string(
+            &format!("Map{}", current.wrapping_add(1)),
+            SAVE_MAP_DEFAULT,
+            SAVE_MAP_CAPACITY,
+        ))
+    }
+
+    /// `CoopSaveHeader__Read` (`0x0049C0D0`): the pair's section replaces
+    /// the record's stage, campaign, counters, time and, for a campaign in
+    /// the registry, its maps, and makes it valid. Another campaign keeps
+    /// no maps and returns false.
+    /// `House1`/`Color1`/`House2`/`Color2` (`+0x14`, `+0x18`, `+0x30`,
+    /// `+0x34`) are not kept: only the getters `0x0049D0C0`/`0x0049D0F0`
+    /// read them, and nothing calls those.
+    pub fn read_save(&mut self, registry: &CooperativeRegistry, save: &IniFile) -> bool {
+        let Some(name) = self.save_section() else {
+            return false;
+        };
+        let section = save.section_or_empty(&name);
+        self.current_map = section.read_int("CurrentMap", 0);
+        self.campaign_type = section.read_int("CampaignType", -1);
+        let read = |key: &str| section.read_int(key, 0);
+        self.tallies = [
+            [
+                read("Kills1"),
+                read("Built1"),
+                read("Lost1"),
+                read("Score1"),
+            ],
+            [
+                read("Kills2"),
+                read("Built2"),
+                read("Lost2"),
+                read("Score2"),
+            ],
+        ];
+        self.time = read("Time");
+        let Some(campaign) = usize::try_from(self.campaign_type)
+            .ok()
+            .and_then(|index| registry.campaign(index))
+        else {
+            self.chosen_maps.clear();
+            return false;
+        };
+        self.chosen_maps = (1..=campaign.stages.len())
+            .map(|stage| {
+                section.read_string(&format!("Map{stage}"), SAVE_MAP_DEFAULT, SAVE_MAP_CAPACITY)
+            })
+            .collect();
+        self.valid = true;
+        true
+    }
 }
+
+/// The map readers' default (`0x0081F108`) and buffer size.
+const SAVE_MAP_DEFAULT: &str = "undefined";
+const SAVE_MAP_CAPACITY: usize = 0x104;
 
 /// One human House's row for `0x0049B930`: its narrowed UI name and the
 /// figures the record adds.
@@ -644,11 +775,13 @@ pub enum CoopSave {
 pub const COOP_SAVE_INI: &str = "coopsave.ini";
 
 /// `INIClass::Put_HouseType` (`0x00475610`): a HouseType's ID, the
-/// `<Player @ A>`..`<Player @ H>` pseudo-Houses `0x117B..0x1182`,
+/// player pseudo-Houses (VERA extends A..H to A..AD),
 /// `<random>` for -2 and -3, else `<none>`.
 pub(crate) fn house_type_text(index: i32, roster: &[CooperativeCountryRosterEntry]) -> String {
+    if let Some(token) = crate::rules::native_processing::house_type_player_at_text(index) {
+        return token;
+    }
     match index {
-        0x117B..=0x1182 => format!("<Player @ {}>", (b'A' + (index - 0x117B) as u8) as char),
         -3 | -2 => "<random>".to_owned(),
         _ => usize::try_from(index)
             .ok()
@@ -731,23 +864,6 @@ pub(crate) fn prepare_ai(
     Ok(effect)
 }
 
-/// Mode+64/5C2710's retained C1 payload. Round-major order is also the native
-/// draw order; a pair is [country index, color index]. This cache is generated
-/// once after69B8C0 and replaced by a decoded C1 on guests. It does not replace
-/// MatchSession's current resolved participant choices.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct CooperativeRoundAssignments {
-    rounds: Vec<[[i32; 2]; 8]>,
-}
-impl CooperativeRoundAssignments {
-    pub(crate) fn rounds(&self) -> &[[[i32; 2]; 8]] {
-        &self.rounds
-    }
-    pub(crate) fn accept(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
-        self.rounds = rounds;
-    }
-}
-
 /// What a Cooperative mode slot reads besides its own state: the session's
 /// scenario file names (`[0xA8B8CC]`, catalog order), the nodes' names
 /// (`0xA8DA78`, the local player first) and whether Choose Map `0x6B` is
@@ -759,12 +875,32 @@ pub(crate) struct CooperativeSlotContext<'a> {
     pub chooser_on_top: bool,
 }
 
-/// One campaign row of `+0x4C`'s chooser list: `"%d. %s"` with the
-/// campaign's number and name, and the scenario record of its reserve's
-/// current map as item data.
+/// `+0x94`'s saved-campaign tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SavedCampaignJoin {
+    Nothing,
+    /// `TXT_SAVE_CAMP_AVAILABLE` in the default colour (-1).
+    Notice,
+    /// `TXT_COOP_USE_SAVE` appended to Choose Map's list with this record.
+    Row(usize),
+}
+
+/// `+0x90`'s saved-campaign effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SavedCampaignLeave {
+    Nothing,
+    /// Choose Map's last row goes.
+    RemoveRow,
+    /// The scenario named `<token>.MAP` (`strcmpi`) becomes the setup's.
+    Scenario(String),
+}
+
+/// One row of `+0x4C`'s chooser list and its scenario record: a campaign's
+/// `"%d. %s"` with its reserve's current map, or (`campaign` None)
+/// `TXT_COOP_USE_SAVE` with the saved campaign's next map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CooperativeChooserRow {
-    pub campaign: usize,
+    pub campaign: Option<usize>,
     pub record: usize,
 }
 
@@ -811,7 +947,6 @@ fn bind_two_nodes(record: &mut CooperativeProgressRecord, nodes: &[&str]) {
 pub struct CooperativeProgressState {
     active: Option<CooperativeProgressRecord>,
     reserves: Vec<Option<CooperativeProgressRecord>>,
-    round_assignments: CooperativeRoundAssignments,
     /// `+0x33C`: the campaign the setup screen's countries come from. It
     /// follows the active record only where a slot copies it.
     campaign: i32,
@@ -819,6 +954,11 @@ pub struct CooperativeProgressState {
     refresh_pending: bool,
     /// `+0x4C`: the campaign whose reserve Choose Map last took.
     reserve_taken: i32,
+    /// `+0x48`: Use Map took the saved campaign. Only the constructor
+    /// clears it.
+    saved_in_use: bool,
+    /// `+0x49`: Choose Map's list ends with the saved-campaign row.
+    saved_row_listed: bool,
 }
 
 impl Default for CooperativeProgressState {
@@ -826,10 +966,11 @@ impl Default for CooperativeProgressState {
         Self {
             active: None,
             reserves: Vec::new(),
-            round_assignments: CooperativeRoundAssignments::default(),
             campaign: 0,
             refresh_pending: true,
             reserve_taken: 0,
+            saved_in_use: false,
+            saved_row_listed: false,
         }
     }
 }
@@ -985,14 +1126,20 @@ impl CooperativeProgressState {
     /// (`0x0049B660`); a present one loses its names unless there are two
     /// nodes. Missing reserves are built. Each campaign whose reserve's
     /// current map names one of `records` (`"%s.MAP"`) gives a row; the
-    /// others are skipped. The saved-campaign row is not ported.
+    /// others are skipped. Then, when coopsave.ini holds the pair's section
+    /// and `records` its next map, the saved-campaign row (`+0x49` set).
+    /// RESIDUAL: native gives each row's record to list index = campaign
+    /// index (`0x005C3E5D`), so after a skipped campaign the rows' item data
+    /// shifts; here each row keeps its own record.
     pub(crate) fn chooser_rows(
         &mut self,
         registry: &CooperativeRegistry,
         rng: &mut SimRng,
         nodes: &[&str],
         records: &[(usize, &str)],
+        save: Option<&IniFile>,
     ) -> Vec<CooperativeChooserRow> {
+        self.saved_row_listed = false;
         match self.active.as_mut() {
             None if nodes.len() == 2 => {
                 let mut record = CooperativeProgressRecord::default();
@@ -1005,7 +1152,7 @@ impl CooperativeProgressState {
         if self.reserves.is_empty() {
             self.rebuild_reserves(registry, rng);
         }
-        (0..registry.campaigns.len())
+        let mut rows = (0..registry.campaigns.len())
             .filter_map(|campaign| {
                 let token = self
                     .reserves
@@ -1016,34 +1163,63 @@ impl CooperativeProgressState {
                     .iter()
                     .find(|(_, file)| scenario_is_map(file, token))?
                     .0;
-                Some(CooperativeChooserRow { campaign, record })
+                Some(CooperativeChooserRow {
+                    campaign: Some(campaign),
+                    record,
+                })
             })
-            .collect()
+            .collect::<Vec<_>>();
+        if let Some(record) = self.saved_record(save, records) {
+            rows.push(CooperativeChooserRow {
+                campaign: None,
+                record,
+            });
+            self.saved_row_listed = true;
+        }
+        rows
+    }
+
+    /// The saved-campaign row's record: with an active record whose pair
+    /// has a coopsave.ini section, the record among `records` named
+    /// `<0x0049D390's map>.MAP` (`strcmpi`).
+    fn saved_record(&self, save: Option<&IniFile>, records: &[(usize, &str)]) -> Option<usize> {
+        let (active, save) = (self.active.as_ref()?, save?);
+        if !active.saved_section_exists(save) {
+            return None;
+        }
+        let token = active.saved_map(save)?;
+        records
+            .iter()
+            .find(|(_, file)| scenario_is_map(file, &token))
+            .map(|(record, _)| *record)
     }
 
     /// `+0x18` (`0x005C1DC0`), Use Map's campaign: with Choose Map on top,
     /// the chosen campaign's reserve becomes the active record and a fresh
     /// reserve replaces it (one draw per stage). Returns whether the setup
     /// screen's countries refresh (`0x005C2500` and the `+0x1C` re-check):
-    /// false without an active record, for the saved-campaign row (not
-    /// ported) or when `+0x33C`'s campaign lacks the record's stage.
+    /// false without an active record or when `+0x33C`'s campaign lacks the
+    /// record's stage. A row past the campaigns is the saved campaign: the
+    /// active record reads the pair's section (`0x0049C0D0`; false when it
+    /// fails) and `+0x48` marks the save in use.
     pub(crate) fn accept_chooser_row(
         &mut self,
         registry: &CooperativeRegistry,
         rng: &mut SimRng,
         context: CooperativeSlotContext,
         row: usize,
+        save: Option<&IniFile>,
     ) -> bool {
-        if self.active.is_none() {
+        let Some(active) = self.active.as_mut() else {
             return false;
-        }
+        };
         if row >= registry.campaigns.len() {
-            if let Some(active) = self.active.as_mut() {
-                bind_two_nodes(active, context.nodes);
+            bind_two_nodes(active, context.nodes);
+            if !save.is_some_and(|save| active.read_save(registry, save)) {
+                return false;
             }
-            return false;
-        }
-        if context.chooser_on_top {
+            self.saved_in_use = true;
+        } else if context.chooser_on_top {
             let taken = self
                 .reserves
                 .get_mut(row)
@@ -1087,8 +1263,8 @@ impl CooperativeProgressState {
     }
 
     /// `+0x94` (`0x005C4110`), a guest joined: the active record is made
-    /// for campaign 0 if missing, takes the two names, then `+0x60`. The
-    /// saved-campaign tail (`TXT_SAVE_CAMP_AVAILABLE`) is not ported.
+    /// for campaign 0 if missing, takes the two names, then `+0x60`;
+    /// [`Self::saved_join`] is its tail.
     pub(crate) fn join(
         &mut self,
         registry: &CooperativeRegistry,
@@ -1101,6 +1277,72 @@ impl CooperativeProgressState {
             .get_or_insert_with(|| fresh_record(registry, 0, rng));
         bind_two_nodes(active, nodes);
         self.publish(registry, setup_open)
+    }
+
+    /// `+0x94`'s tail when coopsave.ini holds the pair's section: under
+    /// Choose Map (dialog `0x6B`) without the row yet, the saved campaign's
+    /// row for its next map among all `records` (none when that map is
+    /// missing); elsewhere `TXT_SAVE_CAMP_AVAILABLE` in the setup's chat.
+    pub(crate) fn saved_join(
+        &mut self,
+        save: Option<&IniFile>,
+        chooser_on_top: bool,
+        records: &[(usize, &str)],
+    ) -> SavedCampaignJoin {
+        let listed = self.saved_row_listed;
+        let (Some(active), Some(save)) = (self.active.as_ref(), save) else {
+            return SavedCampaignJoin::Nothing;
+        };
+        if !active.saved_section_exists(save) {
+            return SavedCampaignJoin::Nothing;
+        }
+        if !chooser_on_top {
+            return SavedCampaignJoin::Notice;
+        }
+        if listed {
+            return SavedCampaignJoin::Nothing;
+        }
+        match self.saved_record(Some(save), records) {
+            Some(record) => {
+                self.saved_row_listed = true;
+                SavedCampaignJoin::Row(record)
+            }
+            None => SavedCampaignJoin::Nothing,
+        }
+    }
+
+    /// `+0x90` (`0x005C3F80`), the guest left. Under Choose Map a listed
+    /// saved row goes (`+0x49` cleared). Elsewhere a save in use (`+0x48`)
+    /// is replaced: the active record is initialized for another campaign
+    /// and then for the reserve Choose Map last took (`0x0049CAF0` twice,
+    /// so its maps are drawn afresh), and its first map becomes the
+    /// scenario. Either way the record's names are cleared
+    /// ([`Self::clear_network_partners`]).
+    pub(crate) fn guest_left(
+        &mut self,
+        registry: &CooperativeRegistry,
+        rng: &mut SimRng,
+        chooser_on_top: bool,
+    ) -> SavedCampaignLeave {
+        let leave = if chooser_on_top {
+            if std::mem::take(&mut self.saved_row_listed) {
+                SavedCampaignLeave::RemoveRow
+            } else {
+                SavedCampaignLeave::Nothing
+            }
+        } else if let Some(active) = self.active.as_mut().filter(|_| self.saved_in_use) {
+            let taken = usize::try_from(self.reserve_taken).unwrap_or(0);
+            let _ = active.initialize_for_campaign(registry, usize::from(taken == 0), rng);
+            let _ = active.initialize_for_campaign(registry, taken, rng);
+            match active.current_chosen_map() {
+                Some(token) => SavedCampaignLeave::Scenario(token.to_owned()),
+                None => SavedCampaignLeave::Nothing,
+            }
+        } else {
+            SavedCampaignLeave::Nothing
+        };
+        self.clear_network_partners();
+        leave
     }
 
     /// `+0x58` (`0x005C2040`), a received C0's campaign: a missing active
@@ -1220,14 +1462,16 @@ impl CooperativeProgressState {
     /// Original5C2710: generate every campaign round using the CURRENT
     /// stage's country callbacks, including all8 slots even when fewer are
     /// active. Human colors come from already-resolved source-order nodes.
+    /// The rounds are C1's payload, round-major in draw order; a pair is
+    /// [country index, color index].
     pub(crate) fn prepare_round_assignments(
-        &mut self,
+        &self,
         registry: &CooperativeRegistry,
         campaign_index: usize,
         roster: &[CooperativeCountryRosterEntry],
         human_colors: &[i32],
         rng: &mut SimRng,
-    ) -> Result<(), CooperativeError> {
+    ) -> Result<Vec<[[i32; 2]; 8]>, CooperativeError> {
         if human_colors.len() > 8 {
             return Err(CooperativeError::TooManyHumans(human_colors.len()));
         }
@@ -1238,10 +1482,10 @@ impl CooperativeProgressState {
                     index: campaign_index,
                     count: registry.campaigns.len(),
                 })?;
-        self.round_assignments.rounds.clear();
         let progress = self.active.clone().unwrap_or_default();
-        let rounds = (campaign.stages.len() as i8).max(0) as usize;
-        for _ in 0..rounds {
+        let count = (campaign.stages.len() as i8).max(0) as usize;
+        let mut rounds = Vec::with_capacity(count);
+        for _ in 0..count {
             let mut colors = [-2; 8];
             colors[..human_colors.len()].copy_from_slice(human_colors);
             let mut round = [[-1; 2]; 8];
@@ -1267,18 +1511,9 @@ impl CooperativeProgressState {
                 };
                 round[row] = [country, color];
             }
-            self.round_assignments.rounds.push(round);
+            rounds.push(round);
         }
-        Ok(())
-    }
-
-    pub(crate) fn round_assignments(&self) -> &CooperativeRoundAssignments {
-        &self.round_assignments
-    }
-
-    /// Native+74/5C2A60 applies decoded service values without random draws.
-    pub(crate) fn accept_round_assignments(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
-        self.round_assignments.accept(rounds);
+        Ok(rounds)
     }
 
     /// MPCooperative5C1D80 Start validation binds exactly two humans only
@@ -1324,6 +1559,12 @@ pub struct CooperativeCountryRosterEntry {
     pub id: String,
     /// Optional HouseType `Name=` alias, such as `America`.
     pub name: Option<String>,
+    /// `Multiplay=yes`, the Ares random pool's first gate.
+    pub multiplay: bool,
+    /// Ares `RandomSelectionWeight=`.
+    pub random_weight: i32,
+    /// Ares `AIRandomSelectionWeight=`.
+    pub ai_random_weight: i32,
 }
 
 impl CooperativeCountryRosterEntry {
@@ -1331,6 +1572,25 @@ impl CooperativeCountryRosterEntry {
         Self {
             id: id.into(),
             name: name.map(str::to_string),
+            multiplay: false,
+            random_weight: 1,
+            ai_random_weight: 1,
+        }
+    }
+
+    pub fn new_with_random(
+        id: impl Into<String>,
+        name: Option<&str>,
+        multiplay: bool,
+        random_weight: i32,
+        ai_random_weight: i32,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.map(str::to_string),
+            multiplay,
+            random_weight,
+            ai_random_weight,
         }
     }
 
@@ -1465,7 +1725,7 @@ fn campaign_tokens(section: &IniSection, key: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 
@@ -1521,9 +1781,8 @@ mod tests {
                     &mut rng,
                 )
             });
-            result.unwrap();
             assert_eq!(
-                serde_json::to_value(owner.round_assignments().rounds()).unwrap(),
+                serde_json::to_value(result.unwrap()).unwrap(),
                 case["rounds"],
                 "{} rounds",
                 case["name"]
@@ -1549,11 +1808,6 @@ mod tests {
                 "{} raw draw order",
                 case["name"]
             );
-            let before = rng.native_state_hex();
-            let rounds = owner.round_assignments().rounds().to_vec();
-            owner.accept_round_assignments(rounds.clone());
-            assert_eq!(owner.round_assignments().rounds(), rounds);
-            assert_eq!(rng.native_state_hex(), before, "decoded C1 does not draw");
         }
     }
 
@@ -1674,6 +1928,38 @@ mod tests {
             CooperativeAiDifficulty::Easy
         );
         assert_eq!(registry.campaigns[0].stages[1].map_variants[2], "A2C");
+    }
+
+    #[test]
+    fn cooperative_loading_art_uses_first_prefix_match_and_requires_both_names() {
+        let mut registry = registry();
+        assert_eq!(
+            registry.loading_art("a2b.map.suffix"),
+            Some(("LSA.shp", "LSA.pal"))
+        );
+        assert_eq!(registry.campaign_for_scenario("a2b.map.suffix"), None);
+        registry.campaigns[1].stages[0].map_variants[0] = "A2".into();
+        registry.campaigns[1].load_screen = "later.shp".into();
+        registry.campaigns[1].load_screen_pallet = "later.pal".into();
+        registry.campaigns[0].load_screen_pallet.clear();
+        assert_eq!(
+            registry.loading_art("A2.MAP"),
+            None,
+            "empty first match does not select a later campaign"
+        );
+        assert_eq!(registry.loading_art("unlisted.map"), None);
+    }
+
+    /// A room's exInfo scenario names a campaign by any stage's variant as
+    /// `<token>.MAP` in any case; other files name none.
+    #[test]
+    fn a_campaign_map_scenario_names_its_campaign() {
+        let registry = registry();
+        assert_eq!(registry.campaign_for_scenario("a2b.map"), Some(0));
+        assert_eq!(registry.campaign_for_scenario("W1C.MAP"), Some(1));
+        for other in ["A1", "A1.YRM", "A1B.MAPX", "XMP29U2.MAP", ""] {
+            assert_eq!(registry.campaign_for_scenario(other), None, "{other}");
+        }
     }
 
     #[test]
@@ -2141,11 +2427,11 @@ mod tests {
         let mut rng = SimRng::new(1);
         let mut state = CooperativeProgressState::default();
         let records = [(4, "c1a01md.map"), (7, "C1A01MDX.MAP"), (9, "C4W01MD.MPR")];
-        let rows = state.chooser_rows(&registry, &mut rng, &["Host", "Guest"], &records);
+        let rows = state.chooser_rows(&registry, &mut rng, &["Host", "Guest"], &records, None);
         assert_eq!(
             rows,
             [CooperativeChooserRow {
-                campaign: 0,
+                campaign: Some(0),
                 record: 4
             }]
         );
@@ -2157,7 +2443,7 @@ mod tests {
         );
         assert!(state.reserve(0).is_some() && state.reserve(1).is_some());
         // A present record loses its names unless there are two nodes.
-        state.chooser_rows(&registry, &mut rng, &["Host"], &records);
+        state.chooser_rows(&registry, &mut rng, &["Host"], &records, None);
         assert_eq!(
             state.active().unwrap().partner_names(),
             [b"".as_slice(), b"".as_slice()]
@@ -2169,7 +2455,7 @@ mod tests {
         let registry = registry();
         let mut rng = SimRng::new(21);
         let mut state = CooperativeProgressState::construct(&registry, &mut rng).unwrap();
-        assert!(!state.accept_chooser_row(&registry, &mut rng, context(&[], &[], true), 1));
+        assert!(!state.accept_chooser_row(&registry, &mut rng, context(&[], &[], true), 1, None));
         state.active = Some(CooperativeProgressRecord::default());
         let reserve = state.reserve(1).unwrap().clone();
         let draws = draws_of(&mut rng, |rng| {
@@ -2177,7 +2463,8 @@ mod tests {
                 &registry,
                 rng,
                 context(&[], &["Host", "Guest"], true),
-                1
+                1,
+                None
             ));
         });
         assert_eq!(draws.len(), 1, "World's one stage");
@@ -2192,7 +2479,7 @@ mod tests {
         // Not under Choose Map: nothing is taken.
         let before = state.clone();
         let draws = draws_of(&mut rng, |rng| {
-            state.accept_chooser_row(&registry, rng, context(&[], &[], false), 0);
+            state.accept_chooser_row(&registry, rng, context(&[], &[], false), 0, None);
         });
         assert!(draws.is_empty());
         assert_eq!(state, before);
@@ -2299,6 +2586,140 @@ mod tests {
         assert_eq!(invalid.current_map, -1);
     }
 
+    /// `0x0049BCE0` gives the first House the first name's tallies only
+    /// when the names match exactly; an invalid record has no rows.
+    #[test]
+    fn campaign_end_tallies_follow_the_first_name() {
+        let mut record = won_record();
+        let host = mission_row("Host", 10, 20, 30, 40);
+        let guest = mission_row("Guest", 1, 2, 3, 4);
+        record.record_win([&host, &guest], 600);
+        let host_first = ([[10, 20, 30, 40], [1, 2, 3, 4]], 600);
+        assert_eq!(record.campaign_end_tallies(b"Host"), Some(host_first));
+        let swapped = ([[1, 2, 3, 4], [10, 20, 30, 40]], 600);
+        assert_eq!(record.campaign_end_tallies(b"host"), Some(swapped));
+        assert_eq!(
+            CooperativeProgressRecord::default().campaign_end_tallies(b"Host"),
+            None
+        );
+    }
+
+    /// The written section as coopsave.ini holds it.
+    fn save_file(section: &str, values: &[(String, String)]) -> IniFile {
+        let mut text = format!("[{section}]\n");
+        for (key, value) in values {
+            text.push_str(&format!("{key}={value}\n"));
+        }
+        IniFile::from_str(&text)
+    }
+
+    /// `0x0049C0D0` restores what `0x0049C5A0` wrote for the same pair, and
+    /// `0x0049D390` names the next stage's map.
+    #[test]
+    fn a_written_save_reads_back_for_the_same_pair() {
+        let registry = registry();
+        let mut record = won_record();
+        let host = mission_row("Host", 10, 20, 30, 40);
+        record.record_win([&host, &mission_row("Guest", 1, 2, 3, 4)], 600);
+        let CoopSave::Write { section, values } =
+            record.coop_save(&registry, &roster(), [(0, 3), (-2, 5)])
+        else {
+            panic!("a mid-campaign win writes");
+        };
+        let save = save_file(&section, &values);
+        let mut fresh = CooperativeProgressRecord::default();
+        assert!(!fresh.saved_section_exists(&save), "no names");
+        fresh.bind_partners("Guest", "Host");
+        assert!(!fresh.saved_section_exists(&save), "the pair in order");
+        fresh.bind_partners("Host", "Guest");
+        assert!(fresh.saved_section_exists(&save));
+        assert_eq!(fresh.saved_map(&save).as_deref(), record.chosen_map(1));
+        assert!(fresh.read_save(&registry, &save));
+        assert_eq!(fresh, record);
+        // A campaign outside the registry keeps no maps.
+        let mut values = values;
+        values[1].1 = "7".into();
+        assert!(!fresh.read_save(&registry, &save_file(&section, &values)));
+        assert!(fresh.chosen_maps.is_empty());
+    }
+
+    /// Choose Map lists the pair's saved row, a join adds it under Choose
+    /// Map or prints the notice elsewhere, Use Map reads the save, and the
+    /// guest's departure drops the row or replaces a save in use.
+    #[test]
+    fn the_saved_campaign_row_follows_the_pair() {
+        let registry = registry();
+        let mut rng = SimRng::new(5);
+        let mut saved = won_record();
+        saved.record_win(
+            [
+                &mission_row("Host", 1, 1, 1, 1),
+                &mission_row("Guest", 1, 1, 1, 1),
+            ],
+            60,
+        );
+        let CoopSave::Write { section, values } =
+            saved.coop_save(&registry, &roster(), [(0, 3), (0, 5)])
+        else {
+            panic!("a mid-campaign win writes");
+        };
+        let save = save_file(&section, &values);
+        let next = format!("{}.MAP", saved.chosen_map(1).unwrap());
+        let records = [(3, "W1.MAP"), (8, next.as_str())];
+        let mut state = CooperativeProgressState::default();
+        let nodes = ["Host", "Guest"];
+        let rows = state.chooser_rows(&registry, &mut rng, &nodes, &records, Some(&save));
+        assert_eq!(
+            rows.last(),
+            Some(&CooperativeChooserRow {
+                campaign: None,
+                record: 8
+            })
+        );
+        assert_eq!(
+            state.saved_join(Some(&save), true, &records),
+            SavedCampaignJoin::Nothing
+        );
+        assert_eq!(
+            state.guest_left(&registry, &mut rng, true),
+            SavedCampaignLeave::RemoveRow
+        );
+        assert_eq!(
+            state.saved_join(Some(&save), true, &records),
+            SavedCampaignJoin::Nothing,
+            "no names"
+        );
+        assert!(state.bind_network_partners(&nodes));
+        assert_eq!(
+            state.saved_join(Some(&save), true, &records),
+            SavedCampaignJoin::Row(8)
+        );
+        assert_eq!(
+            state.saved_join(Some(&save), false, &records),
+            SavedCampaignJoin::Notice
+        );
+
+        let row = registry.campaigns.len();
+        state.accept_chooser_row(
+            &registry,
+            &mut rng,
+            context(&[], &nodes, true),
+            row,
+            Some(&save),
+        );
+        assert_eq!(state.active(), Some(&saved));
+        // With the save in use, the campaign Choose Map last took (none
+        // here, so campaign 0) is drawn afresh and its first map follows.
+        let leave = state.guest_left(&registry, &mut rng, false);
+        let active = state.active().unwrap();
+        assert_eq!((active.campaign_type, active.current_map), (0, 0));
+        assert_eq!(
+            leave,
+            SavedCampaignLeave::Scenario(active.chosen_map(0).unwrap().to_owned())
+        );
+        assert_eq!(active.partner_names(), [b"".as_slice(), b"".as_slice()]);
+    }
+
     #[test]
     fn the_coop_save_writes_keys_in_native_order_and_skips_the_last_stage() {
         let registry = registry();
@@ -2362,5 +2783,11 @@ mod tests {
         assert_eq!(house_type_text(9, &roster), "<none>");
         assert_eq!(house_type_text(0x117B, &roster), "<Player @ A>");
         assert_eq!(house_type_text(0x1182, &roster), "<Player @ H>");
+        assert_eq!(house_type_text(0x1183, &roster), "<Player @ I>");
+        assert_eq!(house_type_text(0x1194, &roster), "<Player @ Z>");
+        assert_eq!(house_type_text(0x1195, &roster), "<Player @ AA>");
+        assert_eq!(house_type_text(0x1198, &roster), "<Player @ AD>");
+        // One past the 120-slot offline Skirmish roster is no player selector.
+        assert_eq!(house_type_text(0x117B + 120, &roster), "<none>");
     }
 }

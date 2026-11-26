@@ -1,6 +1,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map};
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::components::NavTargetRef;
 use crate::sim::house_state::HouseState;
@@ -58,7 +59,7 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
     let Some(Fixture {
         sim,
         rules,
-        overlays,
+        overlays: _,
         team,
         actors,
     }) = Fixture::new(true, true)
@@ -75,10 +76,24 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
             InfantryEntryArgs::REPAIR,
             EntryQueryMode::CheckLocomotor,
             &rules,
-            Some(&overlays),
         )
         .unwrap(),
         0
+    );
+}
+
+#[test]
+fn retail_guard_slower_center_weights_an_unarmed_fast_member_once() {
+    // YHVR has no Primary= and Speed=6 (15 leptons/frame). Foot4DBFD0's
+    // NULL GetWeapon(0) test never passes, so it is counted once:
+    // (2688 + 2752 + 2*4224 + 2*4288 + 5888) / 7 = 4050, cell 15. Weighting
+    // it twice would give 34240 / 8 = 4280, cell 16.
+    let Some(Fixture { sim, team, .. }) = Fixture::build(true, false, Some(("YHVR", 5888))) else {
+        return;
+    };
+    assert_eq!(
+        sim.team_script_vm.teams[&team].zone,
+        Some(TeamTarget::Cell { x: 15, y: 10 })
     );
 }
 
@@ -87,11 +102,17 @@ struct Fixture {
     rules: RuleSet,
     overlays: OverlayTypeRegistry,
     team: u64,
-    actors: [u64; 4],
+    actors: Vec<u64>,
 }
 
 impl Fixture {
     fn new(guard_slower: bool, water: bool) -> Option<Self> {
+        Self::build(guard_slower, water, None)
+    }
+
+    /// The stock Yuri team, plus `extra` (a type added to its TaskForce and
+    /// the X it stands at) when given.
+    fn build(guard_slower: bool, water: bool, extra: Option<(&str, i32)>) -> Option<Self> {
         let retail = retail_battle_rules_for_map("XMP03T4.MAP")?;
         let (_, assets) = retail_assets()?;
         let overlays =
@@ -105,7 +126,14 @@ impl Fixture {
                 "[TeamTypes]\n0=05FBBBEC-G\n[05FBBBEC-G]\nGuardSlower=no\n",
             ));
         }
-        let registry = TeamAiIniRegistry::load_retail(&assets, &scenario, true).unwrap();
+        if let Some((kind, _)) = extra {
+            scenario.merge(&IniFile::from_str(&format!(
+                "[TaskForces]\n0=05FBBADC-G\n[05FBBADC-G]\n0=2,BRUTE\n1=1,YURI\n2=1,VIRUS\n3=1,{kind}\nGroup=-1\n"
+            )));
+        }
+        let registry =
+            TeamAiIniRegistry::load_retail(&assets, &scenario, RulePolicy::stock_multiplayer())
+                .unwrap();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4DBFD0);
         if water {
             crate::sim::arena_fixture::flood(&mut sim, &rules, 32, [(14, 10)]);
@@ -113,14 +141,20 @@ impl Fixture {
         let owner = sim.interner.intern("YuriCountry");
         sim.houses
             .register(HouseState::new(owner, 0, None, false, 0, 10));
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("05FBBBEC-G").unwrap();
         assert_eq!(
             sim.team_script_vm.team_type_ini[&team_type].guard_slower,
             guard_slower
         );
-        let mut actors = [0; 4];
-        for (index, kind) in ["BRUTE", "BRUTE", "YURI", "VIRUS"].into_iter().enumerate() {
+        let mut kinds = vec!["BRUTE", "BRUTE", "YURI", "VIRUS"];
+        let mut xs = vec![2688, 2752, 4224, 4288];
+        if let Some((kind, x)) = extra {
+            kinds.push(kind);
+            xs.push(x);
+        }
+        let mut actors = Vec::new();
+        for (index, kind) in kinds.into_iter().enumerate() {
             let id = sim
                 .spawn_object(
                     kind,
@@ -131,7 +165,7 @@ impl Fixture {
                     &rules,
                 )
                 .unwrap();
-            actors[index] = id;
+            actors.push(id);
         }
         // Recruit/form while clustered, so earlier formation orders cannot hide
         // the later Regroup destination. No Team flags or script cursor are set.
@@ -139,25 +173,25 @@ impl Fixture {
         let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
         for frame in 100..110 {
             sim.session.set_binary_frame_for_test(frame);
-            sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+            sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
             if sim.team_script_vm.teams[&team].current_action(&sim.team_script_vm) == 5 {
                 break;
             }
         }
         let state = &sim.team_script_vm.teams[&team];
         assert_eq!(state.current_action(&sim.team_script_vm), 5);
-        for (&id, x) in actors.iter().zip([2688, 2752, 4224, 4288]) {
+        for (&id, x) in actors.iter().zip(xs) {
             sim.foot_set_location_marked(
                 id,
                 DriveCoord { x, y: 2688, z: 0 },
                 &rules,
                 Some(&overlays),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         }
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
+        sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
         // Calc_Center6EAEE0 uses Foot4DBFD0's converted native speed, then asks
         // the actual closest member's CanEnter before retaining the mean cell.
         Some(Self {

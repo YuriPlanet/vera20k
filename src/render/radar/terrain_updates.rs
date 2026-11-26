@@ -4,26 +4,28 @@
 //! terrain-dirty generation changes. Full reconstruction and these updates
 //! both consume `CurrentRadarCellAuthority`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::current_cell::CurrentRadarCellAuthority;
 use super::geometry::NativeRadarSurfaceGeometry;
-use super::helpers::{MINIMAP_WIDTH, OverlayPixel, RadarSurfacePixel, TerrainPixels, set_pixel};
-use super::projection::{aperture_pixel, rasterize_native_terrain};
+use super::helpers::{MINIMAP_WIDTH, OverlayPixel, TerrainPixels, set_pixel};
+use super::projection::aperture_pixel;
 use super::terrain::{NativeRadarCellColors, NativeRadarCellUpdate, NativeRadarTerrainSurface};
 
 pub(crate) struct RadarTerrainUpdateLayers<'a> {
+    /// The mapless fallback's terrain; a generated surface keeps its own.
     pub base_rgba: &'a mut Vec<u8>,
     pub terrain_pixels: &'a TerrainPixels,
-    pub surface_pixels: &'a mut Vec<RadarSurfacePixel>,
     pub overlay_pixels: &'a mut Vec<OverlayPixel>,
     pub native_surface: Option<NativeRadarSurfaceGeometry>,
     pub native_terrain: &'a mut Option<NativeRadarTerrainSurface>,
+    /// The live MapClass playfield; `None` for a fixture without one.
+    pub playfield: Option<crate::map::playfield::PlayfieldBounds>,
 }
 
 /// A retained-radar terrain update staged before final frame composition.
 ///
-/// CPU pixels may already have changed when an upload fails. The retained
+/// Retained pixels may already have changed when an upload fails. The retained
 /// generation is deliberately committed only by [`Self::finish_with_upload`],
 /// so the next presentation visit re-runs the idempotent CellClass projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,68 @@ impl StagedRadarTerrainUpdate {
             Ok(generation) => generation,
             Err(never) => match never {},
         }
+    }
+}
+
+/// Radar terrain cells drained from the simulation and not yet uploaded.
+///
+/// The client moves the simulation's pending batch here every frame
+/// (`SimRuntime::take_radar_terrain_dirty`), so the minimap presents and
+/// retries from its own state and never writes the simulation. A cell joins
+/// once; the generation advances whenever one joins, and only an upload of
+/// the current generation clears the backlog, so a failed or skipped upload
+/// retries and a stale acknowledgement cannot drop newer cells.
+#[derive(Debug, Default)]
+pub struct RadarTerrainBacklog {
+    cells: Vec<(u16, u16)>,
+    index: BTreeSet<(u16, u16)>,
+    generation: u64,
+}
+
+impl RadarTerrainBacklog {
+    pub fn extend(&mut self, cells: impl IntoIterator<Item = (u16, u16)>) {
+        let mut changed = false;
+        for cell in cells {
+            if self.index.insert(cell) {
+                self.cells.push(cell);
+                changed = true;
+            }
+        }
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    pub fn cells(&self) -> &[(u16, u16)] {
+        &self.cells
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Clears the backlog after an upload of `generation` completed. A stale
+    /// generation or an empty backlog is refused.
+    pub fn acknowledge(&mut self, generation: u64) -> bool {
+        if generation != self.generation || self.cells.is_empty() {
+            return false;
+        }
+        self.cells.clear();
+        self.index.clear();
+        true
+    }
+
+    /// Drops cells from an abandoned timeline: a restore rebuilds the radar
+    /// from the restored cells, not from a replay of earlier marks.
+    pub(super) fn clear(&mut self) {
+        self.cells.clear();
+        self.index.clear();
+    }
+}
+
+impl AsMut<RadarTerrainBacklog> for RadarTerrainBacklog {
+    fn as_mut(&mut self) -> &mut RadarTerrainBacklog {
+        self
     }
 }
 
@@ -104,23 +168,67 @@ pub(super) fn apply_radar_terrain_dirty_cells(
     overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
     cells: &[(u16, u16)],
 ) {
-    let mut native_changes = Vec::new();
-    let terrain_brightness = layers
-        .native_terrain
-        .as_ref()
-        .map_or(1.0, NativeRadarTerrainSurface::terrain_brightness);
+    let Some(surface) = layers.native_terrain.as_mut() else {
+        apply_mapless_dirty_cells(
+            layers,
+            authority,
+            structural_bridge_color,
+            overlay_radar_colors,
+            cells,
+        );
+        return;
+    };
+    // The generated surface bakes overlay precedence into its raw RGB and a
+    // changed batch regenerates it for the GPU to compose. The mapless
+    // per-cell terrain and overlay layers are not drawn beside it, so they are
+    // not maintained; stamping them would leave a non-native pixel when
+    // nothing changed.
+    let terrain_brightness = surface.terrain_brightness();
+    // `ProcessDirtyCells` redraws only a Cell inside the mode-one playfield
+    // (`IsCellInPlayfield(cell, 1)`, `0x00655285..0x00655298`); one outside,
+    // such as a raised Cell in the top rows, keeps its colour until the
+    // radar is rebuilt.
+    let playfield = layers.playfield;
+    let in_playfield = |&&(rx, ry): &&(u16, u16)| {
+        playfield.is_none_or(|bounds| {
+            crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+                (i32::from(rx), i32::from(ry)),
+                Some(bounds),
+                authority.resolved_terrain(),
+            )
+        })
+    };
+    let changes = cells.iter().filter(in_playfield).filter_map(|&(rx, ry)| {
+        let (left, right) = authority.tile_radar_colors(rx, ry, terrain_brightness)?;
+        Some(NativeRadarCellUpdate {
+            base: NativeRadarCellColors {
+                cell: (rx, ry),
+                left,
+                right,
+            },
+            override_color: authority
+                .source(rx, ry, structural_bridge_color, overlay_radar_colors)
+                .map(|(color, _)| color),
+        })
+    });
+    surface.set_cell_states(changes);
+}
+
+/// Mapless fallback (no generated surface): restamp each dirty cell's terrain
+/// pixel and update the per-cell overlay list the minimap stamps in list
+/// order. A changed cell keeps its first slot, a cleared cell drops every
+/// entry, and a new cell appends in batch order. One pass over the list per
+/// batch replaces a list scan per dirty cell.
+fn apply_mapless_dirty_cells(
+    layers: RadarTerrainUpdateLayers<'_>,
+    authority: CurrentRadarCellAuthority<'_>,
+    structural_bridge_color: [u8; 3],
+    overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
+    cells: &[(u16, u16)],
+) {
+    let mut updates: Vec<Option<OverlayPixel>> = Vec::new();
+    let mut slots: HashMap<(u16, u16), usize> = HashMap::new();
     for &(rx, ry) in cells {
-        let source = authority.source(rx, ry, structural_bridge_color, overlay_radar_colors);
-        if let Some((left, right)) = authority.tile_radar_colors(rx, ry, terrain_brightness) {
-            native_changes.push(NativeRadarCellUpdate {
-                base: NativeRadarCellColors {
-                    cell: (rx, ry),
-                    left,
-                    right,
-                },
-                override_color: source.map(|(color, _)| color),
-            });
-        }
         let Some(terrain_pixel) = layers.terrain_pixels.cell(rx, ry).copied() else {
             continue;
         };
@@ -129,39 +237,37 @@ pub(super) fn apply_radar_terrain_dirty_cells(
         {
             set_pixel(layers.base_rgba, MINIMAP_WIDTH, x, y, terrain_pixel.color);
         }
-
-        if let Some((native_color, classification)) = source {
-            let color = [native_color[0], native_color[1], native_color[2], 255];
-            if let Some(existing) = layers
-                .overlay_pixels
-                .iter_mut()
-                .find(|pixel| pixel.rx == rx && pixel.ry == ry)
-            {
-                existing.px = terrain_pixel.px;
-                existing.py = terrain_pixel.py;
-                existing.color = color;
-                existing.classification = classification;
-            } else {
-                layers.overlay_pixels.push(OverlayPixel {
-                    rx,
-                    ry,
-                    px: terrain_pixel.px,
-                    py: terrain_pixel.py,
-                    color,
-                    classification,
-                });
-            }
-        } else {
-            layers
-                .overlay_pixels
-                .retain(|pixel| !(pixel.rx == rx && pixel.ry == ry));
+        slots.entry((rx, ry)).or_insert_with(|| {
+            let source = authority.source(rx, ry, structural_bridge_color, overlay_radar_colors);
+            updates.push(source.map(|(color, classification)| OverlayPixel {
+                rx,
+                ry,
+                px: terrain_pixel.px,
+                py: terrain_pixel.py,
+                color: [color[0], color[1], color[2], 255],
+                classification,
+            }));
+            updates.len() - 1
+        });
+    }
+    let mut placed = vec![false; updates.len()];
+    layers.overlay_pixels.retain_mut(|pixel| {
+        let Some(&slot) = slots.get(&(pixel.rx, pixel.ry)) else {
+            return true;
+        };
+        let Some(update) = updates[slot] else {
+            return false;
+        };
+        if !placed[slot] {
+            *pixel = update;
+            placed[slot] = true;
         }
-    }
-    if let Some(surface) = layers.native_terrain
-        && surface.set_cell_states(native_changes)
-    {
-        let (rgba, pixels) = rasterize_native_terrain(surface);
-        *layers.base_rgba = rgba;
-        *layers.surface_pixels = pixels;
-    }
+        true
+    });
+    layers.overlay_pixels.extend(
+        updates
+            .into_iter()
+            .zip(placed)
+            .filter_map(|(update, placed)| update.filter(|_| !placed)),
+    );
 }

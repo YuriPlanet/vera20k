@@ -108,6 +108,26 @@ fn session_country_allocation_projects_and_survives_until_type_reset() {
     assert_eq!(receipt.pre_reset().event_count(), 0);
 }
 
+/// A Country registry refresh derives every type's house masks again: a type
+/// owned by, and forbidden to, a country the refresh allocates answers for it.
+#[test]
+fn a_country_refresh_projects_type_house_masks_again() {
+    let root = "[Countries]\n0=Alpha\n[Alpha]\nName=Alias\n[Orphan]\nName=Other\nMultiplay=yes\n\
+                [InfantryTypes]\n0=E1\n[E1]\nOwner=Orphan\nForbiddenHouses=Orphan\n";
+    let mut owner = fixture(root);
+    let settings = IniFile::from_str("[MultiPlayer]\nSide=Orphan\n");
+    assert_eq!(owner.read_multiplayer_country(&settings, -1), 1);
+    owner.refresh_multiplayer_country_bodies();
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(root)).unwrap();
+    let masks = |rules: &RuleSet| {
+        let e1 = rules.object("E1").unwrap();
+        (e1.owner_mask(rules), e1.forbidden_houses_mask(rules))
+    };
+    assert_eq!(masks(&rules), (0, 0));
+    owner.project_multiplayer_countries(&mut rules);
+    assert_eq!(masks(&rules), (1 << 1, 1 << 1));
+}
+
 #[test]
 fn retail_session_master_uses_complete_original_country_array() {
     let Some(root) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {

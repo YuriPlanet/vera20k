@@ -7,6 +7,20 @@ use super::{GeneralRules, RuleSet};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 
+/// 300 `[Sides]` and a country on side 280: `find_or_allocate` keeps a Side
+/// to its one-byte identity space (`SideIdx`) and leaves the rest out, so the
+/// registry projection's u8 identities hold and the rules still load.
+#[test]
+fn sides_past_the_u8_identity_space_are_left_out_not_fatal() {
+    let mut text = String::from("[Sides]\n");
+    for index in 0..300 {
+        text.push_str(&format!("{index}=Side{index}\n"));
+    }
+    text.push_str("[Countries]\n0=Far\n[Far]\nSide=Side280\n");
+    let rules = RuleSet::from_ini(&IniFile::from_str(&text)).expect("rules load");
+    assert!(rules.country_index("Far").is_some());
+}
+
 #[test]
 fn comp_easy_bonus_uses_constructor_true_and_exact_ai_key_without_general_gate() {
     assert!(GeneralRules::default().comp_easy_bonus);

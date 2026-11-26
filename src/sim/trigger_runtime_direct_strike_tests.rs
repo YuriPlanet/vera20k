@@ -42,6 +42,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, kind: i32) -> bool {
         entries["CASE"].entries()[0].clone(),
         None,
         None,
+        None,
     );
     let house = sim.interner.intern("IgnoredIncomingHouse");
     sim.apply_live_trigger_action(
@@ -54,7 +55,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, kind: i32) -> bool {
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -142,10 +143,11 @@ fn counted_trigger_dispatches_both_strikes_then_continues() {
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
         None,
         None,
+        None,
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
-    sim.advance_triggers(&rules, None, FrameEffects::default());
+    sim.advance_triggers(&rules, None, &mut FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(sim.projectiles.iter().count(), 1);
     let entity = sim.entities().get(victim).unwrap();
@@ -238,7 +240,7 @@ fn direct_strikes_reject_missing_safe_prerequisites() {
     for kind in [96, 109] {
         assert!(!run(&mut sim, &rules, kind));
     }
-    sim.resolved_terrain = terrain;
+    *sim.resolved_terrain = terrain;
     waypoint(&mut sim, (40, 40));
     let missing = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     assert!(!run(&mut sim, &missing, 96));

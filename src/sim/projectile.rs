@@ -199,6 +199,17 @@ impl ProjectileCoord {
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
+
+    /// YRpp's `CoordStruct::DistanceFromSquared`, the distance Phobos
+    /// compares: each component's int difference as a double, then the sum of
+    /// their squares. Phobos is built for SSE2, so Rust's f64 gives the same
+    /// result on every platform.
+    pub(crate) fn distance_from_squared(self, other: Self) -> f64 {
+        let dx = f64::from(self.x.wrapping_sub(other.x));
+        let dy = f64::from(self.y.wrapping_sub(other.y));
+        let dz = f64::from(self.z.wrapping_sub(other.z));
+        dx * dx + dy * dy + dz * dz
+    }
 }
 
 /// CellClass virtual +0x48 @ 0x00486840 of the cell `MapClass::Get_CellClass`
@@ -224,24 +235,40 @@ pub(crate) fn cell_target_coord(
     rx: u16,
     ry: u16,
 ) -> ProjectileCoord {
-    cell_ref_target_coord(&crate::sim::cell_rect::get_cellclass_fallback(
-        terrain,
-        i32::from(rx),
-        i32::from(ry),
-    ))
+    let cell = crate::sim::cell_rect::get_cellclass_fallback(terrain, i32::from(rx), i32::from(ry));
+    cell_ref_target_coord(terrain, &cell)
 }
 
-/// CellClass virtual +0x58 of a cell already looked up: its +0x48 ground
-/// coordinate plus 416 leptons iff its own structural bit is live.
-pub(crate) fn cell_ref_target_coord(cell: &crate::sim::cell_rect::CellRef<'_>) -> ProjectileCoord {
+/// CellClass virtual +0x58 @ 0x00486890 of a cell already looked up.
+/// Its structural bit selects the deck, with the native +416 rise as fallback.
+pub(crate) fn cell_ref_target_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    cell: &crate::sim::cell_rect::CellRef<'_>,
+) -> ProjectileCoord {
     let ground = cell.get_coords();
     let mut coord = ProjectileCoord::new(ground.x, ground.y, ground.z);
-    if cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
-        coord.z = coord
-            .z
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+    if is_structural_bridge_cell(cell) {
+        coord.z = fixed_deck_z_for_cell_ref(terrain, cell)
+            .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(ground.z, 0, true));
     }
     coord
+}
+
+/// Resolve a retained real CellClass's deck without making another Map
+/// lookup. The shared Dummy may have the same XY as a real cell.
+pub(crate) fn fixed_deck_z_for_cell_ref(
+    terrain: Option<&ResolvedTerrainGrid>,
+    cell: &crate::sim::cell_rect::CellRef<'_>,
+) -> Option<i32> {
+    let crate::sim::cell_rect::CellRef::Real(cell) = cell else {
+        return None;
+    };
+    let terrain = terrain?;
+    let index = terrain.native_fixed_cell_index(cell.rx as i16, cell.ry as i16)?;
+    crate::sim::movement::ground_pose::corrected_deck_z(
+        terrain,
+        crate::map::cell_index::NativeCellIdentity::Real(index),
+    )
 }
 
 /// The shared fallback CellClass's +0x48 coordinate. Read the retained dummy
@@ -258,9 +285,12 @@ pub(crate) fn dummy_cell_ground_coord(dummy: &SharedCellDummy) -> ProjectileCoor
 /// shared fallback CellClass. Unlike a stable allocated cell, every later miss
 /// can change the coordinate observed through this retained identity.
 pub(crate) fn dummy_cell_target_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
-    cell_ref_target_coord(&crate::sim::cell_rect::CellRef::Dummy {
-        cell: dummy.clone(),
-    })
+    cell_ref_target_coord(
+        None,
+        &crate::sim::cell_rect::CellRef::Dummy {
+            cell: dummy.clone(),
+        },
+    )
 }
 
 /// The original target retained by a projectile after weapon fire.
@@ -361,16 +391,31 @@ pub struct ProjectileCollisionPolicy {
     pub subject_to_cliffs: bool,
     pub flak_scatter: bool,
     pub anti_air: bool,
+    /// `BulletType+294 Airburst=`: the Bullet AI homing/closing/fuse arms.
     pub airburst: bool,
+    /// `BulletClass::Explodes`'s airburst gate: native `Airburst=`, or
+    /// `Airburst || Splits` in a Phobos build. A manually constructed policy
+    /// that leaves it `None` falls back to [`Self::airburst`].
+    #[serde(default)]
+    pub explodes_airburst: Option<bool>,
     pub inaccurate: bool,
     /// BulletType +295: 48ACF0 multiplies live Rules gravity by binary64 0.5.
     pub floater: bool,
+    /// Phobos `[Projectile] Gravity=` (`BulletTypeExt::GetAdjustedGravity`):
+    /// the type's gravity bits, or `None` for the live Rules value.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    pub gravity: Option<crate::util::native_x87::NativeF64Bits>,
     /// BulletType +2C8, retained as exact binary64 bits for Eq/hash/save.
     pub elasticity_bits: u64,
     /// `BulletTypeClass::Arcing` (`+0x29B`): impact resolution
     /// (`0x00468ECF`) skips the detector-reference arm for it.
     #[serde(default)]
     pub arcing: bool,
+    /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`): the shared probe's
+    /// GetObstacle also stops at a solid building (`0x468BE2`).
+    #[serde(default)]
+    pub subject_to_solid: bool,
 }
 
 impl ProjectileCollisionPolicy {
@@ -383,11 +428,34 @@ impl ProjectileCollisionPolicy {
         flak_scatter: false,
         anti_air: false,
         airburst: false,
+        explodes_airburst: None,
         inaccurate: false,
         floater: false,
+        #[cfg(feature = "phobos")]
+        gravity: None,
         elasticity_bits: 0x3fe8_0000_0000_0000,
         arcing: false,
+        subject_to_solid: false,
     };
+
+    /// `0x468D80`'s airburst gate, with the pre-feature fallback.
+    pub const fn explodes_airburst(&self) -> bool {
+        match self.explodes_airburst {
+            Some(value) => value,
+            None => self.airburst,
+        }
+    }
+
+    /// Phobos `[Projectile] Gravity=` bits, or `None` on the stock path.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
+        self.gravity
+    }
+
+    #[cfg(not(feature = "phobos"))]
+    pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -424,6 +492,9 @@ pub enum ProjectileCollisionResponse {
     },
     /// The world's answer to [`ProjectileCollisionPhase::ImpactLadder`].
     ImpactLadder(ImpactLadderWorld),
+    /// The world's answer to [`ProjectileCollisionPhase::AresFirestorm`]:
+    /// the bullet burns.
+    AresFirestorm,
 }
 
 /// The target virtual requested at a Bullet AI boundary. Object410540
@@ -447,6 +518,10 @@ pub enum ProjectileCollisionPhase {
     /// `0x00468D80` asks the target and the warhead for
     /// [`resolve_impact_coord`]; the candidate is the bullet's Location.
     ImpactLadder,
+    /// Ares BulletClass_Update_Ranged (`1001AC90`, hook `0x467B94`) asks,
+    /// after the commit, whether the candidate cell holds an active
+    /// firestorm wall that burns the bullet.
+    AresFirestorm,
 }
 
 /// The Target facts `BulletClass` impact resolution (`0x00468D80`) reads.
@@ -637,11 +712,13 @@ pub(crate) fn projectile_slope_reflect_double(
 /// leaves the 512-cell map). So every cluster after the first lands around
 /// the impact, never around the previous cluster.
 pub fn projectile_next_cluster_coord(
+    grid: crate::map::cell_index::CellGrid,
     impact: ProjectileCoord,
     scenario_rng: &mut SimRng,
 ) -> ProjectileCoord {
     let distance = scenario_rng.next_range_i32_inclusive(0x100, 0x200);
     let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+        grid,
         scenario_rng,
         impact.x,
         impact.y,
@@ -927,6 +1004,19 @@ pub struct ProjectilePayload {
     installed_weapon: Option<InternedId>,
     /// Construct4664E6's byte argument, independent of installed Weapon.
     bright: bool,
+    /// Phobos `BulletExt::FirepowerMult`, the firer's firepower multiplier at
+    /// construction. `AirburstWeapon.ApplyFirepowerMult` scales child damage
+    /// with it, and airburst children carry it onward.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "default_firepower_multiplier")]
+    firepower_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Phobos `BulletExt::Detonate`'s `pFiringHouse`: the House a simulated
+    /// detonation keeps when the shot's invoker Techno is already gone
+    /// (`WarheadTypeExt::DetonateAt`). Real bullets leave it unset and keep
+    /// [`crate::sim::projectile::Projectile::phobos_firer_house`].
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    source_house: Option<InternedId>,
     /// `BulletClass+0x150`, 1/256 units: `BulletClass::Construct` writes
     /// [`Self::UNSCALED`] (`0x00466546`) and only a Prism master's supported
     /// shot writes another value (`BuildingClass::ProcessDelayedFire`,
@@ -935,6 +1025,19 @@ pub struct ProjectilePayload {
     /// (`0x004697FC..0x0046980C`, not ported: dormant in retail, see
     /// [`SpecialDetonationAction::DirectRocker`]).
     damage_multiplier: i32,
+    /// Ares BulletClass Range: the leptons left to a FireAt bullet of a
+    /// `Ranged=` type, from its weapon's `ProjectileRange=`
+    /// (TechnoClass_Fire_CreateBullet 1001ADE0, hook 0x6FE53F). `None` for
+    /// every other bullet, whose Range starts at INT_MAX
+    /// (BulletClass_Initialize_Ranged 1001A920, hook 0x4664FB) and never runs
+    /// out. Not part of the world hash.
+    #[serde(default)]
+    ares_range: Option<i32>,
+}
+
+#[cfg(feature = "phobos")]
+fn default_firepower_multiplier() -> crate::util::native_x87::NativeF64Bits {
+    crate::util::native_x87::NativeF64Bits::ONE
 }
 
 impl ProjectilePayload {
@@ -955,6 +1058,11 @@ impl ProjectilePayload {
             installed_weapon: None,
             bright,
             damage_multiplier: Self::UNSCALED,
+            #[cfg(feature = "phobos")]
+            firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+            #[cfg(feature = "phobos")]
+            source_house: None,
+            ares_range: None,
         }
     }
 
@@ -968,6 +1076,11 @@ impl ProjectilePayload {
 
     pub fn bright(&self) -> bool {
         self.bright
+    }
+
+    /// The FireAt bullet's Ares Range ([`Self::ares_range`]).
+    pub(crate) fn with_ares_range(self, ares_range: Option<i32>) -> Self {
+        Self { ares_range, ..self }
     }
 
     /// The sole +130 mutation, corresponding to SetWeaponType46B260.
@@ -988,6 +1101,36 @@ impl ProjectilePayload {
 
     pub fn damage_multiplier(&self) -> i32 {
         self.damage_multiplier
+    }
+
+    /// The firer's firepower multiplier captured at construction.
+    #[cfg(feature = "phobos")]
+    pub const fn firepower_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
+        self.firepower_multiplier
+    }
+
+    /// Carry another bullet's captured firepower multiplier, as Phobos's
+    /// airburst children do.
+    #[cfg(feature = "phobos")]
+    pub fn with_firepower_multiplier(
+        mut self,
+        firepower_multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> Self {
+        self.firepower_multiplier = firepower_multiplier;
+        self
+    }
+
+    /// The House a simulated detonation retains for its source-House
+    /// fallback (`BulletExt::Detonate`'s `pFiringHouse`).
+    #[cfg(feature = "phobos")]
+    pub fn source_house(&self) -> Option<InternedId> {
+        self.source_house
+    }
+
+    #[cfg(feature = "phobos")]
+    pub fn with_source_house(mut self, house: Option<InternedId>) -> Self {
+        self.source_house = house;
+        self
     }
 
     /// `BulletClass::DetonateAtCoord @ 0x004690B0` hands
@@ -1123,6 +1266,21 @@ pub struct Projectile {
     /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
     #[serde(default)]
     firer_house: Option<InternedId>,
+    /// Phobos `BulletExt::FirerHouse`, set by `BulletExt::InitializeState`
+    /// (`0x466556`): the Owner Techno's House at construction, kept after the
+    /// owner expires. Independent of the palette-only `firer_house` above.
+    /// Written by [`Simulation::construct_bullet_scheme`].
+    ///
+    /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    phobos_firer_house: Option<InternedId>,
+    /// Ares BulletExt `+0x8` NukeSW: the superweapon type whose nuke this
+    /// bullet is, set by SW_NuclearMissile::Activate (10072FF0), the silo's
+    /// take-off hook (44CB4C, 10036660) and NukeMaker's propagation (46B423,
+    /// 10036930); read by NukeMaker (46B371) and the impact hook (467E59).
+    #[serde(default)]
+    ares_nuke_sw: Option<InternedId>,
     /// Bullet `+0x158`: set at a `NUKE` impact (`0x00467F3C`), cleared when
     /// the wait ends (`0x0046676A`).
     #[serde(default)]
@@ -1339,6 +1497,18 @@ impl Projectile {
         self.firer_house
     }
 
+    /// Phobos `BulletExt::FirerHouse`: the owner's House retained at
+    /// construction, independent of the palette-only `firer_house`.
+    #[cfg(feature = "phobos")]
+    pub fn phobos_firer_house(&self) -> Option<InternedId> {
+        self.phobos_firer_house
+    }
+
+    /// Ares BulletExt NukeSW.
+    pub(crate) fn ares_nuke_sw(&self) -> Option<InternedId> {
+        self.ares_nuke_sw
+    }
+
     /// Waiting on its anim after a `NUKE` impact (`+0x158`); the draw skips
     /// such a bullet (`BulletClass::DrawSHPOrVoxel`, `0x004680F6`).
     pub fn awaiting_anim(&self) -> bool {
@@ -1364,6 +1534,30 @@ impl Projectile {
         shared_cell_dummy: &SharedCellDummy,
         candidate: ProjectileCoord,
     ) -> Option<ProjectileNukeImpact> {
+        // Ares hook 467E59 (10036960) replaces the `NUKE` test for every
+        // bullet: a superweapon's bullet whose warhead is no NukeMaker rises
+        // to the ground; a flash or a PreImpactAnim makes the impact.
+        if let Some(ares) = nuke.ares {
+            let ball = ares(self.payload.warhead, self.ares_nuke_sw);
+            if !ball.sw_bullet && ball.flash.is_none() && !ball.pre_impact_anim {
+                return None;
+            }
+            if ball.sw_bullet {
+                self.position =
+                    raise_to_ground(self.position, terrain, shared_cell_dummy, self.on_bridge);
+            }
+            let waits = ball.pre_impact_anim;
+            if waits {
+                self.awaiting_anim = true;
+                self.awaited_anim = None;
+                self.previous_cell = ((candidate.x / 256) as i16, (candidate.y / 256) as i16);
+            }
+            return Some(ProjectileNukeImpact {
+                projectile_id: self.id,
+                waits,
+                ares: Some(ball),
+            });
+        }
         if !nuke
             .interner
             .resolve(self.payload.warhead)
@@ -1381,18 +1575,19 @@ impl Projectile {
         Some(ProjectileNukeImpact {
             projectile_id: self.id,
             waits,
+            ares: None,
         })
     }
 
     /// The facts [`resolve_impact_coord`] reads, with the bullet at its
     /// committed Location.
-    fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
+    pub(crate) fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
         ImpactLadderBullet {
             location: self.position,
             reference: self.proximity_reference,
             impact_flag,
             inaccurate: self.collision.inaccurate,
-            airburst: self.collision.airburst,
+            airburst: self.collision.explodes_airburst(),
             arcing: self.collision.arcing,
             homing: self.tracks_target,
         }
@@ -1410,8 +1605,17 @@ pub enum ProjectileDetonationReason {
     /// straight to `DetonateAtCoord` (`0x0070D782`): one detonation, without
     /// the BulletClass cluster loop and its draws.
     DeathWeapon,
+    /// Phobos `BulletExt::Detonate` (an AttachEffect `ExpireWeapon`,
+    /// `RevengeWeapon` or `ReflectDamage` shot): the bullet is created at the
+    /// shot's coordinates and exploded at once, so it takes no cluster loop
+    /// but keeps its real impact coordinate.
+    AttachEffectShot,
     /// A `NUKE` impact's wait ended: its anim is gone (`0x00466771`).
     AnimEnded,
+    /// Phobos `ApplyCrit`'s `Crit.Warhead_FullDetonation` arm:
+    /// `WarheadTypeExt::DetonateAt` builds a bullet with no weapon type and
+    /// explodes it at the target (`Ext/WarheadType/Body.cpp:102..110`).
+    CritWarhead,
 }
 
 /// One deferred `BulletClass::Detonate` handoff for combat to apply.
@@ -1434,6 +1638,24 @@ pub struct ProjectileDetonation {
 pub(crate) struct ProjectileNukeImpact {
     projectile_id: u64,
     waits: bool,
+    /// The Ares impact hook's decision, when it made this impact.
+    ares: Option<AresNukeBall>,
+}
+
+/// What Ares's BulletClass impact hook (467E59, 10036960) decides for one
+/// bullet: `sw_bullet` for a superweapon's nuke (BulletExt NukeSW) whose
+/// warhead is no `NukeMaker=` (rise to the ground, the type's radar event
+/// while `SW.CreateRadarEvent`), the flash's frames (the warhead's
+/// `NukeFlash.Duration`, else 30 for a superweapon's bullet and none for
+/// another, kept only above 0 and while the type's `Light.Enabled`), and the
+/// warhead's `PreImpactAnim` to wait on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AresNukeBall {
+    pub(crate) sw_bullet: bool,
+    pub(crate) radar: bool,
+    pub(crate) flash: Option<i32>,
+    pub(crate) pre_impact_anim: bool,
+    pub(crate) nuke_sw: Option<InternedId>,
 }
 
 impl ProjectileNukeImpact {
@@ -1446,6 +1668,11 @@ impl ProjectileNukeImpact {
     pub(crate) fn waits(self) -> bool {
         self.waits
     }
+
+    /// The Ares impact hook's decision.
+    pub(crate) fn ares(self) -> Option<AresNukeBall> {
+        self.ares
+    }
 }
 
 /// What `BulletClass::AI`'s `NUKE` block and the wait it starts read
@@ -1453,6 +1680,7 @@ impl ProjectileNukeImpact {
 pub struct NukeImpactContext<'a> {
     interner: &'a StringInterner,
     nuke_ball_type: &'a dyn Fn() -> bool,
+    ares: Option<&'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall>,
 }
 
 impl<'a> NukeImpactContext<'a> {
@@ -1464,11 +1692,23 @@ impl<'a> NukeImpactContext<'a> {
         Self {
             interner,
             nuke_ball_type,
+            ares: None,
+        }
+    }
+
+    /// The Ares impact hook's decision for (warhead, BulletExt NukeSW).
+    pub(crate) fn with_ares(
+        self,
+        ares: &'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall,
+    ) -> Self {
+        Self {
+            ares: Some(ares),
+            ..self
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "projectile/trailer_tests.rs"]
 mod trailer_tests;
 
@@ -1515,9 +1755,14 @@ impl ProjectileStore {
         } else {
             kind.spawn_delay
         };
-        let remainder = (binary_frame as i32)
-            .checked_rem(delay)
-            .expect("Bullet Trailer native IDIV requires a nonzero, nonoverflowing SpawnDelay");
+        // gamemd's signed IDIVs of the frame (0x00466844 by the scaled
+        // delay, 0x0046687C by the type's) trap on `SpawnDelay=0` and on
+        // frame i32::MIN with a delay of -1, values only a map or mod can
+        // set. VERA carries on without a trailer for that visit.
+        let Some(remainder) = (binary_frame as i32).checked_rem(delay) else {
+            log::warn!("Bullet Trailer [{name}] not spawned: SpawnDelay={delay} cannot divide");
+            return None;
+        };
         (remainder == 0).then_some((name, position))
     }
 }
@@ -1528,6 +1773,9 @@ pub struct ProjectileAdvanceResult {
     pub detonations: Vec<ProjectileDetonation>,
     pub expired: Vec<u64>,
     nuke_impacts: Vec<ProjectileNukeImpact>,
+    /// A firestorm wall burnt the bullet (Ares hook `0x467B94`); it is in
+    /// `expired` too.
+    pub(crate) ares_firestormed: bool,
 }
 
 impl ProjectileAdvanceResult {
@@ -1684,6 +1932,16 @@ impl ProjectileStore {
     /// Re-read the authoritative fields at a DetonateAtCoord callback
     /// boundary. The explicit impact and reason belong to the caller;
     /// source/target may have changed during synchronous receiver callbacks.
+    /// Ares BulletClass_Detonate's neutering of an abducting bullet
+    /// (100536E0, hook 0x46920B): Health (`+0x6C`) and DamageMultiplier
+    /// (`+0x150`) zeroed, so the vanilla arms that follow deal nothing.
+    pub(crate) fn neuter(&mut self, id: u64) {
+        if let Some(bullet) = self.get_mut(id) {
+            bullet.payload.base_damage = 0;
+            bullet.payload.damage_multiplier = 0;
+        }
+    }
+
     pub(crate) fn current_detonation(&self, request: ProjectileDetonation) -> ProjectileDetonation {
         self.get(request.projectile_id).map_or(request, |bullet| {
             detonation(bullet, request.impact, request.reason)
@@ -1844,6 +2102,9 @@ impl ProjectileStore {
                 collision: ProjectileCollisionPolicy::NONE,
                 on_bridge: false,
                 firer_house: None,
+                #[cfg(feature = "phobos")]
+                phobos_firer_house: None,
+                ares_nuke_sw: None,
                 awaiting_anim: false,
                 awaited_anim: None,
             },
@@ -1905,6 +2166,63 @@ impl ProjectileStore {
     pub(crate) fn set_firer_house(&mut self, id: u64, house: Option<InternedId>) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.firer_house = house;
+        }
+    }
+
+    /// Ares hook 46670F (1001AC10): while a bullet waits on its anim, a
+    /// `PreImpactAnim.Moves` warhead's bullet takes the anim's coordinates as
+    /// its Location (written directly) and the cell there as its target.
+    pub(crate) fn follow_awaited_anim(
+        &mut self,
+        id: u64,
+        at: ProjectileCoord,
+        target: ProjectileTarget,
+    ) {
+        if let Some(projectile) = self.get_mut(id)
+            && projectile.awaiting_anim
+            && projectile.awaited_anim.is_some()
+        {
+            projectile.position = at;
+            projectile.target = target;
+        }
+    }
+
+    /// Ares BulletExt NukeSW's writers.
+    pub(crate) fn set_ares_nuke_sw(&mut self, id: u64, sw_type: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.ares_nuke_sw = sw_type;
+        }
+    }
+
+    /// Phobos `BulletExt::FirerHouse` at bullet initialization.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_firer_house(&mut self, id: u64, house: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.phobos_firer_house = house;
+        }
+    }
+
+    /// Phobos `BulletExt::InitializeState`'s `FirepowerMult`. A payload value
+    /// other than 1.0 came from FireAt's launch capture and is kept.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_firepower_multiplier_if_default(
+        &mut self,
+        id: u64,
+        value: crate::util::native_x87::NativeF64Bits,
+    ) {
+        if let Some(projectile) = self.get_mut(id)
+            && projectile.payload.firepower_multiplier
+                == crate::util::native_x87::NativeF64Bits::ONE
+        {
+            projectile.payload.firepower_multiplier = value;
+        }
+    }
+
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) replaces only the Target
+    /// (`+0x10C`) of a bullet whose path crosses a firestorm wall.
+    pub(crate) fn ares_firestorm_retarget(&mut self, id: u64, target: ProjectileTarget) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.target = target;
         }
     }
 
@@ -1993,6 +2311,7 @@ impl ProjectileStore {
                     ProjectileCollisionPhase::Ordinary { .. } => None,
                     ProjectileCollisionPhase::Shared => collides_at(projectile, candidate),
                     ProjectileCollisionPhase::ImpactLadder => None,
+                    ProjectileCollisionPhase::AresFirestorm => None,
                 },
                 None,
             ) else {
@@ -2222,6 +2541,7 @@ impl ProjectileStore {
                         projectile.velocity,
                         rules_gravity,
                         projectile.collision.floater,
+                        projectile.collision.gravity(),
                     );
                     let candidate = motion.candidate_coord();
                     ordinary_motion = Some(motion);
@@ -2320,7 +2640,42 @@ impl ProjectileStore {
         // 467B9E commits the selected candidate before the shared probe.
         // Every admitted impact bypasses 468BB0, irrespective of ROT.
         let selected_candidate = snap_impact.unwrap_or(candidate);
+        // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), before
+        // that commit: a `Ranged=` bullet spends `F2I(DistanceFrom)` from its
+        // Location to the new one, and impacts once none is left. Only a
+        // game read the Ares way gives a bullet a Range, so no other asks.
+        if let Some(range) = projectile.payload.ares_range.as_mut() {
+            let square = |a: i32, b: i32| {
+                let delta = f64::from(a.wrapping_sub(b));
+                delta * delta
+            };
+            let distance = (square(selected_candidate.x, projectile.position.x)
+                + square(selected_candidate.y, projectile.position.y)
+                + square(selected_candidate.z, projectile.position.z))
+            .sqrt();
+            *range = range.wrapping_sub(crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                distance,
+            ));
+            if *range <= 0 {
+                impact_flag = true;
+            }
+        }
         projectile.position = selected_candidate;
+        // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), after
+        // the replicated SetLocation: a bullet the world burns in a firestorm
+        // wall's cell is UnInit'ed there, before any impact (0x467FBA). Only
+        // Ares code raises a firestorm, so the world answers no without one.
+        if collides_at(
+            projectile,
+            selected_candidate,
+            ProjectileCollisionPhase::AresFirestorm,
+        )
+        .is_some()
+        {
+            result.ares_firestormed = true;
+            result.expired.push(id);
+            return Some(result);
+        }
         let collision_impact = (!impact_flag)
             .then(|| {
                 collides_at(
@@ -2332,6 +2687,9 @@ impl ProjectileStore {
             .flatten()
             .map(|response| match response {
                 ProjectileCollisionResponse::TargetZClamp(impact) => impact,
+                ProjectileCollisionResponse::AresFirestorm => {
+                    unreachable!("only the shared probe answers here")
+                }
                 ProjectileCollisionResponse::Ordinary { .. }
                 | ProjectileCollisionResponse::ImpactLadder(_) => {
                     unreachable!("only the shared probe answers here")
@@ -2519,6 +2877,34 @@ pub(crate) fn projectile_ground_z(
     ground.expect("projectile ground probe requires a supported CellClass slope")
 }
 
+/// Object::GetHeight (0x005F5F40) and SetHeight (0x005F5FA0) use the bullet's
+/// retained OnBridge byte to select the surface. Mapless probes retain the
+/// same dummy as the ground-only query.
+pub(crate) fn projectile_surface_z(
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    coord: ProjectileCoord,
+    on_bridge: bool,
+) -> i32 {
+    if on_bridge && let Some(terrain) = terrain {
+        return crate::sim::movement::ground_pose::query_surface_z(
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            crate::sim::components::DriveCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+            true,
+        )
+        .expect("projectile surface probe requires a supported CellClass slope");
+    }
+    crate::sim::movement::ground_pose::z_at_height(
+        projectile_ground_z(terrain, shared_cell_dummy, coord),
+        0,
+        on_bridge,
+    )
+}
+
 /// BulletType virtual +6C @ 0x0046C4F0, called by ObjectUnlimbo5F4F88
 /// before SetLocation: a coordinate at/below ground is placed one lepton
 /// above it. The strict signed comparison has no Level or bridge-deck gate.
@@ -2584,19 +2970,26 @@ pub(crate) fn projectile_final_snap_admitted(
         || f64::from(distance) <= (projectile_velocity_magnitude(velocity) * 2.0).max(128.0)
 }
 
-/// Live Rules +16B8, with the Type +295 Floater override (4671B9/48ACF0).
+/// Live Rules +16B8 or the Phobos `[Projectile] Gravity=` bits, with the Type
+/// +295 Floater override (4671B9/48ACF0).
 pub fn projectile_gravity(
     rules_gravity: i32,
+    type_gravity: Option<crate::util::native_x87::NativeF64Bits>,
     floater: bool,
 ) -> crate::util::native_x87::NativeF64Bits {
     use crate::util::native_x87::{NativeF64Bits, X87Chop53};
-    let gravity = X87Chop53::load_i32(rules_gravity);
+    let gravity = match type_gravity {
+        Some(bits) => {
+            X87Chop53::load_f64(bits).expect("the Phobos Gravity= reader drops a non-finite value")
+        }
+        None => X87Chop53::load_i32(rules_gravity),
+    };
     let gravity = if floater {
         X87Chop53::mul(gravity, X87Chop53::load_f64(NativeF64Bits::HALF).unwrap())
     } else {
         gravity
     };
-    X87Chop53::store_f64(gravity).expect("finite Rules gravity")
+    X87Chop53::store_f64(gravity).expect("finite projectile gravity")
 }
 
 /// Ordinary 46718F..467494: live gravity scratch, double coordinate sums,
@@ -2606,12 +2999,17 @@ fn ordinary_motion_candidate(
     velocity: ProjectileVelocity,
     rules_gravity: i32,
     floater: bool,
+    type_gravity: Option<crate::util::native_x87::NativeF64Bits>,
 ) -> ProjectileCollisionMotion {
     use crate::util::native_x87::X87Chop53;
     let mut motion = ProjectileCollisionMotion::from_coordinate(position, velocity);
-    // 4671B9/48ACF0 select live gravity, then 467415/467429
-    // store the subtraction only in the ordinary scratch.
-    let gravity = projectile_gravity(rules_gravity, floater);
+    // 4671B9/48ACF0 select live gravity, then 467415/467429 store the
+    // subtraction only in the ordinary scratch. Phobos
+    // `BulletClass_AI_ApplyGravity` replaces only the 4671B9 FILD: a Floater
+    // shell still drops that value at 4671C3 and calls 48ACF0 (Rules x 0.5),
+    // so its type `Gravity=` never reaches the flight step.
+    let type_gravity = type_gravity.filter(|_| !floater);
+    let gravity = projectile_gravity(rules_gravity, type_gravity, floater);
     motion.velocity[2] = X87Chop53::store_f64(X87Chop53::sub(
         X87Chop53::load_f64(motion.velocity[2]).expect("finite velocity"),
         X87Chop53::load_f64(gravity).expect("finite gravity"),
@@ -2653,6 +3051,7 @@ fn original_ordinary_repeated_live_gravity_preserves_both_coordinate_versions() 
                 velocity,
                 row["gravity_sequence"][frame].as_i64().unwrap() as i32,
                 row["floater"].as_bool().unwrap(),
+                None,
             );
             for (name, values) in [
                 ("bits", motion.velocity),
@@ -2799,81 +3198,100 @@ pub(crate) fn projectile_velocity_magnitude_double(
     f64::from(f32::from_bits(bits.bits()))
 }
 
-/// Vertical AI 467371..4673C2 queries candidate floor first, then candidate
-/// Cell, then old Cell only if needed. The floor always belongs to candidate.
-fn structural_bridge_at(
-    terrain: Option<&ResolvedTerrainGrid>,
+pub(crate) fn projectile_cell_at<'a>(
+    terrain: Option<&'a ResolvedTerrainGrid>,
     shared_cell_dummy: &SharedCellDummy,
     coord: ProjectileCoord,
-) -> bool {
+) -> crate::sim::cell_rect::CellRef<'a> {
     use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
-    let cell = if terrain.is_some() {
+    if terrain.is_some() {
         get_cellclass_fallback_leptons(terrain, coord.x, coord.y)
     } else {
         shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
         CellRef::Dummy {
             cell: shared_cell_dummy.clone(),
         }
-    };
+    }
+}
+
+pub(crate) fn is_structural_bridge_cell(cell: &crate::sim::cell_rect::CellRef<'_>) -> bool {
     cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
 }
 
+/// Vertical AI 467371..4673C2 queries candidate floor first, then candidate
+/// Cell, then old Cell only if needed. The native fallback always uses the
+/// candidate's ground, even when the old cell supplies the structural bit.
 fn bridge_surface_z(
     terrain: Option<&ResolvedTerrainGrid>,
     shared_cell_dummy: &SharedCellDummy,
     previous: ProjectileCoord,
     candidate: ProjectileCoord,
 ) -> Option<i32> {
-    use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
     let floor = projectile_ground_z(terrain, shared_cell_dummy, candidate);
-    let structural = |coord: ProjectileCoord| -> bool {
-        let cell = if terrain.is_some() {
-            get_cellclass_fallback_leptons(terrain, coord.x, coord.y)
-        } else {
-            shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
-            CellRef::Dummy {
-                cell: shared_cell_dummy.clone(),
-            }
-        };
-        cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
+    let cell = projectile_cell_at(terrain, shared_cell_dummy, candidate);
+    let bridge = if is_structural_bridge_cell(&cell) {
+        cell
+    } else {
+        let previous = projectile_cell_at(terrain, shared_cell_dummy, previous);
+        if !is_structural_bridge_cell(&previous) {
+            return None;
+        }
+        previous
     };
-    (structural(candidate) || structural(previous))
-        .then(|| floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
+    Some(
+        fixed_deck_z_for_cell_ref(terrain, &bridge)
+            .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true)),
+    )
 }
 
-/// YR `BulletClass_GetAnimFrame` @ 0x00468000.
+/// YR `BulletClass_GetAnimFrame` @ 0x00468000; `frame` is the frame counter
+/// (`Unsorted::CurrentFrame`), `ares` whether the Rules were read the Ares
+/// way (`RuleSet::ares_form`).
 pub fn projectile_shp_frame(
     projectile: &Projectile,
     projectile_type: &crate::rules::projectile_type::ProjectileType,
-) -> u8 {
-    projectile_shp_frame_with_velocity(projectile, projectile_type, projectile.velocity)
-}
-
-/// Read-only directional frame selection, also used with client-sampled
-/// velocity. Animation counters stay authoritative; only direction varies.
-pub fn projectile_shp_frame_with_velocity(
-    projectile: &Projectile,
-    projectile_type: &crate::rules::projectile_type::ProjectileType,
-    velocity: ProjectileVelocity,
-) -> u8 {
+    frame: u32,
+    ares: bool,
+) -> u16 {
+    let velocity = projectile.velocity;
     if projectile.visual.anim_low != 0 || projectile.visual.anim_high != 0 {
-        return projectile.visual.runtime_frame;
+        return u16::from(projectile.visual.runtime_frame);
     }
     // 46800C..468014 uses the retained inverse ART Rotates byte. The
     // animation override above wins even when the shape does not rotate.
     if projectile_type.rotates {
         return 0;
     }
-    use crate::util::direction_tables::{
-        DRAGON_FRAME_TABLE, facing16_from_angle, step32_from_facing16,
-    };
+    use crate::util::direction_tables::DRAGON_FRAME_TABLE;
+    use crate::util::direction_tables::{facing16_from_angle, step32_from_facing16};
     use crate::util::native_x87::X87Chop53 as X;
     use native_math::{atan, d};
-    // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`, then the DirStruct
-    // word conversion (FSUB pi/2, FMUL, ftol).
-    let word = facing16_from_angle(atan(X::neg(d(velocity.y)), d(velocity.x)));
-    // 46805D: the 32-step bucket of the angle word indexes the 0x007F4890 table.
-    DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word))] as u8
+    // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`.
+    let angle = atan(X::neg(d(velocity.y)), d(velocity.x));
+    let facing = if ares {
+        // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces
+        // the body with its own word, 0x3FFF less the truncated angle times
+        // 65535/2pi (1001A894..1001A8BB, constant 10097DB8), whose bucket can
+        // differ at the edges; then AnimLength gives each facing its frames.
+        const ARES_FACING_SCALE: crate::util::native_x87::NativeF64Bits =
+            crate::util::native_x87::NativeF64Bits::from_bits(0x40c4_5f1c_0e99_5ab9);
+        let scaled = X::mul(
+            angle,
+            X::load_f64(ARES_FACING_SCALE).expect("finite Ares facing scale"),
+        );
+        let word = 0x3fff_i32.wrapping_sub(X::ftol_i32_low_masked(scaled)) as u16;
+        let bucket = ((usize::from(word >> 10) + 1) >> 1) & 0x1f;
+        projectile_type.bullet_type_ext.rotating_frame(
+            DRAGON_FRAME_TABLE[bucket],
+            frame as i32,
+            projectile_type.anim_rate,
+        )
+    } else {
+        // The DirStruct word conversion (FSUB pi/2, FMUL, ftol); 46805D: its
+        // 32-step bucket indexes the 0x007F4890 table.
+        DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(facing16_from_angle(angle)))]
+    };
+    facing as u16
 }
 
 // YR BulletClass::AI linkage: this is the bounded ordinary-flight rung; exact trajectory kernels remain separate.
@@ -2904,11 +3322,9 @@ fn raise_to_ground(
     shared_cell_dummy: &SharedCellDummy,
     on_bridge: bool,
 ) -> ProjectileCoord {
-    use crate::sim::movement::ground_pose::{height_at_z, z_at_height};
-    let floor = projectile_ground_z(terrain, shared_cell_dummy, location);
-    if height_at_z(location.z, floor, on_bridge) < 0 {
-        let floor = projectile_ground_z(terrain, shared_cell_dummy, location);
-        location.z = z_at_height(floor, 0, on_bridge);
+    let surface = projectile_surface_z(terrain, shared_cell_dummy, location, on_bridge);
+    if location.z.wrapping_sub(surface) < 0 {
+        location.z = projectile_surface_z(terrain, shared_cell_dummy, location, on_bridge);
     }
     location
 }
@@ -2953,9 +3369,32 @@ fn detonation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    /// Phobos `BulletClass_AI_ApplyGravity` (0x4671B9): a type `Gravity`
+    /// replaces the Rules integer in flight, but a Floater shell still takes
+    /// Rules x 0.5 from 0x48ACF0.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_type_gravity_drives_flight_except_for_a_floater() {
+        use crate::util::native_x87::NativeF64Bits;
+        let type_gravity = Some(NativeF64Bits::from_bits(12.0f64.to_bits()));
+        let fall = |floater| {
+            let velocity = ProjectileVelocity::from_native([NativeF64Bits::from_bits(0); 3]);
+            let motion = ordinary_motion_candidate(
+                ProjectileCoord::new(0, 0, 0),
+                velocity,
+                6,
+                floater,
+                type_gravity,
+            );
+            f64::from_bits(motion.velocity[2].bits())
+        };
+        assert_eq!(fall(false), -12.0);
+        assert_eq!(fall(true), -3.0);
+    }
 
     fn flat_32_by_32() -> ResolvedTerrainGrid {
         ResolvedTerrainGrid::from_cells(
@@ -3160,6 +3599,30 @@ mod tests {
         }
     }
 
+    /// Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94): a FireAt
+    /// bullet of a `Ranged=` type spends its ProjectileRange along its
+    /// flight and impacts once none is left, short of its target.
+    #[test]
+    fn ares_a_ranged_bullet_impacts_when_its_projectile_range_runs_out() {
+        let mut store = ProjectileStore::new();
+        let mut shot = spawn(ProjectileTarget::Cell { rx: 20, ry: 0 });
+        shot.payload = shot.payload.with_ares_range(Some(100));
+        store.spawn(1, shot);
+        let advance = |store: &mut ProjectileStore, frame| {
+            store.advance(
+                frame,
+                &BTreeMap::new(),
+                None,
+                &SharedCellDummy::fresh(),
+                |_, _| None,
+            )
+        };
+        assert!(advance(&mut store, 0).detonations.is_empty(), "64 spent");
+        let result = advance(&mut store, 1);
+        assert_eq!(result.detonations.len(), 1, "128 spent of 100");
+        assert!(result.detonations[0].impact.x < 256);
+    }
+
     #[test]
     fn degenerates_obeys_collision_and_dropping_fuse_admission() {
         // Original467C70..467CA4: Dropping suppresses a detector-only
@@ -3355,8 +3818,8 @@ mod tests {
         sim.admit_projectile(stable_id, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
         // Native in-scenario load restarts Scenario RNG from Seed0. Normalize
         // both controls so this fixture isolates projectile persistence/hash.
-        empty.scenario_rng = crate::sim::rng::SimRng::new(0);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *empty.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
 
         assert_ne!(empty.state_hash(), expected_hash);
@@ -3379,7 +3842,10 @@ mod tests {
             ini.section("P").unwrap(),
             ini.section("P"),
         );
-        assert_eq!(projectile_shp_frame(store.get(id).unwrap(), &kind), 20);
+        assert_eq!(
+            projectile_shp_frame(store.get(id).unwrap(), &kind, 0, false),
+            20
+        );
 
         let projectile = store.projectiles.get_mut(&id).unwrap();
         projectile.visual = ProjectileVisualState {
@@ -3392,6 +3858,26 @@ mod tests {
         projectile.visual.advance();
         assert_eq!(projectile.visual.runtime_frame, 2);
         assert_eq!(projectile.visual.runtime_countdown, 3);
+    }
+
+    /// Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000): with
+    /// `AnimLength=3` facing 20 owns frames 60..62, stepped every `AnimRate`
+    /// frames of the frame counter.
+    #[test]
+    fn ares_anim_length_steps_each_facing_through_its_frames() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let mut store = ProjectileStore::new();
+        let id = store.spawn(1, spawn(ProjectileTarget::Cell { rx: 0, ry: 0 }));
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[P]\nImage=P\nRotates=yes\nAnimRate=2\nAnimLength=3\n",
+        );
+        let kind = crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "P",
+            ini.section("P").unwrap(),
+            ini.section("P"),
+        );
+        let frame = |counter| projectile_shp_frame(store.get(id).unwrap(), &kind, counter, true);
+        assert_eq!([frame(0), frame(3), frame(5), frame(6)], [60, 61, 62, 60]);
     }
 
     #[test]
@@ -3428,7 +3914,7 @@ mod tests {
             projectile.visual.anim_low = input["anim_low"].as_u64().unwrap_or(0) as u8;
             projectile.visual.anim_high = input["anim_high"].as_u64().unwrap_or(0) as u8;
             projectile.visual.runtime_frame = input["runtime_frame"].as_u64().unwrap_or(0) as u8;
-            let frame = projectile_shp_frame(projectile, &kind);
+            let frame = projectile_shp_frame(projectile, &kind, 0, false);
             for draw in row["draws"].as_array().unwrap() {
                 assert_eq!(u64::from(frame), draw["frame"].as_u64().unwrap(), "{input}");
             }
@@ -3662,6 +4148,7 @@ mod tests {
                 .chain(draws.map(|(distance, raw)| {
                     let (x, y) =
                         crate::sim::combat::inviso_scatter::random_direction_coord_for_byte(
+                            crate::map::cell_index::CellGrid::Retail,
                             (raw.as_u64().unwrap() & 0xff) as u8,
                             impact.x,
                             impact.y,
@@ -3689,6 +4176,7 @@ mod tests {
         let _ = cluster_reference.next_range_u32_inclusive(256, 512);
         let _ = cluster_reference.next_u32();
         let coordinate = projectile_next_cluster_coord(
+            crate::map::cell_index::CellGrid::Retail,
             ProjectileCoord::new(20 * 256 + 128, 20 * 256 + 128, 77),
             &mut cluster_rng,
         );
@@ -3863,7 +4351,7 @@ mod tests {
 
         let scattered = launch::fireat_launch_scatter(
             ProjectileCoord::new(1024, 0, 77),
-            256,
+            launch::fireat_scatter_bounds(false, 256),
             1280,
             false,
             &mut rng,
@@ -3886,7 +4374,7 @@ mod tests {
         let _ = flak_reference.next_range_u32_inclusive(0, 0x7fff_fffe);
         let flak = launch::fireat_launch_scatter(
             ProjectileCoord::new(1280, 0, 0),
-            256,
+            launch::fireat_scatter_bounds(true, 256),
             1280,
             true,
             &mut flak_rng,

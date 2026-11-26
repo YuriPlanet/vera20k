@@ -50,7 +50,7 @@ fn certify_parse_total_zero_failures() {
     })
     .expect("read every indexed corpus entry");
     assert!(total > 0, "retail corpus contained no sniffed files");
-    // Baseline 2026-07-19: 8,824/8,824 pass (incl. 271 pcx). Empty allowlist is
+    // Baseline 2026-10-28: 11,854/11,854 pass (incl. 271 pcx). Empty allowlist is
     // intentional — a new failure is a real finding to investigate, never to
     // allowlist blind.
     assert!(

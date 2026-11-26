@@ -3,11 +3,10 @@
 //! Frame-local line commands use the existing selection, Display, projection
 //! and surface A/Z owners. There is no bracket raster or retained state here.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::map::entities::EntityCategory;
 use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend};
-use crate::sim::movement::air_movement::current_fly_height;
-use crate::sim::movement::ground_pose::object_get_coords;
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 use std::collections::BTreeMap;
@@ -132,37 +131,47 @@ pub(super) fn building_bracket_lines(
 /// Palette entries are the existing PALETTE.PAL Convert's packed indices 15/12.
 /// GetHeight 5F5F40 chooses 12 below -4; DrawExtras 6F51AA skips sinking objects.
 pub(crate) fn build_selection_bracket_lines(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     camera: [i32; 2],
     palette: [u16; 2],
     parents: impl IntoIterator<Item = u64>,
 ) -> BTreeMap<u64, BuildingBracketLines> {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation)
     else {
         return BTreeMap::new();
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return BTreeMap::new();
     };
-    let terrain = sim.resolved_terrain();
+    let Some(frame) = match_state.sim_runtime.frame() else {
+        return BTreeMap::new();
+    };
     parents
         .into_iter()
-        .filter_map(|id| sim.entities().get(id))
+        .filter_map(|id| frame.object(id))
         .filter(|e| e.category() == EntityCategory::Structure && e.selection.is_selected())
         .filter_map(|e| {
             let object = rules.object(sim.interner().resolve(e.type_ref()))?;
-            let center = object_get_coords(e, terrain);
-            let color = palette[usize::from(current_fly_height(e, terrain) < -4)];
+            // `ground_pose::object_get_coords` and
+            // `air_movement::queried_flight_height` (GetHeight), captured.
+            let center = e.hud.get_coords;
+            let color = palette[usize::from(e.place.flight_height < -4)];
+            let correction = crate::render::locomotor_visual::building_terrain_correction(
+                i32::from(e.position.z() as i8),
+            );
             let mut lines = building_bracket_lines(
                 [center.x, center.y, center.z],
                 rules.building_dimensions(object),
-                camera,
+                [camera[0], camera[1].wrapping_add(correction)],
                 color,
             );
+            for line in lines.behind.iter_mut().chain(&mut lines.extras) {
+                line.z_adjust = line.z_adjust.map(|z| z.wrapping_sub(correction));
+            }
             if e.sinking.is_active() {
                 lines.extras.clear();
             }
@@ -171,11 +180,12 @@ pub(crate) fn build_selection_bracket_lines(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;
     use crate::sim::game_entity::GameEntity;
+    use crate::sim::movement::ground_pose::object_get_coords;
     use serde_json::Value;
 
     fn native() -> &'static Value {
@@ -192,7 +202,8 @@ mod tests {
         e.position.put_location(DriveCoord { x, y, z });
         let f = &crate::rules::foundation::FOUNDATION_TABLE
             [g["type_result"]["foundation"].as_u64().unwrap() as usize];
-        e.type_facts
+        e.seldom
+            .type_facts
             .set_foundation_for_test(f.name.to_owned().into());
         let center = object_get_coords(&e, None);
         let mut camera: [i32; 2] = point(&g["input"]["camera"]);

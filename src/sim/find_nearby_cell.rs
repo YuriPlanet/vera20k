@@ -1,10 +1,13 @@
-//! Nearby-passable-cell search (engine `Find_Nearby_Passable_Cell`).
+//! Map-owned nearby-cell searches. Passability and shroud searches share
+//! ring order and the map radius cap; their admission and selection differ.
 //!
 //! Square (Chebyshev) ring expansion around a seed cell — concentric perimeters,
 //! NOT a Manhattan diamond (see [`square_ring_cells`]); per-candidate passability (plus an
 //! optional occupancy check that always SKIPS reservations); frame-counter
 //! selection when no target cell is given, nearest-distance selection when a
-//! target is given. It consumes no RNG stream. Exact CellClass projection misses
+//! target is given. That passability search consumes no RNG stream. The shroud
+//! search uses the Scenario ranged owner once its pool is nonempty.
+//! Exact CellClass projection misses
 //! do stamp the process-shared dummy coordinate, so lookup order is deterministic,
 //! future-affecting state; no other grid state is changed. Depends only on `map/`,
 //! `sim/`, and `rules/`; never on render/ui/audio/net.
@@ -31,6 +34,7 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
 
 /// Foot4CBC40..4CBEE2: search the side of `target` facing `from`, in
@@ -188,9 +192,12 @@ pub struct NearbyQuery<'a> {
     /// Bridge filter applied AFTER passability (an FNPC filter, not a passability arg).
     pub allow_bridge_cells: bool,
     /// Caller's terrain-level gate. When set, a candidate is admitted only while it
-    /// stays within one level of the seed cell, with a four-level correction for a
-    /// candidate that carries a bridge. Both free-unit placement attempts set it.
+    /// stays within one level of the seed cell. Structural candidates use their
+    /// effective deck level. Both free-unit placement attempts set this gate.
     pub check_height: bool,
+    /// Native independent tenth argument, checked after the height gate.
+    pub require_burrowable: bool,
+    pub(crate) burrowing_contents: Option<crate::sim::cell_rect::BurrowingContents<'a>>,
     /// When set, each candidate also runs `check_occupancy_rect(.., reservation_arg = -1)`.
     pub check_occupancy: bool,
     /// Radius cap the caller supplies. The engine's own expression is
@@ -385,8 +392,8 @@ where
     let cap = q.radius_cap.min(RADIUS_HARD_CAP) as i32;
     let mut direct_found = false;
     //56DC6B..56DC92 always performs the seed lookup, even with height gate
-    //disabled. The bridge-aware second lookup56DCA8..56DCDC adds four to
-    //this retained level when the seed has structural bit100.
+    //disabled. The bridge-aware second lookup56DCA8..56DCDC selects the deck
+    //when the seed has structural bit100.
     let mut level = projection_cell_view(q, seed.0, seed.1).signed_level as i16;
     if q.passability.bridge_aware_zone
         && if q.resolved_terrain.is_some() {
@@ -397,7 +404,9 @@ where
             candidate_is_bridge_cell(q, seed.0, seed.1)
         }
     {
-        level = level.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16);
+        level = nearby_terrain(q)
+            .and_then(|terrain| fixed_deck_level(terrain, seed.0, seed.1))
+            .unwrap_or_else(|| level.wrapping_add(BRIDGE_DECK_HEIGHT_LEVELS as i16));
     }
     let seed_level = q.check_height.then_some(level);
 
@@ -444,8 +453,9 @@ where
 /// their lookup order and shared-dummy stamps are future-affecting behavior, not a
 /// threshold-table optimization opportunity.
 ///
-/// Candidate `CellClass+0x140 & 0x1000` gates a four-level addition when the same
-/// probe view carries `CellClass+0x140 & 0x100`. The probe level is signed. Native
+/// Candidate `CellClass+0x140 & 0x1000` selects the deck when the same probe
+/// view carries `CellClass+0x140 & 0x100`. The stock deck is four levels above the
+/// signed probe level. Native
 /// tests the projected axes before testing whether the current probe cell reached
 /// the candidate; the returned cell is direct exactly when it equals the candidate.
 // gamemd-derived: `FUN_006D6410 @ 0x006D6410`; candidate conversions/lookups
@@ -458,9 +468,23 @@ fn is_direct_candidate(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> bool {
 
 fn project_candidate(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> (i32, i32) {
     let (cx, cy) = crate::map::cell_index::packed_cell_coord(cx, cy);
-    project_world_coordinate_with_lookup(cx * 256 + 128, cy * 256 + 128, |x, y| {
-        projection_cell_view(q, x, y)
-    })
+    project_world_coordinate_with_terrain(
+        cx * 256 + 128,
+        cy * 256 + 128,
+        nearby_terrain(q),
+        |x, y| projection_cell_view(q, x, y),
+    )
+}
+
+fn nearby_terrain<'a>(q: &NearbyQuery<'a>) -> Option<&'a ResolvedTerrainGrid> {
+    q.native_cells
+        .map(|cells| cells.terrain())
+        .or(q.resolved_terrain)
+}
+
+/// Sample the real cell's deck without adding a lookup that stamps the Dummy.
+fn fixed_deck_level(terrain: &ResolvedTerrainGrid, x: i32, y: i32) -> Option<i16> {
+    terrain.corrected_high_bridge_deck_level((x as u16, y as u16))
 }
 
 fn projection_cell_view(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> CellClassProjectionView {
@@ -482,13 +506,19 @@ fn projection_cell_view(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> CellClassProje
 /// signed cell words. A negative cell's center can project from a different
 /// seed: center(-1)=-128, whose /256 quotient is zero. Scatter and FNPC must
 /// both pass through this conversion before the cell-based kernel.
-pub(crate) fn project_world_coordinate_with_lookup<F>(x: i32, y: i32, lookup: F) -> (i32, i32)
+pub(crate) fn project_world_coordinate_with_terrain<F>(
+    x: i32,
+    y: i32,
+    terrain: Option<&ResolvedTerrainGrid>,
+    lookup: F,
+) -> (i32, i32)
 where
     F: FnMut(i32, i32) -> CellClassProjectionView,
 {
     project_candidate_with_lookup(
         i32::from(crate::util::lepton::lepton_to_cell_packed(x)),
         i32::from(crate::util::lepton::lepton_to_cell_packed(y)),
+        terrain,
         lookup,
     )
 }
@@ -496,7 +526,12 @@ where
 /// Instruction-faithful projection kernel after world-to-cell conversion.
 /// The lookup closure represents one
 /// native `MapClass::Get_CellClass` call and must return level and flags together.
-fn project_candidate_with_lookup<F>(cx: i32, cy: i32, mut lookup: F) -> (i32, i32)
+fn project_candidate_with_lookup<F>(
+    cx: i32,
+    cy: i32,
+    terrain: Option<&ResolvedTerrainGrid>,
+    mut lookup: F,
+) -> (i32, i32)
 where
     F: FnMut(i32, i32) -> CellClassProjectionView,
 {
@@ -523,12 +558,23 @@ where
             i32::from(crate::util::lepton::lepton_to_cell_packed(probe_world_y)),
         );
         let probe_view = lookup(probe.0, probe.1);
-        let mut level_delta = probe_view.signed_level.wrapping_sub(candidate_level);
-        if candidate_is_forward_side
+        let probe_level = if candidate_is_forward_side
             && probe_view.raw_flags_0x1180 & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
         {
-            level_delta = level_delta.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS);
-        }
+            terrain
+                .and_then(|terrain| fixed_deck_level(terrain, probe.0, probe.1))
+                .map_or_else(
+                    || {
+                        probe_view
+                            .signed_level
+                            .wrapping_add(BRIDGE_DECK_HEIGHT_LEVELS)
+                    },
+                    i32::from,
+                )
+        } else {
+            probe_view.signed_level
+        };
+        let level_delta = probe_level.wrapping_sub(candidate_level);
 
         let projection_shift = level_delta.wrapping_mul(PROJECTION_LEVEL_LEPTONS);
         let projected_x = i32::from(crate::util::lepton::lepton_to_cell_packed(
@@ -562,12 +608,34 @@ fn candidate_passes(
     cx: i32,
     cy: i32,
 ) -> bool {
-    if !cell_is_in_playfield_height_aware_in_query(
-        (cx, cy),
-        q.playfield_bounds,
-        q.resolved_terrain,
-        q.native_cells,
-    ) {
+    //56DDAF retains this pointer across rectangle/height queries before
+    //56DE5F calls486FF0. A Dummy can be restamped by those intervening calls.
+    let canonical = if q.require_burrowable && q.native_cells.is_none() {
+        q.resolved_terrain
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+    } else {
+        None
+    };
+    let burrow_cell = if q.require_burrowable {
+        let Some(cells) = q.native_cells.or(canonical.as_ref()) else {
+            return false;
+        };
+        let cell = cells.lookup((cx as i16, cy as i16));
+        if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, q.playfield_bounds, cells) {
+            return false;
+        }
+        Some((cells, cell))
+    } else {
+        None
+    };
+    if burrow_cell.is_none()
+        && !cell_is_in_playfield_height_aware_in_query(
+            (cx, cy),
+            q.playfield_bounds,
+            q.resolved_terrain,
+            q.native_cells,
+        )
+    {
         return false;
     }
 
@@ -609,6 +677,17 @@ fn candidate_passes(
         return false;
     }
 
+    if let Some((cells, cell)) = burrow_cell
+        && !crate::sim::cell_rect::cell_allows_burrowing(
+            cells,
+            cell,
+            q.playfield_bounds,
+            q.burrowing_contents,
+        )
+    {
+        return false;
+    }
+
     //56DE6C bridge filter follows height; final occupancy56DE9D is last.
     if !q.allow_bridge_cells && candidate_is_bridge_cell(q, cx, cy) {
         return false;
@@ -629,8 +708,8 @@ fn candidate_passes(
 }
 
 /// The caller's height gate: `abs(seedLevel - bridgeRise - candidateLevel) < 2`,
-/// where `bridgeRise` is [`crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16`] when the candidate carries a bridge
-/// and 0 otherwise.
+/// where `bridgeRise` is four for a stock bridge candidate and 0 for ground.
+/// When the candidate has a fixed deck, compare directly against its level.
 ///
 /// For an ordinary candidate that is "stay within one level of the seed". For a
 /// bridge candidate the rise comes off the SEED side of the subtraction, so a deck
@@ -645,11 +724,15 @@ fn candidate_passes(
 /// those callsites also set `allow_bridge_cells = false`, so a bridge candidate is
 /// dropped by the bridge filter whatever this gate says.
 ///
-/// The seed is independently raised by four at56DCDC when the caller is
-/// bridge-aware and that seed is structural; collection retains that value.
+/// The seed's effective deck level is selected independently at56DCDC when
+/// the caller is bridge-aware and that seed is structural.
 fn candidate_height_ok(q: &NearbyQuery<'_>, seed_level: i16, cx: i32, cy: i32) -> bool {
     let bridge_rise = if candidate_is_bridge_cell(q, cx, cy) {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
+        if let Some(deck) = nearby_terrain(q).and_then(|terrain| fixed_deck_level(terrain, cx, cy))
+        {
+            return seed_level.abs_diff(deck) < MAX_SEED_LEVEL_DELTA_EXCLUSIVE as u16;
+        }
+        BRIDGE_DECK_HEIGHT_LEVELS as i16
     } else {
         0
     };
@@ -722,11 +805,12 @@ fn cell_to_u16(cell: (i32, i32)) -> Option<(u16, u16)> {
 /// pushes besides the seed. Every static caller loads `g_Map` as ECX, so
 /// [`Simulation::nearby_passable_cell`] supplies the map itself.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct NearbyArgs {
+pub struct NearbyArgs {
     pub passability: PassabilityArgs,
     pub footprint: NearbyFootprint,
     pub allow_bridge_cells: bool,
     pub check_height: bool,
+    pub require_burrowable: bool,
     pub check_occupancy: bool,
     pub target_cell: Option<(i32, i32)>,
     pub options: NearbySearchOptions,
@@ -742,6 +826,7 @@ impl NearbyArgs {
             footprint,
             allow_bridge_cells: true,
             check_height: false,
+            require_burrowable: false,
             check_occupancy: false,
             target_cell: None,
             options: NearbySearchOptions {
@@ -752,6 +837,73 @@ impl NearbyArgs {
 }
 
 impl crate::sim::world::Simulation {
+    /// Map580BC0, called on Script22's first visit at6E9597. Its first24
+    /// qualifying cells in square-ring order are selected by one Scenario
+    /// range request (65C7E0); an empty pool returns the original centre.
+    /// Qualification is only Map578460(mode1), Cell47B3A0 floor, then
+    /// IsShrouded586360. No movement, occupancy, zone or FNPC filters apply.
+    /// Original gamemd instructions580BC0..581082; floor/shroud/identity and
+    /// RNG keep their existing owners. The argument is an Abstract pointer,
+    /// read through virtual+48 before scanning; the result is a Cell pointer.
+    pub(crate) fn nearby_shrouded_cell(
+        &mut self,
+        origin: crate::sim::combat::TargetKind,
+        viewer: crate::sim::intern::InternedId,
+    ) -> Option<crate::sim::components::NavTargetRef> {
+        let (width, height) = self.map_size_diamond()?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let coord =
+            crate::sim::movement::ground_pose::target_get_coords(origin, self, Some(&cells))?;
+        let center = ((coord.x / 256) as i16, (coord.y / 256) as i16);
+        let mut pool = Vec::with_capacity(MAX_CANDIDATES);
+        'rings: for radius in 0..map_owned_radius_cap(width, height) {
+            for (x, y) in square_ring_cells(
+                (i32::from(center.0), i32::from(center.1)),
+                i32::from(radius),
+            ) {
+                let cell = (x as i16, y as i16);
+                if !crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+                    (i32::from(cell.0), i32::from(cell.1)),
+                    self.playfield_bounds(),
+                    Some(terrain),
+                    Some(&cells),
+                ) {
+                    continue;
+                }
+                let world = crate::sim::cell_kernel::cell_center(cell.into(), 0);
+                let mut point = crate::sim::components::DriveCoord {
+                    x: world.x,
+                    y: world.y,
+                    z: 0,
+                };
+                // Native samples this world coordinate through Map565730,
+                // then reads the selected Cell's floor, without a deck rise.
+                point.z =
+                    crate::sim::movement::ground_pose::query_ground_height(&cells, point).ok()?;
+                if crate::sim::vision::point_is_shrouded(&self.fog, &cells, viewer, point) {
+                    pool.push(cell);
+                    if pool.len() == MAX_CANDIDATES {
+                        break 'rings;
+                    }
+                }
+            }
+        }
+        let selected = if pool.is_empty() {
+            center
+        } else {
+            pool[self
+                .scenario_rng
+                .next_range_i32_inclusive(0, pool.len() as i32 - 1) as usize]
+        };
+        //58100C/58104E resolves the chosen packed cell AFTER the draw; this
+        //lookup also publishes the final Dummy stamp when no slot exists.
+        let (x, y) = cells.coord(cells.lookup(selected));
+        Some(crate::sim::components::NavTargetRef::cell(
+            x as u16, y as u16,
+        ))
+    }
+
     /// Foot4CBC40's class-specific entry receiver. Native looks up each
     /// candidate before dispatching +1AC, including an Aircraft receiver.
     pub(crate) fn foot_nearby_location(
@@ -761,7 +913,6 @@ impl crate::sim::world::Simulation {
         target: (i16, i16),
         radii: std::ops::Range<i32>,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<(i16, i16)> {
         use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
@@ -779,7 +930,6 @@ impl crate::sim::world::Simulation {
                 },
                 EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .is_ok_and(|code| code == 0)
         })
@@ -791,11 +941,7 @@ impl crate::sim::world::Simulation {
     /// zone grids, the playfield, the radius cap from the map's Size
     /// ([`map_owned_radius_cap`]) and the current frame for the no-target
     /// pick. `None` when nothing passes or the map size is unknown.
-    pub(crate) fn nearby_passable_cell(
-        &self,
-        seed: (i32, i32),
-        args: NearbyArgs,
-    ) -> Option<(u16, u16)> {
+    pub fn nearby_passable_cell(&self, seed: (i32, i32), args: NearbyArgs) -> Option<(u16, u16)> {
         #[cfg(test)]
         if let Some(answer) =
             crate::sim::movement::fresh_oracle_seam::supplied_nearby_cell(seed, args)
@@ -803,15 +949,27 @@ impl crate::sim::world::Simulation {
             return answer;
         }
         let (width, height) = self.map_size_diamond()?;
+        let native_cells = if args.require_burrowable {
+            self.resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+        } else {
+            None
+        };
         find_nearby_passable_cell_with_options(
             seed,
             &NearbyQuery {
-                native_cells: None,
+                native_cells: native_cells.as_ref(),
                 raw_occupation: Some(&self.substrate.raw_cell_occupation),
                 passability: args.passability,
                 footprint: args.footprint,
                 allow_bridge_cells: args.allow_bridge_cells,
                 check_height: args.check_height,
+                require_burrowable: args.require_burrowable,
+                burrowing_contents: Some(crate::sim::cell_rect::BurrowingContents {
+                    occupancy: &self.substrate.occupancy,
+                    terrain_objects: self.terrain_objects.cell_index(),
+                }),
                 check_occupancy: args.check_occupancy,
                 radius_cap: map_owned_radius_cap(width, height),
                 target_cell: args.target_cell,
@@ -923,6 +1081,7 @@ impl crate::sim::world::Simulation {
                 footprint: NearbyFootprint::SINGLE,
                 allow_bridge_cells: false,
                 check_height: true,
+                require_burrowable: false,
                 check_occupancy: false,
                 target_cell: None,
                 options,
@@ -931,7 +1090,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::bridge_facts::{BRIDGE_FLAG_FORWARD_SIDE, BRIDGE_FLAG_STRUCTURAL};
@@ -1028,6 +1187,8 @@ mod tests {
             footprint: NearbyFootprint::SINGLE,
             allow_bridge_cells: true,
             check_height: false,
+            require_burrowable: false,
+            burrowing_contents: None,
             check_occupancy: false,
             radius_cap: RADIUS_HARD_CAP,
             target_cell: None,
@@ -1259,7 +1420,7 @@ mod tests {
     #[test]
     fn find_nearby_projection_kernel_reads_candidate_then_repeated_far_to_near_cells() {
         let mut transcript = Vec::new();
-        let returned = project_candidate_with_lookup(5, 5, |x, y| {
+        let returned = project_candidate_with_lookup(5, 5, None, |x, y| {
             transcript.push((x, y));
             CellClassProjectionView {
                 signed_level: 0,
@@ -1277,6 +1438,42 @@ mod tests {
         assert_eq!(returned, (5, 5));
         assert_eq!(transcript, expected);
         assert_eq!(transcript.len(), 179, "two candidate reads plus 177 probes");
+    }
+
+    #[test]
+    fn find_nearby_uses_the_fixed_deck_for_height_and_projection() {
+        use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::occupancy::CellListInsertion;
+
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+        let candidate = terrain.native_cell_identity((1, 1));
+        terrain.write_native_cell_flags(candidate, BRIDGE_FLAG_FORWARD_SIDE);
+        let deck = terrain.native_cell_identity((2, 2));
+        terrain.write_native_cell_flags(deck, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.write_native_cell_level(deck, (-3_i8) as u8);
+        terrain.set_authored_high_bridge_deck(deck, 0);
+
+        let path_grid = PathGrid::from_resolved_terrain(&terrain);
+        let mut q = base_query(&terrain, &path_grid);
+        assert_eq!(project_candidate(&q, 1, 1), (1, 1));
+        assert!(candidate_height_ok(&q, -1, 2, 2));
+
+        let mut occupied = OccupancyGrid::new();
+        occupied.add(
+            2,
+            2,
+            1,
+            MovementLayer::Bridge,
+            None,
+            CellListInsertion::PrependNonBuilding,
+        );
+        q.occupancy = Some(&occupied);
+        q.passability.bridge_aware_zone = true;
+        q.check_height = true;
+        q.target_cell = Some((1, 1));
+        q.radius_cap = 2;
+        assert_eq!(find_nearby_passable_cell((2, 2), &q, 0), Some((1, 1)));
     }
 
     #[test]
@@ -1741,15 +1938,16 @@ mod tests {
         for cell in terrain.cells_mut_for_test() {
             cell.ground_walk_blocked = true;
             cell.base_ground_walk_blocked = true;
-            cell.speed_costs.track = Some(0);
-            cell.base_speed_costs.track = Some(0);
+            cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.base_speed_costs.track =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         }
         for &(x, y) in open {
             let cell = terrain.cell_mut_for_test(x, y).expect("open cell");
             cell.ground_walk_blocked = false;
             cell.base_ground_walk_blocked = false;
-            cell.speed_costs.track = Some(100);
-            cell.base_speed_costs.track = Some(100);
+            cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+            cell.base_speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
         terrain
     }

@@ -228,7 +228,7 @@ fn type5_draw_is_one_cyan_outline_in_insertion_order() {
     event.fade = 1.0;
     event.expanding = false;
     let mut rgba = vec![7_u8; 24 * 24 * 4];
-    queue.draw(&mut rgba, 24, 24, (24, 24), (0, 0));
+    draw_into(&queue, &mut rgba, 24, (24, 24), (0, 0));
     let pixel = |x: usize, y: usize| {
         let offset = (y * 24 + x) * 4;
         &rgba[offset..offset + 4]
@@ -248,7 +248,7 @@ fn type5_draw_clips_to_generated_primary_extent_not_host_texture() {
     event.fade = 1.0;
     event.expanding = false;
     let mut rgba = vec![7_u8; 200 * 200 * 4];
-    queue.draw(&mut rgba, 200, 200, (140, 84), (0, 0));
+    draw_into(&queue, &mut rgba, 200, (140, 84), (0, 0));
     let pixel = |x: usize, y: usize| {
         let offset = (y * 200 + x) * 4;
         &rgba[offset..offset + 4]
@@ -269,7 +269,7 @@ fn type5_draw_applies_only_the_centered_primary_surface_copy() {
     event.fade = 1.0;
     event.expanding = false;
     let mut rgba = vec![7_u8; 140 * 108 * 4];
-    queue.draw(&mut rgba, 140, 108, (64, 108), (38, 0));
+    draw_into(&queue, &mut rgba, 140, (64, 108), (38, 0));
     let pixel = |x: usize, y: usize| {
         let offset = (y * 140 + x) * 4;
         &rgba[offset..offset + 4]
@@ -464,7 +464,7 @@ fn non_drawing_event_never_paints_and_dedupes_for_its_own_lifetime() {
 
     let mut rgba = vec![7_u8; 24 * 24 * 4];
     queue.events[0].needs_draw = true;
-    queue.draw(&mut rgba, 24, 24, (24, 24), (0, 0));
+    draw_into(&queue, &mut rgba, 24, (24, 24), (0, 0));
     assert!(
         rgba.iter().all(|&byte| byte == 7),
         "default colour arm draws nothing"
@@ -653,7 +653,10 @@ fn admit_without_radar_geometry_still_gates_by_cell_distance() {
 /// prior and all its phase/scalar/lifetime results, not stock radar pixels.
 #[test]
 fn native_unit_ready_marker_matches_every_original_tick_and_cleanup() {
-    use crate::util::read_helpers::{read_i32_le, read_u16_le, read_u32_le};
+    use crate::util::read_helpers;
+    let read_u16_le = |raw: &[u8], offset| read_helpers::read_u16_le(raw, offset).unwrap();
+    let read_u32_le = |raw: &[u8], offset| read_helpers::read_u32_le(raw, offset).unwrap();
+    let read_i32_le = |raw: &[u8], offset| read_helpers::read_i32_le(raw, offset).unwrap();
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
@@ -787,4 +790,46 @@ fn native_unit_ready_marker_matches_every_original_tick_and_cleanup() {
         Some(cell),
         "native review ring survives expiry"
     );
+}
+
+/// The outlines stored into a `width`-wide RGBA canvas.
+fn draw_into(
+    queue: &ClientRadarEvents,
+    rgba: &mut [u8],
+    width: u32,
+    surface_size: (i32, i32),
+    offset: (i32, i32),
+) {
+    let height = (rgba.len() / 4) as u32 / width;
+    queue.draw((width, height), surface_size, offset, |(x, y), color| {
+        let at = ((y * width + x) * 4) as usize;
+        rgba[at..at + 4].copy_from_slice(&color);
+    });
+}
+
+#[test]
+fn infinite_general_radar_scalars_tick_as_the_masked_fpu_does() {
+    // A rules file or map may write doubles gamemd's ReadDouble turns into
+    // infinities; the tick carries on with the masked x87 results.
+    let config = RadarEventConfig::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[General]\nRadarEventMinRadius=8\nRadarEventSpeed=1e999\n\
+         RadarEventRotationSpeed=1e999\nRadarEventColorSpeed=-1e999\n",
+    ));
+    let mut queue = queue_ready();
+    assert!(queue.create(
+        RadarEventType::BaseUnderAttack,
+        source((20, 20), (40, 40)),
+        0,
+        (140, 108),
+        &config
+    ));
+    for frame in 0..4 {
+        queue.advance_to_frame(frame, &config);
+    }
+    let event = &queue.events[0];
+    // radius - inf is -inf, not Greater than the minimum: the minimum stays.
+    assert_eq!(event.radius, 8.0);
+    // An infinite fade step overshoots every tick, and each bounce clamps
+    // the fade back to 0 or 1.
+    assert!(event.fade == 0.0 || event.fade == 1.0, "{}", event.fade);
 }

@@ -8,7 +8,7 @@
 //! whose native Z lies above the row's threshold
 //! `low16(seed - AdjustForZ(z) - y - 3)` (`0x0053D6A2..0x0053D6B9`,
 //! `0x0053D72F`; the seed is the ZBuffer's `+0x24`, here
-//! `native_z::DEFAULT_Z`) takes the destination pixel its byte's move names
+//! `native_z::ZSeed`'s) takes the destination pixel its byte's move names
 //! ([`displacement`]). Native edits in
 //! place, top row first. Every byte the generator writes moves a pixel up from
 //! a row below, which that blast has not written yet, so reading a snapshot
@@ -117,8 +117,8 @@ impl IonBlastGpu {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("IonBlast shared snapshot layout"),
-            bind_group_layouts: &[snapshot, &layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(snapshot), Some(&layout)],
+            immediate_size: 0,
         });
         let attributes =
             wgpu::vertex_attr_array![0 => Float32x4, 1 => Sint32x2, 2 => Uint32x2, 3 => Float32];
@@ -128,11 +128,11 @@ impl IonBlastGpu {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<BlastInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &attributes,
-                }],
+                })],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -148,7 +148,7 @@ impl IonBlastGpu {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let reach = (1..=u8::MAX)
@@ -235,7 +235,7 @@ impl IonBlastGpu {
 impl TerrainDrawRenderer {
     /// The ripple frames, which take about 75 ms to generate. Native generates
     /// them once per process at start-up: `Init_Game` (`0x0052C946`) ->
-    /// `Show_Loading_Screen` (`0x00531758`) -> `0x0053D330`, gated by
+    /// `Init_Bulk_Data` (`0x00531758`) -> `0x0053D330`, gated by
     /// `0x00AA014C`.
     pub(crate) fn generate_ion_blast_frames(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let frames = RippleFrames::shared();
@@ -369,7 +369,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
-
+                    multiview_mask: None,
                 });
                 let [x, y, w, h] = blast.read;
                 pass.set_scissor_rect(x, y, w, h);
@@ -384,7 +384,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
-
+                    multiview_mask: None,
                 });
                 let [x, y, w, h] = blast.edit;
                 pass.set_scissor_rect(x, y, w, h);

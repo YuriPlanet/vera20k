@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cross-build the VERA20k client or diagnostic probes with Horizon std/newlib."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -10,14 +11,25 @@ import shutil
 import struct
 import subprocess
 import sys
+import tarfile
+import tempfile
+import urllib.request
 from nsp import CLIENT_TITLE_ID, GPU_TITLE_ID, TITLE_ID, icon_path, package
 
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT.parents[3]
 TOOLCHAIN = "nightly-2026-10-04"
 UPSTREAM_COMMIT = "3eac779b232ee47cd0eb957676c64386ac7b0f1d"
-DEFAULT_CLIENT_ASSETS = ROOT / "target/emulator/master-xdg-data/eden/sdmc/game"
-CLIENT_VERSION = "0.0.2"
+WGPU_VERSION = "30.0.1"
+WGPU_ARCHIVES = {
+    "wgpu": "527ccdf43dd5b2e8676eed9984ce00e2bbb0a1b85b70c1969dcb6cd2eb55ab9e",
+    "wgpu-core": "14c018fce9b6270aa203c2fdd56f3cce996713534bd757e4ea58c8560b121f14",
+    "wgpu-hal": "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58",
+    "wgpu-core-deps-windows-linux-android": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
+}
+CLIENT_VERSION = "0.0.6"
+# NACP application title shown in the Switch menu (Yuri's Revenge build).
+CLIENT_TITLE = "VER20K:红警2"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"
 
 
@@ -38,7 +50,7 @@ def client_nsp_artifact(version: str) -> str:
     match = re.fullmatch(r"(\d+\.\d+\.\d+)(?:\s+.+)?", version)
     if match is None:
         raise SystemExit(f"Client NSP version must start with x.y.z: {version!r}")
-    return f"vera20-client-v{match.group(1)}"
+    return f"ver20k-Yuris-Revenge-v{match.group(1)}"
 
 
 def run(*arguments, **kwargs):
@@ -64,6 +76,36 @@ def horizon_ring(work: Path, config: Path) -> Path:
     subprocess.run(["patch", "-p1", "-i", str(patch)], cwd=staged, check=True)
     staged.rename(patched)
     return patched
+
+
+def horizon_wgpu(work: Path) -> dict[str, Path]:
+    """Apply the Horizon Vulkan port to the exact crates pinned by VERA20k."""
+    patch = ROOT / "third_party/wgpu-30.0.1-horizon.patch"
+    patch_id = hashlib.sha256(patch.read_bytes()).hexdigest()[:12]
+    patched = work / f"wgpu-{WGPU_VERSION}-{patch_id}"
+    if not patched.is_dir():
+        cargo_root = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
+        with tempfile.TemporaryDirectory(dir=work) as temp:
+            staged = Path(temp)
+            source = staged / "source"
+            source.mkdir()
+            for name, expected in WGPU_ARCHIVES.items():
+                package = f"{name}-{WGPU_VERSION}"
+                archive = f"{package}.crate"
+                cached = next((cargo_root / "registry/cache").glob(f"*/{archive}"), None)
+                if cached is None:
+                    url = f"https://static.crates.io/crates/{name}/{archive}"
+                    with urllib.request.urlopen(url, timeout=60) as response:
+                        cached = staged / archive
+                        cached.write_bytes(response.read())
+                if hashlib.sha256(cached.read_bytes()).hexdigest() != expected:
+                    raise SystemExit(f"Unexpected checksum for {archive}")
+                with tarfile.open(cached) as files:
+                    files.extractall(source, filter="data")
+                (source / package).rename(source / name)
+            subprocess.run(["patch", "-p1", "--fuzz=0", "-i", str(patch)], cwd=source, check=True)
+            source.rename(patched)
+    return {name: patched / name for name in WGPU_ARCHIVES}
 
 
 def normalize_std_lock(lock: Path, patch_names: set[str]) -> bool:
@@ -96,9 +138,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Compile-check without linking")
     parser.add_argument("--nsp", action="store_true",
-                        help="Also package a standalone NSP with local device keys (default for linked --client)")
-    parser.add_argument("--nsp-assets", metavar="DIR",
-                        help=f"Bundle retail assets into client NSP ROMFS (default: {DEFAULT_CLIENT_ASSETS})")
+                        help="Package a program-only NSP with local device keys (default for linked --client)")
     frontend = parser.add_mutually_exclusive_group()
     frontend.add_argument("--gpu", action="store_true",
                           help="Build the native-window production GPU probe")
@@ -118,21 +158,8 @@ def main():
     )
     if linked_client:
         args.nsp = True
-        args.nsp_assets = args.nsp_assets or str(DEFAULT_CLIENT_ASSETS)
-    if args.nsp_assets and not args.nsp:
-        parser.error("--nsp-assets requires --nsp")
-    if args.nsp_assets and not args.client:
-        parser.error("--nsp-assets currently requires --client")
     if args.profile_sim and not args.client:
         parser.error("--profile-sim currently requires --client")
-    if args.nsp_assets and (args.check or args.host_test or args.check_libc_abi or args.check_client_deps):
-        parser.error("--nsp-assets requires a linked client build")
-    if args.nsp_assets:
-        assets = Path(args.nsp_assets).expanduser().resolve()
-        for required in ("ra2.mix", "ra2md.mix"):
-            if not (assets / required).is_file() or not (assets / required).stat().st_size:
-                parser.error(f"NSP asset directory is missing {required}: {assets}")
-        args.nsp_assets = str(assets)
     os.chdir(ROOT)
     rust_bin = Path.home() / ".cargo/bin"
     os.environ["PATH"] = str(rust_bin) + os.pathsep + os.environ["PATH"]
@@ -158,13 +185,12 @@ def main():
     patches = {name: upstream / "patches" / name for name in ["libc", "memmap2", "rustix"]}
     if args.check_client_deps or args.client:
         patches["cpal"] = upstream / "patches/cpal"
-    if args.client:
+    if args.client or (args.check_client_deps and not args.without_winit):
         patches["winit"] = ROOT / "winit-horizon"
         patches["rustix"] = upstream / "patches/rustix"
     if args.check_client_deps or args.gpu or args.client:
         patches["raw-window-handle"] = upstream / "patches/raw-window-handle"
-        for name in ["wgpu", "wgpu-core", "wgpu-hal", "wgpu-core-deps-windows-linux-android"]:
-            patches[name] = upstream / "patches/bevy-0.18" / name
+        patches.update(horizon_wgpu(work))
     config.write_text("[patch.crates-io]\n" + "\n".join(
         f'{name} = {{ path = {json.dumps(str(path))} }}' for name, path in patches.items()) + "\n")
     if args.client:
@@ -173,10 +199,9 @@ def main():
             fh.write(f'ring = {{ path = {json.dumps(str(patched_ring))} }}\n')
     # getrandom 0.3.x has no Horizon backend; select the custom backend and
     # let vera20k-switch provide __getrandom_v03_custom via csrngGetRandomBytes.
-    if args.client:
-        with config.open("a") as fh:
-            fh.write('\n[target.aarch64-nintendo-horizon]\n'
-                     'rustflags = ["--cfg", "getrandom_backend=\\"custom\\""]\n')
+    with config.open("a") as fh:
+        fh.write('\n[target.aarch64-nintendo-horizon]\n'
+                 'rustflags = ["--cfg", "getrandom_backend=\\"custom\\""]\n')
     if args.check_libc_abi:
         # Reuse the pinned upstream checker rather than maintaining a second
         # list of C/Rust layouts. Run its Python body locally, without Docker.
@@ -238,6 +263,13 @@ def main():
     selected_features = [selected_feature] if selected_feature else []
     if args.profile_sim:
         selected_features.extend(PROFILE_FEATURES.split(","))
+        source_revision = subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "--short=12", "HEAD"],
+            text=True,
+        ).strip()
+        os.environ["VERA_SWITCH_BUILD"] = (
+            source_revision + "@" + datetime.now(timezone.utc).isoformat()
+        )
     features = ["--features", ",".join(selected_features)] if selected_features else []
     run("cargo", f"+{TOOLCHAIN}", "check" if args.check or args.check_client_deps else "build", *manifest, *features,
         "--release", "--config", config, "--target", target,
@@ -259,19 +291,25 @@ def main():
     specs = work / "switch.specs"
     original = (sdk / "libnx/switch.specs").read_text()
     original = original.replace("%:getenv(DEVKITPRO /libnx/switch.ld)", str(linker_script))
-    original = original.replace("--nx-module-name", "--nx-module-name --wrap=threadCreate")
+    wrappers = "--wrap=threadCreate" + (" --wrap=threadClose" if args.profile_sim else "")
+    original = original.replace("--nx-module-name", "--nx-module-name " + wrappers)
     specs.write_text(original)
     cc = sdk / "devkitA64/bin/aarch64-none-elf-gcc"
     artifact = "vera20k-client" if args.client else "vera20k-gpu" if args.gpu else "vera20k-core"
     graphics = ["-DVERA_WGPU"] if args.gpu or args.client else []
     if args.client:
         graphics.append("-DVERA_CLIENT")
+    if args.profile_sim:
+        graphics.append("-DVERA_PERF")
     architecture = ["-march=armv8-a+crc+crypto", "-mtune=cortex-a57", "-mtp=soft", "-fPIE"]
     cflags = [*architecture, *graphics, "-O2", "-g", "-Wall", "-Wextra", "-Werror", "-D__SWITCH__",
         "-ffunction-sections", "-fdata-sections", "-I", sdk / "libnx/include",
         "-I", sdk / "portlibs/switch/include"]
     runtime_objects = [work / "runtime.o"]
     run(cc, *cflags, "-c", "runtime.c", "-o", runtime_objects[0])
+    if args.profile_sim:
+        runtime_objects.append(work / "perf.o")
+        run(cc, *cflags, "-c", "perf.c", "-o", runtime_objects[-1])
     if args.client:
         runtime_objects.append(work / "fps_report.o")
         run(cc, *cflags, "-c", "fps_report.c", "-o", runtime_objects[-1])
@@ -307,7 +345,11 @@ def main():
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     nacp = work / f"{artifact}.nacp"
-    title = "VERA20k" if args.client else "VERA20k GPU Probe" if args.gpu else "VERA20k Core Probe"
+    title = (
+        CLIENT_TITLE if args.client
+        else "VERA20k GPU Probe" if args.gpu
+        else "VERA20k Core Probe"
+    )
     title_id = CLIENT_TITLE_ID if args.client else GPU_TITLE_ID if args.gpu else TITLE_ID
     version = (CLIENT_VERSION + "-profile") if args.client and args.profile_sim else (
         CLIENT_VERSION if args.client else "0.1.0"
@@ -317,7 +359,7 @@ def main():
         if args.client and args.profile_sim
         else client_nsp_artifact(CLIENT_VERSION)
         if args.client
-        else f"{artifact}-assets" if args.nsp_assets else None
+        else None
     )
     run(sdk / "tools/bin/nacptool", "--create", title, "Homebrew", version, nacp,
         f"--titleid={title_id}")
@@ -334,7 +376,6 @@ def main():
             nacp,
             artifact=nro_artifact,
             title_id=title_id,
-            romfs=Path(args.nsp_assets) if args.nsp_assets else None,
             output_artifact=output_artifact,
         )
 

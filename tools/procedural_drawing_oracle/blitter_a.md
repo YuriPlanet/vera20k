@@ -65,11 +65,6 @@ The focused GPU tests are `render::shroud_gpu_tests::` (explicit `--ignored`):
 - Batch/TMP/VXL world paths compare A at fractional positive/negative scroll
   and zoom0.75/1/1.5/2 with the authoritative CPU source and native colors.
   Source replacement, binding reuse and disabled/sandbox state are included.
-- `production_a_blitter_workload_timing` measures 1000/20000 world sources at
-  1280x720, two warmups and20 measured frames. It reports CPU encode, GPU pass
-  timestamps when valid, and submit-to-completion wall time independently.
-  Zero, sentinel and nonincreasing GPU intervals are unavailable, never free.
-  Run optimized; this is synthetic source-overdraw cost, not whole-game timing.
 
 Native fixture replay, the focused Rust/GPU checks and optimized timing passed.
 The [shared validation report](README.md#measured-rendering-cost) links preserved

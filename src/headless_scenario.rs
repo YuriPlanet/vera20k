@@ -23,43 +23,38 @@ pub mod radiation_test_evidence;
 use std::path::Path;
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::map::campaign_manifest::{CampaignStage, ManifestError};
 use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::intern::InternedId;
-use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
-use crate::sim::scenario_session::ScenarioDescriptor;
+use crate::sim::scenario_bootstrap::{
+    AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, MatchLaunchDescriptor,
+    ScenarioBootstrapRng,
+};
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
 
 /// A Battle session on `selected_map_file`: the local player against one
 /// computer house for each of `opponents` (its country and difficulty), every
-/// house on a start the launch draws. The lobby allows seven opponents.
+/// house on a start the launch draws.
 pub fn battle_session(
     selected_map_file: &str,
     opponents: &[(LaunchCountry, AiDifficulty)],
 ) -> SkirmishLaunchSession {
     use crate::skirmish_launch::{
-        LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot, SkirmishLaunchMode,
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
         SkirmishLaunchOptions, SkirmishLocalSlot,
     };
 
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode {
-            class: crate::skirmish_modes::MpModeClass::Battle,
-            id: 1,
-            ui_name_key: "GUI:Battle".to_string(),
-            tooltip_key: "STT:ModeBattle".to_string(),
-            override_file: "MPBattleMD.ini".to_string(),
-            map_filter: "standard".to_string(),
-            random_maps_allowed: true,
-            allies_allowed: true,
-            must_ally: false,
-        },
-        selected_map_file: Some(selected_map_file.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -72,9 +67,8 @@ pub fn battle_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
-        opponents: opponents
+        0,
+        opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
@@ -88,9 +82,8 @@ pub fn battle_session(
                 difficulty,
             })
             .collect(),
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(opponents.len()),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.
@@ -99,6 +92,8 @@ pub struct HeadlessScenario {
     /// resources - no independently swappable execution inputs remain.
     pub runtime: crate::sim::runtime::SimRuntime,
     pub map: MapFile,
+    /// Identity of the exact map payload consumed by this construction.
+    pub source: crate::map::source::LoadedMapSource,
 }
 
 impl HeadlessScenario {
@@ -120,14 +115,25 @@ impl HeadlessScenario {
             team: crate::skirmish_launch::LaunchTeam::None,
             is_human: true,
             observer: false,
-            source_human_index: None,
+            controllers: Vec::new(),
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
+            commander: None,
         };
         let runtime = &mut self.runtime;
         crate::sim::scenario_bootstrap::populate_launch_houses(
             &mut runtime.simulation,
             std::slice::from_ref(&slot),
+            &runtime.resources.rules,
+        );
+        // A launch commits its ally graph after building every house
+        // (`apply_skirmish_launch_alliances`). Committing the unchanged graph
+        // again does the same here: the ally matrix the load already built
+        // is rebuilt with this house's id, instead of answering every
+        // question about the house by name.
+        let alliances = runtime.simulation.house_alliances.as_map().clone();
+        runtime.simulation.install_house_alliances(
+            crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(alliances),
             &runtime.resources.rules,
         );
         runtime
@@ -138,10 +144,11 @@ impl HeadlessScenario {
     }
 }
 
-/// Native logic-frame cadence (66 ms). NOTE: this does NOT match the
-/// client, which steps the sim at `app::types::SIM_TICK_MS` = 22 ms — a
-/// recorded 3x tooling divergence; headless digests are not tick-comparable
-/// to client runs until it is resolved.
+/// Native logic-frame cadence (66 ms), the step headless tools hand each
+/// frame. The client paces its frames at `app::types::SIM_TICK_MS` = 22 ms
+/// instead, and a relay paces them at `1000 / FPS`: a frame is one native
+/// logic frame either way, so frame counts, state hashes and
+/// `scenario_session::ScenarioSession::total_sim_ms` agree across all three.
 pub const SIM_TICK_MS: u32 = 1000 / crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
 
 /// Load `map_file_name` from the retail install at `retail_dir` with a pinned seed.
@@ -178,17 +185,30 @@ pub fn load_with_launch(
     seed: u32,
     launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
 ) -> Result<HeadlessScenario, String> {
-    load_with_launch_and_ini(retail_dir, map_file_name, seed, launch, &Default::default())
+    load_with_launch_and_ini(
+        retail_dir,
+        map_file_name,
+        seed,
+        launch,
+        &Default::default(),
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+    )
 }
 
-/// Explicit host policy for non-YR callers; no hidden cwd/config reread.
-/// Rules, fixed Art and AI all consume the one resolved provider choice.
+/// Explicit asset policy and launch GameMode; no hidden cwd/config reread.
+/// Rules, fixed Art and AI consume the one resolved provider choice. Replays
+/// retain the recorded mode before any mode-dependent House construction.
 pub fn load_with_launch_and_ini(
     retail_dir: &Path,
     map_file_name: &str,
     seed: u32,
     launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
     ini: &crate::util::ini_roots::IniRootConfig,
+    game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    accepted_native_id_prefix: Option<u32>,
+    process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
 ) -> Result<HeadlessScenario, String> {
     let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)
         .and_then(|assets| assets.with_ini_roots(ini))
@@ -198,61 +218,357 @@ pub fn load_with_launch_and_ini(
                 retail_dir.display()
             )
         })?;
-    let mut map = crate::map::source::load_map_by_name_or_path_with_assets(
+    load_with_assets(
         retail_dir,
         map_file_name,
-        &assets,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        &mut assets,
+        game_mode,
+        accepted_native_id_prefix,
+        process_rules,
     )
-    .map_err(|error| format!("load map {map_file_name}: {error}"))?
-    .map;
+    .map_err(|error| error.to_string())
+}
+
+/// Load a lockstep campaign from the map's own Houses and the accepted role
+/// roster. The launch is local tooling data and needs no live transport.
+pub fn load_campaign_stage(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'_>,
+    accepted_native_id_prefix: Option<u32>,
+    game_speed: Option<i32>,
+    logical_map: Option<&str>,
+) -> Result<HeadlessScenario, String> {
+    let mut assets =
+        AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
+            format!(
+                "open retail MIX archives in {}: {error}",
+                retail_dir.display()
+            )
+        })?;
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest: None,
+            game_speed,
+            logical_map,
+        },
+        &mut assets,
+        launch.mode,
+        accepted_native_id_prefix,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CampaignStageCheck {
+    pub stage: String,
+    pub manifest_sha256: String,
+    pub map_sha256: String,
+    pub checked_frames: usize,
+    pub final_state_hash: String,
+}
+
+/// Author command: exercise both the production bootstrap and a separately
+/// reconstructed world loaded from the serialized diagnostic replay.
+pub fn check_campaign_stage(
+    retail_dir: &Path,
+    manifest_path: &Path,
+    stage_id: &str,
+    frames: u32,
+) -> anyhow::Result<CampaignStageCheck> {
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::replay::{ReplayLog, ReplayRunner};
+    use anyhow::Context;
+
+    anyhow::ensure!(frames != 0, "campaign-check requires at least one frame");
+    let manifest = CampaignManifest::load(manifest_path)?;
+    let index = manifest
+        .stage_index(stage_id)
+        .with_context(|| format!("no stage '{stage_id}' in {}", manifest_path.display()))?;
+    let stage = &manifest.stages[index];
+    let series = manifest_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .context("resolve campaign series directory")?;
+    let map = series.join(&stage.map).canonicalize().map_err(|error| {
+        stage.map_error(
+            format!("cannot open '{}': {error}", stage.map),
+            "Set Map to an existing map inside the series directory",
+        )
+    })?;
+    if !map.starts_with(&series) {
+        return Err(stage
+            .map_error(
+                "campaign map resolves outside the series directory",
+                "Set Map to a file contained in the series directory",
+            )
+            .into());
+    }
+    let map_path = map.to_str().ok_or_else(|| {
+        stage.map_error(
+            "campaign map path is not UTF-8",
+            "Use a UTF-8 path inside the series directory",
+        )
+    })?;
+    let start = AuthoredCampaignStart::from_stage(stage, index, 1, Default::default())?;
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
+    let mut scene = load_with_assets(
+        retail_dir,
+        map_path,
+        1,
+        HeadlessLaunch::Campaign {
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start: &start,
+                mode: ScenarioGameMode::Lan,
+                local_source: Some(0),
+            },
+            manifest: Some(stage),
+            game_speed: None,
+            logical_map: None,
+        },
+        &mut assets,
+        ScenarioGameMode::Lan,
+        None,
+        None,
+    )
+    .map_err(|error| match error {
+        HeadlessLoadError::Runtime(message) => anyhow::Error::msg(message),
+        HeadlessLoadError::Manifest(error) => anyhow::Error::new(error),
+    })?;
+    let (_, map_sha256) = scene
+        .source
+        .physical_identity()
+        .context("campaign stage does not have an authored map digest")?;
+    let map_sha256 = map_sha256.to_owned();
+    let log = ReplayRunner::record_campaign_stage(&mut scene, &start, frames)?;
+    let mut bytes = Vec::new();
+    log.write_json(&mut bytes)?;
+    let recorded = ReplayLog::decode_json(&bytes)?;
+    let result = ReplayRunner::verify(retail_dir, &recorded, Some(map_path))?;
+    anyhow::ensure!(
+        result.checked_hashes == frames as usize,
+        "campaign replay is missing frame checks"
+    );
+    Ok(CampaignStageCheck {
+        stage: stage.id.clone(),
+        manifest_sha256: manifest.digest,
+        map_sha256,
+        checked_frames: result.checked_hashes,
+        final_state_hash: format!("{:016x}", result.final_state_hash),
+    })
+}
+
+enum HeadlessLaunch<'a> {
+    Slots(&'a MatchLaunchDescriptor),
+    Campaign {
+        launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'a>,
+        manifest: Option<&'a CampaignStage>,
+        game_speed: Option<i32>,
+        logical_map: Option<&'a str>,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HeadlessLoadError {
+    #[error("{0}")]
+    Runtime(String),
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
+}
+
+impl From<String> for HeadlessLoadError {
+    fn from(message: String) -> Self {
+        Self::Runtime(message)
+    }
+}
+
+/// Reuse the production headless scenario load after retail scenario discovery
+/// has already registered loose YRO archives in the caller's AssetManager.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn load_with_registered_scenario_assets(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    assets: &mut AssetManager,
+) -> Result<HeadlessScenario, String> {
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        assets,
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn load_with_assets(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: HeadlessLaunch<'_>,
+    assets: &mut AssetManager,
+    game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    accepted_native_id_prefix: Option<u32>,
+    process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Result<HeadlessScenario, HeadlessLoadError> {
+    let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
+        HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest,
+            game_speed,
+            logical_map,
+        } => (None, Some(launch.start), manifest, game_speed, logical_map),
+    };
+    let loaded_map =
+        crate::map::source::load_map_by_name_or_path_with_assets(retail_dir, map_file_name, assets)
+            .map_err(|error| match manifest {
+                Some(stage) => HeadlessLoadError::Manifest(stage.map_error(
+                    format!("cannot decode '{}': {error}", stage.map),
+                    "Set Map to a valid authored scenario",
+                )),
+                None => HeadlessLoadError::Runtime(format!("load map {map_file_name}: {error}")),
+            })?;
+    let source = loaded_map.source;
+    if let Some(stage) = manifest {
+        let (_, digest) = source.physical_identity().ok_or_else(|| {
+            stage.map_error(
+                "map has no authored payload digest",
+                "Set Map to a loose authored scenario",
+            )
+        })?;
+        stage.verify_map_digest(digest)?;
+    }
+    let mut map = loaded_map.map;
     // Preserve the process-owned cold Rules registry before theater archive
     // priority changes. The same owner then performs the active noncampaign
     // reset/rebuild and transfers its move-only native-ID receipt.
     let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select(&assets);
-    let (_, _, mut native_rules_owner) = crate::rules::retail_sources::load_startup_rules(
-        &assets,
-        std::sync::Arc::clone(audio_definitions.sounds()),
-        std::sync::Arc::clone(audio_definitions.eva()),
-    )
-    .ok_or_else(|| "load native startup rules".to_string())?
-    .into_parts();
-    let scenario_prefix_plan =
-        crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
-            &launch,
-            &map,
-            &map.waypoints,
-            seed,
+    let mut cold_rules_owner;
+    let native_rules_owner = if let Some(owner) = process_rules {
+        owner
+    } else {
+        let (_, _, owner) = crate::rules::retail_sources::load_startup_rules(
+            &assets,
+            std::sync::Arc::clone(audio_definitions.sounds()),
+            std::sync::Arc::clone(audio_definitions.eva()),
         )
+        .ok_or_else(|| "load native startup rules".to_string())?
+        .into_parts();
+        cold_rules_owner = owner;
+        &mut cold_rules_owner
+    };
+    if let Some(launch) = slot_launch {
+        if let Some(rules) = launch.personal_rules() {
+            native_rules_owner.use_personal_rules(rules.clone());
+        } else if game_mode.execution_topology().is_lockstep() {
+            native_rules_owner
+                .use_personal_rules(launch.session().options.host_rules.personal_rules()?);
+        }
+    }
+    if game_mode.execution_topology().is_lockstep() {
+        native_rules_owner
+            .reset_for_network_match()
+            .map_err(|error| format!("reset network Rules: {error}"))?;
+    }
+    // ThemeClass::ReadINI720590 is process data even without an output device.
+    // Keep the existing headless archive stack: THEMEMD.MIX and the preserved
+    // RA2 THEME.MIX extension were mounted at startup; this route has no shell
+    // neutral-archive activation. Resolve before scenario Rules/theater changes.
+    let themes = crate::rules::theme_ini::ThemeCatalog::select(&assets);
+    let scenario_prefix_plan = slot_launch
+        .map(|launch| {
+            crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
+                launch,
+                &map,
+                &map.waypoints,
+                seed,
+            )
+        })
+        .transpose()
         .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
     let mode_override = crate::rules::retail_sources::select_mode_ini(
         &assets,
-        Some(&launch.session().mode.override_file),
+        slot_launch.map(|launch| launch.session().mode.override_file.as_str()),
     )?;
+    let rules_prefix = match campaign {
+        Some(_) => crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+        None => crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+            mode_override.as_ref(),
+        ),
+    };
+    // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
-        .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                mode_override.as_ref(),
-            ),
-            &map.ini,
-        )
-        .map_err(|error| format!("load native noncampaign rules: {error}"))?
+        .load_scenario(rules_prefix, &map.ini)
+        .map_err(|error| format!("load native scenario rules: {error}"))?
         .into_parts();
-    let bound_scenario_prefix = scenario_prefix_plan
-        .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
-        .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
+    // The game's later readers (ARTMD, the asset closures) follow the way its
+    // Rules were read (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
+    let mode_class = slot_launch.map(|launch| launch.session().mode.class);
+    let rule_policy = if let Some(start) = campaign {
+        start.rule_policy()
+    } else {
+        // Slot launches keep their native constructor even with scripted rules.
+        let construction = BootstrapRuleProfile::Multiplayer;
+        slot_launch
+            .and_then(MatchLaunchDescriptor::rule_policy_override)
+            .map(|policy| policy.with_bootstrap(construction))
+            .unwrap_or_else(|| game_mode.stock_rule_policy_for_bootstrap(construction, mode_class))
+    };
     let team_ai_registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
-    let theater = theater::load_theater(&mut assets, &map.header.theater)
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
+    let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .map_err(|error| format!("{error:#}"))?
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let infantry_sequences =
-        crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
-    let overlay_registry = rules.overlay_registry().clone();
     let house_roster = crate::map::houses::parse_house_roster(
         &map.ini,
         rules.color_schemes.as_slice(),
         Some(&rules),
     );
+    if let Some(stage) = manifest {
+        stage.validate_house_names(house_roster.houses.iter().map(|house| house.name.as_str()))?;
+    }
+    let campaign_options = campaign_speed.map(|game_speed| crate::sim::game_options::GameOptions {
+        game_speed,
+        ..Default::default()
+    });
+    let prefix = match (launch, scenario_prefix_plan) {
+        (HeadlessLaunch::Slots(launch), Some(plan)) => FreshScenarioPrefix::StockOffline(
+            plan.bind_native_rules_receipt(native_rules_receipt, launch, &rules)
+                .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?,
+        ),
+        (HeadlessLaunch::Campaign { launch, .. }, None) => FreshScenarioPrefix::Campaign {
+            native_rules_receipt,
+            rules: &rules,
+            map_data: &map,
+            house_roster: &house_roster,
+            difficulty: launch.start.difficulty(),
+            mission_counter: launch.start.mission_counter(),
+            game_options: campaign_options.as_ref(),
+            campaign_index: 0,
+            restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            network: Some(launch),
+        },
+        _ => unreachable!("each launch uses its own prepared construction"),
+    };
     let lighting_profiles = crate::map::lighting::parse_lighting_profiles(&map.ini);
     let native_start_bounds =
         crate::sim::scenario_bootstrap::NativeStartBounds::from_map_header(&map.header)
@@ -263,14 +579,9 @@ pub fn load_with_launch_and_ini(
         .ok_or_else(|| "fresh cell-array extent overflow".to_string())?;
     let descriptor = ScenarioDescriptor {
         seed,
-        map_name: map_file_name.to_string(),
+        map_name: logical_map.unwrap_or(map_file_name).to_string(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: true,
-        no_damage: false,
-        // Non-campaign: the session staging word's Harvester Truce byte
-        // (`0x005E7495..0x005E74D4`) replaces the map's bit at
-        // `0x00687C16..0x00687C29`.
-        harvester_immune: launch.session().options.harvester_truce,
+        rule_policy,
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         timer_inherit: map.basic.timer_inherit.unwrap_or(false),
@@ -280,27 +591,63 @@ pub fn load_with_launch_and_ini(
         truck_crate: map.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map.basic.ice_growth_enabled,
         vein_growth_enabled: map.basic.vein_growth_enabled,
-        // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-        // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-        tiberium_grows_flag: true,
-        tiberium_spreads_flag: true,
         map_width: scenario_cell_extent,
         map_height: scenario_cell_extent,
-        mp_start_waypoints: waypoints::multiplayer_start_waypoints(
-            bound_scenario_prefix
-                .projection()
-                .active_scenario_waypoints(),
-        )
-        .into_iter()
-        .map(|wp| (wp.index, (wp.rx, wp.ry)))
-        .collect(),
+        mp_start_waypoints: match &prefix {
+            FreshScenarioPrefix::StockOffline(bound) => waypoints::multiplayer_start_waypoints(
+                bound.projection().active_scenario_waypoints(),
+            )
+            .into_iter()
+            .map(|wp| (wp.index, (wp.rx, wp.ry)))
+            .collect(),
+            FreshScenarioPrefix::Campaign { .. } => Default::default(),
+        },
         pixel_conversion_bounds: Default::default(),
         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
-    };
+        ..Default::default()
+    }
+    .with_authored_special_flags(
+        &map.special_flags,
+        slot_launch.is_some_and(|launch| launch.session().options.harvester_truce),
+    );
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng
-        .into_stock_offline_staged_simulation(&descriptor, bound_scenario_prefix)
-        .map_err(|error| format!("stage stock-offline Simulation: {error}"))?;
+        .into_fresh_staged_simulation(&descriptor, prefix)
+        .map_err(|error| match (manifest, &error) {
+            (Some(stage), FreshScenarioPrefixError::DuplicateCampaignHouse(_)) => {
+                HeadlessLoadError::Manifest(stage.map_error(
+                    error.to_string(),
+                    "Give every entry in the map's [Houses] list a distinct name",
+                ))
+            }
+            _ => HeadlessLoadError::Runtime(format!("stage authored Simulation: {error}")),
+        })?;
+    // CreateHouses687FCE..688092 gives WOL humans their node name; other
+    // modes use "<human player>". The House owner hashes that native identity,
+    // so restoring GameMode after construction cannot reconstruct a WOL start.
+    if let Some(launch) = slot_launch {
+        sim.install_session_admission(
+            game_mode,
+            mode_class,
+            launch
+                .rule_policy_override()
+                .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
+        );
+        if let Some(start) = launch.network_start() {
+            if !game_mode.execution_topology().is_lockstep() {
+                return Err("Offline launch has lockstep start settings"
+                    .to_owned()
+                    .into());
+            }
+            start.install(&mut sim);
+        }
+    }
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_none()
+    {
+        sim.install_accepted_native_id_prefix(checkpoint)
+            .map_err(|error| format!("replay native-ID prefix: {error}"))?;
+    }
     let shared_cell_dummy = crate::map::resolved_terrain::SharedCellDummy::fresh();
     shared_cell_dummy.reconstruct_for_map_resize();
     sim.bind_shared_cell_dummy(shared_cell_dummy.clone());
@@ -310,6 +657,7 @@ pub fn load_with_launch_and_ini(
         &team_ai_registry,
         Some(audio_definitions.eva()),
         Some(audio_definitions.sounds().as_ref()),
+        Some(&themes),
     );
     let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
     let mut scenario_fill_ranged =
@@ -323,7 +671,7 @@ pub fn load_with_launch_and_ini(
             Some(&theater),
             Some(&assets),
             Some(&rules.terrain_rules),
-            Some(&overlay_registry),
+            Some(rules.overlay_registry()),
             true,
             rules.general.cliff_back_impassability,
             &mut scenario_fill_ranged,
@@ -335,20 +683,13 @@ pub fn load_with_launch_and_ini(
     // Pending authored Fill has no eager Tile##Anim list. Bind damage-fire
     // roots now and let the authored host bind each actually reached map Anim
     // synchronously before its native constructor spends an ID.
-    let mut scheduler_roots =
-        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    scheduler_roots.extend(crate::map::actions::trigger_anim_class_roots(
-        &rules,
-        &map.actions,
-    ));
-    rules
-        .bind_scheduler_anim_assets(
-            &scheduler_roots,
-            &assets,
-            theater.extension,
-            &map.header.theater,
-        )
-        .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
+    let scheduler_roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
     let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
@@ -359,6 +700,15 @@ pub fn load_with_launch_and_ini(
         &map.header.theater,
     );
     crate::rules::effect_asset_catalog::log_unbound_combat_explosion_roots(unbound_explosion_roots);
+    let mut authored_anim_roots =
+        crate::map::actions::trigger_anim_class_roots(&rules, &map.actions);
+    authored_anim_roots.extend(team_ai_registry.script_anim_class_roots(&rules));
+    rules.bind_anim_class_assets(
+        &authored_anim_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     let (populated_smudge_dims, fallback_smudge_dims) =
         rules.populate_anim_frame_dims(&assets, theater.extension, &map.header.theater);
     log::info!(
@@ -374,31 +724,32 @@ pub fn load_with_launch_and_ini(
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    let _alpha_image_bindings =
-        crate::rules::alpha_image_assets::bind(&rules, &overlay_registry, &assets);
-    rules.bind_animation_sequences(&infantry_sequences);
+    rules.bind_alpha_images(&assets);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlay_registry,
+        rules.overlay_registry(),
         &assets,
         theater.extension,
         &map.header.theater,
     );
     sim.construct_native_map_tubes(&map.ini)
         .map_err(|error| format!("construct native [Tubes]: {error}"))?;
-    let bridge_mode = crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
-        bridge_destruction: true,
+    let bridge_mode = if campaign.is_some() {
+        crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor
+    } else {
+        crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
+            bridge_destruction: true,
+        }
     };
     let signed_new_ini_format = map.basic.new_ini_format.unwrap_or(0);
     let cliff_back_impassability = rules.general.cliff_back_impassability;
-    let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+    let resolved_terrain = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
         &mut sim,
         &mut map,
         terrain_fill,
         &theater,
         &assets,
         &mut rules,
-        &mut native_rules_owner,
-        &overlay_registry,
+        native_rules_owner,
         &overlay_shp_ids,
         signed_new_ini_format,
         true,
@@ -408,60 +759,87 @@ pub fn load_with_launch_and_ini(
         bridge_mode,
         &descriptor,
         |sim, rules| {
-            crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
-                sim,
-                &house_roster,
-                rules,
-                &launch,
-            );
+            if let Some(launch) = slot_launch {
+                crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
+                    sim,
+                    &house_roster,
+                    rules,
+                    launch,
+                );
+            }
         },
     )
     .map_err(|error| format!("finalize authored headless load: {error}"))?;
-    let resolved_terrain = output.resolved_terrain;
-    let overlay_grid = output.overlay_grid;
     // Match the ordinary app's pre-launch binding: production options need
     // identities for unspawned types too, and snapshots carry this interner.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&team_ai_registry, &rules)
-        .map_err(|refused| format!("active YR aimd.ini failed RuleSet resolution: {refused:?}"))?;
-    let _launch_result = crate::sim::scenario_bootstrap::
-        apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+    sim.install_team_ai_registry(&team_ai_registry, &rules);
+    if let (Some(launch), Some(projection)) = (slot_launch, scenario_prefix_projection.as_ref()) {
+        crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &resolved_terrain,
-            &launch,
-            &overlay_registry,
-            &scenario_prefix_projection,
+            launch,
+            projection,
         );
+    }
     let post_map = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
         &rules,
-        &overlay_registry,
-        overlay_grid,
         &house_roster,
-        Some(&launch),
-    );
+        descriptor.rule_policy,
+        slot_launch,
+        campaign.map(AuthoredCampaignStart::carry_over),
+    )
+    .map_err(|error| error.to_string())?;
     if !post_map.navigation_published {
-        return Err("publish headless post-map navigation".to_string());
+        return Err("publish headless post-map navigation".to_owned().into());
     }
     if sim.path_grid().is_none() {
-        return Err("headless post-map navigation is unavailable".to_string());
+        return Err("headless post-map navigation is unavailable"
+            .to_owned()
+            .into());
+    }
+    // MapHouses has already spent its House and Super IDs before Resize.
+    // Replay must rebuild that prefix from the same rules, then check it at
+    // the map-read fence rather than replacing the live cursor afterwards.
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_some()
+        && sim.native_identity_prefix_checkpoint() != Some(checkpoint)
+    {
+        return Err(
+            "replay campaign native-ID prefix differs from the reconstructed House roster"
+                .to_owned()
+                .into(),
+        );
+    }
+    if campaign.is_some() {
+        // The author runner dispatches the canonical source roster every
+        // logic frame without waiting for a transport or reserving a lead.
+        let sources: Vec<_> = sim
+            .session
+            .network_sources(sim.houses.len())
+            .map(|(source, _)| source)
+            .collect();
+        sim.install_network_timing(0);
+        sim.network_command_queues()
+            .install_timing(0, std::num::NonZeroU8::MIN, sources);
     }
     sim.session.publish_started();
     Ok(HeadlessScenario {
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
-                overlay_registry,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
+        source,
     })
 }
 
@@ -475,13 +853,13 @@ impl HeadlessScenario {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed; prior world mutations remain");
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod retail_construction_tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -518,7 +896,7 @@ mod retail_construction_tests {
         };
         let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let resolved = {
             let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
@@ -550,7 +928,7 @@ mod retail_construction_tests {
             (extent, extent),
             "Fill allocates the extent the descriptor announced"
         );
-        crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+        crate::sim::runtime::populate_staged_fixture(
             &mut sim,
             map,
             &resolved,
@@ -798,18 +1176,8 @@ mod retail_construction_tests {
             baseline.native_unique_id().map(|id| id.wrapping_add(1))
         );
         assert_eq!(signed.sim().rng_state(), control.sim().rng_state());
-        assert_eq!(
-            signed.sim().substrate.raw_cell_occupation.ground_bits(0, 0),
-            0
-        );
-        assert_eq!(
-            signed
-                .sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(u16::MAX, 0),
-            0
-        );
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(0, 0), 0);
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(u16::MAX, 0), 0);
     }
 
     #[test]
@@ -887,8 +1255,7 @@ mod retail_construction_tests {
         assert_eq!(sim.terrain_objects().cell_index().len(), 1);
         use crate::sim::occupancy::CellObjectMember;
         let building = sim
-            .substrate
-            .occupancy
+            .occupancy()
             .first_building_on_layer(
                 26,
                 60,
@@ -945,14 +1312,14 @@ mod retail_construction_tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            Default::default(),
+            &mut Default::default(),
         );
         assert_eq!(
             loaded.terrain_objects().get(alias_id).unwrap().health(),
             alias.health() - 1
         );
         loaded.dirty_cells.clear_radar_for_test();
-        loaded.uninit_with_context(alias_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(alias_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .terrain_objects()
@@ -961,13 +1328,7 @@ mod retail_construction_tests {
             [ordinary_id]
         );
         assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
-        loaded.process_pending_delete_with(
-            rules,
-            Some(rules.overlay_registry()),
-            Default::default(),
-            1,
-            true,
-        );
+        loaded.process_pending_delete_with(rules, &mut Default::default(), 1, true);
         assert!(loaded.terrain_objects().get(alias_id).is_none());
         assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
         assert_eq!(
@@ -995,7 +1356,7 @@ mod retail_construction_tests {
                 crate::map::resolved_terrain::zone_class::GROUND;
             base.zone_ids_mut_for_test()[index] = cluster;
         }
-        loaded.uninit_with_context(hole_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(hole_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .zone_grid
@@ -1146,9 +1507,7 @@ mod retail_construction_tests {
         );
         assert_eq!(
             late.sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(source.rx, source.ry)
+                .ground_occupation_bits_for_test(source.rx, source.ry)
                 & 0x1C,
             0
         );
@@ -1379,7 +1738,7 @@ mod retail_construction_tests {
             .sim()
             .houses
             .iter()
-            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive())
+            .filter(|(_, house)| !house.is_human() && !house.multiplay_passive())
             .map(|(&id, _)| id)
             .collect();
         assert_eq!(computers.len(), opponents.len());
@@ -1522,8 +1881,7 @@ mod retail_construction_tests {
                     .path_grid()
                     .is_some_and(|grid| grid.is_walkable_for_infantry(rx, ry));
                 let empty = sim
-                    .substrate
-                    .occupancy
+                    .occupancy()
                     .get(rx, ry)
                     .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground));
                 (walkable && empty).then_some((rx, ry))
@@ -1553,13 +1911,19 @@ mod retail_construction_tests {
             .collect()
     }
 
-    /// Two retail Yuri TeamTypes whose members are spawned beside the Yuri
-    /// house's base once the bases stand: "Yuri Infantry - M1" (`05FFB46C-G`,
-    /// script `0,4 / 49 / 0,1`) and "Yuri Engineers" (`08B95EFC-G`,
-    /// `54 / 0,6 / 49 / 0,9 / 0,2`). Action 0's scan finds the first team
-    /// another house's infantry, which its members attack. For the second it
-    /// prints whether an engineer aimed at another house's building: in the
-    /// first run that team disbanded before frame 1000, not yet explained.
+    /// Two retail Yuri TeamTypes whose members are spawned on the free cells
+    /// nearest the Yuri house's base centre once the bases stand: "Yuri
+    /// Infantry - M1" (`05FFB46C-G`, five Initiates and an engineer, script
+    /// `0,4 / 49 / 0,1`) and "Yuri Engineers" (`08B95EFC-G`,
+    /// `54 / 0,6 / 49 / 0,9 / 0,2`). The first team may recruit the house's
+    /// own Initiates; its leader's action 0 scan finds another house's
+    /// infantry, which an Initiate of the team attacks. For the second it
+    /// prints whether an engineer aimed at another house's building.
+    ///
+    /// The cells 15 north of that base lie in no zone (0xFFFF), and
+    /// `Evaluate_Candidate`'s zone test (`0x006F7E7E..0x006F7E9C`) rejects
+    /// every quarry of a leader standing there: action 0 finds nothing, the
+    /// script runs out and the team is gone.
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_yuri_teams_attack() {
@@ -1571,10 +1935,15 @@ mod retail_construction_tests {
         }
         let runtime = &mut scenario.runtime;
         let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
-        let (yuri, spawned) = spawn_beside_base(
+        let yuri = house_of(sim, "YuriCountry");
+        let (bx, by) = sim.houses[&yuri]
+            .base_center()
+            .expect("the base has a centre");
+        let spawned = spawn_on_free_cells(
             sim,
             &resources.rules,
-            "YuriCountry",
+            yuri,
+            cells_nearest((i32::from(bx), i32::from(by))),
             &[
                 "INIT",
                 "INIT",
@@ -1598,9 +1967,13 @@ mod retail_construction_tests {
         );
         eprintln!(
             "a Yuri engineer's quarry-6 scan: {:?}",
-            factory_scan.map(|id| sim
-                .interner
-                .resolve(sim.entities().get(id).unwrap().type_ref()))
+            factory_scan.map(|pick| match pick {
+                crate::sim::combat::TargetKind::Entity(id) => sim
+                    .interner
+                    .resolve(sim.entities().get(id).unwrap().type_ref())
+                    .to_owned(),
+                cell => format!("{cell:?}"),
+            })
         );
         let teams: Vec<u64> = ["05FFB46C-G", "08B95EFC-G"]
             .into_iter()
@@ -1632,9 +2005,11 @@ mod retail_construction_tests {
         for frame in 1..=3_000u32 {
             scenario.tick();
             let sim = scenario.sim();
-            infantry_attacked |= spawned.iter().any(|&id| {
-                sim.entities().get(id).is_some_and(|entity| {
-                    entity.type_ref() == initiate && aims_at_another_house(sim, entity)
+            infantry_attacked |= sim.team_script_vm.team(teams[0]).is_some_and(|team| {
+                team.members().any(|id| {
+                    sim.entities().get(id).is_some_and(|entity| {
+                        entity.type_ref() == initiate && aims_at_another_house(sim, entity)
+                    })
                 })
             });
             engineer_attacked |= spawned.iter().any(|&id| {
@@ -1704,8 +2079,11 @@ mod retail_construction_tests {
     /// 14 and 43); it carries them to the yard (47) and unloads them, and
     /// they rejoin the team (8). Five riders fill the Night Hawk, so action
     /// 14 finishes on its no-transport arm without archiving a cell (only a
-    /// transport with a seat left reaches `Set_ArchiveTarget @ 0x0070C610`),
-    /// and the unload sends it out of the team with no destination.
+    /// transport with a seat left reaches `Set_ArchiveTarget @ 0x0070C610`).
+    /// It keeps the post its Area Guard archived before the team stepped
+    /// (`TeamClass::AI @ 0x006E9140` spares a `TransportsReturnOnUnload=`
+    /// transport's archive), and the unload sends it out of the team to that
+    /// post.
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_transport_teams_load_and_unload() {
@@ -1746,12 +2124,11 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -1767,7 +2144,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -1776,14 +2153,43 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yards: Vec<String> = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .filter(|(_, entity)| entity.owner() == human)
                 .map(|(_, entity)| sim.interner.resolve(entity.type_ref()).to_string())
                 .collect();
             eprintln!("{team_type}: the local house owns {yards:?}");
-            let (house, spawned) = spawn_beside_base(sim, &resources.rules, country, &types);
+            // The members stand together in a free 3x3 block, within Stray of
+            // their mean, the team's centre (`Calc_Center @ 0x006EAEE0`).
+            // Action 14 (`0x006ED200`) sends a member farther off there on
+            // Move before it joins, and a Night Hawk in flight cannot be
+            // boarded: on Move with a NavCom it answers its passengers
+            // NEGATIVE (`UnitClass::Receive_Radio`,
+            // `0x007377F5..0x0073780D`), and a cell they stand in refuses its
+            // landing (State 4, `0x0054C6CE..0x0054C714`, to Stop_Moving at
+            // `0x0054CA3C`).
+            let house = house_of(sim, country);
+            let (bx, by) = sim.houses[&house]
+                .base_center()
+                .expect("the base has a centre");
+            let free = |sim: &Simulation, rx: i32, ry: i32| {
+                let (Ok(x), Ok(y)) = (u16::try_from(rx), u16::try_from(ry)) else {
+                    return false;
+                };
+                sim.path_grid()
+                    .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
+                    && sim.occupancy().get(x, y).is_none_or(|cell| {
+                        cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    })
+            };
+            let block = (0..900)
+                .map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15))
+                .find(|&(rx, ry)| {
+                    (-1..=1).all(|dy| (-1..=1).all(|dx| free(&*sim, rx + dx, ry + dy)))
+                })
+                .expect("a free 3x3 block beside the base");
+            let spawned =
+                spawn_on_free_cells(sim, &resources.rules, house, cells_nearest(block), &types);
             let id = sim
                 .interner
                 .get(team_type)
@@ -1800,10 +2206,21 @@ mod retail_construction_tests {
                 })
                 .expect("a team of the TeamType");
             let (transport, infantry) = (spawned[0], &spawned[1..]);
+            // The transport's cell, which a computer's Foot on Area Guard
+            // archives as its post (`FootClass::Mission_AreaGuard`,
+            // `0x004D6D78..0x004D6DB9`) before the team steps.
+            let post = sim
+                .entities()
+                .get(transport)
+                .map(|entity| (entity.position.rx(), entity.position.ry()))
+                .expect("the transport stands");
             // The first frame all the infantry were aboard the transport and
             // its archive then, the first frame after that they were all
-            // members again, and the first frame the transport was not, with
-            // its NavCom then.
+            // members again, and the first frame the team stood without the
+            // transport, with its NavCom then. A team whose engineers took the
+            // only building ends instead: action 46 (`0x006EE310`) finds no
+            // target and completes, and `TeamClass::AI` destroys a team run
+            // past its script's end (`0x006E9140`, to `0x006E9713`).
             let (mut loaded, mut archive, mut unloaded) = (None, None, None);
             let mut transport_left = None;
             let mut present = (true, vec![true; spawned.len()]);
@@ -1813,7 +2230,7 @@ mod retail_construction_tests {
                 let team = sim.team_script_vm.team(team_id);
                 let aboard = infantry.iter().all(|&id| {
                     sim.entities().get(id).is_some_and(|entity| {
-                        entity.passenger_role.inside_transport_id() == Some(transport)
+                        entity.passenger_role().inside_transport_id() == Some(transport)
                     })
                 });
                 if loaded.is_none() && aboard {
@@ -1862,7 +2279,7 @@ mod retail_construction_tests {
                                     None => "out",
                                 },
                                 entity.navigation.nav_com(),
-                                if entity.passenger_role.is_inside_transport() {
+                                if entity.passenger_role().is_inside_transport() {
                                     " aboard"
                                 } else {
                                     ""
@@ -1881,8 +2298,7 @@ mod retail_construction_tests {
                 }
                 if let Some(done) = unloaded {
                     if transport_left.is_none()
-                        && !team
-                            .is_some_and(|team| team.members().any(|member| member == transport))
+                        && team.is_some_and(|team| team.members().all(|member| member != transport))
                     {
                         transport_left = Some((
                             frame,
@@ -1907,11 +2323,19 @@ mod retail_construction_tests {
                 "{team_type}: the infantry never rejoined"
             );
             if team_type == "0AD4D7BC-G" {
-                assert_eq!(archive, None, "the full Night Hawk archived a cell");
+                let (x, y) = post;
+                assert_eq!(
+                    archive,
+                    Some(crate::sim::combat::TargetKind::Cell(x, y)),
+                    "the full Night Hawk archived a cell over its post"
+                );
                 assert_eq!(
                     transport_left.map(|(_, nav_com)| nav_com),
-                    Some(None),
-                    "the Night Hawk left its team with no destination"
+                    Some(Some(crate::sim::components::NavTargetRef::Cell {
+                        rx: x,
+                        ry: y
+                    })),
+                    "the Night Hawk left its team for its post"
                 );
             } else {
                 assert_eq!(transport_left, None, "the HTK left its team");
@@ -1951,12 +2375,11 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -1972,7 +2395,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -1981,8 +2404,7 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yard = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2115,9 +2537,25 @@ mod retail_construction_tests {
         let (bx, by) = sim.houses[&yuri]
             .base_center()
             .expect("the base has a centre");
-        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it.
-        let open = |sim: &Simulation, rx: i32, ry: i32| {
-            (-1..3).all(|dy| {
+        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it,
+        // where the bunker's own placement test admits it (the AI's base
+        // changes which free cells are ramps, ore or otherwise unbuildable).
+        let placing = std::sync::Arc::clone(resources);
+        let open = move |sim: &Simulation, rx: i32, ry: i32| {
+            let (Ok(x), Ok(y)) = (i16::try_from(rx), i16::try_from(ry)) else {
+                return false;
+            };
+            let natbnk = placing.rules.object("NATBNK").expect("retail NATBNK");
+            crate::sim::build_site::can_place_building_at(
+                sim,
+                &placing.rules,
+                Some(placing.rules.overlay_registry()),
+                natbnk,
+                (x, y),
+                None,
+                None,
+                None,
+            ) && (-1..3).all(|dy| {
                 (-1..3).all(|dx| {
                     let (Ok(x), Ok(y)) = (u16::try_from(rx + dx), u16::try_from(ry + dy)) else {
                         return false;
@@ -2125,8 +2563,7 @@ mod retail_construction_tests {
                     sim.path_grid()
                         .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
                         && sim
-                            .substrate
-                            .occupancy
+                            .occupancy()
                             .get(x, y)
                             .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground))
                 })
@@ -2171,9 +2608,9 @@ mod retail_construction_tests {
                 seeking = members
                     .iter()
                     .find(|&&id| {
-                        sim.entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(bunker))
+                        sim.entities().get(id).is_some_and(|entity| {
+                            entity.seldom.radio_contacts.slot(0) == Some(bunker)
+                        })
                     })
                     .map(|&id| (frame, id));
             }
@@ -2245,7 +2682,8 @@ mod retail_construction_tests {
                 on_61 = Some((frame, members));
             } else if line.cursor() >= 2 && on_61.is_some() {
                 let held = sim.entities().get(free).is_none_or(|bunker| {
-                    bunker.bunker.occupant().is_some() || bunker.radio_contacts.slot(0).is_some()
+                    bunker.bunker.occupant().is_some()
+                        || bunker.seldom.radio_contacts.slot(0).is_some()
                 });
                 past = Some((frame, members, held));
                 break;
@@ -2279,11 +2717,16 @@ mod retail_construction_tests {
     ///
     /// Put on line 3 instead, as action 6 would, the team's action 9 orders
     /// each chopper (`IsSimpleDeployer=`) to Unload, and they start to land.
-    /// Action 9 is done at once, and the team's next attack order takes them
-    /// off Unload in the air, as `Coordinate_Attack` does natively
+    /// Action 9 is done at once, and the team's next attack order queues
+    /// Attack over their Unload, as `Coordinate_Attack` does natively
     /// (`0x006EB79A..0x006EB7B5`): Unit vt+0x4E4 (`0x00736D50`) keeps only a
     /// `DeployToFire=` unit, or a computer one deploying into a `TickTank=`
-    /// building, on Unload, and the Siege Chopper is neither.
+    /// building, on Unload, and the Siege Chopper is neither. The queued
+    /// Attack waits while the chopper comes down
+    /// (`UnitClass::Is_Ready_To_Commence @ 0x00744270`, the moving arm
+    /// `0x007442C2..0x00744327`; a descending jumpjet is moving,
+    /// `JumpjetLocomotionClass::Is_Moving_Now @ 0x0054D0D0`), so each takes
+    /// it once it is down, before it deploys.
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_soviet_siege_chopper_team_holds_then_attacks_undeployed() {
@@ -2393,6 +2836,8 @@ mod retail_construction_tests {
             )
         };
         let (mut on_9, mut past, mut attacking) = (None, None, None);
+        // Each chopper's state on the first frame it is on Attack.
+        let mut ordered = vec![None; choppers.len()];
         for frame in 1..=600u32 {
             scenario.tick();
             let sim = scenario.sim();
@@ -2401,6 +2846,11 @@ mod retail_construction_tests {
                 states.iter().all(|state| !state.2),
                 "a chopper deployed at frame {frame}: {states:?}"
             );
+            for (first, state) in ordered.iter_mut().zip(&states) {
+                if first.is_none() && state.3 == Some(MissionType::Attack) {
+                    *first = Some((frame, *state));
+                }
+            }
             let cursor = sim.team_script_vm.team(team).map(|team| team.cursor());
             if on_9.is_none() && cursor == Some(3) {
                 on_9 = Some((frame, states.clone()));
@@ -2428,10 +2878,17 @@ mod retail_construction_tests {
             "action 9 did not set both choppers landing to unload: {unloading:?}"
         );
         assert!(past.is_some(), "the team stayed on action 9");
-        let (_, _, airborne) = attacking.expect("no attack order took the choppers off Unload");
+        attacking.expect("no attack order took the choppers off Unload");
+        eprintln!("Siege Chopper team: each chopper's first Attack frame {ordered:?}");
+        // Is_Ready_To_Commence @ 0x00744270 holds the queued Attack while the
+        // jumpjet moves, so none takes it on the way down (it was once
+        // expected in the air).
         assert!(
-            airborne.iter().all(|state| state.1 > 0),
-            "a chopper landed before its attack order: {airborne:?}"
+            ordered
+                .iter()
+                .flatten()
+                .all(|(_, state)| state.0 != Some(STATE_DESCEND)),
+            "a chopper took Attack while it was descending: {ordered:?}"
         );
     }
 
@@ -2602,7 +3059,7 @@ mod retail_construction_tests {
                         crate::sim::build_site::can_place_building_at(
                             sim,
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(resources.rules.overlay_registry()),
                             yard,
                             (x, y),
                             None,
@@ -2699,7 +3156,7 @@ mod retail_construction_tests {
                 &commands,
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed")
     }
@@ -2845,15 +3302,16 @@ mod retail_construction_tests {
             rhino,
             Some(TargetKind::Entity(gi)),
             rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
-        let _ = sim.substrate.mission_commence_exact(rhino, now);
+        let _ = sim
+            .substrate_mut_for_test()
+            .mission_commence_exact(rhino, now);
         let (mut charged, mut died, mut gi_cell, mut crushed) = (None, None, None, false);
         for frame in 1..=600u32 {
             let output = tick_with_due_commands(&mut scenario);
@@ -2979,9 +3437,13 @@ mod retail_construction_tests {
     /// "Allied Spy vs Soviet Power" (`09B5091C-G`: one SPY, the script
     /// `0,4 / 47,131081 / 46,9 / 47,131083 / 46,11`) for a Normal American
     /// house against the idle local Soviet house, which is given a Tesla
-    /// Reactor beside its MCV, guarded by a Sentry Gun and a Conscript. The
+    /// Reactor beside its MCV, guarded by a Sentry Gun and a Conscript, once
+    /// the American house has deployed its MCV: that yard's deploy sends
+    /// every ground Techno of the house, a team's included, to the new base
+    /// (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`, from
+    /// `UnitClass::Deploy` at `0x00739926`), and would call the spy home. The
     /// team's spy is spawned twelve cells from the reactor, towards its own
-    /// house's MCV. Action 0 (attack infantry) takes the flat walk over every
+    /// house's yard. Action 0 (attack infantry) takes the flat walk over every
     /// object (`0x006F8FE0`) and finds the Conscript, which the `MakeupKit`
     /// (`Range=-2`) reaches from anywhere: its `MakesDisguise=` shot dresses
     /// the spy as a Soviet Conscript, and the `FireOnce=` shot ends the
@@ -3005,10 +3467,20 @@ mod retail_construction_tests {
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
         );
+        let america = house_of(scenario.sim(), "Americans");
+        let is_american_yard = |entity: &crate::sim::game_entity::GameEntity| {
+            entity.owner() == america
+                && entity.category() == crate::map::entities::EntityCategory::Structure
+        };
+        for _ in 0..300 {
+            scenario.tick();
+            if scenario.sim().entities().values().any(is_american_yard) {
+                break;
+            }
+        }
         let runtime = &mut scenario.runtime;
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let soviet = house_of(sim, "Russians");
-        let america = house_of(sim, "Americans");
         let at = |sim: &Simulation, id| {
             let entity = sim.entities().get(id).expect("spawned");
             (
@@ -3017,8 +3489,7 @@ mod retail_construction_tests {
             )
         };
         let mcv = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| entity.owner() == soviet)
             .map(|(id, _)| id)
@@ -3039,18 +3510,17 @@ mod retail_construction_tests {
             cells_nearest((rx, ry)),
             &["NALASR", "E2"],
         );
-        // Twelve cells out towards the American MCV. The nearest cells the
+        // Twelve cells out towards the American yard. The nearest cells the
         // other way lie in no zone (0xFFFF), and Evaluate_Candidate's zone
         // test, which only DWORD -1 skips (`0x006F7E36`), then rejects every
         // quarry of a spy standing there.
-        let american_mcv = sim
-            .substrate
-            .entities
+        let american_yard = sim
+            .entities()
             .iter_sorted()
-            .find(|(_, entity)| entity.owner() == america)
+            .find(|(_, entity)| is_american_yard(entity))
             .map(|(id, _)| id)
-            .expect("the American MCV");
-        let (ax, ay) = at(sim, american_mcv);
+            .expect("the American Construction Yard");
+        let (ax, ay) = at(sim, american_yard);
         let reach = (ax - rx).abs().max((ay - ry).abs()).max(1);
         let toward = (rx + (ax - rx) * 12 / reach, ry + (ay - ry) * 12 / reach);
         let cells = cells_nearest(toward)
@@ -3088,7 +3558,7 @@ mod retail_construction_tests {
                 if capturing.is_none()
                     && entity.mission.current().known() == Some(MissionType::Capture)
                 {
-                    let worn = entity.disguise.as_ref().filter(|d| d.is_disguised());
+                    let worn = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised());
                     capturing = Some((frame, worn.map(|d| (d.type_id(), d.house()))));
                 }
             }
@@ -3134,10 +3604,23 @@ mod retail_construction_tests {
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
         );
+        // As the spy team's test waits: the American yard's deploy sends
+        // every ground Techno of the house to the new base
+        // (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`) and would call
+        // Tanya off the reactor.
+        let america = house_of(scenario.sim(), "Americans");
+        for _ in 0..300 {
+            scenario.tick();
+            if scenario.sim().entities().values().any(|entity| {
+                entity.owner() == america
+                    && entity.category() == crate::map::entities::EntityCategory::Structure
+            }) {
+                break;
+            }
+        }
         let runtime = &mut scenario.runtime;
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let soviet = house_of(sim, "Russians");
-        let america = house_of(sim, "Americans");
         let at = |sim: &Simulation, id| {
             let entity = sim.entities().get(id).expect("spawned");
             (
@@ -3146,8 +3629,7 @@ mod retail_construction_tests {
             )
         };
         let mcv_of = |sim: &Simulation, house| {
-            sim.substrate
-                .entities
+            sim.entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == house)
                 .map(|(id, _)| id)
@@ -3172,15 +3654,14 @@ mod retail_construction_tests {
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
             tanya,
             Some(TargetKind::Entity(reactor)),
             rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let (mut sabotage, mut planted, mut died) = (None, None, None);
@@ -3198,7 +3679,7 @@ mod retail_construction_tests {
                 && let Some(pending) = sim
                     .entities()
                     .get(reactor)
-                    .and_then(|reactor| reactor.pending_c4_detonation.pending())
+                    .and_then(|reactor| reactor.building.pending_c4_detonation.pending())
             {
                 planted = Some((frame, pending));
             }
@@ -3252,7 +3733,7 @@ mod retail_construction_tests {
                     entity.owner() == soviet
                         && !entity.death.is_dying()
                         && sim.interner.resolve(entity.type_ref()) == "HARV"
-                        && entity.radio_contacts.is_empty()
+                        && entity.seldom.radio_contacts.is_empty()
                         && entity.mission.current() == harvest
                         && entity
                             .miner
@@ -3269,7 +3750,7 @@ mod retail_construction_tests {
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let strength = rules.object("HARV").expect("retail HARV").strength;
         let at = {
-            let entity = sim.substrate.entities.get_mut(miner).unwrap();
+            let entity = sim.entity_mut_for_test(miner).unwrap();
             entity.health.set_for_test(strength / 2);
             (
                 i32::from(entity.position.rx()),
@@ -3296,7 +3777,7 @@ mod retail_construction_tests {
             tick_with_due_commands(&mut scenario);
             let sim = scenario.sim();
             let entity = sim.entities().get(miner).expect("the miner lives");
-            let refinery = entity.radio_contacts.slot(0).filter(|&dock| {
+            let refinery = entity.seldom.radio_contacts.slot(0).filter(|&dock| {
                 sim.entities().get(dock).is_some_and(|dock| {
                     dock.owner() == soviet && sim.interner.resolve(dock.type_ref()) == "NAREFN"
                 })
@@ -3307,7 +3788,7 @@ mod retail_construction_tests {
             {
                 entered = Some(frame);
             }
-            if entered.is_some() && entity.tether.partner().is_some() {
+            if entered.is_some() && entity.seldom.tether.partner().is_some() {
                 docked = Some(frame);
                 break;
             }
@@ -3466,7 +3947,7 @@ mod retail_construction_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_special_flags_tests {
     use super::*;
 
@@ -3514,6 +3995,46 @@ mod launch_special_flags_tests {
         assert!(
             !plain.sim().session.harvester_immune(),
             "the default skirmish session leaves the bit clear"
+        );
+    }
+}
+
+#[cfg(all(test, tests_scenario))]
+mod launch_alliance_tests {
+    use super::{battle_session, load_session};
+
+    /// A skirmish launch never reads a map House's `Allies=`: gamemd reads it
+    /// in `HouseClass::Read_Scenario_INI @ 0x00500B40`, which an authored map
+    /// reaches only through `HouseClass::Read_INI @ 0x005009B0`, called in
+    /// campaigns alone (`0x0068776E..0x006877B9`). XMP29U2's `[Neutral]`
+    /// names Americans, here the human's House. A pair with Special cannot
+    /// probe this: Post_Map_Init allies Special with every House
+    /// (`0x00686A9E..0x00686AC1`).
+    #[test]
+    fn a_skirmish_launch_leaves_neutral_without_the_maps_allies() {
+        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut session = battle_session(
+            "XMP29U2.MAP",
+            &[(
+                crate::skirmish_launch::LaunchCountry::America,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        session.humans[0].name = "Americans".to_string();
+        let scene = load_session(&root, "XMP29U2.MAP", 0x1234_5678, session).unwrap();
+        let sim = scene.sim();
+        let neutral = sim.interner().get("Neutral").unwrap();
+        let human = sim.interner().get("Americans").unwrap();
+        assert!(
+            sim.houses()
+                .get(&human)
+                .is_some_and(|house| house.is_human())
+        );
+        assert!(
+            !sim.house_alliances()
+                .is_allied(sim.interner(), neutral, human)
         );
     }
 }

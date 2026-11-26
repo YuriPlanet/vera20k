@@ -48,11 +48,13 @@
 //! Unlimbo/PerCell/Limbo rather than the lists.
 //!
 //! RESIDUAL: a Jumpjet's hold and cruise leave its lists alone
-//! (`0x0054D0FF..0x0054D134`), so one that sinks below two levels there counts
-//! as listed by that derivation before its next Mark lists it, and
-//! `Simulation::debug_assert_lifecycle_consistent` reports it. Trigger: a
-//! Jumpjet below two levels while it holds or cruises; at a cruise height of
-//! 500 that needs ground three levels higher beneath it before it climbs.
+//! (`0x0054D0FF..0x0054D134`), so one below two levels there counts as listed
+//! by that derivation before its next Mark lists it;
+//! `Simulation::debug_assert_lifecycle_consistent` passes over those two
+//! states. Trigger: a Jumpjet below two levels while it holds or cruises:
+//! ground three levels higher beneath a cruise at 500, a take-off over its
+//! own destination cell (`0x0054BD10`), or a `LandNearby=` re-aim low in its
+//! descent, each until it climbs.
 //! Effect: in a world without an overlay grid, its cell counts toward the
 //! blocker plane before native lists it. Frequency: unmeasured. Risk: a
 //! different hierarchy-gate verdict there, no other state.
@@ -178,9 +180,14 @@ pub(super) fn raw_occupation_plane(
     path_grid: Option<&PathGrid>,
 ) -> ((u16, u16), MovementLayer) {
     let at = ((coord.x / 256) as u16, (coord.y / 256) as u16);
-    let ground = ground_pose::ground_surface_z_at([coord.x, coord.y], false, terrain, path_grid)
-        .unwrap_or(coord.z);
-    let deck = coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+    let deck_surface =
+        ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, path_grid)
+            .unwrap_or_else(|| {
+                coord
+                    .z
+                    .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+            });
+    let deck = coord.z >= deck_surface
         && (!needs_structural
             || terrain
                 .and_then(|terrain| terrain.cell(at.0, at.1))
@@ -221,13 +228,13 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.tether.partner().is_some())
+            .is_some_and(|entity| entity.seldom.tether.partner().is_some())
         {
             crate::sim::radio::transmit_to_contact(
                 self,
@@ -247,7 +254,20 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        self.foot_mark_remove_with(id, rules, registry, frame_effects, true)
+    }
+
+    /// [`Self::foot_mark_remove`], with the Pick_Up's Recalc only when
+    /// `recalc` asks for it ([`Self::foot_mark_query_scope`]).
+    fn foot_mark_remove_with(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -256,8 +276,39 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_pick_up(id, rules, registry);
+        self.foot_pick_up(id, rules, registry, recalc);
         true
+    }
+
+    /// Mark0, a query, Mark1: the fresh arm's `4B345B..4B34D1` asks the entry
+    /// question with its own mark dropped so the Cell answers without it.
+    /// `body` asks about a Cell other than the one the mark holds, so nothing
+    /// reads the unmarked state: the pair's two Recalcs (`47D2B0` after Mark0
+    /// and Mark1) would recompute the held Cell from the same occupancy (minus
+    /// list order, which the structure question ignores) and end where they
+    /// started. Skip just those two, and keep the Recalc a mark that really
+    /// moves a Foot still runs.
+    ///
+    /// Sim-scale deviation: native runs both Recalcs, so a replay that marks
+    /// and unmarks in this scope pays two Recalcs fewer than gamemd does. The
+    /// Cell they address is the one the mark held, and the Recalc reads no
+    /// Foot in it, so the pair leaves its attributes as they were. Bridge
+    /// Cells are where Recalc does the most work: a 200-tick match on
+    /// `Arctic_Circle_16_Ice_Passages.map` kept its final hash with the skip.
+    pub(crate) fn foot_mark_query_scope<R>(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+        body: impl FnOnce(&mut Simulation) -> R,
+    ) -> R {
+        let marked = self.foot_mark_remove_with(id, rules, registry, frame_effects, false);
+        let answer = body(self);
+        if marked {
+            self.foot_mark_put_with(id, rules, registry, &mut |_, _| {}, frame_effects, false);
+        }
+        answer
     }
 
     /// `MapClass::Pick_Up` (`0x005687F0`) of a Foot: at the Cell and on the
@@ -270,6 +321,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
+        recalc: bool,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -285,11 +337,14 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             false,
+            rules.ares_form(),
         ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
         }
-        self.recalculate_track_cell(cell, rules, registry);
+        if recalc {
+            self.recalculate_track_cell(cell, rules, registry);
+        }
     }
 
     pub(crate) fn foot_mark_put(
@@ -297,7 +352,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_mark_put_observed(id, rules, registry, &mut |_, _| {}, frame_effects)
     }
@@ -311,7 +366,21 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        self.foot_mark_put_with(id, rules, registry, receive, frame_effects, true)
+    }
+
+    /// [`Self::foot_mark_put_observed`], with the Place_Down's Recalc only
+    /// when `recalc` asks for it ([`Self::foot_mark_query_scope`]).
+    fn foot_mark_put_with(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        receive: &mut impl FnMut(&mut Simulation, u64),
+        frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -320,7 +389,7 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_place_down(id, rules, registry, receive, frame_effects);
+        self.foot_place_down(id, rules, registry, receive, frame_effects, recalc);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::CellMarked);
         true
@@ -339,7 +408,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -354,10 +424,10 @@ impl Simulation {
         self.substrate
             .occupancy
             .add(cell.0, cell.1, id, layer, sub_cell, insertion);
-        self.discover_cell_put_object(
+        self.discover_by_player(
             id,
-            cell,
-            crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
+            Some(cell),
+            crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
         );
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);
@@ -368,11 +438,14 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             true,
+            rules.ares_form(),
         ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
         }
-        self.recalculate_track_cell(cell, rules, registry);
+        if recalc {
+            self.recalculate_track_cell(cell, rules, registry);
+        }
     }
 
     /// The Cell Pick_Up/Place_Down address and the OnBridge list, or `None`
@@ -395,26 +468,43 @@ impl Simulation {
         Some((cell, layer))
     }
 
-    /// The raw (Cell, plane) whose vehicle bit Mark(UP) clears for the Unit
-    /// `id` ([`Self::foot_mark_remove`]), read without clearing it: once
-    /// Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
-    /// [`Self::foot_mark_raw`] clears the plane its Location picks.
-    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Option<((u16, u16), MovementLayer)> {
-        let entity = self.substrate.entities.get(id)?;
+    /// The raw (Cell, plane) pairs whose vehicle bit Mark(UP) clears for the
+    /// Unit `id` ([`Self::foot_mark_remove`]), read without clearing them:
+    /// once Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
+    /// [`Self::foot_mark_raw`] clears the plane its Location picks, and the
+    /// plane its last mark chose where Ares recorded one
+    /// ([`Self::track_raw_mark_at`]).
+    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Vec<((u16, u16), MovementLayer)> {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Vec::new();
+        };
         if entity.category() != EntityCategory::Unit
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
             || !entity.foot_occupation_enabled()
+            || self.foot_mark_cell(id).is_none()
         {
-            return None;
+            return Vec::new();
         }
-        self.foot_mark_cell(id)?;
-        Some(raw_occupation_plane(
+        let (at, layer) = raw_occupation_plane(
             ground_pose::position_world_coord(&entity.position),
             false,
             self.resolved_terrain.as_ref(),
             self.path_grid.as_deref(),
-        ))
+        );
+        let mut cleared = vec![(at, layer)];
+        // Only Ares' raw mark records a plane; `None` leaves the stock list.
+        if let Some(deck) = entity.ares_alt_occupation() {
+            let last = if deck {
+                MovementLayer::Bridge
+            } else {
+                MovementLayer::Ground
+            };
+            if last != layer {
+                cleared.push((at, last));
+            }
+        }
+        cleared
     }
 
     /// Remove/AddContent's receiver tail: Infantry returns first
@@ -426,6 +516,7 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         put: bool,
+        ares: bool,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
@@ -434,7 +525,7 @@ impl Simulation {
             return false;
         }
         let coord = ground_pose::position_world_coord(&entity.position);
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put)
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put, ares)
     }
 
     /// The object's own raw occupation receiver on `coord`, vt+0xF0 (PUT) or
@@ -443,6 +534,8 @@ impl Simulation {
     /// `0x005F60A0`/`0x005F6120` (0x40). Mark reaches it through
     /// [`Self::foot_mark_raw`]; a direct call (the Jumpjet grounded reset,
     /// `0x0054D42F`) has no Foot enable gate. Whether a receiver ran.
+    /// `ares` is the game's `RuleSet::ares_form`, for the Unit receiver
+    /// ([`Self::track_raw_mark_at`]).
     pub(crate) fn object_raw_receiver_at(
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
@@ -450,13 +543,22 @@ impl Simulation {
         id: u64,
         coord: DriveCoord,
         put: bool,
+        ares: bool,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         match entity.category() {
             EntityCategory::Unit => {
-                Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+                Self::track_raw_mark_at(
+                    substrate,
+                    path_grid,
+                    resolved_terrain,
+                    id,
+                    coord,
+                    put,
+                    ares,
+                );
             }
             EntityCategory::Infantry => {
                 let owner = entity.owner();
@@ -512,6 +614,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_mark_tests.rs"]
 mod tests;

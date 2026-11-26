@@ -65,6 +65,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX,
                                UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_EIP,
                                UC_X86_REG_FPCW)
 from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import require
 from tools.spatial_oracle import building_construction as bc
 from tools.spatial_oracle import slave_manager as sm
 from tools.spatial_oracle import refinery_dock as rd
@@ -1492,7 +1493,7 @@ def depot_initialize_foot_inputs(vm, names, supplied_state, trace):
         vm.u.reg_write(UC_X86_REG_EBX, 0)
         initialized = vm.block(DEPOT_FOOT_INPUT_INITIALIZERS[name], esi=rd.ACTOR)
         assert initialized['before'] == initialized['after']
-        assert vm.steps.pop() is initialized
+        require(vm.steps.pop() is initialized, f'{name}: initializer is not the last VM step')
         initializers.append(dict(name=name, entry=initialized['entry'],
                                  end_exclusive=initialized['end_exclusive'],
                                  registers=dict(esi=hex(rd.ACTOR), ebx='0x0', ebp='0x0',

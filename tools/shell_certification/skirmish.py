@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 from .core import (
-    ALLOWED_SURFACE_FORMATS, ValidationError, _parse_json_bytes,
+    ALLOWED_SURFACE_FORMATS, ValidationError, parse_json_bytes,
     _read_regular_bytes, _require_array, _require_exact_keys, _require_int,
     _require_object, _require_string, _require_value, sha256_bytes,
 )
@@ -36,7 +36,7 @@ def validate_bundle(directory: Path) -> dict:
     if not directory.is_dir() or {p.name for p in directory.iterdir()} != {"capture.json", "frame.bgra"}:
         raise ValidationError("capture inventory must be exactly capture.json and frame.bgra")
     raw = _read_regular_bytes(directory / "capture.json", "skirmish manifest", maximum_length=1024 * 1024)
-    manifest = _require_object(_parse_json_bytes(raw, "skirmish manifest"), "manifest")
+    manifest = _require_object(parse_json_bytes(raw, "skirmish manifest"), "manifest")
     _require_exact_keys(manifest, (
         "schema_version", "checkpoint", "parity_certification", "presenter_domain",
         "surface", "cursor", "route", "dialog_resource_id", "capture_frame",
@@ -91,7 +91,7 @@ def validate_bundle(directory: Path) -> dict:
     _typed_fields(selection["options"], {
         "credits": int, "speed": int, "units": int, "short_game": bool,
         "super_weapons": bool, "build_off_ally": bool, "crates": bool,
-        "mcv_redeploy": bool, "zoom": bool,
+        "mcv_redeploy": bool,
     }, "options")
     for opponent in _require_array(selection["opponents"], "opponents"):
         _typed_fields(opponent, {"visible": bool, "enabled": bool, "type": str, **row_fields}, "opponent")

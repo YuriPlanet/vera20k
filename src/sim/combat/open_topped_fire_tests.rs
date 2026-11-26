@@ -123,7 +123,7 @@ fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
             y + 2,
             0,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .unwrap_or_else(|| panic!("{kind} spawns"));
     sim.resolve_type_handles(&resources.rules);
@@ -139,7 +139,9 @@ fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
             .substrate
             .entities
             .get(rider)
-            .is_some_and(|entity| entity.passenger_role.open_transport_id() == Some(fortress.bfrt))
+            .is_some_and(|entity| {
+                entity.passenger_role().open_transport_id() == Some(fortress.bfrt)
+            })
         {
             return rider;
         }
@@ -156,7 +158,7 @@ fn retail_frame(scenario: &mut HeadlessScenario, orders: Vec<CommandEnvelope>) -
             &orders,
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("retail frame")
 }
@@ -217,14 +219,14 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
     {
         let sim = fortress.scenario.sim();
         let transport = sim.substrate.entities.get(bfrt).unwrap();
-        let cargo = transport.passenger_role.cargo().expect("a transport");
+        let cargo = transport.passenger_role().cargo().expect("a transport");
         assert_eq!(
             cargo.passengers(),
             gis.iter().rev().copied().collect::<Vec<_>>()
         );
         for &id in &gis {
             let gi = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(gi.passenger_role.inside_transport(), Some((bfrt, true)));
+            assert_eq!(gi.passenger_role().inside_transport(), Some((bfrt, true)));
             assert!(gi.lifecycle.in_limbo());
             assert_eq!(gi.mission.current().known(), Some(MissionType::Guard));
             assert!(gi.attack_target.target().is_none());
@@ -248,15 +250,9 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         } = &fortress.scenario.runtime;
         let rules = &resources.rules;
         let object = rules.object("BFRT").unwrap();
-        let art = rules
-            .art()
-            .get(&object.image)
-            .or_else(|| rules.art().get(&object.id))
-            .expect("BFRT art");
         let transport = sim.substrate.entities.get(bfrt).unwrap();
-        let ports: [crate::rules::flh::Flh; 5] = std::array::from_fn(|port| {
-            art.alternate_fire_flh(port, object.turret_count, object.weapon_count)
-        });
+        let ports: [crate::rules::flh::Flh; 5] =
+            std::array::from_fn(|port| object.alternate_fire_flh(port));
         (
             ports,
             crate::sim::movement::ground_pose::object_world_z_leptons(
@@ -304,7 +300,7 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
             .entities
             .get(bfrt)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         let port = cargo
@@ -557,7 +553,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
                 y + 2,
                 0,
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )
             .expect("GI spawns");
         sim.resolve_type_handles(&resources.rules);
@@ -576,7 +572,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
             .entities
             .get(gi)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport()
             .is_some_and(|(_, open)| open == true)
     };
@@ -610,7 +606,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
             "frame {frame}: a stationary carrier retains the arrival subcell"
         );
         assert_eq!(
-            rider.passenger_role.open_transport_id(),
+            rider.passenger_role().open_transport_id(),
             Some(transport.stable_id())
         );
         for cx in x - 3..=x + 1 {
@@ -775,7 +771,9 @@ fn retail_battle_fortress_permitted_stock_riders_emit_their_weapons() {
                         .substrate
                         .entities
                         .get(target_id)
-                        .is_some_and(|victim| victim.mind_control.controller() == Some(rider))
+                        .is_some_and(|victim| {
+                            victim.seldom.mind_control.controller() == Some(rider)
+                        })
                     {
                         break;
                     }
@@ -784,7 +782,7 @@ fn retail_battle_fortress_permitted_stock_riders_emit_their_weapons() {
                 let sim = fortress.scenario.sim();
                 let victim = sim.substrate.entities.get(target_id).unwrap();
                 assert_eq!(
-                    victim.mind_control.controller(),
+                    victim.seldom.mind_control.controller(),
                     Some(rider),
                     "{kind} captures through its own manager"
                 );

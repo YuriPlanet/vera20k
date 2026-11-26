@@ -39,6 +39,19 @@ pub enum NetworkInterruption {
     QueueFull,
     #[error("network connection stopped responding")]
     ConnectionFailed,
+    /// VERA relay adaptation: the relay sent a record this build cannot read.
+    #[error("this online match needs a newer VERA20k")]
+    NewerClientRequired,
+    /// VERA relay adaptation: the relay refused this game's start because it
+    /// differs from the start another player's game already offered.
+    #[error("this game's match start differs from another player's")]
+    StartMismatch,
+    /// VERA relay adaptation: the relay closed the match before it started,
+    /// which a player leaving does.
+    #[error("another player left before the match started")]
+    StartCancelled,
+    #[error("the game servers lost contact with each other")]
+    FederationLost,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -71,13 +84,17 @@ impl Simulation {
     /// is the first remaining admitted human in shared House order, after
     /// synchronized EXIT/REMOVEPLAYER retires the old timing row. Neither a
     /// local peer list nor a second cached host participates in this decision.
+    ///
+    /// The result is a command sender, which is its House's index unless
+    /// players share Houses (VERA shared control).
     pub fn network_timing_host_house(&self) -> Option<i8> {
         let timing = self.session.network_command_timing()?;
         let wol = self.session.game_mode() == crate::sim::scenario_session::ScenarioGameMode::Wol;
-        let eligible = |house_id: i8| {
-            timing.admits_source(house_id)
-                && usize::try_from(house_id)
-                    .ok()
+        let eligible = |sender: i8| {
+            timing.admits_source(sender)
+                && self
+                    .session
+                    .network_source_house(sender)
                     .and_then(|index| self.houses.order().get(index))
                     .and_then(|owner| self.houses.get(owner))
                     .is_some_and(|house| {
@@ -87,12 +104,10 @@ impl Simulation {
         if wol && eligible(timing.host_house()) {
             return Some(timing.host_house());
         }
-        self.houses
-            .order()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, _)| i8::try_from(index).ok())
-            .find(|&house| eligible(house))
+        self.session
+            .network_sources(self.houses.order().len())
+            .map(|(sender, _)| sender)
+            .find(|&sender| eligible(sender))
     }
 
     /// Borrow the existing EventClass queues for a post-Logic network pass.
@@ -110,8 +125,8 @@ impl Simulation {
     /// this allowance neither reserves mirrors nor changes either command queue.
     pub fn network_mirror_allowance(&self) -> usize {
         let synchronized = self.synchronized_network_command_count();
-        if self.session.game_mode().is_network() {
-            let source_house = self.local_command_house().unwrap_or(0);
+        if self.session.execution_topology().is_lockstep() {
+            let source_house = self.local_command_source().unwrap_or(0);
             NETWORK_COMMAND_CAPACITY.saturating_sub(synchronized).min(
                 NETWORK_SOURCE_DOLIST_CAPACITY
                     .saturating_sub(self.pending_commands.native_house_len(source_house)),
@@ -160,6 +175,15 @@ impl<'a> NetworkCommandQueues<'a> {
     pub fn game_speed(&self) -> i32 {
         self.sim.session.game_options().game_speed
     }
+
+    /// Modern relay policy: freeze the lobby-certified cadence before the
+    /// initial world agreement. Native LAN and solo online keep their existing
+    /// TIMING/PROCESS_TIME path; no later local process sample changes this clock.
+    pub fn configure_sequenced_clock(&mut self, frames_per_second: u16) {
+        self.sim
+            .session
+            .configure_sequenced_clock(frames_per_second);
+    }
     pub fn fog_of_war(&self) -> bool {
         self.sim.session.game_options().fog_of_war
     }
@@ -186,17 +210,46 @@ impl<'a> NetworkCommandQueues<'a> {
     /// cannot silently turn into a locally executed network command: its native
     /// producer must be supplied before this transport can send it.
     pub fn local_records(&self) -> Result<Vec<&CommandRecord>, NetworkQueueError> {
+        self.local_records_after(std::iter::empty())
+    }
+
+    /// Verify an immutable in-flight prefix against OutList, then borrow the
+    /// unreserved suffix under the same mirror capacity. Accepted batches
+    /// still retire through `commit_local_submission`; this read never drains
+    /// or creates a second authoritative command queue.
+    pub fn local_records_after<'r>(
+        &self,
+        reserved: impl IntoIterator<Item = &'r CommandRecord>,
+    ) -> Result<Vec<&CommandRecord>, NetworkQueueError> {
+        let mut sources = self.sim.local_commands.iter();
+        let mut reserved_count = 0;
+        for retained in reserved {
+            let source = sources
+                .next()
+                .ok_or(NetworkQueueError::ChangedLocalEvent {
+                    index: reserved_count,
+                })?
+                .record()
+                .ok_or(NetworkQueueError::UnencodedLocalEvent {
+                    index: reserved_count,
+                })?;
+            if source.opcode() != retained.opcode() || source.payload() != retained.payload() {
+                return Err(NetworkQueueError::ChangedLocalEvent {
+                    index: reserved_count,
+                });
+            }
+            reserved_count += 1;
+        }
         let mut records = Vec::new();
-        for (index, entry) in self
-            .sim
-            .local_commands
-            .iter()
+        for (offset, entry) in sources
             .take(
                 self.mirror_allowance()
-                    .min(crate::sim::command_queue::OUT_LIST_CAPACITY),
+                    .min(crate::sim::command_queue::OUT_LIST_CAPACITY)
+                    .saturating_sub(reserved_count),
             )
             .enumerate()
         {
+            let index = reserved_count + offset;
             match entry.record() {
                 Some(record) => records.push(record),
                 None if records.is_empty() => {
@@ -219,21 +272,7 @@ impl<'a> NetworkCommandQueues<'a> {
         &mut self,
         mirrors: &[CommandRecord],
     ) -> Result<(), NetworkQueueError> {
-        let allowance = self.mirror_allowance().min(self.local_len());
-        if mirrors.len() > allowance {
-            return Err(NetworkQueueError::MirrorCapacity {
-                count: mirrors.len(),
-                allowance,
-            });
-        }
-        for (index, (source, mirror)) in self.sim.local_commands.iter().zip(mirrors).enumerate() {
-            let source = source
-                .record()
-                .ok_or(NetworkQueueError::UnencodedLocalEvent { index })?;
-            if source.opcode() != mirror.opcode() || source.payload() != mirror.payload() {
-                return Err(NetworkQueueError::ChangedLocalEvent { index });
-            }
-        }
+        self.validate_local_prefix(mirrors)?;
         let sources: Vec<_> = self.sim.local_commands.take_prefix(mirrors.len()).collect();
         for (source, mirror) in sources.into_iter().zip(mirrors) {
             let QueuedCommand::Native {
@@ -249,6 +288,7 @@ impl<'a> NetworkCommandQueues<'a> {
                     diagnostic_issue_tick,
                 },
                 true,
+                crate::sim::command_queue::DoListInsertion::Back,
             );
             assert!(
                 accepted,
@@ -258,15 +298,58 @@ impl<'a> NetworkCommandQueues<'a> {
         Ok(())
     }
 
+    /// VERA sequenced lockstep: an acknowledged submission leaves OutList,
+    /// but is not a local mirror. Only its immutable relay commit may enter
+    /// DoList, exactly as for every other sender. The retained transport batch
+    /// is an unacknowledged prefix, never a second simulation command queue.
+    pub fn commit_local_submission(
+        &mut self,
+        records: &[CommandRecord],
+    ) -> Result<(), NetworkQueueError> {
+        self.validate_local_prefix(records)?;
+        self.sim
+            .local_commands
+            .take_prefix(records.len())
+            .for_each(drop);
+        Ok(())
+    }
+
+    fn validate_local_prefix(&self, mirrors: &[CommandRecord]) -> Result<(), NetworkQueueError> {
+        let allowance = self.mirror_allowance().min(self.local_len());
+        if mirrors.len() > allowance {
+            return Err(NetworkQueueError::MirrorCapacity {
+                count: mirrors.len(),
+                allowance,
+            });
+        }
+        for (index, (source, mirror)) in self.sim.local_commands.iter().zip(mirrors).enumerate() {
+            let source = source
+                .record()
+                .ok_or(NetworkQueueError::UnencodedLocalEvent { index })?;
+            if source.opcode() != mirror.opcode() || source.payload() != mirror.payload() {
+                return Err(NetworkQueueError::ChangedLocalEvent { index });
+            }
+        }
+        Ok(())
+    }
+
     /// Decoder64BDD0 admits each expanded event immediately. A false return
     /// preserves the already admitted prefix and lets the decoder report its
     /// native queue-full failure; no rollback or silent eviction is permitted.
+    ///
+    /// VERA network admission, alike on every client: a received plan
+    /// dispatch is dropped as if admitted, since each client generates its
+    /// own. gamemd runs one, so a peer could clear any actor's dispatch latch
+    /// (`0x006386E0`).
     pub fn admit_received(&mut self, record: CommandRecord) -> bool {
+        if super::planning::planning_dispatch_record(&record) {
+            return true;
+        }
         self.sim.admit_native_command_record(record)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::sim::command::{
@@ -277,7 +360,7 @@ mod tests {
     /// Building4439C5/44367B uses each actor's House; ARCHIVE4C6780
     /// occupies one OutList slot per selected producer, in click order.
     #[test]
-    fn local_rally_records_preserve_each_actor_and_the_accepted_prefix() {
+    fn local_rally_records_preserve_each_actor_and_refuse_a_partial_batch() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
@@ -328,10 +411,12 @@ mod tests {
             }
         }
         sim.take_frame_commands_for_test();
+        // Sim-scale deviation: native ARCHIVE appends keep a prefix of the
+        // producers; VERA refuses a batch its queue cannot hold whole.
         let stop = sim.encode_stop_record(local, first).unwrap();
-        for _ in 0..127 {
-            assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop.clone(), 41)));
-        }
+        let stop = CommandEnvelope::synchronized(stop, 41);
+        let free = sim.available_local_command_slots() - 1;
+        assert!(sim.issue_local_commands(std::iter::repeat_n(stop, free)));
         assert!(!sim.issue_local_command(CommandEnvelope::new(
             local,
             41,
@@ -341,13 +426,10 @@ mod tests {
                 producer_ids: vec![second, first],
             }
         )));
-        let queues = sim.network_command_queues();
-        let records = queues.local_records().unwrap();
-        assert_eq!(records.len(), 128);
-        assert_eq!(records[127].opcode(), 0x1e);
         assert_eq!(
-            ArchiveRecord::decode(records[127]).unwrap().entity_id,
-            second as i32
+            sim.pending_local_command_count(),
+            free,
+            "neither producer's rally is queued"
         );
     }
 
@@ -433,23 +515,37 @@ mod tests {
         .encode()
         .unwrap();
         let mut queues = NetworkCommandQueues::new(&mut sim);
-        for _ in 0..crate::sim::command_queue::DO_LIST_CAPACITY {
+        let capacity = crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
+        for _ in 0..capacity {
             assert!(queues.admit_received(record.clone()));
         }
         assert_eq!(queues.mirror_allowance(), 0);
         assert!(!queues.admit_received(record));
-        assert_eq!(
-            queues.synchronized_len(),
-            crate::sim::command_queue::DO_LIST_CAPACITY
-        );
+        assert_eq!(queues.synchronized_len(), capacity);
         assert!(
             sim.pending_commands
                 .iter()
                 .all(|entry| !entry.is_processed())
         );
     }
+
+    /// A peer's plan dispatch (MEGAMISSION flag 2) never reaches DoList and
+    /// is not a queue-full failure; a plan append (flag 1) still is admitted.
+    #[test]
+    fn received_plan_dispatch_is_dropped() {
+        let mut sim = Simulation::new();
+        let mut record =
+            CommandRecord::encode(crate::sim::command::MEGAMISSION_OPCODE, 0, 7, &[]).unwrap();
+        record.payload_mut()[22] = 2;
+        let mut queues = NetworkCommandQueues::new(&mut sim);
+        assert!(queues.admit_received(record.clone()));
+        assert_eq!(queues.synchronized_len(), 0);
+        record.payload_mut()[22] = 1;
+        assert!(queues.admit_received(record));
+        assert_eq!(queues.synchronized_len(), 1);
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "network_wait_tests.rs"]
 mod network_wait_tests;

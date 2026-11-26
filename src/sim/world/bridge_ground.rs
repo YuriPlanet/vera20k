@@ -26,7 +26,7 @@ pub(super) fn apply(
     registry: Option<&OverlayTypeRegistry>,
     rx: u16,
     ry: u16,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let warhead_ref = sim.interner.intern(&rules.bridge_warheads.c4_name);
     let mut current = members(sim, rx, ry).next();
@@ -88,7 +88,7 @@ pub(super) fn apply(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -105,7 +105,7 @@ mod tests {
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(8, 8, cells));
         sim
     }
@@ -120,7 +120,7 @@ mod tests {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         // Supply the fallout scene's pose after the constructor's zero Location.
@@ -162,9 +162,6 @@ mod tests {
              Verses=150%,100%,100%,90%,50%,50%,100%,150%,30%,100%,100%\n",
         ), &art).unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         rules
     }
 
@@ -193,7 +190,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/bridge_zero_health_receiver.json",
@@ -214,7 +211,7 @@ mod tests {
                     SimSoundEvent::VocAt { sound_id, .. }
                     | SimSoundEvent::VocAtCoord { sound_id, .. }
                     | SimSoundEvent::EntityDied { die_sound_id: sound_id, .. }
-                        if sound_id == "GIDie"
+                        if sound_id.name_in(&rules) == "GIDie"
                 )
             })
             .count();
@@ -244,6 +241,7 @@ mod tests {
                 .entities
                 .get(gi)
                 .unwrap()
+                .seldom
                 .kill_record
                 .is_recorded()
         );
@@ -251,7 +249,7 @@ mod tests {
         let head = sim.substrate.entities.get(terror).unwrap();
         assert!(!head.death.is_dying() && head.lifecycle.object_alive());
         assert_eq!(head.health.current(), 0);
-        assert!(head.kill_record.is_recorded());
+        assert!(head.seldom.kill_record.is_recorded());
         assert!(sim.live_object_order_snapshot().contains(&terror));
         // Drive its actual Die2 clock through its ordinary turns and confirm
         // UnInit does not count either fatal callback again. This test does
@@ -268,12 +266,12 @@ mod tests {
                 break;
             }
             sim.session.set_binary_frame_for_test(frame);
-            sim.advance_live_object_turn(terror, &rules, Default::default())
+            sim.advance_live_object_turn(terror, &rules, &mut Default::default())
                 .expect("the corpse's ordinary turn completes");
         }
         let head = sim.substrate.entities.get(terror).unwrap();
         assert!(!head.lifecycle.object_alive());
-        assert!(head.kill_record.is_recorded());
+        assert!(head.seldom.kill_record.is_recorded());
         assert!(!sim.live_object_order_snapshot().contains(&terror));
         assert_eq!(sim.houses[&owner].stats().units_lost(), 2);
         assert_eq!(sim.houses[&owner].stats().units_killed(), 1);
@@ -297,7 +295,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!sim.sound_events.iter().any(|event| matches!(
             event,
@@ -339,7 +337,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let hut = sim.substrate.entities.get(hut).unwrap();
         assert_eq!(hut.health.current(), hut_type.strength);
@@ -386,7 +384,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.entities.get(bunker).unwrap().health.current(),
@@ -429,7 +427,7 @@ mod tests {
                 None,
                 4,
                 4,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let tree = &sim.terrain_objects.objects()[&id];
             if wood {
@@ -482,7 +480,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.entities.get(head).unwrap().health.current(),
@@ -525,7 +523,7 @@ mod tests {
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(8, 8, cells));
         let mut create = |name, x, marked| {
             let id = sim
@@ -537,7 +535,7 @@ mod tests {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             // The unmarked contrast has this same pose without Cell membership.
@@ -574,7 +572,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         for id in [older, newer, building] {
             assert_eq!(

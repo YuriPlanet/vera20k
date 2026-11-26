@@ -34,11 +34,10 @@ fn xyz(value: &Value) -> [i32; 3] {
 }
 
 fn install_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap()).into();
-    sim.scenario_rng =
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
 }
 
 fn rng(sim: &Simulation) -> Value {
@@ -72,7 +71,7 @@ impl Scene {
     fn new(rules: &RuleSet, row: &Value) -> Self {
         let input = &row["input"];
         let mut sim = crate::sim::arena_fixture::rival_arena(rules, 31);
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         let mut actors = Vec::new();
         for (kind, owner, at) in [
             ("DISK", "Americans", input["source"].clone()),
@@ -105,12 +104,12 @@ impl Scene {
             &native()["lifecycle_priors"]["source_report_selector"],
         ) as u16);
         assert!(!input["on_bridge"].as_bool().unwrap());
-        assert_eq!(entity.weapon_burst.index(), int(&input["burst"]));
+        assert_eq!(entity.seldom.weapon_burst.index(), int(&input["burst"]));
         sim.resolve_type_handles(rules);
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
-        sim.session
-            .set_tick_for_test(u64::from(sim.session.binary_frame()));
+        let session = &mut *sim.session;
+        session.set_tick_for_test(u64::from(session.binary_frame()));
         install_rng(&mut sim, &row["rng_before"]);
         let cursor = sim.native_identity_cursor().unwrap();
         Self {
@@ -316,11 +315,11 @@ fn assert_laser(actual: LaserBirth, expected: &Value, context: &str) {
     );
 }
 
-fn sounds(sim: &Simulation, begin: usize) -> Vec<Value> {
+fn sounds(rules: &RuleSet, sim: &Simulation, begin: usize) -> Vec<Value> {
     sim.sound_events[begin..].iter().filter_map(|event| match event {
         SimSoundEvent::VocAt { sound_id, audible_to, rx, ry, sub_x, sub_y, world_z_leptons } => {
             assert!(audible_to.is_none(), "Disk native NULL handle has no House admission gate");
-            Some(json!({"name": sound_id, "coords": [i32::from(*rx) * 256 + sub_x.to_num::<i32>(), i32::from(*ry) * 256 + sub_y.to_num::<i32>(), *world_z_leptons]}))
+            Some(json!({"name": sound_id.name_in(rules), "coords": [i32::from(*rx) * 256 + sub_x.to_num::<i32>(), i32::from(*ry) * 256 + sub_y.to_num::<i32>(), *world_z_leptons]}))
         }
         _ => None,
     }).collect()
@@ -338,7 +337,7 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
     assert_eq!(weapon.range_leptons, int(&priors["range_leptons"]));
     assert_eq!(weapon.laser_duration, int(&priors["duration_byte"]));
     assert_eq!(
-        rules.art().get("DISK").unwrap().primary_fire_flh,
+        rules.object("DISK").unwrap().weapon_flh(0, false),
         [0, 0, 75].into()
     );
     assert_eq!(
@@ -405,10 +404,9 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                             // are not paired native RNG/ID boundaries.
                             paired = false;
                             let id = scene.role(&action["role"]).unwrap();
-                            scene.sim.notify_pointer_expired(
-                                id,
-                                UninitContext::new(rules, Some(&registry)),
-                            );
+                            scene
+                                .sim
+                                .notify_pointer_expired(id, UninitContext::new(rules));
                         }
                         kind => panic!("unexpected action {kind}"),
                     }
@@ -430,9 +428,11 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                     let output_start = scene.sim.lifecycle_outputs.len();
                     let sound_start = scene.sim.sound_events.len();
                     let (_, receipts) = trace_area_visits(|| {
-                        scene
-                            .sim
-                            .tick_disk_lasers(rules, Some(&registry), FrameEffects::default())
+                        scene.sim.tick_disk_lasers(
+                            rules,
+                            Some(&registry),
+                            &mut FrameEffects::default(),
+                        )
                     });
                     let lasers: Vec<_> = scene.sim.lifecycle_outputs[output_start..]
                         .iter()
@@ -484,10 +484,14 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                         paired = false;
                         damage_count += 1;
                     }
-                    for actual in sounds(&scene.sim, sound_start).into_iter().filter(|event| {
-                        event["name"] == rules.general.disk_laser_charge_up().unwrap()
-                            || event["name"] == weapon.report[0]
-                    }) {
+                    for actual in
+                        sounds(&rules, &scene.sim, sound_start)
+                            .into_iter()
+                            .filter(|event| {
+                                event["name"] == rules.general.disk_laser_charge_up().unwrap()
+                                    || event["name"] == weapon.report[0]
+                            })
+                    {
                         let call = &row["sound_calls"][sound_count];
                         let name = match int(&call["sound_id"]) {
                             0 => rules.general.disk_laser_charge_up().unwrap(),
@@ -511,8 +515,7 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                     let begin = scene.sim.lifecycle_test_events_for_test().len();
                     scene.sim.process_pending_delete_with(
                         rules,
-                        Some(&registry),
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                         1,
                         false,
                     );
@@ -596,14 +599,13 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
             scene.sim.session.set_tick_for_test(u64::from(frame));
             scene
                 .sim
-                .tick_disk_lasers(rules, Some(&registry), FrameEffects::default());
+                .tick_disk_lasers(rules, Some(&registry), &mut FrameEffects::default());
         }
         if pending {
             for _ in 0..2 {
-                scene.sim.notify_pointer_expired(
-                    scene.source,
-                    UninitContext::new(rules, Some(&registry)),
-                );
+                scene
+                    .sim
+                    .notify_pointer_expired(scene.source, UninitContext::new(rules));
             }
             assert_eq!(
                 scene
@@ -626,10 +628,10 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
         // This is a Rust save/resume regression, not native RNG persistence:
         // retail's existing load owner resets Scenario to Seed0. Main/MapGen
         // are retained through that owner's process-state seam.
-        scene.sim.scenario_rng = SimRng::new(0);
+        *scene.sim.scenario_rng = SimRng::new(0);
         let mut resumed = snapshot_copy(&scene.sim);
         resumed.retain_process_state_for_load(super::SnapshotProcessState::Live(&scene.sim));
-        resumed.resolved_terrain = scene.sim.resolved_terrain.clone();
+        *resumed.resolved_terrain = (*scene.sim.resolved_terrain).clone();
         resumed.restore_after_snapshot_load().unwrap();
         resumed.resolve_type_handles(rules);
         resumed
@@ -664,7 +666,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                     let output_start = sim.lifecycle_outputs.len();
                     let sound_start = sim.sound_events.len();
                     let (_, area) = trace_area_visits(|| {
-                        sim.tick_disk_lasers(rules, Some(&registry), FrameEffects::default())
+                        sim.tick_disk_lasers(rules, Some(&registry), &mut FrameEffects::default())
                     });
                     let lasers: Vec<_> = sim.lifecycle_outputs[output_start..]
                         .iter()
@@ -673,14 +675,8 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                             _ => None,
                         })
                         .collect();
-                    let sound = sounds(sim, sound_start);
-                    sim.process_pending_delete_with(
-                        rules,
-                        Some(&registry),
-                        FrameEffects::default(),
-                        1,
-                        false,
-                    );
+                    let sound = sounds(&rules, sim, sound_start);
+                    sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, false);
                     (
                         lasers,
                         sound,
@@ -719,16 +715,15 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
         return;
     };
     let rules = retail.rules;
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let source = sim
-        .spawn_object_with_overlay_registry("DISK", "Americans", 10, 10, 64, &rules, &registry)
+        .spawn_object_with_map_overlays("DISK", "Americans", 10, 10, 64, &rules)
         .expect("stock DISK enters through the ordinary constructor");
     let target = sim
         // Six cells preserves this witness's unrocked source; the MTNK's
         // five-cell weapon cannot counterfire. The first RED used four cells.
-        .spawn_object_with_overlay_registry("MTNK", "Russians", 16, 10, 0, &rules, &registry)
+        .spawn_object_with_map_overlays("MTNK", "Russians", 16, 10, 0, &rules)
         .expect("full-health stock MTNK");
     sim.resolve_type_handles(&rules);
     let health = sim.substrate.entities.get(target).unwrap().health.current();
@@ -743,11 +738,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
     );
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
-            rules,
-            overlay_registry: registry,
-            ..SimResources::empty()
-        },
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     let mut commands = vec![command];
     for frame in 0..300 {
@@ -756,7 +747,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
                 &std::mem::take(&mut commands),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary frame");
         assert!(
@@ -780,4 +771,79 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
         }
     }
     panic!("ordinary Attack never delivered the first Disk discharge");
+}
+
+/// Ares DiskLaserClass_Update_Anim (1004CFF0, hook 0x4A76ED): the retail
+/// DISK's hit always asks for the warhead's flash, and with
+/// `[AudioVisual] DiskLaserAnimEnabled=yes` also plays DiskWH's damage
+/// animation (90 damage selects XGRYMED1).
+#[test]
+fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for enabled in [false, true] {
+        let patch = crate::rules::ini_parser::IniFile::from_str(if enabled {
+            "[AudioVisual]\nDiskLaserAnimEnabled=yes\n"
+        } else {
+            "[AudioVisual]\nDiskLaserAnimEnabled=no\n"
+        });
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        ) else {
+            return;
+        };
+        let mut rules = retail.rules;
+        // The anim's SHP binding comes from the asset loader in the game.
+        rules.bind_anim_frame_count_for_test("XGRYMED1", 10);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        let source = sim
+            .spawn_object_with_map_overlays("DISK", "Americans", 10, 10, 64, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object_with_map_overlays("MTNK", "Russians", 16, 10, 0, &rules)
+            .unwrap();
+        sim.resolve_type_handles(&rules);
+        let health = sim.substrate.entities.get(target).unwrap().health.current();
+        let warhead = sim.interner.intern("DiskWH");
+        let command = CommandEnvelope::new(
+            sim.substrate.entities.get(source).unwrap().owner(),
+            sim.session.tick() + 1,
+            Command::Attack {
+                attacker_id: source,
+                target_id: target,
+            },
+        );
+        let mut runtime = SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(SimResources::new(rules)),
+        };
+        let mut commands = vec![command];
+        let mut flashed = false;
+        for _ in 0..300 {
+            let output = runtime
+                .advance_frame(
+                    &std::mem::take(&mut commands),
+                    67,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
+                .unwrap();
+            flashed |= output.combat_lights.iter().any(|request| {
+                matches!(request,
+                    crate::sim::combat::CombatLightRequest::Impact { warhead_ref, .. }
+                        if *warhead_ref == warhead)
+            });
+            let sim = &runtime.simulation;
+            if sim.substrate.entities.get(target).unwrap().health.current() < health {
+                break;
+            }
+        }
+        let sim = &runtime.simulation;
+        assert!(flashed, "the hit asks for DiskWH's flash ({enabled})");
+        let explosion = sim
+            .anims()
+            .any(|(_, anim)| sim.interner.resolve(anim.type_id()) == "XGRYMED1");
+        assert_eq!(explosion, enabled);
+    }
 }

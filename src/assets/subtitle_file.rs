@@ -265,7 +265,7 @@ fn parse_text(value: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.replace("\\n", "\n"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

@@ -28,8 +28,11 @@ pub(crate) fn birth(v: &Value) -> RadiationBeamBirth {
         to: coord(&v["target"]),
         z_adjust: integer(&v["z_adjust"]),
         color: array::<3>(&v["rgb"]).map(|v| v.try_into().unwrap()),
+        house: None,
+        house_color: crate::sim::combat::radiation_beam::BeamHouseColor::None,
         duration: integer(&v["duration"]),
         amplitude: NativeF64Bits::from_bits(bits(&v["amplitude_f64_le_hex"])),
+        eruption: false,
     }
 }
 pub(crate) fn viewport(row: &Value) -> SurfaceLineViewport {
@@ -115,7 +118,7 @@ fn original_world_segments_preclipped_xy_depth_and_rgb565_match() {
         let name = &row["input"]["name"];
         let birth = birth(&row["supplied_birth"]);
         let geometry = BeamGeometry::new(birth.from, birth.to);
-        let frame = StraightFrame::new(geometry, birth, integer(&row["before_progress"]), 10);
+        let frame = SineFrame::straight(geometry, birth, integer(&row["before_progress"]), 10);
         for segment in row["after"]["geometry"].as_array().unwrap() {
             let actual = frame.segment(integer(&segment["index"]));
             assert_eq!(

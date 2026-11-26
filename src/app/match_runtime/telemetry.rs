@@ -15,7 +15,7 @@
 //! from [`TickRateMeter`] (committed ticks), so each number keeps its owner.
 
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::sim::telemetry::TimingSample;
 
@@ -292,7 +292,7 @@ impl Default for TickRateMeter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

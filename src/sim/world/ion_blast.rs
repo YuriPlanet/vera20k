@@ -1,5 +1,6 @@
 //! IonBlastClass53CB10/53CBE0/53D310: one ordered vector for Dominator's
-//! forceless ripples and TAction94's damaging blast. Native vector AA0118,
+//! forceless ripples, TAction94's damaging blast and the Tiberian Sun Ion
+//! Cannon superweapon's (`sim::superweapon::ion_cannon`). Native vector AA0118,
 //! itemsAA011C/countAA0128, records coord/frame/skip-forces (14h bytes).
 //!
 //! Execute94's table entry6DD913 and IonBlastAtWP6E3380 use the tail
@@ -32,16 +33,35 @@ use crate::sim::ion_blast_ripple::{RippleFrames, spiral_point};
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::rocking::ion_blast;
+use crate::util::forked::Forked;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
 const LAST_FRAME: i32 = 79;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct IonBlast {
     coord: [i32; 3],
     frame: i32,
     skip_forces: bool,
+    /// Ares `WarheadTypeExt::IonExt` (saved with the Ares globals,
+    /// 100523D0): the warhead whose applyRipples (10051AE0) raised the blast.
+    #[serde(default)]
+    ares_warhead: Option<crate::sim::intern::InternedId>,
+}
+
+/// The stock fields hash as the derived hash did; an Ares warhead adds its
+/// own fold, so a stock game's state hash keeps its stream.
+impl Hash for IonBlast {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.coord.hash(state);
+        self.frame.hash(state);
+        self.skip_forces.hash(state);
+        if let Some(warhead) = self.ares_warhead {
+            b"ares-ion-blast-warhead-v1".hash(state);
+            warhead.hash(state);
+        }
+    }
 }
 
 pub(super) fn save<S: serde::Serializer>(
@@ -56,8 +76,8 @@ pub(super) fn save<S: serde::Serializer>(
 }
 pub(super) fn load<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<IonBlast>, D::Error> {
-    Vec::deserialize(deserializer)
+) -> Result<Forked<Vec<IonBlast>>, D::Error> {
+    Vec::deserialize(deserializer).map(Forked::new)
 }
 
 impl Simulation {
@@ -67,6 +87,7 @@ impl Simulation {
             coord,
             frame: 0,
             skip_forces: true,
+            ares_warhead: None,
         });
     }
 
@@ -76,12 +97,69 @@ impl Simulation {
         let Some(coord) = self.trigger_waypoint_ground_coord(waypoint) else {
             return false;
         };
+        self.add_ion_cannon_blast(coord);
+        true
+    }
+
+    /// A damaging blast at `coord` (leptons): the constructor appends it at
+    /// frame 0 with its forces on. TAction94 and the Tiberian Sun Ion Cannon
+    /// (Firestorm 2.0 SuperClass::Place case 3, `new IonBlast` 0x60BEC6) build
+    /// one this way.
+    pub(crate) fn add_ion_cannon_blast(&mut self, coord: [i32; 3]) {
         self.ion_blasts.push(IonBlast {
             coord,
             frame: 0,
             skip_forces: false,
+            ares_warhead: None,
         });
-        true
+    }
+
+    /// Ares WarheadTypeExt::applyRipples (installed 10051AE0), first in
+    /// BulletClass_Detonate (100536E0) at its effect coordinate: an
+    /// `IonCannon` or positive `Ripple.Radius` warhead constructs a blast,
+    /// with DisableIonBeam (+0x10, the flag that skips the beam and the
+    /// ripple forces) set unless `IonCannon=yes`, and maps it to the warhead.
+    pub(crate) fn ares_apply_ripples(
+        &mut self,
+        coord: [i32; 3],
+        warhead: &crate::rules::warhead_type::WarheadType,
+    ) {
+        let Some(ion) = warhead
+            .ares_combat()
+            .map(|combat| combat.ion_cannon())
+            .filter(|ion| ion.raises_blast())
+        else {
+            return;
+        };
+        let skip_forces = !ion.enabled();
+        let ares_warhead = Some(self.interner.intern(&warhead.id));
+        self.ion_blasts.push(IonBlast {
+            coord,
+            frame: 0,
+            skip_forces,
+            ares_warhead,
+        });
+    }
+
+    /// The Lifetime below which a blast lives (`0x0053CBF5`: 79). Ares
+    /// IonBlastClass_Update_Duration (hook 0x53CBF5, installed 100541B0)
+    /// takes a mapped warhead's `Ripple.Radius + 1` when lower.
+    fn ion_blast_lifetime(&self, blast: &IonBlast, rules: &RuleSet) -> i32 {
+        if rules.ares()
+            && let Some(ion) = self.ares_ion_cannon(blast, rules)
+        {
+            return ion.blast_lifetime();
+        }
+        LAST_FRAME
+    }
+
+    fn ares_ion_cannon<'r>(
+        &self,
+        blast: &IonBlast,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::ares_warhead::IonCannonRules> {
+        let warhead = self.interner.warhead_type(blast.ares_warhead?, rules)?;
+        Some(warhead.ares_combat()?.ion_cannon())
     }
 
     pub(super) fn hash_ion_blasts(&self, hasher: &mut impl Hasher) {
@@ -102,46 +180,84 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlays: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut bridge_changed = false;
         for index in (0..self.ion_blasts.len()).rev() {
             let blast = self.ion_blasts[index];
-            if blast.frame >= LAST_FRAME {
+            if blast.frame >= self.ion_blast_lifetime(&blast, rules) {
                 self.ion_blasts.remove(index);
                 continue;
             }
             if !blast.skip_forces {
+                let mut rock = true;
                 if blast.frame == 0 {
-                    bridge_changed |= self.start_ion_blast(blast.coord, rules, overlays, effects);
+                    let (changed, rocks) = self.start_ion_blast(&blast, rules, overlays, effects);
+                    bridge_changed |= changed;
+                    rock = rocks;
                 }
-                self.apply_ion_blast_forces(blast, rules);
+                if rock {
+                    self.apply_ion_blast_forces(blast, rules);
+                }
             }
             self.ion_blasts[index].frame += 1;
         }
         bridge_changed
     }
 
+    /// Frame 0 of a blast (`0x0053CC63..0x0053CE0A`): the splash or blast
+    /// anim and the beam, the area damage and the flash. Returns whether a
+    /// bridge changed and whether this frame's ripple forces run. Ares
+    /// IonBlastClass_Update_Beam (hook 0x53CC63, installed 10053F10) gives a
+    /// mapped warhead's blast `IonCannon.Blast`/`.Beam`/`.Warhead`/`.Damage`
+    /// over the Rules values (a null anim or warhead builds or damages
+    /// nothing) and skips the frame's forces for `IonCannon.Rock=no`.
     fn start_ion_blast(
         &mut self,
-        coord: [i32; 3],
+        blast: &IonBlast,
         rules: &RuleSet,
         overlays: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
-    ) -> bool {
+        effects: &mut FrameEffects<'_>,
+    ) -> (bool, bool) {
+        let coord = blast.coord;
+        let general = &rules.general;
+        let ion_cannon_warhead = rules.bridge_warheads.ion_cannon_name.as_str();
+        let ares = if rules.ares() {
+            self.ares_ion_cannon(blast, rules)
+        } else {
+            None
+        };
+        let (blast_anim, beam_anim, warhead_name, damage, rock) = match ares {
+            Some(ion) => (
+                ion.blast(&general.ion_blast_anim),
+                ion.beam(&general.ion_beam_anim),
+                ion.warhead(ion_cannon_warhead),
+                ion.damage(general.ion_cannon_damage),
+                ion.rock(),
+            ),
+            None => (
+                Some(general.ion_blast_anim.as_str()),
+                Some(general.ion_beam_anim.as_str()),
+                Some(ion_cannon_warhead),
+                general.ion_cannon_damage,
+                true,
+            ),
+        };
         let impact = ProjectileCoord::new(coord[0], coord[1], coord[2]);
         //53CC63..53CD14 selects raw cell land, not overlay/nav passability.
         let anim = if detonation_anim::land_at(self, impact) == 2 {
-            rules
-                .combat_damage
-                .splash_list
-                .last()
-                .map(String::as_str)
-                .unwrap_or("")
+            Some(
+                rules
+                    .combat_damage
+                    .splash_list
+                    .last()
+                    .map(String::as_str)
+                    .unwrap_or(""),
+            )
         } else {
-            &rules.general.ion_blast_anim
+            blast_anim
         };
-        for name in [anim, rules.general.ion_beam_anim.as_str()] {
+        for name in [anim, beam_anim].into_iter().flatten() {
             let type_id = self.interner.intern(name);
             let point = AnimWorldCoord {
                 x: coord[0],
@@ -158,57 +274,60 @@ impl Simulation {
         }
         //53CD67 re-queries after both Anim.Start callbacks. Only raw100
         //adds the separate AA013C deck (416), not the broader flags500 gate.
-        let flags = if let Some(terrain) = self.resolved_terrain.as_ref() {
+        let deck_z = if let Some(terrain) = self.resolved_terrain.as_ref() {
             let query = NativeCellQuery::canonical(terrain);
-            query.flags(query.lookup_world(coord[0], coord[1]))
+            let cell = query.lookup_world(coord[0], coord[1]);
+            (query.flags(cell) & 0x100 != 0)
+                .then(|| crate::sim::movement::ground_pose::deck_surface_z(&query, cell, coord[2]))
         } else {
             let dummy = self.effective_shared_cell_dummy();
             dummy.stamp_coord(
                 (coord[0] / 256) as i16 as i32,
                 (coord[1] / 256) as i16 as i32,
             );
-            dummy.raw_flags()
+            (dummy.raw_flags() & 0x100 != 0)
+                .then(|| coord[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
         };
-        let Some(warhead) = rules.warhead(&rules.bridge_warheads.ion_cannon_name) else {
-            return false;
+        let Some(warhead) = warhead_name.and_then(|name| rules.warhead(name)) else {
+            return (false, rock);
         };
         let wh = self.interner.intern(&warhead.id);
         let mut bridge_changed = false;
-        if flags & 0x100 != 0 {
+        if let Some(deck_z) = deck_z {
             bridge_changed |= world_receiver::apply_area_damage(
                 self,
                 rules,
                 overlays,
-                ProjectileCoord::new(
-                    coord[0],
-                    coord[1],
-                    coord[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
-                ),
-                rules.general.ion_cannon_damage,
+                ProjectileCoord::new(coord[0], coord[1], deck_z),
+                damage,
                 warhead,
+                true,
                 (RAD_NO_ATTACKER, None, wh),
                 effects,
-            );
+            )
+            .bridge_state_changed;
         }
         bridge_changed |= world_receiver::apply_area_damage(
             self,
             rules,
             overlays,
             impact,
-            rules.general.ion_cannon_damage,
+            damage,
             warhead,
+            true,
             (RAD_NO_ATTACKER, None, wh),
             effects,
-        );
+        )
+        .bridge_state_changed;
         self.combat_light_requests.emit(CombatLightRequest::Impact {
             target_id: None,
-            damage: rules.general.ion_cannon_damage,
+            damage,
             warhead_ref: wh,
             coord: impact,
             force_create: false,
             flags: 0,
         });
-        bridge_changed
+        (bridge_changed, rock)
     }
 
     fn apply_ion_blast_forces(&mut self, blast: IonBlast, rules: &RuleSet) {
@@ -299,6 +418,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ion_blast_tests.rs"]
 mod tests;

@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon::{firing_occupant_id, is_occupied};
 use crate::sim::command::Command;
@@ -30,11 +29,9 @@ impl Scene {
         retail
             .rules
             .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x522970);
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         for name in ["Americans", "Russians"] {
@@ -52,7 +49,7 @@ impl Scene {
         let options = sim.session.game_options_mut_for_test();
         options.multi_engineer = false;
         options.short_game = false;
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Americans", "Russians"] {
             sim.fog
                 .reveal_all_for_owner(sim.interner.get(name).unwrap());
@@ -60,11 +57,10 @@ impl Scene {
         let terrain_template = sim.resolved_terrain().cloned();
         let mut scene = Self(SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template,
-            },
+            }),
         });
         scene.spawn("GAPOWR", "Americans", (4, 24));
         scene.spawn("NAPOWR", "Russians", (28, 28));
@@ -82,7 +78,7 @@ impl Scene {
                 cell.1,
                 0,
                 &self.0.resources.rules,
-                &self.0.resources.overlay_registry,
+                self.0.resources.rules.overlay_registry(),
             )
             .expect("physical retail constructor and ordinary Unlimbo")
     }
@@ -99,7 +95,12 @@ impl Scene {
         let commands = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(output.tick.frame_committed);
         output
@@ -119,7 +120,11 @@ impl Scene {
     }
 
     fn cargo(&self, id: u64) -> &[u64] {
-        self.actor(id).passenger_role.cargo().unwrap().passengers()
+        self.actor(id)
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .passengers()
     }
 
     fn enter(&mut self, kind: &str, owner: &str, building: u64, capture: bool) -> u64 {
@@ -135,7 +140,9 @@ impl Scene {
                 Command::clicked_mission(id, MissionType::Enter, TargetKind::Entity(building))
             },
         );
-        self.until(|scene| scene.actor(id).passenger_role.inside_transport_id() == Some(building));
+        self.until(|scene| {
+            scene.actor(id).passenger_role().inside_transport_id() == Some(building)
+        });
         assert!(self.actor(id).lifecycle.in_limbo());
         id
     }
@@ -185,13 +192,13 @@ impl Scene {
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
             resources.terrain_template.clone().unwrap(),
-            live.terrain_speed_config.clone(),
+            (*live.terrain_speed_config).clone(),
             &resources.rules,
         );
         loaded
             .restore_map_authority_after_snapshot_load(
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 None,
             )
             .unwrap();
@@ -400,10 +407,10 @@ fn combined_absorber_and_garrison_save_firing_order_then_unload_separate_lists()
     ));
     for id in [gi, conscript, second] {
         assert!(!scene.actor(id).lifecycle.in_limbo());
-        assert_eq!(scene.actor(id).passenger_role.inside_transport_id(), None);
+        assert_eq!(scene.actor(id).passenger_role().inside_transport_id(), None);
     }
     assert_eq!(
-        scene.actor(first).passenger_role.inside_transport_id(),
+        scene.actor(first).passenger_role().inside_transport_id(),
         Some(reactor)
     );
     assert_eq!(scene.threat(reactor), 0);

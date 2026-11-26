@@ -8,6 +8,7 @@ import json
 import struct
 
 from tools.native_oracle import configured_gamemd, finish_vectors, provenance
+from tools.native_oracle import require
 
 
 SIZE = (160, 160)
@@ -185,7 +186,7 @@ def execute_case(assets, metadata, case):
                            required_addresses=(0x48A4F0,))
         typ = u.reg_read(UC_X86_REG_EAX)
         assert typ and m.string(typ + 0x24) == 'SMKPUFF'
-        assert typ == m.invoke(0x428B80, m.cstring('SMKPUFF'))
+        require(typ == m.invoke(0x428B80, m.cstring('SMKPUFF')), 'native 0x428B80 returned an unexpected result')
         type_vtable = m.read32(typ)
         vtables[type_vtable] = bytes(u.mem_read(type_vtable, 0xA4))
         selection = dict(damage=case['damage'], land=case['land'],

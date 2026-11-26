@@ -4,66 +4,46 @@
 //! Match-lifetime diagnostic replay lives in `app::match_diagnostics`; this
 //! owner is process-scoped tooling state.
 
+use crate::app::presentation::render::RenderPhases;
+use crate::util::time::{Duration, Instant};
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
 
 const FRAME_TIMER_WINDOW: usize = 60;
 
-/// Means of in-game render phase spans during one observation window.
+/// In-game render phase spans during one observation window: their means for
+/// the dashboard's report, their totals for the performance panel's Most CPU row.
 ///
 /// The spans are wall time from `presentation::render::render_game`; this meter
-/// only averages them, so a single slow frame cannot mislead the report.
-#[cfg(any(feature = "telemetry-dashboard", target_os = "horizon"))]
+/// only sums them, so a single slow frame cannot mislead the report.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct RenderTimingMeter {
     frames: u32,
-    sums: [Duration; 7],
-    #[cfg(target_os = "horizon")]
-    next_log: Option<Instant>,
+    sums: [Duration; RenderPhases::COUNT],
 }
 
-#[cfg(any(feature = "telemetry-dashboard", target_os = "horizon"))]
 impl RenderTimingMeter {
     /// Fold one finished render into the totals.
-    pub(crate) fn record(&mut self, phases: crate::app::presentation::render::RenderPhases) {
+    pub(crate) fn record(&mut self, phases: RenderPhases) {
         self.frames = self.frames.saturating_add(1);
         for (sum, span) in self.sums.iter_mut().zip(phases.spans()) {
             *sum += span;
         }
-        #[cfg(target_os = "horizon")]
-        {
-            let now = Instant::now();
-            let next_log = *self
-                .next_log
-                .get_or_insert_with(|| now + Duration::from_secs(10));
-            if now >= next_log {
-                let [world, debug, shroud, ui, sidebar, upload, other] =
-                    self.mean_ms().unwrap_or_default();
-                log::info!(
-                    target: "switch::perf",
-                    "Render CPU average over {} frames: world={world:.2}ms \
-                     debug={debug:.2}ms shroud={shroud:.2}ms ui={ui:.2}ms \
-                     sidebar={sidebar:.2}ms upload={upload:.2}ms other={other:.2}ms \
-                     total={:.2}ms",
-                    self.frames,
-                    world + debug + shroud + ui + sidebar + upload + other,
-                );
-                *self = Self {
-                    next_log: Some(now + Duration::from_secs(10)),
-                    ..Default::default()
-                };
-            }
-        }
+    }
+
+    /// Each phase's summed span, in `RenderPhases::spans` order.
+    pub(crate) fn totals(&self) -> [Duration; RenderPhases::COUNT] {
+        self.sums
     }
 
     /// Mean span of each phase in milliseconds, or `None` before the first
     /// render. Order matches `RenderPhases::spans`.
-    pub(crate) fn mean_ms(&self) -> Option<[f32; 7]> {
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) fn mean_ms(&self) -> Option<[f32; RenderPhases::COUNT]> {
         if self.frames == 0 {
             return None;
         }
         let frames = self.frames as f32;
-        let mut means = [0.0f32; 7];
+        let mut means = [0.0f32; RenderPhases::COUNT];
         for (mean, sum) in means.iter_mut().zip(self.sums) {
             *mean = sum.as_secs_f32() * 1000.0 / frames;
         }
@@ -74,15 +54,37 @@ impl RenderTimingMeter {
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) fn report(&self) -> Option<crate::sim::telemetry::RenderTimingReport> {
         let means = self.mean_ms()?;
+        // The wire keeps schema v31's spans: phase 1's parts sum to
+        // `world_ms`, and the frame snapshot stays in `other_ms`.
+        let [
+            snapshot,
+            terrain,
+            objects,
+            world,
+            debug,
+            shroud,
+            ui,
+            sidebar,
+            upload,
+            lights,
+            effects,
+            draw_calls,
+            handoff,
+            other,
+        ] = means;
         Some(crate::sim::telemetry::RenderTimingReport {
             frames: self.frames,
-            world_ms: means[0],
-            debug_ms: means[1],
-            shroud_ms: means[2],
-            ui_ms: means[3],
-            sidebar_ms: means[4],
-            upload_ms: means[5],
-            other_ms: means[6],
+            world_ms: terrain + objects + world,
+            debug_ms: debug,
+            shroud_ms: shroud,
+            ui_ms: ui,
+            sidebar_ms: sidebar,
+            upload_ms: upload,
+            lights_ms: lights,
+            effects_ms: effects,
+            draw_calls_ms: draw_calls,
+            handoff_ms: handoff,
+            other_ms: snapshot + other,
         })
     }
 }
@@ -159,7 +161,15 @@ pub(crate) struct DiagnosticsState {
     pub(crate) parity_digest_sink: Option<crate::sim::parity_digest::ParityDigestSink>,
     /// Rolling frame-time statistics for map observation metadata.
     pub(crate) frame_timer: FrameTimer,
-    #[cfg(any(feature = "telemetry-dashboard", target_os = "horizon"))]
+    /// The perf build's per-frame CSV recorder. Compiled only with `perf`.
+    #[cfg(feature = "perf")]
+    pub(crate) perf_recorder: crate::app::diagnostics::perf_recorder::PerfRecorder,
+    /// The latest committed tick's SIM snapshot, written at the tick tail
+    /// (runtime home) and read at present time (runtime may be lent). Keeps
+    /// the perf CSV's SIM columns populated while a tick is on the SIM thread.
+    #[cfg(feature = "perf")]
+    pub(crate) perf_last_tick: Option<crate::app::diagnostics::perf_recorder::PerfTickSnapshot>,
+    #[cfg(feature = "telemetry-dashboard")]
     pub(crate) render_timing: RenderTimingMeter,
     /// The last render breakdown with samples. A hidden window stops rendering,
     /// and report samples close the live window, so the dashboard keeps the
@@ -216,7 +226,11 @@ impl DiagnosticsState {
             debug_show_foot_path: false,
             parity_digest_sink,
             frame_timer: FrameTimer::new(),
-            #[cfg(any(feature = "telemetry-dashboard", target_os = "horizon"))]
+            #[cfg(feature = "perf")]
+            perf_recorder: crate::app::diagnostics::perf_recorder::PerfRecorder::new(),
+            #[cfg(feature = "perf")]
+            perf_last_tick: None,
+            #[cfg(feature = "telemetry-dashboard")]
             render_timing: Default::default(),
             #[cfg(feature = "telemetry-dashboard")]
             render_report_cache: None,
@@ -271,26 +285,39 @@ impl DiagnosticsState {
     }
 }
 
+/// Read committed simulation state on demand. Trigger announcements are
+/// posted inside exact advancement, before its receipt returns to capture;
+/// caching the previous draw's time would timestamp them one tick early.
+pub(crate) fn diagnostic_presentation_ms(
+    diag: &DiagnosticsState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> Option<u64> {
+    let tick = match_state
+        .sim_runtime
+        .runtime()
+        .map_or(0, |runtime| runtime.simulation.session().tick());
+    diag.presentation_ms(tick)
+}
+
+pub(crate) fn radar_presentation_ms(
+    diag: &DiagnosticsState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) -> u64 {
+    diagnostic_presentation_ms(diag, match_state)
+        .unwrap_or_else(crate::app::match_runtime::frame_pacer::wall_clock_ms)
+}
+
 impl crate::app::AppState {
-    /// Read committed simulation state on demand. Trigger announcements are
-    /// posted inside exact advancement, before its receipt returns to capture;
-    /// caching the previous draw's time would timestamp them one tick early.
     pub(crate) fn diagnostic_presentation_ms(&self) -> Option<u64> {
-        let tick = self
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map_or(0, |runtime| runtime.simulation.session().tick());
-        self.diag.presentation_ms(tick)
+        diagnostic_presentation_ms(&self.diag, &self.match_state)
     }
 
     pub(crate) fn radar_presentation_ms(&self) -> u64 {
-        self.diagnostic_presentation_ms()
-            .unwrap_or_else(crate::app::match_runtime::frame_pacer::wall_clock_ms)
+        radar_presentation_ms(&self.diag, &self.match_state)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

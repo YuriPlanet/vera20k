@@ -48,6 +48,33 @@ fn checked_digest_removal_preserves_the_sorted_duplicate_section_order() {
 }
 
 #[test]
+fn langrule_digest_verification_accepts_matching_sha1_and_rejects_changed_sha1() {
+    // This original LANGRULE control carries the native SaveToPipe SHA-1.
+    // Changing one base64 symbol keeps a well-formed 20-byte digest while
+    // proving mismatch admission is distinct from a missing Digest section.
+    const BODY: &str = concat!(
+        "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n",
+        "[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n",
+    );
+    const DIGEST: &str = "5Z9CTq3TQS20/wfWQHiRlHIBMME=";
+    let valid = IniFile::from_str(&format!("{BODY}[Digest]\n1={DIGEST}\n"));
+    assert_eq!(valid.verify_digest(1), DigestVerification::Valid);
+
+    let changed = format!("B{}", &DIGEST[1..]);
+    let mismatched = IniFile::from_str(&format!("{BODY}[Digest]\n1={changed}\n"));
+    assert_eq!(mismatched.verify_digest(1), DigestVerification::Invalid);
+
+    let missing = IniFile::from_str(BODY);
+    assert_eq!(missing.verify_digest(1), DigestVerification::Missing);
+    assert_eq!(IniFile::empty().verify_digest(0), DigestVerification::Empty);
+
+    let short = IniFile::from_str("[Digest]\n1=QQ==\n");
+    assert_eq!(short.verify_digest(8), DigestVerification::Indeterminate);
+}
+
+// Vanilla duplicate keys, read the stock way: Ares's `INIClass_Parse_Override`
+// (`0x5260D9`) keeps only the later one (rules::ini_parser::ares_syntax).
+#[test]
 fn packed_reader_visits_duplicate_physical_keys_through_the_value_index() {
     // ReadUUBlock526FB0 uses the physical entry count at52708C and walks
     // each physical key at5270C5, then resolves its value at527108.
@@ -232,6 +259,8 @@ fn omitted_fixture_key_preserves_source_order_case_and_reader_defaults() {
     assert_eq!(omitted.section("After").unwrap().get("Keep"), Some("after"));
 }
 
+// Vanilla duplicate keys, read the stock way: Ares's `INIClass_Parse_Override`
+// (`0x5260D9`) keeps only the later one (rules::ini_parser::ares_syntax).
 #[test]
 fn fresh_duplicate_lookup_keeps_physical_bytes_and_projection_copy_separate() {
     // FindEntryByNames526B10 -> signed CRC qsort52B6A0 and midpoint52B6D0.
@@ -385,22 +414,31 @@ fn aimd_digest_matches_its_save_to_pipe_bytes() {
 /// empty sections, spacing, comments and an unterminated last line.
 #[test]
 fn save_to_pipe_matches_the_native_streams() {
-    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/storage_oracle/ini_crc.json",
-    ))
-    .unwrap();
-    for case in corpus["synthetic"].as_array().unwrap() {
-        if case["absent"].as_bool() == Some(true) {
-            continue;
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/ini_crc.json",
+        ))
+        .unwrap();
+        for case in corpus["synthetic"].as_array().unwrap() {
+            if case["absent"].as_bool() == Some(true) {
+                continue;
+            }
+            // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+            // of two equal keys; this control records the vanilla reader.
+            if ares_way && case["name"] == "duplicate_key" {
+                continue;
+            }
+            let input = case["input"].as_str().unwrap();
+            let ini =
+                IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap();
+            assert_eq!(
+                crate::util::native_string::widen_bytes(&ini.save_to_pipe(None)),
+                case["stream"].as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
         }
-        let input = case["input"].as_str().unwrap();
-        let ini = IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap();
-        assert_eq!(
-            crate::util::native_string::widen_bytes(&ini.save_to_pipe(None)),
-            case["stream"].as_str().unwrap(),
-            "{}",
-            case["name"]
-        );
     }
 }
 
@@ -412,4 +450,19 @@ fn multiplayer_digest_ignores_comments_but_keeps_duplicate_value_order() {
     let reordered = IniFile::from_str("[General]\nBuildSpeed=.9\nBuildSpeed=.7\n");
     assert_eq!(base.multiplayer_digest(), padded.multiplayer_digest());
     assert_ne!(base.multiplayer_digest(), reordered.multiplayer_digest());
+}
+
+#[test]
+fn differing_sections_name_the_changed_added_and_removed_sections_once() {
+    let retail =
+        IniFile::from_str("[General]\nBuildSpeed=.7\n[NUKE]\nDamage=1\n[Same]\nA=1\n[Gone]\nB=1\n");
+    let used = IniFile::from_str(
+        "; comment\n[Same]\nA = 1\n[NUKE]\nDamage=2\n[General]\nBuildSpeed=.7\n\
+         [Added]\nX=1\n[General]\nBuildSpeed=.8\n",
+    );
+    assert_eq!(
+        used.differing_sections(&retail),
+        ["Added", "General", "Gone", "NUKE"]
+    );
+    assert!(retail.differing_sections(&retail.clone()).is_empty());
 }

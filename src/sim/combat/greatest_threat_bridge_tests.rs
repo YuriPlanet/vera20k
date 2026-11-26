@@ -181,7 +181,7 @@ fn pick(
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 #[test]
@@ -331,14 +331,11 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         psycho: false,
         controller_house: None,
         fire_world: Some(&world),
-        allies: Default::default(),
-        allies_of_scanner: Default::default(),
-        probe_firer: Default::default(),
         scanner_facts: attacker_facts(firer, obj),
         harvester_immune: false,
         harvester_unit_ids: Vec::new(),
-        scenario_rng: Default::default(),
-        scenario_draws: Default::default(),
+        frame: 0,
+        scanner_web_duration: None,
     };
     let walk = WalkArgs {
         flags: 0x8042,
@@ -346,7 +343,10 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         reference: ThreatReference::NullCoord,
     };
     let rng_before = world.scenario_rng.native_state_hex();
-    assert_eq!(evaluate_candidate(&context, walk, candidate), None);
+    assert_eq!(
+        evaluate_candidate(&context, &mut ScanState::default(), walk, candidate),
+        None
+    );
     let expected = &row["after"]["dummy_coord"];
     assert_eq!(
         dummy.snapshot().coord,
@@ -371,7 +371,6 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         FireSubject {
             world: &world,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer,
             obj,

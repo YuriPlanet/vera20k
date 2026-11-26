@@ -481,6 +481,17 @@ fn flash_matches_native() {
     }
 }
 
+/// Installed Ares's Process head (`10037330`, hook `0x53A6CF`) steps only a
+/// nonnegative flash duration: one below -1, which only Ares stores, never
+/// fades out there (stock's `!= -1` test would fade it at once).
+#[test]
+fn ares_flash_with_a_negative_duration_never_steps() {
+    let mut lighting = ScenarioLightingState::default();
+    lighting.set_nuke_flash_for_test(1, 100, -5);
+    assert!(!lighting.step_nuke_flash(5000));
+    assert_eq!(flash_state(&lighting), [1, 100, -5]);
+}
+
 /// The map's `NukeAmbientChangeRate=` against the native rows: Set_Defaults'
 /// value, a missing key and authored tokens through the production reader.
 #[test]
@@ -771,7 +782,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         house.set_difficulty_for_test(crate::sim::house_state::HouseDifficulty::Hard);
     }
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(test_grid(
+    *sim.resolved_terrain = Some(test_grid(
         64,
         64,
         super::cell_receiver_tests::test_terrain_cell,
@@ -1294,7 +1305,7 @@ fn nuke_awaited_anim_expiry_after_waiter_retirement_is_safe() {
     sim.notify_anim_pointer_expired(unrelated);
     assert_eq!(sim.projectiles.get(id).unwrap().awaited_anim(), Some(ball));
     sim.scalar_delete_anim(unrelated);
-    assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::with_rules(&rules)));
+    assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::new(&rules)));
     sim.process_pending_delete();
     assert!(sim.projectiles.get(id).is_none());
     assert!(sim.anim(ball).is_some());
@@ -1460,7 +1471,7 @@ fn nuke_natural_retirement_boundary_snapshot_continues_once() {
     restored.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     // Same native load normalization as the live-wait save test below.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let frame = sim.session.binary_frame() as i32;
     sim.projectiles.restart_arm_timers_after_load(frame);
     assert_eq!(restored.state_hash(), sim.state_hash());
@@ -1517,7 +1528,7 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
     // Align the control run to the load contract: retail's save reader
     // reinitializes the Scenario RNG, and Bullet Load restarts each bullet's
     // arm timer at the load frame (`0x0046AE9C..0x0046AEB0`).
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let frame = sim.session.binary_frame() as i32;
     sim.projectiles.restart_arm_timers_after_load(frame);
     let wait = |sim: &Simulation| {

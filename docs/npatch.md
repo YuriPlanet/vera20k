@@ -8,7 +8,7 @@ cargo run --release --bin vera20k --features npatch
 ```
 
 The feature compiles to `rules::NPATCH_ENABLED`. A build without it ignores the extension keys
-and keeps stock behavior, like a build without `ares` or `phobos`.
+and keeps stock behavior, like a build without `phobos`.
 
 `[General] VehicleParachute=` chooses the canopy for airdropped non-infantry, falling back to
 `Parachute=` when unset. Infantry keeps `Parachute=`. The name uses the retained animation
@@ -42,15 +42,64 @@ NPSE #359 replaced the global switch with `AIBuildLimit=`. If a VERA ruleset exp
 both, both constraints apply before production starts. Clearing a choice does not skip an
 unsatisfied building-plan node or guarantee the mobile chooser selects an uncapped type.
 
+`[General] DisableParallelAIQueues=` defaults to no and requires `npatch`.
+NPatch Extended (ext173) spells the same global switch
+`DisableAIParallelProduction=` ("whether we should prevent AI factories from
+'cloning' units"). ext173's `ReadGeneral` hook reaches the reader at
+`0xC2BDDA..0xC2BDE7`, which writes `Rules+0x640`, immediately before
+`EnableAIBuildLimitation` at `Rules+0x641`; `0xC2D482` gates the same five
+counters. VERA reads the NPSE name first and falls through to the ext173 name
+when it is absent or unparsable. The 2022-era revision that
+[PR #2877](https://github.com/YuriPlanet/vera20k/pull/2877) discusses sets the
+name per type; only `[General]` is consulted here, so a type-section key stays
+unread instead of driving this global switch. The NPSE native reader preserves
+the current byte (`0xC30303..0xC3031A`); the Rules constructor zeroes it
+(`0x66569B`). With yes, Factory_AI reserves one of five House
+production counters before compatibility, allocation and construction (`0xC2F07C`):
+aircraft, land vehicles, naval vehicles, infantry and buildings. Only vehicles split
+by `Naval=`. The existing House AI production owner saves and hashes those counters.
+
+Mobile exits release at their native class admission prefix, before later placement
+can fail; buildings release after successful Unlimbo (`0xC33940`, `0xC2F184`,
+`0xC2F1A3`). Abandonment releases the held object's House before refund (`0xC2EFB4`).
+Failed starts and PointerExpired retain their reservation. Releases run independently
+of the switch and clamp signed negative counts to zero, matching the original hooks.
+
+## Original project and authors
+
+VERA20K implements the documented behavior in Rust. It neither loads nor patches
+`gamemd.exe`, and it does not redistribute NPatch binaries.
+
+NPatch (NewPatch) is a RockPatch-based YR platform created by **CnCVK (VK)**,
+a former RockPatch developer. The project has several editions:
+
+- **NPatch 1.00** - the original release, published by CnCVK.
+- **NPatch Extended (NPExt)** - released by **LH_Mouse**; its manual is
+  NPExt #169 (2011), and it thanks pd and CnCVK. VERA's legacy
+  `EnableAIBuildLimitation` path cites the NPExt `ext173` reader
+  (`0xC2D132`, gate `0xC2CF67`).
+- **NPatch Special Edition (NPSE)** - installer #0020 on CnCVK's NPatch
+  download page. The **NPSE 2.0 #359** manual and changelog are authored by
+  **lydjjlyd**.
+- **NPatch Autumn Edition (NPAE)** - installer #0011 on the same page.
+
+The NPSE 2.0 manual credits its testers **我爱二次元**, **蓝天白云fd**,
+**好人先昇**, **行少** and **凌敏SHOS**. That manual and its release are the
+source for the `0xC3xxxx` addresses cited above.
+
+简体中文：[扩展支持与原作者](zh-CN/credits.md)。
+
 ## Cross-extension compatibility
 
-The three capabilities — `ares`, `phobos`, `npatch` — are orthogonal and mixable:
+Ares, Phobos and NPatch are orthogonal and mixable. Ares is in every build and a game's data
+switches it on ([Ares](ares.md)); the other two are build features:
 
 ```sh
-cargo run --release --bin vera20k --features ares,phobos,npatch
+cargo run --release --bin vera20k --features phobos,npatch
 ```
 
-Every implemented feature must keep working when the other capabilities are compiled in. A chain
+Every implemented feature must keep working when Ares plays or the other capabilities are
+compiled in. A chain
 may depend on another **capability's own** state (for example a Phobos key that only a Phobos type
 reads), but it must not assume the other features are absent, and it must not re-own state another
 capability already owns. When two extensions touch the same native site, one of them wins by native

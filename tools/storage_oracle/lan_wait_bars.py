@@ -1,6 +1,5 @@
 """Original wait-bar timing and paint controls for the shared LAN oracle.
 
-Run with ``python -m tools.storage_oracle.lan_lobby --wait-bars --write``.
 Whole64A7B0 supplies lag, unsigned scaling, color branches and paint geometry;
 there is no Python timing/color/width model. Only window geometry, raw clock
 returns and terminal surface operations are supplied through existing owners.
@@ -11,7 +10,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_EDX, UC_X86_REG_ESP
 
-from tools.native_oracle import OracleError, STACK_BASE, STACK_SIZE, provenance
+from tools.native_oracle import OracleError, STACK_BASE, STACK_SIZE, finish_vectors, provenance
 from tools.storage_oracle.shell_relayout import Machine, Image, PARENT
 from tools.storage_oracle.saved_game_layout import code_guard, check_code
 
@@ -30,7 +29,6 @@ class WaitBarMachine(Machine):
         self.row = 0
         self.numeric = {}
         self.paints = []
-        self.clock_calls = []
         self.now_ms = 0
         # Preserve actual GetDlgItem and manager lookup, with two source nodes
         # and one admitted private connection (local node has no connection).
@@ -85,7 +83,6 @@ class WaitBarMachine(Machine):
         self.ret(12, 1)
 
     def time_get_time(self):
-        self.clock_calls.append(self.now_ms)
         self.ret(0, self.now_ms)
 
     def observe(self, uc, pc, _size, _data):
@@ -115,7 +112,7 @@ class WaitBarMachine(Machine):
             row['outer_fill_width'] = uc.reg_read(UC_X86_REG_EBP)
 
     def run_case(self, spec):
-        self.numeric, self.paints, self.clock_calls = {}, [], []
+        self.numeric, self.paints = {}, []
         self.now_ms = spec['now_ms']
         self.w32(0xAFA418, spec['wait_elapsed'])
         self.w32(0xAFA278 + 0x0C, spec['peer_elapsed'])
@@ -131,7 +128,7 @@ class WaitBarMachine(Machine):
             raise OracleError('presentation changed peer timing inputs')
         check_code(self.uc, self.guard)
         return dict(input=spec, rows=self.numeric, paint=self.paints,
-                    clock_returns=self.clock_calls, original_code_unchanged=True)
+                    original_code_unchanged=True)
 
 
 def generate():
@@ -173,3 +170,8 @@ def metadata():
                          'scaled_subtract':0x64A920,'unsigned_divide':0x64A922,'threshold':0x64A927,
                          'blue_override':0x64A92F,'percent':0x64A972,'width':0x64A99D})
     return m
+
+
+if __name__ == '__main__':
+    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,
+                   source_paths=SOURCE_PATHS)

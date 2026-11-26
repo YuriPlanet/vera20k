@@ -33,11 +33,12 @@ the selected paid loop; full Scenario population and ordering remain outside it.
 The six cases retain the original declarations and 336 states: healthy, damaged,
 already-collapsed and repaired concrete bridges at seed 31; the historically
 named `damaged_collapse` seed 3 control; and Stop during paid pursuit with an
-already-launched missile. Under the current incoming schedule, damaged seed 31
-collapses at Logic 32 (overlay 220 to 232), clears the target by next-frame 33,
-and reaches Guard with all selected effects drained by next-frame 53. This is
-the collapse/cleanup persistence witness. The unchanged seed 3 control instead
-retains overlay 220 and Attack through next-frame 65, with shots at 1, 5, 55 and
+already-launched missile. Under the captured outside schedule, damaged seed 31
+collapses at Logic 32 (overlay 220 to 232; bridge roll 10 of RandomRanged(1, 1500)),
+clears the target by next-frame 33, and reaches Guard with all selected effects
+drained by next-frame 53. Production no longer draws that schedule, so the restore
+test collapses the same bridge through a map-layer `BridgeStrength=1` instead.
+The unchanged seed 3 control instead retains overlay 220 and Attack through next-frame 65, with shots at 1, 5, 55 and
 60 and two live missiles at its declared horizon. It does not claim cleanup.
 The other five cases drain their selected Bullet, Anim and deferred objects.
 The packet retains 3,147 executed raw RNG words (492, 517, 511, 374, 629 and
@@ -119,7 +120,7 @@ The CRT-corrected historical conditional packet is
 `paid_world_drive_crt.json.gz`, and `huts/hut_joined_drive_crt.json.gz`; their
 literal projections are `paid_conditional_v26_vectors.json`,
 `paid_drive_crt_vectors.json`, and `huts/hut_drive_crt_vectors.json`. The old
-packets, projections and promotion digests remain immutable historical evidence.
+projections are no longer in the repository; `promotion.json` keeps their digests.
 The pre-CRT packets used the superseded image-zero fixture; the corrected
 conditional packet retains its valid historical outside-input boundary. Existing generator modules and shared
 publication owners target the corrected versions; there is no compatibility
@@ -149,7 +150,12 @@ python -m tools.spatial_oracle.fv_cell_attack.paid_vectors --check
 The production consumer is
 [`bridge_fv_pursuit_tests.rs`](../../../src/sim/world/bridge_fv_pursuit_tests.rs),
 `retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native`, using the ordinary
-retail loader and simulation. Its optional `VERA20K_FV_PAID_EXPORT` diagnostics
+retail loader and simulation. Like the native run, it supplies the declared
+identity cursor and seed, executes only the selected FV and its effects (the
+outside world stays physically present but out of the Logic vector) and replays
+each frame's recorded outside calls from `paid_conditional_v26.input.json` on the
+Scenario stream before the frame, so the selected owners read native words.
+Its optional `VERA20K_FV_PAID_EXPORT` diagnostics
 support auditing, but are not inputs to the native generator and are not bundled
 as goldens.
 
@@ -159,8 +165,8 @@ as goldens.
 and outside-call receipts. Its source catalog and capture receipt are sealed to
 retained build `bridge-fv-current-v26`, commit `10c01f0e` and executable
 SHA256 `9f61c3df261986cb9798c1ed094b891ffd4090ce958eec5de0ba0725b72f407d`.
-The previous `paid_conditional.input.json` and its `bridge-fv-mission-v11a`
-receipts are retained. All six declarations, seeds and frame horizons are
+The previous `bridge-fv-mission-v11a` input is no longer in the repository;
+`paid_conditional.meta.json` keeps its digest. All six declarations, seeds and frame horizons are
 preserved; only the newly observed outside inputs define this new comparison.
 
 Current main moved Infantry idle calls from a global suffix to the mission's

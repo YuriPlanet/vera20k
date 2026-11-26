@@ -82,7 +82,6 @@ pub(super) fn dock_exit(
     producer_id: u64,
     mover: u64,
     offered: (i16, i16),
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<DockExit> {
     let cell = crate::sim::docking::building_dock::building_dock_cell(
         sim,
@@ -90,7 +89,6 @@ pub(super) fn dock_exit(
         mover,
         offered,
         rules,
-        overlay_registry,
     )?;
     let producer = sim.substrate.entities.get(producer_id)?;
     let producer_type = sim.entity_object_type(producer, rules)?;
@@ -128,7 +126,7 @@ fn dock_exit_coordinate_and_facing(
         [centre(dock.0), centre(dock.1)],
     );
     let facing = crate::util::direction_tables::quantize::round_facing16_to_8(word);
-    let (width, height) = producer.type_facts.foundation().dimensions();
+    let (width, height) = producer.seldom.type_facts.foundation().dimensions();
     let inward = |cell: i16, base: i16, size: u16| {
         if i32::from(cell) >= i32::from(base) + i32::from(size) {
             cell.wrapping_sub(1)
@@ -163,7 +161,7 @@ pub fn mark_war_factory_spawn_contact(
     rules: &RuleSet,
     producer_id: u64,
     produced_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     for message in [
         crate::sim::radio::RadioMessage::Hello,
@@ -208,18 +206,24 @@ impl Simulation {
     /// (`SuperClass::Launch 0x006CC7BC..0x006CC858`) and the locomotor imbue
     /// (`0x0046953E..0x004695E6`).
     pub(crate) fn unit_in_contact_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(unit) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        unit.category() == crate::map::entities::EntityCategory::Unit
-            && unit.radio_contacts.slot(0).is_some_and(|contact| {
-                self.is_weapons_factory(contact, rules)
-                    && self.substrate.occupancy.first_building_on_layer(
-                        unit.position.rx(),
-                        unit.position.ry(),
-                        MovementLayer::Ground,
-                    ) == Some(contact)
-            })
+        self.unit_war_factory_contact(id, rules).is_some()
+    }
+
+    /// The war factory of [`Self::unit_in_contact_war_factory`], for the
+    /// ReceiveDamage site whose Ares hook also reads its type.
+    pub(crate) fn unit_war_factory_contact(&self, id: u64, rules: &RuleSet) -> Option<u64> {
+        let unit = self.substrate.entities.get(id)?;
+        if unit.category() != crate::map::entities::EntityCategory::Unit {
+            return None;
+        }
+        unit.seldom.radio_contacts.slot(0).filter(|&contact| {
+            self.is_weapons_factory(contact, rules)
+                && self.substrate.occupancy.first_building_on_layer(
+                    unit.position.rx(),
+                    unit.position.ry(),
+                    MovementLayer::Ground,
+                ) == Some(contact)
+        })
     }
 }
 
@@ -371,7 +375,7 @@ pub(super) fn unlimbo_held_naval_unit(
     stable_id: u64,
     cell: (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     // The selected Cell's GetCoords (`0x00486840`).
     let coord = crate::sim::movement::target_cell_coord(
@@ -393,7 +397,7 @@ pub(super) fn unlimbo_held_naval_unit(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -446,7 +450,10 @@ mod tests {
                 14,
                 crate::map::entities::EntityCategory::Structure,
             );
-            producer.type_facts.set_foundation_for_test("3x2".into());
+            producer
+                .seldom
+                .type_facts
+                .set_foundation_for_test("3x2".into());
             producer.position.put_location(location);
             let dock = (number("dock", 0) as i16, number("dock", 1) as i16);
             let producer_type = rules.object("GAPILE").unwrap();
@@ -572,12 +579,17 @@ mod tests {
         let mut terrain = flat_terrain(20, 20);
         for cell in terrain.cells_mut_for_test() {
             // Retail ground rows used by the compact admission matrix.
-            cell.speed_costs.float = Some(0);
-            cell.base_speed_costs.float = Some(0);
-            cell.speed_costs.hover = Some(50);
-            cell.base_speed_costs.hover = Some(50);
+            cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.base_speed_costs.float =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.speed_costs.hover = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            ));
+            cell.base_speed_costs.hover = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            ));
         }
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
         sim
     }
@@ -590,8 +602,8 @@ mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         water.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
-        water.speed_costs.float = Some(100);
-        water.base_speed_costs.float = Some(100);
+        water.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        water.base_speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
     }
 
     #[test]
@@ -620,7 +632,7 @@ mod tests {
                 stable_id,
                 (8, 8),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(stable_id)
         );

@@ -30,6 +30,19 @@ fn grizzly(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) -> u64 {
     id
 }
 
+/// Retreat lets IsAllowedToLeaveMap (`0x004DA1D0`) admit an off-playfield
+/// Cell. Without it, a promoted Unit's Can_Enter_Cell refuses its own Cell
+/// (`0x0073F364..0x0073F388`) and the Unit's own-cell arm (`0x0073AE1B`)
+/// blows it up before the Foot exit runs.
+fn retreat(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::Retreat), 0);
+}
+
 fn team(sim: &mut Simulation, id: u64, action: TeamScriptAction) -> u64 {
     let owner = sim.substrate.entities.get(id).unwrap().owner();
     let script = sim.interner.intern("EXIT-CONTROL");
@@ -59,8 +72,7 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
         observer,
         Some(TargetKind::Entity(id)),
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -89,6 +101,7 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
         .unwrap()
         .passive_scan
         .arm_timer(now, 0);
+    retreat(&mut sim, id);
     let rng = sim.rng_state();
 
     sim.per_cell_process(
@@ -96,7 +109,7 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 
@@ -146,9 +159,10 @@ fn inside_ingress_guard_team_and_turn_completion_do_not_remove_the_grizzly() {
                     argument: MissionType::Guard as i32,
                 },
             );
+            retreat(&mut sim, id);
         }
         let rng = sim.rng_state();
-        sim.per_cell_process(id, reason, &rules, None, FrameEffects::default())
+        sim.per_cell_process(id, reason, &rules, None, &mut FrameEffects::default())
             .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
         assert!(actor.lifecycle.object_alive(), "{name}");
@@ -179,7 +193,7 @@ fn infantry_uses_the_foot_exit_but_an_ordinary_aircraft_keeps_its_own_gate() {
             PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -205,12 +219,13 @@ fn a_partial_world_without_a_playfield_does_not_admit_exit() {
     let mut sim = arena(&rules);
     let id = grizzly(&mut sim, &rules, (20, 20));
     sim.set_playfield_bounds_for_test(None);
+    retreat(&mut sim, id);
     sim.per_cell_process(
         id,
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -244,8 +259,7 @@ fn a_train_heading_back_to_the_playfield_stays_but_an_exiting_train_leaves() {
             id,
             Some(NavTargetRef::cell(destination.0, destination.1)),
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         sim.per_cell_process(
@@ -253,7 +267,7 @@ fn a_train_heading_back_to_the_playfield_stays_but_an_exiting_train_leaves() {
             PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(

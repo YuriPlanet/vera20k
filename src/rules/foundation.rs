@@ -7,18 +7,33 @@
 /// Resolved BuildingType foundation. The stock name is an input token, not a
 /// free-form size. Ares owns declared dimensions, occupied cells and exit cells
 /// independently; one resolved value follows the type into its existing cache.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// Only a Rules read the Ares way installs `Custom` or `InvalidCustom`.
+/// Every object's record copies its type's foundation, so the rare custom
+/// shape sits behind a pointer and a stock one stays two bytes plus a tag.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Foundation {
     Stock(u8),
-    #[cfg(feature = "ares")]
-    Custom(CustomFoundation),
+    Custom(Box<CustomFoundation>),
     /// A configuration the current 16-bit consumer interface cannot admit.
     /// Retained only until the process-registry validation rejects the load.
-    #[cfg(feature = "ares")]
     InvalidCustom,
 }
 
-#[cfg(feature = "ares")]
+/// A stock foundation hashes as its table id alone, as it did while it was
+/// the only variant, so a stock game's configuration hash is unchanged.
+impl std::hash::Hash for Foundation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Stock(id) => id.hash(state),
+            Self::Custom(custom) => {
+                std::mem::discriminant(self).hash(state);
+                custom.hash(state);
+            }
+            Self::InvalidCustom => std::mem::discriminant(self).hash(state),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CustomFoundation {
     width: i32,
@@ -61,9 +76,7 @@ impl Foundation {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Stock(id) => FOUNDATION_TABLE[usize::from(*id)].name,
-            #[cfg(feature = "ares")]
             Self::Custom(_) => "Custom",
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => "Custom",
         }
     }
@@ -71,9 +84,7 @@ impl Foundation {
     pub(crate) fn selector(&self) -> u8 {
         match self {
             Self::Stock(id) => *id,
-            #[cfg(feature = "ares")]
             Self::Custom(_) => 127,
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => 127,
         }
     }
@@ -81,7 +92,6 @@ impl Foundation {
     pub(crate) fn valid(&self) -> bool {
         match self {
             Self::Stock(id) => usize::from(*id) < FOUNDATION_TABLE.len(),
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => {
                 u16::try_from(custom.width).is_ok()
                     && u16::try_from(custom.height).is_ok()
@@ -91,7 +101,6 @@ impl Foundation {
                     && custom.cells.windows(2).all(|pair| pair[0] < pair[1])
                     && !custom.cells.contains(&(0x7fff, 0x7fff))
             }
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => false,
         }
     }
@@ -102,16 +111,17 @@ impl Foundation {
                 let def = &FOUNDATION_TABLE[usize::from(*id)];
                 (def.width, def.height)
             }
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => (
                 u16::try_from(custom.width).expect("validated custom foundation width"),
                 u16::try_from(custom.height).expect("validated custom foundation height"),
             ),
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
         }
     }
 
+    // `dimensions` answers BuildingTypeClass::GetFoundationWidth @ 0x0045EC90
+    // for a custom foundation too: Ares 3.0 10015310 (hook 0x45EC90) returns
+    // its CustomWidth, as 100152D0 (hook 0x45ECA0) its CustomHeight below.
     pub fn dimensions_leptons(&self) -> [i32; 2] {
         let (width, height) = self.dimensions();
         [i32::from(width) << 8, i32::from(height) << 8]
@@ -123,21 +133,52 @@ impl Foundation {
         i32::from(self.dimensions().1) + i32::from(include_bib && bib)
     }
 
-    /// Type+DFC, returned by45EC20. Custom cells have the executed Ares
-    /// 1000DF78 sort/unique order (X first, then Y); stock rows are unchanged.
-    pub fn cell_offsets(&self) -> Vec<(i16, i16)> {
+    /// Type+DFC, returned by45EC20, read in place: a stock rectangle row by
+    /// row, the refinery's special list, or a custom foundation's cells in
+    /// the executed Ares 1000DF78 sort/unique order (X first, then Y).
+    pub fn cell_offsets(&self) -> impl Iterator<Item = (i16, i16)> + '_ {
+        let (rectangle, listed): (Option<(u16, u16)>, &[(i16, i16)]) = match self {
+            Self::Stock(id) => {
+                let def = &FOUNDATION_TABLE[usize::from(*id)];
+                if def.id == REFINERY_FOUNDATION_ID {
+                    (None, &REFINERY_CELL_OFFSETS)
+                } else {
+                    (Some((def.width, def.height)), &[])
+                }
+            }
+            Self::Custom(custom) => (None, &custom.cells),
+            Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
+        };
+        rectangle
+            .into_iter()
+            .flat_map(|(width, height)| {
+                (0..height).flat_map(move |dy| (0..width).map(move |dx| (dx as i16, dy as i16)))
+            })
+            .chain(listed.iter().copied())
+    }
+
+    /// Whether [`Self::cell_offsets`] yields `offset`, without walking it: a
+    /// stock rectangle by its bounds, the refinery's eight-entry list, and a
+    /// custom list by binary search over its sorted, unique cells.
+    pub fn contains_cell_offset(&self, offset: (i16, i16)) -> bool {
         match self {
-            Self::Stock(_) => foundation_cell_offsets(self.name()),
-            #[cfg(feature = "ares")]
-            Self::Custom(custom) => custom.cells.clone(),
-            #[cfg(feature = "ares")]
+            Self::Stock(id) => {
+                let def = &FOUNDATION_TABLE[usize::from(*id)];
+                if def.id == REFINERY_FOUNDATION_ID {
+                    REFINERY_CELL_OFFSETS.contains(&offset)
+                } else {
+                    let (dx, dy) = offset;
+                    (0..i32::from(def.width)).contains(&i32::from(dx))
+                        && (0..i32::from(def.height)).contains(&i32::from(dy))
+                }
+            }
+            Self::Custom(custom) => custom.cells.binary_search(&offset).is_ok(),
             Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
         }
     }
 
     pub(crate) fn custom_outline(&self) -> Option<&[(i16, i16)]> {
         match self {
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => Some(&custom.outline),
             _ => None,
         }
@@ -146,16 +187,12 @@ impl Foundation {
     ///4A94F0 / Ares10011980 and6D50FB: cursor bounds come from the actual
     /// terminated cell list, independently of declared width/height.
     pub fn cell_bounds(&self) -> (i16, i16, i16, i16) {
-        let cells = self.cell_offsets();
-        if cells.is_empty() {
-            return (0, 0, 0, 0);
-        }
-        cells.iter().fold(
-            (512, 512, -512, -512),
-            |(min_x, min_y, max_x, max_y), &(x, y)| {
-                (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y))
-            },
-        )
+        self.cell_offsets()
+            .fold(None, |bounds, (x, y)| {
+                let (min_x, min_y, max_x, max_y) = bounds.unwrap_or((512, 512, -512, -512));
+                Some((min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y)))
+            })
+            .unwrap_or((0, 0, 0, 0))
     }
 
     pub fn placement_origin_at_cursor(&self, cursor: (u16, u16)) -> (u16, u16) {
@@ -183,16 +220,16 @@ impl Foundation {
     ) {
         match self {
             Self::Stock(id) => *id = read_building_foundation(*id, image, type_id, &mut read),
-            #[cfg(feature = "ares")]
             _ => {}
         }
     }
 
     /// BuildingType ReadINI suffix464A49/464A56 ->1000DD40. Fixed ART
     /// [effective Image], once per extension; never a layered RULES key.
-    /// Native execution: tools/rules_oracle/ares_foundation.json.
-    #[cfg(feature = "ares")]
+    /// Native execution: tools/rules_oracle/ares_foundation.json. Its caller
+    /// runs it only for a Rules read the Ares way.
     pub(crate) fn read_custom_pass(&mut self, art: &crate::rules::ini_parser::IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if matches!(self, Self::Custom(_) | Self::InvalidCustom)
             || !art
                 .read_string("Foundation", "", 0x800)
@@ -244,16 +281,16 @@ impl Foundation {
             outline.push(pair);
         }
         outline.push((0x7fff, 0x7fff));
-        *self = Self::Custom(CustomFoundation {
+        *self = Self::Custom(Box::new(CustomFoundation {
             width,
             height,
             cells,
             outline,
-        });
+        }));
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, any(tests_rules_a_n, tests_sim_world_c_o, tests_sim_world_t_z)))]
 #[path = "foundation_custom_tests.rs"]
 pub(crate) mod custom_tests;
 
@@ -471,42 +508,36 @@ pub fn placement_origin_at_cursor(value: &str, cursor: (u16, u16)) -> (u16, u16)
     Foundation::from(value).placement_origin_at_cursor(cursor)
 }
 
+/// `3x3Refinery`'s table id.
+const REFINERY_FOUNDATION_ID: u8 = 9;
+
+/// `3x3Refinery`'s native list, which deliberately omits `(2, 1)`.
+const REFINERY_CELL_OFFSETS: [(i16, i16); 8] = [
+    (0, 0),
+    (1, 0),
+    (2, 0),
+    (0, 1),
+    (1, 1),
+    (0, 2),
+    (1, 2),
+    (2, 2),
+];
+
 /// Exact sentinel-list contents for one native foundation, without the final
-/// `(0x7FFF, 0x7FFF)` terminator.
+/// `(0x7FFF, 0x7FFF)` terminator ([`Foundation::cell_offsets`]).
 ///
 /// All table entries are row-major rectangles except `3x3Refinery`, whose
 /// native list deliberately omits `(2, 1)`. `0x0` has no cell offsets.
 pub fn foundation_cell_offsets(value: &str) -> Vec<(i16, i16)> {
-    let def = foundation_def(value);
-    if def.id == 9 {
-        return vec![
-            (0, 0),
-            (1, 0),
-            (2, 0),
-            (0, 1),
-            (1, 1),
-            (0, 2),
-            (1, 2),
-            (2, 2),
-        ];
-    }
-
-    let mut offsets = Vec::with_capacity(usize::from(def.width) * usize::from(def.height));
-    for dy in 0..def.height {
-        for dx in 0..def.width {
-            offsets.push((dx as i16, dy as i16));
-        }
-    }
-    offsets
+    Foundation::from(value).cell_offsets().collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 
-    #[cfg(not(feature = "ares"))]
     #[test]
-    fn stock_build_has_no_custom_foundation_extension() {
+    fn stock_way_has_no_custom_foundation_extension() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::RulesLayerStack;
         let rules = IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nImage=ART\n");
@@ -522,6 +553,30 @@ mod tests {
             rules.object("TEST").unwrap().foundation,
             Foundation::default()
         );
+    }
+
+    /// The membership search relies on the reader keeping a custom list
+    /// sorted and unique, whatever order the art lists its cells in.
+    #[test]
+    fn custom_cells_are_found_whatever_order_the_art_lists_them_in() {
+        use crate::rules::ini_parser::IniFile;
+        let art = IniFile::from_str(
+            "[ART]\nFoundation=Custom\nFoundation.X=3\nFoundation.Y=2\n\
+            Foundation.0=2,1\nFoundation.1=0,0\nFoundation.2=1,0\nFoundation.3=0,0\n",
+        );
+        let mut foundation = Foundation::default();
+        foundation.read_custom_pass(art.section_or_empty("ART"));
+        let listed = [(0, 0), (1, 0), (2, 1)];
+        assert_eq!(foundation.cell_offsets().collect::<Vec<_>>(), listed);
+        for dx in -1..4 {
+            for dy in -1..3 {
+                assert_eq!(
+                    foundation.contains_cell_offset((dx, dy)),
+                    listed.contains(&(dx, dy)),
+                    "({dx}, {dy})"
+                );
+            }
+        }
     }
 
     #[test]

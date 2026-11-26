@@ -491,16 +491,47 @@ class CacheTests(unittest.TestCase):
         self.assertFalse((self.store / 'latest' / f'{gone.name}.json').exists())
         self.assertTrue(live.exists())
 
+    def test_abandoned_target_builds_are_reclaimed_whatever_their_profile(self):
+        # tools/wasm/build.py builds the `wasm` profile, which the runner has no name for.
+        gone = self.abandoned()
+        outputs = [self.put(gone, relative) for relative in (
+            'wasm32-unknown-unknown/CACHEDIR.TAG',
+            'wasm32-unknown-unknown/debug/.cargo-lock',
+            'wasm32-unknown-unknown/debug/.fingerprint/crate-0123/lib-crate',
+            'wasm32-unknown-unknown/debug/deps/libcrate-0123456789abcdef.rlib',
+            'wasm32-unknown-unknown/wasm/.fingerprint/vera20k-0123/lib-vera20k',
+            'wasm32-unknown-unknown/wasm/deps/vera20k.wasm',
+            'wasm32-unknown-unknown/wasm/vera20k.wasm')]
+        result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(result['state'], 'trimmed', result)
+        self.assertEqual(set(result['removed_files']), set(map(str, outputs)), result)
+        self.assertFalse(gone.exists())
+        self.assertEqual(result['removed_abandoned_roots'], [str(gone)])
+        registry = json.loads((self.store / 'cache-roots.json').read_text())
+        self.assertNotIn(str(gone), registry['roots'])
+
+    def test_target_build_left_by_a_stopped_pass_still_goes(self):
+        # A pass unlinks files first and directories last, so a stopped pass
+        # leaves the emptied .fingerprint directory but maybe not the tag.
+        gone = self.abandoned()
+        (gone / 'wasm32-unknown-unknown/wasm/.fingerprint').mkdir(parents=True)
+        rest = self.put(gone, 'wasm32-unknown-unknown/wasm/deps/vera20k.wasm')
+        result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(result['removed_files'], [str(rest)], result)
+        self.assertFalse(gone.exists())
+
     def test_abandoned_cache_keeps_what_saved_builds_name_and_foreign_files(self):
         gone = self.abandoned()
         required = self.put(gone, 'debug/deps/required.rcgu.o')
         orphan = self.put(gone, 'debug/deps/orphan.rcgu.o')
         foreign = self.put(gone, 'research/native-evidence.bin')
+        # Shaped like a target build, but no Cargo fingerprints beside it.
+        target_shaped = self.put(gone, 'wasm32-evidence/debug/native.bin')
         binary, _ = self.label()
         result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0),
                            dependencies=lambda executable: {required} if executable == binary else set())
         self.assertEqual(result['removed_files'], [str(orphan)], result)
-        self.assertTrue(required.exists() and foreign.exists())
+        self.assertTrue(required.exists() and foreign.exists() and target_shaped.exists())
         registry = json.loads((self.store / 'cache-roots.json').read_text())
         self.assertIn(str(gone), registry['roots'])
 
@@ -1192,6 +1223,31 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(result['removed_files'], [])
         self.assertTrue(older.exists())
         self.assertTrue(objects['old'].exists())
+
+    def test_automatic_pass_reclaims_older_executable_after_checkout_unlocks(self):
+        older, newer, objects, dependencies = self.older_executable()
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 1 << 62)  # Keep the reserve short.
+        lock = self.store / 'checkouts' / f'{self.namespace}.lock'
+        receipts = self.store / 'retention'
+
+        def automatic():
+            with cargo_run.build_lock(self.store / 'cargo.lock', 0):
+                cache.automatic_locked(self.root, self.store, policy, [self.target])
+
+        with patch.object(cache, '_dependencies', side_effect=dependencies), redirect_stderr(io.StringIO()):
+            with cargo_run.file_lock(lock, time.monotonic() + 5):
+                automatic()
+                (receipt,) = receipts.glob('*.json')
+                self.assertEqual(json.loads(receipt.read_text())['removable_groups'], 0)
+                automatic()
+                self.assertEqual(list(receipts.glob('*.json')), [receipt])
+                self.assertTrue(older.exists())
+            automatic()
+
+        self.assertFalse(older.exists())
+        self.assertFalse(objects['old'].exists())
+        for path in (newer, objects['new'], objects['shared']):
+            self.assertTrue(path.exists(), path)
 
     def test_under_budget_never_invokes_expensive_dependency_inspection(self):
         self.label()

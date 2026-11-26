@@ -19,6 +19,7 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         angles: [0.5, 0.],
         body_facing: 64,
         slope_blend: None,
+        tunnel_tilt: None,
         turret_offset: rules.art().get("DEST").map_or(0, |art| art.turret_offset),
     };
     let key = UnitSpriteKey {
@@ -31,13 +32,13 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         barrel_pitch: 0,
     };
     let (body, body_bounds) = model
-        .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
+        .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose), false, None)
         .unwrap();
     assert!(body.palette_indices.iter().any(|&index| index != 0));
     assert!(body_bounds.is_some());
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     let entry = cache
-        .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
+        .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false)
         .unwrap();
     assert_eq!(entry.pixel_size, [body.width as f32, body.height as f32]);
     assert_eq!(
@@ -56,13 +57,13 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         };
         assert!(
             model
-                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
+                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose), false, None)
                 .is_none(),
             "no invented stock DEST gun assets"
         );
         assert!(
             cache
-                .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
+                .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false,)
                 .is_none()
         );
     }
@@ -71,7 +72,7 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         ..pose
     };
     let (unposed, _) = model
-        .render_pose(&key, Some(&vpl), PoseTilt::Ground(level))
+        .render_pose(&key, Some(&vpl), PoseTilt::Ground(level), false, None)
         .unwrap();
     assert_ne!(
         (body.width, body.height, body.palette_indices),
@@ -102,6 +103,7 @@ fn ship_parts_reuse_native_unit_uncached_gun_arm_controls() {
             angles: [0.; 2],
             body_facing: body_step * 8,
             slope_blend: None,
+            tunnel_tilt: None,
             turret_offset: row["turret_offset"].as_i64().unwrap() as i32,
         };
         let matrices = ground_unit_pose_matrices(
@@ -149,6 +151,7 @@ pub(crate) fn native_ground_pose(input: &serde_json::Value) -> GroundPose {
             phase_num: total.wrapping_sub(remaining),
             phase_den: total as u8,
         }),
+        tunnel_tilt: None,
         turret_offset: 0,
     }
 }
@@ -270,6 +273,7 @@ fn assert_native_ground_matrices_and_parts(
         if let Some(gun) = row.get("gun_component") {
             let control = &gun["input"];
             let pose = GroundPose {
+                tunnel_tilt: None,
                 turret_offset: control["turret_offset"].as_i64().unwrap() as i32,
                 ..pose
             };
@@ -304,7 +308,7 @@ fn assert_native_ground_matrices_and_parts(
             };
             let (pose, key) = native_ground_part(type_id, row, layer);
             let (sprite, bounds) = model
-                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
+                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose), false, None)
                 .unwrap();
             let rect: [i32; 6] =
                 std::array::from_fn(|i| raster["rect"][i].as_i64().unwrap() as i32);

@@ -175,7 +175,7 @@ fn the_launch_matches_native() {
             cell.0,
             cell.1,
             sw_type,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
 
         let native_anim = events(row, "anim").next().unwrap();
@@ -290,7 +290,7 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
                 .iter()
                 .filter(|event| {
                     matches!(event, SimSoundEvent::VocAt { sound_id, audible_to: None, rx: 40, ry: 40, world_z_leptons: 0, .. }
-                        if sound_id == "ForceShieldFading")
+                        if sound_id.name_in(&rules) == "ForceShieldFading")
                 })
                 .count()
         };
@@ -465,7 +465,7 @@ mod sound_reference_history {
             .unwrap();
         sim.spawn_object("PROVIDER", "Russians", 27, 27, 0, rules)
             .unwrap();
-        sim.recheck_house_tech_tree(owner, rules);
+        sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
         let type_id = sim.interner.get(SHIELD).unwrap();
         assert!(sim.super_weapons[&owner][&type_id].is_active());
         assert!(!sim.super_weapons[&owner][&type_id].is_ready());
@@ -480,6 +480,7 @@ mod sound_reference_history {
         );
         sim.sound_events.clear_for_test();
         assert!(sim.apply_command_with_overlays(
+            None,
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id: type_id,
@@ -488,7 +489,7 @@ mod sound_reference_history {
             },
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         // StartSound is expanded by the app from this actual Launch fact and
         // the bound type. Its cue consumer is tested in sound_dispatch; core
@@ -543,7 +544,7 @@ mod sound_reference_history {
                             crate::util::lepton::CELL_CENTER_LEPTON
                         )
                     );
-                    assert_eq!(sound_id, expected_fade);
+                    assert_eq!(sound_id.name_in(&rules), expected_fade);
                     fade_visits.push(visit);
                 }
             }

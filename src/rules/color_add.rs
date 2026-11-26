@@ -94,6 +94,22 @@ impl ColorAddTable {
             (r << 11 | g << 5 | b) | (r << 11 | (g >> 1) << 6 | b) | (r << 10 | (g >> 1) << 5 | b);
         word as u16
     }
+
+    /// Phobos `GeneralUtils::GetColorFromColorAdd`
+    /// (`src/Utilities/GeneralUtils.cpp`): its pixel-format switch breaks after
+    /// the RGB565 arm, so unlike [`Self::rgb565_word`] the word is only
+    /// `R<<11 | G<<5 | B`. An index outside the table answers 0.
+    ///
+    /// RESIDUAL: Phobos `[AudioVisual] ColorAddUse8BitRGB=yes` (default no)
+    /// reads the entry as 8-bit RGB instead; VERA does not read that key.
+    #[cfg(feature = "phobos")]
+    pub fn phobos_word(&self, index: i32) -> u16 {
+        let Some(entry) = usize::try_from(index).ok().and_then(|i| self.slots.get(i)) else {
+            return 0;
+        };
+        let [r, g, b] = entry.rgb.map(u32::from);
+        (r << 11 | g << 5 | b) as u16
+    }
 }
 
 /// ReadAudioVisual6691E0's signed ColorAdd indexes (Rules+18A4..18B0).
@@ -132,7 +148,7 @@ impl ColorAddSelectors {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 

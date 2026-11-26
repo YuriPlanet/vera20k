@@ -1,0 +1,329 @@
+//! VERA extension: write a generated map as a multiplayer `.map` text
+//! (`.map` on disk), in the sections [`crate::map::map_file::MapFile`]
+//! parses back: `[Basic]`, `[Map]`, the map's own INI sections (lighting),
+//! `[Waypoints]`, `[Terrain]`, the object lists, the three packs and an
+//! optional `[Preview]` thumbnail.
+//!
+//! RESIDUAL: gamemd's own writer, `Save_Scenario_Map_File` 0x00687CE0 (its
+//! one caller is `RandomMapSetupDialog__Proc` at 0x00596A8B), is not ported.
+//! This writer emits the formats gamemd's readers take (`ReadIsoMapPack5`
+//! 0x0056BB93, the overlay packs, `[Terrain]` and `[Waypoints]` at radix 1000
+//! under `NewINIFormat=4`).
+
+use std::fmt::Write as _;
+
+use crate::map::entities::{EntityCategory, MapEntity};
+use crate::map::map_file::MapFile;
+use crate::util::base64::base64_encode;
+
+/// Uncompressed bytes per pack block, as the retail packs hold.
+const PACK_BLOCK: usize = 8192;
+/// Base64 characters per numbered pack line, as retail maps write.
+const PACK_LINE: usize = 70;
+/// The overlay byte of a cell without one.
+const NO_OVERLAY: u8 = 0xFF;
+/// `[Terrain]` and `[Waypoints]` key radix under `NewINIFormat=4`.
+const CELL_RADIX: u32 = 1000;
+
+/// A map thumbnail for `[Preview]` / `[PreviewPack]`: `width * height` RGBA
+/// pixels, rows top down.
+pub struct ExportPreview<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: &'a [u8],
+}
+
+/// The `.map` text of `map` as a standard multiplayer map named `name` for
+/// `min_players..=max_players`, with `preview` as its Choose Map thumbnail
+/// and `starts` as the `[Header]` the numbered start markers are drawn from.
+pub fn multiplayer_map_text(
+    map: &MapFile,
+    name: &str,
+    min_players: u32,
+    max_players: u32,
+    preview: Option<ExportPreview<'_>>,
+    starts: Option<&crate::map::preview::PreviewSourceBounds>,
+) -> String {
+    let mut out = String::new();
+    write_map_text(
+        &mut out,
+        map,
+        name,
+        min_players,
+        max_players,
+        preview,
+        starts,
+    )
+    .expect("fmt::Write for String never fails");
+    out
+}
+
+fn write_map_text(
+    out: &mut String,
+    map: &MapFile,
+    name: &str,
+    min_players: u32,
+    max_players: u32,
+    preview: Option<ExportPreview<'_>>,
+    starts: Option<&crate::map::preview::PreviewSourceBounds>,
+) -> std::fmt::Result {
+    let name: String = name
+        .chars()
+        .filter(|c| !c.is_control() && *c != ';')
+        .collect();
+    let header = &map.header;
+    write!(
+        out,
+        "[Basic]\nName={name}\nNewINIFormat=4\nMultiplayerOnly=1\nOfficial=no\n\
+         GameMode=standard\nMinPlayer={min_players}\nMaxPlayer={max_players}\n\
+         MinPlayers={min_players}\nMaxPlayers={max_players}\n\n\
+         [Map]\nTheater={}\nSize=0,0,{},{}\nLocalSize={},{},{},{}\n\n",
+        header.theater,
+        header.width,
+        header.height,
+        header.local_left,
+        header.local_top,
+        header.local_width,
+        header.local_height,
+    )?;
+
+    for section_name in map.ini.section_names() {
+        let Some(section) = map.ini.section(section_name) else {
+            continue;
+        };
+        writeln!(out, "[{section_name}]")?;
+        for (key, value) in section.raw_entries() {
+            writeln!(out, "{key}={value}")?;
+        }
+        out.push('\n');
+    }
+
+    // The start header the map list reads for its numbered markers
+    // (`0x00689D64..0x00689E62`): the projected playfield and each start.
+    if let Some(starts) = starts {
+        write!(
+            out,
+            "[Header]\nStartX={}\nStartY={}\nWidth={}\nHeight={}\nNumberStartingPoints={}\n",
+            starts.origin_x,
+            starts.origin_y,
+            starts.width,
+            starts.height,
+            starts.start_points.len(),
+        )?;
+        for (index, point) in starts.start_points.iter().enumerate() {
+            writeln!(out, "Waypoint{}={},{}", index + 1, point.x, point.y)?;
+        }
+        out.push('\n');
+    }
+
+    // The thumbnail `DecodePreviewPackToSurface @ 0x00641B00` reads: the
+    // `Size` rect's last two fields, and 24-bit RGB rows through LZO blocks.
+    if let Some(preview) = preview
+        && preview.width > 0
+        && preview.rgba.len() == preview.width as usize * preview.height as usize * 4
+    {
+        writeln!(
+            out,
+            "[Preview]\nSize=0,0,{},{}\n",
+            preview.width, preview.height
+        )?;
+        let rgb: Vec<u8> = preview
+            .rgba
+            .chunks_exact(4)
+            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
+            .collect();
+        push_pack(
+            out,
+            "PreviewPack",
+            &crate::util::lzo::compress_chunks(&rgb, PACK_BLOCK),
+        )?;
+    }
+
+    let mut waypoints: Vec<_> = map.waypoints.iter().collect();
+    waypoints.sort_by_key(|(index, _)| **index);
+    out.push_str("[Waypoints]\n");
+    for (index, waypoint) in waypoints {
+        let cell = u32::from(waypoint.ry) * CELL_RADIX + u32::from(waypoint.rx);
+        writeln!(out, "{index}={cell}")?;
+    }
+    out.push('\n');
+
+    out.push_str("[Terrain]\n");
+    for object in &map.terrain_objects {
+        let cell = u32::from(object.ry) * CELL_RADIX + u32::from(object.rx);
+        writeln!(out, "{cell}={}", object.name)?;
+    }
+    out.push('\n');
+
+    for (section, category) in [
+        ("Structures", EntityCategory::Structure),
+        ("Units", EntityCategory::Unit),
+        ("Infantry", EntityCategory::Infantry),
+        ("Aircraft", EntityCategory::Aircraft),
+    ] {
+        let mut lines = map
+            .entities
+            .iter()
+            .filter(|entity| entity.category == category)
+            .peekable();
+        if lines.peek().is_none() {
+            continue;
+        }
+        writeln!(out, "[{section}]")?;
+        for (index, entity) in lines.enumerate() {
+            writeln!(out, "{index}={}", object_line(entity))?;
+        }
+        out.push('\n');
+    }
+
+    // The overlay planes at the row width the reader takes from `Size`
+    // (`MapHeader::cell_grid`): 512 bytes a row, 1024 on VERA's extended
+    // sizes even when no overlay sits at 512 or beyond.
+    let side = usize::from(header.cell_grid().side());
+    let mut ids = vec![NO_OVERLAY; side * side];
+    let mut frames = vec![0u8; side * side];
+    for overlay in &map.overlays {
+        let (rx, ry) = (usize::from(overlay.rx), usize::from(overlay.ry));
+        if rx < side && ry < side {
+            ids[ry * side + rx] = overlay.overlay_id;
+            frames[ry * side + rx] = overlay.frame;
+        }
+    }
+    push_pack(
+        out,
+        "OverlayPack",
+        &crate::util::lcw::compress_chunks(&ids, PACK_BLOCK),
+    )?;
+    push_pack(
+        out,
+        "OverlayDataPack",
+        &crate::util::lcw::compress_chunks(&frames, PACK_BLOCK),
+    )?;
+
+    let mut cells = Vec::with_capacity(map.cells.len() * 11);
+    for cell in &map.cells {
+        cells.extend_from_slice(&(cell.rx as i16).to_le_bytes());
+        cells.extend_from_slice(&(cell.ry as i16).to_le_bytes());
+        cells.extend_from_slice(&cell.tile_index.to_le_bytes());
+        cells.extend_from_slice(&[cell.sub_tile, cell.z, cell.legacy_ice_byte]);
+    }
+    push_pack(
+        out,
+        "IsoMapPack5",
+        &crate::util::lzo::compress_chunks(&cells, PACK_BLOCK),
+    )
+}
+
+/// One object-list line in the column order the scenario readers take.
+fn object_line(entity: &MapEntity) -> String {
+    let MapEntity {
+        owner,
+        type_id,
+        health,
+        cell_x,
+        cell_y,
+        facing,
+        sub_cell,
+        ..
+    } = entity;
+    let high = u8::from(entity.high);
+    let group = entity.group;
+    let veterancy = entity.veterancy.unwrap_or(0);
+    let base = format!("{owner},{type_id},{health},{cell_x},{cell_y}");
+    match entity.category {
+        // ...,Facing,Tag,AISellable,AIRebuildable,Powered,Upgrades,SpotLight,
+        // Upgrade1..3,AIRepairable,Nominal
+        EntityCategory::Structure => {
+            let powered = i32::from(entity.structure_online);
+            format!("{base},{facing},None,1,0,{powered},0,0,None,None,None,1,0")
+        }
+        // ...,SubCell,Mission,Facing,Tag,Veterancy,Group,High,Recruitable A/B
+        EntityCategory::Infantry => {
+            format!("{base},{sub_cell},None,{facing},None,{veterancy},{group},{high},1,0")
+        }
+        // ...,Facing,Mission,Tag,Veterancy,Group,High,FollowsIndex,Recruitable A/B
+        EntityCategory::Unit => {
+            format!("{base},{facing},None,None,{veterancy},{group},{high},-1,1,0")
+        }
+        // ...,Facing,Mission,Tag,Veterancy,Group,Recruitable A/B
+        EntityCategory::Aircraft => {
+            format!("{base},{facing},None,None,{veterancy},{group},1,0")
+        }
+    }
+}
+
+/// A pack section: the base64 of `bytes` over numbered lines.
+fn push_pack(out: &mut String, section: &str, bytes: &[u8]) -> std::fmt::Result {
+    let encoded = base64_encode(bytes);
+    writeln!(out, "[{section}]")?;
+    for (index, line) in encoded.as_bytes().chunks(PACK_LINE).enumerate() {
+        write!(out, "{}=", index + 1)?;
+        // Base64 is ASCII, so each byte is one character.
+        out.extend(line.iter().copied().map(char::from));
+        out.push('\n');
+    }
+    out.push('\n');
+    Ok(())
+}
+
+#[cfg(all(test, tests_map))]
+mod tests {
+    use super::*;
+    use crate::map::overlay::OverlayEntry;
+
+    /// The overlay planes take the row width the map reader uses for this
+    /// `Size`, even when no overlay itself sits at 512 or beyond.
+    #[test]
+    fn overlays_of_a_wide_map_load_back_where_they_were_placed() {
+        let mut map = MapFile::from_bytes(
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n",
+        )
+        .unwrap();
+        // A generated map keeps only its own extra sections (lighting).
+        map.ini = crate::rules::ini_parser::IniFile::from_str("");
+        // 300 + 300 is past the retail 512 sum; the ore sits under 512.
+        (map.header.width, map.header.height) = (300, 300);
+        map.overlays = vec![OverlayEntry {
+            rx: 300,
+            ry: 200,
+            overlay_id: 5,
+            frame: 3,
+        }];
+        let text = multiplayer_map_text(&map, "Wide", 2, 2, None, None);
+        let read = MapFile::from_bytes(text.as_bytes()).unwrap();
+        let placed: Vec<_> = read
+            .overlays
+            .iter()
+            .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+            .collect();
+        assert_eq!(placed, [(300, 200, 5, 3)]);
+    }
+
+    /// VERA extension: a derelict's unpowered flag survives export, where the
+    /// original writer always marked every structure powered.
+    #[test]
+    fn derelict_structures_keep_their_power_state_in_the_export() {
+        let mut map = MapFile::from_bytes(
+            b"[Basic]\nNewINIFormat=4\n\
+              [Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+              [Structures]\n\
+              0=Neutral,GARAD,48,1,1,0,None,1,0,0,0,0,None,None,None,1,0\n\
+              1=Neutral,CAPOWR,256,1,0,0,None,1,0,1,0,0,None,None,None,1,0\n",
+        )
+        .unwrap();
+        map.ini = crate::rules::ini_parser::IniFile::from_str("");
+        let text = multiplayer_map_text(&map, "Derelicts", 2, 2, None, None);
+        let read = MapFile::from_bytes(text.as_bytes()).unwrap();
+        let powers: Vec<_> = read
+            .entities
+            .iter()
+            .map(|e| (e.type_id.clone(), e.health, e.structure_online))
+            .collect();
+        assert_eq!(
+            powers,
+            [("GARAD".into(), 48, false), ("CAPOWR".into(), 256, true),]
+        );
+    }
+}

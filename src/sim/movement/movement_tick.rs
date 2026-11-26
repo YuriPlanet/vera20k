@@ -62,10 +62,7 @@ pub(super) fn snapshot_mover(
             .unwrap_or(MovementZone::Normal),
         omni_crusher: e.mover_facts.omni_crusher(),
         regular_crusher: e.mover_facts.regular_crusher(),
-        locomotor_kind: e
-            .locomotor
-            .as_ref()
-            .map(|locomotor| locomotor.active_kind()),
+        locomotor_kind: e.locomotor.as_ref().map(|l| l.active_kind()),
         allow_zone_hierarchy: playfield_bounds.is_none() || e.in_playfield(),
     })
 }
@@ -86,6 +83,8 @@ struct OrdinaryMoverVisit {
     snap: MoverSnapshot,
     walk_position_before_step: Option<crate::sim::components::Position>,
     prone_crawls: Option<bool>,
+    /// Phobos `ProneSpeed` for the same prone infantryman.
+    prone_multiplier: Option<f64>,
     /// Walk75AEC0 argument1: the outer call may retry a refused head once.
     walk_retry_allowed: bool,
 }
@@ -136,6 +135,7 @@ impl WalkAdmissionRequest {
             entity_id: self.entity_id,
             destination,
             urgency,
+            retain_head: false,
             visit,
         }
     }
@@ -147,17 +147,29 @@ pub(crate) struct FootPathRequest {
     /// Find_Path's third argument: 0 for an ordinary request, 1 or 2 from the
     /// Drive/Ship code-2 ladder (0x4B3A0E), read by the edge cost (+3C).
     pub(crate) urgency: u8,
+    /// Drive/Ship's last train word: preserve one step and extend the path
+    /// from its endpoint (Find_Path argument 2 at 0x004B3F07).
+    pub(super) retain_head: bool,
     visit: OrdinaryMoverVisit,
 }
 
 /// The start and goal cells of `actor`'s core search toward `goal`
-/// ([`FootPathRequest::search`]): the Foot's own cell and the goal's.
+/// ([`FootPathRequest::search`]). Run_AStar `0x004CBBA0` starts at the cell of
+/// Foot vt+0x4C (`0x004DBDF0`), the live head before the Foot's own
+/// coordinates. A train continuation then walks its retained direction from
+/// this cell. Walk searches with no head, Drive and Ship at a head they have
+/// reached, and only a Hover (Process `0x0051448A`) can still be short of its.
 pub(super) fn core_search_cells(
     actor: &crate::sim::game_entity::GameEntity,
     goal: crate::sim::components::DriveCoord,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> ((u16, u16), (u16, u16)) {
+    let start = super::foot_path::coord_cell(
+        super::foot_coordinate::navigation_coordinate(actor, terrain)
+            .expect("a path requester has its active locomotor"),
+    );
     (
-        (actor.position.rx(), actor.position.ry()),
+        (start.0 as u16, start.1 as u16),
         ((goal.x / 256) as u16, (goal.y / 256) as u16),
     )
 }
@@ -179,7 +191,9 @@ fn no_queue_path_request(
     }
     let loco = entity.locomotor.as_ref()?;
     match loco.active_kind() {
-        LocomotorKind::Walk if loco.step_head().is_none() => loco.walk_destination(),
+        LocomotorKind::Walk | LocomotorKind::Mech if loco.step_head().is_none() => {
+            loco.walk_destination()
+        }
         _ => None,
     }
 }
@@ -210,10 +224,12 @@ impl FootPathRequest {
             entity_id,
             destination,
             urgency,
+            retain_head: false,
             visit: OrdinaryMoverVisit {
                 snap,
                 walk_position_before_step: None,
                 prone_crawls: None,
+                prone_multiplier: None,
                 walk_retry_allowed: true,
             },
         })
@@ -224,22 +240,54 @@ impl FootPathRequest {
         &self.visit.snap
     }
 
+    /// Whether this Walk request runs with its Process argument 0: the
+    /// recursion of a refused step's retry (0x75B716, 0x75BABB, 0x75BC04),
+    /// whose next refusal takes the argument-0 arms instead of retrying.
+    pub(super) fn walk_retry_spent(&self) -> bool {
+        !self.visit.walk_retry_allowed
+    }
+
+    /// Resume as that recursion would: the batched answer of a waiting
+    /// recursion (`path_batch`).
+    pub(super) fn spend_walk_retry(&mut self) {
+        self.visit.walk_retry_allowed = false;
+    }
+
     /// Find_Path's core search (`Simulation::foot_core_search`) calls this
     /// between its Mark0/Mark1, or before Mark0 for a batched path search
     /// whose `foot_entry` emulates the lift (`foot_path::MoverLift`). The
     /// context's blocker plane is current; this reuses the single existing
     /// search. `foot_entry` answers every class question and walks every
-    /// code-2 chain.
+    /// code-2 chain. `allow_zone_hierarchy` is the mover's half of AStar's
+    /// allowHS, [`Simulation::foot_search_allows_hierarchy`].
+    ///
+    /// [`Simulation::foot_search_allows_hierarchy`]: crate::sim::world::Simulation::foot_search_allows_hierarchy
     pub(super) fn search(
         &self,
         goal: crate::sim::components::DriveCoord,
         entities: &EntityStore,
         ctx: PathfindingContext<'_>,
         foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
-    ) -> Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure> {
+        allow_zone_hierarchy: bool,
+    ) -> Result<Vec<i32>, super::movement_path::MovePathFailure> {
+        use super::movement_path::MovePathFailure;
         let snap = &self.visit.snap;
         let actor = entities.get(self.entity_id).expect("live suspended mover");
-        let (start, goal) = core_search_cells(actor, goal);
+        let (mut start, goal) = core_search_cells(actor, goal, ctx.resolved_terrain);
+        if self.retain_head {
+            // Run_AStar @ 0x004CBBA0 walks Find_Path's retained prefix
+            // from the live navigation coordinate before starting at 42C900.
+            let terrain = ctx.resolved_terrain.ok_or(MovePathFailure::MissingGrid)?;
+            let first = actor
+                .navigation
+                .path_replay()
+                .remaining_directions()
+                .first()
+                .map_or(-1, |&d| i32::from(d));
+            start = terrain
+                .walk_native_path(start, &[first])
+                .map_err(|_| MovePathFailure::UnrepresentedPrefix)?;
+        }
         // AStar 0x00429A90 takes the start height from the Foot's OnBridge
         // byte (+0x8C): the cell level, +4 on a bridge. No path layer.
         let layer = if actor.on_bridge() {
@@ -262,28 +310,9 @@ impl FootPathRequest {
             //The admitted search prepares markers and applies native42AECA
             //urgency downgrade through the live Foot provider.
             self.urgency,
-            snap.allow_zone_hierarchy,
+            allow_zone_hierarchy,
             foot_entry,
         )
-        // Foot+5E0 words carry no layer; the Process reads OnBridge.
-        .map(|(path, _)| path)
-    }
-
-    /// FootFindPath4D3920's success tail: the found route becomes the
-    /// Foot+5E0 direction queue, and 4D4003 records the current Cell as its
-    /// reference. Foot timer/latch/retry state has its own lifetime.
-    ///
-    /// Every Foot reads only that queue.
-    pub(super) fn install_route(
-        &self,
-        actor: &mut crate::sim::game_entity::GameEntity,
-        path: Vec<(u16, u16)>,
-    ) {
-        let current = (actor.position.rx(), actor.position.ry());
-        actor
-            .navigation
-            .path_replay_mut()
-            .install(current, &path, 1);
     }
 }
 
@@ -297,25 +326,9 @@ struct MovementPassEffects {
     walk_boundary: Option<(u64, crate::sim::components::DriveCoord)>,
     foot_path_request: Option<FootPathRequest>,
     walk_admission_request: Option<WalkAdmissionRequest>,
-    /// A Drive/Ship Unit's Process_Movement(&out, 1, 0), which the host runs
+    /// A Drive/Ship Foot's Process_Movement(&out, 1, 0), which the host runs
     /// at the Simulation (`track_fresh`).
     track_movement: Option<(u64, super::track_process::TrackFamily)>,
-}
-
-/// A Drive/Ship Unit: its Process_Movement is `track_fresh`. The active
-/// locomotor's Process decides it (`DriveLocomotionClass::Process`
-/// `0x004B0500`, `ShipLocomotionClass::Process` `0x0069FC10`).
-fn native_track_route(
-    entity: &crate::sim::game_entity::GameEntity,
-) -> Option<super::track_process::TrackFamily> {
-    if entity.category() != EntityCategory::Unit {
-        return None;
-    }
-    match entity.locomotor.as_ref()?.active_kind() {
-        LocomotorKind::Drive => Some(super::track_process::TrackFamily::Drive),
-        LocomotorKind::Ship => Some(super::track_process::TrackFamily::Ship),
-        _ => None,
-    }
 }
 
 /// Where a mover visit enters [`advance_ordinary_mover`].
@@ -328,7 +341,7 @@ enum VisitEntry {
     /// no active-track dispatch and no new mover visit.
     AfterTrackEnd,
     /// Below the no-queue request, after Find_Path resumed head selection.
-    FootPathResume(Box<OrdinaryMoverVisit>),
+    FootPathResume(OrdinaryMoverVisit),
 }
 
 /// Run one ordinary mover visit. An early return ends this visit, including
@@ -340,7 +353,7 @@ fn advance_ordinary_mover(
     entity_id: u64,
     grids: PassGrids<'_>,
     native_frame: u32,
-    interner: &mut crate::sim::intern::StringInterner,
+    interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     houses: &crate::sim::houses::Houses,
     effects: &mut MovementPassEffects,
@@ -391,14 +404,20 @@ fn advance_ordinary_mover(
     let resumed_path_request = matches!(entry, VisitEntry::FootPathResume(_));
     let counts_visit = matches!(entry, VisitEntry::Process);
     let visit = if let VisitEntry::FootPathResume(visit) = entry {
-        *visit
+        visit
     } else {
         if counts_visit {
             stats.movers_total = stats.movers_total.saturating_add(1);
         }
         // Drive4B0A79 / Ship6A0142 (and the track-end continuation 4B0647):
         // Process_Movement runs at the Simulation; see `track_fresh`.
-        if let Some(family) = entities.get(entity_id).and_then(native_track_route) {
+        // Drive4B0A79 / Ship6A0142 call Process_Movement for the linked
+        // Foot. Infantry and Unit dispatch through the same locomotor slot.
+        if let Some(family) = entities
+            .get(entity_id)
+            .and_then(|actor| actor.locomotor.as_ref())
+            .and_then(|loco| super::track_process::TrackFamily::from_kind(loco.active_kind()))
+        {
             debug_assert!(track_movement.is_none(), "scoped Process has one request");
             *track_movement = Some((entity_id, family));
             return;
@@ -407,7 +426,12 @@ fn advance_ordinary_mover(
         if !entities
             .get(entity_id)
             .and_then(|entity| entity.locomotor.as_ref())
-            .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Walk)
+            .is_some_and(|locomotor| {
+                matches!(
+                    locomotor.active_kind(),
+                    LocomotorKind::Walk | LocomotorKind::Mech
+                )
+            })
         {
             return;
         }
@@ -419,21 +443,25 @@ fn advance_ordinary_mover(
         };
         // Walk tests CanEnter at 0x75B690 before its paid SetCoords calls
         // (0x75BDC0/0x75C12E). A refused prospective step keeps exact XY.
-        let walk_position_before_step = snap
-            .locomotor_kind
-            .filter(|kind| *kind == LocomotorKind::Walk)
-            .and_then(|_| entities.get(entity_id).map(|entity| entity.position));
-        let prone_crawls = entities.get(entity_id).and_then(|entity| {
-            if !infantry::is_prone_for_damage(entity) {
-                return None;
-            }
-            let obj = interner.object_type(entity.type_ref(), rules)?;
-            Some(obj.crawls)
-        });
+        let walk_position_before_step = (snap.locomotor_kind == Some(LocomotorKind::Walk))
+            .then(|| entities.get(entity_id).map(|entity| entity.position))
+            .flatten();
+        // The prone arm of `InfantryClass::GetMovementSpeed @ 0x00521D80`
+        // reads the type's `Crawls=` and, under Phobos, its `ProneSpeed`.
+        let prone_type = entities
+            .get(entity_id)
+            .filter(|entity| infantry::is_prone_for_damage(entity))
+            .and_then(|entity| interner.object_type(entity.type_ref(), rules));
+        let prone_crawls = prone_type.map(|obj| obj.crawls);
+        #[cfg(feature = "phobos")]
+        let prone_multiplier = prone_type.map(|obj| rules.prone_speed_for(obj));
+        #[cfg(not(feature = "phobos"))]
+        let prone_multiplier = None;
         OrdinaryMoverVisit {
             snap,
             walk_position_before_step,
             prone_crawls,
+            prone_multiplier,
             walk_retry_allowed: true,
         }
     };
@@ -465,6 +493,7 @@ fn advance_ordinary_mover(
             entity_id,
             destination,
             urgency: 0,
+            retain_head: false,
             visit,
         });
         return;
@@ -473,6 +502,7 @@ fn advance_ordinary_mover(
         snap,
         walk_position_before_step,
         prone_crawls,
+        prone_multiplier,
         walk_retry_allowed,
     } = visit;
     let Some(entity) = entities.get_mut(entity_id) else {
@@ -494,6 +524,7 @@ fn advance_ordinary_mover(
                 snap,
                 walk_position_before_step,
                 prone_crawls,
+                prone_multiplier,
                 walk_retry_allowed,
             },
         });
@@ -516,6 +547,22 @@ fn advance_ordinary_mover(
         *walk_per_cell = Some((entity_id, head));
         return;
     }
+    // Firestorm 2.0 Walk `Internal_Process` `0x0066DC8A..0x0066DCAA` (gamemd
+    // 0x75BF85..0x75BFA6): with the head still 17 leptons or more away, an
+    // immobilized owner clears the moving byte and Foot's scold latch and
+    // returns without stepping, keeping its path. Only Firestorm's web term
+    // is ported; the EMP term stays the residual in `walk_step`.
+    if entity.is_webbed(native_frame as i32)
+        && entity.locomotor.as_ref().is_some_and(|loco| {
+            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
+        })
+    {
+        if let Some(loco) = entity.locomotor.as_mut() {
+            loco.stop_movement_animation();
+        }
+        entity.navigation.path_runtime_mut().clear_scold_latch();
+        return;
+    }
     let object = interner.object_type(entity.type_ref(), rules);
     let adjusted_speed =
         super::foot_speed::adjusted_speed(entity, object, rules.general.veteran_speed, houses);
@@ -523,6 +570,7 @@ fn advance_ordinary_mover(
         entity,
         adjusted_speed,
         prone_crawls,
+        prone_multiplier,
         native_frame,
         resolved_terrain,
         path_grid,
@@ -556,18 +604,20 @@ fn advance_ordinary_mover(
 /// way). The entity touch log maintains building contributions (and, in
 /// fixtures without an overlay grid, mobiles).
 /// Debug checks compare against a fresh sum. No cache data is saved or hashed.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct MovementPassCache {
     blocker: BlockerPlaneCache,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct BlockerPlaneCache {
     entry: Option<BlockerPlaneEntry>,
     /// How often the plane was rebuilt from the whole map and every entity.
     #[cfg(any(test, feature = "test-support"))]
     world_rebuilds: usize,
 }
+
+#[derive(Clone)]
 
 struct BlockerPlaneEntry {
     key: BlockerPlaneKey,
@@ -641,6 +691,11 @@ impl MovementPassCache {
             Touched::All => None,
             Touched::Ids(ids) => Some(ids),
         };
+        // With the retained Foot bytes only buildings are sources, so until
+        // the next call the log need not name anything else. A call under
+        // another key rebuilds, so a narrowed log is read only by a plane
+        // that retains them.
+        entities.narrow_touched(TouchReader::BlockerPlane, retained_foot);
         match blocker
             .entry
             .as_mut()
@@ -670,14 +725,17 @@ impl MovementPassCache {
                     // With the retained Foot bytes only a building is a
                     // source (`blocker_plane_source`), and a stored object's
                     // category never changes: a touched object of another
-                    // category without a source still has none. The category
-                    // column says so without loading the entity.
+                    // category has none. The category column says so
+                    // without loading the entity.
                     if retained_foot
                         && entities
                             .category_of(id)
                             .is_some_and(|category| category != EntityCategory::Structure)
-                        && !entry.sources.contains_key(&id)
                     {
+                        debug_assert!(
+                            !entry.sources.contains_key(&id),
+                            "object {id} is a blocker plane source but no building"
+                        );
                         continue;
                     }
                     let now = entities.get(id).and_then(|entity| {
@@ -766,7 +824,7 @@ impl MovementPassCache {
 /// Walk tail. Returns whether the object still advances as an ordinary
 /// mover.
 fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
-    let Some(entity) = entities.get_mut(entity_id) else {
+    let Some(entity) = entities.get(entity_id) else {
         return false;
     };
     // Walk75AEC0 is the Process of every live Foot (FootClass::AI
@@ -774,12 +832,12 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     // destination (+0x1C): either one runs its step, neither the idle tail
     // 75BCE3 (Walk75AEC3..75AF10).
     let walk_route = entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == LocomotorKind::Walk
-            && (loco.step_head().is_some() || loco.walk_destination().is_some())
+        matches!(
+            loco.active_kind(),
+            LocomotorKind::Walk | LocomotorKind::Mech
+        ) && (loco.step_head().is_some() || loco.walk_destination().is_some())
     });
-    if entity.is_active() && !walk_route {
-        super::walk_step::finish_idle(entity);
-    }
+    let idle_tail = entity.is_active() && !walk_route;
     // A Drive or Ship got here through the outer Process gates
     // (`track_turn`: Drive 0x4B08D1..0x4B0A69 / Ship 0x69FF98..0x6A0131),
     // which admit Process_Movement (0x4B0A79 / 0x6A0142) for a moving class
@@ -787,11 +845,17 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     let track_route = entity.locomotor.as_ref().is_some_and(|loco| {
         super::track_process::TrackFamily::from_kind(loco.active_kind()).is_some()
     });
-    if !walk_route && !track_route {
-        return false;
+    // The idle tail writes only speed and the scold latch, which neither
+    // route nor layer reads.
+    if idle_tail
+        && let Some(entity) = entities.get_mut_if(entity_id, super::walk_step::finish_idle_writes)
+    {
+        super::walk_step::finish_idle(entity);
     }
-    let layer = entity.movement_layer_or_ground();
-    !matches!(layer, MovementLayer::Air | MovementLayer::Underground)
+    // Foot AI dispatches the installed class (4DA877). A grounded
+    // Jumpjet can install Walk (51B0CC); Walk::In_Which_Layer (75C7E0)
+    // returns Ground even when the displaced controller cached Air.
+    walk_route || track_route
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -816,17 +880,17 @@ pub(crate) fn tick_movement_with_grids(
     // This adapter owns only fixture assembly and result transfer. Runtime
     // state is moved, not mirrored; every entity reaches the production host.
     let mut sim = crate::sim::world::Simulation::new();
-    sim.substrate.entities = std::mem::take(entities);
-    sim.substrate.occupancy = std::mem::take(occupancy);
-    sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
-    sim.interner = std::mem::take(interner);
-    sim.scenario_rng = rng.clone();
+    *sim.substrate.entities = std::mem::take(entities);
+    *sim.substrate.occupancy = std::mem::take(occupancy);
+    *sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
+    *sim.interner = std::mem::take(interner);
+    *sim.scenario_rng = rng.clone();
     sim.session.set_tick_for_test(sim_tick);
     sim.session.set_binary_frame_for_test(native_frame);
     *sim.house_alliances_mut_for_test() = alliances.clone();
-    sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    sim.zone_grid = zone_grid.cloned();
-    sim.resolved_terrain = resolved_terrain.cloned();
+    *sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
+    *sim.zone_grid = zone_grid.cloned().map(Into::into);
+    *sim.resolved_terrain = resolved_terrain.cloned();
     sim.set_playfield_bounds_for_test(playfield_bounds);
     sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());
     let order = live_order
@@ -839,11 +903,11 @@ pub(crate) fn tick_movement_with_grids(
                 .expect("fixture reached an unsupported production movement receiver"),
         );
     }
-    *entities = sim.substrate.entities;
-    *occupancy = sim.substrate.occupancy;
-    *raw_cell_occupation = sim.substrate.raw_cell_occupation;
-    *interner = sim.interner;
-    *rng = sim.scenario_rng;
+    *entities = sim.substrate.entities.into_inner();
+    *occupancy = sim.substrate.occupancy.into_inner();
+    *raw_cell_occupation = sim.substrate.raw_cell_occupation.into_inner();
+    *interner = sim.interner.into_inner();
+    *rng = sim.scenario_rng.into_inner();
     sound_events.extend(sim.sound_events.take_for_test());
     stats
 }
@@ -856,7 +920,7 @@ pub(crate) struct PendingMovementPass {
 pub(crate) enum MoverReentry {
     /// Find_Path resumed head selection (Walk after 0x75AFC5, Drive 0x4B32A1,
     /// Ship 0x6A28F1).
-    FootPath(Box<FootPathRequest>),
+    FootPath(FootPathRequest),
     /// Process_Movement after Process_Track(0) ended the track in the same
     /// Process (Drive 0x4B0647 / Ship 0x69FCEE).
     AfterTrackEnd(u64),
@@ -905,10 +969,9 @@ impl PendingMovementPass {
             playfield_bounds: sim.playfield_bounds(),
         };
         let (entity_id, entry) = match reentry {
-            MoverReentry::FootPath(request) => (
-                request.entity_id,
-                VisitEntry::FootPathResume(Box::new(request.visit)),
-            ),
+            MoverReentry::FootPath(request) => {
+                (request.entity_id, VisitEntry::FootPathResume(request.visit))
+            }
             MoverReentry::AfterTrackEnd(entity_id) => (entity_id, VisitEntry::AfterTrackEnd),
         };
         advance_ordinary_mover(
@@ -916,7 +979,7 @@ impl PendingMovementPass {
             entity_id,
             grids,
             sim.session.binary_frame(),
-            &mut sim.interner,
+            &sim.interner,
             rules,
             &sim.houses,
             &mut self.effects,
@@ -952,7 +1015,7 @@ pub(crate) fn begin_movement(
     native_frame: u32,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     playfield_bounds: Option<PlayfieldBounds>,
-    interner: &mut crate::sim::intern::StringInterner,
+    interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     houses: &crate::sim::houses::Houses,
 ) -> PendingMovementPass {
@@ -983,11 +1046,11 @@ pub(crate) fn finish_movement_pass(pending: PendingMovementPass) -> MovementTick
     pending.effects.stats
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "track_chain_migration_tests.rs"]
 mod track_chain_migration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod pass_cache_tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;

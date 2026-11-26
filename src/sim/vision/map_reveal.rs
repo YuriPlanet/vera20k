@@ -24,12 +24,14 @@ impl FogState {
     /// `MapClass::RevealEntireMap`'s one-time House+240 test and set
     /// (`0x00577F9A..0x00577FAD`): false when the map is already revealed.
     pub(crate) fn admit_whole_map_reveal(&mut self, owner: InternedId) -> bool {
+        self.note_map(owner);
         self.whole_map_revealed_owners.insert(owner)
     }
 
     /// Successful native6FB170 gap re-admission invalidates House+240,
     /// including a friendly generator whose footprint leaves no hostile gap.
     pub(crate) fn invalidate_whole_map_reveal_for_owner(&mut self, owner: InternedId) {
+        self.note_map(owner);
         self.whole_map_revealed_owners.remove(&owner);
     }
 
@@ -78,7 +80,7 @@ impl FogState {
             .map(|&id| (id, self.sight_admissions.get(&(id, owner)).cloned()))
             .collect();
         let mut world = crate::sim::world::Simulation::default();
-        world.fog = std::mem::take(self);
+        *world.fog = std::mem::take(self);
         world.transition_whole_map_with_gap_reentry(
             owner,
             cells,
@@ -94,7 +96,7 @@ impl FogState {
             &super::VisionConfig::default(),
             crate::sim::world::UninitContext::default(),
         );
-        *self = world.fog;
+        *self = world.fog.into_inner();
     }
 
     /// Map577D90's entry240 guard, before the shared live callbacks. The
@@ -104,11 +106,16 @@ impl FogState {
         owner: InternedId,
         transition: MapTransition,
     ) -> bool {
-        if self.width == 0
-            || self.height == 0
-            || (transition == MapTransition::Reveal
-                && self.whole_map_revealed_owners.contains(&owner))
-        {
+        if transition == MapTransition::Reveal && self.whole_map_revealed_owners.contains(&owner) {
+            return false;
+        }
+        self.begin_whole_map_store(owner)
+    }
+
+    /// Admits a store to every cell of `owner`'s map: its plane exists and
+    /// its tracked changes are no longer complete. False for an empty map.
+    fn begin_whole_map_store(&mut self, owner: InternedId) -> bool {
+        if self.width == 0 || self.height == 0 {
             return false;
         }
         self.by_owner
@@ -116,6 +123,21 @@ impl FogState {
             .tracked
             .complete = false;
         true
+    }
+
+    /// `MapClass::Reset_Shroud @ 0x00577BB0`'s cell pass on `owner`'s map
+    /// ([`OwnerVisibility::store_cleared_map_cell`] on each of `cells`).
+    /// Unlike the [`MapTransition`]s it releases no sight or gap; its caller
+    /// clears House+240 afterwards.
+    pub(crate) fn store_cleared_map(&mut self, owner: InternedId, cells: Vec<(u16, u16)>) {
+        if !self.begin_whole_map_store(owner) {
+            return;
+        }
+        self.note_map(owner);
+        let vis = self.by_owner.get_mut(&owner).expect("admitted map store");
+        for cell in cells {
+            vis.store_cleared_map_cell(cell);
+        }
     }
 
     /// Explicit footprint-only fixture inputs; no live source admission or
@@ -190,6 +212,7 @@ impl FogState {
         cells: Vec<(u16, u16)>,
         transition: MapTransition,
     ) {
+        self.note_map(owner);
         self.gap_sources.remove(&owner);
         if transition == MapTransition::Reveal {
             self.whole_map_revealed_owners.insert(owner);
@@ -220,6 +243,7 @@ impl FogState {
         for index in gap_footprint(gap, usize::from(self.width), usize::from(self.height)) {
             vis.add_gap_cell(index);
         }
+        self.note_map(owner);
         self.gap_sources.entry(owner).or_default().insert(gap);
         self.whole_map_revealed_owners.remove(&owner);
     }

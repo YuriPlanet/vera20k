@@ -12,9 +12,31 @@ typedef uint32_t Result;
 typedef uint32_t Handle;
 typedef struct { void *address; } SharedMemory;
 typedef struct { Handle session; } Service;
-typedef struct { int unused; } Thread;
+typedef struct { Handle handle; int unused; } Thread;
 typedef void (*ThreadFunc)(void *);
 typedef int64_t s64;
+typedef int32_t s32;
+typedef int InfoType;
+typedef u32 Mutex;
+typedef int PcvModuleId;
+typedef Service ClkrstSession;
+#define InfoType_ThreadTickCount 25
+#define InfoType_ThreadTickCountDeprecated 0xF0000002
+#define PcvModuleId_CpuBus 0
+#define PcvModuleId_GPU 1
+#define PcvModuleId_EMC 2
+void mutexLock(Mutex *);
+void mutexUnlock(Mutex *);
+Handle threadGetCurHandle(void);
+bool hosversionAtLeast(u32, u32, u32);
+Result svcGetThreadId(u64 *, Handle);
+Result svcGetThreadCoreMask(s32 *, u64 *, Handle);
+Result svcGetThreadPriority(s32 *, Handle);
+Result clkrstInitialize(void);
+void clkrstExit(void);
+Result clkrstOpenSession(ClkrstSession *, PcvModuleId, u32);
+void clkrstCloseSession(ClkrstSession *);
+Result clkrstGetClockRate(ClkrstSession *, u32 *);
 typedef struct {
     bool in_send_pid;
     int out_handle_attrs[8];

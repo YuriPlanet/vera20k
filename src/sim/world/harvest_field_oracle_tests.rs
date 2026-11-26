@@ -241,7 +241,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
         grid.recalculate_runtime_cell(s.sim.resolved_terrain.as_mut().unwrap(), registry, at);
     }
     let frame = s.sim.session.binary_frame();
-    s.sim.ore_growth_state = OreGrowthState::new(33, 33);
+    *s.sim.ore_growth_state = OreGrowthState::new(33, 33);
     s.sim
         .ore_growth_state
         .reset_native_tiberium_classes_for_rect((16, 16), 4, frame);
@@ -263,7 +263,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             miner.set_harvesting_for_test(input["harvesting"] == true);
         }
     }
-    s.sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    *s.sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     if let Some(owned) = input["owned_by_current_house"].as_bool() {
         s.sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
@@ -277,9 +277,10 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             .entities
             .get_mut(s.miner)
             .unwrap()
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(owned);
-        s.sim.fog = crate::sim::vision::FogState::new(33, 33);
+        *s.sim.fog = crate::sim::vision::FogState::new(33, 33);
         s.sim.fog.reveal_cells_for_owner(
             current,
             input["mapped"].as_array().into_iter().flatten().map(cell),
@@ -450,7 +451,8 @@ fn reduce_tiberium_matches_the_original_cell_reduction() {
             input["amount"].as_i64().unwrap() as i32,
             &s.rules,
             Some(registry()),
-        );
+        )
+        .unwrap();
         assert_eq!(
             u64::from(outcome.removed_amount),
             row["removed"].as_u64().unwrap(),
@@ -492,7 +494,8 @@ fn scan_for_tiberium_matches_the_original_ring_scan() {
             Some(registry()),
             s.miner,
             input["range"].as_i64().unwrap() as i32,
-        );
+        )
+        .unwrap();
         let found = found.map_or(serde_json::json!([0, 0]), |(x, y)| {
             serde_json::json!([x, y])
         });
@@ -514,8 +517,9 @@ fn search_for_tiberium_matches_the_original_search_and_move() {
             Some(registry()),
             s.miner,
             input["range"].as_i64().unwrap() as i32,
-            crate::sim::world::FrameEffects::default(),
-        );
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         assert_eq!(
             u64::from(ok),
             row["ok"].as_u64().unwrap(),
@@ -558,11 +562,12 @@ fn mission_harvest_states_zero_and_one_match_the_original_dispatch() {
             &mut s.sim,
             s.miner,
             &s.rules,
-            crate::sim::world::ObjectAiCtx {
+            &mut crate::sim::world::ObjectAiCtx {
                 overlay_registry: Some(registry()),
                 ..Default::default()
             },
-        );
+        )
+        .unwrap();
         let entity = s.sim.substrate.entities.get(s.miner).unwrap();
         let timer = entity.mission.dispatch_timer();
         assert_eq!(
@@ -625,9 +630,10 @@ fn campaign_player_scan_rejects_unexplored_ore() {
         .entities
         .get_mut(scene.miner)
         .unwrap()
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
-    scene.sim.fog = crate::sim::vision::FogState::new(33, 33);
+    *scene.sim.fog = crate::sim::vision::FogState::new(33, 33);
     assert!(crate::sim::vision::cell_is_shrouded(
         &scene.sim.fog,
         &crate::map::resolved_terrain::NativeCellQuery::canonical(
@@ -643,7 +649,8 @@ fn campaign_player_scan_rejects_unexplored_ore() {
             Some(registry()),
             scene.miner,
             6,
-        ),
+        )
+        .unwrap(),
         None,
         "the native campaign scan rejects the only hidden candidate"
     );

@@ -35,7 +35,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
             HouseDifficulty::Normal,
             &general,
             CountryDifficultyBiases::default(),
-            false,
+            crate::rules::rule_policy::RulePolicy::stock_campaign(),
             index as i32,
             0,
         );
@@ -48,6 +48,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
         // The estimator fixture's retained raw rank is2.0 (40000000).
         entity.veterancy.set_rank_for_test(200);
         entity
+            .seldom
             .crate_multipliers
             .set_firepower_multiplier_for_test(NativeF64Bits::from_bits(if id == 1 {
                 1f64.to_bits()
@@ -55,6 +56,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
                 19f64.to_bits()
             }));
         entity
+            .seldom
             .crate_multipliers
             .set_armor_multiplier_for_test(NativeF64Bits::from_bits(if id == 1 {
                 1f64.to_bits()
@@ -140,4 +142,22 @@ fn threat_estimate_uses_the_attacking_house_firepower() {
         super::super::estimated_damage_on(&sim, &rules, 1, 2, rules.weapon("Gun").unwrap()),
         row["result_i32"].as_i64().unwrap() as i32
     );
+}
+
+#[test]
+#[cfg(feature = "phobos")]
+fn phobos_firepower_multiplier_folds_the_constructor_stages() {
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+
+    let stages = super::damage::attacker::FireDamageStages {
+        house_firepower: NativeF64Bits::from_bits(1.5_f64.to_bits()),
+        unit_firepower: NativeF64Bits::from_bits(2.0_f64.to_bits()),
+        rank_firepower: Some(NativeF64Bits::from_bits(1.2_f64.to_bits())),
+        occupied: Some(NativeF32Bits::from_bits(0.5_f32.to_bits())),
+        bunkered: None,
+        open_topped: None,
+        ae_firepower: 1.1,
+    };
+    let value = super::phobos_firepower_multiplier(&stages);
+    assert!((f64::from_bits(value.bits()) - 1.98).abs() < 1e-12);
 }

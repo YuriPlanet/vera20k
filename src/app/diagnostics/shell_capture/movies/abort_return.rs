@@ -9,7 +9,7 @@ use crate::ui::shell::abort::{AbortButton, AbortSecondary};
 use crate::ui::shell::pause_menu::{PauseMenuButton, PauseMenuTemplate};
 
 fn menu_dialog(state: &AppState) -> u32 {
-    match crate::app::input::pause_menu::current_template(state) {
+    match crate::app::input::pause_menu::current_template(&state.match_state.match_presentation) {
         PauseMenuTemplate::Offline => 0xb5,
         PauseMenuTemplate::Network => 0xbba,
         PauseMenuTemplate::Internet => 0xff,
@@ -21,7 +21,7 @@ fn queued_destructs(state: &AppState) -> Result<usize> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("abort lost its installed runtime")?
         .simulation;
     Ok(sim
@@ -47,76 +47,53 @@ enum AbortInputPhase {
     SurrenderOkPressed,
     Queued,
 }
-pub(super) struct AbortReturnInput {
+pub(in super::super) struct AbortReturnInput {
     phase: AbortInputPhase,
     /// The B6 button to press, or none to stop once B6 has presented.
     choice: Option<AbortButton>,
     /// Stop on the presented menu instead of pressing Abort; on FF, first
-    /// jump the speed trackbar to its fastest end.
+    /// open the Game Options page, which FF's group heads, and jump its speed
+    /// trackbar to the fastest end.
     stop_at_menu: bool,
-    /// The menu button to press: Abort, or Game Controls to stop on BBB.
-    menu_press: PauseMenuButton,
     /// Abort opens the Surrender box instead of B6: `Some(true)` presses
     /// its OK, `Some(false)` stops once it has presented.
     surrender: Option<bool>,
 }
+/// Where an [`AbortReturnInput`] route ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in super::super) enum AbortGoal {
+    /// Stop on the presented menu; on FF, first open the Game Options page
+    /// and jump its speed trackbar to the fastest end.
+    Menu,
+    /// Press Abort, then this B6 button, or stop once B6 has presented.
+    Choose(Option<AbortButton>),
+    /// A WOL tournament game's Abort: the Surrender box, then OK
+    /// (`press_ok`) or a stop once it has presented.
+    Surrender { press_ok: bool },
+}
 impl AbortReturnInput {
-    /// Through B6 Leave to the queued EXIT.
-    pub(super) fn begin(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<Self> {
-        Self::begin_choosing(state, route, frame, Some(AbortButton::Leave))
-    }
-
-    /// A WOL tournament game's Abort: the Surrender box, then OK or a stop.
-    pub(super) fn begin_surrender(
+    /// Ordinary Escape toward `goal`. `exact_step` advances the offline
+    /// exact-step owner until B5 opens; without it (a capture whose match the
+    /// ordinary frame loop runs, or a live peer that may advance only through
+    /// its normal frame boundary) the route waits for the menu the loop's
+    /// next tick opens.
+    pub(in super::super) fn begin(
         state: &mut AppState,
         route: &mut Vec<Value>,
         frame: u32,
-        press_ok: bool,
+        goal: AbortGoal,
+        exact_step: bool,
     ) -> Result<Self> {
-        let mut input = Self::begin_choosing(state, route, frame, None)?;
-        input.surrender = Some(press_ok);
+        let choice = match goal {
+            AbortGoal::Choose(choice) => choice,
+            AbortGoal::Menu | AbortGoal::Surrender { .. } => None,
+        };
+        let mut input = Self::begin_mode(state, route, frame, choice, exact_step)?;
+        input.stop_at_menu = goal == AbortGoal::Menu;
+        if let AbortGoal::Surrender { press_ok } = goal {
+            input.surrender = Some(press_ok);
+        }
         Ok(input)
-    }
-
-    /// Open the in-game menu and stop there.
-    pub(super) fn begin_menu(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-    ) -> Result<Self> {
-        let mut input = Self::begin_choosing(state, route, frame, None)?;
-        input.stop_at_menu = true;
-        Ok(input)
-    }
-
-    /// Open the in-game menu, press Game Controls and stop on BBB.
-    pub(super) fn begin_game_controls(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-    ) -> Result<Self> {
-        let mut input = Self::begin_choosing(state, route, frame, None)?;
-        input.menu_press = PauseMenuButton::GameControls;
-        Ok(input)
-    }
-
-    pub(super) fn begin_choosing(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-        choice: Option<AbortButton>,
-    ) -> Result<Self> {
-        Self::begin_mode(state, route, frame, choice, true)
-    }
-
-    /// Live peers must advance only through their normal frame boundary. Queue
-    /// Options through the keyboard and wait for the actual menu to appear.
-    pub(super) fn begin_network_observe(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-    ) -> Result<Self> {
-        Self::begin_mode(state, route, frame, Some(AbortButton::Secondary), false)
     }
 
     fn begin_mode(
@@ -174,11 +151,10 @@ impl AbortReturnInput {
             },
             choice,
             stop_at_menu: false,
-            menu_press: PauseMenuButton::Abort,
             surrender: None,
         })
     }
-    pub(super) fn after_present(
+    pub(in super::super) fn after_present(
         &mut self,
         state: &mut AppState,
         route: &mut Vec<Value>,
@@ -222,10 +198,36 @@ impl AbortReturnInput {
                 route.push(
                     json!({"frame": frame, "action": "pause menu presented", "dialog": dialog}),
                 );
-                let layout = crate::app::input::pause_menu::current_layout(state)
+                let mut layout = crate::app::input::pause_menu::current_layout(state)
                     .context("B5 has no loaded hit geometry")?;
                 if self.stop_at_menu {
-                    if let Some(internet) = layout.internet {
+                    let internet = state.match_state.match_presentation.pause_menu_template
+                        == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet;
+                    if internet {
+                        // The menu opens on Game Controls; FF's group heads
+                        // the Game Options page, which Options' column shows:
+                        // Keyboard, then a button per category.
+                        use crate::ui::main_menu_dialogs::options::Category;
+                        let game_options = 1 + Category::ALL
+                            .iter()
+                            .position(|category| *category == Category::Gameplay)
+                            .context("the column has no Game Options page")?;
+                        for (step, row) in [("Options", 0), ("Game Options page", game_options)] {
+                            let rect = *layout
+                                .page_column()
+                                .get(row)
+                                .with_context(|| format!("FF has no {step} button"))?;
+                            let point = click_in_game(state, rect);
+                            layout = crate::app::input::pause_menu::current_layout(state)
+                                .context("FF has no loaded hit geometry")?;
+                            route.push(json!({"frame": frame, "action": step,
+                                "dialog": dialog, "point": point}));
+                        }
+                    }
+                    if internet {
+                        let internet = layout.internet.context(
+                            "FF's Game Options page has no Internet Game Controls group",
+                        )?;
                         use crate::ui::shell::pause_menu::InternetSlider;
                         let rect = internet.sliders[InternetSlider::Speed as usize];
                         // The admitted strip's last pixel row, beside the
@@ -236,18 +238,7 @@ impl AbortReturnInput {
                             1,
                             1,
                         );
-                        let point = set_window_pointer_to_rect_center(state, target);
-                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            ElementState::Pressed,
-                        );
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            ElementState::Released,
-                        );
+                        let point = click_in_game(state, target);
                         let pause = state.match_state.match_presentation.internet_pause;
                         ensure!(
                             pause.positions[InternetSlider::Speed as usize] == 6,
@@ -260,23 +251,15 @@ impl AbortReturnInput {
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
-                let press = self.menu_press;
+                let press = PauseMenuButton::Abort;
                 let rect = layout
                     .button(press)
                     .with_context(|| format!("the in-game menu has no {press:?}"))?;
-                let point = set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
+                let point = press_in_game(state, rect);
                 ensure!(
-                    state
-                        .match_state
-                        .match_presentation
-                        .pause_menu_interaction
-                        .is_pressed(press),
+                    crate::app::input::pause_menu::button_states(&state.match_state)
+                        [press as usize]
+                        .pressed,
                     "physical {press:?} press missed its loaded control"
                 );
                 route.push(
@@ -288,11 +271,9 @@ impl AbortReturnInput {
             AbortInputPhase::AbortPressed => {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
-                        && state
-                            .match_state
-                            .match_presentation
-                            .pause_menu_interaction
-                            .is_pressed(self.menu_press),
+                        && crate::app::input::pause_menu::button_states(&state.match_state)
+                            [PauseMenuButton::Abort as usize]
+                            .pressed,
                     "the menu press changed before its presented release"
                 );
                 crate::app::input::dispatch::handle_mouse_input(
@@ -300,17 +281,6 @@ impl AbortReturnInput {
                     MouseButton::Left,
                     ElementState::Released,
                 );
-                if self.menu_press == PauseMenuButton::GameControls {
-                    ensure!(
-                        state.match_state.match_presentation.in_game_menu
-                            == InGameMenuState::Options,
-                        "physical Game Controls release did not open BBB"
-                    );
-                    route.push(json!({"frame": frame, "action": "Game Controls release"}));
-                    MoviesCapture::restore_neutral_pointer(state);
-                    self.phase = AbortInputPhase::Queued;
-                    return Ok(true);
-                }
                 if self.surrender.is_some() {
                     ensure!(
                         state.match_state.match_presentation.in_game_menu
@@ -357,19 +327,12 @@ impl AbortReturnInput {
                 let rect = layout
                     .button(choice)
                     .with_context(|| format!("B6 does not show {choice:?}"))?;
-                let point = set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
+                let point = press_in_game(state, rect);
                 ensure!(
-                    state
-                        .match_state
-                        .match_presentation
-                        .abort_buttons
-                        .is_pressed(choice),
+                    crate::app::input::dialog_page::pressed(
+                        &state.match_state.match_presentation.dialog_ui,
+                        choice.id()
+                    ),
                     "physical B6 {choice:?} press missed its loaded control"
                 );
                 route.push(
@@ -384,7 +347,8 @@ impl AbortReturnInput {
                         && state.frontend.skirmish_shell_chrome.is_some(),
                     "the Surrender box did not present with its loaded artwork"
                 );
-                let layout = crate::app::input::surrender::layout(state);
+                let layout =
+                    crate::app::input::surrender::layout(&state.renderer, &state.frontend.screen);
                 route.push(json!({"frame": frame, "action": "Surrender box presented",
                     "dialog": 0x120, "rect": [layout.dialog.x, layout.dialog.y,
                     layout.dialog.w, layout.dialog.h]}));
@@ -393,19 +357,12 @@ impl AbortReturnInput {
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
-                let point = set_window_pointer_to_rect_center(state, layout.ok);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
+                let point = press_in_game(state, layout.button(0));
                 ensure!(
-                    state
-                        .match_state
-                        .match_presentation
-                        .surrender_buttons
-                        .is_pressed(crate::app::input::surrender::SurrenderButton::Ok),
+                    crate::app::input::surrender::pressed(
+                        &state.match_state.match_presentation,
+                        crate::app::input::surrender::SurrenderButton::Ok
+                    ),
                     "the Surrender OK press missed its control"
                 );
                 route.push(json!({"frame": frame, "action": "Surrender OK press",
@@ -421,7 +378,7 @@ impl AbortReturnInput {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("Surrender lost its installed runtime")?
                     .simulation;
                 let exits = sim
@@ -451,11 +408,10 @@ impl AbortReturnInput {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm
-                        && state
-                            .match_state
-                            .match_presentation
-                            .abort_buttons
-                            .is_pressed(AbortButton::Secondary),
+                        && crate::app::input::dialog_page::pressed(
+                            &state.match_state.match_presentation.dialog_ui,
+                            AbortButton::Secondary.id()
+                        ),
                     "B6 secondary capture changed before its presented press/release"
                 );
                 let secondary = crate::app::input::abort::current_abort_layout(state)
@@ -477,7 +433,7 @@ impl AbortReturnInput {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("Observe lost its installed runtime")?
                         .simulation;
                     ensure!(
@@ -512,17 +468,16 @@ impl AbortReturnInput {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm
-                        && state
-                            .match_state
-                            .match_presentation
-                            .abort_buttons
-                            .is_pressed(AbortButton::Leave),
+                        && crate::app::input::dialog_page::pressed(
+                            &state.match_state.match_presentation.dialog_ui,
+                            AbortButton::Leave.id()
+                        ),
                     "B6 Leave capture changed before its presented press/release"
                 );
                 let runtime = state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("B6 lost its installed runtime")?;
                 ensure!(
                     !runtime
@@ -552,7 +507,7 @@ impl AbortReturnInput {
                 let sim = &state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .context("Leave lost its installed runtime")?
                     .simulation;
                 let exits = sim

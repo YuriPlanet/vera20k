@@ -18,6 +18,12 @@
 //! Native registry allocation and ordered RulesClass passes live in
 //! `rules::native_processing`; typed gameplay projection lives in `ruleset`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
@@ -32,9 +38,32 @@ pub mod ini_value;
 #[path = "ini_directives.rs"]
 pub mod directives;
 
+/// Ares's `+` keys, `[Child]:[Base]` sections and later-wins keys, which an
+/// Ares launch adds to every INI text load.
+#[path = "ini_ares_syntax.rs"]
+mod ares_syntax;
+
+use std::borrow::Cow;
+
 use self::ini_value::strtrim_ascii;
 
 const READ_LINE_PAYLOAD: usize = 511;
+
+/// Result of `ReadCCFile(..., checkDigest = true)`'s Digest check, which only
+/// the LANGRULE reads make. Physical file absence is represented by the source
+/// selector's `None`; this status also records the selected source's physical
+/// byte length.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DigestVerification {
+    Empty,
+    Missing,
+    Valid,
+    Invalid,
+    /// ReadUUBlock can return fewer than 20 bytes for malformed input. The
+    /// native comparison still reads all 20 bytes, including unwritten stack
+    /// tail bytes, so that path has no stable result to claim here.
+    Indeterminate,
+}
 
 /// One physical section occurrence in an INI file.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -187,25 +216,24 @@ impl IniSection {
             let Some(value) = patch.get(key) else {
                 continue;
             };
-            let Some(index) = self.fresh_index.as_ref() else {
+            let Some(index) = self.fresh_index.as_mut() else {
                 self.set(key, value);
                 continue;
             };
-            match find_crc_index_value(index, ini_name_crc(key)).copied() {
+            let crc = ini_name_crc(key);
+            match find_crc_index_value(index, crc).copied() {
                 Some(PhysicalEntry::First(at)) => {
-                    *self.entries.get_mut(&self.key_order[at]).unwrap() = value.to_owned();
+                    *self
+                        .entries
+                        .get_mut(&self.key_order[at])
+                        .expect("every key_order key has its entry") = value.to_owned();
                 }
                 Some(PhysicalEntry::Duplicate(at)) => {
                     self.duplicate_entries[at].2 = value.to_owned();
                 }
                 None => {
-                    let at = self.key_order.len();
+                    insert_source_index(index, crc, PhysicalEntry::First(self.key_order.len()));
                     self.insert_initial(key, value);
-                    insert_source_index(
-                        self.fresh_index.as_mut().unwrap(),
-                        ini_name_crc(key),
-                        PhysicalEntry::First(at),
-                    );
                 }
             }
         }
@@ -280,11 +308,22 @@ impl IniSection {
         self.entries.get(key).map(String::as_str)
     }
 
+    /// A reader's lookup: the stored text of an exact-case key, noted for the
+    /// per-game Ares switch (`rules::ares_switch`). The store's own merges
+    /// and walks use [`Self::get`] and are not reads.
+    fn value(&self, key: &str) -> Option<&str> {
+        let value = self.get(key);
+        if value.is_some() {
+            crate::rules::ares_switch::note_found(&self.name, key);
+        }
+        value
+    }
+
     /// Raw text for a reader whose native default depends on a later asset
     /// binding step. The caller must pass the returned value through the
     /// matching `ini_value` reader rather than interpreting it directly.
     pub(crate) fn raw_value(&self, key: &str) -> Option<&str> {
-        self.get(key)
+        self.value(key)
     }
 
     /// Test builds only: the raw stored text, for tests that inspect storage.
@@ -295,11 +334,17 @@ impl IniSection {
 
     /// Whether the section's reader can find the key, whatever its value.
     pub fn is_present(&self, key: &str) -> bool {
-        self.get(key).is_some()
+        self.value(key).is_some()
     }
 
+    /// The values successive Rules passes gave `key`, for a reader (noted as
+    /// [`Self::value`] notes them).
     fn projected_values(&self, key: &str) -> Option<&[String]> {
-        self.projected_values.get(key).map(Vec::as_slice)
+        let values = self.projected_values.get(key).map(Vec::as_slice);
+        if values.is_some() {
+            crate::rules::ares_switch::note_found(&self.name, key);
+        }
+        values
     }
 
     /// The type IDs of a registry section `native_processing` rewrote with
@@ -345,6 +390,14 @@ pub struct IniFile {
     /// None denotes a compatibility projection, including saved reader views.
     #[serde(skip)]
     fresh_section_index: Option<Vec<(i32, usize)>>,
+    /// The next Ares `+` key number. Only loads read it, so a saved INI,
+    /// which nothing loads into again, does not keep it.
+    #[serde(skip)]
+    next_iterator_key: i32,
+    /// The text loaded into this INI and the Ares `[Child]:[Base]` copies
+    /// charged against it. Only loads read it, like the `+` counter.
+    #[serde(skip)]
+    ares_copies: ares_syntax::CopyBudget,
 }
 
 impl<'de> serde::Deserialize<'de> for IniFile {
@@ -362,6 +415,8 @@ impl<'de> serde::Deserialize<'de> for IniFile {
             sections: saved.sections,
             first_section,
             fresh_section_index: None,
+            next_iterator_key: 0,
+            ares_copies: ares_syntax::CopyBudget::default(),
         })
     }
 }
@@ -372,20 +427,26 @@ impl IniFile {
             sections: Vec::new(),
             first_section: HashMap::new(),
             fresh_section_index: None,
+            next_iterator_key: 0,
+            ares_copies: ares_syntax::CopyBudget::default(),
         }
     }
 
-    /// Supply recorded native cache sections without physical parsing. Some
-    /// oracle controls contain stored-empty entries or sections, which the
-    /// physical reader would discard. Storage and first-section indexing stay
-    /// with this owner; production projection mutators remain private.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn from_sections_for_test(sections: impl IntoIterator<Item = IniSection>) -> Self {
+    /// Construct stored sections without parsing text. Native synthetic INIs
+    /// write names and values directly; punctuation in them is not syntax.
+    /// A repeated section replaces its first stored occurrence.
+    pub fn from_sections(sections: impl IntoIterator<Item = IniSection>) -> Self {
         let mut ini = Self::empty();
         for section in sections {
             ini.replace_first_section(section);
         }
         ini
+    }
+
+    /// Recorded cache controls may include empty entries the text reader drops.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn from_sections_for_test(sections: impl IntoIterator<Item = IniSection>) -> Self {
+        Self::from_sections(sections)
     }
 
     /// Parse arbitrary bytes by zero-extending each byte to a Unicode scalar.
@@ -396,9 +457,11 @@ impl IniFile {
     /// reaches it without an LF, and `LoadFromStraw` discards the line read
     /// on that call: a last line without a line feed is not loaded.
     /// Executed controls: tools/storage_oracle/ini_crc (`unterminated_last_*`).
-    /// RESIDUAL: loading into an INI that already holds sections (the
-    /// `0x00525BFA` arm, e.g. loose `*.PKT` files at `0x00699B58`) puts that
-    /// last entry before testing the flag; VERA has no such merge load.
+    /// Loading into an INI that already holds sections (the `0x00525BFA` arm)
+    /// puts that last entry before testing the flag. A game read the Ares way
+    /// loads its included files that way (`IniFile::merge_load`). RESIDUAL: loose
+    /// `*.PKT` map catalogs merge that way too (`0x00699B58`); VERA reads them
+    /// as fresh files.
     pub fn from_bytes(data: &[u8]) -> Result<Self, RulesError> {
         let complete = data
             .iter()
@@ -408,43 +471,40 @@ impl IniFile {
         Ok(Self::from_str(&text))
     }
 
+    /// `LoadFromStraw` (`0x00525A60`) into an empty INI. An Ares launch
+    /// hooks this reader for every INI it loads, so a thread that reads the
+    /// Ares way (`ares_switch::ares_way`: a game that ships `ares.mix`) adds
+    /// Ares's syntax here.
     #[expect(
         clippy::should_implement_trait,
         reason = "infallible constructor; FromStr would force a Result on every caller"
     )]
     pub fn from_str(text: &str) -> Self {
+        if crate::rules::ares_switch::ares_way() {
+            ares_syntax::load_fresh(text)
+        } else {
+            Self::load_fresh(text)
+        }
+    }
+
+    fn load_fresh(text: &str) -> Self {
         let mut ini = Self::empty();
         let mut current_section = None;
-
-        for physical_line in text.split('\n') {
-            // Straw::ReadLine removes every CR byte while consuming the line.
-            // Most lines end in the one CR of a CRLF pair and hold no other.
-            let line = physical_line.strip_suffix('\r').unwrap_or(physical_line);
-            let without_carriage_returns = if line.contains('\r') {
-                std::borrow::Cow::Owned(line.replace('\r', ""))
-            } else {
-                std::borrow::Cow::Borrowed(line)
-            };
-            if without_carriage_returns.is_empty() {
-                continue;
+        for line in read_lines(text) {
+            match lex_line(&line) {
+                Some(NativeLine::Header { name, .. }) => {
+                    let index = ini.sections.len();
+                    ini.sections.push(IniSection::new(name.to_string()));
+                    ini.first_section.entry(name.to_string()).or_insert(index);
+                    current_section = Some(index);
+                }
+                Some(NativeLine::Entry { key, value }) => {
+                    if let Some(index) = current_section {
+                        ini.sections[index].insert_initial(key, value);
+                    }
+                }
+                None => {}
             }
-
-            // Straw::ReadLine stores at most 511 payload bytes and consumes the
-            // remainder through LF. The discarded tail is never a second line.
-            // A character takes at least one byte, so shorter text is whole.
-            let chunk_end = if without_carriage_returns.len() <= READ_LINE_PAYLOAD {
-                without_carriage_returns.len()
-            } else {
-                without_carriage_returns
-                    .char_indices()
-                    .nth(READ_LINE_PAYLOAD)
-                    .map_or(without_carriage_returns.len(), |(index, _)| index)
-            };
-            let buffered = &without_carriage_returns[..chunk_end];
-            // NUL occupies a buffer byte, but subsequent C-string operations
-            // make the rest of that physical line invisible to the loader.
-            let visible = buffered.split_once('\0').map_or(buffered, |(head, _)| head);
-            Self::parse_line(&mut ini, &mut current_section, visible);
         }
 
         // Retail provenance: INI lexical loading — `INIClass__LoadFromStraw` @ `0x00525A60`.
@@ -465,6 +525,13 @@ impl IniFile {
         ini
     }
 
+    /// `ReadCCFile` of an Ares `[#include]` or Phobos `$Include` file into
+    /// the INI that lists it: `LoadFromStraw`'s merge arm, with an Ares
+    /// launch's parser hooks. Returns the file's own entries of section `list`.
+    fn merge_load(&mut self, data: &[u8], list: &str) -> IniSection {
+        ares_syntax::load_into(self, data, list)
+    }
+
     fn discard_entryless_sections(&mut self) {
         self.fresh_section_index = None;
         self.sections.retain(|section| section.entry_count() != 0);
@@ -477,44 +544,6 @@ impl IniFile {
             self.first_section
                 .entry(section.name.clone())
                 .or_insert(index);
-        }
-    }
-
-    fn parse_line(ini: &mut Self, current_section: &mut Option<usize>, raw_line: &str) {
-        let line = strtrim_ascii(raw_line);
-        if line.is_empty() {
-            return;
-        }
-
-        if line.starts_with('[')
-            && let Some(end) = line.find(']')
-        {
-            let name = &line[1..end];
-            let index = ini.sections.len();
-            ini.sections.push(IniSection::new(name.to_string()));
-            ini.first_section.entry(name.to_string()).or_insert(index);
-            *current_section = Some(index);
-            return;
-        }
-
-        // Semicolon truncation happens before the first-equals split, and
-        // only a cut line is trimmed whole (`0x00525F3A`): otherwise the key
-        // and value are trimmed alone, so `strtrim`'s trailing bound applies
-        // to the value's own leading run. `#` has no comment meaning in the
-        // active parser.
-        let payload = raw_line
-            .split_once(';')
-            .map_or(raw_line, |(head, _)| strtrim_ascii(head));
-        let Some((key, value)) = payload.split_once('=') else {
-            return;
-        };
-        let key = strtrim_ascii(key);
-        let value = strtrim_ascii(value);
-        if key.is_empty() || value.is_empty() {
-            return;
-        }
-        if let Some(index) = *current_section {
-            ini.sections[index].insert_initial(key, value);
         }
     }
 
@@ -569,13 +598,51 @@ impl IniFile {
         let Some(position) = self.section_position("Digest") else {
             return;
         };
-        if self.sections[position].read_packed_text().is_empty() {
+        if !self.sections[position]
+            .packed_text_values()
+            .any(|chunk| !chunk.is_empty())
+        {
             return;
         }
         // Clear5257C0 -> RemoveKey52B2B0 compacts the sorted pair array and
         // clears its cached pair, without resetting the sorted flag. Retain
         // the other physical sections and their lookup order unchanged.
         self.remove_section_at(position);
+    }
+
+    /// Verify the selected `[Digest]` section as `ReadCCFile4741F0` does for
+    /// LANGRULE (`0x004741F0`). It consumes the same packed physical values as
+    /// `ReadUUBlock526FB0`, then compares the first 20 decoded bytes with
+    /// `SaveToPipe526470`'s SHA-1 after excluding the selected Digest section.
+    /// `ReadCCFile` bypasses Digest for a zero-byte physical file. The section
+    /// removal that follows a positive read is `remove_digest_for_checked_load`.
+    pub(crate) fn verify_digest(&self, payload_len: usize) -> DigestVerification {
+        if payload_len == 0 {
+            return DigestVerification::Empty;
+        }
+        let Some(position) = self.section_position("Digest") else {
+            return DigestVerification::Missing;
+        };
+        let packed = self.sections[position].read_packed_text();
+        if packed.is_empty() {
+            return DigestVerification::Missing;
+        }
+
+        let decoded = crate::util::base64::base64_decode(&packed);
+        let expected = crate::util::sha1::sha1_bytes(&self.save_to_pipe(Some("Digest")));
+        match decoded {
+            Ok(decoded) if decoded.len() >= expected.len() => {
+                if decoded[..expected.len()] == expected[..] {
+                    DigestVerification::Valid
+                } else {
+                    DigestVerification::Invalid
+                }
+            }
+            // Short or malformed text may have written some bytes before the
+            // native 20-byte compare reads its uninitialized stack tail. Do
+            // not claim the map decoder's strict error as native rejection.
+            Ok(_) | Err(_) => DigestVerification::Indeterminate,
+        }
     }
 
     fn remove_section_at(&mut self, position: usize) {
@@ -616,8 +683,10 @@ impl IniFile {
         ini
     }
 
-    /// Compatibility overlay: later exact keys replace earlier ones. This is
-    /// also the include extension's policy, not native PutString528660 parity.
+    /// Compatibility overlay: later exact keys replace earlier ones. Without
+    /// Ares this is also the include extension's policy, not native
+    /// PutString528660 parity; a game read the Ares way loads includes through
+    /// `IniFile::merge_load`.
     /// Residual: overlapping loose PKT files (699B58) can retain a cached
     /// duplicate pair across insertion, then change selection on a later sort.
     /// That separate map-catalog merge needs native index/capacity/cache history
@@ -639,7 +708,9 @@ impl IniFile {
             if patch.first_section.get(&section.name) != Some(&patch_index) {
                 continue;
             }
-            let selected = patch.section(&section.name).unwrap();
+            let selected = patch
+                .section(&section.name)
+                .expect("the name is one of patch's own sections");
             if let Some(index) = self.section_position(&section.name) {
                 self.sections[index].overlay_source(selected);
             } else if add_sections {
@@ -664,7 +735,9 @@ impl IniFile {
             }
             // The typed pass must consume the same section as its native
             // readers, even when the CRC index selects a later occurrence.
-            let patch_section = patch.section(&physical.name).unwrap();
+            let patch_section = patch
+                .section(&physical.name)
+                .expect("the name is one of patch's own sections");
             if let Some(index) = self.first_section.get(&physical.name).copied() {
                 self.sections[index].overlay_rules_pass(patch_section);
             } else {
@@ -717,9 +790,12 @@ impl IniFile {
         }
     }
 
-    /// Deterministic hash over native section occurrence and entry order.
+    /// Deterministic hash over native section occurrence and entry order,
+    /// the same on every platform
+    /// ([`StateHasher`](crate::util::state_hasher::StateHasher)): replays
+    /// carry a map's.
     pub fn content_hash(&self) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = crate::util::state_hasher::StateHasher::new();
         for section in &self.sections {
             section.name.hash(&mut hasher);
             for key in section.keys() {
@@ -760,6 +836,33 @@ impl IniFile {
         bytes
     }
 
+    /// VERA: the names of the sections whose entries differ between this
+    /// file and `other`, added and removed ones too, in byte order. Entries
+    /// compare as [`Self::multiplayer_digest`] reads them: every physical
+    /// entry in order, a section's repeated headers as one.
+    pub fn differing_sections(&self, other: &IniFile) -> Vec<String> {
+        use std::collections::BTreeMap;
+        fn entries(ini: &IniFile) -> BTreeMap<&str, Vec<(&str, &str)>> {
+            let mut sections: BTreeMap<&str, Vec<_>> = BTreeMap::new();
+            for section in &ini.sections {
+                sections
+                    .entry(section.name.as_str())
+                    .or_default()
+                    .extend(section.physical_entries());
+            }
+            sections
+        }
+        let (mine, theirs) = (entries(self), entries(other));
+        let mut names: Vec<&str> = mine.keys().chain(theirs.keys()).copied().collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+            .into_iter()
+            .filter(|name| mine.get(name) != theirs.get(name))
+            .map(str::to_owned)
+            .collect()
+    }
+
     /// `CCINIClass::GetCRC` (`0x00476D80`): `CRCEngine` (`0x004A1DE0`) over
     /// the SHA-1 digest (`0x0069E9E0`) of the INI's `SaveToPipe` bytes.
     pub fn native_crc(&self) -> u32 {
@@ -793,16 +896,107 @@ fn ini_name_crc(name: &str) -> i32 {
     crate::assets::mix_hash::crc_engine(&bytes[..end]) as i32
 }
 
+/// One visible line as `LoadFromStraw` (`0x00525A60`) reads it.
+enum NativeLine<'a> {
+    /// `[name]`, and the text after that first `]`, where Ares reads a base.
+    Header {
+        name: &'a str,
+        tail: &'a str,
+    },
+    Entry {
+        key: &'a str,
+        value: &'a str,
+    },
+}
+
+/// The visible text of each nonempty physical line, as `Straw::ReadLine`
+/// stores it for `LoadFromStraw`.
+fn read_lines(text: &str) -> impl Iterator<Item = Cow<'_, str>> {
+    text.split('\n').filter_map(|physical_line| {
+        // Straw::ReadLine removes every CR byte while consuming the line.
+        // Most lines end in the one CR of a CRLF pair and hold no other.
+        let line = physical_line.strip_suffix('\r').unwrap_or(physical_line);
+        let line = if line.contains('\r') {
+            Cow::Owned(line.replace('\r', ""))
+        } else {
+            Cow::Borrowed(line)
+        };
+        if line.is_empty() {
+            return None;
+        }
+        // Straw::ReadLine stores at most 511 payload bytes and consumes the
+        // remainder through LF. The discarded tail is never a second line.
+        // A character takes at least one byte, so shorter text is whole.
+        let chunk_end = if line.len() <= READ_LINE_PAYLOAD {
+            line.len()
+        } else {
+            line.char_indices()
+                .nth(READ_LINE_PAYLOAD)
+                .map_or(line.len(), |(index, _)| index)
+        };
+        // NUL occupies a buffer byte, but subsequent C-string operations
+        // make the rest of that physical line invisible to the loader.
+        let visible = line[..chunk_end].find('\0').unwrap_or(chunk_end);
+        Some(match line {
+            Cow::Borrowed(line) => Cow::Borrowed(&line[..visible]),
+            Cow::Owned(mut line) => {
+                line.truncate(visible);
+                Cow::Owned(line)
+            }
+        })
+    })
+}
+
+/// Both `LoadFromStraw` arms classify a line alike.
+fn lex_line(raw_line: &str) -> Option<NativeLine<'_>> {
+    let line = strtrim_ascii(raw_line);
+    if line.is_empty() {
+        return None;
+    }
+    if line.starts_with('[')
+        && let Some(end) = line.find(']')
+    {
+        return Some(NativeLine::Header {
+            name: &line[1..end],
+            tail: &line[end + 1..],
+        });
+    }
+    // Semicolon truncation happens before the first-equals split, and
+    // only a cut line is trimmed whole (`0x00525F3A`): otherwise the key
+    // and value are trimmed alone, so `strtrim`'s trailing bound applies
+    // to the value's own leading run. `#` has no comment meaning in the
+    // active parser.
+    let payload = raw_line
+        .split_once(';')
+        .map_or(raw_line, |(head, _)| strtrim_ascii(head));
+    let (key, value) = payload.split_once('=')?;
+    let key = strtrim_ascii(key);
+    let value = strtrim_ascii(value);
+    if key.is_empty() || value.is_empty() {
+        return None;
+    }
+    Some(NativeLine::Entry { key, value })
+}
+
 /// SectionIndex::FindPair52B620 and FindINIEntryIndexPair52B6D0 use the
 /// same signed midpoint search, returning the first equal pair visited.
 fn find_crc_index_value<T>(pairs: &[(i32, T)], crc: i32) -> Option<&T> {
+    find_crc_index_slot(pairs, crc).map(|slot| &pairs[slot].1)
+}
+
+/// The slot [`find_crc_index_value`] answers from.
+fn find_crc_index_slot<T>(pairs: &[(i32, T)], crc: i32) -> Option<usize> {
+    let mut start = 0;
     let mut remaining = pairs;
     while !remaining.is_empty() {
         let middle = remaining.len() / 2;
         match remaining[middle].0.cmp(&crc) {
-            std::cmp::Ordering::Equal => return Some(&remaining[middle].1),
+            std::cmp::Ordering::Equal => return Some(start + middle),
             std::cmp::Ordering::Greater => remaining = &remaining[..middle],
-            std::cmp::Ordering::Less => remaining = &remaining[middle + 1..],
+            std::cmp::Ordering::Less => {
+                start += middle + 1;
+                remaining = &remaining[middle + 1..];
+            }
         }
     }
     None
@@ -815,7 +1009,8 @@ fn insert_source_index<T: Copy>(pairs: &mut Vec<(i32, T)>, crc: i32, value: T) {
     let mut selected = Vec::with_capacity(pairs.len() + 1);
     for &(existing, _) in pairs.iter() {
         if selected.last().is_none_or(|&(last, _)| last != existing) {
-            selected.push((existing, *find_crc_index_value(pairs, existing).unwrap()));
+            let value = find_crc_index_value(pairs, existing).expect("existing is a CRC in pairs");
+            selected.push((existing, *value));
         }
     }
     let at = selected.partition_point(|&(existing, _)| existing < crc);
@@ -839,6 +1034,6 @@ pub(crate) fn is_native_none_type_name(value: &str) -> bool {
     value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("<none>")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ini_parser_tests.rs"]
 mod tests;

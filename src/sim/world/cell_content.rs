@@ -22,7 +22,7 @@ impl Simulation {
         cell: NativeCellIdentity,
         rules: &crate::rules::ruleset::RuleSet,
         registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> bool {
         if !self
             .cell_overlay(cell)
@@ -61,8 +61,8 @@ impl Simulation {
             rules,
             &[coord],
         );
-        self.publish_cell_and_assign_orphaned_zone(rules, coord, &blocked);
-        self.stop_all_targeting_cell(coord.0, coord.1, rules, Some(registry), effects);
+        self.publish_cell_and_assign_orphaned_zone(rules, coord, Some(&blocked));
+        self.stop_all_targeting_cell(coord.0, coord.1, rules, effects);
         true
     }
 
@@ -93,7 +93,7 @@ impl Simulation {
         }
     }
 
-    pub(crate) fn cell_objects(
+    pub fn cell_objects(
         &self,
         cell: (u16, u16),
         layer: MovementLayer,
@@ -104,6 +104,34 @@ impl Simulation {
             layer,
             self.terrain_objects.members_at(cell),
         )
+    }
+
+    /// `CellClass::GetContent`: the deck list (`+0xE8`) when the cell has a
+    /// `BridgeHead` (`+0x140 & 0x100`), otherwise the ground list (`+0xE4`).
+    pub(crate) fn native_cell_content(
+        &self,
+        cell: (u16, u16),
+    ) -> impl Iterator<Item = CellObjectMember> + '_ {
+        let layer = if self.cell_has_bridge_head(cell) {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        self.cell_objects(cell, layer)
+    }
+
+    /// `CellClass::ContainsBridge`: the cell's `BridgeHead` flag.
+    pub(crate) fn cell_has_bridge_head(&self, cell: (u16, u16)) -> bool {
+        self.resolved_terrain.as_ref().is_some_and(|terrain| {
+            crate::sim::cell_rect::get_cellclass_fallback(
+                Some(terrain),
+                i32::from(cell.0),
+                i32::from(cell.1),
+            )
+            .bridge_flags_0x1180()
+                & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+                != 0
+        })
     }
 
     /// The head of a cell's ground list (`CellClass+0xE4`), the object
@@ -136,8 +164,9 @@ impl Simulation {
                 // list; FogCell486BA4/contact483495 follow Object+30. The
                 // list identity of an alias differs from Get_Cell_Packed.
                 let (x, y) = terrain.cell();
-                let cell =
-                    crate::map::cell_index::canonical_cell_coord(i32::from(x), i32::from(y))?;
+                let cell = self
+                    .cell_grid()
+                    .canonical_coord(i32::from(x), i32::from(y))?;
                 Some((cell, MovementLayer::Ground))
             }
         }

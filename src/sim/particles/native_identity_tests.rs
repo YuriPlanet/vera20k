@@ -1,5 +1,7 @@
 //! Original constructor/Logic continuation, bounded to the flat Spark controls
 //! in `procedural_drawing_oracle/electric_bolt` and the retained save envelope.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60), so the
+// stock control holds in a stock game only.
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
@@ -126,21 +128,20 @@ fn assert_state(sim: &Simulation, id: u64, expected: &Value) {
             particle.marked_for_deletion,
             native["time_to_die"].as_bool().unwrap()
         );
-        let spark = particle.spark.as_ref().unwrap();
         assert_eq!(
             serde_json::json!([
-                spark.velocity_x.bits(),
-                spark.velocity_y.bits(),
-                spark.velocity_z.bits()
+                particle.direction[0].bits(),
+                particle.direction[1].bits(),
+                particle.direction[2].bits()
             ]),
             native["velocity_bits"]
         );
-        assert_eq!(serde_json::json!(spark.start_rgb), native["color"]);
+        assert_eq!(serde_json::json!(particle.start_rgb), native["color"]);
         assert_eq!(
-            spark.color_index,
+            particle.color_index,
             native["color_index"].as_i64().unwrap() as i32
         );
-        let color_hex: String = spark
+        let color_hex: String = particle
             .color_accumulator
             .bits()
             .to_le_bytes()
@@ -175,23 +176,23 @@ fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state
             .iter()
             .find(|event| event["pc"] == "0x62dc50")
             .unwrap();
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             system_entry["native_id_before"].as_u64().unwrap() as u32,
         ));
         // EBolt Init's Main draw precedes the system constructor. Adopt that
         // executed boundary; this test covers the actual system/particle path.
         let rng = &case["birth"]["rng_after"];
-        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap()).into();
-        sim.scenario_rng =
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng["scenario"].as_str().unwrap());
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());
         let position: [i32; 3] =
             serde_json::from_value(case["endpoint"]["target"].clone()).unwrap();
         let cells = (43..=47)
             .flat_map(|x| (47..=51).map(move |y| test_flat_cell(x, y)))
             .collect();
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
-        sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(64, 64, cells));
+        *sim.overlay_grid = Some(OverlayGrid::new(64, 64));
         let id = sim
             .spawn_particle_system(
                 ParticleSystemTypeId(0),

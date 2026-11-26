@@ -19,9 +19,6 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
     let ini = IniFile::from_str(source);
     let (mut sim, mut rules, _) =
         entry_test_fixture::fixture_with_rules_and_fixed_art(source, &art);
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules.bind_type_sound_references(
         &ini,
         &SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Cheer\n[Cheer]\n")),
@@ -44,7 +41,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         // Mission/Doing are explicit initialized component inputs. Native
@@ -86,7 +83,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
             .doing()
     };
     assert_eq!([doing(ids[0]), doing(ids[1]), doing(ids[2])], [32, 0, 32]);
-    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocCentered { sound_id } if sound_id == "Cheer")).count(), 1);
+    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Cheer")).count(), 1);
     let invalid = CommandRecord::encode(CHEER_OPCODE, 7, 0, &[]).unwrap();
     assert!(sim.decode_native_command_record(&invalid, 99).is_none());
 }

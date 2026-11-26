@@ -8,6 +8,8 @@ lang: tr
 
 [Svenska](../sv/) · [简体中文](../zh-CN/) · [Deutsch](../de/) · [العربية](../ar/) · [Русский](../ru/) · [ไทย](../th/) · **Türkçe** · [English](../)
 
+[Harekât bildirimleri](campaign-manifest.md)
+
 Red Alert 2: Yuri's Revenge — Rust ile sıfırdan yeniden yazıldı.
 
 Bu sayfa kodun kısa bir haritasıdır. Kodla çelişirse doğru olan koddur. Her modülün başındaki `//!` yorumu, modülün ne yaptığını ve nelere bağımlı olabileceğini açıklar.
@@ -30,6 +32,8 @@ Bu sayfa kodun kısa bir haritasıdır. Kodla çelişirse doğru olan koddur. He
 Değişebilen tüm oyun durumu tek bir yapıda tutulur: `Simulation` (`src/sim/world/mod.rs`). `SimRuntime::advance_frame()` bir kareyi orijinal oyunun kare sırasıyla çalıştırır.
 
 Uygulama, oyuncu girdisini simülasyon için komutlara dönüştürür. Her kareden sonra yeni durumu render motoruna verir ve o karenin ürettiği sesleri çalar. Render işlemi yalnızca simülasyon durumunu okur; `sim/` ise hiçbir zaman `render/`, `ui/`, `audio/` veya `net/` modüllerine bağımlı değildir.
+
+![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](../images/architecture.tr.png)
 
 ## Determinizm
 

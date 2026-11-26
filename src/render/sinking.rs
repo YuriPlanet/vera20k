@@ -61,7 +61,7 @@ pub(crate) fn apply_waterline_clip(draw: &mut DrawState, row: Option<i16>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_render_s_z, tests_app_presentation_render)))]
 pub(crate) mod tests {
     use super::*;
     use serde_json::Value;

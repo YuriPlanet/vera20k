@@ -43,7 +43,8 @@ fn make_test_sim(rules: &RuleSet) -> (Simulation, PathGrid) {
         recruitable_a: true,
         recruitable_b: true,
         group: -1,
-        structure_upgrades: [None, None, None],
+        follows: None,
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -129,7 +130,7 @@ fn replay_reapplies_header_seed() {
     fn sim_with_unit(desc: &ScenarioDescriptor, rules: &RuleSet) -> (Simulation, PathGrid) {
         let mut sim = Simulation::from_descriptor(desc);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let grid = crate::sim::arena_fixture::flat_ground(&mut sim, rules);
         let entity = MapEntity {
@@ -147,7 +148,8 @@ fn replay_reapplies_header_seed() {
             recruitable_a: true,
             recruitable_b: true,
             group: -1,
-            structure_upgrades: [None, None, None],
+            follows: None,
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,

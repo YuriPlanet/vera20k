@@ -1,9 +1,9 @@
 """Bounded Event packet controls for the existing LAN oracle entry.
 
-Run with ``python -m tools.storage_oracle.lan_lobby --event-packets --write``.
 Executes original constructors, 649CA0's header writer, 64B660/64B4D0 and
 64BDD0. The stop at 649D94 is before transport: no packets leave this VM.
 """
+from pathlib import Path
 import struct
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
@@ -14,7 +14,7 @@ from unicorn.x86_const import (
 
 from tools.native_oracle import (
     OracleError, RET_MAGIC, SCRATCH, SCRATCH_SIZE, STACK_BASE, STACK_SIZE,
-    load_image, provenance, run_checked,
+    finish_vectors, load_image, provenance, run_checked,
 )
 
 RECORD_LEN = 111
@@ -226,3 +226,7 @@ def metadata():
                           probe=0x64A000, probe_stop=0x64A090,
                           send_stop=0x649D94, compress=0x64B660,
                           cache=0x64B4D0, decompress=0x64BDD0))
+
+
+if __name__ == "__main__":
+    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata)

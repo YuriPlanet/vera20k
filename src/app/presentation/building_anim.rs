@@ -8,17 +8,38 @@
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
+use crate::audio::sfx::SfxPlayer;
 use crate::sim::production;
+use crate::ui::game_screen::GameScreen;
 
 /// The tactical listener shared by inline and frame-tail sound consumption.
 pub(crate) fn sound_listener(state: &AppState) -> crate::audio::sfx::SpatialListener {
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_viewport_size(state);
+    let (tactical_width, tactical_height) = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    // The listener sits at the battlefield's corner, which a layout may set
+    // in from the frame's corner, where the camera is.
+    let origin = crate::app::input::camera::tactical_origin_world(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     crate::audio::sfx::SpatialListener {
         tactical_width: tactical_width as i32,
         tactical_height: tactical_height as i32,
-        origin_x: state.match_state.input.camera_x,
-        origin_y: state.match_state.input.camera_y,
+        origin_x: state.match_state.input.camera_x + origin.0,
+        origin_y: state.match_state.input.camera_y + origin.1,
         zoom: state.match_state.input.zoom_level,
     }
 }
@@ -30,9 +51,9 @@ pub(crate) fn refresh_coordinate_sound_gains(state: &mut AppState) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation);
-    let local_owner = preferred_local_owner_name(state);
+    let local_owner = preferred_local_owner_name(&state.match_state);
     let Some(catalog) = state.process_assets.audio_catalog() else {
         return;
     };
@@ -146,7 +167,7 @@ impl SoundPlaybackInputs<'_> {
         let source = crate::app::match_runtime::sound_dispatch::anim_world_sound_source(world);
         let gain = self
             .spatial_context(Some(sim), local_owner)
-            .gain_for(&sound, Some(source));
+            .gain_for(sound, Some(source));
         sfx.update_looping_sound(owner, gain, self.catalog.sounds());
     }
 
@@ -157,6 +178,7 @@ impl SoundPlaybackInputs<'_> {
         sfx: &mut crate::audio::sfx::SfxPlayer,
         events: &[crate::audio::events::GameSoundEvent],
         sim: Option<&crate::sim::world::Simulation>,
+        names: Option<&crate::rules::ruleset::SoundNames>,
         local_owner: Option<&str>,
     ) {
         use crate::audio::events::GameSoundEvent;
@@ -183,9 +205,23 @@ impl SoundPlaybackInputs<'_> {
             }
         };
         for event in events {
+            let resolved;
+            let event = if matches!(event, GameSoundEvent::TriggerAudio { .. }) {
+                let Some(value) = event.resolve_trigger_audio(registry, eva_registry) else {
+                    continue;
+                };
+                resolved = value;
+                &resolved
+            } else {
+                event
+            };
+            // The event's sound by name, as its rules' table holds it.
+            let sound_id = event.sound_id(names);
             match event {
+                GameSoundEvent::TriggerAudio { .. } => continue,
                 GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
                 GameSoundEvent::UnitVoiceDestroyed { owner } => sfx.destroy_unit_voice(*owner),
+                GameSoundEvent::UnitVoiceMoved { from, to } => sfx.move_unit_voice(*from, *to),
                 // Unit acknowledgement lines — always full volume (non-positional).
                 // `TechnoClass::Queue_Voice @ 0x00708D90` only latches the line on
                 // the speaking object. Only an actual reached Techno6F9EBB
@@ -194,7 +230,7 @@ impl SoundPlaybackInputs<'_> {
                 | GameSoundEvent::UnitMoveOrder { speaker_id, .. }
                 | GameSoundEvent::UnitAttackOrder { speaker_id, .. }
                 | GameSoundEvent::UnitVoiceRequested { speaker_id, .. } => {
-                    sfx.queue_unit_voice(*speaker_id, event.sound_id());
+                    sfx.queue_unit_voice(*speaker_id, sound_id);
                 }
                 // `VoxClass::PlayEVA @ 0x00752700`: routing (pending slot, the
                 // QUEUE FIFOs, critical/interrupt lists), the same-type duplicate
@@ -232,18 +268,16 @@ impl SoundPlaybackInputs<'_> {
                 }
                 // UI events — always full volume (non-positional).
                 GameSoundEvent::UiSound { .. } => {
-                    sfx.play_sound(event.sound_id(), registry);
+                    sfx.play_sound(sound_id, registry);
                 }
                 // `CreditsClass::Draw @ 0x004A2519`: `PUSH 0x3f000000` — the
                 // credit tick is the one UI cue native plays at half volume,
                 // centred (`EDX = 0x2000`).
                 GameSoundEvent::CreditTick { .. } => {
-                    sfx.play_sound_with_volume(event.sound_id(), 0.5, registry);
+                    sfx.play_sound_with_volume(sound_id, 0.5, registry);
                 }
                 GameSoundEvent::AnimationStarted {
-                    anim_id,
-                    sound_id,
-                    source,
+                    anim_id, source, ..
                 } => match gain_for(sound_id, *source) {
                     Some(gain) => {
                         sfx.play_animation_sound_spatial(*anim_id, sound_id, gain, registry);
@@ -257,28 +291,25 @@ impl SoundPlaybackInputs<'_> {
                     sfx.detach_animation_sound(*anim_id);
                 }
                 GameSoundEvent::AnimationStopped {
-                    anim_id,
-                    stop_sound_id,
-                    source,
+                    anim_id, source, ..
                 } => {
                     sfx.stop_animation_sound(*anim_id);
-                    if let Some(stop_sound_id) =
-                        stop_sound_id.as_deref().filter(|id| !id.is_empty())
-                        && let Some(gain) = gain_for(stop_sound_id, *source)
+                    if !sound_id.is_empty()
+                        && let Some(gain) = gain_for(sound_id, *source)
                     {
-                        sfx.play_sound_spatial(stop_sound_id, gain, registry);
+                        sfx.play_sound_spatial(sound_id, gain, registry);
                     }
                 }
-                GameSoundEvent::CloakSound { sound_id, source }
-                | GameSoundEvent::WallCrushed { sound_id, source }
-                | GameSoundEvent::VocAt { sound_id, source } => {
+                GameSoundEvent::CloakSound { source, .. }
+                | GameSoundEvent::WallCrushed { source, .. }
+                | GameSoundEvent::VocAt { source, .. } => {
                     play_voc(sfx, sound_id, *source);
                 }
                 GameSoundEvent::VocAtCoord {
-                    sound_id,
                     coordinate,
                     flags,
                     source,
+                    ..
                 } => {
                     sfx.play_sound_at_coord(
                         sound_id,
@@ -292,7 +323,7 @@ impl SoundPlaybackInputs<'_> {
                 GameSoundEvent::VocStopAtCoord { coordinate, flags } => {
                     sfx.stop_sound_at_coord(*coordinate, *flags);
                 }
-                GameSoundEvent::BaseUnderAttackSfx { sound_id } => {
+                GameSoundEvent::BaseUnderAttackSfx { .. } => {
                     // `0x004F95BF MOV EDX,0x2000` / `0x004F95C4 PUSH 0x3F800000`:
                     // pan centred, volume 1.0f, no handle — an ordinary pooled
                     // event, not a voice. `RulesClass::ReadAudioVisual` keeps only
@@ -308,9 +339,7 @@ impl SoundPlaybackInputs<'_> {
                     );
                 }
                 GameSoundEvent::SuperWeaponActivated {
-                    sound_id,
-                    source,
-                    eva_event,
+                    source, eva_event, ..
                 } => {
                     // `RulesClass::ReadAudioVisual @ 0x006691E0` and
                     // `SuperWeaponTypeClass::ReadINI @ 0x006CEBE5` both store only
@@ -319,8 +348,9 @@ impl SoundPlaybackInputs<'_> {
                     // not reach the raw audio-bag fallback.
                     if !sound_id.is_empty() && registry.get(sound_id).is_some() {
                         match source {
-                            // `VocClass::PlayAtCoord @ 0x00750E20` /
-                            // `PlayAt @ 0x007509E0` at the target coordinate.
+                            // A one-shot `VocClass::PlayAt @ 0x007509E0` at
+                            // the target coordinate. Launch's 750E20 cues
+                            // arrive as `VocAtCoord`.
                             Some(source) => {
                                 if let Some(gain) = gain_for(sound_id, Some(*source)) {
                                     let _ =
@@ -346,9 +376,7 @@ impl SoundPlaybackInputs<'_> {
                     }
                 }
                 GameSoundEvent::BridgeRepaired {
-                    sound_id,
-                    source,
-                    eva_event,
+                    source, eva_event, ..
                 } => {
                     if !sound_id.is_empty()
                         && let Some(gain) = gain_for(sound_id, *source)
@@ -362,8 +390,8 @@ impl SoundPlaybackInputs<'_> {
                 // Spatial events — distance volume and pan from the sound's
                 // Range/Type/MinVolume against the tactical view.
                 _ => {
-                    if let Some(gain) = gain_for(event.sound_id(), event.source()) {
-                        sfx.play_sound_spatial(event.sound_id(), gain, registry);
+                    if let Some(gain) = gain_for(sound_id, event.source()) {
+                        sfx.play_sound_spatial(sound_id, gain, registry);
                     }
                 }
             }
@@ -371,56 +399,74 @@ impl SoundPlaybackInputs<'_> {
     }
 }
 
-/// Tick the sidebar power bar animation (segment-by-segment transition).
-pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
-    let owner_name = preferred_local_owner_name(state);
-    let bar_height_px = power_bar_budget_px(state);
+/// Run the power bar's AnimationTick 63FEA0 for each of this pass's Sidebar
+/// Action `visits` ([`super::sidebar_gadgets::sidebar_action_visits`]).
+pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64, visits: u64) {
+    let owner_name = preferred_local_owner_name(&state.match_state);
+    let bar_height_px = power_bar_budget_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    // The theoretical total walks the house's buildings: the frame's answer.
+    state.match_state.sim_runtime.ensure_frame();
 
+    let anim = &mut state.match_state.match_presentation.power_bar_anim;
     match (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
         owner_name.as_deref(),
     ) {
-        (Some(runtime), Some(owner)) => {
+        (Some(runtime), Some(frame), Some(owner)) => {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
-            let theoretical_total = || sim.theoretical_power_for_owner(rules, owner);
-            let (produced, drained) = production::power_balance_for_owner(sim, rules, owner);
-            state
-                .match_state
-                .match_presentation
-                .sidebar_projection
-                .refresh_power(produced, drained);
-            let anim = &mut state.match_state.match_presentation.power_bar_anim;
+            let theoretical_total = || frame.scene.ui.theoretical_power();
             anim.fit_strip(bar_height_px, theoretical_total);
-            anim.update(produced, drained, theoretical_total, wall_ms);
+            let (produced, drained) = production::power_balance_for_owner(sim, rules, owner);
+            for _ in 0..visits {
+                anim.update(produced, drained, theoretical_total, wall_ms);
+                if !anim.in_motion() {
+                    break;
+                }
+            }
         }
         _ => {
-            state
-                .match_state
-                .match_presentation
-                .sidebar_projection
-                .refresh_power(0, 0);
-            let anim = &mut state.match_state.match_presentation.power_bar_anim;
             anim.fit_strip(bar_height_px, || 0);
-            anim.update(0, 0, || 0, wall_ms);
+            for _ in 0..visits {
+                anim.update(0, 0, || 0, wall_ms);
+                if !anim.in_motion() {
+                    break;
+                }
+            }
         }
     }
 }
 
 /// Current Sidebar geometry, shared by ordinary AI and saved NoInit before
 /// its first draw. The retained native band counts are never clamped to it.
-pub(crate) fn power_bar_budget_px(state: &AppState) -> i32 {
-    // Compute bar height from sidebar layout.
-    let spec = state.match_state.match_presentation.sidebar_layout_spec;
-    let (sw, sh) = state.sidebar_frame().layout_screen();
-    let layout = crate::ui::sidebar::compute_layout_with_spec(spec, sw, sh, 0);
+pub(crate) fn power_bar_budget_px(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> i32 {
+    let layout = crate::app::presentation::sidebar_render::current_sidebar_layout(
+        platform,
+        renderer,
+        screen,
+        presentation,
+        persistence,
+    );
     // 63FB20: segment budget is (native strip height + 3) / 3.
-    (layout.cameo_grid_bottom - layout.cameo_grid_top) as i32 + 3
+    layout.cameo_grid_height() as i32 + 3
 }
 
 /// House508DF0 -> Radar656BE0 -> Voc750920: centred, volume 1, NULL
 /// handle. Both one-shots survive a reversal independently of the movie loop.
-pub(crate) fn radar_availability_sound(
+fn radar_availability_sound(
     rules: &crate::rules::ruleset::RuleSet,
     cue: crate::render::radar::anim::RadarAvailabilityCue,
 ) -> Option<crate::audio::events::GameSoundEvent> {
@@ -430,47 +476,74 @@ pub(crate) fn radar_availability_sound(
         RadarAvailabilityCue::Off => &rules.general.radar_off,
     };
     sound
-        .clone()
+        .as_deref()
         .map(|sound_id| crate::audio::events::GameSoundEvent::VocAt {
-            sound_id,
+            sound_id: rules.sound_name(sound_id),
             source: None,
         })
 }
 
-/// Reconcile view/tool changes with the same radar owner the reached House
-/// boundaries update. Its equality guard suppresses already-delivered edges.
-pub(crate) fn update_radar_state(state: &mut AppState) {
-    let new_has_radar: bool = match (
+/// Whether the local player's House has the tactical radar.
+pub(crate) fn local_has_radar(state: &AppState) -> bool {
+    match (
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
-        preferred_local_owner_name(state).as_deref(),
+        preferred_local_owner_name(&state.match_state).as_deref(),
     ) {
         (Some(sim), Some(rules), Some(owner)) => {
             crate::sim::radar::has_radar_for_owner(sim, rules, owner)
         }
         _ => false,
-    };
-    state.match_state.match_presentation.has_radar = new_has_radar;
+    }
+}
 
-    let cue = state
-        .match_state
-        .match_presentation
-        .radar_anim
-        .as_mut()
-        .and_then(|radar| radar.set_has_radar(new_has_radar));
-    if let Some(cue) = cue {
-        //656BE0 ends the radar's movie loop before either cue.
-        crate::app::radar_movie::end_radar_sound_loop(state);
-        if let Some(sound) = state
-            .rules()
-            .and_then(|rules| radar_availability_sound(rules, cue))
-        {
-            state.match_state.match_audio.sound_events.push(sound);
-        }
+/// The client half of `RadarClass::SetTacticalMapAvailable @ 0x00656DF0`,
+/// for both frame paths (`FrameClientBoundary`, `DeferredClientEffects`)
+/// and a watcher's view change: store the local radar's availability; on a
+/// change the housing opens or closes (`Radar656BE0`), the radar's movie
+/// loop ends (`0x00656C0E`, `0x00656C4E`) and the RadarOn or RadarOff
+/// one-shot comes back for the caller to play in its own sound order. The
+/// housing's equality guard (`0x00656DF8..0x00656E02`) returns nothing for
+/// an availability already delivered.
+pub(crate) fn set_tactical_radar(
+    has_radar: &mut bool,
+    radar_anim: Option<&mut crate::render::radar::anim::RadarAnimState>,
+    sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
+    rules: &crate::rules::ruleset::RuleSet,
+    available: bool,
+) -> Option<crate::audio::events::GameSoundEvent> {
+    *has_radar = available;
+    let cue = radar_anim?.set_has_radar(available)?;
+    if let Some(sfx) = sfx {
+        crate::app::radar_movie::end_radar_sound_loop_with(sfx);
+    }
+    radar_availability_sound(rules, cue)
+}
+
+/// [`set_tactical_radar`] on the app's own owners, with the cue queued for
+/// the pass's sound drain: a threaded frame's recorded change, and a
+/// watcher's new view, whose House's radar no House update reports.
+pub(crate) fn set_local_tactical_radar(
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    available: bool,
+) {
+    let Some(rt) = match_state.sim_runtime.runtime() else {
+        return;
+    };
+    let presentation = &mut match_state.match_presentation;
+    if let Some(sound) = set_tactical_radar(
+        &mut presentation.has_radar,
+        presentation.radar_anim.as_mut(),
+        sfx_player.as_mut(),
+        &rt.resources.rules,
+        available,
+    ) {
+        match_state.match_audio.sound_events.push(sound);
     }
 }
 
@@ -508,15 +581,16 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
 
     let events = state.match_state.match_audio.sound_events.drain();
     let listener = sound_listener(state);
-    let local_owner = preferred_local_owner_name(state);
-    let sim = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation);
-    let ticking_sound = state
-        .rules()
-        .and_then(|rules| rules.general.bomb_ticking_sound.clone());
+    let local_owner = preferred_local_owner_name(&state.match_state);
+    // The bombs' and owners' coordinates are the frame's
+    // (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
+    let runtime = state.match_state.sim_runtime.presentation();
+    let sim = runtime.map(|rt| &rt.simulation);
+    // The queue's sounds name the match rules' table: every producer runs
+    // in the match ([`crate::rules::ruleset::SoundNames`]).
+    let names = runtime.map(|rt| rt.resources.rules.sound_names());
+    let frame = state.match_state.sim_runtime.frame();
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,
         state.process_assets.manager(),
@@ -537,27 +611,33 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         catalog,
         listener,
     };
-    inputs.consume(sfx, &events, sim, local_owner.as_deref());
+    inputs.consume(sfx, &events, sim, names, local_owner.as_deref());
     let spatial = inputs.spatial_context(sim, local_owner.as_deref());
     let shrouded = |rx, ry| spatial.shrouded(rx, ry);
 
     // `BombListClass::UpdateAll @ 0x00438BF0`'s ticking pass
     // (0x00438C6C..0x00438CFE): a carrier out of limbo starts
-    // `BombTickingSound=` at its Location for every player (`VocClass::PlayAt`
-    // with the bomb's own handle, 0x00438CCA) and re-drives it after that
-    // (0x00438CF8); in limbo, spent or defused, the handle stops. Here the
-    // start is taken for any carrier with no live handle; the owner loop below
-    // re-drives and stops it through `bomb_ticking_coord`.
-    // `RulesClass::ReadAudioVisual` keeps only `VocClass::FindByName`'s index:
-    // an unregistered name is -1, which the ticking pass skips (0x00438C7F).
-    let ticking_sound = ticking_sound.filter(|sound_id| registry.get(sound_id).is_some());
-    if let (Some(sim), Some(sound_id)) = (sim, ticking_sound.as_deref()) {
-        for &carrier in sim.bomb_carriers() {
-            let owner = crate::sim::bomb::ticking_sound_owner(carrier);
+    // the cue retained at attach (0x00438EFD) at its Location for every player
+    // (`VocClass::PlayAt` with the bomb's own handle, 0x00438CCA), then re-drives it
+    // (0x00438CF8). The ordered events hard-stop it in limbo and detach it on
+    // defuse/detonation. Here a carrier without a bound handle starts its cue;
+    // the owner loop below re-drives it through `bomb_ticking_coord`.
+    // `BombClass::Load @ 0x00438B40` retains that cue. The ticking pass reads
+    // it at 0x00438C7C and skips -1 at 0x00438C7F.
+    if let Some(frame) = frame {
+        for tick in frame.scene.ui.bomb_ticks() {
+            let owner = tick.owner;
             if sfx.loop_handle_sound_id(owner).is_some() {
                 continue;
             }
-            let Some(world) = sim.bomb_ticking_coord(carrier) else {
+            let Some(sound_id) = tick
+                .sound
+                .as_deref()
+                .filter(|sound_id| registry.get(sound_id).is_some())
+            else {
+                continue;
+            };
+            let Some(world) = tick.coord else {
                 continue;
             };
             let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
@@ -588,7 +668,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     // `SoundEvent::UpdateState @ 0x004057DC` reaps a stopped event on its next
     // pass because the owner no longer names it.
     for owner in sfx.looping_owners() {
-        let Some(sim) = sim else {
+        let Some(frame) = frame else {
             sfx.stop_animation_sound(owner);
             continue;
         };
@@ -600,8 +680,8 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // `ObjectClass::AI` replays an object's `+0x3C`/`+0x50` handles with
         // `VocClass::PlayAt` on each visit (the sim's `AnimationStarted`);
         // 750D40 never runs on them.
-        if let Some(alive) = sim.object_sound_owner_alive(owner) {
-            if !alive {
+        if let Some(object) = crate::sim::world::object_sound_object(owner) {
+            if !frame.sound_object_stands(object) {
                 sfx.stop_animation_sound(owner);
             }
             continue;
@@ -616,14 +696,19 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // AI visit. A tail poll could overwrite that position or restart a
         // loop after a later callback. Turret and Anim stay separate.
         if crate::sim::combat::gattling::gattling_sound_techno(owner).is_some()
-            || sim.entities().get(owner).is_some_and(|entity| {
+            || frame.object(owner).is_some_and(|entity| {
                 use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
                 matches!(entity.category(), Unit | Infantry | Aircraft)
             })
         {
             continue;
         }
-        let Some(world) = sim.looping_sound_owner_coord(owner) else {
+        let Some(world) = frame
+            .scene
+            .ui
+            .sound_owner_coord(owner)
+            .or_else(|| frame.anim_coord(owner))
+        else {
             // The owner object is gone. Native's `ObjectClass` uninit path
             // releases or stops its handle before the pointer can dangle.
             // Anim Destroy emits release, removing the owner handle while
@@ -650,13 +735,13 @@ fn registry_facts_for_owner(
     owner: u64,
 ) -> Option<crate::audio::sfx::SpatialSource> {
     let key = sfx.handle_sound_id(owner)?;
-    Some(registry.get(&key).map_or_else(
+    Some(registry.get(key).map_or_else(
         || crate::audio::sfx::SpatialSource::from_registry_defaults(registry),
         crate::audio::sfx::SpatialSource::from_entry,
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

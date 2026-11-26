@@ -1,0 +1,61 @@
+{
+  "about": "A report as a game sends it with `finish` (`network_quality`, docs/lobby-protocol.md), every field filled. The game's test in src/app/match_runtime/network_quality.rs writes this file; a lobby keeps the report.",
+  "report": {
+    "catch_up": {
+      "episodes": 3,
+      "max_backlog_frames": 45,
+      "seconds": 12.25,
+      "skipped_draws": 17
+    },
+    "network": {
+      "command_round_trip_ms": {
+        "max": 250,
+        "mean": 75,
+        "samples": 400
+      },
+      "gaps": 9,
+      "link": {
+        "gaps_repaired_by_push": 7,
+        "max_arrival_jitter_ms": 18.75,
+        "max_up_loss_permille": 120,
+        "rto_timeouts": 4,
+        "rtt_ms_p50": 38,
+        "up_congested_seconds": 24.0,
+        "up_lossy_seconds": 30.5
+      },
+      "max_jitter_reserve_ms": 37.5,
+      "max_underrun_wait_ms": 40.5,
+      "repair_pulls": 2,
+      "underrun_wait_ms": 90.25,
+      "underruns": 6
+    },
+    "outcome": {
+      "desync_frame": 9000,
+      "failure": "agreement_mismatch",
+      "reconnects": 1,
+      "start_hash": {
+        "houses": "0123456789abcdef",
+        "setup_seed": "0000000000000007",
+        "world": "ffffffffffffffff"
+      },
+      "started": false
+    },
+    "pacing": {
+      "slowdowns": 3,
+      "slowed_by": [
+        2,
+        5,
+        2
+      ],
+      "slowed_seconds": 8.75
+    },
+    "performance": {
+      "fps_p5": 20.0,
+      "fps_p50": 61.5,
+      "tick_ms_p50": 9.75,
+      "tick_ms_p99": 31.25,
+      "unfocused_seconds": 2.5
+    },
+    "played_seconds": 754.5
+  }
+}

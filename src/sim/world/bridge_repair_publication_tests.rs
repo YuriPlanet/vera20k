@@ -295,7 +295,7 @@ fn walk_boundary_relinks_current_xyz_and_leaves_the_raw_bit_on_the_head() {
         crossing,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let e = sim.substrate.entities.get(id).unwrap();
     assert_eq!(ground_pose::position_world_coord(&e.position), crossing);
@@ -354,7 +354,7 @@ fn production_fresh_head_and_raw_history_match_original_walk_producer() {
             c.level = 2;
             c.slope_type = 1;
         }
-        sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(
+        *sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(
             sim.resolved_terrain.as_ref().unwrap(),
         )));
         let owner = {
@@ -438,7 +438,7 @@ pub(in crate::sim::world) fn ready_repair_fixture(
     u64,
 ) {
     let (mut sim, rules, registry) = fixture();
-    sim.mapgen_rng = Simulation::with_seed(0).mapgen_rng;
+    *sim.mapgen_rng = Simulation::with_seed(0).mapgen_rng.into_inner();
     player_house(&mut sim);
     let hut = sim
         .spawn_object("CABHUT", "Soviets", 16, 15, 0, &rules)
@@ -488,7 +488,7 @@ pub(in crate::sim::world) fn ready_engineer(
         head,
         rules,
         Some(registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.substrate
         .entities
@@ -615,7 +615,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -642,7 +642,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
         DriveCoord::cell(16, 15, 0),
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("hut evacuation finishes within the completion callback");
     let e = sim.substrate.entities.get(waiting).unwrap();
@@ -701,7 +701,7 @@ fn hut_repair_scatters_a_jumpjet_occupant_through_its_air_destination_owner() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -732,7 +732,7 @@ fn hut_repair_scatters_a_jumpjet_occupant_through_its_air_destination_owner() {
         DriveCoord::cell(16, 15, 0),
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("a Jumpjet hut occupant scatters without stopping the frame");
     assert!(
@@ -805,8 +805,7 @@ fn repair_pointer_expiry_uses_descending_infantry_registry_and_preserves_paid_he
     sim.expire_infantry_bridge_hut_targets(
         hut,
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.scenario_rng.state(), expected.state());
     for id in [a, b, c] {
@@ -849,7 +848,7 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
             sim.fog.increment_sensor_at(owner, 16, 15);
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.removal_facts.set_occupier_for_test(exception == 1);
+        e.seldom.removal_facts.set_occupier_for_test(exception == 1);
         if exception == 2 {
             e.navigation
                 .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 16, ry: 15 }));
@@ -860,8 +859,7 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
         sim.expire_infantry_bridge_hut_targets(
             hut,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let e = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
@@ -946,7 +944,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         replay.resolve_type_handles(&rules);
         assert!(replay.path_grid.is_none());
         assert!(replay.zone_grid.as_ref().unwrap().is_native_load_pending());
-        replay.rebuild_caches_after_load(map_terrain, sim.terrain_speed_config.clone(), &rules);
+        replay.rebuild_caches_after_load(map_terrain, (*sim.terrain_speed_config).clone(), &rules);
         replay
             .restore_map_authority_after_snapshot_load(&rules, &registry, None)
             .unwrap();
@@ -954,7 +952,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         assert!(replay.zone_grid.is_some());
         // Scenario reload applies native Seed(0); compare both continuations
         // under that established load rule, not uninterrupted RNG preservation.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let mut retired = false;
         for _ in 0..240 {
             repair_frame(&mut sim, &rules, &registry);
@@ -1055,7 +1053,7 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
             head,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
         let e = sim.substrate.entities.get(id).unwrap();
@@ -1131,18 +1129,14 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
         .nav_com();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
-            rules,
-            overlay_registry: registry,
-            ..SimResources::empty()
-        },
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     let error = runtime
         .advance_frame(
             &[],
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect_err("missing receiver must fail the actual runtime frame");
     assert_eq!(error.entity_id, engineer);
@@ -1217,7 +1211,7 @@ fn hut_queries_pending_uninit_and_active_tube_exit_before_other_gates() {
             hut,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -1232,7 +1226,7 @@ fn hut_queries_pending_uninit_and_active_tube_exit_before_other_gates() {
         row["output"]["dummy"]
     );
     let terrain = sim.resolved_terrain.as_ref().unwrap();
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
         33,
         33,
         terrain.cells().to_vec(),
@@ -1283,6 +1277,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             path_runtime.set_retries_left_for_test(256);
             let grid = sim.path_grid_snapshot();
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::Move {
                     entity_id: rocketeer,
@@ -1291,7 +1286,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             drop(grid);
             let mut expected_runtime =
@@ -1336,7 +1331,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 rocketeer,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             assert_eq!(
@@ -1583,8 +1578,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         id,
         Some(crate::sim::components::NavTargetRef::cell(20, 15)),
         &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("the Unit setter takes the cell");
     let before = sim
@@ -1599,11 +1593,12 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         .unwrap()
         .clone();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Stop { entity_id: id },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let state = sim
         .substrate
@@ -1655,7 +1650,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
                     .cell_mut_for_test(x, y)
                     .unwrap()
                     .speed_costs
-                    .hover = Some(0);
+                    .hover = Some(crate::rules::terrain_rules::test_speed_percent(0));
             }
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();
@@ -1673,7 +1668,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
             id,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let e = sim.substrate.entities.get(id).unwrap();
         let state = e.locomotor.as_ref().unwrap().jumpjet_runtime().unwrap();

@@ -1,7 +1,9 @@
 //! Minimap click inverse and camera-window presentation adapters.
 
 use crate::render::batch::SpriteInstance;
+use crate::render::snapshot::SnapshotObject;
 
+use super::geometry::NativeRadarSurfaceGeometry;
 use super::minimap::MinimapRenderer;
 use super::projection::minimap_screen_point_to_camera_top_left;
 use super::viewport::{
@@ -84,22 +86,66 @@ fn clamp_native_radar_click_cell(
 }
 
 fn signed_tracker_or_inverse_cell(
-    surface: super::geometry::NativeRadarSurfaceGeometry,
+    surface: NativeRadarSurfaceGeometry,
     pixel: (i32, i32),
     tracker_cell: Option<(i16, i16)>,
 ) -> (i16, i16) {
     tracker_cell.unwrap_or_else(|| surface.surface_pixel_to_signed_cell(pixel))
 }
 
+/// The pixels one radar point reads. Native reads one generated pixel for
+/// both the object lookup and the empty-click inverse.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RadarPick {
+    /// The geometry whose inverse names an empty click's cell.
+    inverse: NativeRadarSurfaceGeometry,
+    object_pixel: (i32, i32),
+    cell_pixel: (i32, i32),
+}
+
+impl RadarPick {
+    const fn native(surface: NativeRadarSurfaceGeometry, pixel: (i32, i32)) -> Self {
+        Self {
+            inverse: surface,
+            object_pixel: pixel,
+            cell_pixel: pixel,
+        }
+    }
+
+    /// The native gate admits `cursor`. The HD radar draws objects on the
+    /// native grid and terrain at `hd_scale` times it, so it reads the HD
+    /// pixel under the window pixel's `centre`: objects at the native pixel
+    /// holding it, and the cell its terrain shows there.
+    fn at(
+        surface: NativeRadarSurfaceGeometry,
+        rect: [f32; 4],
+        hd_scale: Option<u32>,
+        cursor: (f32, f32),
+        centre: (f32, f32),
+    ) -> Option<Self> {
+        let screen = NativeRadarScreenGeometry::new(surface, rect);
+        let pixel = screen.screen_to_surface_pixel(cursor)?;
+        let Some(scale) = hd_scale else {
+            return Some(Self::native(surface, pixel));
+        };
+        let fine = screen.fine_surface_pixel(centre, scale);
+        let blocks = scale as i32;
+        Some(Self {
+            inverse: surface.subdivided(scale),
+            object_pixel: (fine.0 / blocks, fine.1 / blocks),
+            cell_pixel: fine,
+        })
+    }
+}
+
 fn native_input_target_at_pixel(
-    surface: super::geometry::NativeRadarSurfaceGeometry,
+    pick: RadarPick,
     tracker: &super::tracker::RetainedRadarTracker,
-    simulation: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
-    pixel: (i32, i32),
+    frame: &impl crate::render::snapshot::SnapshotObjects,
 ) -> NativeRadarInputTarget {
-    let hit = tracker_object_signed_cell(tracker, simulation, rules, pixel);
-    let signed = signed_tracker_or_inverse_cell(surface, pixel, hit.map(|(_, cell)| cell));
+    let hit = tracker_object_signed_cell(tracker, frame, pick.object_pixel);
+    let signed =
+        signed_tracker_or_inverse_cell(pick.inverse, pick.cell_pixel, hit.map(|(_, cell)| cell));
     NativeRadarInputTarget {
         cell: (signed.0 as u16, signed.1 as u16),
         tracker_hit: hit.map(|(id, _)| id),
@@ -108,29 +154,17 @@ fn native_input_target_at_pixel(
 
 fn tracker_object_signed_cell(
     tracker: &super::tracker::RetainedRadarTracker,
-    simulation: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
+    frame: &impl crate::render::snapshot::SnapshotObjects,
     pixel: (i32, i32),
 ) -> Option<(u64, (i16, i16))> {
     let stable_id = tracker.object_at_pixel(pixel.0, pixel.1)?;
     // Original6567EF..656828 dispatches virtual+4C with a null requester,
-    // then truncates signed XY toward zero and packs each low word. A moving
-    // Foot's navigation head can precede its physical Object+48 cell. Do not
-    // perform a Map lookup here: the handler clamps these words first.
-    let point = simulation
-        .navigation_target_coordinate(
-            crate::sim::components::NavTargetRef::object(stable_id),
-            None,
-            rules,
-        )
-        .ok()?;
-    Some((
-        stable_id,
-        (
-            crate::util::lepton::lepton_to_cell_packed(point.x),
-            crate::util::lepton::lepton_to_cell_packed(point.y),
-        ),
-    ))
+    // then truncates signed XY toward zero and packs each low word
+    // (captured as `RadarFacts::click_cell`). A moving Foot's navigation
+    // head can precede its physical Object+48 cell. Do not perform a Map
+    // lookup here: the handler clamps these words first.
+    let cell = frame.object(stable_id)?.radar().click_cell?;
+    Some((stable_id, cell))
 }
 
 fn native_camera_cell_from_signed(
@@ -211,22 +245,21 @@ impl MinimapRenderer {
 
     /// `RadarClass::GetObjectAtRadarPixel @ 0x00656750`: screen to generated
     /// pixel, reverse tracker lookup, then exact x87 cell inverse fallback.
+    /// `centre` is the middle of the window pixel under `screen`, in the same
+    /// layout space; only the HD radar reads it ([`RadarPick::at`]).
     pub(crate) fn native_input_target_in_rect(
         &self,
         screen: (f32, f32),
+        centre: (f32, f32),
         rect: [f32; 4],
-        simulation: &crate::sim::world::Simulation,
-        rules: &crate::rules::ruleset::RuleSet,
+        frame: &impl crate::render::snapshot::SnapshotObjects,
     ) -> Option<NativeRadarInputTarget> {
         let surface = self.native_radar_surface?;
-        let pixel =
-            NativeRadarScreenGeometry::new(surface, rect).screen_to_surface_pixel(screen)?;
+        let pick = RadarPick::at(surface, rect, self.hd_scale(), screen, centre)?;
         Some(native_input_target_at_pixel(
-            surface,
+            pick,
             &self.radar_tracker,
-            simulation,
-            rules,
-            pixel,
+            frame,
         ))
     }
 
@@ -236,21 +269,21 @@ impl MinimapRenderer {
         &self,
         screen_x: f32,
         screen_y: f32,
+        centre: (f32, f32),
         rect_x: f32,
         rect_y: f32,
         rect_w: f32,
         rect_h: f32,
-        simulation: &crate::sim::world::Simulation,
-        rules: &crate::rules::ruleset::RuleSet,
+        frame: &impl crate::render::snapshot::SnapshotObjects,
         terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
         map_size: (i32, i32),
         tactical_size: (i32, i32),
     ) -> Option<NativeRadarCameraTarget> {
         let input = self.native_input_target_in_rect(
             (screen_x, screen_y),
+            centre,
             [rect_x, rect_y, rect_w, rect_h],
-            simulation,
-            rules,
+            frame,
         )?;
         let signed = (input.cell.0 as i16, input.cell.1 as i16);
         let mut target =
@@ -320,6 +353,7 @@ impl MinimapRenderer {
         center_cell: (u16, u16),
         tactical_width: i32,
         tactical_height: i32,
+        world_zoom: f32,
         rect_x: f32,
         rect_y: f32,
         rect_w: f32,
@@ -332,7 +366,13 @@ impl MinimapRenderer {
             // configured. Mapless renderer fixtures have no native geometry.
             return Vec::new();
         };
-        let rect = native_viewport_rect(surface, center_cell, tactical_width, tactical_height);
+        let rect = native_viewport_rect(
+            surface,
+            center_cell,
+            tactical_width,
+            tactical_height,
+            world_zoom,
+        );
         let transition = self.viewport_state.update(rect);
         let _native_old_border_visits = transition.dirty_previous_border;
         native_viewport_outline_instances(
@@ -372,7 +412,7 @@ impl MinimapRenderer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::render::radar::geometry::NativeRadarSurfaceGeometry;
@@ -389,6 +429,7 @@ mod tests {
             origin: (40, 60),
             event_source_cell: None,
             enemy_sensed_prefilter: true,
+            sensor_array_warn: true,
             foundation,
             radar_scale: 1.0,
             discovery_observed: true,
@@ -407,6 +448,7 @@ mod tests {
                 veteran_radar_invisible: false,
             }),
             local_front: false,
+            surface_edge: None,
         }
     }
 
@@ -525,9 +567,13 @@ mod tests {
             &crate::rules::ini_parser::IniFile::from_str("[General]\n"),
         )
         .unwrap();
-        let tracker_signed = tracker_object_signed_cell(&tracker, &simulation, &rules, (40, 60))
-            .unwrap()
-            .1;
+        let tracker_signed = tracker_object_signed_cell(
+            &tracker,
+            &crate::app::presentation::frame::PresentationFrame::of_test(&simulation, &rules),
+            (40, 60),
+        )
+        .unwrap()
+        .1;
         assert_eq!(tracker_signed, (55, 55));
         let tracker_target =
             native_camera_target_from_signed(tracker_signed, (100, 100), (632, 570), &terrain);
@@ -595,7 +641,7 @@ mod tests {
                     },
                     22,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let sim = scene.sim();
@@ -628,7 +674,12 @@ mod tests {
         );
         scene
             .runtime
-            .advance_frame(&[stop], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &[stop],
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         for _ in 0..3 {
             assert_native_radar_camera_case(
@@ -639,7 +690,7 @@ mod tests {
             );
             scene
                 .runtime
-                .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
                 .unwrap();
         }
         assert_native_radar_camera_case(
@@ -684,7 +735,11 @@ mod tests {
             update.origin = pixel;
             tracker.update_object(update, false);
         }
-        let input_target = native_input_target_at_pixel(surface, &tracker, sim, rules, pixel);
+        let input_target = native_input_target_at_pixel(
+            RadarPick::native(surface, pixel),
+            &tracker,
+            &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
+        );
         assert_eq!(
             input_target.tracker_hit,
             (input["tracked"] != false).then_some(id)
@@ -766,6 +821,33 @@ mod tests {
         assert_ne!(
             world, level_only,
             "the slope contribution cannot be reconstructed from Level"
+        );
+    }
+
+    #[test]
+    fn hd_radar_click_takes_the_cell_drawn_under_the_window_pixel() {
+        let surface = NativeRadarSurfaceGeometry::from_raw_rect(30, 20, 300, 180).unwrap();
+        let rect = [100.0, 50.0, 140.0, 108.0];
+        let content = NativeRadarScreenGeometry::new(surface, rect).content_rect();
+        // A sidebar at 3x: the window pixel on the last third of native pixel
+        // (10, 20), which the native gate rounds to the next one over.
+        let corner = (content[0] + 10.0 + 2.0 / 3.0, content[1] + 20.0 + 1.0 / 3.0);
+        let centre = (corner.0 + 0.5 / 3.0, corner.1 + 0.5 / 3.0);
+        assert_eq!(
+            RadarPick::at(surface, rect, None, corner, centre),
+            Some(RadarPick::native(surface, (11, 20)))
+        );
+        let pick = RadarPick::at(surface, rect, Some(3), corner, centre).unwrap();
+        // Objects: the native pixel drawn there. Terrain: the HD pixel drawn
+        // there, and the cell whose shroud and fog the HD radar paints on it.
+        assert_eq!((pick.object_pixel, pick.cell_pixel), ((10, 20), (32, 61)));
+        let cell = signed_tracker_or_inverse_cell(pick.inverse, pick.cell_pixel, None);
+        // The cell the HD radar's composition reads for that pixel.
+        assert_eq!(
+            (cell.0 as u16, cell.1 as u16),
+            surface
+                .subdivided(3)
+                .surface_pixel_to_visibility_cell(pick.cell_pixel)
         );
     }
 
@@ -897,6 +979,7 @@ mod tests {
             crate::map::entities::EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("4x3".to_string().into());
         building
@@ -912,8 +995,12 @@ mod tests {
                 "[BuildingTypes]\n0=BLDG\n[BLDG]\nFoundation=4x3\n",
             ))
             .unwrap();
-        let signed = tracker_object_signed_cell(&tracker, &simulation, &rules, (40, 60))
-            .map(|(_, cell)| cell);
+        let signed = tracker_object_signed_cell(
+            &tracker,
+            &crate::app::presentation::frame::PresentationFrame::of_test(&simulation, &rules),
+            (40, 60),
+        )
+        .map(|(_, cell)| cell);
         assert_eq!(
             signed,
             Some((62, 61)),
@@ -925,12 +1012,16 @@ mod tests {
             "the exact tracker GetCoords cell is the immediate camera centre"
         );
 
-        let edge = simulation.entities_mut_for_test().get_mut(2).unwrap();
+        let edge = simulation.entity_mut_for_test(2).unwrap();
         edge.position.set_rx_for_test(u16::MAX);
         edge.position.set_ry_for_test(u16::MAX);
         assert_eq!(
-            tracker_object_signed_cell(&tracker, &simulation, &rules, (40, 60))
-                .map(|(_, cell)| cell),
+            tracker_object_signed_cell(
+                &tracker,
+                &crate::app::presentation::frame::PresentationFrame::of_test(&simulation, &rules),
+                (40, 60)
+            )
+            .map(|(_, cell)| cell),
             Some((1, 0)),
             "GetCoords converts to wrapping native signed cell words"
         );

@@ -131,16 +131,22 @@ impl NativeRadarSurfaceGeometry {
         let y = i32::from(cell.1 as i16);
         let raw_x = self.raw_offset_x.wrapping_sub(y).wrapping_add(x);
         let raw_y = y.wrapping_sub(self.raw_offset_y).wrapping_add(x);
-        let mut pixel_x = native_ftol(X87Chop53::mul(
+        // Native adds ImageRect's origin before ftol (FIADD `0x006550F4`,
+        // `0x00655117`). That origin lies at least MapAreaX 16 / MapAreaY 49
+        // into the sidebar surface, so a position left of or above the image
+        // rounds down, not toward zero. RESIDUAL: one further out than that
+        // origin rounds toward zero again natively. Dots there are off the
+        // image either way and the view's centre cell is on it, so only a
+        // radar event centred that far out lands 1 px from native.
+        let mut pixel_x = native_floor(X87Chop53::mul(
             X87Chop53::load_i32(raw_x),
             load_f32(self.zoom),
         ));
-        let pixel_y = native_ftol(X87Chop53::mul(
+        let pixel_y = native_floor(X87Chop53::mul(
             X87Chop53::load_i32(raw_y),
             load_f32(self.zoom),
         ));
-        // Native applies this after adding the integral surface origin. In the
-        // relative frame the same correction is exactly `-1 -> 0`.
+        // `0x00655122..0x0065512B` moves ImageRectX - 1 onto the image.
         if pixel_x == -1 {
             pixel_x = 0;
         }
@@ -210,16 +216,15 @@ impl NativeRadarSurfaceGeometry {
         let raw_y = world_y_leptons
             .wrapping_sub(self.raw_offset_y.wrapping_mul(256))
             .wrapping_add(world_x_leptons);
-        let project = |raw| {
-            native_ftol(X87Chop53::mul(
-                X87Chop53::mul(X87Chop53::load_i32(raw), load_f32(self.zoom)),
-                load_constant(ONE_OVER_CELL_BITS),
-            ))
-        };
-        let mut pixel = (project(raw_x), project(raw_y));
+        let mut pixel = (
+            surface_pixel(raw_x, self.zoom),
+            surface_pixel(raw_y, self.zoom),
+        );
         if clamp {
-            pixel.0 = pixel.0.clamp(0, self.generated_width.wrapping_sub(1));
-            pixel.1 = pixel.1.clamp(0, self.generated_height.wrapping_sub(1));
+            // `0x006557F0` raises to 0, then lowers to the image's last pixel:
+            // an empty image gives -1 (`i32::clamp` would panic on it).
+            pixel.0 = pixel.0.max(0).min(self.generated_width.wrapping_sub(1));
+            pixel.1 = pixel.1.max(0).min(self.generated_height.wrapping_sub(1));
         }
         pixel
     }
@@ -242,14 +247,32 @@ impl NativeRadarSurfaceGeometry {
         self.zoom
     }
 
-    /// `RadarClass::GetObjectAtRadarPixel @ 0x00656750` fallback inverse.
-    ///
-    /// The binary uses the same x87 divide/half/+0.5/ftol sequence as
-    /// `RenderCellPixel`; returning the packed words preserves native wrapping
-    /// for an edge pixel instead of imposing a rectangular Rust admission.
-    pub fn surface_pixel_to_cell(self, pixel: (i32, i32)) -> Option<(u16, u16)> {
-        let signed = self.surface_pixel_to_signed_cell(pixel);
-        Some((signed.0 as u16, signed.1 as u16))
+    /// VERA's HD radar: the same raw frame generated at `scale` times the
+    /// size, so HD pixel (x, y) is drawn inside native pixel
+    /// (x / scale, y / scale). Its pixel and cell mappings work in HD pixels;
+    /// its aperture placement is the native one times `scale`, never
+    /// [`Self::aperture_offset`], which assumes the native size.
+    pub fn subdivided(self, scale: u32) -> Self {
+        let scale = scale.max(1) as i32;
+        Self {
+            zoom: self.zoom * scale as f32,
+            generated_width: self.generated_width.wrapping_mul(scale),
+            generated_height: self.generated_height.wrapping_mul(scale),
+            ..self
+        }
+    }
+
+    /// [`Self::surface_pixel_to_visibility_cell`] for every generated pixel,
+    /// row-major, each cell packed as `rx | ry << 16`.
+    pub fn visibility_cells(self) -> Vec<u32> {
+        let (width, height) = self.generated_size();
+        (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .map(|pixel| {
+                let (rx, ry) = self.surface_pixel_to_visibility_cell(pixel);
+                u32::from(rx) | u32::from(ry) << 16
+            })
+            .collect()
     }
 
     pub const fn generated_size(self) -> (i32, i32) {
@@ -296,6 +319,46 @@ fn native_aspect_fit(raw_width: i32, raw_height: i32) -> (f32, i32, i32) {
     }
 }
 
+/// `0x006557F0`'s pixel for one raw coordinate: `ftol(raw * zoom * 2^-8)`
+/// on the x87, at 53-bit precision with truncation toward zero. Below 2^61
+/// the product's truncation to 53 bits drops only bits under 2^8, which the
+/// division by 256 and `ftol` drop anyway, so the pixel is the exact
+/// product's truncation, taken here in integers. Debug builds check it
+/// against the x87 model ([`x87_surface_pixel`]).
+fn surface_pixel(raw: i32, zoom: f32) -> i32 {
+    let bits = zoom.to_bits();
+    let exponent = ((bits >> 23) & 0xff) as i32;
+    // A normal zoom is its 24-bit significand times 2^(exponent - 150), so
+    // the pixel is raw times the significand over 2^(158 - exponent). From
+    // 2 up the product, below 2^31 * 2^(exponent - 126), stays below 2^61.
+    let shift = 158 - exponent;
+    if exponent == 0 || exponent == 0xff || !(2..63).contains(&shift) {
+        return x87_surface_pixel(raw, zoom);
+    }
+    let significand = i64::from((bits & 0x7f_ffff) | 0x80_0000);
+    let signed = if bits >> 31 == 0 {
+        significand
+    } else {
+        -significand
+    };
+    // Below 2^55 in magnitude; `/` truncates toward zero as `ftol` does.
+    let pixel = (i64::from(raw) * signed / (1_i64 << shift)) as i32;
+    debug_assert_eq!(
+        pixel,
+        x87_surface_pixel(raw, zoom),
+        "raw {raw}, zoom {zoom}"
+    );
+    pixel
+}
+
+/// [`surface_pixel`] in the x87 model, operation by operation.
+fn x87_surface_pixel(raw: i32, zoom: f32) -> i32 {
+    native_ftol(X87Chop53::mul(
+        X87Chop53::mul(X87Chop53::load_i32(raw), load_f32(zoom)),
+        load_constant(ONE_OVER_CELL_BITS),
+    ))
+}
+
 fn load_constant(bits: u32) -> X87Value {
     X87Chop53::load_f32(NativeF32Bits::from_bits(bits)).expect("native radar constant is finite")
 }
@@ -317,6 +380,17 @@ fn native_ftol(value: X87Value) -> i32 {
     X87Chop53::ftol_i64(value).expect("native radar geometry fits i32") as i32
 }
 
-#[cfg(test)]
+/// `ftol` of `value` after a positive integral origin was added to it: the
+/// floor, for values no further below zero than that origin.
+fn native_floor(value: X87Value) -> i32 {
+    let truncated = native_ftol(value);
+    if X87Chop53::compare(value, X87Chop53::load_i32(truncated)) == X87Ordering::Less {
+        truncated - 1
+    } else {
+        truncated
+    }
+}
+
+#[cfg(all(test, tests_render_a_r))]
 #[path = "geometry_tests.rs"]
 mod tests;

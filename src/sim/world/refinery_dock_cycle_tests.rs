@@ -26,8 +26,8 @@ fn sample(s: &Scene, id: u64) -> Sample {
     Sample {
         cell: (miner.position.rx(), miner.position.ry()),
         mission: miner.mission.current(),
-        contact: miner.radio_contacts.slot(0),
-        tethered: miner.tether.partner().is_some(),
+        contact: miner.seldom.radio_contacts.slot(0),
+        tethered: miner.seldom.tether.partner().is_some(),
         unloading: state.unload_active(),
         facing: miner.body_facing_current(s.sim.session.binary_frame()),
         ore: state
@@ -56,14 +56,14 @@ fn credits(s: &Scene) -> i32 {
 
 /// Advance one production frame; returns the owner's credits after it.
 fn frame(s: &mut Scene) -> i32 {
-    frame_with_effects(s, &[], crate::sim::world::FrameEffects::default())
+    frame_with_effects(s, &[], &mut crate::sim::world::FrameEffects::default())
 }
 
 /// Same fixture frame as `advance_tick`, with caller-owned frame effects.
 fn frame_with_effects(
     s: &mut Scene,
     commands: &[crate::sim::command::CommandEnvelope],
-    effects: crate::sim::world::FrameEffects<'_>,
+    effects: &mut crate::sim::world::FrameEffects<'_>,
 ) -> i32 {
     let overlay = crate::sim::tiberium::test_support::overlay_registry();
     let grid = s.sim.path_grid_snapshot();
@@ -89,9 +89,8 @@ fn frame_with_production_strip(s: &mut Scene, owner: crate::sim::intern::Interne
     s.sim.session.set_current_house_for_test(Some(owner));
     let due = s.sim.take_due_commands();
     let visits = s.sim.production.factories().strip_visits_for_test(owner);
-    let effects =
-        crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
-    let balance = frame_with_effects(s, &due, effects);
+    let mut effects = crate::sim::world::FrameEffects::default().with_production_strip(&visits);
+    let balance = frame_with_effects(s, &due, &mut effects);
     s.sim.session.set_current_house_for_test(previous_house);
     balance
 }
@@ -145,8 +144,8 @@ fn returning_scene() -> Scene {
 fn admission_owner_uses_actual_sparse_contact_slots() {
     let mut s = returning_scene();
     let refinery = s.sim.substrate.entities.get_mut(s.refinery).unwrap();
-    refinery.radio_contacts = crate::sim::radio::Contacts::with_capacity(2);
-    refinery.radio_contacts.insert(99).unwrap();
+    refinery.seldom.radio_contacts = crate::sim::radio::Contacts::with_capacity(2);
+    refinery.seldom.radio_contacts.insert(99).unwrap();
     let before_rng = s.sim.scenario_rng.logical_state();
     assert_eq!(
         crate::sim::radio::transmit(
@@ -156,7 +155,7 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
             crate::sim::radio::RadioMessage::CanEnter,
             crate::sim::radio::RadioPayload::default(),
             &s.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,
         "CAN_LOAD must share the actual-slot Radio owner"
@@ -169,14 +168,14 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
             &s.rules.object("HARV").unwrap().dock,
             false,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Some(s.refinery),
         "the narrow scan must share the same actual-slot predicate"
     );
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert_eq!(refinery.radio_contacts.slot(0), Some(99));
-    assert_eq!(refinery.radio_contacts.slot(1), None);
+    assert_eq!(refinery.seldom.radio_contacts.slot(0), Some(99));
+    assert_eq!(refinery.seldom.radio_contacts.slot(1), None);
     assert_eq!(s.sim.scenario_rng.logical_state(), before_rng);
 }
 
@@ -226,8 +225,11 @@ fn assert_whole_visit(s: &mut Scene) {
     assert_eq!(end.contact, None);
     assert_ne!(end.mission, MissionId::from_known(MissionType::Unload));
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert!(refinery.radio_contacts.is_empty(), "the slot is free again");
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(
+        refinery.seldom.radio_contacts.is_empty(),
+        "the slot is free again"
+    );
+    assert_eq!(refinery.seldom.tether.partner(), None);
 }
 
 #[test]
@@ -317,7 +319,7 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
                 &s.rules,
                 "Americans",
                 "E1",
-                Default::default(),
+                &mut Default::default(),
                 false,
             ));
         }
@@ -348,7 +350,11 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
                 assert!(stalled, "the paid head stalled before the unload");
                 assert_eq!(cargo_before, 40);
                 assert_eq!(credits(&s), cash_before + payout - spent);
-                assert_eq!(s.sim.houses[&owner].economy().score(), score);
+                // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no
+                // score.
+                if !s.rules.ares() {
+                    assert_eq!(s.sim.houses[&owner].economy().score(), score);
+                }
                 assert_eq!(after.object(), before.object());
                 assert_eq!(after.queue(), first.queue());
                 assert_eq!(after.insertion_seq(), first.insertion_seq());
@@ -412,7 +418,10 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         let spent = 2 * s.rules.object("E1").unwrap().cost;
         assert_eq!(s.sim.houses[&owner].economy().spent_credits(), spent);
         assert_eq!(credits(&s), 50 + payout - spent);
-        assert_eq!(s.sim.houses[&owner].economy().score(), score);
+        // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+        if !s.rules.ares() {
+            assert_eq!(s.sim.houses[&owner].economy().score(), score);
+        }
         assert!(!sample(&s, s.miner).tethered);
     }
     assert_eq!(phases, [true, true]);
@@ -517,8 +526,8 @@ fn a_refinery_order_mid_unload_redocks_and_pays() {
     }
     assert_eq!(paid, 1000, "the whole load is paid after the re-dock");
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert!(refinery.radio_contacts.is_empty());
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(refinery.seldom.radio_contacts.is_empty());
+    assert_eq!(refinery.seldom.tether.partner(), None);
 }
 
 /// A refinery's single dock held by one miner refuses a second miner's
@@ -632,10 +641,10 @@ fn a_guarding_miner_sent_to_a_free_refinery_queues_enter_without_a_destination()
         crate::sim::components::NavTargetRef::Object { id: s.refinery },
         &s.rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let miner = s.sim.substrate.entities.get(s.miner).unwrap();
-    assert_eq!(miner.radio_contacts.slot(0), Some(s.refinery));
+    assert_eq!(miner.seldom.radio_contacts.slot(0), Some(s.refinery));
     assert_eq!(miner.mission.queued().known(), Some(MissionType::Enter));
     assert_eq!(miner.navigation.nav_com(), None);
 }
@@ -696,6 +705,7 @@ fn selling_the_refinery_mid_unload_hands_the_miner_to_harvest() {
             .entities
             .get(s.miner)
             .unwrap()
+            .seldom
             .display_type_override
             .image(),
         None
@@ -728,12 +738,12 @@ fn capturing_the_refinery_mid_unload_sends_the_miner_off() {
         russians,
         &s.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
     assert_eq!(refinery.owner(), russians);
-    assert!(refinery.radio_contacts.is_empty());
-    assert_eq!(refinery.tether.partner(), None);
+    assert!(refinery.seldom.radio_contacts.is_empty());
+    assert_eq!(refinery.seldom.tether.partner(), None);
     let after = sample(&s, s.miner);
     assert_eq!(
         s.sim.substrate.entities.get(s.miner).unwrap().owner(),
@@ -765,6 +775,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
          [Warheads]\n0=C4\n[C4]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         super::refinery_dock_oracle_tests::RULES,
     ));
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let art = IniFile::from_str(
         "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n\
          [GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",
@@ -805,6 +816,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
         None,
         &s.rules,
         Some(crate::sim::tiberium::test_support::overlay_registry()),
+        &mut Vec::new(),
     );
     let after = sample(&s, s.miner);
     assert!(!after.unloading);

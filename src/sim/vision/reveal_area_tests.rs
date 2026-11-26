@@ -146,12 +146,12 @@ fn the_house_gate_matches_native() {
             ..VisionConfig::default()
         };
         for (asker, named) in [("OTHER", "PLAYER"), ("PLAYER", "OTHER")] {
-            let fog = FogState::default();
             let mut alliances = HouseAllianceMap::new();
             if row["allied"] == true {
                 alliances.insert(asker.to_string(), [named.to_string()].into());
             }
-            let admitted = direct_reveal_viewers(&fog, &alliances, other, &config, &interner)
+            // The player's client map is the one the gate is asked for.
+            let admitted = direct_reveal_viewers(&alliances, other, &config, &interner, &[player])
                 .contains(&player);
             let expected = !leaf.is_empty() && asker == "OTHER";
             assert_eq!(admitted, expected, "{asker} {row}");

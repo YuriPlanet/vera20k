@@ -140,7 +140,7 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             .set_preferred_super_weapon_target(wide(cell(&input["initial_other_preferred"])));
         sim.session
             .set_binary_frame_for_test(int(&control["frame"]) as u32);
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         // These are the five admitted MapClass predicate inputs in the
         // generator, not a terrain-height fit to a captured target.
         sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
@@ -163,11 +163,10 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             )
             .unwrap();
         }
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
-        sim.scenario_rng =
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
         assert_eq!(rng_hashes(&sim), control["rng_before"]);
         for row in control["rows"].as_array().unwrap() {
             let stage = row["stage"].as_str().unwrap();
@@ -434,9 +433,15 @@ fn the_best_rally_target_matches_native() {
                 }
             })
             .collect();
+        // Ares 10034C50 (hook 0x50CFAA) drops a cloaked entry without its
+        // draw: those rows hold the stock answer only
+        // (`ares_a_cloaked_rally_target_is_skipped_without_a_draw`).
+        if rules.ares() && entries.iter().any(|entry| entry.cloaked) {
+            continue;
+        }
         let mut rng = SimRng::new(int(&row["seed"]) as u64);
         assert_eq!(
-            pick_best_rally_target(&entries, &mut rng),
+            pick_best_rally_target(&entries, &mut rng, rules.ares()),
             cell(&row["cell"]),
             "{row}"
         );
@@ -446,6 +451,25 @@ fn the_best_rally_target_matches_native() {
             "{row}"
         );
     }
+}
+
+/// Ares 10034C50 (hook 0x50CFAA): a cloaked enemy is worth nothing and is no
+/// candidate, so the visible one wins whatever their values, and the cloaked
+/// entry draws nothing (the single pick's `RandomRanged(0, 0)` draws none).
+#[test]
+fn ares_a_cloaked_rally_target_is_skipped_without_a_draw() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let entry = |cell, value, cloaked| RallyEntry {
+        candidate: true,
+        value,
+        cell,
+        in_playfield: true,
+        cloaked,
+    };
+    let entries = [entry((5, 5), 900, true), entry((9, 9), 1, false)];
+    let mut rng = SimRng::new(0x50CFAA);
+    assert_eq!(pick_best_rally_target(&entries, &mut rng, true), (9, 9));
+    assert_eq!(rng.logical_state(), SimRng::new(0x50CFAA).logical_state());
 }
 
 /// AI_TryFireSW over each row's Supers: production `try_fire` on a house in
@@ -472,6 +496,20 @@ fn the_try_fire_arms_match_native() {
             );
         }
         let mut rules = catalog_rules(&oracle, None, &extra);
+        // Installed Ares's AI (hook 5098F0, 10038E10) aims a redirected
+        // type through its own targeting mode, not the stock arm; such rows
+        // are the stock AI's only (`ai_fire.rs`'s Ares selector coverage).
+        if rules.ares()
+            && kinds.iter().any(|kind| {
+                flag(&kind[1])
+                    && crate::rules::superweapon_type::SuperWeaponKind::from_ini_str(
+                        TYPE_NAMES[int(&kind[0]) as usize],
+                    )
+                    .is_some_and(|kind| kind.is_ares_redirect())
+            })
+        {
+            continue;
+        }
         rules.general.ai_super_defense_frames = int(&row["defense_frames"]);
         let mut sim = Simulation::with_seed(5);
         sim.intern_rule_type_ids(&rules);
@@ -493,7 +531,7 @@ fn the_try_fire_arms_match_native() {
         );
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         let rally = cell(&row["rally"]);
@@ -510,7 +548,7 @@ fn the_try_fire_arms_match_native() {
             .expect("the rally object stands");
         }
         if flag(&row["storm"]) {
-            sim.lightning_storm = LightningStorm::raging_for_test(enemy, (3, 3));
+            *sim.lightning_storm = LightningStorm::raging_for_test(enemy, (3, 3));
         }
         let mut ids = Vec::new();
         for (index, kind) in kinds.iter().enumerate() {
@@ -531,7 +569,7 @@ fn the_try_fire_arms_match_native() {
             &rules,
             computer,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let log = AI_FIRE_LOG.take().unwrap();
 
@@ -638,7 +676,7 @@ fn the_genetic_mutator_target_matches_native() {
             .entry(COMPUTER.to_ascii_uppercase())
             .or_default()
             .insert(ALLY.to_ascii_uppercase());
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.set_playfield_bounds_for_test(Some(playfield(&oracle)));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         // Each listed object and its cell, in arrival order; the cells that
@@ -685,7 +723,7 @@ fn the_genetic_mutator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
                 sim.substrate
                     .entities
@@ -696,7 +734,7 @@ fn the_genetic_mutator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             if extra["limbo"].as_bool().unwrap_or(false) {
@@ -864,7 +902,7 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+    *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
     sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
     Some((rules, sim, americans, russians))
@@ -900,8 +938,7 @@ fn retail_walk_reads_each_object() {
         flying,
         600,
         &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_ne!(
         sim.entity_display_layer(flying, &rules),
@@ -910,7 +947,7 @@ fn retail_walk_reads_each_object() {
     let own = spawn(&mut sim, "NAPOWR", "Americans", (20, 10), 0);
     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
     cloak.set_state_for_test(2);
-    sim.substrate.entities.get_mut(own).unwrap().cloak = Some(cloak);
+    sim.substrate.entities.get_mut(own).unwrap().cloak = Some(Box::new(cloak));
     let built = spawn(&mut sim, "HTNK", "Russians", (33, 50), 0);
     sim.techno_limbo(built);
 
@@ -919,8 +956,9 @@ fn retail_walk_reads_each_object() {
             sim,
             &rules,
             &sim.houses[&americans],
-            russians,
+            Some(russians),
             sim.substrate.entities.get(id).unwrap(),
+            RallyLadder::BestRally,
         )
     };
     // The 4x4 yard's centre cell.
@@ -1147,11 +1185,11 @@ fn the_psychic_dominator_target_matches_native() {
             .entry(COMPUTER.to_ascii_uppercase())
             .or_default()
             .insert(ALLY.to_ascii_uppercase());
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.set_playfield_bounds_for_test(Some(playfield(&oracle)));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         let status = u8::try_from(int(&row["psydom"])).unwrap();
-        sim.psychic_dominator = PsychicDominatorState::for_test(
+        *sim.psychic_dominator = PsychicDominatorState::for_test(
             status,
             (0, 0),
             (status != 0).then_some(computer),
@@ -1237,7 +1275,7 @@ fn the_psychic_dominator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
                 sim.substrate
                     .entities
@@ -1248,7 +1286,7 @@ fn the_psychic_dominator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             if fact("limbo") {

@@ -44,7 +44,7 @@ fn mission_only_aircraft_reveal_matches_original_flag_histories() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -56,7 +56,7 @@ fn mission_only_aircraft_reveal_matches_original_flag_histories() {
             .veterancy
             .set_rank_for_test(input["veterancy"].as_u64().unwrap() as u16 * 100);
         if flag("previous") {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         let placement = if flag("success") {
             PlacementEvidence::MarkSucceeded
@@ -72,7 +72,7 @@ fn mission_only_aircraft_reveal_matches_original_flag_histories() {
             0,
             placement,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(result.is_some(), flag("success"), "{row}");
         assert_eq!(
@@ -98,7 +98,7 @@ fn mission_only_survives_snapshot_limbo_and_ordinary_type_reveal() {
         .unwrap();
     assert!(sim.substrate.entities.get(id).unwrap().is_mission_only());
     sim.conceal(id);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved = GameSnapshot::save(&sim, 0, 0, "deployment", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
@@ -114,7 +114,7 @@ fn mission_only_survives_snapshot_limbo_and_ordinary_type_reveal() {
                     0,
                     PlacementEvidence::MarkSucceeded,
                     &normal,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .is_some()
         );
@@ -139,7 +139,7 @@ fn mission_only_has_its_own_hash_fold() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let before = sim.state_hash();
@@ -147,6 +147,7 @@ fn mission_only_has_its_own_hash_fold() {
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mission_only
         .mark();
     assert_ne!(sim.state_hash(), before);
@@ -212,7 +213,7 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap()
             .slope_type = slope;
-        sim.playfield_bounds = Some(bounds);
+        *sim.playfield_bounds = Some(bounds);
         sim.session.set_binary_frame_for_test(1000);
         let id = sim
             .construct_object_limbo_at_height(
@@ -223,12 +224,12 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
                 0,
                 level,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         if flag("mission_only") {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         entity
             .position
@@ -251,7 +252,7 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
             level,
             placement,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(revealed.is_some(), flag("success"), "{row}");
         let entity = sim.substrate.entities.get(id).unwrap();

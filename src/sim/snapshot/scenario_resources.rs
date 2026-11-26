@@ -56,8 +56,14 @@ impl<'a> SavedScenarioResourcesRef<'a> {
         processed_rules: &'a ProcessedRulesLayers,
         fixed_art_hash: u64,
         terrain: SavedTerrainTemplate,
-        map: SavedMapMetadata,
+        mut map: SavedMapMetadata,
     ) -> Self {
+        // Save the catalog actually bound for the scenario. Its Rules view
+        // also contains unrelated [Map] keys inherited from a mod or mode.
+        map.source.bundled_ice = resources
+            .terrain_template
+            .as_ref()
+            .is_some_and(|terrain| terrain.uses_bundled_ice());
         Self {
             processed_rules,
             fixed_art_hash,
@@ -116,7 +122,6 @@ impl SavedScenarioResources {
     pub fn into_restored_parts(
         self,
         rules: RuleSet,
-        overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry,
         dummy: SharedCellDummy,
     ) -> Result<(SimResources, ProcessedRulesLayers, SavedMapMetadata), SavedTerrainError> {
         let terrain = self.terrain.restore_values(dummy)?;
@@ -124,7 +129,6 @@ impl SavedScenarioResources {
             SimResources {
                 rules,
                 terrain_template: Some(terrain),
-                overlay_registry,
             },
             self.processed_rules,
             self.map,
@@ -139,7 +143,7 @@ impl SavedScenarioResources {
 pub struct SavedMapMetadata {
     map_hash: u64,
     #[serde(with = "source_identity")]
-    source: crate::map::source::LoadedMapSource,
+    source: SavedMapSource,
     basic: crate::map::basic::BasicSection,
     ranking: crate::map::ranking::RankingSection,
     /// ScenarioSave689310 retains Full_Init's resolved +1360/+13DA names.
@@ -158,13 +162,21 @@ pub struct SavedMapMetadata {
     /// Rust media reconstruction policy: release this credit because the
     /// physical Radar video queue is not restored. Other pause holds persist.
     radar_pause_credit: bool,
+    /// VocSave751620's static-sound nodes. The live list remains in audio.
+    static_sounds: Vec<SavedStaticSound>,
+}
+
+/// One node of `VocClass::SaveStaticSounds @ 0x00751620`: the sound and the
+/// Coord of a retained `VocClass::PlayAtCoord @ 0x00750E20` request. Native
+/// writes the sound's vector index; VERA carries its canonical name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedStaticSound {
+    pub sound_id: String,
+    /// Signed native XYZ in leptons (node `+0x20..+0x28`).
+    pub coordinate: [i32; 3],
 }
 
 impl SavedMapMetadata {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "capture existing map, presentation, clock and Theme owners at one save boundary"
-    )]
     pub fn capture(
         map_hash: u64,
         source: &crate::map::source::LoadedMapSource,
@@ -182,7 +194,10 @@ impl SavedMapMetadata {
     ) -> Self {
         Self {
             map_hash,
-            source: source.clone(),
+            source: SavedMapSource {
+                identity: source.clone(),
+                bundled_ice: false,
+            },
             basic: basic.clone(),
             ranking: ranking.clone(),
             campaign_names: campaign_names.clone(),
@@ -194,14 +209,24 @@ impl SavedMapMetadata {
             local_player_name: local_player_name.map(str::to_owned),
             theme_slots,
             radar_pause_credit,
+            static_sounds: Vec::new(),
         }
+    }
+
+    /// The audio owner's static-sound nodes at the save boundary.
+    pub fn with_static_sounds(mut self, static_sounds: Vec<SavedStaticSound>) -> Self {
+        self.static_sounds = static_sounds;
+        self
     }
 
     pub fn map_hash(&self) -> u64 {
         self.map_hash
     }
     pub fn source(&self) -> &crate::map::source::LoadedMapSource {
-        &self.source
+        &self.source.identity
+    }
+    pub fn uses_bundled_ice(&self) -> bool {
+        self.source.bundled_ice
     }
     pub fn basic(&self) -> &crate::map::basic::BasicSection {
         &self.basic
@@ -237,6 +262,20 @@ impl SavedMapMetadata {
     pub fn theme_slots(&self) -> [i32; 2] {
         self.theme_slots
     }
+    pub fn static_sounds(&self) -> &[SavedStaticSound] {
+        &self.static_sounds
+    }
+}
+
+/// Source and map-local terrain selection are restored together. The optional
+/// field extends the source JSON already stored in saves; older records and
+/// maps using a mod's own ice catalog both select the ordinary theater.
+#[derive(Clone, Serialize, Deserialize)]
+struct SavedMapSource {
+    #[serde(flatten)]
+    identity: crate::map::source::LoadedMapSource,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    bundled_ice: bool,
 }
 
 /// Source identity already has a tagged diagnostic JSON representation. Keep
@@ -246,7 +285,7 @@ mod source_identity {
     use super::*;
 
     pub(super) fn serialize<S: serde::Serializer>(
-        value: &crate::map::source::LoadedMapSource,
+        value: &SavedMapSource,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         serde_json::to_string(value)
@@ -256,18 +295,21 @@ mod source_identity {
 
     pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<crate::map::source::LoadedMapSource, D::Error> {
+    ) -> Result<SavedMapSource, D::Error> {
         let json = String::deserialize(deserializer)?;
         // The JSON inside is outside the traced save layout; a schema change
         // fails here as a decode error rather than as another layout.
         if crate::util::save_codec::layout::describing() {
-            return Ok(crate::map::source::LoadedMapSource::LegacyFallback { label: json });
+            return Ok(SavedMapSource {
+                identity: crate::map::source::LoadedMapSource::LegacyFallback { label: json },
+                bundled_ice: false,
+            });
         }
         serde_json::from_str(&json).map_err(serde::de::Error::custom)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -276,7 +318,9 @@ mod tests {
     #[test]
     fn saved_resource_wire_restores_without_source_map_or_rule_replay() {
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
-            IniFile::from_str("[BuildingTypes]\n0=ROOT\n[ROOT]\nStrength=200\n"),
+            IniFile::from_str(
+                "[Map]\nVeraIce=yes\n[BuildingTypes]\n0=ROOT\n[ROOT]\nStrength=200\n",
+            ),
             None,
             IniFile::from_str(""),
             std::sync::Arc::default(),
@@ -299,6 +343,11 @@ mod tests {
             path: "/nonexistent/saved-only-map.map".into(),
             payload_len: 27,
             source_sha256: "saved-source-identity".into(),
+        };
+        // VocSave751620: one static-sound node, sound and Coord.
+        let ambient = SavedStaticSound {
+            sound_id: "OILDERRICKLOOP".into(),
+            coordinate: [5 * 256 + 128, 7 * 256 + 128, -104],
         };
         let saved = SavedScenarioResourcesRef::capture(
             &resources,
@@ -324,7 +373,8 @@ mod tests {
                 None,
                 [-1, -1],
                 false,
-            ),
+            )
+            .with_static_sounds(vec![ambient.clone()]),
         );
         // Exercise the production borrowed writer against the owning reader.
         // JSON round trips would miss tagged-enum/bincode incompatibilities.
@@ -332,18 +382,19 @@ mod tests {
         let restored: SavedScenarioResources =
             crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored.map().source(), &source);
+        assert!(
+            !restored.map().uses_bundled_ice(),
+            "only the map can opt into VERA ice"
+        );
         assert_eq!(restored.map().map_hash(), 123);
+        assert_eq!(restored.map().static_sounds(), [ambient]);
         assert_eq!(restored.terrain().dimensions(), (3, 3));
         let rules = owner
             .project_saved_scenario_rules(restored.processed_rules())
             .unwrap();
         assert_eq!(rules.simulation_config_hash(), expected_hash);
         let (restored, processed, _) = restored
-            .into_restored_parts(
-                rules,
-                crate::rules::overlay_types::OverlayTypeRegistry::empty(),
-                SharedCellDummy::fresh(),
-            )
+            .into_restored_parts(rules, SharedCellDummy::fresh())
             .unwrap();
         assert_eq!(
             restored.terrain_template.unwrap().cells(),

@@ -158,7 +158,7 @@ fn core_probe(directory: &Path) -> Result<Vec<String>, Box<dyn std::error::Error
     results.push(format!("simulation_construct=true state_hash={hash:016x}"));
     let mut runtime = vera20k_core::sim::runtime::SimRuntime {
         simulation,
-        resources: vera20k_core::sim::runtime::SimResources::empty(),
+        resources: vera20k_core::sim::runtime::SimResources::empty().into(),
     };
     for _ in 0..16 {
         runtime

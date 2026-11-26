@@ -13,7 +13,7 @@
 //! changed text restarts a started reveal from count 1 (`0x4B2`,
 //! `0x00611BC1`), as when Use Map picks another map (`0x006ADA99`).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::static_reveal::{
     DialogStatics, DialogStaticsPaint, Kind1Params, PresentedKind1Static, StaticPaint,
@@ -105,10 +105,12 @@ impl SkirmishStatics {
         }
     }
 
-    pub(crate) fn commit_presented(&mut self) {
-        self.dialog.commit_presented();
+    /// Returns whether the presented frame showed a new status-line step.
+    pub(crate) fn commit_presented(&mut self) -> bool {
+        let status_step = self.dialog.commit_presented();
         self.game_type.commit_presented();
         self.map_label.commit_presented();
+        status_step
     }
 
     /// Every reveal ran to completion and its last paint is on screen.
@@ -117,7 +119,7 @@ impl SkirmishStatics {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -150,7 +152,7 @@ mod tests {
 
     #[test]
     fn map_statics_take_the_native_getters_parameters() {
-        let cases = crate::ui::shell::static_reveal::tests::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         for control in [0x6EC, 0x5A8] {
             let case = cases
                 .iter()

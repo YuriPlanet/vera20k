@@ -2,24 +2,32 @@
 
 Start here before writing a session-local helper. Run commands from the checkout
 root with Python 3.12 or newer (the build runner alone supports 3.11). Individual native tools also require Unicorn;
-see [native setup](native_oracle.md). This index currently covers the shared entry
-points; the exhaustive oracle/tool inventory remains tracked in issue #746.
+see [native setup](native_oracle.md). This index covers the shared entry points;
+oracle families index their own fixtures and producers.
 
 | Job | Owner / entry point |
 | --- | --- |
+| Build the optional browser client and minimal preview page | [Wasm guide](../docs/wasm.md), `python3 tools/wasm/build.py` |
 | Observe match data or explicitly enable offline trainer/event tools | [Telemetry dashboard and debug build](telemetry-dashboard/README.md) |
 | Give a new worktree its ignored `ini/` and `config.toml`, or a clone its `config.toml`; report what the game, retail tests and oracles still need | `python -m tools.prepare_checkout` |
 | Run all Python tool and source-skill tests | `python -m tools.run_tests` (below) |
+| Play a client built on the relay protocol crate of every build the lobby admits against a relay change (CI only) | `.github/workflows/relay-compat.yml`, `tools/relay_compat.py` |
+| Play a launcher's (`-SPAWN`) match on loopback: direct, through a local relay with a stand-in lobby, or with browser players | [spawn runs](spawn/README.md), `tools/spawn/run.sh` |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
-| Compile and test one optional capability (`ares`, `phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
+| Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |
+| Compile and test one optional capability (`phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
+| Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
+| Time the 20,000-unit, 30-house battle: the simulation tick and the client frame, on the shipping profile | [the scale benchmark](../docs/scale-benchmark.md), `python -m tools.scale_bench` |
 | Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
 | Run retail corpus checks or export a decoder-baseline candidate | [retail corpus](retail_corpus.md) |
 | Check hermetic gameplay fixtures against production-selected retail sources | [retail fixture contracts](retail_fixture_contracts.md), ordinary library tests with `RA2_DIR` |
+| Run the ignored library tests the retail install alone satisfies; a missing input fails | [retail-backed ignored tests](#retail-backed-ignored-tests), `python -m tools.retail_tests run` |
 | Inspect exact retail INI values through production sources and readers | [INI lookup](ini_lookup.md), `asset ini-get` |
 | Select media archives without ambient argument parsing | [media policy](media_policy.md) |
 | Inspect/extract/render assets | [asset browser](asset_browser/README.md), `asset` binary |
+| Convert RA3's end-game art into `[EndGameScreens]` pictures: banners unclipped, score pages filled | `python -m tools.end_game_cards --sources <dir> --out <dir>` |
 | Reproduce FireAt-tail launch goldens | [projectile fixture family](projectile_oracle/README.md) |
 | Reproduce native projectile launch, timer, collision and arc-domain goldens | [projectile comparisons](projectile_oracle/README.md); shared [slope initializer](native_slope.py) |
 | Reproduce palette, scanline, brightness and Ground/Level goldens | [checked palette oracle](palette_oracle/README.md) |
@@ -34,6 +42,7 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Replay a recorded annotation pass onto another copy of the Ghidra database | [Ghidra annotation passes](ghidra_pass.md), `ApplyGhidraPass.java` |
 | Reproduce Foot coordinates and bridge source-layer / reachability queries | [checked Foot bridge-layer oracle](spatial_oracle/foot_bridge_layer.md) |
 | Run native executable comparisons | [native oracle runner](native_oracle.md) |
+| Find a spatial, rules or shell/storage oracle's shared fixtures, producers and Rust consumers | [spatial](spatial_oracle/README.md), [rules](rules_oracle/README.md), [storage](storage_oracle/README.md) |
 | Reproduce occupied-Building weapon/foundation queries and the scan-bound slice | [garrison queries](garrison_oracle/weapon_range.py), with JSON goldens and coverage sidecar |
 | Preserve failed native execution context and diagnose timeouts | [native failure reports](native_oracle.md#investigating-a-failed-native-run) |
 | Compare shell captures | `python -m tools.shell_capture_diff --help` |
@@ -43,9 +52,76 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Validate retained map captures or compare exact production observations | [map observation](map_observation.md), `python -m tools.map_observation compare` |
 | Name scenario command targets, inspect timelines and assert observed effects | [named commands and inspection](map_observation.md#named-commands-and-outcome-inspection), `python -m tools.map_observation inspect` |
 | Load a chosen retail map, step, capture and exit | [map observation](map_observation.md), `python -m tools.map_observation` |
+| Render a whole map as one picture, such as its preview on vera20k.org | `python3 -m tools.map_render --help` |
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
+| Run stock-YR end-to-end checks and available native comparisons | [end-to-end checks](e2e_parity/README.md), `python -m tools.e2e_parity run` |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
+
+## Capture files
+
+The JSON a Rust test reads is the golden. Raw capture archives, receipts and
+validation records are not committed, and the committed JSON holds only fields
+some Rust source names, written compact (no indentation).
+
+On 2026-11-14 the raw archives that no Rust test read were removed and the
+test-read JSON under the `*_oracle` folders was trimmed this way. A harness
+whose archive is gone can no longer rebuild its JSON from the repository: a
+rebuild needs a new capture, and Git history holds the old archives and the
+untrimmed files. A harness that still runs writes more than is committed; trim
+its output the same way before committing it. Hand-written profiles and the
+palette fixtures, which a tool checks by hash, keep their formatting.
+
+A corpus that records the RNG streams before and after every row can store
+each distinct state once: `python -m tools.share_rng_states FILE` moves them
+into a top-level `shared_rng_states` table and leaves `{"rng_state": n}` in their
+place. A corpus that is a bare list becomes `{"rows": list}`, so its tests
+read `["rows"]`. Tests that load it through `test_fixture::json` see the
+states where they were, so read such a corpus only that way. This took nine
+corpora, `anytown_damage/foot_missions.json` among them, from 55.5 MB to
+24.2 MB.
+
+## Retail-backed ignored tests
+
+```sh
+export RA2_DIR="/path/to/Yuri's Revenge"
+python -m tools.retail_tests list
+python -m tools.retail_tests run
+python -m tools.retail_tests run --filter sim::world:: --filter headless_scenario:: -- --test-threads=4
+```
+
+Library tests that need the retail install, take minutes or need a device are
+`#[ignore]`d, so ordinary `--lib` runs and the platform workflows skip them.
+`run` is their routine run. Before any build it requires `RA2_DIR` to be the game
+folder (with `ra2md.mix` and `gamemd.exe`) and `ini/rulesmd.ini` to exist, the
+checks `prepare_checkout` reports; a missing one exits 2. It then lists the
+ignored tests of both crates through `cargo_run` (`--lib`), keeps the selected
+ones and runs them with `--ignored --exact`, `VERA20K_REQUIRE_RETAIL_INI=1` and
+`VERA20K_REQUIRE_RETAIL_ASSETS=1`, so a fixture without its input fails instead
+of printing `SKIPPED` and passing. The closing summary names each selected test
+that failed or printed no result (a crashed test binary, a batch that did not
+build); either exits nonzero. `--filter` keeps the selected tests whose path
+contains any of its texts, which is how to run a modest batch; arguments after
+`--` go to the test binaries.
+
+Each test's `#[ignore = "..."]` reason selects it; the first class that matches
+wins, and `list --all` shows where every test landed:
+
+| Class | Its reason mentions | Run |
+| --- | --- | --- |
+| `gpu` | GPU, wgpu, adapter, offscreen or readback | no |
+| `device` | X11 or an audio output device | no |
+| `input` | a `VERA20K_*` variable or the recorded retail corpus ([its own profile](retail_corpus.md)) | no |
+| `manual` | manual timing, a census, a benchmark or a local export | no |
+| `run` | starts with `slow;` or `physical`, or with `requires`/`needs` and names the retail install, archives or stock data | yes |
+| `other` | anything else, such as a recorded failure | no |
+
+An ignore reason must therefore name every input beyond `RA2_DIR` and `ini/`.
+Coverage stops there: the excluded classes stay manual, tests this platform
+compiles out are not listed, and a test that returns early on some condition other
+than a missing retail input still passes without checking anything. The tests run
+in the unoptimized test profile, so the debug cross-checks run with them. There
+are no integration test targets; `tests/` holds fixture data only.
 
 ## Dev chord builds
 
@@ -64,6 +140,79 @@ configuration locally with:
 python -m tools.cargo_run -- build --locked --release --no-default-features --bin vera20k
 ```
 
+## Test groups
+
+A test run that names one part of one crate compiles only that part's tests:
+
+```sh
+python -m tools.cargo_run -- test -p vera20k-core --lib sim::combat::gattling
+python -m tools.cargo_run -- test -p vera20k --lib app::input::camera::
+python -m tools.cargo_run --all-tests -- test -p vera20k-core --lib sim::combat::gattling
+python -m tools.group_tests list
+python -m tools.group_tests check
+python -m tools.group_tests tag
+python -m tools.group_tests lend sim::deploy_tests sim-movement
+```
+
+Each crate's test modules belong to groups. A group is a `tests-<group>` feature
+and, under `[package.metadata.test-groups]` in the crate's Cargo.toml
+(`src/Cargo.toml` for the engine), the module path prefixes it owns; the longest
+prefix that starts a module's path owns it. A test module is declared
+`#[cfg(all(test, tests_<group>))]`. The crate's build script
+(`src/test_group_cfgs.rs`) switches every group on, so `cargo test`, a
+`--workspace` run, the Test workflow and the Release test job compile and run
+every test as before. Only the `test-focus` feature narrows a build, to the groups
+whose features are on.
+
+The runner adds those features itself. When a test run names one crate with `-p`
+and every filter is a module path from the crate root (`sim::combat::`, not
+`gattling_`) that falls inside one or two groups, it builds with `test-focus` and
+those groups and prints `Test groups: sim-combat-d-z of vera20k-core`. Every other
+test run compiles every test: no filter, a bare test name, a filter that spans
+three or more groups, `--workspace`, or `--all-tests` before `--`. A test run in
+which no test matched exits 101, focused or not, so a mistyped filter cannot pass.
+
+Measured on the same one-value edit with the same command, with every test
+compiled and with one group (November 2026, Cargo time):
+
+| Crate and filter | Every test | One group | First build of a group |
+| --- | --- | --- | --- |
+| `vera20k-core`, `sim::combat::gattling` | 26.5 to 27.6 s | 10.0 to 12.0 s | 51 s |
+| `vera20k`, `app::input::camera::` | 18.0 to 20.9 s | about 12 s | 63 s |
+
+With no test at all the engine crate rebuilds in about 8 s and the client crate in
+about 10 s, and a group adds roughly 0.05 s per 1,000 test lines it compiles: the
+client crate cannot go far below half, and an engine group should stay under about
+65,000 compiled lines. Each group, and each pair of groups a run names, is its
+own build of the crate's tests. Its first build compiles them from nothing, and it
+keeps its own incremental cache (0.5 to 1.3 GiB) and test executable (0.13 to
+0.18 GiB); the build of every test keeps 2.6 GiB and 0.3 GiB for the engine. The
+cache retention below treats them like any other build: its budgets and the
+free-space reserve evict a checkout's incremental caches together, least recently
+used first, and keep only the newest test executable of a crate.
+
+Test code that more than one group uses:
+
+- A test module that code outside the groups uses (a `#[cfg(test)]` function or
+  impl in production files) is marked `#[cfg(test)] // shared by test groups` and
+  compiles in every test build.
+- A test module another group's tests use lists that group after its own:
+  `#[cfg(all(test, any(tests_sim_h_o, tests_sim_movement)))]`.
+  `python -m tools.group_tests lend <test module path> <group>` writes it, and
+  `lend <test module path> all` marks the module shared. Lend the smallest module
+  that holds the helper: every lent line compiles in the borrower's builds.
+
+When a focused build fails on an item rustc reports as "configured out", a test of
+the group has started using another group's test code. The runner then compiles
+every test instead, in the same run, and says so; `lend` the module the error
+names to repair the group.
+
+A new `#[cfg(test)] mod tests` works without a group: it compiles in every test
+build. `python -m tools.group_tests tag` writes each test module's group, `check`
+lists the modules that are out of step, and a focused run prints the first of
+them. To add or split a group, edit the table and the features in the crate's
+Cargo.toml, then run `tag` and build the new groups once.
+
 ## Cargo ownership and labeled builds
 
 ```sh
@@ -80,6 +229,11 @@ python -m unittest tools.tests.test_cargo_run -v
 incrementally, so a play-test, capture or other run after an edit rebuilds in a fraction of the
 time. Keep timing and performance numbers on `--release`. The runner records, labels and
 resolves `fast` host executables as it does `release` and `debug` ones.
+
+A timing run needs the same quiet: `tools.scale_bench` takes the shared lock
+for each timed run (`cargo_run.build_lock`), so a cooperating build waits for
+it as it would for another build, and the run starts only once no Cargo or
+rustc is running.
 
 `--wait-seconds 60` bounds the wait (default one hour). Ctrl-C interrupts the
 runner. It does not kill other owners. Failed commands retain their exit code,
@@ -146,7 +300,9 @@ If the argument is omitted, the extractor reads `RA2_DIR`, then `config.toml`.
 
 A label preserves every executable reported by **that Cargo invocation**, including
 fresh cache hits, under `<git-common-dir>/owned-builds/artifacts/<label>`.
-Executables retain their original basename inside numbered subdirectories.
+Executables retain their original basename inside numbered subdirectories. Each has
+a copy of the build’s two loose `Terrain` files beside it, so map loads still work
+after the checkout changes.
 The printed directory's `manifest.json` gives the executable filenames, SHA-256s,
 checkout, commit, dirty status, combined tracked/nonignored source hash, command,
 Cargo/Rust versions and common build environment overrides. Labels cannot be
@@ -175,8 +331,9 @@ worktree, so the runner starts one only when it can matter:
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
 - **Skipped** while the newest applied pass found nothing removable, finished
   within that interval and nothing deciding removability has changed since:
-  cache directories, registered roots and profiles, protected executables and
-  which cache profiles are idle. While the reserve is short, only a pass that
+  cache directories, registered roots and profiles, protected executables,
+  which cache profiles are idle, and the checkout locks that held an otherwise
+  reclaimable executable back. While the reserve is short, only a pass that
   found it short counts.
 
 Between passes the cache can exceed its budgets; the free-space reserve is still
@@ -216,11 +373,11 @@ are adopted only when their live checkout/common Git directory and namespace
 prove ownership. A registered cache whose checkout no longer exists is abandoned
 once it has been idle ten minutes (`ABANDONED_SECONDS`), it sits in this repository's
 cache root under its checkout's namespace, and no run holds that checkout's lock.
-Every pass then removes the Cargo profile output in it, whatever the budgets, apart
-from files a preserved or latest build still names; its latest record goes first,
-since only its live checkout could resolve it. Empty directories go with it, and a
-cache left empty leaves the registry. Unregistered or unverifiable caches stay
-untouched.
+Every pass then removes the Cargo profile output in it, `--target` builds of any
+profile included, whatever the budgets, apart from files a preserved or latest build
+still names; its latest record goes first, since only its live checkout could resolve
+it. Empty directories go with it, and a cache left empty leaves the registry.
+Unregistered or unverifiable caches stay untouched.
 Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
 Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
 profile directories. An older executable is a `<name>-<16 hex>` file with a newer
@@ -338,7 +495,10 @@ ownership records or debug inputs remain blocked; do not manufacture metadata.
 Each attempt writes `owned-builds/retention/<timestamp>-<id>.json`: selected and
 removed files, allocated/logical bytes removed, observed free-space change, errors
 and unmet targets, each cache profile's last use and the profiles whose working
-sets it evicted, in eviction order. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
+sets it evicted, in eviction order, and the checkouts whose held lock alone kept
+an otherwise reclaimable executable alive. Releasing one of those locks makes
+that executable reclaimable, so a later pass stops trusting the receipt while
+the lock is gone. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
 APFS clones/snapshots and unrelated volume activity can make observed reclamation
 differ from file allocation; applying a plan rechecks real free space and tries
 additional eligible cold entries when necessary. Plans are never reused for deletion.
@@ -371,6 +531,28 @@ successful builds, and discovery verifies executable bytes. Cross-target and
 other custom-profile builds (such as `shipping`) still support explicit
 paths/labels; they are not auto-run by host tooling. Conventional target paths
 are not a fallback.
+
+## Shell pitfalls
+
+These fail quietly, so a broken run can read as a clean one.
+
+- **Chain build steps with `&&`.** Some agent shells ignore `set -e`, so a step
+  after a failed `cargo_run` still runs and the log can end in a false OK. Count
+  one `Finished` line per compile before trusting a log.
+- **Don't edit the checkout while `cargo_run` runs.** It compares the sources
+  before and after; an edit anywhere in the checkout, even in another crate, ends
+  the run with "Source changed during Cargo" (or "during the tests") and no
+  results, although Cargo printed `Finished`.
+- **zsh doesn't split unquoted variables.** In `cargo_run -- $args`, `$args` stays
+  one word and `cargo_run` runs nothing; write `${=args}` or spell the arguments
+  out. zsh also reads `$sha:r...` as a modifier, so `$sha:refs/heads/x` loses
+  text; write `"${sha}:refs/heads/x"`.
+- **`git grep -E '\bword\b'` matches nothing on macOS**, with no error. Use
+  `git grep -w word` or `-P`, and before trusting an empty search, check that it
+  finds a known use.
+- **Not every file on `main` is rustfmt-clean.** Run
+  `rustfmt --edition 2024 --check <file>` first; format only if the hunks are
+  your own, otherwise re-apply your edit by hand.
 
 ## Python regression suite
 

@@ -52,12 +52,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
         let sim = scenario.sim();
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         let receiver = sim
-            .foot_entry_receiver(
-                id,
-                &scenario.runtime.resources.rules,
-                Some(&scenario.runtime.resources.overlay_registry),
-                None,
-            )
+            .foot_entry_receiver(id, &scenario.runtime.resources.rules, None)
             .unwrap();
         let zones = sim
             .zone_grid
@@ -132,7 +127,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(

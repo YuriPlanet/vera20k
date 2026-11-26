@@ -39,6 +39,18 @@
 //! - Part of assets/ — no dependencies on game modules.
 //! - Uses mix_crypto for decryption and mix_hash for filename lookup.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -46,7 +58,7 @@ use std::sync::Arc;
 use crate::assets::error::AssetError;
 use crate::assets::mix_crypto;
 use crate::assets::mix_hash::mix_hash;
-use crate::util::read_helpers::{read_i32_le, read_u16_le, read_u32_le};
+use crate::util::read_helpers::{read_u16_le, read_u32_le};
 
 /// MIX flags bit: file index is Blowfish-encrypted (with RSA key block).
 const FLAG_ENCRYPTED: u16 = 0x0002;
@@ -93,11 +105,14 @@ pub struct MixArchive {
     /// The raw archive bytes. Top-level archives can stay memory-mapped;
     /// nested archives can share a sub-view into parent archive storage.
     data: MixData,
+    /// The disk file holding these bytes, also for an archive nested in it.
+    container_path: Option<Arc<Path>>,
 }
 
 #[derive(Clone)]
 enum MixBytes {
     Owned(Arc<[u8]>),
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     Mapped(Arc<memmap2::Mmap>),
 }
 
@@ -119,6 +134,7 @@ impl MixData {
         }
     }
 
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn from_mapped(map: memmap2::Mmap) -> Self {
         let bytes = Arc::new(map);
         let len = bytes.len();
@@ -132,6 +148,7 @@ impl MixData {
     fn as_slice(&self) -> &[u8] {
         let bytes = match &self.bytes {
             MixBytes::Owned(data) => &data[..],
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
             MixBytes::Mapped(map) => &map[..],
         };
         &bytes[self.start..self.start + self.len]
@@ -176,18 +193,27 @@ impl SharedBytes {
     /// disk mid-play. `StreamPlayer__PlayFile @ 0x00407B60` likewise buffers
     /// seconds of file ahead of its decoder. Owned bytes are already in memory.
     pub fn read_ahead(&self) {
-        if !matches!(self.0.bytes, MixBytes::Mapped(_)) {
-            return;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            if !matches!(self.0.bytes, MixBytes::Mapped(_)) {
+                return;
+            }
+            let bytes = self.clone();
+            // A failed spawn only loses the warm-up; the reader still faults pages
+            // in itself.
+            let _ = std::thread::Builder::new()
+                .name("asset-read-ahead".into())
+                .spawn(move || {
+                    let touched = bytes.chunks(4096).fold(0u8, |sum, page| sum ^ page[0]);
+                    std::hint::black_box(touched);
+                });
         }
-        let bytes = self.clone();
-        // A failed spawn only loses the warm-up; the reader still faults pages
-        // in itself.
-        let _ = std::thread::Builder::new()
-            .name("asset-read-ahead".into())
-            .spawn(move || {
-                let touched = bytes.chunks(4096).fold(0u8, |sum, page| sum ^ page[0]);
-                std::hint::black_box(touched);
-            });
+    }
+}
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        self
     }
 }
 
@@ -211,66 +237,47 @@ impl MixArchive {
 
     /// Cheap format sniff used before cloning candidate nested MIX payloads.
     pub fn looks_like_mix(data: &[u8]) -> bool {
-        if data.len() < INDEX_HEADER_SIZE {
-            return false;
+        Self::sniff(data).unwrap_or(false)
+    }
+
+    /// [`Self::looks_like_mix`]'s answer, or `None` when the bytes end before
+    /// a header field.
+    fn sniff(data: &[u8]) -> Option<bool> {
+        let first_word: u16 = read_u16_le(data, 0)?;
+
+        // The index header: file_count, then body_size.
+        let index_header_at = if first_word == 0 {
+            NEW_FORMAT_HEADER_SIZE
+        } else {
+            0
+        };
+        let file_count: u16 = read_u16_le(data, index_header_at)?;
+        let body_size: u32 = read_u32_le(data, index_header_at + 2)?;
+
+        if first_word == 0 && (read_u16_le(data, 2)? & FLAG_ENCRYPTED) != 0 {
+            let min_header = NEW_FORMAT_HEADER_SIZE
+                + mix_crypto::RSA_KEY_BLOCK_SIZE
+                + mix_crypto::BLOWFISH_BLOCK_SIZE;
+            return Some(data.len() >= min_header);
         }
 
-        let first_word: u16 = read_u16_le(data, 0);
-
-        if first_word == 0 {
-            if data.len() < NEW_FORMAT_HEADER_SIZE + INDEX_HEADER_SIZE {
-                return false;
-            }
-
-            let flags: u16 = read_u16_le(data, 2);
-            if (flags & FLAG_ENCRYPTED) != 0 {
-                let min_header = NEW_FORMAT_HEADER_SIZE
-                    + mix_crypto::RSA_KEY_BLOCK_SIZE
-                    + mix_crypto::BLOWFISH_BLOCK_SIZE;
-                return data.len() >= min_header;
-            }
-
-            let file_count: u16 = read_u16_le(data, NEW_FORMAT_HEADER_SIZE);
-            let body_size: u32 = read_u32_le(data, NEW_FORMAT_HEADER_SIZE + 2);
-            let Some(index_bytes) = (file_count as usize).checked_mul(INDEX_ENTRY_SIZE) else {
-                return false;
-            };
-            let Some(body_offset) =
-                (NEW_FORMAT_HEADER_SIZE + INDEX_HEADER_SIZE).checked_add(index_bytes)
-            else {
-                return false;
-            };
-            return Self::header_bounds_are_sane(data, body_offset, body_size);
-        }
-
-        let file_count: u16 = first_word;
-        let body_size: u32 = read_u32_le(data, 2);
-        let Some(index_bytes) = (file_count as usize).checked_mul(INDEX_ENTRY_SIZE) else {
-            return false;
-        };
-        let Some(body_offset) = INDEX_HEADER_SIZE.checked_add(index_bytes) else {
-            return false;
-        };
-        Self::header_bounds_are_sane(data, body_offset, body_size)
+        let index_bytes = (file_count as usize).checked_mul(INDEX_ENTRY_SIZE)?;
+        let body_offset = (index_header_at + INDEX_HEADER_SIZE).checked_add(index_bytes)?;
+        Some(Self::header_bounds_are_sane(data, body_offset, body_size))
     }
 
     fn from_data(data: MixData) -> Result<Self, AssetError> {
         let bytes = data.as_slice();
-        if bytes.len() < 4 {
-            return Err(AssetError::InvalidMixHeader {
-                reason: format!("File too small: {} bytes (need at least 4)", bytes.len()),
-            });
-        }
-
         // The first u16 distinguishes old vs new MIX format.
         // New format (RA2/TS): offset 0 is always 0x0000 as a format marker.
         // Old-header layout: offset 0 is file_count (always non-zero).
-        let first_word: u16 = read_u16_le(bytes, 0);
-        let flags = if first_word == 0 {
-            read_u16_le(bytes, 2)
-        } else {
-            0
+        let (Some(first_word), Some(second_word)) = (read_u16_le(bytes, 0), read_u16_le(bytes, 2))
+        else {
+            return Err(AssetError::InvalidMixHeader {
+                reason: format!("File too small: {} bytes (need at least 4)", bytes.len()),
+            });
         };
+        let flags = if first_word == 0 { second_word } else { 0 };
         let (mut entries, body_offset, body_size) = if first_word == 0 {
             let is_encrypted: bool = (flags & FLAG_ENCRYPTED) != 0;
 
@@ -291,14 +298,46 @@ impl MixArchive {
             body_size,
             flags,
             data,
+            container_path: None,
         })
     }
 
     /// Load a MIX archive from a file path.
     pub fn load(path: &Path) -> Result<Self, AssetError> {
-        let file = File::open(path)?;
-        let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
-        Self::from_data(MixData::from_mapped(data))
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let data = {
+            let bytes = crate::util::file_system::read_shared(path)?;
+            let len = bytes.len();
+            MixData {
+                bytes: MixBytes::Owned(bytes),
+                start: 0,
+                len,
+            }
+        };
+        // WASI has no memory maps (memmap2's stub refuses every map), so the
+        // headless wasm determinism run reads each archive whole.
+        #[cfg(target_os = "wasi")]
+        let data = MixData::from_owned(std::fs::read(path)?);
+        #[cfg(not(any(
+            all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+            target_os = "wasi"
+        )))]
+        let data = {
+            let file = File::open(path)?;
+            // SAFETY: memmap2 cannot stop another process from changing the
+            // file under the map. Nothing in the game writes an archive it has
+            // open; a file changed outside it mid-game is the residual memmap2
+            // documents, taken for reads without copies.
+            let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
+            MixData::from_mapped(data)
+        };
+        let mut archive = Self::from_data(data)?;
+        archive.container_path = Some(Arc::from(path));
+        Ok(archive)
+    }
+
+    pub(super) fn container_path(&self) -> Option<&Path> {
+        self.container_path.as_deref()
     }
 
     /// Look up a file by name. Returns the raw bytes if found.
@@ -309,12 +348,25 @@ impl MixArchive {
         self.get_by_id(mix_hash(name))
     }
 
+    /// `MixFileSystem__Resolve_First` @ `0x005B4430` (`0x005B44CB..0x005B44FB`)
+    /// probes the midpoint of a signed-ID sorted index and stops at equality.
+    /// The midpoint rule also decides which entry a repeated ID selects.
+    fn entry_by_id(&self, id: i32) -> Option<&MixEntry> {
+        let mut entries = self.entries.as_slice();
+        loop {
+            let mid = entries.len() / 2;
+            let entry = entries.get(mid)?;
+            match entry.id.cmp(&id) {
+                std::cmp::Ordering::Less => entries = &entries[mid + 1..],
+                std::cmp::Ordering::Greater => entries = &entries[..mid],
+                std::cmp::Ordering::Equal => return Some(entry),
+            }
+        }
+    }
+
     /// Look up a file by its pre-computed hash ID.
-    ///
-    /// Uses binary search on the sorted index for O(log n) lookup.
     pub fn get_by_id(&self, id: i32) -> Option<&[u8]> {
-        let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
-        let entry: &MixEntry = &self.entries[index];
+        let entry = self.entry_by_id(id)?;
         let data = self.data.as_slice();
 
         let start = self.body_offset.checked_add(entry.offset as usize)?;
@@ -328,22 +380,33 @@ impl MixArchive {
         Some(&data[start..end])
     }
 
+    /// Whether the index lists `id`, readable or not.
+    pub fn contains_id(&self, id: i32) -> bool {
+        self.entry_by_id(id).is_some()
+    }
+
     /// [`Self::get_by_id`] as a share of the archive storage.
     pub fn get_shared_by_id(&self, id: i32) -> Option<SharedBytes> {
-        let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
-        self.entry_view(&self.entries[index]).map(SharedBytes)
+        let entry = self.entry_by_id(id)?;
+        self.entry_view(entry).map(SharedBytes)
+    }
+
+    /// [`Self::get_by_name`] as a share of the archive storage.
+    pub fn get_shared_by_name(&self, name: &str) -> Option<SharedBytes> {
+        self.get_shared_by_id(mix_hash(name))
     }
 
     /// Parse a child MIX archive directly from an entry without copying its bytes.
     pub fn nested_archive_by_id(&self, id: i32) -> Result<Option<Self>, AssetError> {
-        let index: usize = match self.entries.binary_search_by_key(&id, |e| e.id) {
-            Ok(index) => index,
-            Err(_) => return Ok(None),
-        };
-        let Some(data) = self.entry_view(&self.entries[index]) else {
+        let Some(entry) = self.entry_by_id(id) else {
             return Ok(None);
         };
-        Self::from_data(data).map(Some)
+        let Some(data) = self.entry_view(entry) else {
+            return Ok(None);
+        };
+        let mut archive = Self::from_data(data)?;
+        archive.container_path.clone_from(&self.container_path);
+        Ok(Some(archive))
     }
 
     /// Number of files in this archive.
@@ -436,41 +499,39 @@ impl MixArchive {
     fn parse_encrypted_new_format(
         data: &[u8],
     ) -> Result<(Vec<MixEntry>, usize, usize), AssetError> {
-        // RSA key block starts after the 4-byte new-format header.
-        let rsa_start: usize = NEW_FORMAT_HEADER_SIZE;
-        let rsa_end: usize = rsa_start + mix_crypto::RSA_KEY_BLOCK_SIZE;
-
-        if data.len() < rsa_end {
+        // RSA key block starts after the 4-byte new-format header; the
+        // encrypted index starts right after the RSA block.
+        let encrypted_start: usize = NEW_FORMAT_HEADER_SIZE + mix_crypto::RSA_KEY_BLOCK_SIZE;
+        let Some((rsa_block, encrypted)) = data
+            .get(NEW_FORMAT_HEADER_SIZE..)
+            .and_then(|rest| rest.split_at_checked(mix_crypto::RSA_KEY_BLOCK_SIZE))
+        else {
             return Err(AssetError::InvalidMixHeader {
                 reason: format!(
                     "File too small for RSA key block: {} bytes (need at least {})",
                     data.len(),
-                    rsa_end
+                    encrypted_start
                 ),
             });
-        }
+        };
 
         // Extract the 56-byte Blowfish key from the RSA-encrypted block.
-        let blowfish_key: [u8; 56] = mix_crypto::extract_blowfish_key(&data[rsa_start..rsa_end])?;
-
-        // The encrypted index starts right after the RSA block.
-        let encrypted_start: usize = rsa_end;
+        let blowfish_key: [u8; 56] = mix_crypto::extract_blowfish_key(rsa_block)?;
 
         // Decrypt the first 8-byte block to peek at file_count and body_size.
-        if data.len() < encrypted_start + mix_crypto::BLOWFISH_BLOCK_SIZE {
+        let Some(mut first_block) = encrypted
+            .first_chunk::<{ mix_crypto::BLOWFISH_BLOCK_SIZE }>()
+            .copied()
+        else {
             return Err(AssetError::InvalidMixHeader {
                 reason: "File too small for encrypted index header".to_string(),
             });
-        }
-
-        let mut first_block: [u8; 8] = [0u8; 8];
-        first_block.copy_from_slice(
-            &data[encrypted_start..encrypted_start + mix_crypto::BLOWFISH_BLOCK_SIZE],
-        );
+        };
         mix_crypto::blowfish_decrypt_ecb(&blowfish_key, &mut first_block)?;
 
-        let file_count: u16 = read_u16_le(&first_block, 0);
-        let body_size = read_u32_le(&first_block, 2) as usize;
+        let [count_0, count_1, size_0, size_1, size_2, size_3, ..] = first_block;
+        let file_count = u16::from_le_bytes([count_0, count_1]);
+        let body_size = u32::from_le_bytes([size_0, size_1, size_2, size_3]) as usize;
 
         // Calculate total encrypted index size and decrypt everything.
         let total_index_bytes: usize = INDEX_HEADER_SIZE + file_count as usize * INDEX_ENTRY_SIZE;
@@ -478,7 +539,8 @@ impl MixArchive {
         let encrypted_size: usize = total_index_bytes.div_ceil(mix_crypto::BLOWFISH_BLOCK_SIZE)
             * mix_crypto::BLOWFISH_BLOCK_SIZE;
 
-        if data.len() < encrypted_start + encrypted_size {
+        // Copy and decrypt the entire index.
+        let Some(encrypted_index) = encrypted.get(..encrypted_size) else {
             return Err(AssetError::InvalidMixHeader {
                 reason: format!(
                     "File too small for encrypted index: {} bytes (need {})",
@@ -486,11 +548,8 @@ impl MixArchive {
                     encrypted_start + encrypted_size
                 ),
             });
-        }
-
-        // Copy and decrypt the entire index.
-        let mut decrypted_index: Vec<u8> =
-            data[encrypted_start..encrypted_start + encrypted_size].to_vec();
+        };
+        let mut decrypted_index: Vec<u8> = encrypted_index.to_vec();
         mix_crypto::blowfish_decrypt_ecb(&blowfish_key, &mut decrypted_index)?;
 
         // Parse entries from the decrypted index buffer.
@@ -510,14 +569,15 @@ impl MixArchive {
     fn parse_unencrypted_new_format(
         data: &[u8],
     ) -> Result<(Vec<MixEntry>, usize, usize), AssetError> {
-        if data.len() < NEW_FORMAT_HEADER_SIZE + INDEX_HEADER_SIZE {
+        let (Some(file_count), Some(body_size)) = (
+            read_u16_le(data, NEW_FORMAT_HEADER_SIZE),
+            read_u32_le(data, NEW_FORMAT_HEADER_SIZE + 2),
+        ) else {
             return Err(AssetError::InvalidMixHeader {
                 reason: "File too small for new-format unencrypted header".to_string(),
             });
-        }
-
-        let file_count: u16 = read_u16_le(data, NEW_FORMAT_HEADER_SIZE);
-        let body_size = read_u32_le(data, NEW_FORMAT_HEADER_SIZE + 2) as usize;
+        };
+        let body_size = body_size as usize;
 
         let index_start: usize = NEW_FORMAT_HEADER_SIZE + INDEX_HEADER_SIZE;
         let index_end: usize = index_start + file_count as usize * INDEX_ENTRY_SIZE;
@@ -545,14 +605,13 @@ impl MixArchive {
         data: &[u8],
         file_count: u16,
     ) -> Result<(Vec<MixEntry>, usize, usize), AssetError> {
-        if data.len() < INDEX_HEADER_SIZE {
+        // body_size at offset 2 (skip file_count which is the first 2 bytes).
+        let Some(body_size) = read_u32_le(data, 2) else {
             return Err(AssetError::InvalidMixHeader {
                 reason: "File too small for old-header MIX header".to_string(),
             });
-        }
-
-        // body_size at offset 2 (skip file_count which is the first 2 bytes).
-        let body_size = read_u32_le(data, 2) as usize;
+        };
+        let body_size = body_size as usize;
 
         let index_start: usize = INDEX_HEADER_SIZE;
         let index_end: usize = index_start + file_count as usize * INDEX_ENTRY_SIZE;
@@ -578,30 +637,47 @@ impl MixArchive {
         start: usize,
         file_count: u16,
     ) -> Result<Vec<MixEntry>, AssetError> {
-        let mut entries: Vec<MixEntry> = Vec::with_capacity(file_count as usize);
-
-        for i in 0..file_count as usize {
-            let offset: usize = start + i * INDEX_ENTRY_SIZE;
-
-            if offset + INDEX_ENTRY_SIZE > data.len() {
-                return Err(AssetError::InvalidMixHeader {
-                    reason: format!(
-                        "Index entry {} extends past data ({} > {})",
-                        i,
-                        offset + INDEX_ENTRY_SIZE,
-                        data.len()
-                    ),
-                });
-            }
-
-            entries.push(MixEntry {
-                id: read_i32_le(data, offset),
-                offset: read_u32_le(data, offset + 4),
-                size: read_u32_le(data, offset + 8),
+        let Some(table) = data.get(start..).and_then(|index| {
+            index
+                .as_chunks::<INDEX_ENTRY_SIZE>()
+                .0
+                .get(..file_count as usize)
+        }) else {
+            return Err(AssetError::InvalidMixHeader {
+                reason: format!(
+                    "Index of {} entries at {} extends past data ({})",
+                    file_count,
+                    start,
+                    data.len()
+                ),
             });
-        }
+        };
 
-        Ok(entries)
+        Ok(table
+            .iter()
+            .map(
+                |&[
+                    id_0,
+                    id_1,
+                    id_2,
+                    id_3,
+                    at_0,
+                    at_1,
+                    at_2,
+                    at_3,
+                    len_0,
+                    len_1,
+                    len_2,
+                    len_3,
+                ]| {
+                    MixEntry {
+                        id: i32::from_le_bytes([id_0, id_1, id_2, id_3]),
+                        offset: u32::from_le_bytes([at_0, at_1, at_2, at_3]),
+                        size: u32::from_le_bytes([len_0, len_1, len_2, len_3]),
+                    }
+                },
+            )
+            .collect())
     }
 
     fn header_bounds_are_sane(data: &[u8], body_offset: usize, body_size: u32) -> bool {
@@ -618,5 +694,42 @@ impl MixArchive {
             return None;
         }
         self.data.subrange(start, end)
+    }
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
+
+    /// An archive whose index lists one id four times. The native resolver
+    /// (`MixFileSystem__Resolve_First` @ `0x005B4430`) probes the midpoint of
+    /// the sorted index and stops at equality, so the repeated id resolves to
+    /// the entry the midpoint lands on, not the first or the last.
+    #[test]
+    fn a_repeated_id_resolves_to_the_midpoint_the_native_probe_finds() {
+        let mut entries = vec![MixEntry {
+            id: 7,
+            offset: 6,
+            size: 2,
+        }];
+        entries.extend((0..4).map(|index| MixEntry {
+            id: 42,
+            offset: index * 2,
+            size: 2,
+        }));
+        entries.sort_by_key(|entry| entry.id);
+        let archive = MixArchive {
+            entries,
+            body_offset: 0,
+            body_size: 8,
+            flags: 0,
+            data: MixData::from_owned(b"aabbccdd".to_vec()),
+            container_path: None,
+        };
+        // Five entries: the probe lands on index 2, the third of the four.
+        assert_eq!(archive.get_by_id(42), Some(b"bb".as_slice()));
+        assert_eq!(archive.get_by_id(7), Some(b"dd".as_slice()));
+        assert!(archive.contains_id(42));
+        assert!(!archive.contains_id(43));
     }
 }

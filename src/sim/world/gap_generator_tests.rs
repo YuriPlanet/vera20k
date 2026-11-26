@@ -4,6 +4,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
+use crate::sim::vision;
 use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
 
 fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
@@ -89,7 +90,7 @@ fn insert(
     }
     // Occupancy can discover a Building immediately on a revealed cell, so
     // bind the same Rules that its Type registry lookup requires.
-    let _ = sim.mark_entity_put(id, UninitContext::with_rules(rules));
+    let _ = sim.mark_entity_put(id, UninitContext::new(rules));
     if kind == EntityCategory::Structure {
         // Supply a discovered Building prior for these operational/map controls;
         // the actual campaign discovery admission is tested separately.
@@ -97,6 +98,7 @@ fn insert(
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
     }
@@ -129,7 +131,7 @@ fn damage(sim: &mut Simulation, rules: &RuleSet, id: u64, amount: i32) {
                 arg6: false,
             },
         ),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -151,8 +153,12 @@ fn defeat_local_viewer(
     sim.session.set_binary_frame_for_test(1);
     for (owner, buildings, units) in [(defeated, 0, 0), (alive, 0, 1), (gap_owner, 2, 1)] {
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.tracking_mut().set_buildings_for_test(buildings);
-        house.tracking_mut().set_active_units_for_test(units);
+        house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(buildings);
+        house
+            .tracking_mut_for_test()
+            .set_active_units_for_test(units);
     }
     sim.check_defeat(Some(rules), None);
     assert!(sim.houses[&defeated].is_defeated());
@@ -174,7 +180,7 @@ fn defeated_gap_viewer_keeps_old_counter_and_suppresses_new_hostile_gaps() {
     insert(&mut sim, &rules, 4, alive, "SIGHT", 30, 30);
     insert(&mut sim, &rules, 5, gap_owner, "SIGHT", 29, 29);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
     assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
 
@@ -182,10 +188,10 @@ fn defeated_gap_viewer_keeps_old_counter_and_suppresses_new_hostile_gaps() {
     assert!(sim.fog.has_ground_bits(defeated, 12, 12));
     assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
 
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
     // GoOffline removes immediately; Building Update samples the off edge
     // before the following online edge can publish another CreateGap.
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert_eq!(sim.fog.gap_sources()[&defeated].len(), 1);
     assert!(sim.fog.gap_sources()[&alive].is_empty());
     assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
@@ -193,14 +199,14 @@ fn defeated_gap_viewer_keeps_old_counter_and_suppresses_new_hostile_gaps() {
     assert!(sim.fog.has_ground_bits(defeated, 12, 12));
     assert!(!sim.fog.has_ground_bits(alive, 12, 12));
 
-    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.go_building_online(1, &rules, &mut FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
     assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
 
     insert(&mut sim, &rules, 3, gap_owner, "GAGAP", 20, 20);
     power(&mut sim, &rules);
-    sim.visit_building_operational(3, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(3, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert_eq!(gap_count(&sim, defeated, (20, 20)), 0);
     assert_eq!(gap_count(&sim, alive, (20, 20)), 1);
@@ -223,7 +229,7 @@ fn defeated_gap_viewer_does_not_reenter_hostile_gap_after_shroud_reset() {
     insert(&mut sim, &rules, 3, alive, "SIGHT", 30, 30);
     insert(&mut sim, &rules, 4, gap_owner, "SIGHT", 29, 29);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
     assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
 
@@ -256,12 +262,15 @@ fn defeated_viewer_fogs_hostile_gap_through_power_cycle_without_shroud() {
         sim.fog.by_owner()[&viewer].shroud_knowledge_raw()[index].gap_counter()
     };
 
+    // The surviving House's unit, which Ares HasBeenDefeated10024990 (hook
+    // 0x4F8EBD) requires behind its nonzero unit total.
+    insert(&mut sim, &rules, 4, alive, "SIGHT", 30, 30);
     defeat_local_viewer(&mut sim, &rules, defeated, alive, gap_owner);
 
     insert(&mut sim, &rules, 1, gap_owner, "GAGAP", 12, 12);
     insert(&mut sim, &rules, 2, gap_owner, "POWER", 16, 12);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
 
     assert!(sim.fog.is_cell_gap_fog(defeated, 12, 12));
@@ -283,8 +292,8 @@ fn defeated_viewer_fogs_hostile_gap_through_power_cycle_without_shroud() {
     assert!(!sim.fog.is_cell_gap_fog(alive, 12, 12));
 
     // Powered off: the bulk clear+reproject drops the friendly fog too.
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(!sim.fog.is_cell_gap_fog(defeated, 12, 12));
     assert!(!sim.fog.is_cell_gap_covered(defeated, 12, 12));
@@ -292,8 +301,8 @@ fn defeated_viewer_fogs_hostile_gap_through_power_cycle_without_shroud() {
     assert!(!sim.fog.is_cell_gap_covered(alive, 12, 12));
 
     // Powered on again: fog returns, still no hostile shroud write.
-    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.go_building_online(1, &rules, &mut FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(sim.fog.is_cell_gap_fog(defeated, 12, 12));
     assert!(!sim.fog.is_cell_gap_covered(defeated, 12, 12));
@@ -308,8 +317,11 @@ fn defeat_does_not_reclassify_an_active_hostile_gap() {
     let (mut sim, rules, viewer, alive, gap_owner) = fixture();
     insert(&mut sim, &rules, 1, gap_owner, "GAGAP", 12, 12);
     insert(&mut sim, &rules, 2, gap_owner, "POWER", 16, 12);
+    // The surviving House's unit, which Ares HasBeenDefeated10024990 (hook
+    // 0x4F8EBD) requires behind its nonzero unit total.
+    insert(&mut sim, &rules, 4, alive, "SIGHT", 30, 30);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert!(!sim.fog.is_cell_gap_fog(viewer, 12, 12));
 
     defeat_local_viewer(&mut sim, &rules, viewer, alive, gap_owner);
@@ -322,14 +334,14 @@ fn defeat_does_not_reclassify_an_active_hostile_gap() {
 
     // The current defeated predicate sends this removal through the friendly
     // decrement, even though its activation wrote the hostile counter.
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(!sim.fog.is_cell_gap_fog(viewer, 12, 12));
 
     let hash = sim.state_hash();
     let bytes = crate::util::save_codec::serialize(&sim.fog).unwrap();
-    sim.fog = crate::util::save_codec::deserialize(&bytes).unwrap();
+    *sim.fog = crate::util::save_codec::deserialize(&bytes).unwrap();
     assert_eq!(
         sim.state_hash(),
         hash,
@@ -345,13 +357,13 @@ fn defeat_does_not_reclassify_an_active_hostile_gap() {
     // signed >0 test (58652E..586536) still leaves the footprint bright.
     insert(&mut sim, &rules, 3, gap_owner, "GAGAP", 12, 12);
     power(&mut sim, &rules);
-    sim.visit_building_operational(3, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(3, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(!sim.fog.is_cell_gap_fog(viewer, 12, 12));
 
-    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    assert!(sim.go_building_online(1, &rules, &mut FrameEffects::default()));
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     refresh(&mut sim, &rules);
     assert!(sim.fog.is_cell_gap_fog(viewer, 12, 12));
 }
@@ -365,7 +377,7 @@ fn reveal_inserted_sight(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         None,
         &vision::VisionConfig::default(),
         None,
-        UninitContext::with_rules(rules),
+        UninitContext::new(rules),
     );
 }
 
@@ -375,21 +387,21 @@ fn explicit_power_off_removes_gap_before_the_operational_visit_and_on_defers_add
     insert(&mut sim, &rules, 1, a, "GAGAP", 12, 12);
     insert(&mut sim, &rules, 2, a, "POWER", 16, 12);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert!(sim.fog.is_cell_gap_covered(b, 12, 12));
     let rng = sim.rng_state();
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
     assert!(
         !sim.fog.is_cell_gap_covered(b, 12, 12),
         "DisableStuff4524E9 removes immediately"
     );
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
-    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
+    assert!(sim.go_building_online(1, &rules, &mut FrameEffects::default()));
     assert!(
         !sim.fog.is_cell_gap_covered(b, 12, 12),
         "GoOnline has no gap-add callback"
     );
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert!(sim.fog.is_cell_gap_covered(b, 12, 12));
     assert_eq!(sim.rng_state(), rng);
 }
@@ -468,11 +480,21 @@ pub fn gap_operational_power_loss_views() -> Vec<(
     refresh(&mut sim, &rules);
     insert(&mut sim, &rules, 20, first, "GAGAP", 10, 12);
     power(&mut sim, &rules);
-    sim.visit_building_operational(20, &rules, None, crate::sim::world::FrameEffects::default()); // gap
-    sim.techno_limbo_with_rules(10, &rules, None); // leave, with its stored sight
+    sim.visit_building_operational(
+        20,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    ); // gap
+    sim.techno_limbo_with_rules(10, &rules); // leave, with its stored sight
     insert(&mut sim, &rules, 30, last, "GAGAP", 14, 12);
     power(&mut sim, &rules);
-    sim.visit_building_operational(30, &rules, None, crate::sim::world::FrameEffects::default()); // second gap
+    sim.visit_building_operational(
+        30,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    ); // second gap
     assert!(matches!(sim.reveal(10), RevealOutcome::Revealed { .. }));
     // A Reveal without a map commits no exact Z (`unlimbo_z`); SetHeight puts
     // the jumpjet back at 208, the high-flight threshold.
@@ -480,14 +502,18 @@ pub fn gap_operational_power_loss_views() -> Vec<(
         10,
         208,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     refresh(&mut sim, &rules); // real return, not a raw counter assignment
     damage(&mut sim, &rules, 40, 75);
     assert_eq!(sim.substrate.entities.get(40).unwrap().health.current(), 25);
     power(&mut sim, &rules);
-    sim.visit_building_operational(20, &rules, None, crate::sim::world::FrameEffects::default()); // remove first gap
+    sim.visit_building_operational(
+        20,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    ); // remove first gap
     sim.fog.flush_pending_gap_conceal(120);
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
 
@@ -503,12 +529,13 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             .entities
             .get(30)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
     );
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0); // native Scenario load reset
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0); // native Scenario load reset
     let before = sim.state_hash();
     let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "gap-power-order", 0);
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -544,13 +571,18 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_TRANSLATE,
         );
         live.set_logic_order_for_test(order);
-        live.advance_live_object_pass(&rules, None, crate::sim::world::FrameEffects::default())
-            .expect("fixture frame must complete");
+        live.advance_live_object_pass(
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .expect("fixture frame must complete");
         assert_eq!(
             live.substrate
                 .entities
                 .get(10)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers
                 .timer(viewer),
             crate::sim::timer::CdTimer::started(239, 15)
@@ -565,7 +597,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             "{}",
             case["name"]
         );
-        views.push((live.fog, viewer, shrouded));
+        views.push((live.fog.into_inner(), viewer, shrouded));
     }
     views
 }
@@ -574,16 +606,28 @@ pub fn gap_operational_power_loss_views() -> Vec<(
 fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     let (mut sim, rules, a, owner, b) = fixture();
     insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     power(&mut sim, &rules); // newly low, before another Building turn
     insert(&mut sim, &rules, 2, a, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
-    let gap = &sim.substrate.entities.get(1).unwrap().gap_generator;
+    let gap = &sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .building
+        .gap_generator;
     assert!(
         sim.substrate
             .entities
             .get(1)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );
@@ -612,6 +656,7 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&a]
             .active()
@@ -625,7 +670,7 @@ fn spy_sat_gap_reentry_and_removal_publish_the_native_ground_bits() {
     insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
     insert(&mut sim, &rules, 2, owner, "POWER", 16, 12);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     insert(&mut sim, &rules, 3, viewer, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
     let ground =
@@ -633,12 +678,12 @@ fn spy_sat_gap_reentry_and_removal_publish_the_native_ground_bits() {
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
     assert_eq!(ground(&sim), 0);
 
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
     assert!(sim.fog.is_cell_revealed(viewer, 12, 12));
     assert_eq!(ground(&sim), 0x18);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
-    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
+    assert!(sim.go_building_online(1, &rules, &mut FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
     assert_eq!(ground(&sim), 0);
 }
@@ -653,7 +698,12 @@ fn spy_sat_gap_reentry_asks_the_generators_house_about_the_viewer() {
         *sim.house_alliances_mut_for_test() =
             HouseAllianceMap::from([(asker.into(), [other.into()].into())]);
         insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
-        sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.visit_building_operational(
+            1,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         power(&mut sim, &rules);
         insert(&mut sim, &rules, 2, a, "GASPYSAT", 1, 1);
         sim.reconcile_active_vision_structures(&rules);
@@ -682,13 +732,18 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
     power(&mut sim, &rules);
     insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
     refresh(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     sim.change_owner_with_rules(
         1,
         a,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.fog.is_cell_visible(a, 12, 12));
     assert!(sim.fog.is_cell_revealed(a, 12, 12));
@@ -699,6 +754,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
         .entities
         .get(1)
         .unwrap()
+        .building
         .gap_generator
         .viewers()[&owner]
         .radius();
@@ -708,6 +764,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .active()
@@ -717,6 +774,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .radius(),
@@ -738,11 +796,16 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
     sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert!(sim.fog.whole_map_revealed_for_owner(viewer));
     insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert!(!sim.fog.whole_map_revealed_for_owner(viewer));
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
     power(&mut sim, &rules); // low power, but no Building turn has removed it
@@ -754,6 +817,7 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
@@ -768,10 +832,15 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
     sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     insert(&mut sim, &rules, 1, viewer, "GAGAP", 12, 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_building_operational(
+        1,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert!(
         !sim.fog.whole_map_revealed_for_owner(viewer),
         "friendly admitted add clears240 without a hostile receipt"
@@ -783,6 +852,7 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
             .entities
             .get(1)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
@@ -799,39 +869,40 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
 pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, bool)> {
     let (mut sim, rules, viewer, gapper, _) = fixture();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     sim.session.set_current_house_for_test(Some(viewer));
     let source = sim
         .spawn_object("SIGHT", "Americans", 16, 16, 0, &rules)
         .expect("source Unlimbo");
-    let mut views = vec![(sim.fog.clone(), viewer, true)];
+    let mut views = vec![((*sim.fog).clone(), viewer, true)];
     sim.spawn_object("POWER", "Soviet", 2, 2, 0, &rules)
         .expect("power Unlimbo");
     let gap = sim
         .spawn_object("GAGAP", "Soviet", 18, 16, 0, &rules)
         .expect("gap Unlimbo");
     power(&mut sim, &rules);
-    sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(gap, &rules, None, &mut FrameEffects::default());
     assert!(
         sim.substrate
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&viewer]
             .active()
     );
     assert_ne!(viewer, gapper);
-    views.push((sim.fog.clone(), viewer, true));
-    sim.techno_limbo_with_rules(source, &rules, None);
+    views.push(((*sim.fog).clone(), viewer, true));
+    sim.techno_limbo_with_rules(source, &rules);
     refresh(&mut sim, &rules);
     assert!(!sim.fog.sight_is_latched(source, viewer));
-    views.push((sim.fog.clone(), viewer, true));
+    views.push(((*sim.fog).clone(), viewer, true));
     for (frame, open) in [(119, true), (120, false)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.tick_pending_shroud_conceal(UninitContext::with_rules(&rules));
+        sim.tick_pending_shroud_conceal(UninitContext::new(&rules));
         assert_eq!(sim.fog.is_cell_revealed(viewer, 16, 16), open);
-        views.push((sim.fog.clone(), viewer, open));
+        views.push(((*sim.fog).clone(), viewer, open));
     }
     views
 }
@@ -841,7 +912,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
 pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, InternedId)> {
     let (mut sim, rules, a, b, c) = fixture();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
+    *sim.fog = vision::FogState::new(32, 32);
     let hostile = sim.intern("Neutral");
     sim.houses
         .register(HouseState::new(hostile, 3, None, false, 10_000, 10));
@@ -872,16 +943,16 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
     power(&mut sim, &rules);
     let mut views = Vec::new();
     for _ in 0..3 {
-        sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+        sim.visit_building_operational(gap, &rules, None, &mut FrameEffects::default());
         refresh(&mut sim, &rules);
         assert!(sim.fog.is_cell_visible(b, 16, 16));
         assert!(!sim.fog.is_cell_visible(c, 16, 16));
         assert!(!sim.fog.is_cell_revealed(c, 16, 16));
-        views.push((sim.fog.clone(), b, c));
+        views.push(((*sim.fog).clone(), b, c));
     }
-    sim.techno_limbo_with_rules(gap, &rules, None);
+    sim.techno_limbo_with_rules(gap, &rules);
     assert!(!sim.fog.is_cell_revealed(c, 16, 16));
-    views.push((sim.fog.clone(), b, c));
+    views.push(((*sim.fog).clone(), b, c));
     views
 }
 
@@ -902,7 +973,7 @@ fn a_raised_gap_generator_centres_its_circle_by_its_height() {
         .set_exact_z_leptons_for_test(Some(4 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS));
     insert(&mut sim, &rules, 2, a, "POWER", 20, 16);
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     let disc = |sim: &Simulation| {
         (
             sim.fog.is_cell_gap_covered(b, 4, 14),
@@ -926,7 +997,7 @@ fn a_raised_gap_generator_centres_its_circle_by_its_height() {
         (true, false),
         "the owner's friendly gap fog takes the same disc"
     );
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
     assert_eq!(disc(&sim), (false, false, false, false));
 }
 
@@ -941,35 +1012,100 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     power(&mut sim, &rules);
-    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
     assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
-    let sample = sim.entities().get(1).unwrap().building_last_operational;
-    let context = UninitContext::with_rules(&rules);
-    sim.release_alliance_sight(context);
+    let sample = sim
+        .entities()
+        .get(1)
+        .unwrap()
+        .building
+        .building_last_operational;
+    let mut context = UninitContext::new(&rules);
+    sim.release_alliance_sight(context.reborrow());
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
-    sim.admit_alliance_sight(context);
+    sim.admit_alliance_sight(context.reborrow());
     assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(
-        sim.entities().get(1).unwrap().building_last_operational,
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .building
+            .building_last_operational,
         sample
     );
 
-    sim.release_alliance_sight(context);
-    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
-    sim.admit_alliance_sight(context);
+    sim.release_alliance_sight(context.reborrow());
+    assert!(sim.go_building_offline(1, &rules, &mut FrameEffects::default()));
+    sim.admit_alliance_sight(context.reborrow());
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(
-        sim.entities().get(1).unwrap().building_last_operational,
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .building
+            .building_last_operational,
         sample
     );
-    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    assert!(sim.go_building_online(1, &rules, &mut FrameEffects::default()));
     // Online alone has no add. The map callback's fresh operational check
     //can re-admit before Building43FB20 publishes its next6C8 sample.
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
     sim.admit_alliance_sight(context);
     assert!(sim.fog.is_cell_gap_covered(player, 12, 12));
     assert_eq!(
-        sim.entities().get(1).unwrap().building_last_operational,
+        sim.entities()
+            .get(1)
+            .unwrap()
+            .building
+            .building_last_operational,
         sample
     );
+}
+
+#[test]
+fn alliance_callbacks_skip_only_the_allied_map_between_gap_maps() {
+    // House order a, b, c. c's gap generator takes the Map4ADEE0/4ADCD0 gap
+    // callbacks on a's map and its own; b, which c counts an ally, takes the
+    // allied-Building arm instead and no gap callback (4ADFBF/4ADE21).
+    let (mut sim, rules, a, b, c) = fixture();
+    insert(&mut sim, &rules, 1, c, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, c, "POWER", 16, 12);
+    sim.session.set_current_house_for_test(Some(a));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
+        "THIRD".to_string(),
+        std::collections::BTreeSet::from(["SOVIET".to_string()]),
+    )]);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, &mut FrameEffects::default());
+    let maps = |sim: &Simulation| {
+        [a, b, c].map(|viewer| {
+            (
+                sim.fog.is_cell_gap_covered(viewer, 12, 12),
+                sim.fog.is_cell_gap_fog(viewer, 12, 12),
+            )
+        })
+    };
+    let built = maps(&sim);
+    assert!(built[1].1, "the allied map counts the friendly gap");
+    let mut context = UninitContext::new(&rules);
+    sim.release_alliance_sight(context.reborrow());
+    let released = maps(&sim);
+    assert_eq!(
+        (built[0].0, released[0].0),
+        (true, false),
+        "the enemy map's gap is released"
+    );
+    assert_eq!(
+        released[1], built[1],
+        "the allied map takes no gap callback"
+    );
+    assert_eq!(
+        (built[2].1, released[2].1),
+        (true, false),
+        "the owner's own gap fog is released"
+    );
+    sim.admit_alliance_sight(context);
+    assert_eq!(maps(&sim), built);
 }

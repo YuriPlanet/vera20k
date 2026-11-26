@@ -25,8 +25,8 @@ pub(super) fn navigation_snapshot(
             let records: Vec<_> =
                 (0..graph.record_slot_count())
                     .map(|index| {
-                        graph.record(index as u16).map_or(Value::Null, |record| {
-                let edges: Vec<_> = graph.edges(index as u16).iter()
+                        graph.record(index as crate::sim::pathfinding::zone_map::ZoneId).map_or(Value::Null, |record| {
+                let edges: Vec<_> = graph.edges(index as crate::sim::pathfinding::zone_map::ZoneId).iter()
                     .map(|edge| [u32::from(edge.neighbor), u32::from(edge.flag)]).collect();
                 json!({"parent":record.parent,"zone_type":record.zone_type,"edges":edges})
             })
@@ -67,7 +67,7 @@ pub(super) fn navigation_snapshot(
             "bridge_flags": c.bridge_facts.raw_flags,
             "overlay": sim.overlay_grid.as_ref().unwrap().cell(x, y).overlay_id,
             "cached_class": base.movement_classes()[index], "cached_height": base.levels()[index],
-            "base_id": cluster, "raw_row7": base.raw_zone_ids_by_row()[7].get(usize::from(cluster)),
+            "base_id": cluster, "raw_row7": base.raw_zone_ids_by_row()[7].get(cluster as usize),
         }))
     }).collect();
     json!({
@@ -113,13 +113,13 @@ pub(super) fn restored_retail(
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         pristine.clone(),
-        live.terrain_speed_config.clone(),
+        *live.terrain_speed_config,
         &resources.rules,
     );
     restored
         .restore_map_authority_after_snapshot_load(
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
             None,
         )
         .unwrap();
@@ -184,6 +184,7 @@ pub fn visit_starting_mtnk_concrete_attack(
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).
@@ -246,7 +247,11 @@ pub fn visit_starting_mtnk_concrete_attack(
     let mut guarding = false;
     let mut shots = 0;
     let mut dispatched = 0;
-    for step in 1..=profile["ticks"].as_u64().unwrap() {
+    // Each AP hit damages the bridge only when the Scenario draw falls under
+    // its 65 damage out of BridgeStrength=1500, and every House's play draws
+    // the same stream, so the second success comes at no fixed shot. Four
+    // profiles' frames bound a run that never collapses the bridge.
+    for step in 1..=4 * profile["ticks"].as_u64().unwrap() {
         let due: Vec<_> = orders
             .iter()
             .filter(|order| order.execute_tick == step - 1)
@@ -266,7 +271,7 @@ pub fn visit_starting_mtnk_concrete_attack(
         dispatched += due.len();
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         let fired = output
@@ -350,7 +355,7 @@ pub fn visit_starting_mtnk_concrete_attack(
         visit(label, &mut scene, Some(&output));
     }
     panic!(
-        "normal starting MTNK must reach damage, collapse and settled Guard within the profile bound"
+        "normal starting MTNK must reach damage, collapse and settled Guard within four profiles' frames"
     );
 }
 
@@ -358,6 +363,30 @@ pub(super) fn load_anytown_concrete() -> HeadlessScenario {
     let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
     let map = std::env::var("VERA20K_ANYTOWN_MAP").unwrap_or_else(|_| "XMP03T4.MAP".to_owned());
     crate::headless_scenario::load(&retail, &map, 0).unwrap()
+}
+
+pub(super) fn load_anytown_concrete_from_path(path: &std::path::Path) -> HeadlessScenario {
+    let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
+    let map = path.to_string_lossy();
+    crate::headless_scenario::load(&retail, &map, 0).unwrap()
+}
+
+pub(super) fn retail_anytown_map_bytes() -> Vec<u8> {
+    use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+
+    let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
+    let assets = AssetManager::new(&retail, MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let loaded =
+        crate::map::source::load_map_by_name_or_path_with_assets(&retail, "XMP03T4.MAP", &assets)
+            .unwrap();
+    let (length, digest) = loaded
+        .source
+        .physical_identity()
+        .expect("retail Anytown has physical map bytes");
+    crate::map::source::prepare_transfer_map_source(&loaded.source, &assets)
+        .unwrap()
+        .read(digest, length)
+        .unwrap()
 }
 
 pub(super) fn load_shrapnel() -> HeadlessScenario {
@@ -394,8 +423,7 @@ fn damage_bridge(
         &mut runtime.simulation,
         &runtime.resources.rules,
         &[event],
-        Some(&runtime.resources.overlay_registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -681,7 +709,7 @@ fn repair_ordinary_bridge(
             start.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary Engineer bank placement");
     let orders = producer(&runtime.simulation, &runtime.resources.rules, engineer, hut);
@@ -700,7 +728,7 @@ fn repair_ordinary_bridge(
                 &due,
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         published |= output.tick.bridge_state_changed;

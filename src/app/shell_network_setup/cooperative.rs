@@ -1,5 +1,6 @@
 //! The setup's Cooperative campaign (LAN, and WOL where wired: Use Map,
-//! the host's join, Quick Co-op): MPCooperative's slots (vtable
+//! the host's join, Quick Co-op, a kept room's return after BC6's
+//! Continue): MPCooperative's slots (vtable
 //! `0x007EE27C`) at their native call sites in the setup, Choose Map, the
 //! host's join and the guest's packets. The progress itself belongs to the
 //! runtime's `CooperativeProgressState`; this module only reads the session
@@ -9,10 +10,20 @@
 use super::NetworkSetupRequest;
 use crate::app::AppState;
 use crate::app::frontend::skirmish_session::cooperative::{
-    CooperativeCampaignText, CooperativeSlotContext,
+    CooperativeCampaignText, CooperativeSlotContext, SavedCampaignJoin, SavedCampaignLeave,
 };
+use crate::skirmish_launch::SkirmishLaunchMode;
 use crate::skirmish_modes::MpModeClass;
 
+use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::CooperativeResume;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::scenario_catalog::ScenarioCatalog;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
+use crate::skirmish_modes::SkirmishGameMode;
+use crate::util::config::GameConfig;
 /// What the slots read from the session: the scenario file names in catalog
 /// order (`[0xA8B8CC]`), the nodes' names local first (`0xA8DA78`), the
 /// current scenario (`[0xA8B254]`) and whether Choose Map is on top.
@@ -24,9 +35,9 @@ struct SlotInputs {
 }
 
 impl SlotInputs {
-    fn read(state: &AppState) -> Self {
-        let records = state.frontend.scenario_catalog.records();
-        let launch = state.match_state.session.network_setup();
+    fn read(frontend: &FrontendState, session: &MatchSession) -> Self {
+        let records = frontend.scenario_catalog.records();
+        let launch = session.network_setup();
         let mut nodes: Vec<String> = Vec::new();
         if let Some(launch) = launch {
             // Every machine's node 0 is its local player.
@@ -46,12 +57,8 @@ impl SlotInputs {
                 .map(|record| record.file_name.clone())
                 .collect(),
             nodes,
-            current: state.frontend.multiplayer_shell_runtime.scenario_index(),
-            chooser_on_top: state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .is_some(),
+            current: frontend.multiplayer_shell_runtime.scenario_index(),
+            chooser_on_top: frontend.skirmish_shell_state.choose_map_modal.is_some(),
         }
     }
 
@@ -69,71 +76,74 @@ impl SlotInputs {
     }
 }
 
-fn is_cooperative(state: &AppState, mode_id: i32) -> bool {
-    crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, mode_id)
+fn is_cooperative(modes: &[SkirmishGameMode], mode_id: i32) -> bool {
+    crate::skirmish_modes::mode_by_id(modes, mode_id)
         .is_some_and(|mode| mode.class == MpModeClass::Cooperative)
 }
 
 /// The current mode (`[0xA8B23C]`) is Cooperative.
-pub(crate) fn current(state: &AppState) -> bool {
-    state
-        .match_state
-        .session
+pub(crate) fn current(session: &MatchSession) -> bool {
+    session
         .network_setup()
         .is_some_and(|launch| launch.mode.class == MpModeClass::Cooperative)
 }
 
 /// `0x005E26C0`: a setup dialog (BC, BD, C2 or C9) exists. Quick Match's
 /// setup has none.
-fn setup_open(state: &AppState) -> bool {
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(|protocol| !protocol.quick_match)
+fn setup_open(protocol: Option<&NetworkSetupProtocol>) -> bool {
+    protocol.is_some_and(|protocol| !protocol.quick_match)
 }
 
 /// `0x00775940(0xBC)`: the host's setup dialog is on the shell stack.
-fn host_setup_open(state: &AppState) -> bool {
-    setup_open(state) && state.match_state.session.host()
+fn host_setup_open(protocol: Option<&NetworkSetupProtocol>, session: &MatchSession) -> bool {
+    setup_open(protocol) && session.host()
 }
 
 /// `0x005C2500`: every row's country becomes the stage's single country or
 /// Random. Nothing changes without the campaign's stage. `+0x18`'s
 /// per-node `+0x1C` re-check that follows always passes after it.
-fn refresh_countries(state: &mut AppState) -> anyhow::Result<()> {
-    refresh_rows(state, true)
+fn refresh_countries(
+    runtime: &MultiplayerShellRuntime,
+    session: &mut MatchSession,
+) -> anyhow::Result<()> {
+    refresh_rows(runtime, session, true)
 }
 
 /// `0x005C2500` over the rows; `ai_rows` false keeps the AI rows' countries,
 /// as BC open's row loop (`0x005ED762`) restores them from the profile
 /// (`0x004E3F70`) after its refreshes.
-fn refresh_rows(state: &mut AppState, ai_rows: bool) -> anyhow::Result<()> {
-    let runtime = &state.frontend.multiplayer_shell_runtime;
+fn refresh_rows(
+    runtime: &MultiplayerShellRuntime,
+    session: &mut MatchSession,
+    ai_rows: bool,
+) -> anyhow::Result<()> {
     if runtime.cooperative_setup_view().player_countries.is_none() {
         return Ok(());
     }
     let country = runtime.cooperative_default_country();
-    state
-        .match_state
-        .session
-        .reset_network_countries(country, ai_rows)?;
-    state.platform.window.request_redraw();
+    session.reset_network_countries(country, ai_rows)?;
     Ok(())
 }
 
 /// `+0x60`'s tail: the refresh it took, then the `C0` text to every guest.
 /// A guest never sends one (its LAN 0x17 goes to nodes 1..N-1, which it
 /// has none of in its own node list).
-fn publish(state: &mut AppState, published: Option<(bool, Option<String>)>) -> anyhow::Result<()> {
+fn publish(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    published: Option<(bool, Option<String>)>,
+) -> anyhow::Result<()> {
     let Some((refresh, text)) = published else {
         return Ok(());
     };
     if refresh {
-        refresh_countries(state)?;
+        refresh_countries(&frontend.multiplayer_shell_runtime, session)?;
     }
-    if let Some(text) = text.filter(|_| state.match_state.session.host()) {
-        super::actions::queue(state, NetworkSetupRequest::PublishCooperativeCampaign(text));
+    if let Some(text) = text.filter(|_| session.host()) {
+        super::actions::queue(
+            &mut frontend.network_setup_protocol,
+            NetworkSetupRequest::PublishCooperativeCampaign(text),
+        );
     }
     Ok(())
 }
@@ -142,15 +152,20 @@ fn publish(state: &mut AppState, published: Option<(bool, Option<String>)>) -> a
 /// profile restore chose the scenario (`+0x44` there): `+0x20`, then
 /// `+0x24`, then `+0x18` with no chooser (row 0, no swap: `0x005E66D0`
 /// reads a dead list), then `+0x7C`, which only repaints.
-pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
-    if !current(state) {
+pub(super) fn host_opened(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+) -> anyhow::Result<()> {
+    if !current(session) {
         return Ok(());
     }
-    let inputs = SlotInputs::read(state);
+    let inputs = SlotInputs::read(frontend, session);
     let current = inputs.current;
-    let host_setup = host_setup_open(state);
+    let host_setup = host_setup_open(frontend.network_setup_protocol.as_ref(), session);
     let selected = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         inputs.with(|context, _| {
             parts
                 .progress
@@ -158,12 +173,25 @@ pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
         })
     };
     if let Some(index) = selected.filter(|index| *index != current) {
-        select_scenario(state, index, true)?;
+        let mode = session
+            .network_setup()
+            .expect("admitted setup")
+            .mode
+            .clone();
+        select_scenario(
+            game_config,
+            frontend,
+            session,
+            process_assets,
+            index,
+            Some(mode),
+        )?;
     }
-    refresh_rows(state, false)?;
-    let inputs = SlotInputs::read(state);
+    refresh_rows(&frontend.multiplayer_shell_runtime, session, false)?;
+    let inputs = SlotInputs::read(frontend, session);
+    let save = frontend.multiplayer_shell_runtime.cooperative_save();
     let refresh = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         parts.progress.request_refresh();
         inputs.with(|context, _| {
             parts.progress.accept_chooser_row(
@@ -174,27 +202,81 @@ pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
                     ..context
                 },
                 0,
+                save.as_ref(),
             )
         })
     };
     if refresh {
-        refresh_rows(state, false)?;
+        refresh_rows(&frontend.multiplayer_shell_runtime, session, false)?;
     }
+    Ok(())
+}
+
+/// VERA: a WOL room its host gets back after BC6's Continue
+/// ([`CooperativeResume`]), before its players are seated again. The
+/// relay match ended with the mission, so the room stands in for `+0xAC`:
+/// it takes the Cooperative mode and the next stage with the capacity pass,
+/// as BC open's selection does, and keeps the record, which `+0x20` would
+/// replace outside Choose Map. `+0x24` and `+0x60` follow as after Use Map;
+/// C2's opening publish, still queued, carries them, and the partner's
+/// join (`+0x94`) names both players again. That join skips `+0x94`'s
+/// saved-campaign tail ([`guest_joined`]): `+0xAC` seats both without one.
+pub(crate) fn resume(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+    resume: CooperativeResume,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        frontend
+            .multiplayer_shell_runtime
+            .cooperative_next_scenario_token()
+            .is_some(),
+        "no campaign stage to continue"
+    );
+    let mode = crate::skirmish_modes::mode_by_id(&frontend.skirmish_modes, resume.mode_id)
+        .filter(|mode| mode.class == MpModeClass::Cooperative)
+        .map(SkirmishLaunchMode::from_game_mode)
+        .ok_or_else(|| anyhow::anyhow!("no Cooperative mode {}", resume.mode_id))?;
+    select_scenario(
+        game_config,
+        frontend,
+        session,
+        process_assets,
+        resume.scenario,
+        Some(mode),
+    )?;
+    anyhow::ensure!(current(session), "the next mission has no loadable map");
+    let setup = setup_open(frontend.network_setup_protocol.as_ref());
+    let published = {
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
+        parts.progress.request_refresh();
+        parts.progress.publish(parts.registry, setup)
+    };
+    publish(frontend, session, published)?;
+    session.await_cooperative_rematch_seat();
     Ok(())
 }
 
 /// `MPGameOptions__SelectScenario` (`0x005E7BF0`) from `+0x20`: the
 /// scenario its record's first map names becomes the setup's map. It writes
 /// only the map globals and the row count `[0xA8BB0C]`, keeping every row,
-/// start and team. `bc_open` adds what BC's init runs after its helper,
-/// the capacity pass `0x005EC3A0` at `0x005DED73`; ChooseMap's port carries
-/// it.
+/// start and team. `capacity_pass` adds what BC's init runs after its
+/// helper, the capacity pass `0x005EC3A0` at `0x005DED73`, in that mode;
+/// ChooseMap's port carries it.
 /// RESIDUAL: that port also resets starts and teams (`0x005EE6A0`,
 /// `0x005EE510`), which BC's init is not traced to run; its rows are the
 /// defaults then.
-fn select_scenario(state: &mut AppState, index: usize, bc_open: bool) -> anyhow::Result<()> {
-    let Some(file) = state
-        .frontend
+fn select_scenario(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+    index: usize,
+    capacity_pass: Option<SkirmishLaunchMode>,
+) -> anyhow::Result<()> {
+    let Some(file) = frontend
         .scenario_catalog
         .records()
         .get(index)
@@ -202,8 +284,7 @@ fn select_scenario(state: &mut AppState, index: usize, bc_open: bool) -> anyhow:
     else {
         return Ok(());
     };
-    let Some(capacity) = state
-        .frontend
+    let Some(capacity) = frontend
         .scenario_catalog
         .shell_maps()
         .iter()
@@ -213,58 +294,51 @@ fn select_scenario(state: &mut AppState, index: usize, bc_open: bool) -> anyhow:
         log::warn!("Cooperative selected {file}, which has no loadable map entry");
         return Ok(());
     };
-    if bc_open {
-        let mode = state
-            .match_state
-            .session
-            .network_setup()
-            .expect("admitted setup")
-            .mode
-            .clone();
-        let removed = state
-            .match_state
-            .session
-            .select_network_map(mode, file.clone(), capacity)?;
-        debug_assert!(removed.is_empty(), "a Cooperative map seats both players");
-    } else {
-        state
-            .match_state
-            .session
-            .select_network_scenario(file.clone(), capacity)?;
+    match capacity_pass {
+        Some(mode) => {
+            let removed = session.select_network_map(mode, file.clone(), capacity)?;
+            debug_assert!(removed.is_empty(), "a Cooperative map seats both players");
+        }
+        None => session.select_network_scenario(file.clone(), capacity)?,
     }
     // +0x20 writes [0xA8B254] before the selection.
-    state
-        .frontend
-        .multiplayer_shell_runtime
-        .set_scenario_index(index);
-    let metadata = super::local_map_metadata(state, &file)?;
-    state
-        .match_state
-        .session
-        .accept_network_map_metadata(metadata, None, true)?;
-    state.frontend.random_map_retention.select_map(&file);
+    frontend.multiplayer_shell_runtime.set_scenario_index(index);
+    let metadata = super::local_map_metadata(
+        game_config,
+        &frontend.scenario_catalog,
+        process_assets,
+        &file,
+    )?;
+    session.accept_network_map_metadata(metadata, None, true)?;
+    frontend.random_map_retention.select_map(&file);
     Ok(())
 }
 
 /// Choose Map's list in Cooperative (`+0x4C`): one `"%d. %s"` row per
 /// campaign whose reserve's map is among `records` (the mode's valid
-/// scenarios), with that record as the row's data. A game-type click
+/// scenarios), with that record as the row's data, then the saved
+/// campaign's `TXT_COOP_USE_SAVE` row when coopsave.ini holds the pair's
+/// section and its next map is among them. A game-type click
 /// (`0x005E6C14..0x005E6C9B`) first rebuilds the reserves (`+0x0C` true,
 /// `+0x10`). None when `mode_id` is not Cooperative or no setup is open.
 pub(crate) fn chooser_rows(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
     mode_id: i32,
     records: &[usize],
     clicked: bool,
 ) -> Option<Vec<(usize, String)>> {
-    if !is_cooperative(state, mode_id) || !setup_open(state) {
+    if !is_cooperative(&frontend.skirmish_modes, mode_id)
+        || !setup_open(frontend.network_setup_protocol.as_ref())
+    {
         return None;
     }
-    let inputs = SlotInputs::read(state);
+    let inputs = SlotInputs::read(frontend, session);
     let files: Vec<(usize, String)> = records
         .iter()
         .filter_map(|&index| {
-            let record = state.frontend.scenario_catalog.records().get(index)?;
+            let record = frontend.scenario_catalog.records().get(index)?;
             Some((index, record.file_name.clone()))
         })
         .collect();
@@ -272,47 +346,70 @@ pub(crate) fn chooser_rows(
         .iter()
         .map(|(index, file)| (*index, file.as_str()))
         .collect();
+    let save = frontend.multiplayer_shell_runtime.cooperative_save();
     let rows = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         if clicked {
             parts.progress.rebuild_reserves(parts.registry, parts.rng);
         }
         inputs.with(|_, nodes| {
             parts
                 .progress
-                .chooser_rows(parts.registry, parts.rng, nodes, &files)
+                .chooser_rows(parts.registry, parts.rng, nodes, &files, save.as_ref())
         })
     };
     Some(
         rows.into_iter()
             .map(|row| {
-                let key = state
-                    .frontend
+                let Some(campaign) = row.campaign else {
+                    return (row.record, saved_row_label(process_assets));
+                };
+                let key = frontend
                     .multiplayer_shell_runtime
-                    .cooperative_campaign_name(row.campaign)
+                    .cooperative_campaign_name(campaign)
                     .unwrap_or_default()
                     .to_owned();
-                let name = crate::app::App::csf_label(state, &key, &key);
-                (row.record, format!("{}. {}", row.campaign + 1, name))
+                let name = process_assets.csf_label(&key, &key);
+                (row.record, format!("{}. {}", campaign + 1, name))
             })
             .collect(),
     )
+}
+
+fn saved_row_label(process_assets: &ProcessAssets) -> String {
+    process_assets.csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE")
+}
+
+/// Every scenario record's file name, as `[0xA8B8CC]` holds them.
+fn scenario_files(scenario_catalog: &ScenarioCatalog) -> Vec<(usize, String)> {
+    scenario_catalog
+        .records()
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (index, record.file_name.clone()))
+        .collect()
 }
 
 /// Use Map (`0x005E7160`) in Cooperative, after the setup took the map: a
 /// mode change runs `+0x20` (its scenario choice is overwritten by Use
 /// Map's own, `0x005E7371`), then `+0x24`, `+0x18` for the chosen row with
 /// the chooser still on top, `+0x7C` and `+0x60`.
-pub(super) fn map_used(state: &mut AppState, mode_changed: bool, row: usize) -> anyhow::Result<()> {
-    if !current(state) {
+pub(super) fn map_used(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    mode_changed: bool,
+    row: usize,
+) -> anyhow::Result<()> {
+    if !current(session) {
         return Ok(());
     }
-    let inputs = SlotInputs::read(state);
+    let inputs = SlotInputs::read(frontend, session);
     let current = inputs.current;
-    let host_setup = host_setup_open(state);
-    let setup = setup_open(state);
+    let host_setup = host_setup_open(frontend.network_setup_protocol.as_ref(), session);
+    let setup = setup_open(frontend.network_setup_protocol.as_ref());
+    let save = frontend.multiplayer_shell_runtime.cooperative_save();
     let refresh = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         inputs.with(|context, _| {
             if mode_changed {
                 parts
@@ -320,76 +417,167 @@ pub(super) fn map_used(state: &mut AppState, mode_changed: bool, row: usize) -> 
                     .enter_mode(parts.registry, parts.rng, context, current, host_setup);
             }
             parts.progress.request_refresh();
-            parts
-                .progress
-                .accept_chooser_row(parts.registry, parts.rng, context, row)
+            parts.progress.accept_chooser_row(
+                parts.registry,
+                parts.rng,
+                context,
+                row,
+                save.as_ref(),
+            )
         })
     };
     if mode_changed || refresh {
-        refresh_countries(state)?;
+        refresh_countries(&frontend.multiplayer_shell_runtime, session)?;
     }
     let published = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         parts.progress.publish(parts.registry, setup)
     };
-    publish(state, published)
+    publish(frontend, session, published)
 }
 
 /// The host's join accept (LAN `0x005E1BF2`, WOL `0x007A6E5A`) →
 /// `0x005E2FA0`: the chooser's
 /// selected mode when Choose Map is on top, else the current one, gets
 /// `+0x94`, which makes the record if needed, binds the two names and
-/// publishes it. Ordinary modes' `+0x94` does nothing.
+/// publishes it; with the pair's save it then adds Choose Map's saved row
+/// or prints `TXT_SAVE_CAMP_AVAILABLE`. Ordinary modes' `+0x94` does
+/// nothing.
+/// VERA: the partner coming back to a kept room ([`resume`]) skips the
+/// tail. In retail BC6's Continue goes through `+0xAC`'s rematch
+/// (`0x005C46E0`) straight to Start_Scenario (`GameExit__Victory`,
+/// `0x00685670`, on LAN and WOL alike), so no join and no tail run there.
 pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
-    let mode_id = match state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .as_ref()
-    {
-        Some(modal) => modal.selected_mode_id,
-        None => match state.match_state.session.network_setup() {
-            Some(launch) => launch.mode.id,
-            None => return Ok(()),
-        },
-    };
-    if !is_cooperative(state, mode_id) {
+    if !peer_mode_cooperative(&state.frontend, &state.match_state.session) {
         return Ok(());
     }
-    let inputs = SlotInputs::read(state);
-    let setup = setup_open(state);
+    let inputs = SlotInputs::read(&state.frontend, &state.match_state.session);
+    let setup = setup_open(state.frontend.network_setup_protocol.as_ref());
     let published = {
         let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
         inputs.with(|_, nodes| parts.progress.join(parts.registry, parts.rng, nodes, setup))
     };
-    publish(state, published)
+    publish(
+        &mut state.frontend,
+        &mut state.match_state.session,
+        published,
+    )?;
+    if state.match_state.session.take_cooperative_rematch_seat() {
+        return Ok(());
+    }
+    let save = state.frontend.multiplayer_shell_runtime.cooperative_save();
+    let files = scenario_files(&state.frontend.scenario_catalog);
+    let files: Vec<(usize, &str)> = files
+        .iter()
+        .map(|(index, file)| (*index, file.as_str()))
+        .collect();
+    let tail = state
+        .frontend
+        .multiplayer_shell_runtime
+        .cooperative_parts()
+        .progress
+        .saved_join(save.as_ref(), inputs.chooser_on_top, &files);
+    match tail {
+        SavedCampaignJoin::Nothing => {}
+        SavedCampaignJoin::Notice => {
+            let text = state.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            crate::app::shell_lan::append_room_chat(
+                state,
+                crate::ui::lan_shell::LanChatLine {
+                    text: text.encode_utf16().collect(),
+                    color: u32::MAX,
+                },
+            );
+        }
+        SavedCampaignJoin::Row(record) => {
+            let label = saved_row_label(&state.process_assets);
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_mut()
+            {
+                modal.push_row(record, label);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The mode a join or departure calls (`0x005E2FA0`, `0x005E11DC`): Choose
+/// Map's selected game type while it is on top, else the current mode.
+fn peer_mode_cooperative(frontend: &FrontendState, session: &MatchSession) -> bool {
+    let mode_id = match frontend.skirmish_shell_state.choose_map_modal.as_ref() {
+        Some(modal) => modal.selected_mode.id,
+        None => match session.network_setup() {
+            Some(launch) => launch.mode.id,
+            None => return false,
+        },
+    };
+    is_cooperative(&frontend.skirmish_modes, mode_id)
+}
+
+/// The host's accepted departure (LAN `0x005E11DC..0x005E1235`) runs that
+/// mode's `+0x90`; only Cooperative's acts. Under Choose Map it drops a
+/// listed saved row; elsewhere a save in use gives way to the reserve's
+/// campaign, whose first map the setup takes and publishes.
+/// RESIDUAL: outside Choose Map native refreshes the type and map statics
+/// and runs the throttled publish `0x005E32D0` on every departure, and a
+/// first map missing from the catalog selects index `count`; here only a
+/// found map is selected and published.
+pub(super) fn guest_left(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+) -> anyhow::Result<()> {
+    if !peer_mode_cooperative(frontend, session) {
+        return Ok(());
+    }
+    let chooser_on_top = frontend.skirmish_shell_state.choose_map_modal.is_some();
+    let leave = {
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
+        parts
+            .progress
+            .guest_left(parts.registry, parts.rng, chooser_on_top)
+    };
+    match leave {
+        SavedCampaignLeave::Nothing => {}
+        SavedCampaignLeave::RemoveRow => {
+            if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
+                modal.pop_row();
+            }
+        }
+        SavedCampaignLeave::Scenario(token) => {
+            let index = scenario_files(&frontend.scenario_catalog)
+                .into_iter()
+                .find_map(|(index, file)| {
+                    crate::util::native_string::crt_strcmpi(&file, &format!("{token}.MAP"))
+                        .is_eq()
+                        .then_some(index)
+                });
+            if let Some(index) = index {
+                select_scenario(game_config, frontend, session, process_assets, index, None)?;
+                super::actions::queue(
+                    &mut frontend.network_setup_protocol,
+                    NetworkSetupRequest::PublishOptions,
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The join's country (`0x005E1945..0x005E1973`): the requested country if
 /// the current mode admits it (`+0x1C`), else the mode's default (`+0x28`).
 /// Only Cooperative's slots differ from "any country".
 pub(super) fn admit_join_country(
-    state: &AppState,
+    runtime: &MultiplayerShellRuntime,
+    session: &MatchSession,
     slot: &mut crate::skirmish_launch::SkirmishLocalSlot,
 ) {
-    if !current(state) {
-        return;
-    }
-    let runtime = &state.frontend.multiplayer_shell_runtime;
-    let requested = if slot.country_random {
-        -2
-    } else {
-        i32::from(slot.country.raw_index())
-    };
-    if runtime.cooperative_admits(requested) {
-        return;
-    }
-    match runtime.cooperative_default_country() {
-        Some(country) => {
-            slot.country = country;
-            slot.country_random = false;
-        }
-        None => slot.country_random = true,
+    if current(session) {
+        runtime.cooperative_admit_country(slot);
     }
 }
 
@@ -397,14 +585,18 @@ pub(super) fn admit_join_country(
 /// MPCooperative takes, then its `+0x5C`; their refresh repaints the
 /// countries while a setup dialog is open. A text missing a field calls no
 /// mode.
-pub(super) fn campaign_received(state: &mut AppState, text: &str) -> anyhow::Result<()> {
+pub(super) fn campaign_received(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    text: &str,
+) -> anyhow::Result<()> {
     let Some(text) = CooperativeCampaignText::parse(text) else {
         return Ok(());
     };
-    let inputs = SlotInputs::read(state);
-    let setup = setup_open(state);
+    let inputs = SlotInputs::read(frontend, session);
+    let setup = setup_open(frontend.network_setup_protocol.as_ref());
     let refresh = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         inputs.with(|_, nodes| {
             parts
                 .progress
@@ -413,7 +605,7 @@ pub(super) fn campaign_received(state: &mut AppState, text: &str) -> anyhow::Res
         parts.progress.receive_stage(&text, setup)
     };
     if refresh {
-        refresh_countries(state)?;
+        refresh_countries(&frontend.multiplayer_shell_runtime, session)?;
     }
     Ok(())
 }
@@ -426,15 +618,20 @@ pub(super) fn campaign_received(state: &mut AppState, text: &str) -> anyhow::Res
 /// keeps: `+0x20` may select the first map's scenario
 /// (`0x005C1B79..0x005C1BA1`), which the later lookup at `0x007A6E0B`
 /// selects again. The countries refresh only with a setup dialog.
-pub(super) fn mode_entered(state: &mut AppState) -> anyhow::Result<()> {
-    if !current(state) {
+pub(super) fn mode_entered(
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+) -> anyhow::Result<()> {
+    if !current(session) {
         return Ok(());
     }
-    let inputs = SlotInputs::read(state);
+    let inputs = SlotInputs::read(frontend, session);
     let current = inputs.current;
-    let host_setup = host_setup_open(state);
+    let host_setup = host_setup_open(frontend.network_setup_protocol.as_ref(), session);
     let selected = {
-        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        let parts = frontend.multiplayer_shell_runtime.cooperative_parts();
         inputs.with(|context, _| {
             parts
                 .progress
@@ -444,12 +641,12 @@ pub(super) fn mode_entered(state: &mut AppState) -> anyhow::Result<()> {
     // RESIDUAL: a guest's own SelectScenario is not ported; the host's
     // options name its map.
     if let Some(index) = selected
-        && state.match_state.session.host()
+        && session.host()
     {
-        select_scenario(state, index, false)?;
+        select_scenario(game_config, frontend, session, process_assets, index, None)?;
     }
-    if setup_open(state) {
-        refresh_countries(state)?;
+    if setup_open(frontend.network_setup_protocol.as_ref()) {
+        refresh_countries(&frontend.multiplayer_shell_runtime, session)?;
     }
     Ok(())
 }

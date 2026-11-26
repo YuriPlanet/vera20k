@@ -1,5 +1,5 @@
 //! The traced types below are only ever built by `describe`.
-#![allow(dead_code)]
+#![expect(dead_code, reason = "the traced types are only built by `describe`")]
 
 use std::collections::BTreeMap;
 

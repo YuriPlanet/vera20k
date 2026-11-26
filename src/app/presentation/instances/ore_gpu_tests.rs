@@ -98,7 +98,7 @@ impl Probe {
             }
         }
         let gpu = Gpu::new();
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         let rules = &scene.runtime.resources.rules;
         // A future paid wall has no map-pack slot. The production atlas
         // preloads all Wall frames from the retail registry independently.
@@ -248,7 +248,7 @@ impl Probe {
         let terrain = scene.sim().resolved_terrain().unwrap();
 
         if let Some((source, owner, expected)) = &mut self.live_a {
-            source.rebuild_if_needed(
+            source.rebuild_submitted(
                 &self.gpu.device,
                 &self.gpu.queue,
                 scene.sim().fog(),
@@ -291,7 +291,7 @@ impl Probe {
                         atlas,
                         names: &self.names,
                         live_grid: scene.sim().overlay_grid(),
-                        registry: Some(&scene.runtime.resources.overlay_registry),
+                        registry: Some(scene.runtime.resources.rules.overlay_registry()),
                         rules: Some(&scene.runtime.resources.rules),
                         interner: Some(scene.sim().interner()),
                         tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
@@ -314,12 +314,13 @@ impl Probe {
             if piece != CellRasterPiece::Body {
                 let (atlas, _) = shadow.as_ref().expect("native shadow comparison resources");
                 crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+                    crate::render::cell_window::CellWindow::Whole,
                     terrain,
                     atlas,
                     &self.names,
                     entries,
                     scene.sim().overlay_grid(),
-                    Some(&scene.runtime.resources.overlay_registry),
+                    Some(scene.runtime.resources.rules.overlay_registry()),
                     None,
                     camera.world_origin_y,
                     camera.world_height,
@@ -550,6 +551,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
     let owner = scene.sim().session().current_house().unwrap();
     let mut orders: Vec<_> = profile["commands"]
         .as_array()
@@ -606,7 +608,8 @@ fn assert_retail_wall_profile_reaches_native_raster(
     let wall = scene
         .runtime
         .resources
-        .overlay_registry
+        .rules
+        .overlay_registry()
         .id_for_name(wall_name)
         .unwrap();
     let initial = scene.sim().overlay_grid().unwrap().cell(source.0, source.1);
@@ -733,7 +736,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
         dispatched += due.len();
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         sale_seen |= output.sound_events.iter().any(|event| {
@@ -863,7 +866,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
 
     let output = scene
         .runtime
-        .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     assert!(output.tick.frame_committed);
     entries.remove_cells(&output.overlay_removals);
@@ -948,14 +951,13 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     let refinery = candidates
         .into_iter()
         .find_map(|at| {
-            scene.runtime.simulation.spawn_object_with_overlay_registry(
+            scene.runtime.simulation.spawn_object_with_map_overlays(
                 &dock,
                 &owner_name,
                 at.0,
                 at.1,
                 0,
                 &scene.runtime.resources.rules,
-                &scene.runtime.resources.overlay_registry,
             )
         })
         .expect("an accepted map-placed refinery near the starting base");
@@ -968,14 +970,13 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     let miner = scene
         .runtime
         .simulation
-        .spawn_object_with_overlay_registry(
+        .spawn_object_with_map_overlays(
             "HARV",
             &owner_name,
             123,
             33,
             0,
             &scene.runtime.resources.rules,
-            &scene.runtime.resources.overlay_registry,
         )
         .expect("retail War Miner Unlimbo on the ore cell");
     let order = CommandEnvelope::new(
@@ -1080,7 +1081,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
                 commands,
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         // Same presentation index owner and application order as sim_tick.
@@ -1113,18 +1114,20 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
     let mut scene = crate::headless_scenario::load(&root, "GoldSt.mmx", 0x12345678).unwrap();
     let packet = packet();
     let mut probe = Probe::new(&scene, &packet, Some((123, 33)), None);
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let tib01 = registry.id_for_name("TIB01").unwrap();
     for control in packet["controls"].as_array().unwrap() {
         let xy: [u16; 2] = std::array::from_fn(|i| control["coords"][i].as_i64().unwrap() as u16);
         assert_eq!(
-            registry.tiberium_display_overlay_id(
-                &scene.runtime.resources.rules.tiberium_types,
-                tib01,
-                xy[0],
-                xy[1],
-                0
-            ),
+            registry
+                .tiberium_display_overlay_id(
+                    &scene.runtime.resources.rules.tiberium_types,
+                    tib01,
+                    xy[0],
+                    xy[1],
+                    0
+                )
+                .unwrap(),
             Some(control["display_overlay_id"].as_u64().unwrap() as u8),
             "original signed selector {control}"
         );
@@ -1138,7 +1141,8 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
         let runtime = &mut scene.runtime;
         let id = runtime
             .resources
-            .overlay_registry
+            .rules
+            .overlay_registry()
             .id_for_name(input["type"].as_str().unwrap())
             .unwrap();
         let cell = runtime
@@ -1172,7 +1176,7 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
                 .resolved_terrain_mut_for_test()
                 .as_mut()
                 .unwrap(),
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
             at,
         );
         *runtime.simulation.overlay_grid_mut_for_test() = Some(grid);
@@ -1217,15 +1221,15 @@ fn retail_sloped_ore_rows_match_original_with_zero_tail_boundary() {
             input["coords"][1].as_u64().unwrap() as u16,
         );
         let runtime = &mut scene.runtime;
-        let registry = &runtime.resources.overlay_registry;
+        let registry = runtime.resources.rules.overlay_registry();
         let id = registry
             .id_for_name(input["type"].as_str().unwrap())
             .unwrap();
         let display = row["display_overlay_id"].as_u64().unwrap() as u8;
-        let key = crate::render::overlay_atlas::OverlaySpriteKey {
-            name: registry.name(display).unwrap().to_owned(),
-            frame: i32::from(input["state"].as_u64().unwrap() as u8),
-        };
+        let key = crate::render::overlay_atlas::tiberium_image_key(
+            registry.name(display).unwrap(),
+            i32::from(input["state"].as_u64().unwrap() as u8),
+        );
         for batch in &probe.batches {
             assert!(
                 batch.atlas.get(&key).is_some(),
@@ -1233,13 +1237,15 @@ fn retail_sloped_ore_rows_match_original_with_zero_tail_boundary() {
             );
         }
         assert_eq!(
-            registry.tiberium_display_overlay_id(
-                &runtime.resources.rules.tiberium_types,
-                id,
-                at.0,
-                at.1,
-                input["slope"].as_u64().unwrap() as u8
-            ),
+            registry
+                .tiberium_display_overlay_id(
+                    &runtime.resources.rules.tiberium_types,
+                    id,
+                    at.0,
+                    at.1,
+                    input["slope"].as_u64().unwrap() as u8
+                )
+                .unwrap(),
             Some(display)
         );
         let mut grid = runtime

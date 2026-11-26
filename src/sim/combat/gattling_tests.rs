@@ -170,9 +170,11 @@ fn original_stage_histories() {
                         &ty.stages,
                         elite,
                         i32_of(&call["arg"]),
+                        None,
                         |weapon| ty.report(weapon, elite).map(|items| items.len() as i32),
-                        || reached_stops += 1,
-                        || {
+                        &mut (),
+                        |_| reached_stops += 1,
+                        |_| {
                             let draw = rng.next_u32();
                             draws.push(i64::from(draw));
                             draw
@@ -270,9 +272,11 @@ fn original_fault_inputs_play_nothing() {
             &ty.stages,
             false,
             1,
+            None,
             |weapon| ty.report(weapon, false).map(|items| items.len() as i32),
-            || {},
-            || panic!("no draw without a WeaponType"),
+            &mut (),
+            |_| {},
+            |_| panic!("no draw without a WeaponType"),
         );
         assert!(effects.report.is_none());
         assert!(!state.report_latch());
@@ -381,14 +385,14 @@ fn original_unit_fire_update_rows() {
                 entity.veterancy.set_elite();
             }
         }
-        sim.main_rng = SimRng::new(0x2A61).into();
+        *sim.main_rng = SimRng::new(0x2A61);
         sim.sound_events.clear_for_test();
         let mut probe = SimRng::new(0x2A61);
         sim.unit_fire_update_tail(
             id,
             outcome,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
@@ -421,7 +425,7 @@ fn original_unit_fire_update_rows() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    Some(sound_id.clone())
+                    Some(sound_id.name_in(&rules).to_string())
                 }
                 _ => None,
             })
@@ -591,62 +595,73 @@ impl Spin {
 /// (one `g_MainRng` draw) and again at each stage-up, after a hard stop.
 #[test]
 fn a_gattling_tank_spins_up_while_it_fights() {
-    let mut spin = Spin::new();
-    let post = spin.spawn_post();
-    spin.order(crate::sim::command::Command::Attack {
-        attacker_id: spin.tank,
-        target_id: post,
-    });
-    let mut stage_ups = Vec::new();
-    let mut weapons_by_stage: std::collections::BTreeMap<i32, std::collections::BTreeSet<String>> =
-        Default::default();
-    let mut loops = Vec::new();
-    let mut previous = spin.state();
-    for frame in 0..620 {
-        let stage_before = spin.state().stage();
-        let (fired, sounds) = spin.tick();
-        for weapon in fired {
-            weapons_by_stage
-                .entry(stage_before)
-                .or_default()
-                .insert(weapon);
-        }
-        let now = spin.state();
-        assert_eq!(
-            now.value(),
-            (previous.value() + 1).min(600),
-            "frame {frame}: one point a frame up to the cap"
-        );
-        if now.stage() != previous.stage() {
-            stage_ups.push((now.stage(), now.value()));
-        }
-        for sound in sounds {
-            match sound {
-                crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    loops.push(sound_id);
-                }
-                crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
-                    loops.push("stop".to_string());
-                }
-                _ => panic!("frame {frame}: no release while charging"),
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let mut spin = Spin::new();
+        let post = spin.spawn_post();
+        spin.order(crate::sim::command::Command::Attack {
+            attacker_id: spin.tank,
+            target_id: post,
+        });
+        let mut stage_ups = Vec::new();
+        let mut weapons_by_stage: std::collections::BTreeMap<
+            i32,
+            std::collections::BTreeSet<String>,
+        > = Default::default();
+        let mut loops = Vec::new();
+        let mut previous = spin.state();
+        for frame in 0..620 {
+            let stage_before = spin.state().stage();
+            let (fired, sounds) = spin.tick();
+            for weapon in fired {
+                weapons_by_stage
+                    .entry(stage_before)
+                    .or_default()
+                    .insert(weapon);
             }
+            let now = spin.state();
+            assert_eq!(
+                now.value(),
+                (previous.value() + 1).min(600),
+                "frame {frame}: one point a frame up to the cap"
+            );
+            if now.stage() != previous.stage() {
+                stage_ups.push((now.stage(), now.value()));
+            }
+            for sound in sounds {
+                match sound {
+                    crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
+                        loops.push(sound_id.name_in(&spin.rules).to_string());
+                    }
+                    crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
+                        loops.push("stop".to_string());
+                    }
+                    _ => panic!("frame {frame}: no release while charging"),
+                }
+            }
+            previous = now;
         }
-        previous = now;
+        // Ares' stage test reads the charged value (hook 0x70DEBA): a frame earlier.
+        let stage_ups_at = if ares_way {
+            [(1, 200), (2, 400)]
+        } else {
+            [(1, 201), (2, 401)]
+        };
+        assert_eq!(stage_ups, stage_ups_at);
+        assert_eq!(previous.value(), 600);
+        let stage_weapons =
+            |stage: i32| -> Vec<String> { weapons_by_stage[&stage].iter().cloned().collect() };
+        assert_eq!(stage_weapons(0), ["G0"]);
+        assert_eq!(stage_weapons(1), ["G2"]);
+        assert_eq!(stage_weapons(2), ["G4"]);
+        //70DF9C stops before every new report, and70DF74 adds the stage stop.
+        assert_eq!(
+            loops,
+            [
+                "stop", "Loop0", "stop", "stop", "Loop2", "stop", "stop", "Loop4"
+            ]
+        );
     }
-    assert_eq!(stage_ups, [(1, 201), (2, 401)]);
-    assert_eq!(previous.value(), 600);
-    let stage_weapons =
-        |stage: i32| -> Vec<String> { weapons_by_stage[&stage].iter().cloned().collect() };
-    assert_eq!(stage_weapons(0), ["G0"]);
-    assert_eq!(stage_weapons(1), ["G2"]);
-    assert_eq!(stage_weapons(2), ["G4"]);
-    //70DF9C stops before every new report, and70DF74 adds the stage stop.
-    assert_eq!(
-        loops,
-        [
-            "stop", "Loop0", "stop", "stop", "Loop2", "stop", "stop", "Loop4"
-        ]
-    );
 }
 
 /// Stopped at the cap after firing at the ground, with nothing to pick
@@ -714,7 +729,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         arrival,
         &spin.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     {
         let tank = spin.sim.substrate.entities.get_mut(spin.tank).unwrap();
@@ -734,7 +749,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
             &spin.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,
     );
@@ -745,11 +760,11 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::movement::PerCellReason::Arrival,
             &spin.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let tank = spin.sim.substrate.entities.get(spin.tank).unwrap();
-    assert!(tank.passenger_role.is_inside_transport());
+    assert!(tank.passenger_role().is_inside_transport());
     assert_eq!((tank.gattling.stage(), tank.gattling.value()), (0, 0));
     assert_eq!(tank.mission.ai_counter(), 0);
     assert!(!tank.gattling.report_latch());
@@ -791,4 +806,40 @@ fn gattling_state_round_trips_and_is_hashed() {
         .unwrap()
         .gattling = GattlingState::from_fields(1, 322, false);
     assert_ne!(restored.state_hash(), hashed, "the value is hashed");
+}
+
+/// Ares TechnoClass_UpdateGattling_Cycle (Ares.dll 1004B6C0, hook 0x70DEBA):
+/// the stage test reads the charged value rather than the starting one, and
+/// a `Gattling.Cycle` type at the cap restarts at stage 0 with its loop
+/// stopped and the latch clear.
+#[test]
+fn ares_cycle_hook_tests_the_charged_value_and_restarts_a_cyclic_type() {
+    let table =
+        GattlingStages::from_fields(3, [50, 100, 150, 0, 0, 0], [50, 100, 150, 0, 0, 0], 10, 5);
+    let charge = |value, stage, ares_cycle| {
+        let mut state = GattlingState::from_fields(stage, value, true);
+        let mut stops = 0;
+        let effects = state.increase(
+            &table,
+            false,
+            1,
+            ares_cycle,
+            |_| Some(0),
+            &mut (),
+            |_| stops += 1,
+            |_| 0,
+        );
+        let stage_up = effects.stage_up;
+        (
+            state.stage(),
+            state.value(),
+            state.report_latch(),
+            stage_up,
+            stops,
+        )
+    };
+    assert_eq!(charge(45, 0, None), (0, 55, true, false, 0));
+    assert_eq!(charge(45, 0, Some(false)), (1, 55, false, true, 1));
+    assert_eq!(charge(150, 2, Some(false)), (2, 150, true, false, 0));
+    assert_eq!(charge(150, 2, Some(true)), (0, 0, false, false, 1));
 }

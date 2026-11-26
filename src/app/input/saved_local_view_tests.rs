@@ -85,7 +85,7 @@ fn fixture() -> (Simulation, RuleSet, MatchInputState) {
         );
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(id != 2);
+        entity.seldom.selection.set_selected_for_test(id != 2);
         entity.set_object_group_for_test(if id == 1 { 8 } else { 9 });
         sim.entities_mut_for_test().insert(entity);
     }
@@ -267,8 +267,22 @@ fn pending_selection_survives_load_until_the_existing_queue_owner_drains_it() {
         save_codec::serialize(&sim.pending_command_snapshot()).unwrap(),
         queued_before
     );
-    assert!(!sim.entities().get(2).unwrap().selection.is_selected());
-    assert!(sim.entities().get(3).unwrap().selection.is_selected());
+    assert!(
+        !sim.entities()
+            .get(2)
+            .unwrap()
+            .seldom
+            .selection
+            .is_selected()
+    );
+    assert!(
+        sim.entities()
+            .get(3)
+            .unwrap()
+            .seldom
+            .selection
+            .is_selected()
+    );
 
     // Model the existing queue receiver draining/refusing this command. The
     // shared reconciliation closes pending mode against committed flags;
@@ -348,20 +362,21 @@ fn capture_prunes_departed_references_but_preserves_saved_idle_follow() {
 /// therefore replaces an outgoing armed mode even when Options was opened
 /// without canceling it.
 #[test]
-fn idle_saved_view_replaces_outgoing_superweapon_targeting_and_repair() {
+fn idle_saved_view_replaces_outgoing_superweapon_targeting_repair_and_power() {
     let (sim, rules, source) = fixture();
     let saved = serialized_capture(&source, &sim, &rules);
     let mut outgoing = MatchInputState::new(Default::default());
     outgoing.targeting_mode = Some(TargetingMode::SuperWeapon("OutgoingSuper".into()));
     let mut sidebar = SidebarGadgetState::new();
     sidebar.repair_mode_on = true;
+    sidebar.power_mode_on = true;
 
     PreparedSavedLocalView::new(saved, &sim, &rules)
         .unwrap()
         .commit_into(&mut outgoing, &mut sidebar);
 
     assert_eq!(outgoing.targeting_mode, None);
-    assert!(!sidebar.repair_mode_on && !sidebar.sell_mode_on);
+    assert!(!sidebar.repair_mode_on && !sidebar.sell_mode_on && !sidebar.power_mode_on);
 }
 
 /// MouseLoad swizzles the incoming placement object/type at 5BE101/5BE112.
@@ -391,7 +406,9 @@ fn idle_saved_view_replaces_outgoing_building_placement_and_preview() {
         }],
         wall_autofill_cells: vec![],
     });
-    outgoing.submit_building_placement();
+    outgoing.submit_building_placement(
+        &mut crate::app::sidebar_projection::SidebarModel::default(),
+    );
     assert!(outgoing.begin_building_placement("UNIT", 3, owner));
 
     commit(
@@ -426,13 +443,16 @@ fn saved_superweapon_targeting_survives_roundtrip_without_charge_admission() {
     assert_eq!(outgoing.targeting_mode, source.targeting_mode);
 }
 
-/// The swizzled placement product/type and House index +11AC, and the
-/// Repair/Sell bytes, come back as saved; the preview is recomputed later.
+/// The swizzled placement product/type and House index +11AC, the
+/// foundation latch +0x1174/+0x1181, and the Repair/Sell bytes, come back as
+/// saved; the preview is recomputed later.
 #[test]
 fn saved_placement_and_sell_mode_survive_roundtrip() {
     let (sim, rules, mut source) = fixture();
     let owner = sim.session().current_house().unwrap();
     assert!(source.begin_building_placement("UNIT", 1, owner));
+    source.foundation_latch =
+        crate::app::input::state::FoundationLatch::from_saved(Some(((8, 4), false)));
     let saved = serialized_capture(&source, &sim, &rules);
     let mut outgoing = MatchInputState::new(Default::default());
     commit(
@@ -442,6 +462,7 @@ fn saved_placement_and_sell_mode_survive_roundtrip() {
     assert_eq!(outgoing.targeting_mode, source.targeting_mode);
     assert_eq!(outgoing.building_placement_issuer(), Some(owner));
     assert!(outgoing.building_placement_preview.is_none());
+    assert_eq!(outgoing.foundation_latch, source.foundation_latch);
 
     let (_, _, idle) = fixture();
     let mut selling = SidebarGadgetState::new();
@@ -454,4 +475,20 @@ fn saved_placement_and_sell_mode_survive_roundtrip() {
         .commit_into(&mut outgoing, &mut sidebar);
     assert!(sidebar.sell_mode_on && !sidebar.repair_mode_on);
     assert_eq!(outgoing.targeting_mode, None);
+}
+
+/// MouseLoad 5BDF70 restores TabClass IsCommandBarOpen (+0x5544) with the raw
+/// Mouse body, so a bar saved closed stays closed over an outgoing open bar.
+#[test]
+fn saved_closed_command_bar_survives_roundtrip() {
+    let (sim, rules, idle) = fixture();
+    let mut closed = SidebarGadgetState::new();
+    closed.command_bar_closed = true;
+    let saved = serialized_capture_with(&idle, &closed, &sim, &rules);
+    let mut sidebar = SidebarGadgetState::new();
+    let mut outgoing = MatchInputState::new(Default::default());
+    PreparedSavedLocalView::new(saved, &sim, &rules)
+        .unwrap()
+        .commit_into(&mut outgoing, &mut sidebar);
+    assert!(sidebar.command_bar_closed);
 }

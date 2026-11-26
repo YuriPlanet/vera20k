@@ -254,7 +254,7 @@ fn assemble_type(rules: &RuleSet, type_id: &str, layers: Vec<Value>) -> Result<V
         "limits": [
             "Fields come from the final Rust scenario RuleSet, including its constructors/readers/post-passes; this report alone establishes no new native equivalence.",
             "Jumpjet parameters are stored type values on every ObjectType, independent of JumpJet. Locomotor Link conversions/clamps and live flight state are not applied.",
-            "Rules inspection executes the supported noncampaign skirmish path with the special TMCJ4F flag absent; campaign passes, LANGRULE Digest handling and that flagged extra pass are not modeled.",
+            "Rules inspection executes the supported noncampaign skirmish path, including the LANGRULE Digest check, with the THETEAM flag absent; campaign passes and the TMCJ4F pass are not run.",
             "Existing production parser/reader residuals remain; no replacement parser or type loader is used."
         ],
     }))
@@ -282,7 +282,7 @@ fn assemble(
         "result_kind": "production_ini_accessor",
         "limits": [
             "An accessor result is not a final gameplay field: constructors, type allocation timing, field-specific defaults/clamps, art indirection and post-read passes may change it.",
-            "Rules inspection executes the supported noncampaign skirmish path with the special TMCJ4F flag absent; campaign passes, LANGRULE Digest handling and that flagged extra pass are not modeled.",
+            "Rules inspection executes the supported noncampaign skirmish path, including the LANGRULE Digest check, with the THETEAM flag absent; campaign passes and the TMCJ4F pass are not run.",
             "Authored values reflect the production byte parser: empty values are omitted and duplicate-key resolution retains its documented stock-inert residual.",
             "Reader residuals remain: malformed ReadDouble/coord values use deterministic Rust recovery; ReadRange overflow differs from native. No new native equivalence is claimed."
         ],
@@ -334,7 +334,8 @@ fn run_inner(
     ) {
         log::warn!("Could not enumerate retail skirmish scenarios: {error:#}");
     }
-    let roster = select_ini(assets, "MPModesMD.ini")?;
+    let roster_name = assets.ini_roots().modes().to_owned();
+    let roster = select_ini(assets, &roster_name)?;
     let modes = crate::skirmish_modes::skirmish_modes_from_selected_ini(
         assets,
         &roster.ini,
@@ -343,8 +344,8 @@ fn run_inner(
     .map_err(|e| e.to_string())?;
     let id = options.mode_id.expect("validated mode id");
     let mode = crate::skirmish_modes::mode_by_id(&modes, id)
-        .ok_or_else(|| format!("mode id {id} is absent from MPModesMD.ini"))?;
-    if !mode.class.lists_in_skirmish() {
+        .ok_or_else(|| format!("mode id {id} is absent from {roster_name}"))?;
+    if !mode.class.policy().lists_in_skirmish {
         return Err(format!(
             "mode id {id} is not in the supported noncampaign skirmish list"
         ));
@@ -358,7 +359,14 @@ fn run_inner(
     // App match loading activates theater archives after selecting startup
     // sources and before resolving the mode override. Follow that route;
     // headless's older pre-theater mode lookup is not the claimed path.
-    crate::map::theater::load_theater(assets, &map.map.header.theater).ok_or_else(|| {
+    crate::map::theater::load_scenario_theater(
+        assets,
+        &map.map.header.theater,
+        &map.map.ini,
+        false,
+    )
+    .map_err(|error| format!("{error:#}"))?
+    .ok_or_else(|| {
         format!(
             "load theater {} for app rule-source selection",
             map.map.header.theater
@@ -434,7 +442,7 @@ fn run_inner(
     Ok(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     use crate::rules::process_owner::NativeRulesProcessOwner;
@@ -449,16 +457,19 @@ mod tests {
     }
 
     #[test]
-    fn ini_roots_art_probe_reads_selected_mo_source_and_reports_choice() {
+    fn ini_roots_art_probe_reads_custom_source_and_reports_choice() {
         use crate::util::ini_roots::{IniProfile, IniRootConfig};
         let dir = crate::map::source::test_support::TestDirectory::new("ini-roots-art-tool");
-        dir.write("rulesmo.ini", b"[General]\nBuildSpeed=.7\n");
-        dir.write("artmo.ini", b"[TEST]\nVoxel=yes\n");
-        dir.write("aimo.ini", b"[Marker]\nValue=MO\n");
+        dir.write("custom-rules.ini", b"[General]\nBuildSpeed=.7\n");
+        dir.write("custom-art.ini", b"[TEST]\nVoxel=yes\n");
+        dir.write("custom-ai.ini", b"[Marker]\nValue=custom\n");
         dir.write("artmd.ini", b"[TEST]\nVoxel=no\n");
         let mut assets = AssetManager::from_loose_root_for_test(dir.path())
             .with_ini_roots(&IniRootConfig {
-                profile: IniProfile::Mo,
+                profile: IniProfile::Custom,
+                rules: Some("custom-rules.ini".into()),
+                art: Some("custom-art.ini".into()),
+                ai: Some("custom-ai.ini".into()),
                 ..Default::default()
             })
             .unwrap();
@@ -472,10 +483,10 @@ mod tests {
             &options("bool", "false"),
         )
         .unwrap();
-        assert_eq!(report["ini_roots"]["art"], "artmo.ini");
+        assert_eq!(report["ini_roots"]["art"], "custom-art.ini");
         assert_eq!(
             report["authored_layers"][0]["source"]["logical_name"],
-            "artmo.ini"
+            "custom-art.ini"
         );
         assert_eq!(report["accessor_result"], serde_json::json!(true));
     }
@@ -720,8 +731,13 @@ mod tests {
     #[ignore = "requires retail YR installation containing RiverRam.yro; run explicitly"]
     fn retail_yro_scenario_inspection_uses_retained_discovery() {
         let retail = std::path::PathBuf::from(std::env::var("RA2_DIR").expect("set RA2_DIR"));
-        let mut assets =
-            crate::asset_tools::root::open_manager(&retail, false).expect("retail manager");
+        let mut assets = crate::asset_tools::root::open_manager(
+            &retail,
+            false,
+            Default::default(),
+            &crate::util::archive_names::ArchiveNames::default(),
+        )
+        .expect("retail manager");
         let query = IniOptions {
             domain: Some("rules".into()),
             reader: Some("speed".into()),

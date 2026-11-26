@@ -1316,6 +1316,15 @@ impl Window {
             .maybe_queue_on_main(move |w| w.set_ime_allowed(allowed))
     }
 
+    /// Horizon extension: the text the software keyboard should start from.
+    /// An edit opens the keyboard pre-filled with its own content so that
+    /// confirming replaces the value instead of appending to it.
+    pub fn set_ime_initial_text(&self, text: &str) {
+        let owned = text.to_owned();
+        self.window
+            .maybe_queue_on_main(move |w| w.set_ime_initial_text(&owned))
+    }
+
     /// Sets the IME purpose for the window using [`ImePurpose`].
     ///
     /// ## Platform-specific

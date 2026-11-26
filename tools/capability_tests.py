@@ -78,13 +78,6 @@ class Capability:
 # compile-covered only, as `npatch` is until its first chain lands.
 CAPABILITIES: tuple[Capability, ...] = (
     Capability(
-        "ares",
-        ("ares",),
-        "Ares extension behaviour; its tests are gated per module and named "
-        "ares_* where they are dedicated.",
-        focus=("ares_",),
-    ),
-    Capability(
         "phobos",
         ("phobos",),
         "Phobos extension behaviour: custom radiation types, superweapon "
@@ -104,6 +97,21 @@ CAPABILITIES: tuple[Capability, ...] = (
         test=False,
     ),
     Capability(
+        "verax",
+        ("verax",),
+        "VERA20K's own first-party extension: the VeraX-gated autoload, "
+        "hotkey and skirmish chains.",
+        focus=("autoload",),
+    ),
+    Capability(
+        "npbug",
+        ("npbug",),
+        "VERA20K's opt-in NPBUG bug-fix extension: gameplay corrections "
+        "adopted from the NPExt changelog, deliberately deviating from "
+        "native behaviour only when compiled in.",
+        focus=("npbug_",),
+    ),
+    Capability(
         "debug-tools",
         ("debug-tools",),
         "Diagnostic builds: the browser dashboard, offline trainer and "
@@ -116,29 +124,53 @@ CAPABILITIES: tuple[Capability, ...] = (
         "trainer/event hooks debug-tools adds.",
     ),
     Capability(
-        "horizon-client",
-        ("horizon-client",),
-        "Switch client integration; device validation uses the standalone Horizon build.",
+        "perf",
+        ("perf",),
+        "Offline performance recording: a per-frame CSV of every SIM and "
+        "render phase and the path, process and GPU counters under perf/.",
+        focus=("perf_recorder",),
+    ),
+    Capability(
+        "wasm",
+        ("wasm",),
+        "Browser host support; desktop feature-isolation compilation. The "
+        "separate WebAssembly workflow builds the browser target.",
         test=False,
     ),
     Capability(
-        "horizon-frame-profile",
-        ("horizon-frame-profile",),
-        "Optional Switch frame profiling; absent from the shipping client.",
+        "wasm-net",
+        ("wasm-net",),
+        "Optional browser networking; desktop feature-isolation compilation. "
+        "The separate WebAssembly workflow builds the browser target.",
+        test=False,
+    ),
+    Capability(
+        "wasm-lan",
+        ("wasm-lan",),
+        "Optional browser LAN play over WebRTC; desktop feature-isolation "
+        "compilation. The separate WebAssembly workflow builds the browser target.",
+        test=False,
+    ),
+    Capability(
+        "wasm-threads",
+        ("wasm-threads",),
+        "Browser simulation work on a Web Worker pool; desktop feature-isolation "
+        "compilation. `tools/wasm/build.py --threads` builds the browser target.",
         test=False,
     ),
 )
 
-# The capability mixes #2797 declares meaningful: the three extension flags are
-# orthogonal, so every pair and the triple are compiled, plus the diagnostic
-# build over the triple. Combinations are compile-covered; each capability is
-# tested on its own so the matrix stays bounded.
+# The capability mixes #2797 declares meaningful: the extension flags are
+# orthogonal, so every pair of them is compiled, then all of them together, and
+# the diagnostic build over all of them. Ares needs no flag: it is in every
+# build and switches on from a game's data. Combinations are compile-covered;
+# each capability is tested on its own so the matrix stays bounded.
 COMBINATIONS: tuple[tuple[str, ...], ...] = (
-    ("ares", "phobos"),
-    ("ares", "npatch"),
     ("phobos", "npatch"),
-    ("ares", "phobos", "npatch"),
-    ("debug-tools", "ares", "phobos", "npatch"),
+    ("phobos", "npbug"),
+    ("npatch", "npbug"),
+    ("phobos", "npatch", "npbug"),
+    ("debug-tools", "phobos", "npatch", "npbug"),
 )
 
 BY_NAME = {capability.name: capability for capability in CAPABILITIES}
@@ -201,22 +233,11 @@ def command_focus(capability_name: str, extra: Sequence[str]) -> int:
     if not spec.focus:
         print(f"{capability_name} has no dedicated module selectors; use `test`")
         return 0
-    status = 0
-    for package in (CORE, CLIENT):
-        current = run_cargo(
-            [
-                "test",
-                "-p",
-                package,
-                "--lib",
-                "--features",
-                spec.flag,
-                "--",
-                *spec.focus,
-                *extra,
-            ]
-        )
-        status = status or current
+    # One run over both crates: a selector may name tests in only one of them,
+    # and tools/cargo_run.py fails a run in which no test matched at all.
+    status = run_cargo(
+        ["test", "--workspace", "--lib", "--features", spec.flag, "--", *spec.focus, *extra]
+    )
     if status == 0:
         print(f"focused {capability_name} on {', '.join(spec.focus)}")
     return status

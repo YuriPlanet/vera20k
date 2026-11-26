@@ -1,4 +1,4 @@
-; Windows installer for VERA. The Release workflow (.github/workflows/release.yml)
+; Windows installer for VERA20K. The Release workflow (.github/workflows/release.yml)
 ; compiles it with the Inno Setup compiler pinned in the workflow:
 ;
 ;   ISCC /DAppVersion=<x.y.z> /DBuild=<YYYYMMDD-HHMMSS> /DPackageDir=<package folder>
@@ -10,10 +10,16 @@
 ; folder as ra2_dir and the install folder as settings_dir. Shortcuts start the
 ; program in its install folder, so logs, saves, replays and its VERA.INI stay
 ; there and never touch the game folder, which may be read-only or shared with
-; the original game.
+; the original game. It makes the Mods folder there too, where a player puts
+; their mods (docs/modding.md), with a Start menu shortcut to it.
 ;
 ; A silent install takes the game folder from /GAMEDIR=<folder>, or else uses
 ; the one it would offer.
+;
+; The game's updater (src/app/updater) runs a newer setup with /SILENT
+; /UPDATE=<the game's process id> /DIR=<its install folder>: setup waits for
+; that process to exit, keeps config.toml exactly as it is, replaces the program
+; files and starts the game again.
 ;
 #ifndef AppVersion
   #error Define AppVersion, Build, PackageDir, OutputDir and OutputBaseFilename
@@ -25,19 +31,35 @@
 [Setup]
 ; Fixed for the life of the program: upgrades find the previous install by it.
 AppId={{9C9BFC32-A7B8-48ED-A428-72333354BDDB}
-AppName=VERA
+AppName=VERA20K
 AppVersion={#AppVersion}
 ; The version and build, which stay true when a release republishes this
 ; installer under a plain name.
-AppVerName=VERA {#AppVersion} (build {#Build})
-AppPublisher=VERA
+AppVerName=VERA20K {#AppVersion} (build {#Build})
+AppPublisher=VERA20K
 AppPublisherURL=https://github.com/YuriPlanet/vera20k
 AppSupportURL=https://github.com/YuriPlanet/vera20k/issues
 AppUpdatesURL=https://github.com/YuriPlanet/vera20k/releases
 VersionInfoVersion={#AppVersion}
+VersionInfoProductName=VERA20k
+VersionInfoProductVersion={#AppVersion}
+#ifdef SignedUninstallerDir
+; External signing preserves Inno's generated cache filename across compiles.
+SignedUninstaller=yes
+SignedUninstallerDir={#SignedUninstallerDir}
+#endif
 ; Per user: {autopf} is %LOCALAPPDATA%\Programs, which the program can write to.
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\VERA
+DefaultDirName={autopf}\VERA20K
+; An upgrade keeps the folder of the install it replaces, unless its drive is gone.
+UsePreviousAppDir=PreviousDriveExists
+; Setup never closes other programs. By default a silent Setup shuts down every
+; application that Windows' Restart Manager reports as using vera20k.exe,
+; whatever it is: on GitHub's Windows runner that was the runner's own job
+; process (provjobd), which ended the job. The game's updater waits for the game
+; to exit (InitializeSetup); a file still held fails the install, with the
+; reason in Setup's log.
+CloseApplications=no
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -47,7 +69,7 @@ DisableWelcomePage=no
 ShowLanguageDialog=auto
 ; Use Inno Setup's built-in setup icon and wizard images.
 UninstallDisplayIcon={app}\vera20k.exe
-UninstallDisplayName=VERA
+UninstallDisplayName=VERA20K
 SourceDir={#PackageDir}
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
@@ -62,8 +84,8 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 ; Credit the actual compiler in the title bar; keep the standard footer clear.
 english.SetupWindowTitle=Setup - %1 | Inno Setup {#DecodeVer(Ver)}
 chinesesimplified.SetupWindowTitle=安装 - %1 | Inno Setup {#DecodeVer(Ver)}
-english.WelcomeLabel2=VERA is a community-built engine for Yuri's Revenge.%n%nRequires game files from your own copy of Yuri's Revenge 1.001.
-chinesesimplified.WelcomeLabel2=VERA 是由社区开发的《尤里的复仇》游戏引擎。%n%n需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
+english.WelcomeLabel2=VERA20K is a community-built engine for Yuri's Revenge.%n%nRequires game files from your own copy of Yuri's Revenge 1.001.
+chinesesimplified.WelcomeLabel2=VERA20K 是由社区开发的《尤里的复仇》游戏引擎。%n%n需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
 
 [CustomMessages]
 english.GameDirCaption=Yuri's Revenge folder
@@ -106,13 +128,14 @@ english.GameCheckRequiredHeading=Required files - must be fixed:
 english.GameCheckOptionalHeading=Optional content - installation can continue:
 english.GameCheckFailed=Setup could not check this folder. Choose another folder or try again.%n%1
 english.GameCheckNoFolder=No game folder was selected.
-english.ConfigNotWritten=Setup could not write %1.
+english.FileNotWritten=Setup could not write %1.
 english.ReadyFiles=Files to install / replace:
 english.ReadyChanges=Other changes:
 english.ReadyConfigNew=Create config.toml with the selected game folder.
 english.ReadyConfigExisting=Keep config.toml settings; update the game-folder path.
 english.ReadyExtras=Add an Inno Setup uninstaller and a Start menu shortcut.
-english.ReadyPreserved=Existing saves, replays and personal settings are kept.
+english.ReadyMods=Create a Mods folder for your mods, with a Start menu shortcut to it.
+english.ReadyPreserved=Existing saves, replays, mods and personal settings are kept.
 chinesesimplified.GameDirCaption=《尤里的复仇》文件夹
 chinesesimplified.GameDirDescription=《尤里的复仇》安装在哪里？
 chinesesimplified.GameDirSubCaption=请选择一个安装，或浏览其他文件夹。
@@ -153,13 +176,14 @@ chinesesimplified.GameCheckRequiredHeading=必需文件 - 必须修复：
 chinesesimplified.GameCheckOptionalHeading=可选内容 - 可以继续安装：
 chinesesimplified.GameCheckFailed=安装程序无法检查此文件夹。请选择其他文件夹或重试。%n%1
 chinesesimplified.GameCheckNoFolder=尚未选择游戏文件夹。
-chinesesimplified.ConfigNotWritten=安装程序无法写入 %1。
+chinesesimplified.FileNotWritten=安装程序无法写入 %1。
 chinesesimplified.ReadyFiles=将安装或替换的文件：
 chinesesimplified.ReadyChanges=其他更改：
 chinesesimplified.ReadyConfigNew=创建 config.toml，记录所选游戏文件夹。
 chinesesimplified.ReadyConfigExisting=保留 config.toml 中的设置，仅更新游戏文件夹路径。
 chinesesimplified.ReadyExtras=添加 Inno Setup 卸载程序和开始菜单快捷方式。
-chinesesimplified.ReadyPreserved=保留已有的存档、录像和个人设置。
+chinesesimplified.ReadyMods=创建用于存放模组的 Mods 文件夹，并在开始菜单添加它的快捷方式。
+chinesesimplified.ReadyPreserved=保留已有的存档、录像、模组和个人设置。
 
 [Files]
 Source: "vera20k.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -167,24 +191,52 @@ Source: "config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE-GPL"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
+; Microsoft's DirectX Shader Compiler (fetch-dxc.ps1): wgpu compiles the
+; DirectX 12 shaders with it when it sits beside the game.
+Source: "dxcompiler.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE-DXC.txt"; DestDir: "{app}"; Flags: ignoreversion
+; Every language but English and the fonts behind them. Deleting a language's
+; files removes it from the game until the next update.
+Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
+Source: "Terrain\vera_ice.mix"; DestDir: "{app}\Terrain"; Flags: ignoreversion
+Source: "Terrain\vera_ice_tiles.ini"; DestDir: "{app}\Terrain"; Flags: ignoreversion
+; The player's map folder can already contain an edited copy.
+Source: "Maps\Arctic_Circle_16_Ice_Passages.map"; DestDir: "{app}\Maps"; Flags: onlyifdoesntexist uninsneveruninstall; Check: NeedsArcticMap
+
+[Dirs]
+; Where a player puts their mods, one folder each. The game makes it too, for
+; the systems without this installer. It is the player's: an uninstall keeps it.
+Name: "{app}\Mods"; Flags: uninsneveruninstall
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Icons]
-Name: "{autoprograms}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\VERA20K Mods"; Filename: "{app}\Mods"
+Name: "{autodesktop}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [InstallDelete]
 ; AppId and the previous install directory still identify upgrades. Replace
-; our old shortcuts so an upgrade has one visible product name.
-Type: files; Name: "{autoprograms}\VERA20K.lnk"
-Type: files; Name: "{autodesktop}\VERA20K.lnk"
+; the shortcuts that 0.2.x installers named VERA, so an upgrade has one
+; visible product name.
+Type: files; Name: "{autoprograms}\VERA.lnk"
+Type: files; Name: "{autodesktop}\VERA.lnk"
+; Releases before the Bink decoder and xBR scaler moved to the GPLv3 installed
+; the LGPL's text, which no file is under now.
+Type: files; Name: "{app}\LGPL-2.1-or-later.txt"
+; The folder is the release's, so a language it no longer has does not stay.
+Type: filesandordirs; Name: "{app}\languages"
 
 [Run]
-Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA20K}"; Flags: nowait postinstall skipifsilent
+; An update the game started returns the player to the game.
+Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent; Check: IsGameUpdate
 
 [Code]
+const
+  ArcticMapReceipt = '{app}\Maps\.Arctic_Circle_16_Ice_Passages.installed';
+
 type
   TGameSource = (gsManual, gsDetected, gsSteam, gsEAApp);
   TGameInstallation = record
@@ -203,6 +255,54 @@ var
   RecommendedInstall: Integer;
   InstallationsScanned, UpdatingSelection: Boolean;
   RequiredIssues, OptionalIssues: String;
+
+function OpenProcess(DesiredAccess: DWORD; InheritHandle: BOOL; ProcessId: DWORD): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: DWORD): DWORD;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+{ The game's process id when its updater started this setup (/UPDATE=), else 0. }
+function UpdatingGame(): DWORD;
+begin
+  Result := StrToIntDef(ExpandConstant('{param:UPDATE|0}'), 0);
+end;
+
+{ An update of an installed game keeps its config.toml, and with it the game
+  folder and settings, exactly as they are. }
+function IsGameUpdate(): Boolean;
+begin
+  Result := False;
+  if UpdatingGame() <> 0 then
+    Result := FileExists(AddBackslash(WizardDirValue()) + 'config.toml');
+end;
+
+{ The game quits once it has started this setup: wait until it has exited, so
+  its files can be replaced. }
+function InitializeSetup(): Boolean;
+var
+  Game: THandle;
+begin
+  Result := True;
+  if UpdatingGame() = 0 then
+    Exit;
+  { SYNCHRONIZE; 0 means it has already exited. }
+  Game := OpenProcess($00100000, False, UpdatingGame());
+  if Game <> 0 then
+  begin
+    if WaitForSingleObject(Game, 60000) <> 0 then
+      Log('The game had not exited after a minute');
+    CloseHandle(Game);
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (PageID = GameDirPage.ID) or (PageID = GameCheckPage.ID) then
+    Result := IsGameUpdate();
+end;
 
 function NormalizeGameDir(Dir: String): String;
 begin
@@ -235,6 +335,18 @@ begin
       Value := ExtractFileDir(Value);
     Result := RemoveBackslashUnlessRoot(Value);
   end;
+end;
+
+{ [Setup] UsePreviousAppDir. An upgrade takes the previous folder without showing
+  Setup's folder page, and Inno first checks it once installing has started
+  (Inno 7.1.0: Setup.MainForm.pas:201), where a drive that is gone, such as a
+  memory card now under another letter, can only end Setup. Forgetting that
+  folder brings the page back, offering the default one. }
+function PreviousDriveExists(): Boolean;
+begin
+  Result := DirExists(AddBackslash(ExtractFileDrive(RegistryDir(HKA,
+    ExpandConstant('Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1'),
+    'Inno Setup: App Path', False))));
 end;
 
 procedure AddCandidate(var Candidates: TGameInstallations; Dir: String; Source: TGameSource);
@@ -743,7 +855,10 @@ end;
 
 procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
-  SetPreviousData(PreviousDataKey, 'GameDir', GameDir());
+  if IsGameUpdate() then
+    SetPreviousData(PreviousDataKey, 'GameDir', GetPreviousData('GameDir', ''))
+  else
+    SetPreviousData(PreviousDataKey, 'GameDir', GameDir());
 end;
 
 procedure AppendReadySection(var Memo: String; Section, NewLine: String);
@@ -761,7 +876,7 @@ var
   ConfigInfo: String;
 begin
   { Use the standard Ready memo and retain Inno Setup's normal sections.
-    Keep the filenames below aligned with the five packaged [Files] entries. }
+    Keep the filenames below aligned with the packaged [Files] entries. }
   Result := '';
   AppendReadySection(Result, MemoUserInfoInfo, NewLine);
   AppendReadySection(Result, MemoDirInfo, NewLine);
@@ -769,14 +884,17 @@ begin
   AppendReadySection(Result, MemoComponentsInfo, NewLine);
   AppendReadySection(Result, MemoGroupInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
-    Space + 'vera20k.exe, config.toml.example, README.txt' + NewLine +
-    Space + 'LICENSE-GPL, THIRD_PARTY_LICENSES.html', NewLine);
+    Space + 'vera20k.exe, dxcompiler.dll, config.toml.example, README.txt' + NewLine +
+    Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages' + NewLine +
+    Space + 'Maps\Arctic_Circle_16_Ice_Passages.map' + NewLine +
+    Space + 'Terrain\vera_ice.mix, Terrain\vera_ice_tiles.ini', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else
     ConfigInfo := CustomMessage('ReadyConfigNew');
   AppendReadySection(Result, CustomMessage('ReadyChanges') + NewLine +
-    Space + ConfigInfo + NewLine + Space + CustomMessage('ReadyExtras'), NewLine);
+    Space + ConfigInfo + NewLine + Space + CustomMessage('ReadyExtras') + NewLine +
+    Space + CustomMessage('ReadyMods'), NewLine);
   AppendReadySection(Result, MemoTasksInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyPreserved') + NewLine +
     CustomMessage('GameInstallUntouched'), NewLine);
@@ -854,7 +972,7 @@ begin
   if FileExists(ConfigPath) then
   begin
     if not LoadStringsFromFile(ConfigPath, Lines) then
-      RaiseException(FmtMessage(CustomMessage('ConfigNotWritten'), [ConfigPath]));
+      RaiseException(FmtMessage(CustomMessage('FileNotWritten'), [ConfigPath]));
     SetPathsKey(Lines, 'ra2_dir', Folder);
   end
   else
@@ -865,11 +983,23 @@ begin
     SetPathsKey(Lines, 'settings_dir', '.');
   end;
   if not SaveStringsToUTF8FileWithoutBOM(ConfigPath, Lines, False) then
-    RaiseException(FmtMessage(CustomMessage('ConfigNotWritten'), [ConfigPath]));
+    RaiseException(FmtMessage(CustomMessage('FileNotWritten'), [ConfigPath]));
+end;
+
+{ The game uses the same receipt to preserve a player's deletion after launch. }
+function NeedsArcticMap(): Boolean;
+begin
+  Result := not FileExists(ExpandConstant(ArcticMapReceipt));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    WriteConfig();
+  begin
+    if NeedsArcticMap() and FileExists(ExpandConstant('{app}\Maps\Arctic_Circle_16_Ice_Passages.map')) then
+      if not SaveStringToFile(ExpandConstant(ArcticMapReceipt), '', False) then
+        RaiseException(FmtMessage(CustomMessage('FileNotWritten'), [ExpandConstant(ArcticMapReceipt)]));
+    if not IsGameUpdate() then
+      WriteConfig();
+  end;
 end;

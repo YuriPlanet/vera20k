@@ -30,7 +30,7 @@ fn hut_hover(sim: &Simulation, engineer: u64, hut: u64) -> HoverTargetKindWithId
     let actor = sim.entities().get(engineer).unwrap();
     let target = sim.entities().get(hut).unwrap();
     let friendly = crate::map::houses::is_allied_with(
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         sim.resolve(actor.owner()),
         sim.resolve(target.owner()),
     );
@@ -85,6 +85,7 @@ fn resolve_hut_orders(
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     // The executed caller proves identical action for self/allied/hostile.
     // Check every relation golden, avoiding an invented expected-action formula.

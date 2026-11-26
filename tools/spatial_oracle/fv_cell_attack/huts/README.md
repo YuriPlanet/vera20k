@@ -31,8 +31,8 @@ hut gameplay projection remains identical: every hut byte, RNG word, callback,
 shot, impact and repair field above is unchanged. Raw FV timers/residuals and
 redundant frame-7 movement calls change as detailed in the [parent package](../README.md).
 The active source is `hut_joined_drive_crt.json.gz` and the active projection is
-`hut_drive_crt_vectors.json`. The prior packet and projection remain immutable
-superseded evidence; the same generator entrypoints target the corrected files. Huts join **after** the FV command; this does not establish ScenarioLoad
+`hut_drive_crt_vectors.json`. The prior projection is no longer in the
+repository (`promotion.json` keeps its digest); the same generator entrypoints target the corrected files. Huts join **after** the FV command; this does not establish ScenarioLoad
 population order. Other Buildings, Units, Infantry, initial ambient Anims, live
 Terrain AI, global Scenario/House phases and audio remain excluded. The source
 uses the inherited supplied human House; Neutral is the only fully constructed

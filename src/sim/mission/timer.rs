@@ -84,7 +84,6 @@ impl MissionDispatchTimer {
     }
 
     /// The signed wrapping remainder while dispatch is pending.
-    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn remaining_if_pending(self, now: u32) -> Option<i32> {
         let remaining = self.0.remaining(now as i32);
@@ -158,7 +157,7 @@ impl MissionTimer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 

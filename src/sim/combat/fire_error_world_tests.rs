@@ -64,7 +64,7 @@ fn bridge_row_terrain() -> crate::map::resolved_terrain::ResolvedTerrainGrid {
 
 fn bridge_scene(firer: &str) -> crate::sim::world::Simulation {
     let mut sim = crate::sim::world::Simulation::new();
-    sim.resolved_terrain = Some(bridge_row_terrain());
+    *sim.resolved_terrain = Some(bridge_row_terrain());
     spawn(
         &mut sim.substrate.entities,
         1,
@@ -82,7 +82,7 @@ fn bridge_scene(firer: &str) -> crate::sim::world::Simulation {
         (12, 10),
     );
     // After the spawns: `test_default` interns their names.
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     sim
 }
 
@@ -124,13 +124,12 @@ fn a_mapless_fire_gate_takes_the_shared_range_answer() {
         );
     }
     // After the spawns: `test_default` interns their names.
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     assert!(sim.resolved_terrain.is_none());
     let error = |firer: u64, kind: &str, target: u64| {
         crate::sim::combat::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(firer).unwrap(),
             obj: rules.object(kind).unwrap(),
@@ -144,4 +143,136 @@ fn a_mapless_fire_gate_takes_the_shared_range_answer() {
     assert_eq!(error(2, "ART", 3), FireError::Range, "inside MinimumRange");
     assert_ne!(error(2, "ART", 4), FireError::Range, "5 cells away");
     assert_eq!(error(2, "ART", 5), FireError::Range, "beyond Range");
+}
+
+/// T18 (`0x006FC2A3`): a BalloonHover target still tethered to its war
+/// factory (`+0x418`, set by the factory's TETHER) and not yet high-flying
+/// is illegal to fire at; once untethered it is a normal target.
+#[test]
+fn a_tethered_low_balloon_is_illegal_to_fire_at() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n1=ZEP\n\
+         [InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+         [TANK]\nStrength=300\nArmor=heavy\nPrimary=Gun\n\
+         [ZEP]\nStrength=300\nArmor=heavy\nBalloonHover=yes\n\
+         [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("balloon fixture rules");
+    let mut sim = crate::sim::world::Simulation::new();
+    spawn(
+        &mut sim.substrate.entities,
+        1,
+        "TANK",
+        EntityCategory::Unit,
+        "Americans",
+        (5, 5),
+    );
+    spawn(
+        &mut sim.substrate.entities,
+        2,
+        "ZEP",
+        EntityCategory::Unit,
+        "Soviet",
+        (7, 5),
+    );
+    *sim.interner = test_interner();
+    let error = |sim: &crate::sim::world::Simulation| {
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: sim,
+            rules: &rules,
+            fog: None,
+            firer: sim.substrate.entities.get(1).unwrap(),
+            obj: rules.object("TANK").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(2)),
+            weapon_index: 0,
+        }
+        .fire_error(true)
+    };
+    use crate::sim::combat::fire_error::FireError;
+    assert_ne!(error(&sim), FireError::Illegal, "untethered");
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .seldom
+        .tether
+        .set_for_test(Some(99));
+    assert_eq!(error(&sim), FireError::Illegal, "tethered to its factory");
+}
+
+/// T9 (`0x006FC13F`) compares the target with the firer's `+0x11C` before
+/// any `+0x82` test; a garrison occupant or cargo rider has no Transporter,
+/// so its carrier is not T9's `Transporter::Target`. A rider whose
+/// Transporter is set is still refused. vera20k#3838.
+#[test]
+fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=CARR\n\
+         [InfantryTypes]\n0=RIDER\n\
+         [BuildingTypes]\n[AircraftTypes]\n\
+         [CARR]\nStrength=300\nArmor=heavy\nPassengers=1\n\
+         [RIDER]\nStrength=100\nArmor=none\nPrimary=Gun\n\
+         [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("transporter fixture rules");
+    let mut sim = crate::sim::world::Simulation::new();
+    spawn(
+        &mut sim.substrate.entities,
+        1,
+        "CARR",
+        EntityCategory::Unit,
+        "Americans",
+        (10, 10),
+    );
+    let mut rider = GameEntity::test_default_of_category(
+        2,
+        "RIDER",
+        "Americans",
+        11,
+        10,
+        EntityCategory::Infantry,
+    );
+    rider.health.set_for_test(100);
+    rider.lifecycle.set_in_limbo_for_test(false);
+    sim.substrate.entities.insert(rider);
+    *sim.interner = test_interner();
+    let error = |sim: &crate::sim::world::Simulation| {
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: sim,
+            rules: &rules,
+            fog: None,
+            firer: sim.substrate.entities.get(2).unwrap(),
+            obj: rules.object("RIDER").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(1)),
+            weapon_index: 0,
+        }
+        .fire_error(true)
+    };
+    use crate::sim::combat::fire_error::FireError;
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+            1, false,
+        ));
+    assert_ne!(
+        error(&sim),
+        FireError::Illegal,
+        "a garrison occupant or cargo rider stores no Transporter"
+    );
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::boarded_for_test(
+            1, false,
+        ));
+    assert_eq!(
+        error(&sim),
+        FireError::Illegal,
+        "a rider's Transporter is the target whatever +0x82 says"
+    );
 }

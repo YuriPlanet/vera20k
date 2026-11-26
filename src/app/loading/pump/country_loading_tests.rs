@@ -14,7 +14,8 @@ fn fixture() -> (TestDirectory, ProcessAssets, LoadingSession) {
     dir.write("artmd.ini", b"[Movies]\n");
     dir.write("parent.pal", &[12; 768]);
     dir.write("child.pal", &[20; 768]);
-    let manager = AssetManager::from_loose_root_for_test(dir.path());
+    // An Ares game: its Rules are read the Ares way.
+    let manager = AssetManager::from_loose_root_with_ares_for_test(dir.path());
     let mut assets = ProcessAssets::new(
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         false,
@@ -86,6 +87,7 @@ fn bind(session: &mut LoadingSession, assets: &ProcessAssets) -> anyhow::Result<
 
 #[test]
 fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (_dir, mut assets, mut session) = fixture();
     bind(&mut session, &assets).unwrap();
     let early = session
@@ -148,7 +150,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
         prepared.request.startup().launch_session().unwrap(),
         Some(&csf),
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         &[],
     );
     composition.bind_country_loading(late, Some(&csf));
@@ -164,6 +166,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
 
 #[test]
 fn ares_country_loading_attempt_freezes_absent_palette_without_aborting_prefix() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for malformed in [false, true] {
         let (dir, mut assets, mut session) = fixture();
         if malformed {
@@ -203,6 +206,7 @@ fn ares_country_loading_attempt_freezes_absent_palette_without_aborting_prefix()
 
 #[test]
 fn ares_country_loading_attempt_failures_cancel_pending_prefix_and_preserve_actual_registry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for failed_attempt in [false, true] {
         let (_dir, mut assets, mut session) = fixture();
         let country = crate::rules::ruleset::CountryIdx(1);
@@ -248,7 +252,79 @@ fn ares_country_loading_attempt_failures_cancel_pending_prefix_and_preserve_actu
 }
 
 #[test]
+fn network_replays_skip_outgoing_country_prefix_rules() {
+    use crate::app::match_runtime::session::SessionMode;
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for mode in [SessionMode::Lan, SessionMode::Wol, SessionMode::Skirmish] {
+        let (dir, mut assets, previous) = fixture();
+        let launch = previous.stage.startup().launch_session().unwrap().clone();
+        previous.retire(&mut assets);
+        let mut request =
+            LoadingRequest::unverified_legacy_skirmish(launch.clone(), tests::unverified_seed(77));
+        request.startup = LoadingStartup::Replay {
+            launch: Box::new(
+                crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch)
+                    .unwrap(),
+            ),
+            game_mode: mode,
+            native_id_prefix: 0,
+            seed: crate::app::match_bootstrap::MatchSeed {
+                value: 77,
+                source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
+                seed_authority_certifying: false,
+            },
+        };
+        let mut session = LoadingSession::from_request(request);
+        session.job.ra2_dir = Some(dir.path().to_owned());
+        session.job.asset_manager = assets.lease_for_loading();
+        bind(&mut session, &assets).unwrap();
+        if mode.is_network() {
+            // The production initial map loader resets recorded network Rules
+            // after the early Country bind and before the optional late prefix.
+            assets
+                .native_rules_mut_with_tile_cache()
+                .0
+                .unwrap()
+                .reset_for_network_match()
+                .unwrap();
+        }
+        prepare_map(&mut session);
+        let LoadingStage::Prepared(prepared) = &mut session.stage else {
+            panic!("prepared");
+        };
+        let mut outgoing = crate::sim::world::Simulation::with_seed(77);
+        outgoing.publish_scenario_started();
+        prepare_country_loading_prefix(
+            &mut assets,
+            Some(&mut outgoing),
+            prepared,
+            session.native.as_mut().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outgoing.session().started(), mode.is_network(), "{mode:?}");
+        assert_eq!(
+            prepared.rules_prefix.is_none(),
+            mode.is_network(),
+            "{mode:?}"
+        );
+        assert_eq!(
+            session
+                .native
+                .as_ref()
+                .unwrap()
+                .early_country_loading
+                .is_none(),
+            mode.is_network(),
+            "{mode:?}"
+        );
+        session.retire(&mut assets);
+    }
+}
+
+#[test]
 fn ares_country_loading_attempt_keeps_observer_random_map_and_campaign_on_existing_routes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (_dir, mut assets, mut session) = fixture();
     let LoadingStage::Selected(request) = &mut session.stage else {
         panic!("selected");

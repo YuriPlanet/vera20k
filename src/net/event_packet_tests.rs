@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_fixture::unhex;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -62,14 +63,6 @@ fn corpus() -> Corpus {
         "tools/storage_oracle/lan_event_packets.json",
     ))
     .expect("native Event packet corpus")
-}
-
-fn unhex(text: &str) -> Vec<u8> {
-    assert!(text.len().is_multiple_of(2));
-    text.as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect()
 }
 
 fn record(text: &str, fill: u8) -> CommandRecord {
@@ -136,7 +129,8 @@ fn original_packet_bytes_mirrors_caches_and_expansion_match() {
     let controls = corpus();
     assert_eq!(controls.input_fill, 0xa5);
     assert_eq!(controls.decoded_fill, 0);
-    assert_eq!(PAYLOAD_LENGTHS.as_slice(), controls.payload_lengths);
+    let native_lengths: Vec<u8> = (0..47).filter_map(event_body_len).collect();
+    assert_eq!(native_lengths, controls.payload_lengths);
     for flow in controls.flows {
         let mut sender = EventPacketCodec::default();
         let mut receiver = EventPacketCodec::default();
@@ -183,6 +177,44 @@ fn original_packet_bytes_mirrors_caches_and_expansion_match() {
 }
 
 #[test]
+fn targeted_event_has_the_same_meaning_in_local_mirror_and_received_packet() {
+    use crate::sim::command::{SpecialPlaceRecord, TARGET_HOUSE_PAYLOAD_LEN, TargetHouseRecord};
+    let native = SpecialPlaceRecord {
+        house_id: 1,
+        frame: 42,
+        type_index: 5,
+        cell: (11, 20),
+    }
+    .encode()
+    .unwrap();
+    let mut targeted = TargetHouseRecord::encode(3, &native).unwrap();
+    targeted.payload_mut()[usize::from(TARGET_HOUSE_PAYLOAD_LEN)] = 0xa5;
+    let header = FrameInfo {
+        house_id: 1,
+        event_frame: 42,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
+    };
+    let packet = EventPacketCodec::default()
+        .encode_packet(&[&targeted], header, 42, NATIVE_EVENT_PACKET_CAPACITY)
+        .unwrap();
+    let local = TargetHouseRecord::decode(&packet.mirrors[0]).unwrap();
+    let mut remote = None;
+    EventPacketCodec::default()
+        .decode_packet(&packet.bytes, |record| {
+            if let Some(decoded) = TargetHouseRecord::decode(&record) {
+                remote = Some(decoded);
+            }
+            true
+        })
+        .unwrap();
+    assert_eq!(local.target_house, 3);
+    assert_eq!(local.command, native);
+    assert_eq!(remote, Some(local));
+}
+
+#[test]
 fn original_truncated_and_full_admission_keep_the_accepted_prefix() {
     let controls = corpus();
     for receive in controls.receives {
@@ -224,7 +256,7 @@ fn blocked_external_payload_retains_encoded_prefix_and_source() {
     let step = &controls.flows[0].steps[0];
     let source = record(&step.inputs[0], 0xa5);
     let bytes = unhex(&step.packet);
-    let extended = CommandRecord::encode(EXTENDED, 2, 25, &[0x34; 8]).unwrap();
+    let extended = CommandRecord::encode(ADD_PLAYER_OPCODE, 2, 25, &[0x34; 8]).unwrap();
     let mut codec = EventPacketCodec::default();
     let encoded = codec
         .encode_packet(&[&source, &extended], header(&bytes), 15, 558)
@@ -234,7 +266,7 @@ fn blocked_external_payload_retains_encoded_prefix_and_source() {
     assert_eq!(encoded.consumed_records(), 1);
     assert_eq!(extended.payload()[..8], [0x34; 8]);
     let mut extended_bytes = bytes;
-    extended_bytes.extend([EXTENDED, 4, 0, 0, 0, 1, 2, 3, 4]);
+    extended_bytes.extend([ADD_PLAYER_OPCODE, 4, 0, 0, 0, 1, 2, 3, 4]);
     let mut admitted = Vec::new();
     let error = codec
         .decode_packet(&extended_bytes, |record| {
@@ -244,7 +276,7 @@ fn blocked_external_payload_retains_encoded_prefix_and_source() {
         .unwrap_err();
     assert_eq!(error.kind, DecodeFailureKind::ExtendedPayload);
     assert_eq!(error.admitted_records, 2);
-    assert_eq!(error.remainder, [EXTENDED, 4, 0, 0, 0, 1, 2, 3, 4]);
+    assert_eq!(error.remainder, [ADD_PLAYER_OPCODE, 4, 0, 0, 0, 1, 2, 3, 4]);
 }
 
 #[test]

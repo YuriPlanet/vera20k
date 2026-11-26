@@ -1,173 +1,157 @@
 //! The WOL page dialogs on the shared control owners: `0xCF` over `0x113`
 //! or C2/C9, and `0x11E` over the empty backdrop. Both are the 451x326
 //! compact popup (background mode 2) with owner-draw buttons, NewEdits and
-//! an owner-draw list.
+//! an owner-draw list, their looks read from the dialogs' widgets.
 
-use std::time::Instant;
-
-use super::SHELL_LABEL_TEXT_RGB;
-use super::controls::list_controls;
-use super::text::rect_to_text_rect;
-use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint, label, push_edit, row_rgb};
+use super::gui_paint::{ButtonArt, GuiStyle, HostRows, paint_gui_styled};
+use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
-use crate::render::shell_paint::{self, ModalButton, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::lan_shell::{LanChatLine, LanListState};
-use crate::ui::shell::button::ShellButtonInteraction;
+use crate::app::frontend::state::FrontendState;
+use crate::app::renderer_state::RendererState;
+use crate::render::hud_paint::{HudPaint, Material};
+use crate::render::shell_paint;
+use crate::ui::lan_shell::LanChatLine;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::ShellListGeometry;
 use crate::ui::shell::modal::{WolPageLayout, WolPageReceivedLayout};
 use crate::ui::wol_page::*;
 
-const SCALE: ShellScale = ShellScale::RETAIL;
+const SCALE: ShellScale = crate::ui::shell::geom::RETAIL_SCALE;
 
-fn caption(
-    state: &AppState,
-    key: &str,
-    rect: RectPx,
-    align: ShellAlign,
-    enabled: bool,
-) -> PaintLabel<'static> {
-    PaintLabel {
-        text: label(state, key).into(),
-        rect,
-        align,
-        rgb: if enabled {
-            SHELL_LABEL_TEXT_RGB
-        } else {
-            shell_paint::SHELL_TEXT_RGB_DISABLED
-        },
-        path_a_reveal: None,
-    }
+/// The mode-2 paint (`0x006221D1`) picks the neutral background in the
+/// shell and the scenario side's in a match.
+fn side(state: &AppState) -> Option<crate::ui::sidebar::SidebarTheme> {
+    (state.frontend.screen == crate::app::GameScreen::InGame)
+        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state))
 }
 
-fn button_caption(
-    state: &AppState,
-    key: &str,
-    rect: RectPx,
-    buttons: &ShellButtonInteraction<u16>,
-    id: u16,
-    enabled: bool,
-) -> PaintLabel<'static> {
-    caption(
-        state,
-        key,
-        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-            rect,
-            buttons.is_pressed(id),
-        ),
-        ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
-        enabled,
-    )
-}
-
-/// The frame, scrollbar and rows of a transcript.
-fn paint_transcript(
-    paint: &mut WolLobbyPaint,
-    state: &AppState,
-    geometry: ShellListGeometry,
-    list: &LanListState,
-    lines: &[LanChatLine],
-    selectable: bool,
-) {
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
-        return;
-    };
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        geometry,
-        list,
-        selectable,
-        SCALE,
-    );
-    for (visible, line) in lines
-        .iter()
-        .skip(list.top_index)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let row = geometry.row(visible);
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            &state.renderer.bit_font,
-            &String::from_utf16_lossy(&line.text),
-            rect_to_text_rect(RectPx::new(row.x + 2, row.y, row.w - 2, row.h)),
-            row_rgb(line.color),
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            POPUP_DEPTHS.text,
-            SCALE.factor(),
-        ));
-    }
-}
-
-/// Draw the box first, then its children over it. The mode-2 paint
+/// The box, for its children to draw over it. The mode-2 paint
 /// (`0x006221D1`) picks the neutral background in the shell and the
 /// scenario side's in a match.
-fn paint_box(
-    state: &AppState,
-    dialog: RectPx,
-    buttons: &[ModalButton],
-    labels: &[PaintLabel],
-) -> WolLobbyPaint {
+fn paint_box(state: &AppState, dialog: RectPx) -> WolLobbyPaint {
+    paint_box_on(state, dialog, SCALE)
+}
+
+fn paint_box_on(state: &AppState, dialog: RectPx, scale: ShellScale) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
         return paint;
     };
-    let side = (state.frontend.screen == crate::app::GameScreen::InGame)
-        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
-    let draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        atlas.mode_two_dialog_background(side),
+    paint.controls = shell_paint::paint_modal_sprites(
+        atlas.mode_two_dialog_background(side(state)),
         super::type3_button_frames(atlas),
         dialog,
-        buttons,
-        labels,
-        SCALE,
+        &[],
+        scale,
         POPUP_DEPTHS,
     );
-    paint.controls = draw.sprites;
-    paint.texts.extend(draw.text);
     paint
 }
 
+/// Appends a widget paint's sprites and texts to the box's.
+fn extend(paint: &mut WolLobbyPaint, widgets: HudPaint) {
+    paint
+        .controls
+        .extend(widgets.lane(Material::Controls).copied());
+    paint.texts.extend(widgets.texts);
+}
+
+/// `dialog`'s box and its widgets over it: owner-draw buttons, NewEdits and
+/// the transcript, with the statics and rows its model keeps.
+fn paint_widget_box(
+    state: &AppState,
+    dialog: DialogResourceId,
+    rect: RectPx,
+    text_of: &dyn Fn(i32) -> Option<String>,
+    rows_of: &dyn Fn(i32) -> Option<HostRows>,
+) -> WolLobbyPaint {
+    let mut paint = paint_box(state, rect);
+    let c = &state.frontend.shell_controller;
+    let Some(root) = c.root_in(dialog) else {
+        return paint;
+    };
+    let style = GuiStyle {
+        text_of: Some(text_of),
+        rows_of: Some(rows_of),
+        ..GuiStyle::popup()
+    };
+    extend(
+        &mut paint,
+        paint_gui_styled(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            c.gui(),
+            root,
+            SCALE,
+            &[],
+            style,
+        ),
+    );
+    paint
+}
+
+/// A transcript's rows with their colours.
+fn rows(lines: &[LanChatLine]) -> HostRows {
+    let text = |line: &LanChatLine| String::from_utf16_lossy(&line.text);
+    lines.iter().map(|line| (text(line), line.color)).collect()
+}
+
 /// The WOL tournament Surrender box: `0x005C60D0`'s ShellMessageBox `0x120`
-/// with `TXT_SURRENDER` over OK `0x5AE` and Cancel (control 2).
+/// with `TXT_SURRENDER` over OK `0x5AE` and Cancel (control 2), from its
+/// nodes ([`crate::app::input::surrender::sync`]).
 fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
-    use crate::app::input::surrender::SurrenderButton;
-    let layout = crate::app::input::surrender::layout(state);
-    let buttons = &state.match_state.match_presentation.surrender_buttons;
-    let ok = buttons.is_pressed(SurrenderButton::Ok);
-    let cancel = buttons.is_pressed(SurrenderButton::Cancel);
-    let centre = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-    let label_rect = crate::app::frontend::shell_pass::owner_draw_button_label_rect;
-    paint_box(
-        state,
-        layout.dialog,
-        &[
-            ModalButton {
-                rect: layout.ok,
-                pressed: ok,
-                enabled: true,
-            },
-            ModalButton {
-                rect: layout.cancel,
-                pressed: cancel,
-                enabled: true,
-            },
-        ],
-        &[
-            caption(state, "TXT_SURRENDER", layout.body, ShellAlign::NONE, true),
-            caption(state, "TXT_OK", label_rect(layout.ok, ok), centre, true),
-            caption(
-                state,
-                "TXT_CANCEL",
-                label_rect(layout.cancel, cancel),
-                centre,
-                true,
-            ),
-        ],
-    )
+    use crate::app::input::surrender::{self, BODY, SurrenderButton};
+    let layout = surrender::layout(&state.renderer, &state.frontend.screen);
+    let mut paint = paint_box(state, layout.dialog);
+    let Some(root) = surrender::root(&state.match_state.match_presentation) else {
+        return paint;
+    };
+    let text_of = |id: i32| -> Option<String> {
+        let key = match u16::try_from(id).ok()? {
+            BODY => "TXT_SURRENDER",
+            0x5AE => "TXT_OK",
+            2 => "TXT_CANCEL",
+            _ => return None,
+        };
+        Some(state.csf_text(key))
+    };
+    let pressed_of = |id: i32| match id {
+        0x5AE => Some(surrender::pressed(
+            &state.match_state.match_presentation,
+            SurrenderButton::Ok,
+        )),
+        2 => Some(surrender::pressed(
+            &state.match_state.match_presentation,
+            SurrenderButton::Cancel,
+        )),
+        _ => None,
+    };
+    let style = GuiStyle {
+        buttons: ButtonArt::Modal,
+        text_of: Some(&text_of),
+        pressed_of: Some(&pressed_of),
+        ..GuiStyle::default()
+    };
+    let gui = state.match_state.match_presentation.dialog_ui.gui();
+    extend(
+        &mut paint,
+        paint_gui_styled(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            gui,
+            root,
+            SCALE,
+            &[],
+            style,
+        ),
+    );
+    paint
 }
 
 /// `0xCF`: no title; the name, text, transcript, status and two buttons.
@@ -176,81 +160,9 @@ pub(crate) fn paint_wol_page_dialog(
     page: &WolPageDialog,
     layout: &WolPageLayout,
 ) -> WolLobbyPaint {
-    let labels = vec![
-        // SS_RIGHT, then two left-aligned statics.
-        caption(
-            state,
-            "GUI:PageBuddy",
-            layout.name_label,
-            ShellAlign::H_RIGHT,
-            true,
-        ),
-        caption(
-            state,
-            "GUI:TextToSend",
-            layout.text_label,
-            ShellAlign::NONE,
-            true,
-        ),
-        caption(
-            state,
-            "GUI:FindStatus",
-            layout.status_label,
-            ShellAlign::NONE,
-            true,
-        ),
-        PaintLabel {
-            text: page.status.clone().into(),
-            rect: layout.status,
-            align: ShellAlign::NONE,
-            rgb: SHELL_LABEL_TEXT_RGB,
-            path_a_reveal: None,
-        },
-        button_caption(
-            state,
-            "GUI:Page",
-            layout.send,
-            &page.buttons,
-            SEND,
-            page.send_enabled,
-        ),
-        button_caption(
-            state,
-            "GUI:Cancel",
-            layout.cancel,
-            &page.buttons,
-            CANCEL,
-            true,
-        ),
-    ];
-    let buttons = [
-        ModalButton {
-            rect: layout.send,
-            pressed: page.buttons.is_pressed(SEND),
-            enabled: page.send_enabled,
-        },
-        ModalButton {
-            rect: layout.cancel,
-            pressed: page.buttons.is_pressed(CANCEL),
-            enabled: true,
-        },
-    ];
-    let mut paint = paint_box(state, layout.dialog, &buttons, &labels);
-    let caret = caret_visible(page.focus_at, Instant::now());
-    for (edit, rect) in [(&page.name, layout.name), (&page.text, layout.text)] {
-        push_edit(
-            &mut paint,
-            state,
-            edit,
-            rect,
-            edit.focused && caret,
-            SCALE,
-            POPUP_DEPTHS.text,
-        );
-    }
-    let geometry = crate::app::shell_wol::page::page_geometry(layout, page);
-    paint_transcript(&mut paint, state, geometry, &page.list, &page.lines, false);
-    paint
+    let text_of = |id| (id == i32::from(STATUS)).then(|| page.status.clone());
+    let rows_of = |id| (id == i32::from(PAGE_TRANSCRIPT)).then(|| rows(&page.lines));
+    paint_widget_box(state, PAGE_DIALOG, layout.dialog, &text_of, &rows_of)
 }
 
 /// `0x11E`: the centred title, the selectable transcript, the reply edit,
@@ -260,77 +172,9 @@ pub(crate) fn paint_wol_page_received(
     received: &WolPageReceived,
     layout: &WolPageReceivedLayout,
 ) -> WolLobbyPaint {
-    let labels = vec![
-        caption(
-            state,
-            "GUI:PageReceived",
-            layout.title,
-            ShellAlign::H_CENTER,
-            true,
-        ),
-        caption(
-            state,
-            "GUI:ReplyTo",
-            layout.reply_to_label,
-            ShellAlign::H_RIGHT,
-            true,
-        ),
-        PaintLabel {
-            text: received.reply_to.clone().into(),
-            rect: layout.reply_to,
-            align: ShellAlign::NONE,
-            rgb: SHELL_LABEL_TEXT_RGB,
-            path_a_reveal: None,
-        },
-        button_caption(
-            state,
-            "GUI:ReplyPage",
-            layout.send,
-            &received.buttons,
-            SEND,
-            received.send_enabled,
-        ),
-        button_caption(
-            state,
-            "GUI:Back",
-            layout.back,
-            &received.buttons,
-            BACK,
-            true,
-        ),
-    ];
-    let buttons = [
-        ModalButton {
-            rect: layout.send,
-            pressed: received.buttons.is_pressed(SEND),
-            enabled: received.send_enabled,
-        },
-        ModalButton {
-            rect: layout.back,
-            pressed: received.buttons.is_pressed(BACK),
-            enabled: true,
-        },
-    ];
-    let mut paint = paint_box(state, layout.dialog, &buttons, &labels);
-    push_edit(
-        &mut paint,
-        state,
-        &received.reply,
-        layout.reply,
-        received.reply.focused && caret_visible(received.focus_at, Instant::now()),
-        SCALE,
-        POPUP_DEPTHS.text,
-    );
-    let geometry = crate::app::shell_wol::page::received_geometry(layout, received);
-    paint_transcript(
-        &mut paint,
-        state,
-        geometry,
-        &received.list,
-        &received.lines,
-        true,
-    );
-    paint
+    let text_of = |id| (id == i32::from(REPLY_TO)).then(|| received.reply_to.clone());
+    let rows_of = |id| (id == i32::from(RECEIVED_TRANSCRIPT)).then(|| rows(&received.lines));
+    paint_widget_box(state, RECEIVED_DIALOG, layout.dialog, &text_of, &rows_of)
 }
 
 /// Add Buddy `0x115` over `0x116`: the centred caption, the name edit and
@@ -338,51 +182,10 @@ pub(crate) fn paint_wol_page_received(
 /// to show.
 pub(crate) fn paint_wol_add_buddy(
     state: &AppState,
-    add: &crate::ui::wol_buddy::WolAddBuddy,
     layout: &crate::ui::shell::modal::WolAddBuddyLayout,
 ) -> WolLobbyPaint {
-    use crate::ui::wol_buddy::{ADD, BACK as ADD_BACK};
-    let labels = vec![
-        caption(
-            state,
-            "GUI:BuddyNickname",
-            layout.label,
-            ShellAlign::H_CENTER,
-            true,
-        ),
-        button_caption(
-            state,
-            "GUI:AddBuddy",
-            layout.add,
-            &add.buttons,
-            ADD,
-            add.add_enabled,
-        ),
-        button_caption(state, "GUI:Back", layout.back, &add.buttons, ADD_BACK, true),
-    ];
-    let buttons = [
-        ModalButton {
-            rect: layout.add,
-            pressed: add.buttons.is_pressed(ADD),
-            enabled: add.add_enabled,
-        },
-        ModalButton {
-            rect: layout.back,
-            pressed: add.buttons.is_pressed(ADD_BACK),
-            enabled: true,
-        },
-    ];
-    let mut paint = paint_box(state, layout.dialog, &buttons, &labels);
-    push_edit(
-        &mut paint,
-        state,
-        &add.edit,
-        layout.name,
-        add.edit.focused && caret_visible(add.focus_at, Instant::now()),
-        SCALE,
-        POPUP_DEPTHS.text,
-    );
-    paint
+    let dialog = crate::ui::wol_buddy::ADD_DIALOG;
+    paint_widget_box(state, dialog, layout.dialog, &|_| None, &|_| None)
 }
 
 /// The connection verify `0x130` over C2/C9: the SS_CENTER title, then one
@@ -395,72 +198,88 @@ pub(crate) fn paint_wol_verify(
     layout: &crate::ui::shell::modal::WolVerifyLayout,
 ) -> WolLobbyPaint {
     if let Some(message) = &verify.mismatch {
-        let pressed = verify
-            .ok
-            .is_pressed(crate::ui::wol_shell::BOX_OK)
-            .then_some(crate::ui::wol_shell::BOX_OK);
-        let (dialog, buttons, labels) = crate::app::frontend::wol_welcome_render::message_box_parts(
+        let mut paint = WolLobbyPaint::default();
+        let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+            return paint;
+        };
+        let parts =
+            crate::app::shell_network_setup::verify_mismatch_parts(&state.renderer.gpu, message);
+        let pressed = verify.ok_pressed();
+        let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);
+        let ok = |id| pressed && id == crate::ui::wol_shell::BOX_OK;
+        // The box's widgets in the verify's own tree
+        // ([`crate::ui::wol_verify::WolVerifyDialog::sync_mismatch`]).
+        let tree = verify.widgets();
+        let draw = super::paint_shell_box(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            Some(atlas),
+            tree,
             message,
-            pressed,
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
+            &parts,
+            ok,
+            look,
         );
-        let buttons: Vec<ModalButton> = buttons
-            .into_iter()
-            .map(|(rect, pressed)| ModalButton {
-                rect,
-                pressed,
-                enabled: true,
-            })
-            .collect();
-        return paint_box(state, dialog, &buttons, &labels);
+        paint.controls = draw.sprites;
+        paint.texts.extend(draw.text);
+        return paint;
     }
-    let labels = [caption(
-        state,
-        "GUI:ConnectingToPlayers",
-        layout.title,
-        ShellAlign::H_CENTER,
-        true,
-    )];
-    let mut paint = paint_box(state, layout.dialog, &[], &labels);
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    let scale = layout.scale;
+    let mut paint = paint_box_on(state, layout.dialog, scale);
+    let Some((gui, root)) = verify.widgets() else {
         return paint;
     };
-    let chrome = atlas.control_chrome();
-    if let Some(geometry) = verify.list_geometry(layout) {
-        super::list::paint_list(
-            &mut paint.controls,
-            atlas,
-            geometry,
-            verify.visible_nodes(layout).start,
-            None,
-            verify.pressed_scroll_part(),
-            false,
-            SCALE,
-        );
-    }
-    for node in verify.visible_nodes(layout) {
-        let name = &verify.names[node];
-        let rect = verify.node_rect(layout, node).expect("visible verify node");
-        super::controls::paint_control(
-            &mut paint.controls,
-            &chrome,
-            super::controls::ControlPaint::Checkbox {
-                rect,
-                checked: verify.checked[node],
-            },
-            SCALE,
-        );
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            &state.renderer.bit_font,
-            name,
-            rect_to_text_rect(crate::ui::skirmish_shell::checkbox_text_rect(rect, SCALE)),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            POPUP_DEPTHS.text,
-            SCALE.factor(),
-        ));
+    // The title, each box captioned with its node's name; the list holds
+    // no rows of its own, only its frame and scrollbar under the boxes.
+    let text_of = |id: i32| -> Option<String> {
+        let id = u16::try_from(id).ok()?;
+        if id == crate::ui::wol_verify::TITLE {
+            return Some(state.csf_text("GUI:ConnectingToPlayers"));
+        }
+        verify.names.get(verify.node_of(id)?).cloned()
+    };
+    let list = i32::from(crate::ui::wol_verify::LIST);
+    let rows_of = |id: i32| (id == list).then(HostRows::new);
+    let style = GuiStyle {
+        text_of: Some(&text_of),
+        rows_of: Some(&rows_of),
+        ..GuiStyle::default()
+    };
+    let children = gui.tree().children(root).unwrap_or_default();
+    let id_of = |node| gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+    // The title and the list, then the boxes over the list.
+    for pass in [
+        Some(crate::ui::wol_verify::TITLE),
+        Some(crate::ui::wol_verify::LIST),
+        None,
+    ] {
+        for &node in children {
+            let id = id_of(node);
+            let painted = match pass {
+                Some(wanted) => id == Some(wanted),
+                None => id.and_then(|id| verify.node_of(id)).is_some(),
+            };
+            if painted {
+                extend(
+                    &mut paint,
+                    paint_gui_styled(
+                        &state.platform.ime,
+                        &state.renderer.bit_font,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        gui,
+                        node,
+                        scale,
+                        &[],
+                        style,
+                    ),
+                );
+            }
+        }
     }
     paint
 }
@@ -478,16 +297,38 @@ pub(crate) struct InMatchPageDraw {
     )>,
 }
 
+/// A zoomed match draws the dialog's text at the window's pixels after the
+/// zoom (`window_ui`), laid out in the frame as ever.
 pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
+    let window_ui = &state.renderer.window_ui;
+    window_ui.set_page_texts(Vec::new());
+    let raster = crate::app::presentation::window_ui::dialog_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
+    );
+    let frame_raster = state
+        .renderer
+        .bit_font
+        .set_raster(raster.unwrap_or(crate::render::bit_font::TextRaster::NATIVE));
     let paint = match state.match_state.match_presentation.in_game_menu {
-        crate::ui::pause_menu::InGameMenuState::Page => paint_wol_page_dialog(
-            state,
-            crate::app::shell_wol::page::page_dialog(state)?,
-            &crate::app::shell_wol::page::page_layout(state),
-        ),
-        crate::ui::pause_menu::InGameMenuState::Surrender => paint_surrender_box(state),
-        _ => return None,
+        crate::ui::pause_menu::InGameMenuState::Page => {
+            crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref()).map(|page| {
+                paint_wol_page_dialog(
+                    state,
+                    page,
+                    &crate::app::shell_wol::page::page_layout(
+                        &state.renderer,
+                        &state.frontend.screen,
+                    ),
+                )
+            })
+        }
+        crate::ui::pause_menu::InGameMenuState::Surrender => Some(paint_surrender_box(state)),
+        _ => None,
     };
+    state.renderer.bit_font.set_raster(frame_raster);
+    let paint = paint?;
     let batch = &state.renderer.batch_renderer;
     let gpu = &state.renderer.gpu;
     // The UI camera follows the world camera's scroll (see the message
@@ -508,24 +349,44 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
             .collect();
         batch.create_instance_buffer(gpu, &shifted)
     };
+    let texts = paint.texts.iter();
+    if raster.is_some() {
+        window_ui.set_page_texts(
+            texts
+                .map(|text| {
+                    let buffer = batch.create_instance_buffer(gpu, &text.instances);
+                    (text.scissor, buffer)
+                })
+                .collect(),
+        );
+        return Some(InMatchPageDraw {
+            controls: screen(&paint.controls),
+            texts: Vec::new(),
+        });
+    }
     Some(InMatchPageDraw {
         controls: screen(&paint.controls),
-        texts: paint
-            .texts
-            .iter()
+        texts: texts
             .map(|text| (text.scissor, screen(&text.instances)))
             .collect(),
     })
 }
 
 impl InMatchPageDraw {
-    pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, state: &'a AppState) {
-        let batch = &state.renderer.batch_renderer;
-        let (width, height) = (state.render_width(), state.render_height());
-        if let (Some((buffer, count)), Some(atlas)) = (
-            &self.controls,
-            state.frontend.skirmish_shell_chrome.as_ref(),
-        ) {
+    pub(crate) fn draw<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        renderer: &'a RendererState,
+        frontend: &'a FrontendState,
+    ) {
+        let batch = &renderer.batch_renderer;
+        let (width, height) = (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        );
+        if let (Some((buffer, count)), Some(atlas)) =
+            (&self.controls, frontend.skirmish_shell_chrome.as_ref())
+        {
             batch.draw_with_buffer_ui_passthrough(pass, &atlas.texture, buffer, *count);
         }
         for (scissor, buffer) in &self.texts {
@@ -540,12 +401,7 @@ impl InMatchPageDraw {
                 continue;
             }
             pass.set_scissor_rect(x, y, w, h);
-            batch.draw_with_buffer_ui_passthrough(
-                pass,
-                state.renderer.bit_font.atlas(),
-                buffer,
-                *count,
-            );
+            batch.draw_with_buffer_ui_passthrough(pass, renderer.bit_font.atlas(), buffer, *count);
         }
         pass.set_scissor_rect(0, 0, width, height);
     }

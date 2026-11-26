@@ -57,7 +57,11 @@ pub(in crate::sim) fn assert_entity_state(
     context: &str,
 ) {
     let entity = sim.substrate.entities.get(id).unwrap();
-    let state = entity.disguise.as_ref().expect("Techno constructor state");
+    let state = entity
+        .seldom
+        .disguise
+        .as_ref()
+        .expect("Techno constructor state");
     assert_eq!(
         json!({
             "disguised": u8::from(state.is_disguised()),
@@ -100,7 +104,7 @@ fn fixture(row: &Value) -> Simulation {
     entity.position.set_exact_z_leptons_for_test(Some(z));
     entity.health.set_for_test(signed(&before["health"]));
     entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-    entity.disguise = Some(state_from_native(&mut sim, before));
+    entity.seldom.disguise = Some(state_from_native(&mut sim, before));
     let origin = (entity.position.rx(), entity.position.ry());
     sim.substrate.entities.insert(entity);
     let tile = row["input"]["tile_index"].as_i64().unwrap_or(0) as i32;
@@ -113,13 +117,13 @@ fn fixture(row: &Value) -> Simulation {
     });
     let base = row["input"]["bridge_base"].as_i64().unwrap_or(-1);
     grid.test_set_high_bridge_set_starts(u16::try_from(base).ok(), None);
-    sim.resolved_terrain = Some(grid);
+    *sim.resolved_terrain = Some(grid);
     sim.session
         .set_binary_frame_for_test(signed(&row["frame"]) as u32);
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
+    *sim.main_rng =
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
     sim
 }
 
@@ -307,8 +311,8 @@ fn native_mirage_acquisition_gates_and_retained_identity() {
         .unwrap();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         if let Some(slot) = input["radio_contact_slot"].as_u64() {
-            entity.radio_contacts.set_capacity(slot as usize + 1);
-            entity.radio_contacts.set_slot(slot as usize, 99);
+            entity.seldom.radio_contacts.set_capacity(slot as usize + 1);
+            entity.seldom.radio_contacts.set_slot(slot as usize, 99);
         }
         if input["drive_destination_prior"] == true {
             // Original DriveIsMoving reads an explicit nonzero Destination
@@ -427,7 +431,7 @@ fn mirage_full_snapshot_preserves_wait_and_uses_the_restored_scenario_owner() {
     loaded.resolve_type_handles(&retail.rules);
     // Resolved terrain is an immutable app-provided map input, not snapshot
     // data. Bind that same map before the resumed Unit visit.
-    loaded.resolved_terrain = sim.resolved_terrain.take();
+    *loaded.resolved_terrain = sim.resolved_terrain.take();
     assert_state(&loaded, &row["after_load"], "full restore");
     assert_eq!(
         loaded.scenario_rng.logical_state(),

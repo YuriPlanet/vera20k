@@ -67,6 +67,8 @@ fn apply_theme_action_to_output(
 
 pub(crate) struct AppAudioRuntime {
     pub(crate) master_groups: AudioMasterGroups,
+    /// `mute_for_restore`'s current state.
+    pub(crate) restore_muted: bool,
     /// Always-present device-independent Theme owner.
     pub(crate) theme: ThemeRuntime,
     /// One process cadence for Sound, Vox and Theme; device callbacks run
@@ -80,14 +82,9 @@ pub(crate) struct AppAudioRuntime {
     /// Rust-native substitute for native's one shared DirectSound-device gate.
     /// Frozen after both process-start output constructor attempts.
     pub(crate) launcher_audio_available: bool,
-    /// Native has a startup-suppression gate. Current Rust has no non-default
-    /// route, so production initializes this false and keeps one explicit seam.
+    /// `-X…Q` (`Parse_Command_Line` writes `0x00A8ED64` at `0x0052FB0A`):
+    /// every Theme entry point and Vox's dequeue refuse to run.
     pub(crate) theme_startup_suppressed: bool,
-    /// The single rodio device stream shared by music and SFX. Declared last so
-    /// it outlives both players during drop; Horizon's audren allows one
-    /// stream per process.
-    #[allow(dead_code)]
-    pub(crate) output: Option<rodio::MixerDeviceSink>,
 }
 
 /// The process volume groups that only lifecycle code writes, with the
@@ -184,10 +181,8 @@ impl AppAudioRuntime {
             sfx.set_movie_held(held, wall_ms);
         }
         if let Some(music) = self.music_player.as_mut() {
-            if held {
-                music.pause_output();
-            } else {
-                music.resume_output();
+            music.set_movie_hold(held);
+            if !held {
                 music.restore_stream_volume(wall_ms);
             }
         }
@@ -264,6 +259,17 @@ impl AppAudioRuntime {
         }
     }
 
+    /// A rejoining process replays the past at speed: VERA adaptation, its
+    /// effects and voices stay silent until the world reaches the present.
+    /// The profile's volumes come back unchanged.
+    pub(crate) fn mute_for_restore(&mut self, muted: bool, sound_volume: f64, voice_volume: f64) {
+        if std::mem::replace(&mut self.restore_muted, muted) == muted {
+            return;
+        }
+        self.set_sound_volume(if muted { 0.0 } else { sound_volume });
+        self.set_voice_volume(if muted { 0.0 } else { voice_volume });
+    }
+
     /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` publishes the stored
     /// Options f32 to the stream first, then Theme's `+0xC` gate. Theme owns its
     /// native quantization; the player's safe 0..1 gain never feeds back into
@@ -293,7 +299,8 @@ impl AppAudioRuntime {
     }
 
     pub(crate) fn initialize_theme(&mut self, assets: &AssetManager) {
-        self.theme.initialize_catalog(assets);
+        let gates = self.theme_gates();
+        self.theme.initialize_catalog(assets, gates);
     }
 
     pub(crate) fn maintain_main_menu_theme(&mut self, assets: &AssetManager, wall_ms: u64) {
@@ -380,7 +387,6 @@ impl AppAudioRuntime {
     }
 
     /// Ares loading hook inputs use the existing Theme catalog/stream owner.
-    #[cfg(feature = "ares")]
     pub(crate) fn play_ares_loading_theme<'a>(
         &mut self,
         names: impl IntoIterator<Item = Option<&'a str>>,
@@ -403,8 +409,8 @@ impl AppAudioRuntime {
         assets: &AssetManager,
         wall_ms: u64,
     ) {
-        self.theme.initialize_catalog(assets);
         let gates = self.theme_gates();
+        self.theme.initialize_catalog(assets, gates);
         let physical = self.music_output_state();
         let action = self
             .theme
@@ -499,7 +505,7 @@ impl AppAudioRuntime {
     /// select SCORE, INTRO or the next scenario. Source: original instructions.
     pub(crate) fn apply_scenario_exit_tick(
         &mut self,
-        tick: crate::app::match_runtime::scenario_exit::ScenarioExitTick,
+        tick: &crate::app::match_runtime::scenario_exit::ScenarioExitTick,
         assets: Option<&AssetManager>,
         wall_ms: u64,
     ) {
@@ -513,15 +519,16 @@ impl AppAudioRuntime {
             }
             self.restore_sound_master();
         }
-        // Score dialogs explicitly select SCORE after the master is restored:
-        // 5C9B10 (multiplayer), original gamemd.exe. Campaign WM_INIT
-        // selects its theme after the Win movie in open_campaign_score_page.
+        // Score dialogs explicitly select their theme after the master is
+        // restored: 5C9B10 (multiplayer), original gamemd.exe, or the side's
+        // name under the hook at 0x5C9B75. Campaign WM_INIT selects its theme
+        // after the Win movie in open_campaign_score_page.
         if let Some(crate::app::match_runtime::scenario_exit::ScenarioExitAudioAction::PlayTheme(
             theme,
-        )) = tick.after_cleanup
+        )) = &tick.after_cleanup
             && let Some(assets) = assets
         {
-            let _ = self.play_theme(theme, assets, wall_ms);
+            let _ = self.play_theme(&theme, assets, wall_ms);
         }
     }
 
@@ -587,11 +594,11 @@ impl AppAudioRuntime {
 /// InitSideMixFiles534FAC / LoadContent67E761 bind saved Scenario.Side,
 /// not the separately restored current House. Only successful adoption calls
 /// here; reset retains the outgoing cache until this explicit replacement.
-pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
-    if let (Some(runtime), Some(sfx)) = (
-        state.match_state.sim_runtime.as_ref(),
-        state.audio.sfx_player.as_mut(),
-    ) {
+pub(crate) fn bind_match_eva_context(
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
+    audio: &mut AppAudioRuntime,
+) {
+    if let (Some(runtime), Some(sfx)) = (sim_runtime.runtime(), audio.sfx_player.as_mut()) {
         sfx.set_eva_side(
             runtime.simulation.session().scenario_side(),
             &runtime.resources.rules,
@@ -602,15 +609,19 @@ pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
 /// Bind Theme's Is_Allowed context from the incoming world on either fresh
 /// start or saved load. Native reads live House/Side state; the Rust projection
 /// must not keep the previous map's local side or registry indices.
-pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
-    if let Some(assets) = state.process_assets.manager() {
-        state.audio.initialize_theme(assets);
+pub(crate) fn bind_match_theme_context(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    audio: &mut AppAudioRuntime,
+) {
+    if let Some(assets) = process_assets.manager() {
+        audio.initialize_theme(assets);
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return;
     };
     let simulation = &runtime.simulation;
-    let local_side = state.match_state.local_player_owner().and_then(|owner| {
+    let local_side = match_state.local_player_owner().and_then(|owner| {
         crate::sim::house_state::house_state_for_owner(
             simulation.houses(),
             owner,
@@ -618,7 +629,7 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
         )
         .map(|house| i32::from(house.side_index()))
     });
-    state.audio.theme.begin_scenario(
+    audio.theme.begin_scenario(
         ThemeAllowContext {
             local_side,
             campaign_scenario: simulation.session().campaign_mission_counter(),
@@ -634,6 +645,28 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
 }
 
 #[cfg(test)]
+impl AppAudioRuntime {
+    /// A runtime with an EVA/SFX output and no music output, or `None` after
+    /// a `SKIPPED` line when the machine has no output device.
+    pub(crate) fn with_sfx_output_for_test() -> Option<Self> {
+        let Some(sfx_player) = SfxPlayer::new() else {
+            eprintln!("SKIPPED: no audio output device");
+            return None;
+        };
+        Some(Self {
+            theme: ThemeRuntime::default(),
+            service_clock: AudioServiceClock::default(),
+            music_player: None,
+            sfx_player: Some(sfx_player),
+            launcher_audio_available: true,
+            theme_startup_suppressed: false,
+            master_groups: Default::default(),
+            restore_muted: false,
+        })
+    }
+}
+
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -715,7 +748,7 @@ mod tests {
                 launcher_audio_available: true,
                 theme_startup_suppressed: false,
                 master_groups: Default::default(),
-                output: None,
+                restore_muted: false,
             };
             runtime.initialize_theme(&assets);
             let stored = f32::from_bits(options["stored_f32_bits"].as_u64().unwrap() as u32);
@@ -755,10 +788,10 @@ mod tests {
             launcher_audio_available: true,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
-            output: None,
+            restore_muted: false,
         };
-        let mut frontend = crate::sim::rng::MainRng::new(1);
-        let mut main = crate::app::state::process_main_draws(None, &mut frontend);
+        let frontend = crate::sim::rng::MainRng::new(1);
+        let mut main = crate::app::state::process_main_draws(&frontend);
         runtime.service_audio(100, false, Some(&assets), None, &mut main);
         assert!(!runtime.service_clock.admit(100));
         runtime.service_audio(133, false, Some(&assets), None, &mut main);
@@ -796,7 +829,7 @@ mod tests {
             launcher_audio_available: true,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
-            output: None,
+            restore_muted: false,
         };
         runtime.initialize_theme(&assets);
         // Restore through the production Theme owner with an admitted stream;
@@ -814,15 +847,15 @@ mod tests {
         let before = runtime.theme.saved_slots();
         assert_eq!(before, [0, -1]);
         let mut exit = ScenarioExitCascade::start(0, ScenarioExitDestination::CampaignDefeat);
-        runtime.apply_scenario_exit_tick(exit.tick(0, false, false), Some(&assets), 0);
+        runtime.apply_scenario_exit_tick(&exit.tick(0, false, false), Some(&assets), 0);
         let moving = runtime.sound_master_moving();
-        runtime.apply_scenario_exit_tick(exit.tick(500, moving, false), Some(&assets), 500);
+        runtime.apply_scenario_exit_tick(&exit.tick(500, moving, false), Some(&assets), 500);
         // GameExit__Defeat glides only the effects master (0x00685715); the
         // Theme stream keeps playing at full.
         assert_eq!(runtime.master_groups.sound_master.value(), 0x2000);
         assert_eq!(runtime.theme.saved_slots(), before);
         let moving = runtime.sound_master_moving();
-        runtime.apply_scenario_exit_tick(exit.tick(1_000, moving, false), Some(&assets), 1_000);
+        runtime.apply_scenario_exit_tick(&exit.tick(1_000, moving, false), Some(&assets), 1_000);
         assert_eq!(runtime.master_groups.sound_master.value(), 0x4000);
         assert_eq!(
             runtime.theme.saved_slots(),
@@ -843,8 +876,8 @@ mod tests {
                 model: crate::ui::score_shell::ScoreScreenModel::default(),
             },
         );
-        runtime.apply_scenario_exit_tick(score.tick(3_000, false, false), Some(&assets), 3_000);
-        runtime.apply_scenario_exit_tick(score.tick(3_000, false, false), Some(&assets), 3_000);
+        runtime.apply_scenario_exit_tick(&score.tick(3_000, false, false), Some(&assets), 3_000);
+        runtime.apply_scenario_exit_tick(&score.tick(3_000, false, false), Some(&assets), 3_000);
         assert_eq!(
             runtime.theme.current_song(),
             2,
@@ -885,7 +918,7 @@ mod tests {
             launcher_audio_available: true,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
-            output: None,
+            restore_muted: false,
         };
         runtime.initialize_theme(&assets);
         let gates = runtime.theme_gates();
@@ -923,7 +956,7 @@ mod tests {
             launcher_audio_available: false,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
-            output: None,
+            restore_muted: false,
         };
         let stream_target = |runtime: &AppAudioRuntime| {
             runtime
@@ -960,7 +993,7 @@ mod tests {
             launcher_audio_available: false,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
-            output: None,
+            restore_muted: false,
         };
         runtime.set_movie_audio_held(true, 0);
         runtime.service_master_groups(100);

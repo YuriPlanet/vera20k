@@ -24,7 +24,7 @@ pub(crate) fn live_threat_posed(
         return 0;
     };
     if candidate.category() == EntityCategory::Structure {
-        let occupants = candidate.passenger_role.occupants().count();
+        let occupants = candidate.passenger_role().occupants().count();
         if occupants > 0 {
             return occupants.wrapping_mul(rules.general.threat_per_occupant);
         }

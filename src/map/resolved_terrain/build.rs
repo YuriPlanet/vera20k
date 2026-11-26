@@ -1,7 +1,9 @@
 //! Map construction (Fill): materializing map cells into resolved terrain,
 //! TMP tile metadata, overlay classification and the height maps.
 
-use super::bridge_flags::apply_native_bridge_flag_stamp_to_parts;
+use super::bridge_flags::{
+    apply_native_bridge_flag_stamp_to_parts, refresh_runtime_bridge_projection,
+};
 use super::native_cell::native_resolved_cell_index;
 use super::tubes::build_auto_low_bridge_tubes;
 use super::*;
@@ -251,27 +253,33 @@ impl ResolvedTerrainGrid {
             let mut grid = Self {
                 width: 0,
                 height: 0,
-                cells: Vec::new(),
+                cells: super::terrain_cells::TerrainCells::default(),
+                level_span: LevelSpan::of([]),
                 land_speed_costs: land_speed_cost_profiles(None),
-                overlay_passability: Vec::new(),
-                native_tmp_draw_heights: HashMap::new(),
+                overlay_passability: Default::default(),
+                native_tmp_draw_heights: Default::default(),
                 shared_cell_dummy,
                 mutation_epoch: 0,
-                native_allocated: materialized_size_diamond.then(Vec::new),
-                radar_color_valid: Vec::new(),
-                damaged_radar_metadata: Vec::new(),
+                native_allocated: materialized_size_diamond.then(|| Vec::new().into()),
+                radar_color_valid: Default::default(),
+                damaged_radar_metadata: Default::default(),
                 tube_facts: Vec::new(),
                 native_tube_indices: Vec::new(),
                 tube_native_ids: Vec::new(),
                 clear_tile_id: 0,
                 water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
                 tile_registry_len: None,
+                tile_burrowing_permissions: None,
                 dummy_accepts_smudge: false,
                 high_bridge_rim_tiles: None,
+                wood_bridge_rim_tiles: Default::default(),
                 bridge_set_start: None,
                 wood_bridge_set_start: None,
                 tile_animations: Vec::new(),
                 destroyable_cliff_catalog: None,
+                deformation_catalog: None,
+                ice_catalog: None,
+                deformation_enabled: false,
                 bridge_recalc_catalog: None,
                 allocation_caches: Default::default(),
             };
@@ -349,7 +357,8 @@ impl ResolvedTerrainGrid {
         let final_lookup: HashMap<(u16, u16), &MapCell> =
             final_cells.iter().map(|c| ((c.rx, c.ry), c)).collect();
 
-        let snow_theater = map.header.theater.eq_ignore_ascii_case("SNOW");
+        let snow_theater = crate::rules::object_image::ImageTheater::from_name(&map.header.theater)
+            == crate::rules::object_image::ImageTheater::Snow;
         let mut terrain_objects = HashMap::new();
         if projection.is_eager() {
             for obj in &map.terrain_objects {
@@ -389,10 +398,12 @@ impl ResolvedTerrainGrid {
                     ),
                 );
                 for (dx, dy) in offsets {
-                    let Some(cell) = crate::map::cell_index::canonical_cell_coord(
-                        i32::from(x.wrapping_add(dx)),
-                        i32::from(y.wrapping_add(dy)),
-                    ) else {
+                    let Some(cell) = crate::map::cell_index::CellGrid::for_extent(width, height)
+                        .canonical_coord(
+                            i32::from(x.wrapping_add(dx)),
+                            i32::from(y.wrapping_add(dy)),
+                        )
+                    else {
                         continue;
                     };
                     if cell.0 >= width || cell.1 >= height {
@@ -691,6 +702,7 @@ impl ResolvedTerrainGrid {
                     final_sub_tile: stored_final_sub_tile,
                     is_wood_bridge_repair_tile,
                     level,
+                    legacy_ice_byte: raw.map_or(0, |cell| cell.legacy_ice_byte),
                     filled_clear: raw.is_none(),
                     tileset_index: metadata.tileset_index,
                     land_type: metadata.land_type,
@@ -736,7 +748,10 @@ impl ResolvedTerrainGrid {
         // The engine reaches cells through an anti-diagonal iterator, so the
         // animations are constructed in that order. The loop above is row-major,
         // so restore the sweep order here: the spawner then assigns animation
-        // identities the way a native load would.
+        // identities the way a native load would. On a Size at least two wide
+        // this is the allocated-cell walk's order
+        // (`map::playfield::SizeDiamond::allocated_cells`); only generated
+        // maps, which are at least four wide, spawn from this list.
         tile_animations.sort_by_key(|anim| (anim.rx as u32 + anim.ry as u32, anim.rx));
         if !tile_animations.is_empty() {
             log::info!(
@@ -758,26 +773,55 @@ impl ResolvedTerrainGrid {
         // OverlayClass anchor is an allocated CellClass; its setter then walks
         // through MapClass lookups, so missing neighbors stamp/mutate the one
         // shared dummy rather than disappearing at the rectangular edge.
-        for overlay in projection
-            .is_eager()
-            .then_some(map.overlays.iter())
-            .into_iter()
-            .flatten()
-        {
-            let anchor_index = native_resolved_cell_index(
+        let authored_high_bridge_anchors =
+            if projection.is_eager() && overlay_load_source == OverlayLoadSource::Authored {
+                let resources = overlay_registry.zip(asset_manager).zip(theater_data);
+                let mut bridge_assets = [None; 256];
+                map.overlays
+                    .iter()
+                    .filter_map(|overlay| {
+                        let id = overlay.overlay_id;
+                        let stamp = crate::map::bridge_facts::high_bridge_stamp_for_overlay(id)?;
+                        // Match the authored reader's SHP/CellAnim gate (0x005FD446)
+                        // when assets are bound. Resource-free fixtures keep their
+                        // permissive eager projection.
+                        if let Some(((registry, assets), theater)) = resources
+                            && !*bridge_assets[usize::from(id)].get_or_insert_with(|| {
+                                registry
+                                    .flags(id)
+                                    .is_some_and(|flags| flags.cell_anim.is_some())
+                                    || registry.name(id).is_some_and(|name| {
+                                        crate::rules::effect_asset_catalog::load_overlay_shape(
+                                            assets,
+                                            registry,
+                                            name,
+                                            theater.extension,
+                                            &map.header.theater,
+                                        )
+                                        .is_some()
+                                    })
+                            })
+                        {
+                            return None;
+                        }
+                        Some(((overlay.rx, overlay.ry), stamp))
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+        for &((x, y), (family, direction)) in &authored_high_bridge_anchors {
+            if native_resolved_cell_index(
                 width,
                 height,
                 native_allocated.as_deref(),
                 cells.len(),
-                i32::from(overlay.rx),
-                i32::from(overlay.ry),
-            );
-            if overlay_load_source == OverlayLoadSource::Authored
-                && let Some((family, direction)) =
-                    crate::map::bridge_facts::high_bridge_stamp_for_overlay(overlay.overlay_id)
-                && anchor_index.is_some()
+                i32::from(x),
+                i32::from(y),
+            )
+            .is_some()
             {
-                let stamp = BridgeFlagStamp::new((overlay.rx, overlay.ry), direction, true);
+                let stamp = BridgeFlagStamp::new((x, y), direction, true);
                 let _ = apply_native_bridge_flag_stamp_to_parts(
                     &mut cells,
                     width,
@@ -796,25 +840,7 @@ impl ResolvedTerrainGrid {
             .into_iter()
             .flatten()
         {
-            let facts = cell.bridge_facts;
-            if facts.has_structural_bridge() {
-                cell.has_bridge_deck = true;
-                cell.bridge_walkable = !cell.terrain_object_blocks && !cell.overlay_blocks;
-                cell.bridge_deck_level = cell.level.saturating_add(4);
-            } else if facts.family != crate::map::bridge_facts::BridgeStampFamily::None
-                && cell
-                    .bridge_layer
-                    .as_ref()
-                    .is_some_and(|bl| bl.direction != BridgeDirection::Low)
-            {
-                cell.has_bridge_deck = false;
-                cell.bridge_walkable = false;
-                cell.bridge_deck_level = cell.level;
-            }
-
-            if facts.has_transition_flag() {
-                cell.bridge_transition = true;
-            }
+            refresh_runtime_bridge_projection(cell, false);
         }
 
         {
@@ -861,11 +887,6 @@ impl ResolvedTerrainGrid {
         // the normal path accepts Clear, Water, Beach, or Ice. Non-2 bytes have
         // no observable write, so this load resolver output-gates the pure scan.
         if projection.is_eager() && cliff_back_impassability == 2 {
-            const CLIFF_BACK_HEIGHT_DIFF: i16 = 4;
-            // 6 neighbor offsets in (dx, dy) matching gamemd.exe RecalcAttributes:
-            // (X, Y-1), (X-1, Y), (X+2, Y+2), (X+1, Y+1), (X-1, Y+1), (X+1, Y-1)
-            const NEIGHBOR_OFFSETS: [(i32, i32); 6] =
-                [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
             let rock_lt = LandType::Rock.as_index();
             // The Rock row, as a TMP Rock cell takes it.
             let rock = land_row(terrain_rules, LandType::Rock);
@@ -873,9 +894,10 @@ impl ResolvedTerrainGrid {
             debug_assert_eq!(cliff_back_eligibility.len(), cells.len());
             let resolved_cell_count = cells.len();
             let fixed_stride_index = |x: i32, y: i32| {
-                let native_index = crate::map::cell_index::cell_linear_index(x, y)?;
-                let canonical_x = (native_index % crate::map::cell_index::CELL_ROW_STRIDE) as usize;
-                let canonical_y = (native_index / crate::map::cell_index::CELL_ROW_STRIDE) as usize;
+                let grid = crate::map::cell_index::CellGrid::for_extent(width, height);
+                let (canonical_x, canonical_y) = grid.canonical_coord(x, y)?;
+                let (canonical_x, canonical_y) =
+                    (usize::from(canonical_x), usize::from(canonical_y));
                 if canonical_x >= usize::from(width) || canonical_y >= usize::from(height) {
                     return None;
                 }
@@ -893,21 +915,16 @@ impl ResolvedTerrainGrid {
                 if !eligibility.current && !eligibility.base {
                     continue;
                 }
-                let cell_level = i16::from(cells[idx].level as i8);
-                let rx = cells[idx].rx as i16;
-                let ry = cells[idx].ry as i16;
-
-                let mut behind_cliff = false;
-                for &(dx, dy) in &NEIGHBOR_OFFSETS {
-                    let nx = rx.wrapping_add(dx as i16) as i32;
-                    let ny = ry.wrapping_add(dy as i16) as i32;
-                    if fixed_stride_index(nx, ny).is_some_and(|nidx| {
-                        i16::from(cells[nidx].level as i8) >= cell_level + CLIFF_BACK_HEIGHT_DIFF
-                    }) {
-                        behind_cliff = true;
-                        break;
-                    }
-                }
+                // A neighbour outside the resolved grid never counts here.
+                let behind_cliff = super::cell_recalc::is_behind_cliff(
+                    cells[idx].rx as i16,
+                    cells[idx].ry as i16,
+                    cells[idx].level as i8,
+                    |nx, ny| {
+                        fixed_stride_index(i32::from(nx), i32::from(ny))
+                            .map_or(i8::MIN, |nidx| cells[nidx].level as i8)
+                    },
+                );
                 if behind_cliff {
                     let cell = &mut cells[idx];
                     if eligibility.current {
@@ -963,27 +980,33 @@ impl ResolvedTerrainGrid {
         let mut grid = Self {
             width,
             height,
-            cells,
+            level_span: LevelSpan::of_terrain(cells.iter()),
+            cells: super::terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
-            native_allocated,
-            radar_color_valid,
-            damaged_radar_metadata,
+            native_allocated: native_allocated.map(Into::into),
+            radar_color_valid: radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts,
             native_tube_indices,
             tube_native_ids,
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: None,
             dummy_accepts_smudge: false,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             bridge_set_start: None,
             wood_bridge_set_start: None,
             tile_animations,
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            ice_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         };
@@ -998,6 +1021,15 @@ impl ResolvedTerrainGrid {
                 .as_ref()
                 .map_or_else(Default::default, |s| s.selector()),
         );
+        if projection.is_eager() && overlay_load_source == OverlayLoadSource::Authored {
+            let decks =
+                grid.recover_authored_high_bridge_decks(authored_high_bridge_anchors, |_| true);
+            for ((x, y), deck) in decks {
+                if let Some(index) = grid.native_fixed_cell_index(x as i16, y as i16) {
+                    grid.set_authored_high_bridge_deck(NativeCellIdentity::Real(index), deck);
+                }
+            }
+        }
         grid
     }
 }
@@ -1168,7 +1200,7 @@ pub(super) fn presentation_tile_parts(
 /// reclasses unconditionally and the valid-tile sparse/OOB-subtile fallback
 /// filters `Clear` only. An already-invalid/sentinel tile id reaches this
 /// final-normal filter, not the sparse-entry copy.
-pub(super) fn cliff_back_normal_reclass_applies(land_type: u8) -> bool {
+pub(crate) fn cliff_back_normal_reclass_applies(land_type: u8) -> bool {
     use crate::rules::terrain_rules::LandType;
     land_type == LandType::Clear.as_index()
         || land_type == LandType::Water.as_index()
@@ -1265,35 +1297,24 @@ pub(super) fn is_wood_bridge_repair_tile(
 pub(super) fn load_native_tmp_draw_heights(
     theater: Option<&TheaterData>,
     assets: Option<&crate::assets::asset_manager::AssetManager>,
-) -> HashMap<u16, PristineTmpHeader> {
+) -> LookupMap<u16, PristineTmpHeader> {
     let (Some(theater), Some(assets)) = (theater, assets) else {
-        return HashMap::new();
+        return LookupMap::default();
     };
-    const WARNING_SAMPLE_LIMIT: usize = 8;
-    let mut heights = HashMap::new();
-    let mut missing_filenames = 0;
-    let mut missing_assets = 0;
-    let mut invalid_headers = 0;
-    let mut warning_samples = Vec::with_capacity(WARNING_SAMPLE_LIMIT);
+    let mut heights = LookupMap::default();
     for id in 0..theater.lookup.len() {
         let Ok(id) = u16::try_from(id) else {
             break;
         };
         let Some(name) = theater.lookup.filename(i32::from(id)) else {
-            missing_filenames += 1;
-            if warning_samples.len() < WARNING_SAMPLE_LIMIT {
-                warning_samples.push(format!("tile {id}: no registered filename"));
-            }
+            log::warn!("TMP draw dimensions unavailable: tile {id} has no registered filename");
             continue;
         };
-        let Some(bytes) = assets.get_ref(name) else {
-            missing_assets += 1;
-            if warning_samples.len() < WARNING_SAMPLE_LIMIT {
-                warning_samples.push(format!("tile {id}: missing {name}"));
-            }
+        let Some(bytes) = assets.get(name) else {
+            log::warn!("TMP draw dimensions unavailable: tile {id} asset {name} is missing");
             continue;
         };
-        match TmpFile::pristine_header_fields_from_bytes(bytes) {
+        match TmpFile::pristine_header_fields_from_bytes(&bytes) {
             Ok(rows) => {
                 heights.insert(
                     id,
@@ -1303,22 +1324,8 @@ pub(super) fn load_native_tmp_draw_heights(
                     },
                 );
             }
-            Err(error) => {
-                invalid_headers += 1;
-                if warning_samples.len() < WARNING_SAMPLE_LIMIT {
-                    warning_samples.push(format!("{name}: invalid header ({error})"));
-                }
-            }
+            Err(error) => log::warn!("TMP draw dimensions unavailable for {name}: {error}"),
         }
-    }
-    let unavailable = missing_filenames + missing_assets + invalid_headers;
-    if unavailable != 0 {
-        log::warn!(
-            "TMP draw dimensions unavailable for {unavailable} tile entries \
-             (no filename={missing_filenames}, missing asset={missing_assets}, \
-             invalid header={invalid_headers}); samples: {}",
-            warning_samples.join("; ")
-        );
     }
     heights
 }
@@ -1441,6 +1448,19 @@ pub(super) fn load_tile_metadata(
     };
     metadata.tmp_file_valid = true;
     merge_tmp_file_metadata(&mut metadata, &tmp, key.sub_tile, terrain_rules);
+    // Firestorm 2.0 Read_Theater 0x4f54a5..0x4f5562 patches the loaded main
+    // image of each ice family's edge and open-water tiles to Water.
+    if key.variant == 0
+        && key.sub_tile == 0
+        && metadata.has_tmp_metadata
+        && super::ice::ice_tile_is_water(td.ice_sets, key.tile_id)
+    {
+        const TMP_WATER: u8 = 9;
+        metadata.raw_land_type = TMP_WATER;
+        metadata.land_type =
+            crate::rules::terrain_rules::tmp_terrain_to_land_type(TMP_WATER).as_index();
+        apply_land_type_semantics(&mut metadata, terrain_rules);
+    }
     metadata
 }
 
@@ -1502,16 +1522,26 @@ pub(super) fn height_in_pixels_from_tmp(tile_height: u32, relative_extra_y: i32)
     Some((numerator / 15) as i8)
 }
 
+/// The last record of the 21-row ground slope tables.
+pub(super) const MAX_TMP_RAMP_TYPE: u8 = 20;
+
 pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.subtile_entry_valid = Some(true);
     metadata.raw_land_type = tile.terrain_type;
     metadata.land_type =
         crate::rules::terrain_rules::tmp_terrain_to_land_type(tile.terrain_type).as_index();
-    metadata.slope_type = tile.ramp_type;
+    // The slope tables hold 21 records (0..=20). gamemd indexes them with the
+    // raw byte and reads past the table for a larger one; VERA-only: such a
+    // tile (damaged or mod art) is flat ground.
+    metadata.slope_type = if tile.ramp_type <= MAX_TMP_RAMP_TYPE {
+        tile.ramp_type
+    } else {
+        0
+    };
     metadata.template_height = tile.height;
     metadata.render_offset_x = tile.offset_x;
     metadata.render_offset_y = tile.offset_y;
-    metadata.has_ramp = tile.ramp_type != 0;
+    metadata.has_ramp = metadata.slope_type != 0;
     metadata.has_tmp_metadata = true;
     metadata.radar_left = tile.radar_left;
     metadata.radar_right = tile.radar_right;
@@ -1650,8 +1680,15 @@ fn merge_overlay_zone_type(current: Option<u8>, candidate: Option<u8>) -> Option
     }
 }
 
-pub(super) fn wheel_speed_at_or_below_one_percent(wheel: Option<u8>) -> bool {
-    wheel.is_some_and(|speed| speed <= 1)
+pub(super) fn wheel_speed_at_or_below_one_percent(
+    wheel: Option<crate::util::native_x87::NativeF32Bits>,
+) -> bool {
+    // RecalcZoneType483D57..483D69 accepts only Greater here: its AH41 test
+    // makes Less, Equal and Unordered impassable.
+    wheel.is_some_and(|speed| {
+        crate::rules::terrain_rules::compare_speed_to_one_percent(speed)
+            != crate::util::native_x87::MaskedX87Ordering::Greater
+    })
 }
 
 /// Reproduce the active map-load order: initialize every allocated Size-diamond
@@ -1668,6 +1705,22 @@ fn selector_free_map_cells(map: &MapFile, lookup: Option<&TilesetLookup>) -> Vec
             cell
         })
         .collect()
+}
+
+/// VERA: whether every tile `map`'s cells name, translated as a load
+/// translates them, has a file that `exists`. A map whose tiles all exist
+/// among the original game's plays on them (`map::theater::TerrainFiles`).
+pub fn map_tiles_exist(
+    map: &MapFile,
+    lookup: &TilesetLookup,
+    mut exists: impl FnMut(&str) -> bool,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    selector_free_map_cells(map, Some(lookup))
+        .iter()
+        .map(|cell| cell.tile_index)
+        .filter(|&tile| tile != crate::map::theater::NO_TILE && tile != i32::from(u16::MAX))
+        .all(|tile| !seen.insert(tile) || lookup.filename(tile).is_some_and(&mut exists))
 }
 
 pub(super) fn materialize_map_load_cells(
@@ -1697,27 +1750,42 @@ pub(super) fn materialize_map_load_cells(
         .unwrap_or(0);
     let mut cells = Vec::with_capacity(expected_count);
     let mut index_by_coord = HashMap::with_capacity(expected_count);
-    let last_sum = n + m * 2;
+    let mut allocate = |x: u32, y: u32, tile_index: i32, z: u8| {
+        let rx = u16::try_from(x).expect("validated Size diamond x fits u16");
+        let ry = u16::try_from(y).expect("validated Size diamond y fits u16");
+        index_by_coord.insert((rx, ry), cells.len());
+        cells.push(MapCell {
+            rx,
+            ry,
+            tile_index,
+            sub_tile: 0,
+            z,
+            // CellClass::Constructor47BBF0 writes zero at47BCFE before
+            // authored Pack5 records overwrite allocated cells.
+            legacy_ice_byte: 0,
+        });
+    };
 
-    // This sum-major form is the native iterator's anti-diagonal order: each
-    // diagonal advances x and retreats y, beginning at (1, Size.Width).
-    for sum in (n + 1)..=last_sum {
-        for rx in 0..=sum {
-            let ry = sum - rx;
-            if rx.abs_diff(ry) >= n {
-                continue;
-            }
-            let rx = u16::try_from(rx).expect("validated Size diamond x fits u16");
-            let ry = u16::try_from(ry).expect("validated Size diamond y fits u16");
-            let index = cells.len();
-            cells.push(MapCell {
-                rx,
-                ry,
-                tile_index: selector.draw_fill_tile_index(is_water, scenario_fill_ranged),
-                sub_tile: 0,
-                z: 0u8.wrapping_add(map.header.level as u8),
-            });
-            index_by_coord.insert((rx, ry), index);
+    // `MapClass::Resize @ 0x00565C10` has allocated every Size-diamond cell
+    // at level 0 (the call at 0x004ACF0D). The fill walk at
+    // 0x004ACF81..0x004ACFD6 then gives each cell `Next` returns one Scenario
+    // `RandomRanged` tile and adds the map's Level to its level.
+    let diamond = crate::map::playfield::SizeDiamond::from_size(n as i32, m as i32);
+    for (x, y) in diamond.allocated_cells() {
+        let tile_index = selector.draw_fill_tile_index(is_water, scenario_fill_ranged);
+        allocate(
+            x as u32,
+            y as u32,
+            tile_index,
+            0u8.wrapping_add(map.header.level as u8),
+        );
+    }
+    // On a Size one cell wide that walk ends after (1, 1), while Resize
+    // allocated the whole diagonal: its later cells keep the constructor's
+    // tile 0xFFFF (0x0047BC11) and level 0.
+    if n == 1 {
+        for k in 2..=m {
+            allocate(k, k, 0xFFFF, 0);
         }
     }
     debug_assert_eq!(cells.len(), expected_count);

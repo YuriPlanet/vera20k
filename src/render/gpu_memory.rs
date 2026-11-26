@@ -24,6 +24,10 @@ struct MemorySnapshot {
 
 unsafe extern "C" {
     fn platform_memory_snapshot(snapshot: *mut MemorySnapshot);
+    #[cfg(feature = "horizon-frame-profile")]
+    fn platform_perf_poll();
+    #[cfg(feature = "horizon-frame-profile")]
+    fn platform_perf_thread_name(name: *const std::ffi::c_char);
 }
 
 pub(super) struct Monitor {
@@ -39,6 +43,10 @@ impl Monitor {
             .name("gpu-memory".into())
             .stack_size(128 * 1024)
             .spawn(move || {
+                #[cfg(feature = "horizon-frame-profile")]
+                unsafe {
+                    platform_perf_thread_name(c"gpu-memory".as_ptr())
+                };
                 let mib = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
                 let mut heap_peak = 0;
                 let mut gpu_peak = 0;
@@ -80,6 +88,10 @@ impl Monitor {
                         gpu.memory_allocations.read(),
                         mib(gpu_peak),
                     );
+                    #[cfg(feature = "horizon-frame-profile")]
+                    unsafe {
+                        platform_perf_poll()
+                    };
                     // Publish the last sample even if the render thread hangs.
                     log::logger().flush();
                     match stopped.recv_timeout(Duration::from_secs(2)) {

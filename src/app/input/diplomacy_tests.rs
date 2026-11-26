@@ -1,32 +1,93 @@
 use super::*;
 use crate::rules::house_colors::{HouseColorIndex, house_text_rgb};
 use crate::sim::house_state::{HouseState, MatchStatistics};
+use crate::skirmish_modes::MpModeClass;
+
+#[test]
+fn alliance_order_admission_uses_the_admitted_policy_in_skirmish() {
+    let Fixture {
+        mut sim, mut rules, ..
+    } = fixture();
+    rules.general.allies_allowed = true;
+    rules.general.ally_change_allowed = true;
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .ally_change_allowed = true;
+
+    let mode = SessionMode::Skirmish;
+    let stock = mode.stock_rule_policy(Some(MpModeClass::Battle));
+    sim.install_session_admission(
+        mode,
+        Some(MpModeClass::Battle),
+        stock.with_uses_campaign_diplomacy(true),
+    );
+    assert!(alliance_change_allowed(sim.session(), &rules));
+    sim.install_session_admission(
+        mode,
+        Some(MpModeClass::Battle),
+        stock.with_allows_manual_alliances(false),
+    );
+    assert!(!alliance_change_allowed(sim.session(), &rules));
+}
 
 /// Entry: the sidebar gadget 0x006538FE and Request_Diplomacy_Menu 0x006ABC40.
 #[test]
 fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
     use DiplomacyRequest::{Hotkey, SidebarButton};
     use RequestedState::{Diplomacy, MissionBriefing, Nothing};
+    let campaign = SessionMode::from_game_mode(0);
+    let offline = SessionMode::from_game_mode(5);
     let coop = Some(MpModeClass::Cooperative);
     let battle = Some(MpModeClass::Battle);
     for (request, mode, class, expected) in [
-        (SidebarButton, SessionMode::Campaign, None, MissionBriefing),
-        (Hotkey, SessionMode::Campaign, None, Nothing),
-        (SidebarButton, SessionMode::Skirmish, battle, Diplomacy),
-        (Hotkey, SessionMode::Skirmish, battle, Diplomacy),
+        (SidebarButton, campaign, None, MissionBriefing),
+        (Hotkey, campaign, None, Nothing),
+        (SidebarButton, offline, battle, Diplomacy),
+        (Hotkey, offline, battle, Diplomacy),
+        (SidebarButton, SessionMode::Other, None, Diplomacy),
+        (Hotkey, SessionMode::Other, None, Diplomacy),
         (SidebarButton, SessionMode::Lan, battle, Diplomacy),
         (SidebarButton, SessionMode::Lan, coop, MissionBriefing),
         (SidebarButton, SessionMode::Wol, coop, MissionBriefing),
         // Tab writes 8 even in co-op; the gadget's co-op test is LAN/WOL only.
         (Hotkey, SessionMode::Lan, coop, Diplomacy),
-        (SidebarButton, SessionMode::Skirmish, coop, Diplomacy),
+        (SidebarButton, offline, coop, Diplomacy),
     ] {
         assert_eq!(
-            requested_state(request, mode, class),
+            requested_state(
+                request,
+                mode.execution_topology(),
+                mode.stock_rule_policy(class)
+            ),
             expected,
             "{request:?} in {mode:?} with {class:?}"
         );
     }
+
+    let lan = SessionMode::Lan;
+    let briefing = lan
+        .stock_rule_policy(battle)
+        .with_network_diplomacy_briefing(true);
+    assert_eq!(
+        requested_state(SidebarButton, lan.execution_topology(), briefing),
+        MissionBriefing
+    );
+    assert_eq!(
+        requested_state(Hotkey, lan.execution_topology(), briefing),
+        Diplomacy
+    );
+
+    let rules = offline
+        .stock_rule_policy(battle)
+        .with_uses_campaign_diplomacy(true);
+    assert_eq!(
+        requested_state(SidebarButton, offline.execution_topology(), rules),
+        MissionBriefing
+    );
+    assert_eq!(
+        requested_state(Hotkey, offline.execution_topology(), rules),
+        Nothing
+    );
 }
 
 struct Fixture {
@@ -93,7 +154,6 @@ const SKIRMISH: DiplomacyRules<'static> = DiplomacyRules {
     allies_allowed: true,
     quick_coop: false,
     local_inactive: false,
-    game_mode_nonzero: true,
     listeners: &[true; 8],
 };
 
@@ -112,6 +172,45 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
     )
 }
 
+#[test]
+fn a_connection_watcher_adds_no_row_and_a_native_observer_keeps_light_grey() {
+    let mut scene = fixture();
+    scene.sim.install_session_mode(SessionMode::Wol);
+    let before = rows(&scene, SKIRMISH).rows;
+    scene.sim.install_watcher();
+    assert!(scene.sim.session().observer_houses().is_empty());
+    assert_eq!(rows(&scene, SKIRMISH).rows, before);
+    assert_eq!(crate::sim::crates::human_player_count(&scene.sim), 1);
+    assert_eq!(scene.sim.houses().len(), 4);
+
+    let mut classic = fixture();
+    classic.sim.install_session_mode(SessionMode::Wol);
+    let country = classic.sim.intern("Russians");
+    let observer = classic.sim.intern("ClassicObserver");
+    let mut house = HouseState::new(observer, 0, Some(country), true, 0, 10);
+    house.set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle(
+        "Classic Observer",
+    ));
+    classic.sim.houses_mut_for_test().register(house);
+    classic
+        .sim
+        .session_mut_for_test()
+        .install_observer_houses_for_test(vec![observer]);
+    let light_grey = HouseUiSources {
+        csf: None,
+        computer: "Computer",
+        schemes: &classic.schemes,
+        colors: &classic.colors,
+    }
+    .named_scheme_rgb("LightGrey")
+    .unwrap();
+    let rows = rows(&classic, SKIRMISH).rows;
+    assert_eq!(rows.len(), 8);
+    let visible = rows[4].as_ref().unwrap();
+    assert_eq!(visible.name, "Classic Observer");
+    assert_eq!(visible.rgb, light_grey);
+}
+
 fn ally(sim: &mut Simulation, asker: &str, other: &str) {
     sim.house_alliances_mut_for_test()
         .entry(asker.to_ascii_uppercase())
@@ -123,90 +222,93 @@ fn ally(sim: &mut Simulation, asker: &str, other: &str) {
 /// non-Multiplay Houses get no row.
 #[test]
 fn rows_swap_the_local_player_into_row_zero_and_skip_non_multiplay_houses() {
-    let fixture = fixture();
-    let resolved = rows(&fixture, SKIRMISH);
-    let names: Vec<Option<&str>> = resolved
-        .rows
-        .iter()
-        .map(|row| row.as_ref().map(|row| row.name.as_str()))
-        .collect();
-    assert_eq!(
-        names,
-        [
-            Some("[New Player]"),
-            Some("Computer"),
-            Some("Computer"),
-            None,
-            None,
-            None,
-            None,
-            None
-        ]
-    );
-    // Insignia by HouseType index: Russians (2) on row 0, then the swapped
-    // Americans (0) on row 2, Alliance (1) on row 1.
-    let insignia: Vec<_> = resolved.rows[..3]
-        .iter()
-        .map(|row| row.as_ref().unwrap().insignia)
-        .collect();
-    assert_eq!(
-        insignia,
-        [Some("frai.pcx"), Some("japi.pcx"), Some("usai.pcx")]
-    );
-    assert!(resolved.rows[0].as_ref().unwrap().allies.is_none());
-    let mut large = self::fixture();
-    for index in 4..32 {
-        let name = format!("Player{index}");
-        let id = large.sim.intern(&name);
-        let country = large
-            .sim
-            .intern(if index == 4 { "Neutral" } else { "Americans" });
-        let mut state = HouseState::new(id, 0, Some(country), index != 4, 0, 10);
-        state.set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle(&name));
-        large.sim.houses_mut_for_test().register(state);
-        if index == 31 {
-            large
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let fixture = fixture();
+        let resolved = rows(&fixture, SKIRMISH);
+        let names: Vec<Option<&str>> = resolved
+            .rows
+            .iter()
+            .map(|row| row.as_ref().map(|row| row.name.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                Some("[New Player]"),
+                Some("Computer"),
+                Some("Computer"),
+                None,
+                None,
+                None,
+                None,
+                None
+            ]
+        );
+        // Stock insignia go by HouseType index: Russians (2) on row 0, then the
+        // swapped Americans (0) on row 2, Alliance (1) on row 1. Ares answers
+        // from `File.Flag`, whose default `HouseTypeExt::Initialize @ 0x1001C0F0`
+        // picks by stored ID, so Russians keeps its own flag at index 2.
+        let local = if ares_way { "rusi.pcx" } else { "frai.pcx" };
+        let insignia: Vec<_> = resolved.rows[..3]
+            .iter()
+            .map(|row| row.as_ref().unwrap().insignia.as_deref())
+            .collect();
+        assert_eq!(insignia, [Some(local), Some("japi.pcx"), Some("usai.pcx")]);
+        assert!(resolved.rows[0].as_ref().unwrap().allies.is_none());
+        let mut large = self::fixture();
+        for index in 4..32 {
+            let name = format!("Player{index}");
+            let id = large.sim.intern(&name);
+            let country = large
                 .sim
-                .session_mut_for_test()
-                .set_current_house_for_test(Some(id));
+                .intern(if index == 4 { "Neutral" } else { "Americans" });
+            let mut state = HouseState::new(id, 0, Some(country), index != 4, 0, 10);
+            state.set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle(&name));
+            large.sim.houses_mut_for_test().register(state);
+            if index == 31 {
+                large
+                    .sim
+                    .session_mut_for_test()
+                    .set_current_house_for_test(Some(id));
+            }
         }
-    }
-    let resolved = rows(&large, SKIRMISH);
-    assert_eq!(resolved.rows.len(), 32);
-    assert_eq!(resolved.rows[0].as_ref().unwrap().name, "Player31");
-    assert!(
-        resolved.rows[31].is_some(),
-        "House0 remains reachable when local House is31"
-    );
-    assert_eq!(resolved.rows.iter().flatten().count(), 30);
+        let resolved = rows(&large, SKIRMISH);
+        assert_eq!(resolved.rows.len(), 32);
+        assert_eq!(resolved.rows[0].as_ref().unwrap().name, "Player31");
+        assert!(
+            resolved.rows[31].is_some(),
+            "House0 remains reachable when local House is31"
+        );
+        assert_eq!(resolved.rows.iter().flatten().count(), 30);
 
-    // The two fixed House entries after eight players do not create a blank
-    // second page in an ordinary retail-sized match.
-    let mut ordinary = self::fixture();
-    ordinary.sim = Simulation::with_seed(1);
-    for index in 0..10 {
-        let id = ordinary.sim.intern(&format!("House{index}"));
-        let country = ordinary
-            .sim
-            .intern(if index < 8 { "Americans" } else { "Neutral" });
-        ordinary.sim.houses_mut_for_test().register(HouseState::new(
-            id,
-            0,
-            Some(country),
-            index < 8,
-            0,
-            10,
-        ));
-        if index == 7 {
-            ordinary
+        // The two fixed House entries after eight players do not create a blank
+        // second page in an ordinary retail-sized match.
+        let mut ordinary = self::fixture();
+        ordinary.sim = Simulation::with_seed(1);
+        for index in 0..10 {
+            let id = ordinary.sim.intern(&format!("House{index}"));
+            let country = ordinary
                 .sim
-                .session_mut_for_test()
-                .set_current_house_for_test(Some(id));
+                .intern(if index < 8 { "Americans" } else { "Neutral" });
+            ordinary.sim.houses_mut_for_test().register(HouseState::new(
+                id,
+                0,
+                Some(country),
+                index < 8,
+                0,
+                10,
+            ));
+            if index == 7 {
+                ordinary
+                    .sim
+                    .session_mut_for_test()
+                    .set_current_house_for_test(Some(id));
+            }
         }
+        let resolved = rows(&ordinary, SKIRMISH);
+        assert_eq!(resolved.rows.len(), 8);
+        assert!(resolved.rows.iter().all(Option::is_some));
     }
-    let resolved = rows(&ordinary, SKIRMISH);
-    assert_eq!(resolved.rows.len(), 8);
-    assert!(resolved.rows.iter().all(Option::is_some));
 }
 
 /// Colours: the House's scheme, Grey once defeated; kills are the

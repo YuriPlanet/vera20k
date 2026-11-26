@@ -23,6 +23,7 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::util::direction::DIRECTION_DELTAS;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 
 // Fixed cell indexing is map-owned (map::cell_index, F05); sim re-exports
 // so runtime consumers keep their paths.
@@ -327,15 +328,24 @@ pub(crate) fn check_cell_passability(
             (listed(MovementLayer::Ground), listed(MovementLayer::Bridge))
         }
     };
+    let base_level = i16::from(cell.signed_level());
+    let has_bridge =
+        cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
+    let requested_level = args.level.filter(|&level| level != -1);
+    let fixed_deck_level = if has_bridge && requested_level.is_some() {
+        canonical.and_then(|coord| map.terrain?.corrected_high_bridge_deck_level(coord))
+    } else {
+        None
+    };
     evaluate_is_clear_to_move(IsClearToMoveRequest {
         speed_type: args.speed_type,
         movement_zone: args.movement_zone,
         requested_zone,
         actual_zone,
-        base_level: i16::from(cell.signed_level()),
-        has_bridge: cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
-            != 0,
-        requested_level: args.level.filter(|&level| level != -1),
+        base_level,
+        has_bridge,
+        fixed_deck_level,
+        requested_level,
         is_bridge: args.is_bridge,
         ground_occupation_bits,
         deck_occupation_bits,
@@ -401,6 +411,8 @@ struct IsClearToMoveRequest {
     base_level: i16,
     /// Native `CellClass::Flags & 0x100` bridge gate.
     has_bridge: bool,
+    /// A live authored deck, if this cell belongs to one.
+    fixed_deck_level: Option<i16>,
     /// `None` corresponds to native level `-1` (select bridge occupation on a bridge cell).
     requested_level: Option<i16>,
     is_bridge: bool,
@@ -429,16 +441,24 @@ fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult
         return IsClearToMoveResult::ZoneMismatch;
     }
 
+    let deck_level = input.fixed_deck_level.unwrap_or_else(|| {
+        input
+            .base_level
+            .saturating_add(BRIDGE_DECK_HEIGHT_LEVELS as i16)
+    });
     let selected_layer = match input.requested_level {
+        // Native 4834A0 tests the ground first. A fixed deck can coincide
+        // with the ground; a request for that deck must still see its list.
+        Some(level) if input.has_bridge && input.fixed_deck_level == Some(level) => {
+            MovementLayer::Bridge
+        }
         Some(level) if level == input.base_level => {
             if input.has_bridge && !input.is_bridge {
                 return IsClearToMoveResult::LevelMismatch;
             }
             MovementLayer::Ground
         }
-        Some(level) if input.has_bridge && level == input.base_level.saturating_add(4) => {
-            MovementLayer::Bridge
-        }
+        Some(level) if input.has_bridge && level == deck_level => MovementLayer::Bridge,
         Some(_) => return IsClearToMoveResult::LevelMismatch,
         None if input.has_bridge => MovementLayer::Bridge,
         None => MovementLayer::Ground,
@@ -488,7 +508,9 @@ fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult
     // `0x004835DE..0x004835F4`: a cost equal to 0.0 refuses unless the deck
     // was selected. A row the scenario rules lack reads as 0.0.
     if selected_layer != MovementLayer::Bridge
-        && row.cost_for_speed_type(input.speed_type).unwrap_or(0) == 0
+        && row
+            .cost_for_speed_type(input.speed_type)
+            .is_none_or(|cost| cost.is_zero())
     {
         return IsClearToMoveResult::LandBlocked;
     }
@@ -532,13 +554,78 @@ pub(crate) fn scan_cell_rect(rect: CellRect, mut visit: impl FnMut(i32, i32) -> 
 /// Sparse authority for CellClass `+0xDC`. A fixed-stride coordinate selects a
 /// real entry only when the active terrain has an allocated CellClass pointer;
 /// every invalid or valid-but-unallocated lookup shares `dummy_mask`.
+///
+/// One bit per House id. Native allocates a 32-bit word per cell, and the
+/// retail game never holds more than thirty-two Houses; VERA's offline
+/// Skirmish seats up to one hundred twenty players beside Neutral and Special, so the
+/// word widens to 128 bits ([`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CellReservationGrid {
-    masks: BTreeMap<(u16, u16), u32>,
+    #[serde(with = "saved_reservations")]
+    masks: BTreeMap<(u16, u16), u128>,
     /// Native save iterates allocated CellClass pointers only. The process-global
     /// fallback CellClass is reconstructed cleared during load/Resize.
     #[serde(skip)]
-    dummy_mask: u32,
+    dummy_mask: u128,
+}
+
+// Saves have always held a map from (u16, u16) to a 32-bit reservation word.
+// A real cell uses at most ten coordinate bits. The top two bits of the saved
+// x select the group of 32 houses; group zero keeps the original key and word.
+// This changes neither the save layout nor the bytes for an ordinary game.
+mod saved_reservations {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serializer, ser::SerializeMap};
+
+    const GROUP_SHIFT: u32 = u16::BITS - 2;
+    const _: () = assert!(crate::map::cell_index::MAX_CELL_SIDE <= 1 << GROUP_SHIFT);
+
+    fn words(cells: &BTreeMap<(u16, u16), u128>) -> impl Iterator<Item = ((u16, u16), u32)> + '_ {
+        cells.iter().flat_map(|(&(x, y), &mask)| {
+            let mut remaining = mask;
+            std::iter::from_fn(move || {
+                if remaining == 0 {
+                    return None;
+                }
+                let group = remaining.trailing_zeros() / u32::BITS;
+                let shift = group * u32::BITS;
+                let word = (remaining >> shift) as u32;
+                remaining &= !(u128::from(u32::MAX) << shift);
+                Some(((x | ((group as u16) << GROUP_SHIFT), y), word))
+            })
+        })
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        cells: &BTreeMap<(u16, u16), u128>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(words(cells).count()))?;
+        for (key, word) in words(cells) {
+            map.serialize_entry(&key, &word)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<(u16, u16), u128>, D::Error> {
+        let mut cells = BTreeMap::new();
+        for ((saved_x, y), word) in BTreeMap::<(u16, u16), u32>::deserialize(deserializer)? {
+            let x = saved_x & (u16::MAX >> 2);
+            let group = u32::from(saved_x >> GROUP_SHIFT);
+            if x >= crate::map::cell_index::MAX_CELL_SIDE
+                || y >= crate::map::cell_index::MAX_CELL_SIDE
+            {
+                return Err(serde::de::Error::custom("invalid reservation cell"));
+            }
+            if word != 0 {
+                *cells.entry((x, y)).or_default() |= u128::from(word) << (group * u32::BITS);
+            }
+        }
+        Ok(cells)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -644,11 +731,11 @@ impl CellReservationGrid {
         }
     }
 
-    pub fn raw_mask(&self, terrain: Option<&ResolvedTerrainGrid>, x: i32, y: i32) -> u32 {
+    pub fn raw_mask(&self, terrain: Option<&ResolvedTerrainGrid>, x: i32, y: i32) -> u128 {
         self.raw_mask_for_selection(&resolve_reservation_cell(terrain, x, y))
     }
 
-    fn raw_mask_for_selection(&self, cell: &ReservationCellSelection) -> u32 {
+    fn raw_mask_for_selection(&self, cell: &ReservationCellSelection) -> u128 {
         match cell {
             ReservationCellSelection::Real(rx, ry) => {
                 self.masks.get(&(*rx, *ry)).copied().unwrap_or(0)
@@ -658,7 +745,7 @@ impl CellReservationGrid {
         }
     }
 
-    pub(crate) fn raw_mask_for_cell_ref(&self, cell: &CellRef<'_>) -> u32 {
+    pub(crate) fn raw_mask_for_cell_ref(&self, cell: &CellRef<'_>) -> u128 {
         match cell {
             CellRef::Real(cell) => self.masks.get(&(cell.rx, cell.ry)).copied().unwrap_or(0),
             CellRef::Dummy { .. } => self.dummy_mask,
@@ -733,12 +820,16 @@ impl CellReservationGrid {
         result
     }
 
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (u16, u16, u32)> + '_ {
+    pub(crate) fn entries(&self) -> impl ExactSizeIterator<Item = (u16, u16, u128)> + '_ {
         self.masks.iter().map(|(&(rx, ry), &mask)| (rx, ry, mask))
     }
 
-    pub fn dummy_mask(&self) -> u32 {
+    pub fn dummy_mask(&self) -> u128 {
         self.dummy_mask
+    }
+
+    pub(crate) fn restore_saved_dummy_mask(&mut self, mask: u128) {
+        self.dummy_mask = mask;
     }
 
     /// Reconstruct only the split `+0xDC` state of the fixed fallback
@@ -836,7 +927,7 @@ fn occupancy_blocker_at(
     ctx: &CellRectOccupancyContext<'_>,
     x: i32,
     y: i32,
-    reservation_mask: u32,
+    reservation_mask: u128,
 ) -> Option<OccupancyBlocker> {
     // Native `CellRect::CheckOccupancy @ 0x00586780` resolves the never-null
     // CellClass first. All following columns therefore observe the lookup's
@@ -981,7 +1072,7 @@ pub fn cell_is_in_playfield_height_aware(
 
 /// Map578540 mode1 reads an already-retained Cell pointer. Unlike578460,
 /// it does not look up the coordinates or stamp the shared dummy again.
-pub(crate) fn retained_cell_is_in_playfield(
+pub fn retained_cell_is_in_playfield(
     cell: crate::map::cell_index::NativeCellIdentity,
     bounds: Option<PlayfieldBounds>,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
@@ -990,6 +1081,50 @@ pub(crate) fn retained_cell_is_in_playfield(
     let coord = cells.coord(cell);
     let (level, slope) = cells.ground_fields(cell);
     bounds.contains_height_aware_packed(i32::from(coord.0), i32::from(coord.1), level as i8, slope)
+}
+
+/// The native ground lists while GameActive(A8E9A0) is set. An absent
+/// projection means the caller is in the inactive loading/teardown phase;
+/// ScenarioSession.started is a different native byte.
+#[derive(Clone, Copy)]
+pub(crate) struct BurrowingContents<'a> {
+    pub occupancy: &'a OccupancyGrid,
+    pub terrain_objects: &'a BTreeMap<(u16, u16), u64>,
+}
+
+/// CellClass::PassesTileAndOccupancyChecks486FF0. The incoming Cell pointer
+/// survives nested queries: this leaf never resolves its coordinate again.
+/// Outside the playfield succeeds immediately; invalid signed tile indices
+/// skip only the tile permission, not slope, bridge or active ground lists.
+pub(crate) fn cell_allows_burrowing(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    cell: crate::map::cell_index::NativeCellIdentity,
+    bounds: Option<PlayfieldBounds>,
+    contents: Option<BurrowingContents<'_>>,
+) -> bool {
+    if !retained_cell_is_in_playfield(cell, bounds, cells) {
+        return true;
+    }
+    let terrain = cells.terrain();
+    if !terrain.tile_allows_burrowing(terrain.native_cell_tile_index(cell))
+        || cells.ground_fields(cell).1 != 0
+        || cells.flags(cell) & 0x500 != 0
+    {
+        return false;
+    }
+    if let Some(contents) = contents {
+        let coord = cells.coord(cell);
+        let coord = (coord.0 as u16, coord.1 as u16);
+        if contents
+            .occupancy
+            .first_building_on_layer(coord.0, coord.1, MovementLayer::Ground)
+            .is_some()
+            || contents.terrain_objects.contains_key(&coord)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn cell_is_in_playfield_height_aware_in_query(
@@ -1107,26 +1242,119 @@ pub fn cell_is_in_playfield_leptons(
     cell_is_in_playfield_height_aware(cell, bounds, terrain)
 }
 
-fn reservation_mask(reservation_arg: i32) -> u32 {
-    if reservation_arg == -1 {
-        0
-    } else {
-        1u32 << ((reservation_arg as u32) & 0x1F)
+/// One bit per House id, the low seven bits of a non-negative argument, where
+/// native takes the low five of its 32-bit word. `-1` reserves nothing; the
+/// other negative arguments are native's own sentinels and keep the native
+/// five-bit alias (`-2` is bit 30), so they never reach a widened bit.
+fn reservation_mask(reservation_arg: i32) -> u128 {
+    // Players + Neutral/Special + reserved slots fill the 128-bit word.
+    const _: () = assert!(crate::skirmish_launch::SKIRMISH_HOUSE_SLOT_COUNT <= u128::BITS as usize);
+    match reservation_arg {
+        -1 => 0,
+        arg if arg < 0 => 1u128 << ((arg as u32) & 0x1F),
+        arg => 1u128 << (arg as u32 & 0x7F),
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "cell_rect_clamp_tests.rs"]
 mod clamp_tests;
 
-#[cfg(test)]
+/// YRpp `CellSpreadEnumerator` (`Helpers/Enumerators.h`): cell offsets from
+/// the center outward, ring by ring, clamped to its `Max` of 0x100. Ring 1 is
+/// `(0,0), (-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)`.
+/// Enumerated as it is walked, as the native enumerator is: a walk builds no
+/// list.
+pub fn cell_spread_offsets(spread: usize) -> CellSpreadOffsets {
+    /// `CellSpreadEnumerator::Max`.
+    const MAX_SPREAD: usize = 0x100;
+    CellSpreadOffsets {
+        spread: spread.min(MAX_SPREAD),
+        curspread: 0,
+        current: (0, 0),
+        has_two: true,
+        had_two: true,
+    }
+}
+
+/// The walk [`cell_spread_offsets`] returns: the enumerator's state.
+#[derive(Debug, Clone)]
+pub struct CellSpreadOffsets {
+    spread: usize,
+    curspread: usize,
+    current: (i16, i16),
+    has_two: bool,
+    had_two: bool,
+}
+
+impl Iterator for CellSpreadOffsets {
+    type Item = (i16, i16);
+
+    fn next(&mut self) -> Option<(i16, i16)> {
+        if self.curspread > self.spread {
+            return None;
+        }
+        let cell = self.current;
+        self.step();
+        Some(cell)
+    }
+}
+
+impl CellSpreadOffsets {
+    /// The enumerator's `operator++`: the cell after `current`.
+    fn step(&mut self) {
+        let current = &mut self.current;
+        if *current == (0, 0) || (current.0 == 1 && current.1 == self.curspread as i16) {
+            self.curspread += 1;
+            *current = (-1, -(self.curspread as i16));
+            self.has_two = true;
+            self.had_two = true;
+            return;
+        }
+        if self.has_two {
+            current.0 += 1;
+            self.has_two = current.0 == 0;
+            return;
+        }
+        if current.0 < 0 {
+            current.0 = -current.0;
+            self.has_two = self.had_two;
+            return;
+        }
+        current.1 += 1;
+        let change_sign = current.1 > 0;
+        if change_sign {
+            current.1 = -current.1;
+        }
+        current.0 = (self.curspread as i16 + current.1)
+            .wrapping_mul(-2)
+            .wrapping_sub(1);
+        let diff = current.0 - current.1;
+        self.has_two = diff >= 0;
+        self.had_two = self.has_two;
+        if diff == -1 {
+            current.0 += 1;
+        } else if diff < 0 {
+            current.0 = current
+                .1
+                .wrapping_neg()
+                .wrapping_div(2)
+                .wrapping_sub(self.curspread as i16);
+        }
+        if change_sign {
+            current.1 = -current.1;
+        }
+    }
+}
+
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
     use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     use crate::map::map_file::MapHeader;
-    use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
+    use crate::map::resolved_terrain::test_retail_clear_speed_costs;
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::rules::terrain_rules::{SpeedCostProfile, TerrainRules};
     use crate::sim::occupancy::CellListInsertion;
@@ -1151,8 +1379,8 @@ mod tests {
 
     fn clear_land() -> CellLand {
         CellLand {
-            row: TEST_RETAIL_CLEAR_SPEED_COSTS,
-            clear_row: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            row: test_retail_clear_speed_costs(),
+            clear_row: test_retail_clear_speed_costs(),
             overlay: None,
         }
     }
@@ -1165,6 +1393,7 @@ mod tests {
             actual_zone: 7,
             base_level: 2,
             has_bridge: false,
+            fixed_deck_level: None,
             requested_level: Some(2),
             is_bridge: false,
             ground_occupation_bits: 0,
@@ -1179,13 +1408,14 @@ mod tests {
     fn zero_row_land(overlay: Option<OverlayPassability>) -> Option<CellLand> {
         Some(CellLand {
             row: SpeedCostProfile {
-                foot: Some(0),
-                track: Some(0),
-                wheel: Some(0),
-                float: Some(0),
-                amphibious: Some(0),
-                float_beach: Some(0),
-                hover: Some(0),
+                foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             },
             overlay,
             ..clear_land()
@@ -1243,6 +1473,55 @@ mod tests {
             IsClearToMoveResult::Occupied {
                 remaining_bits: 0x40
             }
+        );
+    }
+
+    #[test]
+    fn explicit_fixed_deck_level_selects_deck_occupation() {
+        use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+        let cell = terrain.native_cell_identity((3, 3));
+        terrain.write_native_cell_flags(cell, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.write_native_cell_level(cell, 8);
+        terrain.set_authored_high_bridge_deck(cell, 10);
+        let mut listed = OccupancyGrid::new();
+        listed.add(
+            3,
+            3,
+            1,
+            MovementLayer::Bridge,
+            None,
+            CellListInsertion::PrependNonBuilding,
+        );
+        let map = CellPassabilityMap {
+            terrain: Some(&terrain),
+            overlays: None,
+            zones: None,
+            native_cells: None,
+            raw_occupation: None,
+            listed_occupancy: Some(&listed),
+        };
+        let mut args = mover(SpeedType::Track, MovementZone::Normal);
+        let cell = canonical_cell_ref(&terrain, cell);
+        args.level = Some(10);
+        assert_eq!(
+            check_cell_passability(&cell, args, &map),
+            IsClearToMoveResult::Occupied {
+                remaining_bits: 0x40
+            }
+        );
+        args.level = Some(8);
+        assert_eq!(
+            check_cell_passability(&cell, args, &map),
+            IsClearToMoveResult::Clear {
+                selected_layer: MovementLayer::Ground
+            }
+        );
+        args.level = Some(12);
+        assert_eq!(
+            check_cell_passability(&cell, args, &map),
+            IsClearToMoveResult::LevelMismatch
         );
     }
 
@@ -1835,7 +2114,8 @@ mod tests {
         assert_eq!(terrain.dummy_cell_requested_coord(), (1, 0));
         zone_grid
             .base_topology_mut_for_test()
-            .raw_zone_ids_by_row_mut_for_test()[row][3] = u16::MAX;
+            .raw_zone_ids_by_row_mut_for_test()[row][3] =
+            u16::MAX as crate::sim::pathfinding::zone_map::ZoneId;
         assert!(!check(77, &zone_grid), "raw 0xffff stays distinct");
         assert_eq!(
             terrain.dummy_cell_requested_coord(),
@@ -1872,7 +2152,8 @@ mod tests {
         assert!(!check(&terrain, &zone_grid, 92, true));
         zone_grid
             .base_topology_mut_for_test()
-            .raw_zone_ids_by_row_mut_for_test()[row][cluster] = u16::MAX;
+            .raw_zone_ids_by_row_mut_for_test()[row][cluster] =
+            u16::MAX as crate::sim::pathfinding::zone_map::ZoneId;
         assert!(check(&terrain, &zone_grid, 0xFFFF, true));
         terrain.cells_mut_for_test()[0].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         assert_eq!(
@@ -2077,12 +2358,14 @@ mod tests {
     fn gsi_04_05_reservation_masks_aliases_dummy_and_neighbors_are_native_shaped() {
         assert_eq!(reservation_mask(-1), 0);
         assert_eq!(reservation_mask(-2), 1 << 30);
-        assert_eq!(reservation_mask(32), 1);
-        assert_eq!(reservation_mask(63), 1 << 31);
+        // VERA: House ids past the native word keep their own bit instead of
+        // aliasing bit 0/31.
+        assert_eq!(reservation_mask(32), 1u128 << 32);
+        assert_eq!(reservation_mask(63), 1u128 << 63);
 
         let mut grid = CellReservationGrid::new();
         grid.reserve(None, -1, 1, 32);
-        assert_eq!(grid.raw_mask(None, 511, 0), 1);
+        assert_eq!(grid.raw_mask(None, 511, 0), 1u128 << 32);
         grid.reserve(None, 512, 0, 1);
         assert_eq!(grid.raw_mask(None, 0, 1), 2);
 

@@ -19,7 +19,7 @@ a different extracted-INI requirement and does not enable this suite.
 
 The committed reference is `tests/fixtures/retail_goldens/manifest.json`, resolved
 from the compile-time checkout path. It records 64 archives under 16 roots,
-8,824 directly sniffed assets, 3,438 audio-bag entries and ten named decoder
+11,854 directly sniffed assets, 3,438 audio-bag entries and ten named decoder
 results. Those counts describe this reference corpus, not every supported install.
 The corpus explicitly mounts all disk MIXes, including archives the game's normal
 startup skips, while pinning digital-install media index 2. Unknown formats are

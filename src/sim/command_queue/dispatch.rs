@@ -4,13 +4,20 @@ use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
+use super::FRAMEINFO_EVENT_OPCODE;
 use crate::sim::command::{
-    CommandRecord, MEGAMISSION_OPCODE, MEGAMISSION_STAGE_CAPACITY, stage_megamission,
+    CommandRecord, MEGAMISSION_OPCODE, MEGAMISSION_STAGE_CAPACITY, OPTIONS_OPCODE,
+    PAGE_USER_OPCODE, stage_megamission,
 };
 use crate::sim::intern::InternedId;
 
 pub const DO_LIST_CAPACITY: usize = 0x4000;
-const FRAMEINFO_OPCODE: u8 = 0x1c;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoListInsertion {
+    Back,
+    Front,
+}
 
 /// Derived occupancy of the one DoList, including a temporarily moved scan.
 /// Source counts bound authenticated multiplayer traffic without rescanning
@@ -70,8 +77,20 @@ pub struct CommandDispatchClock {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandDispatchMode {
+    /// The original offline scan with its 256-event MegaMission stage. Only
+    /// tests use it; the simulation dispatches as SinglePlayer or Network.
     Offline,
+    /// The simulation outside multiplayer, under the single-player bound.
+    SinglePlayer,
     Network,
+}
+
+impl CommandDispatchMode {
+    /// Execute_DoList `0x0064C579..0x0064C5A9`: a network game consumes a
+    /// late event without executing it, except FRAMEINFO.
+    pub(crate) fn skips_late(self, opcode: Option<u8>) -> bool {
+        self == Self::Network && opcode != Some(FRAMEINFO_EVENT_OPCODE)
+    }
 }
 
 /// Fallback metadata only for an entry with no native record. A native record
@@ -391,6 +410,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
             },
             CAPACITY,
             usize::MAX,
+            DoListInsertion::Back,
         )
     }
 
@@ -400,6 +420,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
         reserved: NativeCommandOccupancy,
         maximum: usize,
         maximum_per_house: usize,
+        insertion: DoListInsertion,
     ) -> bool {
         let native = entry.consumes_native_dolist_slot();
         let native_count = self.refresh_native_count();
@@ -417,7 +438,10 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
         }
         entry.clear_processed();
         self.native_count.as_mut().unwrap().add(&entry);
-        self.entries.push_back(entry);
+        match insertion {
+            DoListInsertion::Back => self.entries.push_back(entry),
+            DoListInsertion::Front => self.entries.push_front(entry),
+        }
         true
     }
 
@@ -458,7 +482,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
         for entry in self.entries.iter_mut().take(scan_len) {
             if let Some(record) = entry.native_record_mut() {
                 let frame = record.frame_stamp();
-                if record.opcode() != FRAMEINFO_OPCODE
+                if record.opcode() != FRAMEINFO_EVENT_OPCODE
                     && self.retime_window.start < frame
                     && frame < self.retime_window.end
                 {
@@ -473,12 +497,15 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
             }
             let mut staged = Vec::new();
             let mut staged_late = Vec::new();
-            let stage_capacity =
-                if mode == CommandDispatchMode::Network && CAPACITY > DO_LIST_CAPACITY {
-                    super::NETWORK_SOURCE_DOLIST_CAPACITY
-                } else {
-                    MEGAMISSION_STAGE_CAPACITY
-                };
+            let stage_capacity = if mode == CommandDispatchMode::SinglePlayer {
+                // Sim-scale deviation: Execute_DoList64C380's 256-event
+                // stage must not discard the rest of an admitted army click.
+                super::SINGLE_PLAYER_DOLIST_CAPACITY
+            } else if mode == CommandDispatchMode::Network && CAPACITY > DO_LIST_CAPACITY {
+                super::NETWORK_SOURCE_DOLIST_CAPACITY
+            } else {
+                MEGAMISSION_STAGE_CAPACITY
+            };
             for entry in self.entries.iter_mut().take(scan_len) {
                 if entry.is_processed() {
                     continue;
@@ -506,25 +533,22 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
                 };
 
                 host.before_entry(house, entry, is_late);
-                if is_late
-                    && opcode != Some(FRAMEINFO_OPCODE)
-                    && mode == CommandDispatchMode::Network
-                {
+                if is_late && mode.skips_late(opcode) {
                     host.late_entry(house, entry);
                     summary.late_skipped += 1;
                     continue;
                 }
 
                 match opcode {
-                    Some(FRAMEINFO_OPCODE) => {
+                    Some(FRAMEINFO_EVENT_OPCODE) => {
                         if !is_late && mode == CommandDispatchMode::Network {
                             summary.frame_info_compared +=
                                 usize::from(host.frame_info(house, entry)?);
                         }
                         summary.timing_consumed += 1;
                     }
-                    Some(0x22) => {}
-                    Some(0x0c) if !house.current_player => {}
+                    Some(PAGE_USER_OPCODE) => {}
+                    Some(OPTIONS_OPCODE) if !house.current_player => {}
                     Some(MEGAMISSION_OPCODE) => {
                         if stage_megamission(&mut staged, entry, stage_capacity) {
                             staged_late.push(is_late);
@@ -589,7 +613,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use std::convert::Infallible;

@@ -45,12 +45,23 @@ pub enum Verb {
     IniType { type_id: String },
     IniRoots,
     IniExpand { name: String },
+    CampaignCheck(CampaignCheckArgs),
     Help,
+}
+
+pub struct CampaignCheckArgs {
+    pub manifest: PathBuf,
+    pub stage: String,
+    pub frames: u32,
 }
 
 pub struct Cli {
     pub ra2_dir: Option<PathBuf>,
+    /// Explicit mod directory; its normal mod.ini supplies loading rules.
+    pub mod_dir: Option<PathBuf>,
     pub all_mixes: bool,
+    /// `--ares`: the player's Ares setting the game opens with.
+    pub ares: crate::util::ares_launch::AresSetting,
     pub verb: Verb,
     pub find: FindOptions,
     pub ls: LsOptions,
@@ -86,6 +97,8 @@ VERBS
   ini-type <TYPE>          Inspect final scenario ObjectType movement/flight fields.
   ini-roots               Inspect the selected Rules/Art/AI roots and byte sources.
   ini-expand <FILE>        Probe production Include/Inherits expansion and sources.
+  campaign-check <MANIFEST> <STAGE> <FRAMES>
+                       Validate a campaign stage and verify each replayed frame.
   find <NAME>          Which archive wins, what shadows it, and what is
                        catalogued but unreachable by name lookup.
   ls <ARCHIVE>         Paged listing of one archive's entries.
@@ -132,13 +145,17 @@ ini-expand
                        --all-mixes widens tooling lookup only, not game mounting.
 
 GLOBAL OPTIONS
-  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type only; overrides [ini] as a unit.
+  --ini-profile <yr|auto|ra2|custom>  ini-roots/get/type: overrides [ini] as a unit.
   --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
                        Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
+  --mod-dir <PATH>     Overlay a mod directory using its mod.ini loading rules.
   --all-mixes          Also mount archives the game's startup path skips.
                        Tooling-only: hits found this way are not what the game
                        would resolve.
+  --ares <Auto|On|Off> The Ares setting the game opens with. Default Auto, which
+                       reads the installation without its ares.mix; On reads
+                       it as an Ares game (string tables, audio bags, INIs).
   -h, --help           This text.
 
 find
@@ -180,7 +197,7 @@ palette-for
 
 csf-get / csf-grep
   --source <NAME>      Inspect one raw .csf. Default: the active game table
-                       (ra2md.csf; Ares builds also apply its supplements).
+                       (ra2md.csf; an Ares game also applies its supplements).
   --raw                Also report the stored text before normalisation.
   --limit/--offset     Paging. Default limit 50.
 
@@ -221,7 +238,9 @@ parse-check
 pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     let mut cli = Cli {
         ra2_dir: None,
+        mod_dir: None,
         all_mixes: false,
+        ares: Default::default(),
         verb: Verb::Help,
         find: FindOptions::default(),
         ls: LsOptions::default(),
@@ -254,7 +273,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
 
     if matches!(
         verb_word.as_str(),
-        "ini-get" | "ini-type" | "ini-roots" | "ini-expand"
+        "ini-get" | "ini-type" | "ini-roots" | "ini-expand" | "campaign-check"
     ) && args
         .peek()
         .is_some_and(|arg| matches!(arg.as_str(), "-h" | "--help"))
@@ -288,6 +307,15 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         "ini-expand" => Verb::IniExpand {
             name: require_target(target, "ini-expand", "<FILE>")?,
         },
+        "campaign-check" => Verb::CampaignCheck(CampaignCheckArgs {
+            manifest: PathBuf::from(require_target(
+                target,
+                "campaign-check",
+                "<MANIFEST> <STAGE> <FRAMES>",
+            )?),
+            stage: value(&mut args, "campaign-check stage")?,
+            frames: number(&mut args, "campaign-check frames")?,
+        }),
         "find" => Verb::Find {
             name: require_target(target, "find", "<NAME>")?,
         },
@@ -334,6 +362,8 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--mod-dir"
+                    | "--ares"
                     | "--all-mixes"
                     | "--ini-profile"
                     | "--rules-ini"
@@ -349,6 +379,8 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--mod-dir"
+                    | "--ares"
                     | "--all-mixes"
                     | "--strict"
                     | "--max-depth"
@@ -363,6 +395,8 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--mod-dir"
+                    | "--ares"
                     | "--ini-profile"
                     | "--rules-ini"
                     | "--art-ini"
@@ -387,24 +421,43 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         {
             return Err(flag_not_valid(&flag, &cli.verb));
         }
+        if matches!(cli.verb, Verb::CampaignCheck(_))
+            && !matches!(flag.as_str(), "--ra2-dir" | "-h" | "--help")
+        {
+            return Err(flag_not_valid(&flag, &cli.verb));
+        }
         match flag.as_str() {
             "-h" | "--help" => {
                 cli.verb = Verb::Help;
                 return Ok(cli);
             }
             "--ra2-dir" => cli.ra2_dir = Some(PathBuf::from(value(&mut args, "--ra2-dir")?)),
+            "--mod-dir" => cli.mod_dir = Some(PathBuf::from(value(&mut args, "--mod-dir")?)),
             "--all-mixes" => cli.all_mixes = true,
+            "--ares" => {
+                let text = value(&mut args, "--ares")?;
+                cli.ares = crate::util::ares_launch::AresSetting::parse(&text)
+                    .ok_or_else(|| format!("--ares takes Auto, On or Off, not {text:?}"))?;
+            }
             "--ini-profile" | "--rules-ini" | "--art-ini" | "--ai-ini" => {
-                if !matches!(
+                let ini_verb = matches!(
                     cli.verb,
                     Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
-                ) {
+                );
+                if !ini_verb {
                     return Err(flag_not_valid(&flag, &cli.verb));
                 }
                 let config = cli.ini_roots.get_or_insert_with(Default::default);
                 let text = value(&mut args, &flag)?;
                 match flag.as_str() {
-                    "--ini-profile" => config.profile = text.parse()?,
+                    "--ini-profile" => {
+                        let profile: crate::util::ini_roots::IniProfile = text.parse()?;
+                        // An explicit ra2 profile is a whole-stack RA2 request in
+                        // headless tools too: mirror the game's `-ra2` so archive
+                        // mounts and CSF selection follow the non-md family.
+                        crate::util::ra2_launch::set(profile == crate::util::ini_roots::IniProfile::Ra2);
+                        config.profile = profile;
+                    }
                     "--rules-ini" => config.rules = Some(text),
                     "--art-ini" => config.art = Some(text),
                     "--ai-ini" => config.ai = Some(text),
@@ -580,6 +633,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     if let Some(config) = &cli.ini_roots {
         config.validate()?;
     }
+    if cli.ini_source_only && cli.mod_dir.is_some() {
+        return Err("--source-only cannot be combined with --mod-dir; use the source directory with --ra2-dir or inspect the mod's normal archive stack".into());
+    }
     Ok(cli)
 }
 
@@ -630,14 +686,93 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::IniType { .. } => "ini-type",
         Verb::IniRoots => "ini-roots",
         Verb::IniExpand { .. } => "ini-expand",
+        Verb::CampaignCheck(_) => "campaign-check",
         Verb::Help => "help",
     };
     format!("{flag} is not valid for `{verb_name}`")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mod_directory_is_accepted_by_each_ini_command() {
+        for mut words in [
+            vec!["ini-roots"],
+            vec![
+                "ini-get", "TEST", "Voxel", "--domain", "art", "--reader", "raw",
+            ],
+            vec![
+                "ini-type",
+                "TEST",
+                "--domain",
+                "rules",
+                "--map",
+                "example.map",
+                "--mode-id",
+                "1",
+            ],
+            vec!["ini-expand", "example.ini"],
+        ] {
+            words.extend(["--mod-dir", "mods/example"]);
+            let cli = parse(args(&words)).unwrap();
+            assert_eq!(
+                cli.mod_dir.as_deref(),
+                Some(std::path::Path::new("mods/example"))
+            );
+        }
+    }
+
+    #[test]
+    fn campaign_check_requires_three_positionals_and_accepts_only_its_retail_root() {
+        let cli = parse(args(&[
+            "campaign-check",
+            "campaigns/series/campaign.ini",
+            "Opening",
+            "24",
+            "--ra2-dir",
+            "D:/Game Dir",
+        ]))
+        .unwrap();
+        assert!(matches!(
+            cli.verb,
+            Verb::CampaignCheck(CampaignCheckArgs { manifest, stage, frames: 24 })
+                if manifest == std::path::Path::new("campaigns/series/campaign.ini")
+                    && stage == "Opening"
+        ));
+        assert_eq!(
+            cli.ra2_dir.as_deref(),
+            Some(std::path::Path::new("D:/Game Dir"))
+        );
+        for words in [
+            &["campaign-check", "campaign.ini", "Opening"][..],
+            &["campaign-check", "campaign.ini", "Opening", "-1"],
+            &[
+                "campaign-check",
+                "campaign.ini",
+                "Opening",
+                "24",
+                "--all-mixes",
+            ],
+        ] {
+            assert!(parse(args(words)).is_err(), "{words:?}");
+        }
+    }
+
+    #[test]
+    fn mod_directory_cannot_silently_override_source_only() {
+        let error = parse(args(&[
+            "ini-expand",
+            "example.ini",
+            "--mod-dir",
+            "mods/example",
+            "--source-only",
+        ]))
+        .err()
+        .expect("source-only and a mod must be refused");
+        assert!(error.contains("--source-only cannot be combined with --mod-dir"));
+    }
 
     #[test]
     fn ini_roots_cli_keeps_profile_choice_whole_and_rejects_other_verbs() {
@@ -663,6 +798,14 @@ mod tests {
             custom.ini_roots.unwrap().resolve(|_| true).unwrap().names(),
             ["r.ini", "a.ini", "i.ini"]
         );
+        let extract = parse(args(&[
+            "extract",
+            "alternate.ini",
+            "--mod-dir",
+            "mods/example",
+        ]))
+        .unwrap();
+        assert_eq!(extract.mod_dir, Some(PathBuf::from("mods/example")));
         for words in [
             vec![
                 "ini-roots",
@@ -671,11 +814,11 @@ mod tests {
                 "--rules-ini",
                 "r.ini",
             ],
-            vec!["ini-roots", "--ini-profile", "mo", "--ai-ini", "aimd.ini"],
+            vec!["ini-roots", "--ini-profile", "yr", "--ai-ini", "aimd.ini"],
             vec!["ini-roots", "--ini-profile", "unknown"],
             vec!["ini-roots", "--out", "somewhere"],
-            vec!["find", "r.ini", "--ini-profile", "mo"],
-            vec!["ini-expand", "r.ini", "--ini-profile", "mo"],
+            vec!["find", "r.ini", "--ai-ini", "alternate.ini"],
+            vec!["ini-expand", "r.ini", "--ini-profile", "custom"],
             vec!["ini-roots", "--strict"],
             vec!["ini-roots", "--source-only"],
         ] {
@@ -687,7 +830,7 @@ mod tests {
     fn ini_expand_probe_admits_only_its_own_read_only_options() {
         let cli = parse(args(&[
             "ini-expand",
-            "rulesmo.ini",
+            "alternate.ini",
             "--strict",
             "--max-depth",
             "12",
@@ -695,7 +838,7 @@ mod tests {
             "--source-only",
         ]))
         .unwrap();
-        assert!(matches!(cli.verb, Verb::IniExpand { name } if name == "rulesmo.ini"));
+        assert!(matches!(cli.verb, Verb::IniExpand { name } if name == "alternate.ini"));
         assert!(cli.ini_strict && cli.all_mixes && cli.ini_source_only);
         assert_eq!(cli.ini_max_depth, 12);
         for words in [
@@ -771,6 +914,18 @@ mod tests {
             .err()
             .expect("a flag as a value is an error");
         assert!(err.contains("--filter needs a value"), "got {err}");
+    }
+
+    #[test]
+    fn ares_takes_the_players_setting() {
+        use crate::util::ares_launch::AresSetting;
+        assert_eq!(
+            parse(args(&["csf-get", "x"])).unwrap().ares,
+            AresSetting::Auto
+        );
+        let cli = parse(args(&["csf-get", "x", "--ares", "on"])).unwrap();
+        assert_eq!(cli.ares, AresSetting::On);
+        assert!(parse(args(&["csf-get", "x", "--ares", "maybe"])).is_err());
     }
 
     #[test]

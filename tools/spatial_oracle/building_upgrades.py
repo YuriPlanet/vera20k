@@ -176,15 +176,40 @@ def generate():
         removal_rows.append(dict(name=name,initial_count=count,initial_type_slot=slot,
             count=int(u.mem_read(OBJ+0x702,1)[0]),
             slots=[f.read(OBJ+0x5EC+n*4) for n in range(3)],calls=list(f.calls)))
+    turret_removal_rows = []
+    for name, count, host_turret, lower_turret, top_turret in (
+        ('top_turret', 2, False, False, True),
+        ('lower_turret_only', 2, False, True, False),
+        ('host_turret_only', 2, True, False, False),
+        ('single_turret', 1, False, False, True),
+    ):
+        f.prepare_upgrade(count=count)
+        u = f.u
+        for typ, turret in ((TYPE, host_turret), (SECOND_UPGRADE_TYPE, lower_turret),
+                            (UPGRADE_TYPE, top_turret)):
+            u.mem_write(typ + 0xCA1, bytes([turret]))
+            u.mem_write(typ + 0x16F0, dwords(-1, -1))
+        initial_slots = [SECOND_UPGRADE_TYPE, UPGRADE_TYPE, 0] if count == 2 else [UPGRADE_TYPE, 0, 0]
+        u.mem_write(OBJ + 0x5EC, dwords(*initial_slots))
+        u.mem_write(OBJ + 0x55C, bytes(21 * 4))
+        u.mem_write(OBJ + 0x5FC, dwords(-1))
+        f.power(0x451690)
+        labels = {0: None, UPGRADE_TYPE: 'UPGRADE', SECOND_UPGRADE_TYPE: 'LOWER'}
+        turret_removal_rows.append(dict(name=name, initial_count=count,
+            host_turret=host_turret, lower_turret=lower_turret, top_turret=top_turret,
+            initial_slots=[labels[p] for p in initial_slots],
+            count=int(u.mem_read(OBJ + 0x702, 1)[0]),
+            slots=[labels[f.read(OBJ + 0x5EC + n * 4)] for n in range(3)],
+            animation_slots=[call['slot'] for call in f.calls if call['call'] == 'remove_animation']))
     assert original == [bytes(f.u.mem_read(a,b-a)) for a,b in SPANS]
     return dict(schema_version=1, admission_and_install=admissions, power=power_rows,
-                removal=removal_rows)
+                removal=removal_rows, turret_removal=turret_removal_rows)
 
 
 def metadata():
     f=UpgradeFixture()
     result=provenance(
-        scope='Original452670 admission,4408DF..440A26 own-building Unlimbo upgrade arm with451400 PowerUp,451690 ordinary PowerDown,44E7B0/44E880 power and drain.',
+        scope='Original452670 admission,4408DF..440A26 own-building Unlimbo upgrade arm with451400 PowerUp,451690 ordinary/turret PowerDown,44E7B0/44E880 power and drain.',
         assumptions=['Candidate lookup and Building RTTI already accepted; fixtures supply an ordinary own-house host, original Building vtable/type getter and original image bytes.',
                      'No WallTower, InfantryAbsorb, UnitAbsorb, overpower or satellite upgrade flags; health ratio and integer conversion execute originally with PC53/chop0E7F.',
                      'No full scenario startup, visual rendering, factory economy, house refresh implementation or temporary object destruction is certified.'],

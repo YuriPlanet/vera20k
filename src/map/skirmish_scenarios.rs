@@ -10,11 +10,20 @@ use crate::map::waypoints::Waypoint;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::skirmish_modes::SkirmishGameMode;
 
+/// The random-map seed file the `.SED` launch branch recognises, and the
+/// chooser's sentinel row. VERA writes it into its own folder
+/// (`map::source::random_map_dir`), where `map_load` reads it; gamemd keeps it
+/// in the game folder.
 pub const RANDMAP_SED: &str = "RandMap.Sed";
+/// The preview bitmap the random-map dialog writes beside [`RANDMAP_SED`]: the
+/// chooser's thumbnail, a room's generated preview and the loading screen's.
+pub const RANDMAP_PREVIEW: &str = "RandMap.img";
 /// `[RandomMap] NumPlayers` is clamped to this inclusive range before
-/// generation, so the sentinel has to advertise the same span.
+/// generation, so the sentinel has to advertise the same span. The original
+/// stops at 8; VERA's generator seats up to the offline Skirmish row count
+/// (`rmg::MAX_PLAYERS`).
 pub const RANDOM_MAP_MIN_PLAYERS: u8 = 2;
-pub const RANDOM_MAP_MAX_PLAYERS: u8 = 8;
+pub const RANDOM_MAP_MAX_PLAYERS: u8 = crate::map::rmg::MAX_PLAYERS as u8;
 /// Start slots the generator produces before a `.SED` supplies `NumPlayers`.
 /// This is a *default quota*, not a capacity limit: `RANDOM_MAP_MAX_PLAYERS`
 /// used to alias it, which capped the sentinel at 4 and made 5-8 player random
@@ -37,7 +46,17 @@ pub enum SkirmishScenarioSource {
     MissionsMdPkt,
     LoosePkt(String),
     LooseYro(String),
-    LooseYrm(String),
+    LooseMap(String),
+    /// An installed archive member selected by filename without a PKT record.
+    ArchiveMap,
+    /// A map listed by the selected mod's client catalog.
+    ClientCatalog,
+    /// A first-party scenario included in the game.
+    Bundled,
+    /// VERA: a map only in the lobby's online map library, by SHA-256. Its
+    /// row comes from the library's copy of the map's header; Choose Map
+    /// downloads the map into VERA's own Maps folder before using it.
+    Online(String),
     Synthetic,
 }
 
@@ -53,6 +72,10 @@ pub struct SkirmishScenarioRecord {
     pub source: SkirmishScenarioSource,
     pub file_name: String,
     pub display_name: String,
+    /// VERA: the string-table label a PKT entry's `Description` names, kept
+    /// so the title reads again in a language picked after the scan
+    /// (`scenario_sources::relabel_records`).
+    pub title_label: Option<String>,
     pub author: Option<String>,
     pub preview: PreviewSection,
     pub multiplayer_start_waypoints: Vec<Waypoint>,
@@ -66,6 +89,11 @@ pub struct SkirmishScenarioRecord {
 }
 
 impl SkirmishScenarioRecord {
+    /// Whether this row is a map only in the online library, with no file here.
+    pub fn is_online(&self) -> bool {
+        matches!(self.source, SkirmishScenarioSource::Online(_))
+    }
+
     pub fn concrete_from_ini(
         source_ordinal: usize,
         source: SkirmishScenarioSource,
@@ -82,6 +110,7 @@ impl SkirmishScenarioRecord {
             source,
             file_name: entry.file_name,
             display_name: entry.display_name,
+            title_label: None,
             author: entry.author,
             preview: entry.preview,
             multiplayer_start_waypoints: entry.multiplayer_start_waypoints,
@@ -131,6 +160,7 @@ impl SkirmishScenarioRecord {
             source: SkirmishScenarioSource::Synthetic,
             file_name: RANDMAP_SED.to_string(),
             display_name: display_name.into(),
+            title_label: None,
             author: None,
             preview: PreviewSection::default(),
             multiplayer_start_waypoints: Vec::new(),
@@ -150,6 +180,7 @@ impl SkirmishScenarioRecord {
             source: source_for_file_name(&entry.file_name),
             file_name: entry.file_name.clone(),
             display_name: entry.display_name.clone(),
+            title_label: None,
             author: entry.author.clone(),
             preview: entry.preview.clone(),
             multiplayer_start_waypoints: entry.multiplayer_start_waypoints.clone(),
@@ -183,7 +214,7 @@ fn source_for_file_name(file_name: &str) -> SkirmishScenarioSource {
         .map(str::to_ascii_lowercase);
     match ext.as_deref() {
         Some("yro") => SkirmishScenarioSource::LooseYro(file_name.to_string()),
-        Some("yrm") => SkirmishScenarioSource::LooseYrm(file_name.to_string()),
+        Some("map" | "yrm" | "mpr") => SkirmishScenarioSource::LooseMap(file_name.to_string()),
         Some("pkt") => SkirmishScenarioSource::LoosePkt(file_name.to_string()),
         _ => SkirmishScenarioSource::Synthetic,
     }
@@ -248,6 +279,14 @@ pub fn record_matches_mode(record: &SkirmishScenarioRecord, mode: &SkirmishGameM
         SkirmishScenarioKind::ConcreteMap if record.game_modes.is_empty() => {
             mode.map_filter == "standard"
         }
+        SkirmishScenarioKind::ConcreteMap
+            if record.source == SkirmishScenarioSource::ClientCatalog =>
+        {
+            record
+                .game_modes
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
+        }
         SkirmishScenarioKind::ConcreteMap => record
             .game_modes
             .iter()
@@ -290,7 +329,7 @@ pub fn upsert_random_map_sentinel(
     idx
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;
@@ -310,7 +349,7 @@ mod tests {
         ));
         SkirmishScenarioRecord::concrete_from_ini(
             source_ordinal,
-            SkirmishScenarioSource::LooseYrm(format!("{name}.yrm")),
+            SkirmishScenarioSource::LooseMap(format!("{name}.yrm")),
             &format!("{name}.yrm"),
             &ini,
         )
@@ -441,7 +480,7 @@ mod tests {
         // Pinned to literals on purpose: the capacity used to alias the
         // generated-start quota, which silently capped random maps at 4.
         assert_eq!(RANDOM_MAP_MIN_PLAYERS, 2);
-        assert_eq!(RANDOM_MAP_MAX_PLAYERS, 8, "NumPlayers clamps to 2..8");
+        assert_eq!(RANDOM_MAP_MAX_PLAYERS, 120, "NumPlayers clamps to 2..120");
         assert_ne!(
             RANDOM_MAP_MAX_PLAYERS, RANDOM_MAP_GENERATED_START_QUOTA,
             "capacity must not be re-aliased to the start quota"
@@ -452,7 +491,7 @@ mod tests {
             "Random Map",
             i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
         );
-        assert_eq!(rec.max_players, Some(8));
+        assert_eq!(rec.max_players, Some(120));
     }
 
     #[test]
@@ -505,7 +544,7 @@ mod tests {
             i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
         );
         stale.file_name = "Wrong.yrm".to_string();
-        stale.source = SkirmishScenarioSource::LooseYrm("Wrong.yrm".to_string());
+        stale.source = SkirmishScenarioSource::LooseMap("Wrong.yrm".to_string());
         stale.multiplayer_start_waypoints = vec![Waypoint {
             index: 0,
             rx: 11,

@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 
 use crate::asset_tools::identify;
 use crate::asset_tools::report::{ErrorReport, ExtractReport};
+use crate::asset_tools::sanitise_name;
 use crate::assets::asset_manager::AssetManager;
 
 /// Output root when the caller does not name one. Relative and under `target/`,
@@ -95,7 +96,7 @@ pub fn run(
     // check, and the report should say so before they open it.
     let identified = identify::identify(bytes);
 
-    let file_name = sanitise_name(name);
+    let file_name = sanitise_name(name, FALLBACK_FILE_NAME);
     if file_name != name {
         warnings.push(format!(
             "asset name {name} was sanitised to {file_name} for the filesystem"
@@ -172,35 +173,7 @@ fn extract_dir(out: &Path) -> PathBuf {
     root.join(EXTRACT_SUBDIR)
 }
 
-/// Replace every character outside `[A-Za-z0-9._-]` so the name is safe as a
-/// filename component on any platform.
-///
-/// Mirrors `verb_render::sanitise_name` character for character: the two verbs
-/// must agree, or the same asset lands under two different names. It is copied
-/// rather than called because that one is module-private; the test below pins
-/// this copy to the same fixtures verb_render's own test asserts.
-///
-/// Flattening the path separators is also what keeps a name like `../../x` from
-/// escaping the output root — the result is always a single path component.
-fn sanitise_name(name: &str) -> String {
-    let sanitised: String = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitised.is_empty() {
-        FALLBACK_FILE_NAME.to_string()
-    } else {
-        sanitised
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 
@@ -215,9 +188,12 @@ mod tests {
 
     #[test]
     fn a_traversing_name_flattens_to_one_component() {
-        assert_eq!(sanitise_name("../../etc/passwd"), ".._.._etc_passwd");
+        assert_eq!(
+            sanitise_name("../../etc/passwd", FALLBACK_FILE_NAME),
+            ".._.._etc_passwd"
+        );
         let dir = extract_dir(Path::new(DEFAULT_OUT_ROOT));
-        let path = dir.join(sanitise_name("../../etc/passwd"));
+        let path = dir.join(sanitise_name("../../etc/passwd", FALLBACK_FILE_NAME));
         assert!(path.ends_with(".._.._etc_passwd"), "{}", path.display());
         // One component below the extract directory, never above it.
         assert_eq!(path.parent(), Some(dir.as_path()), "{}", path.display());

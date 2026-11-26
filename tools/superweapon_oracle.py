@@ -313,6 +313,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX,
 from tools.ai_base_building_oracle import FAKE, RULES, SCENARIO, STUBS, Emu, u32
 from tools.native_oracle import (NATIVE_FPCW, RET_MAGIC, STACK_BASE, STACK_SIZE, OracleError,
                                  finish_vectors, provenance, run_checked)
+from tools.native_oracle import require
 
 FRAME = 0xA8ED84
 SW_TYPES = 0xA8E334
@@ -4652,7 +4653,7 @@ def unit_light():
     startup = {key: rows[0][key] for key in ('scalars', 'nuke_level', 'geometry_initializers')}
     for row in rows:
         for key, value in startup.items():
-            assert row.pop(key) == value
+            require(row.pop(key) == value, f'{key} differs from the shared value')
     return dict(startup=startup, rows=rows, retail=dict(
         physical=physical['physical'],
         cases=retail))
@@ -8191,7 +8192,7 @@ def ripple_step_bits(fpcw):
 
 def ion_blast_ripple():
     """The ring step's initializers under the startup and the process control
-    words; the generator 0x53D330 (Show_Loading_Screen's call) under the
+    words; the generator 0x53D330 (Init_Bulk_Data's call) under the
     process word after the startup initializers: each frame's FNV-1a over its
     512x256 bytes, its written (not -1) count and its byte values; and the
     spiral functions 0x53D8E0 (index 1..288, DrawAll's table) and 0x53D960

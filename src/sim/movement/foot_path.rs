@@ -28,8 +28,8 @@ use crate::sim::mission::MissionId;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
-use crate::sim::pathfinding::CODE2_CHAIN_MAX_HOPS;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
+use crate::sim::pathfinding::{CODE2_CHAIN_MAX_HOPS, TrainSearchPose};
 use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
@@ -39,6 +39,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::dir_from_facing16;
 #[cfg(test)]
 use crate::util::fixed_math::SIM_ZERO;
+use crate::util::forked::Forked;
 
 /// AStar429F54's live Foot +1AC receiver: Infantry 0x0051BF90 or Unit
 /// 0x0073F0A0, the one class port behind `Simulation::foot_can_enter`, with
@@ -47,10 +48,14 @@ use crate::util::fixed_math::SIM_ZERO;
 /// Cell reach the same decision owner used by Walk, Drive/Ship and bridge
 /// repair. The raw code drives admission and cost at 0x00429F5A..FED; a
 /// code 2 is priced by the chain over the live cell lists
-/// ([`Simulation::astar_code2_chain_jams`]).
+/// ([`Simulation::astar_code2_chain`]).
 struct FootSearchEntry<'a> {
     sim: &'a Simulation,
     receiver: Result<crate::sim::world::FootEntryReceiver<'a>, String>,
+    /// The batch's kept code-2 chains
+    /// ([`crate::sim::world::EntryFacts::code2_chain`]); none for a search
+    /// at the Foot's own turn, whose world no other search shares.
+    chains: Option<&'a crate::sim::world::EntryFacts>,
     threat_coefficient: crate::util::native_x87::NativeF64Bits,
     markers: super::path_markers::DeferredBridgeMarkerSearch<'a>,
     /// The mover, when Mark0 has not lifted it ([`MoverLift::Emulated`]):
@@ -59,9 +64,59 @@ struct FootSearchEntry<'a> {
     /// The unlifted mover's own cell. Lifting it would change any answer
     /// about that cell, so asking one marks the search.
     own_cell: Option<(i16, i16)>,
+    /// The own cell's index on a regular terrain, where a real candidate is
+    /// at the own cell exactly when it has that index
+    /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::regular_cell_index`]).
+    own_index: Option<usize>,
+    /// Whether the search asked about the own cell.
+    ///
+    /// This and [`Self::previous`] are cells because the search can only
+    /// share the entry: A* and path finishing hold the marker overlay that
+    /// [`crate::sim::pathfinding::SearchFootEntry::prepare_search_markers`]
+    /// lends out of [`Self::markers`] for the whole search while they keep
+    /// calling `classify` on the same entry, and the zone precheck, its retry
+    /// flood and A* each keep a `&dyn SearchFootEntry` copy of
+    /// [`crate::sim::pathfinding::MoverSearchFacts`]. Each search builds its
+    /// own entry on the thread that runs it, so no other thread sees them.
     read_own_cell: std::cell::Cell<bool>,
+    /// The cell asked from: an expansion asks about up to eight neighbours
+    /// from one cell.
+    previous: LastRealCell,
+    train_pose: Option<TrainSearchPose>,
     /// A Unit whose type is `Passive=`.
     passive_unit: bool,
+    /// The path batch's test whether a re-path goes on
+    /// ([`crate::sim::pathfinding::SearchFootEntry::keeps_searching`]);
+    /// none for every other search.
+    keep_searching: Option<&'a dyn Fn(u32) -> bool>,
+}
+
+/// The last coordinate whose lookup found a real cell, with that cell. Such
+/// a lookup has no side effect, so it is not repeated; one that misses
+/// stamps the shared Dummy, so it is made at each ask. A cell for the reason
+/// at [`FootSearchEntry::read_own_cell`].
+#[derive(Default)]
+struct LastRealCell(std::cell::Cell<Option<((u16, u16), NativeCellIdentity)>>);
+
+impl LastRealCell {
+    /// `terrain`'s cell at `coord`
+    /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::native_cell_identity`]).
+    fn lookup(
+        &self,
+        terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+        coord: (u16, u16),
+    ) -> NativeCellIdentity {
+        if let Some((kept, cell)) = self.0.get()
+            && kept == coord
+        {
+            return cell;
+        }
+        let cell = terrain.native_cell_identity((coord.0 as i16, coord.1 as i16));
+        if let NativeCellIdentity::Real(_) = cell {
+            self.0.set(Some((coord, cell)));
+        }
+        cell
+    }
 }
 
 /// Whether Mark0 has lifted the searching mover off its cell.
@@ -79,6 +134,10 @@ pub(super) enum MoverLift {
 }
 
 impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
+    fn train_pose(&self) -> Option<TrainSearchPose> {
+        self.train_pose
+    }
+
     fn classify(&self, query: crate::sim::pathfinding::SearchEntryQuery) -> Result<u8, String> {
         let terrain = self
             .sim
@@ -86,9 +145,7 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
             .as_ref()
             .ok_or("Foot search requires map cells")?;
         let receiver = self.receiver.as_ref().map_err(Clone::clone)?;
-        let previous = query
-            .from
-            .map(|coord| terrain.native_cell_identity((coord.0 as i16, coord.1 as i16)));
+        let previous = query.from.map(|coord| self.previous.lookup(terrain, coord));
         let candidate = match query.candidate {
             crate::sim::pathfinding::SearchEntryCandidate::CopiedCoord(coord) => {
                 terrain.native_cell_identity((coord.0 as i16, coord.1 as i16))
@@ -96,10 +153,16 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
             crate::sim::pathfinding::SearchEntryCandidate::RetainedNativeCell(cell) => cell,
         };
         if let Some(own) = self.own_cell
-            && let NativeCellIdentity::Real(_) = candidate
-            && terrain.native_cell_coord(candidate) == own
+            && let NativeCellIdentity::Real(index) = candidate
         {
-            self.read_own_cell.set(true);
+            let at_own = self.own_index.map_or_else(
+                || terrain.native_cell_coord(candidate) == own,
+                |own_index| index == own_index,
+            );
+            debug_assert_eq!(at_own, terrain.native_cell_coord(candidate) == own);
+            if at_own {
+                self.read_own_cell.set(true);
+            }
         }
         receiver.can_enter(
             candidate,
@@ -117,26 +180,33 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
             .hierarchy_house_threat(padded_index)
     }
     fn code2_chain_jams(&self, cell: (u16, u16), layer: MovementLayer) -> Result<bool, String> {
-        self.sim.astar_code2_chain_jams(cell, layer, self.unlisted)
+        let walk = || self.sim.astar_code2_chain(cell, layer, self.unlisted);
+        // The kept answers go by real cell index, which on a regular terrain
+        // belongs to the cell at `cell` alone.
+        let index = self
+            .sim
+            .resolved_terrain
+            .as_ref()
+            .and_then(|terrain| terrain.regular_cell_index((cell.0 as i16, cell.1 as i16)));
+        match self.chains.zip(index) {
+            Some((chains, index)) => chains.code2_chain(index, layer, self.unlisted, walk),
+            None => walk().map(|chain| chain.jams),
+        }
     }
     fn prepare_search_markers(
         &self,
-    ) -> Result<
-        Option<(
-            u8,
-            std::cell::Ref<'_, crate::sim::pathfinding::SearchMarkerOverlay>,
-        )>,
-        String,
-    > {
+    ) -> Result<Option<(u8, &crate::sim::pathfinding::SearchMarkerOverlay)>, String> {
         Ok(Some(self.markers.prepare()))
     }
-    fn prepared_search_markers(
-        &self,
-    ) -> Option<std::cell::Ref<'_, crate::sim::pathfinding::SearchMarkerOverlay>> {
+    fn prepared_search_markers(&self) -> Option<&crate::sim::pathfinding::SearchMarkerOverlay> {
         self.markers.prepared()
     }
     fn is_passive_unit(&self) -> bool {
         self.passive_unit
+    }
+    fn keeps_searching(&self, expanded: u32) -> bool {
+        self.keep_searching
+            .is_none_or(|keep_searching| keep_searching(expanded))
     }
     fn finishing_threat_coefficient(
         &self,
@@ -164,6 +234,28 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
     }
 }
 
+/// What one walk of the code-2 chain read ([`Simulation::astar_code2_chain`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Code2Chain {
+    /// Whether the traffic ahead jams.
+    pub(crate) jams: bool,
+    /// The [`Self::name_bit`] of each object the walk followed: the first of
+    /// each list it read, after the mover it skips.
+    pub(crate) named: u64,
+    /// Whether every search whose mover the walk did not follow walks the
+    /// same: no list it read began with the mover it skips, and no lookup
+    /// fell off the map, which stamps the shared Dummy.
+    pub(crate) shared: bool,
+}
+
+impl Code2Chain {
+    /// Object `id`'s bit in [`Self::named`], one of 62: a mover whose bit is
+    /// clear is not in the chain.
+    pub(crate) fn name_bit(id: u64) -> u64 {
+        1 << (id % 62)
+    }
+}
+
 impl Simulation {
     /// The urgency-0 code-2 chain of `AStar_compute_edge_cost @ 0x00429830`
     /// (`0x00429886..0x00429984`): whether the traffic ahead of `cell`'s
@@ -183,42 +275,57 @@ impl Simulation {
     /// After [`CODE2_CHAIN_MAX_HOPS`] Foots it jams, without testing the list
     /// the last one heads for. The lists skip `unlisted`, a mover Mark0 has
     /// not lifted yet ([`MoverLift::Emulated`]).
-    pub(crate) fn astar_code2_chain_jams(
+    pub(crate) fn astar_code2_chain(
         &self,
         cell: (u16, u16),
         layer: MovementLayer,
         unlisted: Option<u64>,
-    ) -> Result<bool, String> {
+    ) -> Result<Code2Chain, String> {
         let terrain = self
             .resolved_terrain
             .as_ref()
             .ok_or("the code-2 chain requires map cells")?;
         let frame = self.session.binary_frame();
+        let mut chain = Code2Chain {
+            jams: true,
+            named: 0,
+            shared: true,
+        };
+        let clears = |chain: Code2Chain| -> Result<Code2Chain, String> {
+            Ok(Code2Chain {
+                jams: false,
+                ..chain
+            })
+        };
         let mut list = Some((cell, layer));
         for _ in 0..CODE2_CHAIN_MAX_HOPS {
             let Some(object) = list.and_then(|(cell, layer)| {
                 self.cell_objects(cell, layer).find(|object| {
-                    !matches!(*object, CellObjectMember::Entity(id) if Some(id) == unlisted)
+                    let mover =
+                        matches!(*object, CellObjectMember::Entity(id) if Some(id) == unlisted);
+                    chain.shared &= !mover;
+                    !mover
                 })
             }) else {
-                return Ok(false);
+                return clears(chain);
             };
             // A terrain object is no Foot.
             let CellObjectMember::Entity(id) = object else {
-                return Ok(true);
+                return Ok(chain);
             };
+            chain.named |= Code2Chain::name_bit(id);
             let foot = self
                 .substrate
                 .entities
                 .get(id)
                 .ok_or("a cell list names a retired object")?;
             if !foot.category().is_foot() {
-                return Ok(true);
+                return Ok(chain);
             }
             let direction = if !foot.foot_speed.speed_fraction_is_positive() {
                 let Some(&word) = foot.navigation.path_replay().remaining_directions().first()
                 else {
-                    return Ok(false);
+                    return clears(chain);
                 };
                 word & 7
             } else {
@@ -232,7 +339,11 @@ impl Simulation {
             ));
             let level = |cell| i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
             let bridge = terrain.native_cell_flags(next) & 0x100 != 0
-                && (foot.on_bridge() || level(terrain.native_cell_identity(own)) - level(next) > 2);
+                && (foot.on_bridge() || {
+                    let own_cell = terrain.native_cell_identity(own);
+                    chain.shared &= matches!(own_cell, NativeCellIdentity::Real(_));
+                    level(own_cell) - level(next) > 2
+                });
             list = match next {
                 NativeCellIdentity::Real(_) => {
                     let (x, y) = terrain.native_cell_coord(next);
@@ -243,10 +354,13 @@ impl Simulation {
                     };
                     Some(((x as u16, y as u16), layer))
                 }
-                NativeCellIdentity::Dummy => None,
+                NativeCellIdentity::Dummy => {
+                    chain.shared = false;
+                    None
+                }
             };
         }
-        Ok(true)
+        Ok(chain)
     }
 }
 
@@ -340,7 +454,7 @@ enum CoreRefusal {
     VeraOnly(&'static str),
 }
 
-/// The result of one `Find_Path(cell, 0, 0)` call.
+/// The result of one `FootClass::Find_Path` call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FindPathResult {
     /// A route of at least one direction was copied into Foot+5E0. AStar
@@ -374,9 +488,10 @@ impl Simulation {
     /// 750920 receives Rules ScoldSound, centered pan0x2000, volume1 and0.
     /// Clearing is caller-owned: Drive4B3AC9/Ship6A3118 can recurse before
     /// their later clear. Evidence: tools/spatial_oracle/foot_scold_latch.
+    /// The sound channel is written only by the sound (`util::forked`).
     pub(crate) fn play_foot_path_scold(
         substrate: &ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         rules: &RuleSet,
     ) {
@@ -384,9 +499,11 @@ impl Simulation {
             return;
         };
         if actor.navigation.path_runtime().scold_latch_raw() != 0
-            && let Some(sound_id) = rules.general.scold_sound.clone()
+            && let Some(sound_id) = rules.general.scold_sound.as_deref()
         {
-            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
+            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered {
+                sound_id: rules.sound_name(sound_id),
+            });
         }
     }
 
@@ -395,27 +512,38 @@ impl Simulation {
     /// (`track_fresh`).
     pub(crate) fn run_foot_path_request(
         &mut self,
-        request: &FootPathRequest,
+        request: &mut FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         // A batched request waits for the next frame's batch as if the +640
-        // timer still ran (`path_batch`, a proposed deviation): 75AF4B..75AF66
+        // timer still ran (`path_batch`, a sim-scale deviation): 75AF4B..75AF66
         // calls the owner's vt+0x548 and returns. So does the admission
         // retry's recursion, whose +640 the retry just expired, unless it is
-        // the Foot's first request in a frame the batch answered. A request
-        // for the Foot's own cell never waits.
+        // the Foot's first request in a frame the batch answered; the request
+        // that takes its answer resumes with the retry spent, as the
+        // recursion runs. A request for the Foot's own cell never waits.
+        let resumes_recursion = self.answered_recursion(request.entity_id)
+            == Some(super::path_batch::WaitingRequest::RetryRecursion);
+        let waiting = if request.walk_retry_spent() {
+            super::path_batch::WaitingRequest::RetryRecursion
+        } else {
+            super::path_batch::WaitingRequest::NoQueue
+        };
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
             &self.substrate.entities,
             request.entity_id,
-            super::path_batch::WaitingRequest::NoQueue,
+            waiting,
         ) {
             self.substrate.walk_owner_clear_doing(request.entity_id)?;
             return Ok(FootPathOutcome::Returned);
+        }
+        if resumes_recursion {
+            request.spend_walk_retry();
         }
         self.run_walk_path_request(request, rules, registry, frame_effects)
             .map(|resumed| {
@@ -427,14 +555,14 @@ impl Simulation {
             })
     }
 
-    /// `Find_Path(cell, 0, 0)` for a no-queue caller whose own movement
-    /// timer is already armed; see [`FindPathResult`].
+    /// FootClass::Find_Path @ 0x004D3920 for a locomotor request or a
+    /// linked car's destination, including Drive/Ship's one-word extension.
     pub(crate) fn foot_find_path(
         &mut self,
         request: &FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FindPathResult, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -462,29 +590,22 @@ impl Simulation {
                 SuppliedPath::CoreNull => super::fresh_oracle_seam::arm_core_null(),
             }
         }
-        //4D392A..393A: append=false clears one head before the +2CC
-        //precheck; the backing suffix is retained.
-        self.substrate
+        // FootClass::Find_Path @ 0x004D3920 clears Path[0] at 4D393A
+        // only with a zero prefix. Refusal at 4D3989 clears it either way.
+        let actor = self
+            .substrate
             .entities
             .get_mut(id)
-            .ok_or("retired Find_Path requester")?
-            .navigation
-            .path_replay_mut()
-            .clear_live_head();
-        let Some(answer) =
-            self.find_path_target_answer(id, request.destination, rules, registry)?
-        else {
-            //4D3989..399C returns false before Mark, AStar or +500.
+            .ok_or("retired Find_Path requester")?;
+        if !request.retain_head {
+            actor.clear_live_path_head();
+        }
+        let Some(answer) = self.find_path_target_answer(id, request.destination, rules)? else {
+            self.substrate.clear_path_head(id);
             return Ok(FindPathResult::Failed);
         };
-        let goal = self.find_path_goal_for_answer(
-            id,
-            request.destination,
-            answer,
-            rules,
-            registry,
-            frame_effects,
-        )?;
+        let goal =
+            self.find_path_goal_for_answer(id, request.destination, answer, rules, frame_effects)?;
         match self.search_foot_path(request, goal, rules, registry, frame_effects)? {
             Ok(()) => Ok(FindPathResult::Route),
             Err(refusal) => {
@@ -526,7 +647,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -555,7 +676,7 @@ impl Simulation {
         goal: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Result<(), CoreRefusal>, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -563,9 +684,13 @@ impl Simulation {
             return Err("Find_Path core requires PathGrid; no native failure inferred".into());
         }
         self.foot_mark_remove(id, rules, registry, frame_effects);
+        // 4D3E17..4D3E2C: target redirection and Mark0 may have changed Path[0].
+        if !request.retain_head {
+            self.substrate.clear_path_head(id);
+        }
         #[cfg(test)]
         self.export_bridge_engineer_entry_inputs(id, rules, "mark0");
-        let searched = match self.take_batched_search(request, goal) {
+        let searched = match self.take_batched_search(request, goal, rules) {
             Some(searched) => searched,
             None => {
                 //The blocker plane must see Mark0, including the actor's
@@ -582,6 +707,11 @@ impl Simulation {
                     &self.interner,
                     rules,
                 );
+                //The search reads one unchanged world after Mark0, as a path
+                //batch's searches read theirs, so it keeps the entry facts it
+                //reads the same way (VERA-only; the answers are the same).
+                //It walks its code-2 chains itself.
+                self.empty_entry_facts(false);
                 let counts = self.movement_pass_cache.current_blocker_plane();
                 //The track_fresh_response oracle substitutes the whole AStar
                 //core 0x4CBBA0 for a CoreNull row, so no +1AC call happens
@@ -600,17 +730,29 @@ impl Simulation {
                         request,
                         goal,
                         rules,
-                        registry,
                         grid,
                         counts,
                         MoverLift::Marked,
+                        self.entry_facts(),
                         None,
                     )
                     .0
                 }
             }
         };
-        //4D3EAC restores Mark1 before inspecting the core result.
+        //4D3E82..3E9F copies a successful route before Mark1's callbacks.
+        if let Ok(directions) = &searched {
+            let actor = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .ok_or("retired Find_Path direction receiver")?;
+            actor
+                .navigation
+                .path_replay_mut()
+                .install_directions(directions, request.retain_head);
+        }
+        //4D3EAC restores Mark1 before the timer and follower continuation.
         self.foot_mark_put(id, rules, registry, frame_effects);
         if let Err(super::movement_path::MovePathFailure::Search(
             crate::sim::pathfinding::zone_search::PathSearchFailure::CellEntryUnavailable(cause),
@@ -627,10 +769,35 @@ impl Simulation {
         actor.navigation.path_runtime_mut().start_movement(frame, 0);
         use super::movement_path::MovePathFailure;
         use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
+        // 4D3EF7..4D3F22 takes the full result's last step, even if the
+        // copy window truncated it. A failed append can still have a head:
+        // native selects word 0 of its unwritten search output in that case.
+        // Use the retained head for a deterministic trailing destination,
+        // before the ordinary failed-search stop reaches the cars.
+        let last = match &searched {
+            Ok(directions) => directions.last().map(|&word| word as u8),
+            Err(_) if request.retain_head => actor
+                .navigation
+                .path_replay()
+                .remaining_directions()
+                .first()
+                .copied(),
+            _ => None,
+        };
+        if let Some(last) = last {
+            self.continue_unit_follower_paths(request, goal, last, rules, registry, frame_effects)?;
+        }
         match searched {
-            Ok(path) => {
-                debug_assert!(path.len() >= 2, "AStar routes leave the start cell");
-                request.install_route(actor, path);
+            Ok(_) => {
+                //4D3FF0..4003 queries the live initiator's current Cell
+                //only after every follower destination/search callback.
+                let actor = self
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .ok_or("Find_Path initiator retired during follower callbacks")?;
+                let current = (actor.position.rx() as i16, actor.position.ry() as i16);
+                actor.navigation.path_replay_mut().rebase(current);
                 Ok(Ok(()))
             }
             Err(MovePathFailure::Search(
@@ -642,30 +809,165 @@ impl Simulation {
             Err(MovePathFailure::Search(Search::CompatibilityZoneRejected)) => {
                 Ok(Err(CoreRefusal::VeraOnly("CompatibilityZoneRejected")))
             }
+            Err(MovePathFailure::UnrepresentedPrefix) => {
+                Ok(Err(CoreRefusal::VeraOnly("unrepresented train prefix")))
+            }
             Err(MovePathFailure::MissingGrid) => {
                 Err("Find_Path core requires PathGrid; no native failure inferred".into())
             }
             Err(MovePathFailure::Search(Search::CellEntryUnavailable(cause))) => Err(cause),
+            Err(MovePathFailure::Search(Search::Stopped)) => {
+                Err("Find_Path's own search stopped; only batched searches stop".into())
+            }
         }
+    }
+
+    /// FootClass::Find_Path @ 0x004D3920's Unit follower continuation,
+    /// 0x004D3ECD..0x004D3FE1 (original instructions). It routes successive
+    /// peers behind the requested/redirected endpoint through the ordinary
+    /// queue, destination and Find_Path owners. IsTrain and House do not
+    /// gate this branch; a marked follower does not propagate recursively.
+    fn continue_unit_follower_paths(
+        &mut self,
+        request: &FootPathRequest,
+        goal: DriveCoord,
+        last_direction: u8,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), String> {
+        let actor = self
+            .substrate
+            .entities
+            .get(request.entity_id)
+            .ok_or("retired Find_Path follower initiator")?;
+        if actor.category() != EntityCategory::Unit
+            || actor
+                .navigation
+                .path_replay()
+                .remaining_directions()
+                .is_empty()
+            || actor.is_unit_follower()
+        {
+            return Ok(());
+        }
+        let Some(first) = actor.unit_follower() else {
+            return Ok(());
+        };
+        let mut next = Some(first);
+        let mut destination = coord_cell(goal);
+        let reverse = crate::util::direction::opposite_direction(last_direction & 7)
+            .expect("masked path direction");
+        let mut visited = std::collections::BTreeSet::from([request.entity_id]);
+        //A malformed graph can retain false follower bytes on every edge,
+        //causing nested Find_Path calls before the outer loop revisits an
+        //identity. Check only this admitted traversal, without forbidding
+        //cycles at map admission/save or adding a persistent graph cache.
+        //gamemd's loop at 4D3ECD never ends on such a cycle (a hang). VERA
+        //carries on: the mover keeps its own path and no follower is routed,
+        //since a walk cut at the repeat could still nest without end.
+        let mut probe = next;
+        while let Some(id) = probe {
+            if !visited.insert(id) {
+                log::warn!(
+                    "Unit {} heads a cyclic FOLLOWS chain (repeats at {id}); its followers are not routed",
+                    request.entity_id
+                );
+                return Ok(());
+            }
+            let peer = self
+                .substrate
+                .entities
+                .get(id)
+                .filter(|peer| peer.category() == EntityCategory::Unit)
+                .ok_or("Find_Path follower reference names a missing Unit")?;
+            probe = peer.unit_follower();
+        }
+        visited.clear();
+        visited.insert(request.entity_id);
+        while let Some(id) = next {
+            //The native loop never ends on a cycle that callbacks linked
+            //during this walk; VERA ends the chain at the repeat.
+            if !visited.insert(id) {
+                log::warn!("Unit follower chain closed on {id} during its walk; ended there");
+                break;
+            }
+            destination = {
+                let cells = NativeCellQuery::canonical(
+                    self.resolved_terrain
+                        .as_ref()
+                        .ok_or("Find_Path followers require map cells")?,
+                );
+                let cell = cells.lookup(destination);
+                cells.coord(cells.neighbor(cell, usize::from(reverse)))
+            };
+            let nav = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("Find_Path follower reference names a retired Unit")?
+                .navigation
+                .nav_com();
+            let already_routed = match nav {
+                Some(nav) => {
+                    coord_cell(super::navcom::nav_target_coordinate(
+                        nav,
+                        None,
+                        self,
+                        self.resolved_terrain.as_ref(),
+                        Some((rules, &self.interner)),
+                    )?) == destination
+                }
+                None => false,
+            };
+            if !already_routed {
+                crate::sim::mission::authority::queue_entity_mission_deferred(
+                    self.substrate
+                        .entities
+                        .get_mut(id)
+                        .ok_or("retired Find_Path follower queue receiver")?,
+                    MissionId::from_known(MissionType::Move),
+                );
+                self.redirect_find_path_destination(id, destination, rules, frame_effects)?;
+                let peer_request = FootPathRequest::track(
+                    &self.substrate.entities,
+                    id,
+                    DriveCoord::from(cell_center(destination.into(), 0)),
+                    0,
+                    self.playfield_bounds(),
+                )
+                .ok_or("retired Find_Path follower search receiver")?;
+                //4D3FD9 ignores the child's AL, then reads its live next
+                //pointer after callbacks, including failure cleanup.
+                let _ = self.foot_find_path(&peer_request, rules, registry, frame_effects)?;
+            }
+            next = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("Find_Path follower retired during its callbacks")?
+                .unit_follower();
+        }
+        Ok(())
     }
 
     /// The core search (AStar 0x0042C900 with its bridge markers and both
     /// finishing passes) for `request` toward `goal` on the current world,
-    /// reading the blocker counts `counts` and a path batch's kept entry
-    /// `facts`. The flag says whether an [`MoverLift::Emulated`] search asked
-    /// about the mover's own cell.
+    /// reading the blocker counts `counts` and the kept entry `facts`
+    /// ([`Simulation::empty_entry_facts`]). The flag says whether an
+    /// [`MoverLift::Emulated`] search asked about the mover's own cell.
     pub(super) fn foot_core_search(
         &self,
         request: &FootPathRequest,
         goal: DriveCoord,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         grid: &crate::sim::pathfinding::PathGrid,
         counts: &crate::sim::pathfinding::BlockerNeighborCounts,
         lift: MoverLift,
         facts: Option<&crate::sim::world::EntryFacts>,
+        keep_searching: Option<&dyn Fn(u32) -> bool>,
     ) -> (
-        Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure>,
+        Result<Vec<i32>, super::movement_path::MovePathFailure>,
         bool,
     ) {
         let id = request.entity_id;
@@ -712,19 +1014,31 @@ impl Simulation {
         );
         // A requester outside Infantry and Unit has no receiver, so its
         // search fails at the first class question.
+        let object = self.interner.object_type(actor.type_ref(), rules);
+        let is_train = object.is_some_and(|object| object.is_train);
         let entry = FootSearchEntry {
             sim: self,
             markers: marker_search,
-            receiver: self.foot_entry_receiver(id, rules, registry, facts),
+            receiver: self.foot_entry_receiver(id, rules, facts),
+            chains: facts.filter(|_| lift == MoverLift::Emulated),
             threat_coefficient: self.foot_path_threat_coefficient(id),
             unlisted,
             own_cell: unlisted.map(|_| (own_cell.0 as i16, own_cell.1 as i16)),
+            own_index: unlisted
+                .and(self.resolved_terrain.as_ref())
+                .and_then(|terrain| {
+                    terrain.regular_cell_index((own_cell.0 as i16, own_cell.1 as i16))
+                }),
             read_own_cell: std::cell::Cell::new(false),
+            previous: LastRealCell::default(),
+            train_pose: is_train.then(|| TrainSearchPose {
+                facing_octant: dir_from_facing16(actor.body_facing.current(frame)),
+                level: ground_pose::position_world_coord(&actor.position).z
+                    / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+            }),
             passive_unit: actor.category() == EntityCategory::Unit
-                && self
-                    .interner
-                    .object_type(actor.type_ref(), rules)
-                    .is_some_and(|object| object.passive),
+                && object.is_some_and(|object| object.passive),
+            keep_searching,
         };
         let searched = request.search(
             goal,
@@ -737,8 +1051,27 @@ impl Simulation {
                 blocker_neighbor_counts: Some(counts),
             },
             &entry,
+            self.foot_search_allows_hierarchy(request, is_train),
         );
         (searched, entry.read_own_cell.get())
+    }
+
+    /// The mover's terms of AStar's allowHS (`0x0042CACC..0x0042CAEC`): the
+    /// snapshot's TechnoClass+0x3D5 byte, then Foot+0x320
+    /// ([`Self::foot_allows_outside_playfield`]). A mover allowed to leave the
+    /// map takes the plain cell A*, past the zone refusal and the corridor.
+    /// At 0x0042CACC a train bypasses the hierarchy even before the
+    /// playfield byte is read.
+    pub(crate) fn foot_search_allows_hierarchy(
+        &self,
+        request: &FootPathRequest,
+        is_train: bool,
+    ) -> bool {
+        !is_train
+            && request.snapshot().allow_zone_hierarchy
+            && !self
+                .foot_allows_outside_playfield(request.entity_id, is_train)
+                .expect("live path requester")
     }
 
     /// The live Foot's threat coefficient for its searches (Foot 0x4DC760),
@@ -771,7 +1104,7 @@ impl Simulation {
         goal: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -831,7 +1164,7 @@ impl Simulation {
         self.assign_null_destination(id, rules, registry, frame_effects);
         //4D4149 dispatches the concrete target setter, including an owned
         //Airstrike's cancellation before its TarCom changes.
-        self.assign_target_represented(id, None, rules, registry, frame_effects)
+        self.assign_target_represented(id, None, rules, frame_effects)
             .map_err(|_| "retired failed Find_Path actor")?;
         let human = self.owner_is_human(owner);
         let mission = if human {
@@ -861,7 +1194,6 @@ impl Simulation {
                 id,
                 Some(crate::sim::components::NavTargetRef::cell(rx, ry)),
                 rules,
-                registry,
                 frame_effects,
             )
             .map_err(|cause| format!("Find_Path failure post: {cause}"))?;
@@ -879,7 +1211,6 @@ impl Simulation {
         id: u64,
         destination: DriveCoord,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<u8>, String> {
         if !self.foot_path_zone_precheck(id, destination, rules)? {
             return Ok(None);
@@ -890,7 +1221,7 @@ impl Simulation {
             .ok_or("Find_Path goal requires map cells")?;
         let target = ((destination.x / 256) as i16, (destination.y / 256) as i16);
         let cell = terrain.native_cell_identity(target);
-        self.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules, registry)
+        self.foot_can_enter(id, cell, InfantryEntryArgs::REPAIR, rules)
             .map(Some)
     }
 
@@ -904,24 +1235,24 @@ impl Simulation {
         destination: DriveCoord,
         answer: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<DriveCoord, String> {
         let Some(near) = self.find_path_redirect(id, destination, answer, rules)? else {
             return Ok(destination);
         };
-        self.redirect_find_path_destination(id, near, rules, registry, frame_effects)?;
+        self.redirect_find_path_destination(id, near, rules, frame_effects)?;
         Ok(DriveCoord::from(cell_center(near.into(), 0)))
     }
 
     /// The cell [`Self::find_path_goal_for_answer`] retargets the search to,
-    /// if its code-6 or code-7 arm redirects; it changes nothing. Code 6
+    /// if its code-6 or code-7 arm redirects. For non-trains, code 6
     /// beyond CloseEnough (Rules+1718; a Team member reads Stray +171C or
     /// RelaxedStray +1720 through 0x6F03B0) asks FNPC for a cell near the
     /// target, accepts it only when it lies closer to the target than the
     /// actor (0x4D3C39) and `EstimateZoneCost` 0x42D170 admits it (at most
     /// Chebyshev plus 6). Code 7 with a Building in the target cell
-    /// (0x47C520) redirects unconditionally.
+    /// (0x47C520) redirects unconditionally, to cell (0,0) when FNPC finds
+    /// no cell.
     pub(crate) fn find_path_redirect(
         &self,
         id: u64,
@@ -945,8 +1276,8 @@ impl Simulation {
                 //0x4D3A30..0x4D3A57: a team member keeps a target within its
                 //team's stray (TeamClass::Get_Stray 0x6F03B0), anyone else
                 //within CloseEnough.
-                let keep_within = match self.team_script_vm.team_for_member(id) {
-                    Some((team_id, _)) => self.team_stray(team_id, rules),
+                let keep_within = match self.team_script_vm.team_of(id) {
+                    Some(team_id) => self.team_stray(team_id, rules),
                     None => rules.general.close_enough,
                 };
                 //0x4D3944..0x4D3A2B: |+48 coordinate - target centre| with z.
@@ -954,9 +1285,14 @@ impl Simulation {
                 let centre = cell_center(target.into(), 0);
                 let distance =
                     native_xyz_distance(coord.x - centre.x, coord.y - centre.y, coord.z - centre.z);
-                //0x4D3A9B: dist <= that distance keeps the target. IsTrain (+C94)
-                //is set by no retail TechnoType (no IsTrain=yes in rulesmd).
-                if distance <= keep_within {
+                // 4D3A9B..4D3AA7: a train keeps its occupied destination
+                // even when it is farther away than the stop distance.
+                if distance <= keep_within
+                    || self
+                        .interner
+                        .object_type(actor.type_ref(), rules)
+                        .is_some_and(|object| object.is_train)
+                {
                     return Ok(None);
                 }
                 let Some(near) = self.find_path_nearby_cell(id, target, rules)? else {
@@ -1008,12 +1344,13 @@ impl Simulation {
                 {
                     return Ok(None);
                 }
-                //0x4D3DD8..0x4D3E03: the FNPC result is set and searched without
-                //an invalid-cell test; only an FNPC failure over the whole map
-                //radius would search cell (0,0), which no test fixture produces.
-                let near = self.find_path_nearby_cell(id, target, rules)?.ok_or(
-                    "Find_Path code-7 redirect found no passable cell near the Building target",
-                )?;
+                //0x4D3DD8..0x4D3E03 sets and searches the FNPC result without
+                //code 6's invalid-cell test (0x4D3BBD..0x4D3BD7). An FNPC that
+                //finds nothing answers the zero Cell (0x56E79A..0x56E7AA reads
+                //0xABD480), so SetDestination and the search go to cell (0,0).
+                let near = self
+                    .find_path_nearby_cell(id, target, rules)?
+                    .unwrap_or((0, 0));
                 Ok(Some(near))
             }
             _ => Ok(None),
@@ -1023,9 +1360,9 @@ impl Simulation {
     /// FNPC 0x56DC20 as `Find_Path` calls it (0x4D3B0A..0x4D3B76 and
     /// 0x4D3D6C..0x4D3DD8): seed = target cell, Type+67C speed, zone =
     /// GetZoneID(current cell, table row, OnBridge), the table row, OnBridge,
-    /// footprint 1x1, height check on, occupancy check = the Subterranean
-    /// obstacle flag (Type+D2C, never set for stock infantry), bridge cells
-    /// allowed, nearest to the actor's current cell.
+    /// footprint 1x1, height check on, independent burrow flag when Type+D2C
+    /// and the original destination passes486FF0, no occupancy check, bridge
+    /// cells allowed, nearest to the actor's current cell.
     fn find_path_nearby_cell(
         &self,
         id: u64,
@@ -1040,13 +1377,19 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Find_Path FNPC requires the mover type")?;
-        if object.movement_zone == MovementZone::Subterranean {
-            return Err(
-                "Find_Path FNPC obstacle flag (Type+D2C, 0x486FF0) is not represented".into(),
+        let Some(zone) = find_path_search_zone(object.movement_zone) else {
+            // Find_Path indexes table 0x7E8BF0 with the raw MovementZone row
+            // (0x4D3AC3). Row -1 reads the dword before the table instead of
+            // a search row; gamemd has no defined answer there and VERA will
+            // not emulate that out-of-bounds read. Treat it as FNPC finding no
+            // cell: Find_Path's callers already handle the zero answer, so an
+            // invalid MovementZone from external data cannot abort the frame.
+            log::debug!(
+                "Find_Path FNPC: entity {id} has invalid MovementZone {:?}; no nearby cell",
+                object.movement_zone
             );
-        }
-        let zone = find_path_search_zone(object.movement_zone)
-            .ok_or("Find_Path FNPC requires a valid MovementZone")?;
+            return Ok(None);
+        };
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -1059,6 +1402,21 @@ impl Simulation {
             .ok_or("Find_Path FNPC requires original Map Size")?;
         let current = coord_cell(ground_pose::position_world_coord(&actor.position));
         let current = (i32::from(current.0), i32::from(current.1));
+        // Find_Path4D3AEE/4D3D50 tests the original destination, not the
+        // replacement candidates. Its answer becomes FNPC's tenth argument.
+        let require_burrowable = object.movement_zone == MovementZone::Subterranean && {
+            let cells = NativeCellQuery::canonical(terrain);
+            let target = cells.lookup(target);
+            crate::sim::cell_rect::cell_allows_burrowing(
+                &cells,
+                target,
+                self.playfield_bounds(),
+                Some(crate::sim::cell_rect::BurrowingContents {
+                    occupancy: &self.substrate.occupancy,
+                    terrain_objects: self.terrain_objects.cell_index(),
+                }),
+            )
+        };
         let required_zone_id = zones.get_zone_id_native(
             terrain,
             (current.0 as u16, current.1 as u16),
@@ -1070,6 +1428,7 @@ impl Simulation {
                 (i32::from(target.0), i32::from(target.1)),
                 NearbyArgs {
                     check_height: true,
+                    require_burrowable,
                     target_cell: Some(current),
                     ..NearbyArgs::plain(
                         PassabilityArgs {
@@ -1087,9 +1446,9 @@ impl Simulation {
     }
 
     /// `PathfinderClass::EstimateZoneCost` 0x42D170, shared by Find_Path and
-    /// Approach_Target. Both native callers pass a Foot and movement override
-    /// -1, so its type supplies the movement row. The caller owns its limit:
-    /// Find_Path uses Chebyshev+6; Approach uses Chebyshev+8.
+    /// Approach_Target. Those callers pass a Foot and movement override-1,
+    /// so its type supplies the movement row. Unit746000 instead requests
+    /// Normal explicitly. The caller owns its cost limit.
     ///
     /// The two CellStruct arguments and bridge booleans are already copied
     /// inputs. The body retains both GetCell results before projecting either
@@ -1112,6 +1471,7 @@ impl Simulation {
             start_bridge,
             goal_bridge,
             rules,
+            None,
         )
     }
 
@@ -1120,6 +1480,7 @@ impl Simulation {
     /// read: the second lookup and the bridge helpers may restamp Dummy,
     /// including before the original arguments are reread for distances.
     /// The bridge booleans are copied inputs, not live Cell flag queries.
+    /// A movement override supplies42D170's explicit row; None is native-1.
     pub(crate) fn estimate_zone_cost_in_query(
         &self,
         id: u64,
@@ -1128,8 +1489,8 @@ impl Simulation {
         start_bridge: bool,
         goal_bridge: bool,
         rules: &RuleSet,
+        movement_override: Option<MovementZone>,
     ) -> Result<i32, String> {
-        use crate::sim::cell_rect::get_cellclass_fallback;
         use crate::sim::pathfinding::zone_build::find_high_bridge_record_index;
         use crate::sim::pathfinding::zone_hierarchy::{
             ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat, zone_precheck_flat,
@@ -1152,28 +1513,26 @@ impl Simulation {
             .zone_grid
             .as_ref()
             .ok_or("EstimateZoneCost requires zone topology")?;
-        let lookup = |cell: (i16, i16)| {
-            get_cellclass_fallback(Some(terrain), i32::from(cell.0), i32::from(cell.1))
-        };
         let cells = NativeCellQuery::canonical(terrain);
-        let start_cell = lookup(start.coord(&cells)); //42D1A1
-        let goal_cell = lookup(goal.coord(&cells)); //42D1B2, after start's lookup
+        let start_cell = cells.lookup(start.coord(&cells)); //42D1A1
+        let goal_cell = cells.lookup(goal.coord(&cells)); //42D1B2, after start's lookup
         let start_projection = live_hierarchy_projection(
-            terrain,
+            &cells,
             zones.bridge_records(),
-            &start_cell,
+            start_cell,
             start_bridge,
             self.playfield_bounds(),
         )?;
         let goal_projection = live_hierarchy_projection(
-            terrain,
+            &cells,
             zones.bridge_records(),
-            &goal_cell,
+            goal_cell,
             goal_bridge,
             self.playfield_bounds(),
         )?;
+        let movement_zone = movement_override.unwrap_or(object.movement_zone);
         let hierarchy = zones
-            .hierarchy_for(object.movement_zone)
+            .hierarchy_for(movement_zone)
             .ok_or("EstimateZoneCost requires the native movement row")?;
         let start_zone = zones
             .hierarchy_zone_at_native(0, start_projection)
@@ -1195,7 +1554,7 @@ impl Simulation {
             hierarchy,
             start_zone,
             goal_zone,
-            object.movement_zone,
+            movement_zone,
             &ZonePrecheckExclusions::default(),
             Some(ZonePrecheckThreat::new(coefficient, &threat_lookup)),
         )?
@@ -1205,7 +1564,7 @@ impl Simulation {
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
         let signed = |cell: (u16, u16)| (cell.0 as i16, cell.1 as i16);
         let direct = chebyshev(start.coord(&cells), goal.coord(&cells));
-        let fine_path = &path.paths[0];
+        let fine_path = path.route(0);
         let count = fine_path.len();
         let mut cost = 2 * (count as i32 - 1);
 
@@ -1296,20 +1655,29 @@ impl Simulation {
         id: u64,
         cell: (i16, i16),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
+        //0x4D3CBF, 0x4D3DF1 and 0x4D3FBB pass Map[cell] (0x5657A0) to
+        //vt+0x480: a cell with no allocation stamps the shared Dummy, whose
+        //coordinate the setter's Move_To then reads.
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            terrain.native_cell_identity(cell);
+        }
         let requested = crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-        self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
+        self.assign_destination_represented(id, Some(requested), rules, frame_effects)
             .map_err(|cause| format!("Find_Path redirect: {cause}"))
     }
 
     /// Foot+320/4DA1D0, shared by class admission and the path-zone precheck.
     /// Read retained3D5/3D4 and effective mission; fresh bounds or locomotor
-    /// state cannot reconstruct these inputs. TypeC94 IsTrain is absent from
-    /// stock retail types and remains outside the represented rules contract.
+    /// state cannot reconstruct these inputs. An in-playfield train returns
+    /// true at 0x004DA1EB..0x004DA1F3 before the mission and Team gates.
     /// Original complete-call evidence: tools/spatial_oracle/unit_entry_boundary.
-    pub(crate) fn foot_allows_outside_playfield(&self, id: u64) -> Result<bool, String> {
+    pub(crate) fn foot_allows_outside_playfield(
+        &self,
+        id: u64,
+        is_train: bool,
+    ) -> Result<bool, String> {
         let actor = self
             .substrate
             .entities
@@ -1318,7 +1686,7 @@ impl Simulation {
         if !actor.in_playfield() {
             return Ok(false);
         }
-        if actor.is_mission_only() || actor.mission.effective().raw() == 4 {
+        if is_train || actor.is_mission_only() || actor.mission.effective().raw() == 4 {
             return Ok(true);
         }
         Ok(self.member_team_is_moving_outside_playfield(id))
@@ -1392,7 +1760,7 @@ impl Simulation {
             .ok_or("missing Foot navigation reachability type")?;
         let destination = coord_cell(destination);
         let source = self.foot_navigation_coordinate(id)?;
-        let allow_destination_fringe = self.foot_allows_outside_playfield(id)?;
+        let allow_destination_fringe = self.foot_allows_outside_playfield(id, object.is_train)?;
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -1419,16 +1787,41 @@ impl Simulation {
                 destination,
                 movement_zone: object.movement_zone,
                 on_bridge: actor.on_bridge(),
-                in_tube: actor.low_bridge_tube_state.is_some(),
+                in_tube: actor.active_tube().is_some(),
                 allow_destination_fringe,
             },
         )
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
+
+    /// A lookup that found a real cell is kept; one that missed is made
+    /// again, stamping the shared Dummy at each ask.
+    #[test]
+    fn only_a_lookup_that_found_a_real_cell_is_kept() {
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+        let mut terrain = test_grid(4, 4, test_flat_cell);
+        let hole = (3, 3);
+        let allocated: Vec<_> = (0..4)
+            .flat_map(|y| (0..4).map(move |x| (x, y)))
+            .filter(|&cell| cell != hole)
+            .collect();
+        terrain.test_set_native_allocated_cells(&allocated);
+        let dummy = terrain.shared_cell_dummy();
+        let last = LastRealCell::default();
+        let real = terrain.native_cell_identity((1, 2));
+        assert!(matches!(real, NativeCellIdentity::Real(_)));
+        assert_eq!(last.lookup(&terrain, (1, 2)), real);
+        assert_eq!(last.lookup(&terrain, (1, 2)), real);
+        for _ in 0..2 {
+            dummy.stamp_coord(-5, -6);
+            assert_eq!(last.lookup(&terrain, hole), NativeCellIdentity::Dummy);
+            assert_eq!(dummy.snapshot().coord, (3, 3), "the miss stamps again");
+        }
+    }
 
     #[test]
     fn signed_lepton_cell_conversion_truncates_toward_zero() {
@@ -1460,27 +1853,72 @@ mod tests {
         assert_eq!(find_path_search_zone(MovementZone::Invalid), None);
     }
 
+    /// The original indexes table 0x7E8BF0 with the raw MovementZone row. An
+    /// invalid parser result is row -1 there, which reads the dword before the
+    /// table rather than producing a search row. VERA has no
+    /// native answer to reproduce, so FNPC treats that as finding no cell and
+    /// Find_Path's redirect continues instead of aborting the frame.
+    #[test]
+    fn fnpc_treats_an_invalid_movement_zone_as_no_nearby_cell() {
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=SAPCX\n[SAPCX]\nStrength=100\nSpeed=6\nSpeedType=Track\nMovementZone=Subterrannean\nLocomotor={4A582743-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let id = sim
+            .spawn_object("SAPCX", "Americans", 3, 3, 0, &rules)
+            .unwrap();
+        // 10 cells east and 7 south is beyond CloseEnough, so the code-6 arm
+        // reaches FNPC.
+        let destination = DriveCoord::cell(13, 10, 0);
+        let answer = sim.find_path_redirect(id, destination, 6, &rules);
+        assert!(
+            answer.is_ok(),
+            "an invalid MovementZone must not abort Find_Path: {answer:?}"
+        );
+        assert_eq!(
+            answer.unwrap(),
+            None,
+            "FNPC's no-cell answer keeps the original target"
+        );
+        let request = FootPathRequest::track(
+            &sim.substrate.entities,
+            id,
+            destination,
+            0,
+            sim.playfield_bounds(),
+        )
+        .expect("track request");
+        let found = sim.foot_find_path(
+            &request,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        assert!(
+            found.is_ok(),
+            "an invalid MovementZone must not abort foot_find_path: {found:?}"
+        );
+    }
+
     /// `AStar @ 0x0042CAD6` takes the zone hierarchy only for a mover in the
     /// playfield (Techno+0x3D5), which the Foot search snapshots with its
     /// request. With the zones split between start and goal, a mover outside
-    /// the playfield still finds the flat route; one inside it is refused at
-    /// the hierarchy.
+    /// the playfield still finds the flat route; an ordinary mover inside is refused.
+    /// `IsTrain` (0x0042CACC) bypasses the zone refusal even inside.
     #[test]
     fn foot_search_takes_the_zone_hierarchy_only_inside_the_playfield() {
-        for in_playfield in [false, true] {
+        for (in_playfield, is_train) in [(false, false), (true, false), (true, true)] {
             let (mut sim, rules, registry) =
-                crate::sim::world::entry_test_fixture::fixture_with_rules(
-                    "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=400\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
-                );
+                crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
+                    "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=400\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nLocomotor={{4A582741-9839-11D1-B709-00A024DDAFD1}}\nIsTrain={is_train}\n"
+                ));
             let (start, goal_cell) = ((13, 15), (17, 15));
             let id = sim
                 .spawn_object("MTNK", "Americans", start.0, start.1, 0, &rules)
                 .unwrap();
-            sim.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .set_in_playfield(in_playfield);
+            let frame = sim.session.binary_frame();
+            let mover = sim.substrate.entities.get_mut(id).unwrap();
+            mover.set_in_playfield(in_playfield);
+            mover.body_facing.snap(0x4000, frame); // east, toward the goal
             let mut split = sim.path_grid.as_deref().unwrap().clone();
             for y in 0..split.height() {
                 split.set_blocked(15, y, true);
@@ -1493,7 +1931,7 @@ mod tests {
                 goal_cell,
                 MovementLayer::Ground,
             ));
-            sim.zone_grid = Some(zones);
+            *sim.zone_grid = Some(zones.into());
             let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);
             let request = FootPathRequest::track(
                 &sim.substrate.entities,
@@ -1509,7 +1947,7 @@ mod tests {
                     goal,
                     &rules,
                     Some(&registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let route = sim
@@ -1520,11 +1958,61 @@ mod tests {
                 .navigation
                 .path_replay()
                 .route_cells();
-            assert_eq!(found.is_ok(), !in_playfield, "in_playfield={in_playfield}");
+            let should_find = !in_playfield || is_train;
+            assert_eq!(
+                found.is_ok(),
+                should_find,
+                "in_playfield={in_playfield} train={is_train}"
+            );
             assert_eq!(
                 route.last() == Some(&goal_cell),
-                !in_playfield,
+                should_find,
                 "in_playfield={in_playfield}: {route:?}"
+            );
+        }
+    }
+
+    /// AStar_main_loop 0x00429C87..0x00429D25 precloses the rear three
+    /// neighbouring cells for the entire search. Even on open ground a
+    /// train cannot circle around and enter the cell just behind its start.
+    #[test]
+    fn a_train_can_route_ahead_but_not_into_the_cell_at_its_tail() {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=ENGINE\n[ENGINE]\nStrength=400\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nIsTrain=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let id = sim
+            .spawn_object("ENGINE", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let frame = sim.session.binary_frame();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .body_facing
+            .snap(0x4000, frame);
+        for (x, reachable) in [(16, true), (14, false)] {
+            let goal = DriveCoord::cell(x, 15, 0);
+            let request = FootPathRequest::track(
+                &sim.substrate.entities,
+                id,
+                goal,
+                0,
+                sim.playfield_bounds(),
+            )
+            .unwrap();
+            let found = sim
+                .search_foot_path(
+                    &request,
+                    goal,
+                    &rules,
+                    Some(&registry),
+                    &mut FrameEffects::default(),
+                )
+                .unwrap();
+            assert_eq!(
+                found.is_ok(),
+                reachable,
+                "east-facing train going to {x},15"
             );
         }
     }
@@ -1585,7 +2073,7 @@ mod tests {
                 DriveCoord::cell(28, 28, 0),
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
             let sent = !human && skirmish;
@@ -1613,14 +2101,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_path_marker_integration_tests.rs"]
 mod marker_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_path_threat_integration_tests.rs"]
 mod threat_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_path_code2_chain_tests.rs"]
 mod code2_chain_tests;

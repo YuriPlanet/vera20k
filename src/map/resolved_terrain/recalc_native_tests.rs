@@ -27,7 +27,8 @@ pub fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
     grid.native_allocated = Some(
         (0..33)
             .flat_map(|y| (0..33).map(move |x| (12..=20).contains(&x) && (12..=20).contains(&y)))
-            .collect(),
+            .collect::<Vec<_>>()
+            .into(),
     );
     grid.bridge_recalc_catalog = Some(Arc::new(BridgeRecalcCatalog::for_tiles(
         &theater,
@@ -44,11 +45,11 @@ pub fn bridge_constructor_terrain() -> ResolvedTerrainGrid {
 /// Tile2 is invalid against the two-entry registry; tile0 has the supplied
 /// slope used by the second-pass admission discriminator. No Recalc substitute.
 pub fn install_bridge_batch_test_catalog(grid: &mut ResolvedTerrainGrid, slope: bool) {
-    install_repair_test_catalog(grid, slope, true, 11);
+    install_repair_test_catalog(grid, (11, u8::from(slope)), (11, 0), true);
 }
 
 pub fn install_ordinary_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
-    install_repair_test_catalog(grid, false, false, 11);
+    install_repair_test_catalog(grid, (11, 0), (11, 0), false);
 }
 
 /// Bind the supplied empty IsoTileType array from the Jumpjet native fixture.
@@ -94,37 +95,50 @@ pub fn install_bridge_query_test_catalog(grid: &mut ResolvedTerrainGrid, width: 
 /// The ordinary catalog with a Tunnel tile1 (TMP terrain type 5): a Cell on it
 /// keeps Cell+EC = Tunnel through the Recalc(-1) its Mark runs.
 pub fn install_tunnel_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
-    install_repair_test_catalog(grid, false, false, 5);
+    install_repair_test_catalog(grid, (11, 0), (5, 0), false);
+}
+
+/// The ordinary catalog with a Water tile1 (TMP terrain type 9): a Cell on it
+/// keeps LandType Water through the Recalc(-1) a Mark runs.
+pub fn install_water_repair_test_catalog(grid: &mut ResolvedTerrainGrid) {
+    install_repair_test_catalog(grid, (11, 0), (9, 0), false);
+}
+
+/// Clear ground (TMP terrain type 0) for scenes whose native map is Clear:
+/// tile0 is flat and tile1 has ramp type `ramp`, so the Recalc(-1) a Mark
+/// runs keeps a Cell's Clear land and a ramp on tile1.
+pub fn install_clear_test_catalog(grid: &mut ResolvedTerrainGrid, ramp: u8) {
+    install_repair_test_catalog(grid, (0, 0), (0, ramp), false);
 }
 
 /// The catalog depends only on these inputs and carries a supplied selector
 /// table, so the grids share one copy per test process: building it writes
-/// and loads a loose archive stack.
+/// and loads a loose archive stack. Each tile is its TMP terrain type and
+/// ramp type.
 fn install_repair_test_catalog(
     grid: &mut ResolvedTerrainGrid,
-    slope: bool,
+    first: (u8, u8),
+    second: (u8, u8),
     wheel_only: bool,
-    second_terrain: u8,
 ) {
     grid.bridge_recalc_catalog = crate::test_fixture::once_per_process(
-        ("repair test catalog", slope, wheel_only, second_terrain),
-        || {
-            Some(Arc::new(repair_test_catalog(
-                slope,
-                wheel_only,
-                second_terrain,
-            )))
-        },
+        ("repair test catalog", first, second, wheel_only),
+        || Some(Arc::new(repair_test_catalog(first, second, wheel_only))),
     );
 }
 
-fn repair_test_catalog(slope: bool, wheel_only: bool, second_terrain: u8) -> BridgeRecalcCatalog {
+fn repair_test_catalog(
+    (first_terrain, first_ramp): (u8, u8),
+    (second_terrain, second_ramp): (u8, u8),
+    wheel_only: bool,
+) -> BridgeRecalcCatalog {
     let theater = synthetic_theater_from_ini(
         b"[TileSet0000]\nTilesInSet=2\nFileName=source\nSetName=Plain\n",
     );
-    let mut first = gsi_04_02_last_tiles_tmp_bytes(11, [0; 3], [0; 3]);
-    first[62] = u8::from(slope);
-    let second = gsi_04_02_last_tiles_tmp_bytes(second_terrain, [0; 3], [0; 3]);
+    let mut first = gsi_04_02_last_tiles_tmp_bytes(first_terrain, [0; 3], [0; 3]);
+    first[62] = first_ramp;
+    let mut second = gsi_04_02_last_tiles_tmp_bytes(second_terrain, [0; 3], [0; 3]);
+    second[62] = second_ramp;
     let (_directory, assets) = gsi_04_02_asset_manager_with_loose_tmps(&[
         ("source01.tem", &first),
         ("source02.tem", &second),
@@ -380,8 +394,11 @@ fn assert_resident_source_rejection_preserves_cell(catalog: Arc<BridgeRecalcCata
 #[test]
 fn resident_recalc_rejects_unadmitted_lifecycle_requirements() {
     for (declaration, raw_land, effect) in [
-        ("ShadowCaster=yes\n", 11, "declared shadow policy"),
-        ("ShadowTiles=1\n", 11, "declared shadow policy"),
+        (
+            "ShadowCaster=yes\nShadowTiles=1\n",
+            11,
+            "declared shadow policy",
+        ),
         (
             "[Plain]\nTile01Anim=FIRE\nTile01AttachesTo=0\n",
             11,
@@ -755,7 +772,7 @@ fn retail_bridge_recalc_and_presentation_match_original_execution() {
         0,
         crate::map::tile_variant_selector::TileVariantSelector::from_initialized(table),
     );
-    let keys = crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_theater(&theater);
+    let keys = theater.high_bridge_rim_tiles;
     let wood = theater.lookup.bounds()[usize::from(theater.wood_bridge_set.unwrap())].start;
     drop(assets);
     for tile in (keys.base..keys.base + 16)
@@ -822,7 +839,7 @@ fn retail_bridge_catalog_after_normal_map_loading() {
                     index,
                     overlay,
                     -1,
-                    &scenario.runtime.resources.overlay_registry,
+                    scenario.runtime.resources.rules.overlay_registry(),
                     sim.playfield_bounds(),
                 )
                 .unwrap_or_else(|error| panic!("{fallback} {coord:?} source{input:?}: {error}"));
@@ -865,4 +882,21 @@ fn repair_tile_queries_use_registered_names_and_live_index_validity() {
     assert!(grid.tile_allows_morph_placement(-1).unwrap());
     assert!(grid.tile_allows_morph_placement(1).unwrap());
     assert!(grid.tile_allows_morph_placement(0xffff).unwrap());
+}
+
+/// A save can cache a variant this session registered no TMP file for. Both
+/// save-load readers keep the save and use the pristine file.
+#[test]
+fn saved_variant_beyond_registered_files_restores_with_first_file() {
+    let mut grid = bridge_constructor_terrain();
+    let index = grid.index(16, 16).unwrap();
+    grid.cells[index].variant = 3;
+    grid.refresh_saved_cell_presentation(index)
+        .expect("the saved cell restores");
+    assert_eq!(grid.cells[index].variant, 0);
+
+    grid.cells[index].variant = 3;
+    let catalog = grid.bridge_recalc_catalog.clone().unwrap();
+    grid.bind_saved_damaged_radar(&catalog)
+        .expect("the saved baseline binds");
 }

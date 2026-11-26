@@ -8,7 +8,9 @@
 //! qualify (`TeamScriptState::wants_members`) rests on instruction reading.
 
 use super::*;
-use crate::sim::ai_team_creation::tests::{Draws, dword, events, flag, index, native_draws, rows};
+use crate::rules::rule_policy::RulePolicy;
+use crate::sim::ai_team_creation::tests::{Draws, events, index};
+use crate::sim::ai_team_creation::tests::{dword, flag, native_draws, rows};
 use crate::sim::house_state::HouseState;
 use serde_json::Value;
 
@@ -33,7 +35,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);
@@ -43,14 +45,17 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &crate::rules::ini_parser::IniFile::from_str(""),
-        sim.session.game_mode_nonzero(),
+        sim.session.rule_policy(),
     )
     .unwrap();
-    assert!(
-        sim.install_team_ai_registry(&registry, &rules)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(sim.install_team_ai_registry(&registry, &rules).is_empty());
+    // Installed Ares CanBuild10024090 (hook 0x4F7870) -> PrereqValidate10021B00
+    // asks HasFactory for computer houses too, where stock 0x004F7B5C answers
+    // them 1 before any factory; the replacement GI needs a real barracks.
+    if rules.ares_form() {
+        sim.spawn_object("GAPILE", "Americans", 20, 20, 0, &rules)
+            .unwrap();
+    }
     // Physical AIMD: Allied Base Guard - Refine needs three E1 and three GGI.
     let team_type = sim.interner.get("06175EFC-G").unwrap();
     sim.create_team(team_type, Some(owner), &rules).unwrap();
@@ -78,7 +83,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         },
     );
     assert_eq!(rules.warhead("SA").unwrap().inf_death, 1);
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let corpse = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(corpse.health.current(), 0);
     assert!(corpse.lifecycle.object_alive());
@@ -89,7 +94,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         corpse.mission.effective(),
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard)
     );
-    assert!(corpse.base_defense_response.recruitable_a());
+    assert!(corpse.seldom.base_defense_response.recruitable_a());
     assert!(sim.team_script_vm.team_for_member(victim).is_none());
     crate::sim::ai_base_building::update_production_choices(&mut sim, &rules, owner, None);
     assert_eq!(
@@ -143,6 +148,64 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     panic!("the physical GI Die1 sequence must retire and permit its replacement");
 }
 
+/// The aircraft chooser (`0x004FF210`) of a house whose teams need no
+/// aircraft has no candidates, and still draws once ([`pick`]), keeping its
+/// choice at -1.
+#[test]
+fn a_class_no_team_needs_still_draws_once() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n\
+         [AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=100\n",
+    ))
+    .expect("minimal rules");
+    let aimd = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
+         [TaskForces]\n0=F\n[F]\n0=2,E1\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
+    let mut sim = Simulation::with_seed(0x4FF210);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_team_ai_registry(&registry, &rules);
+    let owner = sim.interner.intern("Computer");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
+    let team_type = sim.interner.get("TT").expect("TT interned");
+    sim.create_team(team_type, Some(owner), &rules)
+        .expect("no Max= limit");
+    let mut expected = sim.scenario_rng.clone();
+    // Ares 100216A0 draws `RandomRanged(0, 99)` instead.
+    if rules.ares_form() {
+        expected.next_range_i32_inclusive(0, 99);
+    } else {
+        expected.next_range_i32_inclusive(0, 0x7FFF_FFFE);
+    }
+
+    choose(&mut sim, &rules, owner, UnitChoiceKind::Aircraft);
+
+    assert_eq!(
+        sim.houses[&owner]
+            .ai_unit_choices()
+            .get(UnitChoiceKind::Aircraft),
+        -1
+    );
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected.logical_state(),
+        "one draw"
+    );
+}
+
+// Ares 100216A0 (hooks 0x4FEA60, 0x4FEEE0, 0x4FF210) draws
+// `RandomRanged(0, 99)` first (`ares_the_choice_draws_a_percent`).
 #[test]
 fn the_choosers_match_the_original() {
     for (number, row) in rows("choosers").iter().enumerate() {
@@ -206,7 +269,7 @@ fn the_choosers_match_the_original() {
         assert_eq!(asked_can_build, native_can_build, "{context}: CanBuild");
         let fill = dword(&row["fill"][index(&row["difficulty"])]);
         let mut draws = Draws::new(row);
-        let choice = pick(&candidates, fill, |low, high| draws.draw(low, high));
+        let choice = pick(&candidates, fill, false, |low, high| draws.draw(low, high));
         assert_eq!(draws.asked, native_draws(row), "{context}: draws");
         assert_eq!(choice.unwrap_or(-1), dword(&row["choice"]), "{context}");
     }
@@ -235,7 +298,7 @@ fn the_fill_earliest_gate_takes_the_native_draws() {
         let fill = dword(&row["fill_percent"]);
         let roll = dword(&row["draw"]);
         let mut draws = [roll, 0].into_iter();
-        let choice = pick(&candidates, fill, |_, _| draws.next().unwrap());
+        let choice = pick(&candidates, fill, false, |_, _| draws.next().unwrap());
         let earliest = row["earliest"].as_bool().unwrap();
         assert_eq!(
             choice,
@@ -265,22 +328,82 @@ fn the_harvester_branch_matches_the_original() {
             current_iq: dword(&row["iq"]),
             iq_harvester: dword(&row["iq_harvester"]),
             no_ore: flag(&row["no_ore"]),
-            human: house.is_controlled_by_human(dword(&row["game_mode"]) != 0),
+            human: house.is_controlled_by_human(
+                crate::sim::scenario_session::ScenarioGameMode::from_game_mode(dword(
+                    &row["game_mode"],
+                ))
+                .stock_rule_policy(None),
+            ),
             tech_level: house.tech_level(),
         };
-        let decision = harvester_decision(&facts);
-        assert_eq!(
-            decision.unwrap_or(-1),
-            dword(&row["choice"]),
-            "harvester row {number}"
-        );
-        // Past the branch, the team pass (no candidates here) draws once.
-        assert_eq!(
-            native_draws(row).len(),
-            usize::from(decision.is_none()),
-            "harvester row {number}: draws"
-        );
+        for ares in [false, true] {
+            // Ares 10023410 compares the TechLevels signed.
+            if ares
+                && let Some((_, harvester_tech)) = facts.harvester
+                && ((harvester_tech as u32) <= (facts.tech_level as u32))
+                    != (harvester_tech <= facts.tech_level)
+            {
+                continue;
+            }
+            let decision = harvester_decision(&facts, ares);
+            assert_eq!(
+                decision.unwrap_or(-1),
+                dword(&row["choice"]),
+                "harvester row {number}, ares {ares}"
+            );
+            // Past the branch, the team pass (no candidates here) draws once.
+            assert_eq!(
+                native_draws(row).len(),
+                usize::from(decision.is_none()),
+                "harvester row {number}: draws"
+            );
+        }
     }
+}
+
+/// Ares 100216A0: the first draw is `RandomRanged(0, 99)`, below
+/// `FillEarliestTeamProbability` the earliest team's type (4), else a second
+/// draw among the most needed (7); and 10023410 admits a harvester with a
+/// negative TechLevel, which gamemd's unsigned compare refuses.
+#[test]
+fn ares_the_choice_draws_a_percent() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let candidates = [
+        Candidate {
+            index: 4,
+            need: 1,
+            earliest: 10,
+        },
+        Candidate {
+            index: 7,
+            need: 2,
+            earliest: 20,
+        },
+    ];
+    for (roll, choice) in [(49, 4), (50, 7)] {
+        let mut asked = Vec::new();
+        let mut draws = [roll, 0].into_iter();
+        let picked = pick(&candidates, 50, true, |low, high| {
+            asked.push((low, high));
+            draws.next().unwrap()
+        });
+        assert_eq!(picked, Some(choice), "draw {roll}");
+        assert_eq!(asked[0], (0, 99));
+    }
+    let facts = HarvesterFacts {
+        harvester: Some((7, -1)),
+        refinery: Some(None),
+        gatherers: 0,
+        destinations: 1,
+        harvesters_per_refinery: 2,
+        slave_miners: 0,
+        current_iq: 5,
+        iq_harvester: 0,
+        no_ore: false,
+        human: false,
+        tech_level: 10,
+    };
+    assert_eq!(harvester_decision(&facts, true), Some(7));
 }
 
 /// A state saved before the NPSE naval slot existed keeps its land channel and

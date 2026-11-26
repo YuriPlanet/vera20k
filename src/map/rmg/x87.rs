@@ -89,6 +89,15 @@ impl TruncF64 {
         Self(X87Chop53::sub(self.0, rhs.0))
     }
 
+    /// `FABS`.
+    pub fn abs(self) -> Self {
+        if self.lt(Self::zero()) {
+            self.neg()
+        } else {
+            self
+        }
+    }
+
     /// `FCOM`: whether `self` is below `rhs`.
     pub fn lt(self, rhs: Self) -> bool {
         X87Chop53::compare(self.0, rhs.0) == X87Ordering::Less
@@ -100,6 +109,12 @@ impl TruncF64 {
 impl From<X87Value> for TruncF64 {
     fn from(value: X87Value) -> Self {
         Self(value)
+    }
+}
+
+impl From<TruncF64> for X87Value {
+    fn from(value: TruncF64) -> Self {
+        value.0
     }
 }
 
@@ -139,6 +154,25 @@ pub fn approx_sqrt(value: TruncF64) -> TruncF64 {
     TruncF64::from_f64(f64::from(f32::from_bits(result_bits)))
 }
 
+/// Store to a priority-heap node's `f32` key: `FSTP m32real` under the
+/// generator's chop control word, so the value truncates toward zero where a
+/// Rust `as f32` would round to nearest.
+pub fn store_f32(value: TruncF64) -> f32 {
+    f32::from_bits(narrow_to_f32_bits(value))
+}
+
+/// The jittered-distance heap key that blob, LAT-patch, tree and tiberium
+/// growth share: `sqrt(d²) + draw * 5.0 * K`, stored with [`store_f32`].
+/// Each original reads its own 5.0: `CarveBlob` 0x0059C1DB..0x0059C229
+/// (0x007ED808), 0x005A4E5F..0x005A4EA2 (0x007ED808), 0x005A49AC..0x005A49EB
+/// (0x007ED800) and 0x005A2D7E..0x005A2DB6 (0x007ED7C0).
+pub fn jittered_distance_key(squared_distance: i32, draw: u32) -> f32 {
+    let jitter = TruncF64::from_f64(f64::from(draw))
+        .mul(TruncF64::from_f64(5.0))
+        .mul(TruncF64::from_f64(f64::from_bits(super::rng::RANGE_K_BITS)));
+    store_f32(approx_sqrt(TruncF64::from_f64(f64::from(squared_distance))).add(jitter))
+}
+
 /// The generator's square root of an integer squared-distance, as the `f32`
 /// the start/tiberium phases store in their priority heaps.
 pub fn approx_sqrt_f32(squared_distance: i32) -> f32 {
@@ -150,9 +184,11 @@ pub fn approx_sqrt_f32(squared_distance: i32) -> f32 {
 /// The original computes this with `FYL2X` (`ln(2) * log2(x)`). Its low bits
 /// are largely irrelevant because `approx_sqrt` immediately narrows the result
 /// to single precision, but the last bit is not proven identical to the
-/// hardware instruction — see the FP contract report.
+/// hardware instruction — see the FP contract report. Host `ln`s disagree in
+/// that bit (`ln(3)` among them), so every client takes libm's, keeping the
+/// generated map the same on every target.
 pub fn ln(value: TruncF64) -> TruncF64 {
-    TruncF64::from_f64(value.to_f64().ln())
+    TruncF64::from_f64(libm::log(value.to_f64()))
 }
 
 /// Normally distributed draws, matching the original's Box-Muller helper.
@@ -205,7 +241,7 @@ fn unit_to_signed(rng: &mut RmgRng, one: TruncF64) -> TruncF64 {
     unit.add(unit).sub(one)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -230,6 +266,13 @@ mod tests {
         (16383, 0x007F_FDFF),
     ];
 
+    /// The heap stores with `FSTP m32` under chop: a key just below 5.0 stays
+    /// below it, where round-to-nearest would store 5.0 and win ties it loses.
+    #[test]
+    fn jittered_key_store_truncates() {
+        let key = jittered_distance_key(0, u32::MAX);
+        assert_eq!(key, f32::from_bits(5.0f32.to_bits() - 1));
+    }
     #[test]
     fn sqrt_table_matches_retail_at_the_pinned_points() {
         for &(index, retail) in RETAIL_SQRT_SPOT {
@@ -317,6 +360,16 @@ mod tests {
             );
             assert!(approx > 0.0, "sqrt({value}) must stay positive");
         }
+    }
+
+    #[test]
+    fn ln_is_the_same_on_every_target() {
+        // ln(3): Apple's libm gives 1.0986122886681098, libm one bit below;
+        // every client must take the same one.
+        assert_eq!(
+            ln(TruncF64::from_f64(3.0)).to_f64().to_bits(),
+            1.098_612_288_668_109_6_f64.to_bits()
+        );
     }
 
     #[test]

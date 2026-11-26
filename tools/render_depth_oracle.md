@@ -74,8 +74,10 @@ python -m tools.render_depth_fixture target/foot-z/cliff-back.map --cliff-back
 ```
 
 Use a [map observation profile](map_observation.md) with its absolute
-`launch.selected_map_file`, then capture before/after preserved builds through
-`tools.map_observation` and compare them with the same tool. The fixture contains
+`launch.selected_map_file` and one AI opponent (the scene's buildings are the
+computer's; a skirmish never creates the local House's authored Structures),
+then capture before/after preserved builds through `tools.map_observation` and
+compare them with the same tool. The fixture contains
 controlled tank/infantry positions and a scenario-only
 `[General] CliffBackImpassability=0` override; it does not retune ordinary maps.
 A matching capture establishes production load/step/render regression evidence,

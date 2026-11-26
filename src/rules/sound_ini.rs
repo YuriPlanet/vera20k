@@ -32,11 +32,50 @@
 //! - Part of rules/ — depends on rules/ini_parser and the assets audio index
 //!   (`Sounds=` admission). No sim/render dependencies.
 
+/// A map's playback operand, independent of the local audio catalog. Network
+/// triggers retain names or literal slots until the audio owner consumes them;
+/// gameplay operands still use Read6DD5B0's resolved numeric value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum SoundReference {
+    Name(String),
+    Index(i32),
+}
+
+impl SoundReference {
+    pub fn sound<'a>(&'a self, registry: &'a SoundRegistry) -> Option<&'a str> {
+        match self {
+            Self::Name(name) => registry.get(name),
+            Self::Index(index) => registry.entry_by_index(*index),
+        }
+        .map(|entry| entry.id.as_str())
+    }
+
+    pub fn eva_index(&self, registry: &EvaRegistry) -> Option<i32> {
+        match self {
+            Self::Name(name) => registry.index_of(name),
+            Self::Index(index) => registry.entry_by_index(*index).map(|_| *index),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Name(name) => Some(name),
+            Self::Index(_) => None,
+        }
+    }
+}
+
+impl From<String> for SoundReference {
+    fn from(name: String) -> Self {
+        Self::Name(name)
+    }
+}
+
 use std::collections::HashMap;
 
 use crate::assets::audio_bag::AudioIndex;
 use crate::rules::ini_parser::{IniFile, IniSection};
-#[cfg(feature = "ares")]
 use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::ini_value::{crt_atoi, strtok};
 
@@ -314,10 +353,12 @@ impl SoundEntry {
     }
 
     /// Body sample index range `attack .. count - decay` (may be empty).
+    /// `LoadSamples` (`0x004048B0`) subtracts as a wrapping dword
+    /// (`0x0040496E SUB ECX,EDX`), so a `Decay=` of `i32::MIN` wraps too.
     pub fn body_range(&self) -> std::ops::Range<usize> {
         let count = self.sounds.len() as i32;
         let start = self.attack.clamp(0, count);
-        let end = (count - self.decay).clamp(start, count);
+        let end = count.wrapping_sub(self.decay).clamp(start, count);
         start as usize..end as usize
     }
 }
@@ -330,6 +371,96 @@ pub struct SoundRegistry {
     ///definition; duplicate reads update it without moving this retained ID.
     native_order: Vec<String>,
     defaults: SoundDefaults,
+}
+
+/// Fixed Voc bindings retained by Rules across scenario and RMG resets.
+/// Names represent resolved catalog IDs. Ctor665946/66594C/6659AC and
+///6659B2/6659C4 store -1. YuriMindControl+214 is uninitialized (66594C/52
+/// skip it): deterministic silence until a successful binding is a safety
+/// deviation for invalid custom inputs, not a claimed native default.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GlobalSoundReferences {
+    /// RulesCtor665886/66588C: +18C/+190 start at -1.
+    gui_build: Option<String>,
+    gui_tab: Option<String>,
+    bomb_ticking: Option<String>,
+    bomb_attach: Option<String>,
+    psychic_reveal: Option<String>,
+    mind_control: Option<String>,
+    mind_cleared: Option<String>,
+    mastermind_overload: Option<String>,
+    /// RulesCtor666009: +6EC starts at -1.
+    building_slam: Option<String>,
+}
+
+impl GlobalSoundReferences {
+    pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
+        [
+            self.gui_build.as_deref(),
+            self.gui_tab.as_deref(),
+            self.building_slam.as_deref(),
+        ]
+    }
+
+    pub(crate) fn bomb_ticking(&self) -> Option<&str> {
+        self.bomb_ticking.as_deref()
+    }
+
+    pub(crate) fn bomb_attach(&self) -> Option<&str> {
+        self.bomb_attach.as_deref()
+    }
+
+    pub(crate) fn psychic_reveal(&self) -> Option<&str> {
+        self.psychic_reveal.as_deref()
+    }
+
+    pub(crate) fn mind_control(&self) -> Option<&str> {
+        self.mind_control.as_deref()
+    }
+
+    pub(crate) fn mind_cleared(&self) -> Option<&str> {
+        self.mind_cleared.as_deref()
+    }
+
+    pub(crate) fn mastermind_overload(&self) -> Option<&str> {
+        self.mastermind_overload.as_deref()
+    }
+
+    pub(crate) fn read_pass(&mut self, pass: &IniFile, sounds: &SoundRegistry) {
+        let Some(section) = pass.section("AudioVisual") else {
+            return;
+        };
+        // ReadAudioVisual6693AC..66942C: each current index survives an
+        // absent, empty or unknown ReadString128 / VocFind7514D0 result.
+        self.gui_build =
+            sounds.read_rules_reference(section, "GUIBuildSound", self.gui_build.take());
+        self.gui_tab = sounds.read_rules_reference(section, "GUITabSound", self.gui_tab.take());
+        // ReadAudioVisual669A60..669AD8 /669FC3..669FF0: current-ID defaults,
+        // ReadString128 and fixed VocFind7514D0. A registered none is a cue.
+        self.bomb_ticking =
+            sounds.read_rules_reference(section, "BombTickingSound", self.bomb_ticking.take());
+        self.bomb_attach =
+            sounds.read_rules_reference(section, "BombAttachSound", self.bomb_attach.take());
+        // ReadAudioVisual669AE3..669B19 precedes PsychicReveal.
+        self.mind_control =
+            sounds.read_rules_reference(section, "YuriMindControlSound", self.mind_control.take());
+        self.psychic_reveal = sounds.read_rules_reference(
+            section,
+            "PsychicRevealActivateSound",
+            self.psychic_reveal.take(),
+        );
+        // ReadAudioVisual669FFC..66A03B /66A0C1..66A100, in native order.
+        self.mastermind_overload = sounds.read_rules_reference(
+            section,
+            "MasterMindOverloadDeathSound",
+            self.mastermind_overload.take(),
+        );
+        self.mind_cleared =
+            sounds.read_rules_reference(section, "MindClearedSound", self.mind_cleared.take());
+        // ReadAudioVisual66AA93..66AAC9, after the earlier AV sound reads.
+        self.building_slam =
+            sounds.read_rules_reference(section, "BuildingSlam", self.building_slam.take());
+    }
 }
 
 impl SoundRegistry {
@@ -415,7 +546,17 @@ impl SoundRegistry {
 
     /// Look up a sound entry by ID (case-insensitive).
     pub fn get(&self, sound_id: &str) -> Option<&SoundEntry> {
-        self.entries.get(&sound_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(sound_id, |key| self.entries.get(key))
+    }
+
+    /// VocClass::FindIndex7514D0 returns the first registered slot matching
+    /// the raw name, case-insensitively. TAction::Read6DD7CE stores this
+    /// ordinal in +90 even when Execute uses it as a non-audio scalar.
+    pub fn index_of(&self, sound_id: &str) -> Option<i32> {
+        self.native_order
+            .iter()
+            .position(|key| key.eq_ignore_ascii_case(sound_id))
+            .and_then(|index| i32::try_from(index).ok())
     }
 
     /// Literal action+90 consumers index the Voc array registered by7512CA..
@@ -431,9 +572,34 @@ impl SoundRegistry {
     /// Voc FindIndex7514D0. Missing, empty and unknown names retain the
     /// previous signed ID (constructor -1); later rules passes do not erase
     /// an earlier valid selection. Names here represent that resolved ID.
-    pub(crate) fn read_rules_reference(&self, section: &IniSection, key: &str) -> Option<String> {
-        section.read_string_with(key, 0x80, None, |current, name| {
+    pub(crate) fn read_rules_reference(
+        &self,
+        section: &IniSection,
+        key: &str,
+        current: Option<String>,
+    ) -> Option<String> {
+        section.read_string_with(key, 0x80, current, |current, name| {
             self.get(name).map(|entry| entry.id.clone()).or(current)
+        })
+    }
+
+    /// Ares NullableIdx<Voc>1000E9D0: ReadString2048, FindIndex7514D0
+    /// through1000D520, then none only if lookup failed. A registered name
+    /// spelled `none` is still a cue. Unset and explicit -1 stay distinct.
+    pub(crate) fn read_ares_reference(
+        &self,
+        section: &IniSection,
+        key: &str,
+    ) -> Option<Option<String>> {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        section.read_string_with(key, 2048, None, |current, name| {
+            if let Some(entry) = self.get(name) {
+                Some(Some(entry.id.clone()))
+            } else if crate::rules::ini_parser::is_native_none_type_name(name) {
+                Some(None)
+            } else {
+                current
+            }
         })
     }
 
@@ -573,7 +739,7 @@ fn read_entry(
 /// Installed Ares replaces this function (`VocClassData_AddSample`
 /// `0x1005AFA0`, hook record in `tools/rules_oracle/ares_audio_bags.json`): a
 /// missed name goes to its loose-sample loader (`0x1005AFF4..0x1005AFFA`) and
-/// `+0x0C` is never cleared, so the Ares build keeps every name too.
+/// `+0x0C` is never cleared, so a game read the Ares way keeps every name too.
 fn add_sample(
     sounds: &mut Vec<String>,
     samples_resolved: &mut bool,
@@ -584,8 +750,7 @@ fn add_sample(
         return;
     }
     let name = token.trim_start_matches(['$', '#']);
-    #[cfg(feature = "ares")]
-    let index = index.filter(|_| false);
+    let index = index.filter(|_| !crate::rules::ares_switch::ares_way());
     match index {
         Some(index) if index.find_sample_index(name).is_none() => *samples_resolved = false,
         _ if !name.is_empty() => sounds.push(name.to_string()),
@@ -849,9 +1014,9 @@ pub struct EvaEntry {
     pub russian: Option<String>,
     /// `Yuri=` column (`+0x2C`).
     pub yuri: Option<String>,
-    /// Ares100639C0's nine-byte slots, in the owning registry's EVATypes order.
-    #[cfg(feature = "ares")]
-    extra_columns: Vec<Option<String>>,
+    /// Ares100639C0's nine-byte slots, in the owning registry's EVATypes order;
+    /// `None` when EVAMD was read the stock way (`ares_switch::ares_way`).
+    extra_columns: Option<Vec<Option<String>>>,
     /// `Type=` (`+0x4C`), default STANDARD.
     pub eva_type: EvaType,
     /// `Priority=` (`+0x48`), default NORMAL.
@@ -870,8 +1035,7 @@ impl EvaEntry {
             allied: None,
             russian: None,
             yuri: None,
-            #[cfg(feature = "ares")]
-            extra_columns: Vec::new(),
+            extra_columns: None,
             eva_type: EvaType::Standard,
             priority: EvaPriority::Normal,
             volume: 1.0,
@@ -915,40 +1079,38 @@ impl EvaEntry {
         }
     }
 
-    /// GetFilename753380, replaced by Ares10063920 when enabled. Ares keeps
-    /// signed invalid indices empty rather than selecting the stock Yuri column.
+    /// GetFilename753380, replaced by Ares10063920 when EVAMD was read the
+    /// Ares way. Ares keeps signed invalid indices empty rather than selecting
+    /// the stock Yuri column.
     /// Executed controls: tools/spatial_oracle/ares_eva.{json,md}.
     pub fn column_by_voice(&self, voice: i32) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            match voice {
-                0 => self.allied.as_deref(),
-                1 => self.russian.as_deref(),
-                2 => self.yuri.as_deref(),
-                _ => self
-                    .extra_columns
-                    .get(usize::try_from(voice.checked_sub(3)?).ok()?)?
-                    .as_deref(),
-            }
+        let Some(extra_columns) = &self.extra_columns else {
+            return self.column(EvaSide::from_voice_index(voice));
+        };
+        match voice {
+            0 => self.allied.as_deref(),
+            1 => self.russian.as_deref(),
+            2 => self.yuri.as_deref(),
+            _ => extra_columns
+                .get(usize::try_from(voice.checked_sub(3)?).ok()?)?
+                .as_deref(),
         }
-        #[cfg(not(feature = "ares"))]
-        self.column(EvaSide::from_voice_index(voice))
     }
 
     /// Ares100639C0 runs after the stock entry reader: ReadString(capacity16,
     /// default empty), then bounded copy into char[9]. Each read replaces every
     /// slot, including a missing/empty key. This is fixed EVAMD data, not a rules
     /// layer. Native executions: ares_eva.json extra_columns[_reread].
-    #[cfg(feature = "ares")]
     fn read_extra_columns(&mut self, section: Option<&IniSection>, tags: &[String]) {
-        self.extra_columns = tags
-            .iter()
-            .map(|tag| {
-                section
-                    .and_then(|section| section.read_name(tag, 16))
-                    .map(|value| truncate_native_bytes(value, 8).to_string())
-            })
-            .collect();
+        self.extra_columns = Some(
+            tags.iter()
+                .map(|tag| {
+                    section
+                        .and_then(|section| section.read_name(tag, 16))
+                        .map(|value| truncate_native_bytes(value, 8).to_string())
+                })
+                .collect(),
+        );
     }
 }
 
@@ -970,7 +1132,6 @@ pub struct EvaRegistry {
     names: HashMap<String, usize>,
     /// Ares10063660 owns first spelling/order of additional voice tags. Entry
     /// extra-column slots derive from this same order; neither mutates after init.
-    #[cfg(feature = "ares")]
     extra_tags: Vec<String>,
 }
 
@@ -979,29 +1140,26 @@ impl EvaRegistry {
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut entries = Vec::new();
         let mut names = HashMap::new();
+        let ares_way = crate::rules::ares_switch::ares_way();
         // Ares10063660 registers EVATypes before DialogList. ReadString's
         // capacity200 includes NUL; stock tags and later case variants are
         // skipped. Evidence: tools/spatial_oracle/ares_eva.{json,md}.
-        #[cfg(feature = "ares")]
-        let extra_tags = {
-            let mut tags: Vec<String> = Vec::new();
-            if let Some(list) = ini.section("EVATypes") {
-                for name in list.keys().filter_map(|key| list.read_name(key, 200)) {
-                    if EVA_STOCK_TAGS
-                        .iter()
-                        .any(|stock| stock.eq_ignore_ascii_case(name))
-                        || tags.iter().any(|tag| tag.eq_ignore_ascii_case(name))
-                    {
-                        continue;
-                    }
-                    tags.push(name.to_string());
+        let mut extra_tags: Vec<String> = Vec::new();
+        if ares_way && let Some(list) = ini.section("EVATypes") {
+            for name in list.keys().filter_map(|key| list.read_name(key, 200)) {
+                if EVA_STOCK_TAGS
+                    .iter()
+                    .any(|stock| stock.eq_ignore_ascii_case(name))
+                    || extra_tags.iter().any(|tag| tag.eq_ignore_ascii_case(name))
+                {
+                    continue;
                 }
+                extra_tags.push(name.to_string());
             }
-            tags
-        };
+        }
         if let Some(list) = ini.section("DialogList") {
             // Stock ReadString char[200] (75304D); Ares10063660 uses char[40].
-            let capacity = if crate::rules::ARES_ENABLED { 40 } else { 200 };
+            let capacity = if ares_way { 40 } else { 200 };
             for key in list.keys() {
                 let Some(name) = list.read_name(key, capacity) else {
                     continue;
@@ -1011,13 +1169,10 @@ impl EvaRegistry {
                     continue;
                 }
                 names.insert(id, entries.len());
-                let entry = EvaEntry::from_section(name, ini.section(name));
-                #[cfg(feature = "ares")]
-                let entry = {
-                    let mut entry = entry;
+                let mut entry = EvaEntry::from_section(name, ini.section(name));
+                if ares_way {
                     entry.read_extra_columns(ini.section(name), &extra_tags);
-                    entry
-                };
+                }
                 entries.push(entry);
             }
         }
@@ -1028,9 +1183,17 @@ impl EvaRegistry {
         Self {
             entries,
             names,
-            #[cfg(feature = "ares")]
             extra_tags,
         }
+    }
+
+    /// Ares' voice count, `EVAVoices::Types` plus the three stock tags: the
+    /// bound trigger action 148 checks before it selects a voice
+    /// (TActionExt::Execute 100396C0).
+    pub fn voice_count(&self) -> i32 {
+        i32::try_from(self.extra_tags.len())
+            .expect("an INI cannot list 2^31 EVA voices")
+            .saturating_add(3)
     }
 
     /// Ares1002EC00 resolves stock names to 0/1/2, then registered EVATypes
@@ -1044,20 +1207,16 @@ impl EvaRegistry {
         {
             return Some(index as i32);
         }
-        #[cfg(feature = "ares")]
-        {
-            self.extra_tags
-                .iter()
-                .position(|name| name.eq_ignore_ascii_case(tag))
-                .map(|index| {
-                    i32::try_from(index)
-                        .expect("EVA voice registry exceeds native i32 count")
-                        .checked_add(3)
-                        .expect("EVA voice registry exceeds native i32 count")
-                })
-        }
-        #[cfg(not(feature = "ares"))]
-        None
+        // A registry read the stock way holds no EVATypes, so it finds none.
+        self.extra_tags
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case(tag))
+            .map(|index| {
+                i32::try_from(index)
+                    .expect("an INI cannot list 2^31 EVA voices")
+                    .checked_add(3)
+                    .expect("an INI cannot list 2^31 EVA voices")
+            })
     }
 
     /// `VoxClass::PlayEVA`'s `stricmp` scan: the entry for an event name.
@@ -1071,7 +1230,7 @@ impl EvaRegistry {
     pub fn index_of(&self, event_name: &str) -> Option<i32> {
         self.names
             .get(&event_name.to_ascii_uppercase())
-            .map(|&index| i32::try_from(index).expect("EVA registry exceeds native i32 count"))
+            .map(|&index| i32::try_from(index).expect("an INI cannot list 2^31 EVA events"))
     }
 
     /// QueueVoice752480 accepts only 0 <= index < the registered count.
@@ -1083,13 +1242,13 @@ impl EvaRegistry {
     /// against the fixed catalog. Unknown names retain the prior index;
     /// explicit none clears it. Source: Ares 4f1d9299,
     /// Utilities/TemplateDef.h:444 and Ext/SWType/Body.cpp:78,132.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_rules_reference(
         &self,
         section: Option<&IniSection>,
         key: &str,
         default_event: &str,
     ) -> Option<String> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let default = self.entry(default_event).map(|entry| entry.name.clone());
         let Some(section) = section else {
             return default;
@@ -1151,11 +1310,11 @@ fn parse_sound_priority(raw: &str) -> u8 {
         .map_or(SOUND_PRIORITY_DEFAULT, |&(_, value)| value)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "sound_ini_ares_eva_tests.rs"]
 mod ares_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 
@@ -1331,6 +1490,16 @@ mod tests {
         assert_eq!(reg.get("Bogus").unwrap().control, RANDOM);
         assert_eq!(parse_control_token("INTERRUPT"), 0x10);
         assert_eq!(parse_control_token("predelay"), 0x08);
+    }
+
+    /// `LoadSamples`'s `count - decay` wraps: `Decay=-2147483648` leaves no
+    /// body sample instead of overflowing.
+    #[test]
+    fn a_minimum_decay_wraps_to_an_empty_body() {
+        let reg = registry("[Min]\nSounds=a b c\nControl=decay\nDecay=-2147483648\n");
+        let min = reg.get("Min").expect("listed id registers");
+        assert_eq!(min.decay, i32::MIN);
+        assert_eq!(min.body_range(), 0..0);
     }
 
     /// `Delay=`/`FShift=` one-or-two token rule and the `VShift=` clamp. Key

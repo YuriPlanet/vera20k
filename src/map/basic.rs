@@ -4,7 +4,20 @@
 //! This module keeps the first-pass support intentionally narrow: parse the most
 //! useful metadata now and leave the broader scenario semantics for later work.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
+use crate::assets::csf_file::CsfFile;
 use crate::rules::ini_parser::IniFile;
+use crate::util::native_string::decode_widened_utf8;
 use crate::util::native_x87::NativeF64Bits;
 
 /// Owner of the active `SpecialFlags::DestroyableBridges` bit during load.
@@ -49,6 +62,12 @@ pub struct BasicSection {
     pub ice_growth_enabled: Option<bool>,
     /// Scenario34A7: current-default ReadBool68A58F..68A5BA, fresh true.
     pub vein_growth_enabled: Option<bool>,
+    /// Scenario+0x34B3 `TiberiumDeathToVisceroid`: current-default ReadBool
+    /// in `ScenarioClass::Read_INI_Basic @ 0x00689E90` between
+    /// IceGrowthEnabled and FreeRadar; `Set_Defaults @ 0x00683610` resets it
+    /// to true. Only Ares reads the byte (`TechnoExt::SpawnVisceroid @
+    /// 100468B0`), so only a game Ares plays in stores it in the Scenario.
+    pub tiberium_death_to_visceroid: Option<bool>,
     /// Scenario+34A5, current-default ReadBool68A235..68A24D; fresh false.
     pub train_crate: Option<bool>,
     /// Scenario+34B1, current-default ReadBool68A217..68A22F; fresh false.
@@ -149,9 +168,6 @@ impl SpecialFlagsSection {
     /// initializes0x8088: Inert/grows false, spreads/destroyable bridges true.
     /// The passed snapshot is a projection of the existing live authorities.
     pub fn resolve_campaign_defaults(&mut self, prior: Option<&Self>) {
-        // Full_Init686BA2 clears this bit before Read_SpecialFlags, even
-        // when the outgoing campaign retained FogOfWar=yes.
-        self.fog_of_war.get_or_insert(false);
         self.inert
             .get_or_insert(prior.and_then(|flags| flags.inert).unwrap_or(false));
         self.tiberium_grows.get_or_insert(
@@ -195,11 +211,12 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         return BasicSection::default();
     };
 
+    let map_text = |value: &str| decode_widened_utf8(value).into_owned();
     BasicSection {
         // The scenario list's ReadString 0x40 (`0x00699858`).
-        name: section.read_name("Name", 0x40).map(str::to_string),
+        name: section.read_name("Name", 0x40).map(map_text),
         // No gamemd reader; VERA's scenario menu shows it.
-        author: section.read_name("Author", 0x80).map(str::to_string),
+        author: section.read_name("Author", 0x80).map(map_text),
         // ReadMovie4757D0 uses ReadString128 then the fixed movie registry;
         // bare `none` is an ordinary movie name, not a ReadType sentinel.
         intro: section
@@ -232,6 +249,7 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         tiberium_growth_enabled: section.read_bool_value("TiberiumGrowthEnabled"),
         ice_growth_enabled: section.read_bool_value("IceGrowthEnabled"),
         vein_growth_enabled: section.read_bool_value("VeinGrowthEnabled"),
+        tiberium_death_to_visceroid: section.read_bool_value("TiberiumDeathToVisceroid"),
         train_crate: section.read_bool_value("TrainCrate"),
         truck_crate: section.read_bool_value("TruckCrate"),
         free_radar: section.read_bool_value("FreeRadar"),
@@ -293,7 +311,100 @@ pub fn parse_special_flags_section(ini: &IniFile) -> SpecialFlagsSection {
     }
 }
 
-#[cfg(test)]
+/// The most of a map's briefing [`briefing_text`] keeps, in characters.
+const MAX_BRIEFING_CHARS: usize = 2000;
+
+/// VERA: a map's `[Basic] Briefing`, the text lobby programs show over the
+/// map preview, each `@` starting a new line. gamemd never reads the key; its
+/// briefings come from `MISSIONMD.INI`. It is read from the file's own lines,
+/// as the INI reader keeps only 511 bytes of a line (`Straw::ReadLine`) and
+/// briefings run longer: section and key names match without case, the first
+/// copy with a value counts, and the value ends at `;`. Control characters
+/// other than spacing go, runs of space become one, blank lines collapse to
+/// one and the text is cut at [`MAX_BRIEFING_CHARS`], as vera20k.org's map
+/// list shows it. `None` without one, or when it is only a string-table name
+/// such as `Brief:TRN01`, which map editors leave in maps.
+pub fn briefing_text(map_bytes: &[u8]) -> Option<String> {
+    briefing_text_with_csf(map_bytes, None)
+}
+
+/// The same briefing reader with an active string table for installed maps.
+/// VERA resolves a label once and formats its text with the map's line breaks
+/// and length limit.
+pub fn briefing_text_with_csf(map_bytes: &[u8], csf: Option<&CsfFile>) -> Option<String> {
+    let value = basic_briefing_value(map_bytes)?;
+    let value = crate::util::native_string::widen_bytes(value);
+    let value = decode_widened_utf8(&value);
+    let value = if is_string_table_name(&value) {
+        csf?.get(&value)?
+    } else {
+        &value
+    };
+    let mut text = String::new();
+    let mut blank = false;
+    for line in value.split(['@', '\n']) {
+        let line: String = line
+            .chars()
+            .filter(|c| !c.is_control() || c.is_whitespace())
+            .collect();
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() {
+            blank = !text.is_empty();
+            continue;
+        }
+        if !text.is_empty() {
+            text.push_str(if blank { "\n\n" } else { "\n" });
+        }
+        blank = false;
+        text.push_str(&words.join(" "));
+    }
+    let text: String = text.chars().take(MAX_BRIEFING_CHARS).collect();
+    let text = text.trim_end();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// The raw value of the first `Briefing=` with one in a `[Basic]` section.
+fn basic_briefing_value(map_bytes: &[u8]) -> Option<&[u8]> {
+    let mut in_basic = false;
+    for line in map_bytes.split(|&byte| byte == b'\n') {
+        let line = line.trim_ascii();
+        if let Some(rest) = line.strip_prefix(b"[") {
+            in_basic = rest
+                .iter()
+                .position(|&byte| byte == b']')
+                .is_some_and(|end| rest[..end].trim_ascii().eq_ignore_ascii_case(b"Basic"));
+            continue;
+        }
+        if !in_basic {
+            continue;
+        }
+        let line = line.split(|&byte| byte == b';').next().unwrap_or_default();
+        let Some(equals) = line.iter().position(|&byte| byte == b'=') else {
+            continue;
+        };
+        let value = line[equals + 1..].trim_ascii();
+        if line[..equals]
+            .trim_ascii()
+            .eq_ignore_ascii_case(b"Briefing")
+            && !value.is_empty()
+        {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// A string-table name: two names of letters, digits and `_` around one `:`.
+fn is_string_table_name(value: &str) -> bool {
+    let name = |part: &str| {
+        !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    };
+    value
+        .split_once(':')
+        .is_some_and(|(category, label)| name(category) && name(label))
+}
+
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -528,6 +639,50 @@ mod tests {
                     bridge_destruction: true,
                 }
             )
+        );
+    }
+
+    #[test]
+    fn a_briefing_past_the_ini_readers_511_bytes_reads_whole_with_each_at_a_new_line() {
+        let orders = "-Hold the bridge ".repeat(40);
+        let map = format!(
+            "[Map]\r\nBriefing=Not this\r\n[Basic]\r\nName=Bridge\r\n\
+             Briefing=Welcome  to Bridge@@@ Orders:@{orders}@@Good luck ; aside\r\n"
+        );
+        assert!(map.lines().any(|line| line.len() > 511));
+        assert_eq!(
+            briefing_text(map.as_bytes()),
+            Some(format!(
+                "Welcome to Bridge\n\nOrders:\n{}\n\nGood luck",
+                orders.trim_end()
+            ))
+        );
+    }
+
+    #[test]
+    fn a_string_table_name_in_place_of_a_briefing_is_no_briefing() {
+        assert_eq!(briefing_text(b"[Basic]\nBriefing=Brief:TRN01\n"), None);
+        assert_eq!(
+            briefing_text(b"[BASIC]\nbriefing=MISSION BRIEFING:@Retake the coast.\n").as_deref(),
+            Some("MISSION BRIEFING:\nRetake the coast.")
+        );
+    }
+
+    #[test]
+    fn a_local_briefing_resolves_its_csf_label_and_keeps_paragraphs() {
+        let csf = crate::assets::csf_file::test_csf(&[(
+            "Brief:Bridge",
+            "  Retake  the bridge.\r\n\r\n守住@大桥  ",
+        )]);
+        let map = b"[Basic]\nBriefing=brief:BRIDGE\n";
+        assert_eq!(
+            briefing_text_with_csf(map, Some(&csf)).as_deref(),
+            Some("Retake the bridge.\n\n守住\n大桥")
+        );
+        assert_eq!(briefing_text(map), None);
+        assert_eq!(
+            briefing_text_with_csf(b"[Basic]\nBriefing=Brief:Unknown\n", Some(&csf)),
+            None
         );
     }
 }

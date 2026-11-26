@@ -3,7 +3,7 @@
 //! here; the physical AEGIS raster has its own original-instruction packet.
 use super::*;
 use crate::app::presentation::render::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_ground_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_ground_object_instances,
 };
 use crate::render::batch::InstanceBufferPool;
 use crate::render::sinking::{SinkingWaterlines, apply_waterline_clip, tests};
@@ -55,7 +55,7 @@ fn native_sinking_clip_survives_camera_scissor_and_ground_upload() {
             );
             body.zshape_origin = [world_y, 480.0];
             apply_waterline_clip(&mut body.draw_state, tests::draw_input(&mut cache, input));
-            let ground = lower_ground_object_instances(vec![PlannedObjectInstance::object(
+            let ground = lower_ground_object_instances(vec![OwnedPlannedObject::object(
                 ObjectDraw {
                     id: 1,
                     layer: TacticalLayer(2),
@@ -245,10 +245,10 @@ fn assert_ground_pose_upload_and_replay(
                 let name = row["input"]["name"].as_str().unwrap();
                 let (pose, key) = native_ground_part(type_id, row, part_layer);
                 let entry = cache
-                    .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
+                    .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false)
                     .unwrap();
                 assert_eq!(entry.page > 0, overflow);
-                cache.upload(&gpu.device, &gpu.queue, &batch);
+                cache.submit(&gpu.device, &gpu.queue, &batch);
                 for manual in [false, true].into_iter().take(if overflow { 2 } else { 1 }) {
                     let rect: [i32; 6] =
                         std::array::from_fn(|i| raster["rect"][i].as_i64().unwrap() as i32);
@@ -268,7 +268,7 @@ fn assert_ground_pose_upload_and_replay(
                         crate::render::native_z::ZGradient::Vertical,
                         false,
                     );
-                    let layer = lower_ground_object_instances(vec![PlannedObjectInstance::object(
+                    let layer = lower_ground_object_instances(vec![OwnedPlannedObject::object(
                         ObjectDraw {
                             id: 1,
                             layer: TacticalLayer(2),

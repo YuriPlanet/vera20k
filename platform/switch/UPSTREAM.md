@@ -17,6 +17,12 @@ Builds use that checkout's `patches/libc` (ARM64 newlib ABI) and
 their own upstream license files. Patches are enabled only through the generated
 Switch Cargo config, including for the `build-std` workspace.
 
+`third_party/wgpu-30.0.1-horizon.patch` ports the Vulkan changes from the
+same Bevy Horizon commit to the [wgpu 30.0.1 release](https://github.com/gfx-rs/wgpu/releases/tag/v30.0.1).
+The build applies it to the published `wgpu`, `wgpu-core`, `wgpu-hal`, and
+`wgpu-core-deps-windows-linux-android` crates. The crate archives retain
+their MIT and Apache-2.0 licenses.
+
 The minimum C NVK probe under `third_party/bevy-horizon-nvk-probe/` comes from
 the same project at local commit `7a656fd` on top of `3eac779b`, under MIT.
 `7a656fd` adds direct devkitA64 builds without Docker and stage markers around

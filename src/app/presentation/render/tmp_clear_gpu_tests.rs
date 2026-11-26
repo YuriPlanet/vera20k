@@ -1,7 +1,6 @@
 //! Physical TMP through the production decoder, atlas, live cell
 //! selection, common lighting, A binding, upload and ordinary terrain draw.
 //! Expected RGB565 and stored Z are captured by original Cell480350/TMP547CF0.
-use super::draw_pooled_zdepth;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::lighting::{LightingProfileUnits, build_cell_light_grid_from_heights_and_units};
 use crate::map::map_file::{MapCell, MapFile};
@@ -277,7 +276,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 - input["viewport_y"].as_i64().unwrap() as f32,
         ];
         let a = a.as_mut().unwrap();
-        a.rebuild_if_needed(
+        a.rebuild_submitted(
             &gpu.device,
             &gpu.queue,
             scene.sim().fog(),
@@ -323,6 +322,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             assert_eq!(instances.normal.len(), 1);
             pool.upload_on_device(
@@ -521,7 +521,12 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                 let commands = if frame == 0 { command.as_slice() } else { &[] };
                 scene
                     .runtime
-                    .advance_frame(commands, 22, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(
+                        commands,
+                        22,
+                        TickLane::Ordinary,
+                        &mut FrameEffects::default(),
+                    )
                     .expect("ordinary Move/Stop frame");
                 let entity = scene.sim().entities().get(source_id).unwrap();
                 let loco = entity.locomotor.as_ref().unwrap();
@@ -556,11 +561,10 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             // An equal LocalSize writer would not exercise that callback.
             // No frame between demotion and restoration releases the source.
             let runtime = &mut scene.runtime;
-            assert!(
-                runtime
-                    .simulation
-                    .change_visible_map_area([2, 2, 1, 1], &runtime.resources.rules,)
-            );
+            assert!(runtime.simulation.change_visible_map_area(
+                [2, 2, 1, 1],
+                crate::sim::world::UninitContext::new(&runtime.resources.rules),
+            ));
             assert!(
                 !runtime
                     .simulation
@@ -569,11 +573,10 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                     .unwrap()
                     .in_playfield()
             );
-            assert!(
-                runtime
-                    .simulation
-                    .change_visible_map_area(restore_local_size, &runtime.resources.rules,)
-            );
+            assert!(runtime.simulation.change_visible_map_area(
+                restore_local_size,
+                crate::sim::world::UninitContext::new(&runtime.resources.rules),
+            ));
             assert!(
                 runtime
                     .simulation
@@ -649,7 +652,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             input["full_view"]["view_origin"][0].as_i64().unwrap() as f32,
             input["full_view"]["view_origin"][1].as_i64().unwrap() as f32 + 15.0,
         ];
-        source.rebuild_if_needed(
+        source.rebuild_submitted(
             &gpu.device,
             &gpu.queue,
             scene.sim().fog(),
@@ -730,6 +733,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             assert_eq!(instances.normal.len(), 1);
             pool.upload_on_device(
@@ -835,7 +839,10 @@ fn assert_tmp_pass(
         let clip: [u32; 4] = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
         pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
         for _ in 0..input["repeat"].as_u64().unwrap() {
-            draw_pooled_zdepth(&mut pass, batch, pool, Some(atlas), "tmp-clear-native");
+            // A row whose cell admits no tile uploads nothing.
+            if let Some((buffer, count)) = pool.get("tmp-clear-native") {
+                batch.draw_with_buffer_zdepth(&mut pass, &atlas.zdepth_bind_group, buffer, count);
+            }
         }
     }
     let reads = [gpu.read(&mut encoder, color), gpu.read(&mut encoder, depth)];
@@ -1055,6 +1062,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 map.header.width = u32::from(coords[0].max(coords[1]));
                 map.header.height = map.header.width;
                 map.cells = vec![MapCell {
+                    legacy_ice_byte: 0,
                     rx: coords[0],
                     ry: coords[1],
                     tile_index: i32::from(tile_id),
@@ -1190,6 +1198,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             if row["output"]["selected_file_index"].as_u64().is_some() {
                 assert_eq!(instances.normal.len(), 1);
@@ -1265,6 +1274,7 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
     map.cells = inputs
         .iter()
         .map(|cell| MapCell {
+            legacy_ice_byte: 0,
             rx: cell["coords"][0].as_u64().unwrap() as u16,
             ry: cell["coords"][1].as_u64().unwrap() as u16,
             tile_index: cell["tile_id"].as_i64().unwrap() as i32,
@@ -1385,6 +1395,7 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
             size[1] as f32,
             Some(&lookup),
             Some(terrain),
+            Vec::new(),
         );
         assert!(!instances.normal.is_empty());
         let mut pool = InstanceBufferPool::new();

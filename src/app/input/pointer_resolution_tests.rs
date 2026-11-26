@@ -2,7 +2,7 @@
 
 use super::MatchInputState;
 use crate::app::input::hotkeys::HotkeyBindings;
-use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
 
 fn input() -> MatchInputState {
     MatchInputState::new(HotkeyBindings::default())
@@ -129,4 +129,18 @@ fn capture_only_source_input_keeps_the_rendered_transition_fallback() {
     input.cursor_y = 150.0;
     input.sync_cursor_space(None);
     assert_eq!((input.cursor_x, input.cursor_y), (400.0, 300.0));
+}
+
+/// A radar order press belongs to the button that began it: the other button
+/// can neither take it over nor finish it.
+#[test]
+fn a_radar_order_press_ends_only_on_its_own_button() {
+    use winit::event::MouseButton;
+    let mut input = input();
+    assert!(input.begin_minimap_press(MouseButton::Right));
+    assert!(!input.begin_minimap_press(MouseButton::Left));
+    assert!(!input.finish_minimap_press(MouseButton::Left));
+    assert_eq!(input.minimap_press_button(), Some(MouseButton::Right));
+    assert!(input.finish_minimap_press(MouseButton::Right));
+    assert!(!input.minimap_press_active());
 }

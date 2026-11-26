@@ -21,18 +21,22 @@ fn sounds() -> SoundRegistry {
 /// One Neutral trigger on a repeat-0 Tag whose only event is 8 ("any event")
 /// and whose only action is `action`, plus waypoint 1 at cell (5, 6).
 fn sim_with_trigger(action: &str) -> (Simulation, crate::map::map_file::MapFile) {
+    sim_with_actions(1, action)
+}
+
+fn sim_with_actions(count: usize, action: &str) -> (Simulation, crate::map::map_file::MapFile) {
     let text = format!(
         "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
          [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
          [Waypoints]\n1=6005\n\
          [Triggers]\nAMB=Neutral,<none>,Ambient,0,1,1,1,0\n\
          [Events]\nAMB=1,8,0,0\n\
-         [Actions]\nAMB=1,{action}\n\
+         [Actions]\nAMB={count},{action}\n\
          [Tags]\nAMBTAG=0,Ambient tag,AMB\n"
     );
     let map = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).unwrap();
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_clear_cell,
@@ -43,6 +47,7 @@ fn sim_with_trigger(action: &str) -> (Simulation, crate::map::map_file::MapFile)
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
         None,
         Some(&sounds()),
+        None,
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     (sim, map)
@@ -52,7 +57,7 @@ fn poll(sim: &mut Simulation) {
     sim.advance_triggers(
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -93,7 +98,7 @@ fn event_8_springs_on_the_first_logic_poll_and_plays_action_99_at_the_waypoint()
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 1 }]
-            if sound_id == "TestAmbient" && *coordinate == WAYPOINT_COORD
+            if sound_id.resolve(None) == Some("TestAmbient") && *coordinate == WAYPOINT_COORD
     ));
     // Repeat 0: the Tag is gone, so later polls play nothing.
     sim.sound_events.clear_for_test();
@@ -109,20 +114,22 @@ fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play(
     // FindIndex folds case; the object takes the sound, nothing plays yet.
     assert!(sim.sound_events.is_empty());
     assert_eq!(
-        sim.object_custom_sounds.get(&40).map(String::as_str),
+        sim.object_custom_sounds
+            .get(&40)
+            .and_then(crate::rules::sound_ini::SoundReference::name),
         Some("TestAmbient")
     );
 
     sim.object_ai_sounds(
         40,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let world = Simulation::movement_sound_world(sim.substrate.entities.get(40).unwrap());
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, sound_id, world: at }]
-            if *anim_id == custom_sound_owner(40) && sound_id == "TestAmbient" && *at == world
+            if *anim_id == custom_sound_owner(40) && sound_id.resolve(None) == Some("TestAmbient") && *at == world
     ));
     // PlayAt on each visit drives the handle; no 750D40 owner coordinate.
     assert_eq!(
@@ -143,7 +150,7 @@ fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play(
     sim.object_ai_sounds(
         40,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.sound_events.is_empty());
     assert!(sim.object_custom_sounds.contains_key(&40));
@@ -158,7 +165,7 @@ fn action_99_with_minus_one_clears_the_custom_sound_and_detaches_its_handle() {
     let (mut sim, _) = sim_with_trigger("99,7,NoSuchSound,0,0,0,0,B");
     insert_structure(&mut sim, 40, "CAWASH18", (5, 6));
     sim.object_custom_sounds
-        .insert(40, "TestAmbient".to_owned());
+        .insert(40, "TestAmbient".to_owned().into());
     poll(&mut sim);
     assert!(matches!(
         sim.sound_events.as_slice(),
@@ -185,7 +192,9 @@ fn action_99_takes_the_cell_terrain_without_a_building_and_its_uninit_detaches()
     poll(&mut sim);
     assert!(sim.sound_events.is_empty());
     assert_eq!(
-        sim.object_custom_sounds.get(&41).map(String::as_str),
+        sim.object_custom_sounds
+            .get(&41)
+            .and_then(crate::rules::sound_ini::SoundReference::name),
         Some("TestAmbient")
     );
 
@@ -193,13 +202,13 @@ fn action_99_takes_the_cell_terrain_without_a_building_and_its_uninit_detaches()
     sim.object_ai_sounds(
         41,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, sound_id, world }]
             if *anim_id == custom_sound_owner(41)
-                && sound_id == "TestAmbient"
+                && sound_id.resolve(None) == Some("TestAmbient")
                 && (world.x, world.y, world.z) == (WAYPOINT_COORD.x, WAYPOINT_COORD.y, 0)
     ));
 
@@ -217,8 +226,18 @@ fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_request
     let (mut sim, _) = sim_with_trigger("116,0,0,0,0,0,0,B");
     insert_tree(&mut sim, 41, (5, 6));
     insert_structure(&mut sim, 40, "CAWASH18", (5, 6));
-    sim.set_custom_sound(40, Some("TestAmbient"));
-    sim.set_custom_sound(41, Some("CowAmbient"));
+    sim.set_custom_sound(
+        40,
+        Some(&crate::rules::sound_ini::SoundReference::Name(
+            "TestAmbient".into(),
+        )),
+    );
+    sim.set_custom_sound(
+        41,
+        Some(&crate::rules::sound_ini::SoundReference::Name(
+            "CowAmbient".into(),
+        )),
+    );
     poll(&mut sim);
     assert!(matches!(
         sim.sound_events.as_slice(),
@@ -226,7 +245,9 @@ fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_request
     ));
     assert!(!sim.object_custom_sounds.contains_key(&40));
     assert_eq!(
-        sim.object_custom_sounds.get(&41).map(String::as_str),
+        sim.object_custom_sounds
+            .get(&41)
+            .and_then(crate::rules::sound_ini::SoundReference::name),
         Some("CowAmbient")
     );
     // Object AI can no longer recreate +50; Terrain's independent handle survives.
@@ -234,13 +255,13 @@ fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_request
     sim.object_ai_sounds(
         40,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.sound_events.is_empty());
     sim.object_ai_sounds(
         41,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(matches!(sim.sound_events.as_slice(),
         [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == custom_sound_owner(41)));
@@ -289,17 +310,17 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
     let world = Simulation::movement_sound_world(sim.substrate.entities.get(50).unwrap());
     for _ in 0..2 {
         sim.sound_events.clear_for_test();
-        sim.object_ai_sounds(50, &rules, FrameEffects::default());
+        sim.object_ai_sounds(50, &rules, &mut FrameEffects::default());
         assert!(matches!(
             sim.sound_events.as_slice(),
             [SimSoundEvent::AnimationStarted { anim_id, sound_id, world: at }]
-                if *anim_id == ambient_sound_owner(50) && sound_id == "CowAmbient" && *at == world
+                if *anim_id == ambient_sound_owner(50) && sound_id.name_in(&rules) == "CowAmbient" && *at == world
         ));
     }
     // A type without AmbientSound plays nothing.
     insert_structure(&mut sim, 51, "CAWASH18", (8, 8));
     sim.sound_events.clear_for_test();
-    sim.object_ai_sounds(51, &rules, FrameEffects::default());
+    sim.object_ai_sounds(51, &rules, &mut FrameEffects::default());
     assert!(sim.sound_events.is_empty());
 
     sim.object_sound_conceal(50, &rules);
@@ -343,9 +364,9 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         .into_parts()
         .0;
     let mut sim = Simulation::new();
-    sim.playfield_bounds =
+    *sim.playfield_bounds =
         Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_clear_cell,
@@ -367,15 +388,20 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
     );
     assert!(sim.rebuild_dynamic_navigation(&rules));
     assert_eq!(sim.live_object_order_snapshot(), [id]);
-    sim.set_custom_sound(id, Some("CowAmbient"));
-    sim.advance_live_object_pass(&rules, None, FrameEffects::default())
+    sim.set_custom_sound(
+        id,
+        Some(&crate::rules::sound_ini::SoundReference::Name(
+            "CowAmbient".into(),
+        )),
+    );
+    sim.advance_live_object_pass(&rules, None, &mut FrameEffects::default())
         .unwrap();
     let starts = |events: &[SimSoundEvent]| {
         assert!(matches!(events, [
             SimSoundEvent::AnimationStarted { anim_id: ambient, sound_id, world },
             SimSoundEvent::AnimationStarted { anim_id: custom, sound_id: custom_sound, .. },
-        ] if *ambient == ambient_sound_owner(id) && sound_id == "OreMineExtract"
-            && *custom == custom_sound_owner(id) && custom_sound == "CowAmbient"
+        ] if *ambient == ambient_sound_owner(id) && sound_id.name_in(&rules) == "OreMineExtract"
+            && *custom == custom_sound_owner(id) && custom_sound.name_in(&rules) == "CowAmbient"
             && (world.x, world.y, world.z) == (WAYPOINT_COORD.x, WAYPOINT_COORD.y, 0)));
     };
     starts(sim.sound_events.as_slice());
@@ -390,7 +416,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
     let processed = crate::util::save_codec::deserialize(&saved).unwrap();
     let loaded_rules = owner.project_saved_scenario_rules(&processed).unwrap();
     // The app restores the resolved map separately from retained save state.
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     assert!(restored.rebuild_dynamic_navigation(&loaded_rules));
     let zone_slots = |world: &Simulation| {
         let graph = world
@@ -403,7 +429,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
     let initial_slots = zone_slots(&sim);
     assert_eq!(zone_slots(&restored), initial_slots);
     restored
-        .advance_live_object_pass(&loaded_rules, None, FrameEffects::default())
+        .advance_live_object_pass(&loaded_rules, None, &mut FrameEffects::default())
         .unwrap();
     starts(restored.sound_events.as_slice());
     restored.sound_events.clear_for_test();
@@ -421,7 +447,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         stopped: std::cell::Cell<bool>,
     }
     impl crate::sim::world::SoundBoundary for StopBoundary {
-        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in events.iter().skip(self.delivered.get()) {
                 if matches!(event, SimSoundEvent::AnimationStopped { anim_id, .. }
                     if *anim_id == ambient_sound_owner(self.id))
@@ -446,12 +472,12 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         delivered: Default::default(),
         stopped: Default::default(),
     };
-    let direct = boundary();
+    let mut direct = boundary();
     assert!(
         sim.retire_non_entity_object(
             id,
-            crate::sim::world::UninitContext::with_rules(&rules)
-                .with_effects(FrameEffects::for_sound(&direct))
+            crate::sim::world::UninitContext::new(&rules)
+                .with_effects(&mut FrameEffects::for_sound(&mut direct))
         )
     );
     assert!(direct.stopped.get());
@@ -462,7 +488,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         "installed hierarchy must exercise local repair"
     );
     let warhead_ref = restored.intern("AP");
-    let lethal = boundary();
+    let mut lethal = boundary();
     restored.commit_noncombat_aoe_receivers(
         &loaded_rules,
         None,
@@ -478,7 +504,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
                 near_center_ic_isolation_eligible: false,
             },
         )],
-        FrameEffects::for_sound(&lethal),
+        &mut FrameEffects::for_sound(&mut lethal),
     );
     assert!(lethal.stopped.get());
     stops(restored.sound_events.as_slice());
@@ -491,7 +517,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
     assert!(restored.live_object_order_snapshot().is_empty());
     restored.sound_events.clear_for_test();
     restored
-        .advance_live_object_pass(&loaded_rules, None, FrameEffects::default())
+        .advance_live_object_pass(&loaded_rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(restored.sound_events.is_empty());
 }
@@ -564,7 +590,7 @@ fn a_custom_sound_reaches_the_hash_and_a_snapshot_restore_rejects_its_missing_ob
     let mut sim = Simulation::new();
     let empty = sim.state_hash();
     sim.object_custom_sounds
-        .insert(77, "TestAmbient".to_owned());
+        .insert(77, "TestAmbient".to_owned().into());
     assert_ne!(sim.state_hash(), empty, "+0x64 reaches the state hash");
 
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "custom_sound", 0);
@@ -572,7 +598,10 @@ fn a_custom_sound_reaches_the_hash_and_a_snapshot_restore_rejects_its_missing_ob
         .unwrap()
         .sim;
     assert_eq!(
-        restored.object_custom_sounds.get(&77).map(String::as_str),
+        restored
+            .object_custom_sounds
+            .get(&77)
+            .and_then(crate::rules::sound_ini::SoundReference::name),
         Some("TestAmbient")
     );
     // No Building or Terrain 77 exists, so the sound has no owner.
@@ -614,6 +643,7 @@ fn sound_actions_resolve_the_selected_cell_coordinate_for_packed_waypoint_aliase
 
 /// Full original Execute98/IsWaypointValid/642740/Scenario RNG controls;
 ///Voc750E20 is the declared output sink. Hashes cover complete native RNG state.
+/// Ares replaces the selection (10039B60, hook 0x6E1780).
 #[test]
 fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain() {
     let cases: &[(u64, &[(u32, u16, u16)], [i32; 3], &str, &str)] = &[
@@ -716,10 +746,12 @@ fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain(
                 crate::util::sha256::sha256_hex(sim.scenario_rng.native_state_hex().as_bytes()),
                 before
             );
+            let reference =
+                sound.map(|name| crate::rules::sound_ini::SoundReference::Name(name.into()));
             assert!(sim.trigger_play_sound_at_random_waypoint(
-                sound,
+                reference.as_ref(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                FrameEffects::default()
+                &mut FrameEffects::default()
             ));
             assert_eq!(
                 crate::util::sha256::sha256_hex(sim.scenario_rng.native_state_hex().as_bytes()),
@@ -730,7 +762,7 @@ fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain(
             if sound.is_some() {
                 assert!(
                     matches!(sim.sound_events.as_slice(), [SimSoundEvent::VocAtCoord { sound_id, coordinate, flags:0 }]
-                    if sound_id=="TestAmbient" && [coordinate.x,coordinate.y,coordinate.z]==expected)
+                    if sound_id.resolve(None)==Some("TestAmbient") && [coordinate.x,coordinate.y,coordinate.z]==expected)
                 );
             } else {
                 assert!(
@@ -751,10 +783,10 @@ fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags(
             poll(&mut sim);
             match kind {
                 19 => assert!(
-                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocCentered {sound_id}] if sound_id=="CowAmbient")
+                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocCentered {sound_id}] if sound_id.resolve(None)==Some("CowAmbient"))
                 ),
                 98 => assert!(
-                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:0}] if sound_id=="CowAmbient" && *coordinate==WAYPOINT_COORD)
+                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:0}] if sound_id.resolve(None)==Some("CowAmbient") && *coordinate==WAYPOINT_COORD)
                 ),
                 99 => {
                     // Parameter11 leaves +44 at its constructor slot0;
@@ -769,7 +801,7 @@ fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags(
                         WAYPOINT_COORD
                     };
                     assert!(
-                        matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:1}] if sound_id=="CowAmbient" && *coordinate==expected)
+                        matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:1}] if sound_id.resolve(None)==Some("CowAmbient") && *coordinate==expected)
                     );
                 }
                 _ => unreachable!(),
@@ -793,4 +825,128 @@ fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags(
         None,
         "98 does not attach a custom sound to the waypoint building"
     );
+}
+
+#[test]
+fn network_named_audio_keeps_equal_worlds_with_missing_local_catalog_entries() {
+    use crate::rules::sound_ini::EvaRegistry;
+    use crate::rules::theme_ini::ThemeCatalog;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    let full = sounds();
+    let absent = SoundRegistry::default();
+    let eva = EvaRegistry::from_ini(&IniFile::from_str("[DialogList]\n0=Alert\n"));
+    let silent_eva = EvaRegistry::default();
+    let directory = crate::map::source::test_support::TestDirectory::new("network-audio-theme");
+    directory.write("thememd.ini", b"[Themes]\n0=Second\n");
+    let theme = ThemeCatalog::select(
+        &crate::assets::asset_manager::AssetManager::from_loose_root_for_test(directory.path()),
+    );
+    let actions = "99,7,TestAmbient,0,0,0,0,B,19,7,CowAmbient,0,0,0,0,A,21,6,Alert,0,0,0,0,A,20,8,Second,0,0,0,0,A,98,7,CowAmbient,0,0,0,0,A";
+    let build = |sounds, eva, themes| {
+        let (mut sim, map) = sim_with_actions(5, actions);
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.initialize_trigger_definitions(
+            &map,
+            &Default::default(),
+            Some(eva),
+            Some(sounds),
+            themes,
+        );
+        sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
+        insert_structure(&mut sim, 40, "MARKER", (5, 6));
+        sim
+    };
+    let mut left = build(&full, &eva, Some(&theme));
+    let mut right = build(&absent, &silent_eva, None);
+    assert_eq!(
+        left.state_hash(),
+        right.state_hash(),
+        "playback catalogs cannot change startup"
+    );
+    poll(&mut left);
+    poll(&mut right);
+    assert_eq!(
+        left.state_hash(),
+        right.state_hash(),
+        "action 99 retains the same sound intent and scheduler state"
+    );
+    assert_eq!(
+        left.object_custom_sounds.get(&40),
+        right.object_custom_sounds.get(&40)
+    );
+    assert_eq!(
+        left.rng_state(),
+        right.rng_state(),
+        "action 98 keeps its native draw"
+    );
+    let saved = crate::sim::snapshot::GameSnapshot::save(&right, 0, 0, "network audio", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    assert_eq!(*restored.object_custom_sounds, *right.object_custom_sounds);
+
+    // The same catalog operand is gameplay state when SetTimer consumes it.
+    let (_, timer_map) = sim_with_trigger("27,7,CowAmbient,0,0,0,0,A");
+    for (sim, catalog) in [(&mut left, &full), (&mut right, &absent)] {
+        sim.initialize_trigger_definitions(
+            &timer_map,
+            &Default::default(),
+            None,
+            Some(catalog),
+            None,
+        );
+        sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
+    }
+    assert_ne!(
+        left.state_hash(),
+        right.state_hash(),
+        "gameplay ordinals must remain in agreement"
+    );
+    poll(&mut left);
+    poll(&mut right);
+    assert_ne!(
+        left.session.scenario_timer_view(),
+        right.session.scenario_timer_view()
+    );
+}
+
+#[test]
+fn network_numeric_custom_sound_keeps_the_authored_slot_and_negative_clears_it() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    let first = sounds();
+    let second = SoundRegistry::default();
+    let build = |sounds| {
+        let (mut sim, map) = sim_with_trigger("99,0,1,0,0,0,0,B");
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.initialize_trigger_definitions(&map, &Default::default(), None, Some(sounds), None);
+        sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
+        insert_structure(&mut sim, 40, "MARKER", (5, 6));
+        sim
+    };
+    let mut left = build(&first);
+    let mut right = build(&second);
+    poll(&mut left);
+    poll(&mut right);
+    assert_eq!(left.state_hash(), right.state_hash());
+    assert!(matches!(
+        right.object_custom_sounds.get(&40),
+        Some(crate::rules::sound_ini::SoundReference::Index(1))
+    ));
+    right.object_ai_sounds(
+        40,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        &mut FrameEffects::default(),
+    );
+    assert!(matches!(
+        right.sound_events.as_slice().last(),
+        Some(SimSoundEvent::TriggerAudio {
+            reference: crate::rules::sound_ini::SoundReference::Index(1),
+            ..
+        })
+    ));
+    let (_, clear) = sim_with_trigger("99,0,-1,0,0,0,0,B");
+    right.initialize_trigger_definitions(&clear, &Default::default(), None, Some(&second), None);
+    right.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
+    poll(&mut right);
+    assert!(!right.object_custom_sounds.contains_key(&40));
 }

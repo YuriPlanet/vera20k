@@ -19,7 +19,7 @@ impl Simulation {
         target: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         if target == (0, 0) {
             return Ok(());
@@ -39,12 +39,19 @@ impl Simulation {
             let Some(actor) = self.substrate.entities.get(id) else {
                 continue;
             };
+            // 0x50D75D..0x50D78B and 0x50D871..0x50D89D: owner, class, then
+            // a NULL Transporter (+0x11C). Garrison occupants and cargo that
+            // CargoClass::AddPassenger loaded (a building's, a reinforcement's
+            // or a paradrop plane's) are warped in Limbo unless an earlier
+            // transport left it set: neither WarpTo body (0x4DF7F0, 0x522FE0)
+            // tests InLimbo. A soldier an aircraft unloaded keeps it until
+            // that aircraft dies (`PassengerRole::transporter`).
             if actor.owner() != house
-                || actor.passenger_role.inside_transport().is_some()
                 || !matches!(
                     actor.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 )
+                || actor.passenger_role().transporter().is_some()
             {
                 continue;
             }
@@ -60,7 +67,6 @@ impl Simulation {
                     InfantryEntryArgs::REPAIR,
                     EntryQueryMode::CheckLocomotor,
                     rules,
-                    registry,
                 )? == 0
                 {
                     break cell;

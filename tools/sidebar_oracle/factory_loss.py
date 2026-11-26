@@ -19,6 +19,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import NativeCallTrace, RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import require
 from tools.rules_oracle.bridge_child_sound import sections
 from tools.sidebar_oracle import cameo_order as c
 from tools.spatial_oracle import building_construction as bc
@@ -114,8 +115,8 @@ def sale_queue_setup(root, *, inputs=None):
     m.invoke(0x49F9B0, m.er.HOUSE + 0x55C8)
     for name in SALE_INFANTRY:
         pointer = m.f.types[name]
-        assert m.invoke(0x4F7870, m.er.HOUSE, pointer, 0, 1) == 1, name
-        assert m.invoke(0x5F7900, pointer, 1, 0, 0, m.er.HOUSE), name
+        require(m.invoke(0x4F7870, m.er.HOUSE, pointer, 0, 1) == 1, name)
+        require(m.invoke(0x5F7900, pointer, 1, 0, 0, m.er.HOUSE), name)
         m.invoke(0x6A8710, c.STRIPS[2], 16, m.get(pointer + 0xDF8))
     m.sale_owned = owned
     m.save()
@@ -142,8 +143,8 @@ def sale_queue_start(m, successor, survivor=False):
         second = sale_queue_building(m, 'NAHAND', (28, 14))
         m.f.house_prior(m.er.HOUSE, (*m.sale_owned, second), native_building_counts=True)
     for name in ('E2', successor):
-        assert m.invoke(0x4FA350, m.er.HOUSE, 16,
-                        get(m.f.types[name] + 0xDF8), 0, 0) == 0
+        require(m.invoke(0x4FA350, m.er.HOUSE, 16,
+                        get(m.f.types[name] + 0xDF8), 0, 0) == 0, 'native 0x4FA350 returned an unexpected result')
     factory = get(m.er.HOUSE + 0x53B0)
     product = get(factory + 0x58)
     assert product and get(product + 0x6C0) == m.f.types['E2']
@@ -1559,8 +1560,8 @@ def setup(root, extra):
     f.house_prior(m.er.HOUSE, owned, native_building_counts=True)
     for name, kind, tab in (('MGTK', 40, 3), ('E1', 16, 2)):
         pointer = f.types[name]
-        assert m.invoke(0x4F7870, m.er.HOUSE, pointer, 0, 1) == 1
-        assert m.invoke(0x5F7900, pointer, 1, 0, 0, m.er.HOUSE)
+        require(m.invoke(0x4F7870, m.er.HOUSE, pointer, 0, 1) == 1, 'native 0x4F7870 returned an unexpected result')
+        require(m.invoke(0x5F7900, pointer, 1, 0, 0, m.er.HOUSE), 'native 0x5F7900 returned an unexpected result')
         index = get(pointer + 0xDF8)
         m.invoke(0x6A8710, c.STRIPS[tab], kind, index)
         m.invoke(0x4FA350, m.er.HOUSE, kind, index, 0, 0)
@@ -1855,7 +1856,7 @@ def aircraft_tech_history(m,raw_actions,actions):
         u.mem_write(action+0x2C,c.dwords(row['kind']))
         u.mem_write(action+0x54,row['inline_type'].encode()+b'\0')
         u.mem_write(action+0x90,c.dwords(row['value']))
-        assert m.invoke(0x6DD8B0,action,m.er.HOUSE,0,0,0)&255==1
+        require(m.invoke(0x6DD8B0,action,m.er.HOUSE,0,0,0)&255==1, 'native 0x6DD8B0 returned an unexpected result')
         stages.append(state('action_orca' if position==0 else 'action_beag'))
     house_tail(m)
     stages.append(state('house_recheck'))
@@ -2307,8 +2308,8 @@ def naval_output_history(inputs, root, case):
             u.mem_write(yard + offset, bytes([value]))
         u.mem_write(yard + 0x534, c.dwords(-1, -1))
         u.mem_write(yard + 0x544, c.dwords(read(yard + 0x6C)))
-        assert invoke(0x43F180, yard, 3) & 255
-        assert invoke(0x55BAA0, 0x87F778, yard, 0) & 255
+        require(invoke(0x43F180, yard, 3) & 255, 'native 0x43F180 returned an unexpected result')
+        require(invoke(0x55BAA0, 0x87F778, yard, 0) & 255, 'native 0x55BAA0 returned an unexpected result')
         f.house_prior(er.HOUSE, (yard,), native_building_counts=True)
         f.phase = 'setup_original_idle'
         invoke(0x44D6A0, yard, 0, 1)
@@ -2331,7 +2332,7 @@ def naval_output_history(inputs, root, case):
             invoke(0x7353C0, peer, f.types['DEST'], er.HOUSE)
             location = f.allocate(12)
             u.mem_write(location, c.dwords(26 * 256 + 128, 25 * 256 + 128, 0))
-            assert invoke(0x737BA0, peer, location, 128) & 255
+            require(invoke(0x737BA0, peer, location, 128) & 255, 'native 0x737BA0 returned an unexpected result')
             capacity = max(3, radio_ctor['capacity'])
             contacts = f.allocate(4 * capacity)
             u.mem_write(contacts, c.dwords(*(peer if i == 2 else 0 for i in range(capacity))))

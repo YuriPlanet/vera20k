@@ -40,6 +40,11 @@ pub(crate) struct FireDamageStages {
     pub bunkered: Option<NativeF32Bits>,
     /// `Rules+0xF58` `OpenToppedDamageMultiplier=` for an open-topped passenger.
     pub open_topped: Option<NativeF32Bits>,
+    /// Phobos `TechnoClass_FirepowerMultiplier` (`0x006FE352`, 8 bytes
+    /// replaced): the firer's active AttachEffect `FirepowerMultiplier`
+    /// product, applied after the native firepower fold and before the
+    /// FIREPOWER rank stage.
+    pub ae_firepower: f64,
 }
 
 /// The damage `FireAt` gives the shot; see the module documentation.
@@ -55,6 +60,8 @@ pub(crate) fn fire_damage(damage: i32, zeroed: bool, stages: &FireDamageStages) 
             ),
             X::load_i32(damage),
         ));
+        // Phobos 0x006FE352: a C++ double multiply, then MSVC's int cast.
+        damage = crate::sim::attach_effect::scale_i32(damage, stages.ae_firepower);
         if let Some(multiplier) = stages.rank_firepower {
             damage = X::ftol_i32_low_masked(X::mul(X::load_i32(damage), X::load_f64(multiplier)));
         }
@@ -68,7 +75,7 @@ pub(crate) fn fire_damage(damage: i32, zeroed: bool, stages: &FireDamageStages) 
     damage
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::object_type::Ability;
@@ -155,6 +162,7 @@ mod tests {
                 occupied: (input.occupied != 0).then(|| f32_bits(input.occupy_mult)),
                 bunkered: bunkered.then(|| f32_bits(input.bunker_mult)),
                 open_topped: (input.open_topped != 0).then(|| f32_bits(input.open_topped_mult)),
+                ae_firepower: 1.0,
             };
             assert_eq!(
                 fire_damage(input.damage, zeroed, &stages),
@@ -162,5 +170,39 @@ mod tests {
                 "row {index}"
             );
         }
+    }
+
+    /// Phobos `TechnoClass_FirepowerMultiplier` (`0x006FE352`) multiplies the
+    /// native firepower fold before the FIREPOWER rank stage; a heal, which
+    /// skips the fold, skips it too.
+    #[test]
+    fn attach_effect_firepower_multiplies_between_the_fold_and_the_rank() {
+        let stages = |ae_firepower| FireDamageStages {
+            house_firepower: NativeF64Bits::ONE,
+            unit_firepower: NativeF64Bits::ONE,
+            rank_firepower: Some(NativeF64Bits::from_bits(1.5_f64.to_bits())),
+            occupied: None,
+            bunkered: None,
+            open_topped: None,
+            ae_firepower,
+        };
+        assert_eq!(fire_damage(100, false, &stages(2.0)), 300, "fold, AE, rank");
+        assert_eq!(fire_damage(100, false, &stages(0.5)), 75);
+        assert_eq!(fire_damage(100, false, &stages(0.0)), 0);
+        assert_eq!(
+            fire_damage(100, false, &stages(-1.0)),
+            -150,
+            "a negative multiplier flips the hit inside the positive gate"
+        );
+        assert_eq!(
+            fire_damage(-10, false, &stages(2.0)),
+            -10,
+            "a heal skips the fold and the AE multiply"
+        );
+        assert_eq!(
+            fire_damage(100, true, &stages(2.0)),
+            0,
+            "a zeroed weapon stays zero"
+        );
     }
 }

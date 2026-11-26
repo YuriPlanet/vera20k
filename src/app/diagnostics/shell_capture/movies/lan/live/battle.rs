@@ -5,6 +5,7 @@ use super::*;
 use crate::app::input::entity_pick::PickSource;
 use crate::app::input::hotkeys::{self, HotkeyCommand, HotkeyResolution};
 use crate::app::input::{commands, dispatch, keyboard};
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{
     ArchiveRecord, Command, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, ObjectAction,
@@ -296,7 +297,7 @@ impl BattleOpening {
                 if simulation(state)?
                     .entities()
                     .get(id)
-                    .is_some_and(|e| e.selection.is_selected())
+                    .is_some_and(|e| e.seldom.selection.is_selected())
                 {
                     if host {
                         chat_key(state, KeyCode::KeyD, &Key::Character("d".into()), Some("d"));
@@ -816,15 +817,8 @@ impl BattleOpening {
                         .iter()
                         .copied()
                         .find(|&cell| {
-                            commands::ordinary_cell_move_goal(
-                                sim,
-                                rules,
-                                state.overlay_registry(),
-                                owner,
-                                id,
-                                cell,
-                                false,
-                            ) == Some(cell)
+                            commands::ordinary_cell_move_goal(sim, rules, owner, id, cell, false)
+                                == Some(cell)
                         })
                         .context("no legal ordinary GI Move into the former GAPILE foundation")?;
                     ground_order_with_mouse(state, id, goal)?;
@@ -910,8 +904,8 @@ impl BattleOpening {
         let actor = sim.entities().get(actor).context("firing paid GI")?;
         let target = sim.entities().get(target).context("shot paid GI")?;
         if target.health.current() < self.attack_health.context("Attack health baseline")?
-            && actor.rearm_timer.start_frame() >= admitted as i32
-            && actor.rearm_timer.duration() > 0
+            && actor.seldom.rearm_timer.start_frame() >= admitted as i32
+            && actor.seldom.rearm_timer.duration() > 0
         {
             ensure!(
                 actor.attack_target.target() == Some(TargetKind::Entity(target.stable_id())),
@@ -929,8 +923,8 @@ impl BattleOpening {
     /// precede execution by MaxAhead. DoList dispatches raw frameN after Logic;
     /// MainTick's late commit makes its first observable state binary_frameN+1.
     /// Source: command_schedule::admit_queued_command and commit_frame_tail.
-    /// The capture handler renders one runtime service pass (handler.rs), whose
-    /// advance_one_simulation_frame loop is0..1. If a failed presentation ever
+    /// The battle runs one frame per render (`observes_every_frame`), so each
+    /// committed frame is observed. If a failed presentation ever
     /// skips the required boundary, refuse the capture instead of labelling a
     /// later mutable state as the command's immediate effect.
     fn observe_due_orders(&mut self, state: &AppState, frame: u32) -> Result<()> {
@@ -1039,7 +1033,7 @@ impl BattleOpening {
                     entity.attack_target.target().is_none()
                         && entity.navigation.nav_com().is_none()
                         && entity.navigation.suspended_nav_com().is_none()
-                        && entity.suspended_attack_target.target().is_none()
+                        && entity.seldom.suspended_attack_target.target().is_none()
                         && entity.navigation.nav_queue().is_empty(),
                     "executed raw Stop did not clear the ordinary GI's target/navigation references"
                 );
@@ -1129,8 +1123,8 @@ impl BattleOpening {
                 && observation
                     .attack_health
                     .is_some_and(|health| current.health < health)
-                && gi.rearm_timer.start_frame() >= attack_due as i32
-                && gi.rearm_timer.duration() > 0
+                && gi.seldom.rearm_timer.start_frame() >= attack_due as i32
+                && gi.seldom.rearm_timer.duration() > 0
             {
                 ensure!(
                     gi.attack_target.target() == Some(TargetKind::Entity(producer)),
@@ -1156,7 +1150,7 @@ impl BattleOpening {
                     );
                     ensure!(
                         gi.attack_target.target().is_none()
-                            && gi.suspended_attack_target.target().is_none()
+                            && gi.seldom.suspended_attack_target.target().is_none()
                             && gi.navigation.nav_com().is_none()
                             && gi.navigation.suspended_nav_com().is_none()
                             && gi.navigation.nav_queue().is_empty(),
@@ -1652,13 +1646,13 @@ impl BattleOpening {
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_factory(sim, owner, e1)
+                        .model.cameo_factory(sim, owner, e1)
                         .is_some();
                     let cameo_present = state
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_strips()
+                        .model.cameo_strips()
                         .items(crate::ui::sidebar::SidebarTab::for_category(
                             ProductionCategory::Infantry,
                         ))
@@ -2324,56 +2318,84 @@ impl BattleOpening {
         Ok(())
     }
 
-    pub(super) fn finished(&self, state: &AppState) -> Result<bool> {
+    /// The end checks this run has not met, by name; empty once it is done.
+    pub(super) fn missing(&self, state: &AppState) -> Result<Vec<&'static str>> {
         let sim = simulation(state)?;
-        Ok(matches!(self.step, Step::Done)
-            && self.rally_executions.iter().all(Option::is_some)
-            && self.rally_planning_commits.iter().all(Option::is_some)
-            && self.gi_products.len() == 2
-            && self
-                .gi_products
-                .iter()
-                .all(|product| product.rally_arrival.is_some())
-            && self.attack_observation.is_some()
-            && self.hit_observation.is_some()
-            && self.stop_observation.is_some()
-            && self.repair.iter().all(|observation| {
-                observation.records.len() == 3
-                    && observation.executions.len() == 3
-                    && observation.damage.is_some()
-                    && observation.stop_execution.is_some()
-                    && observation.stopped.is_some()
-                    && observation.full.is_some()
-            })
-            && (!self.sale_enabled
-                || (self.sale.iter().all(|observation| {
-                    observation.produces.len() == 2
-                        && observation.record.is_some()
-                        && observation.execution.is_some()
-                        && observation.exited.is_some()
-                        && observation.stable.is_some()
-                        && observation.crew_count == Some(observation.crew_settled.len())
-                        && observation.reentry_arrival.is_some()
-                }) && self.sale_local_input.is_some()
-                    && self.sale_local_cleanup.is_some()))
-            && [
-                ("GAPOWR", 2),
-                ("GAPILE", if self.sale_enabled { 0 } else { 2 }),
-            ]
-            .iter()
-            .all(|(type_id, count)| {
-                sim.entities()
-                    .values_sorted()
-                    .filter(|entity| {
-                        entity.is_alive()
-                            && !entity.in_limbo()
-                            && !entity.in_construction_bstate()
-                            && sim.interner().resolve(entity.type_ref()) == *type_id
-                    })
-                    .count()
-                    == *count
-            })
-            && self.all_gi_orders_admitted(state)?)
+        let standing = |type_id: &str| {
+            sim.entities()
+                .values_sorted()
+                .filter(|entity| {
+                    entity.is_alive()
+                        && !entity.in_limbo()
+                        && !entity.in_construction_bstate()
+                        && sim.interner().resolve(entity.type_ref()) == type_id
+                })
+                .count()
+        };
+        let checks = [
+            ("step", matches!(self.step, Step::Done)),
+            (
+                "rally executions",
+                self.rally_executions.iter().all(Option::is_some),
+            ),
+            (
+                "rally planning commits",
+                self.rally_planning_commits.iter().all(Option::is_some),
+            ),
+            ("two GI products", self.gi_products.len() == 2),
+            (
+                "GI rally arrivals",
+                self.gi_products
+                    .iter()
+                    .all(|product| product.rally_arrival.is_some()),
+            ),
+            ("attack", self.attack_observation.is_some()),
+            ("hit", self.hit_observation.is_some()),
+            ("stop", self.stop_observation.is_some()),
+            (
+                "repair",
+                self.repair.iter().all(|observation| {
+                    observation.records.len() == 3
+                        && observation.executions.len() == 3
+                        && observation.damage.is_some()
+                        && observation.stop_execution.is_some()
+                        && observation.stopped.is_some()
+                        && observation.full.is_some()
+                }),
+            ),
+            (
+                "sale",
+                !self.sale_enabled
+                    || self.sale.iter().all(|observation| {
+                        observation.produces.len() == 2
+                            && observation.record.is_some()
+                            && observation.execution.is_some()
+                            && observation.exited.is_some()
+                            && observation.stable.is_some()
+                            && observation.crew_count == Some(observation.crew_settled.len())
+                            && observation.reentry_arrival.is_some()
+                    }),
+            ),
+            (
+                "local sale input",
+                !self.sale_enabled || self.sale_local_input.is_some(),
+            ),
+            (
+                "local sale cleanup",
+                !self.sale_enabled || self.sale_local_cleanup.is_some(),
+            ),
+            ("two GAPOWR", standing("GAPOWR") == 2),
+            (
+                "GAPILE count",
+                standing("GAPILE") == if self.sale_enabled { 0 } else { 2 },
+            ),
+            ("GI orders admitted", self.all_gi_orders_admitted(state)?),
+        ];
+        Ok(checks
+            .into_iter()
+            .filter(|(_, met)| !met)
+            .map(|(name, _)| name)
+            .collect())
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
@@ -2425,7 +2447,7 @@ fn simulation(state: &AppState) -> Result<&Simulation> {
     Ok(&state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("live simulation")?
         .simulation)
 }
@@ -2470,7 +2492,7 @@ fn repair_snapshot(state: &AppState, id: u64, frame: u32) -> Result<RepairSnapsh
         owner: sim.interner().resolve(building.owner()).into(),
         health: building.health.current(),
         estimated_health: building.estimated_health.get(),
-        repairing: building.repairing.is_on(),
+        repairing: building.building.repairing.is_on(),
         credits: economy.credits(),
         spent: economy.spent_credits(),
     })
@@ -2550,7 +2572,7 @@ fn sale_snapshot(
         .map(|building| SaleBuildingSnapshot {
             health: building.health.current(),
             estimated_health: building.estimated_health.get(),
-            repairing: building.repairing.is_on(),
+            repairing: building.building.repairing.is_on(),
             in_limbo: building.in_limbo(),
             mission: building.mission.current().raw(),
             queued_mission: building.mission.queued().raw(),
@@ -2688,10 +2710,10 @@ fn combat_snapshot(state: &AppState, ids: [u64; 2], frame: u32) -> Result<Value>
             "deployed":entity.is_deployed(),"deploying":entity.infantry_deploy_doing(),
             "mission":entity.mission.current().raw(),"queued_mission":entity.mission.queued().raw(),
             "target":entity.attack_target.target(),"destination":entity.navigation.nav_com(),
-            "suspended_target":entity.suspended_attack_target.target(),
+            "suspended_target":entity.seldom.suspended_attack_target.target(),
             "suspended_destination":entity.navigation.suspended_nav_com(),
             "nav_queue":entity.navigation.nav_queue(),
-            "rearm_start":entity.rearm_timer.start_frame(),"rearm_duration":entity.rearm_timer.duration()}));
+            "rearm_start":entity.seldom.rearm_timer.start_frame(),"rearm_duration":entity.seldom.rearm_timer.duration()}));
     }
     Ok(json!({"native_frame":frame,"entities":entities}))
 }
@@ -2701,7 +2723,7 @@ fn gi_rally_snapshot(entity: &crate::sim::game_entity::GameEntity, frame: u32) -
     json!({"native_frame":frame,"id":entity.stable_id(),"position":entity.position,
         "archive":entity.archive_target(),"destination":entity.navigation.nav_com(),
         "mission":entity.mission.current().raw(),"queued_mission":entity.mission.queued().raw(),
-        "tether":entity.tether.partner(),"radio_partner":entity.radio_contacts.slot(0),
+        "tether":entity.seldom.tether.partner(),"radio_partner":entity.seldom.radio_contacts.slot(0),
         "walk_moving":walk.and_then(|walk| walk.walk_is_moving()),
         "walk_destination":walk.and_then(|walk| walk.walk_destination()),
         "step_head":walk.and_then(|walk| walk.step_head())})
@@ -2854,15 +2876,9 @@ fn legal_move_cell(state: &AppState, actor: u64, desired: (u16, u16)) -> Result<
         ) else {
             continue;
         };
-        if let Some(cell) = commands::ordinary_cell_move_goal(
-            sim,
-            rules,
-            state.overlay_registry(),
-            owner,
-            actor,
-            (x, y),
-            false,
-        ) && cell == (x, y)
+        if let Some(cell) =
+            commands::ordinary_cell_move_goal(sim, rules, owner, actor, (x, y), false)
+            && cell == (x, y)
         {
             return Ok(cell);
         }
@@ -2887,12 +2903,227 @@ fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
 }
 
 fn ground_order_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> Result<()> {
+    ground_order_with_mouse_timed(state, id, cell).map(|_| ())
+}
+
+fn ground_order_with_mouse_timed(
+    state: &mut AppState,
+    id: u64,
+    cell: (u16, u16),
+) -> Result<crate::app::match_diagnostics::ObservationTime> {
     select_entity(state, id)?;
     point_at_ground(state, cell)?;
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
-    Ok(())
+    Ok(left_click_timed(state))
+}
+
+fn left_click_timed(state: &mut AppState) -> crate::app::match_diagnostics::ObservationTime {
+    dispatch::handle_mouse_input(state, MouseButton::Left, ElementState::Pressed);
+    let at = crate::app::match_diagnostics::ObservationTime::now();
+    dispatch::handle_mouse_input(state, MouseButton::Left, ElementState::Released);
+    at
+}
+
+pub(super) struct LatencyInput {
+    pub at: crate::app::match_diagnostics::ObservationTime,
+    pub admission: Value,
+}
+
+/// Use the same presented-world picker as the physical click. Terrain
+/// passability alone cannot rule out selecting a friendly object.
+fn empty_ground_point(
+    world: impl crate::app::input::entity_pick::PickWorld,
+    point: (f32, f32),
+    owner: &str,
+) -> bool {
+    crate::app::input::entity_pick::hover_object_at_point(world, point.0, point.1, owner, false)
+        .is_none()
+}
+
+fn latency_input_admission(
+    sim: &mut Simulation,
+    before: usize,
+    actor: u64,
+    target: Option<(u16, u16)>,
+) -> Result<Value> {
+    use crate::sim::command::{MegaMissionOrder, MegaMissionRecord, StopRecord};
+    let after = sim.pending_local_command_count();
+    ensure!(
+        after == before + 1,
+        "latency input admitted {} OutList records; expected one",
+        after.saturating_sub(before)
+    );
+    // The general diagnostic snapshot decodes native records into semantic
+    // commands. Borrow the sender's raw OutList view instead; this never drains.
+    let queues = sim.network_command_queues();
+    let records = queues.local_records()?;
+    ensure!(
+        records.len() == after,
+        "latency OutList prefix is outside the sender's current allowance"
+    );
+    let record = records.get(before).context("latency OutList record")?;
+    let matched = match target {
+        Some((x, y)) => MegaMissionRecord::decode(&record).is_some_and(|command| {
+            command.source_id == actor as i32
+                && command.order
+                    == MegaMissionOrder::Move {
+                        target_x: x as i16,
+                        target_y: y as i16,
+                    }
+        }),
+        None => {
+            StopRecord::decode(&record).is_some_and(|command| command.entity_id == actor as i32)
+        }
+    };
+    ensure!(
+        matched,
+        "latency click admitted another command instead of the requested Move/Stop"
+    );
+    let record_hex: String = record
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(
+        json!({"outlist_before":before,"outlist_after":after,"record_hex":record_hex,
+        "house":record.house_id(),"opcode":record.opcode(),"issue_frame":record.frame_stamp()}),
+    )
+}
+
+/// Select and show the measured actor before readiness sampling. No Move/Stop
+/// is issued, and later measured inputs must retain this view and selection.
+pub(super) fn prepare_latency_view(state: &mut AppState) -> Result<(u64, (u16, u16))> {
+    let sim = simulation(state)?;
+    let owner = sim
+        .session()
+        .current_house()
+        .context("latency local House")?;
+    let entity = sim
+        .entities()
+        .values_sorted()
+        .filter(|entity| {
+            entity.owner() == owner
+                && entity.is_alive()
+                && !entity.in_limbo()
+                && entity.category() == crate::map::entities::EntityCategory::Unit
+                && entity.locomotor.is_some()
+        })
+        .max_by_key(|entity| (entity.health.current(), entity.stable_id()))
+        .context("latency capture requires an owned ground Unit")?;
+    let id = entity.stable_id();
+    let from = (entity.position.rx(), entity.position.ry());
+    select_entity(state, id)?;
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        from.0,
+        from.1,
+    );
+    let world = ground_world_point(state, from)?;
+    point_at_world(state, world);
+    Ok((id, from))
+}
+
+/// The ordinary mouse path owns admission. Projection checks the prepared
+/// tactical viewport; a target outside it is an explicit diagnostic failure.
+pub(super) fn latency_move_with_mouse(
+    state: &mut AppState,
+    actor: u64,
+    origin: (u16, u16),
+    direction: usize,
+) -> Result<((u16, u16), LatencyInput)> {
+    ensure!(
+        projected_selection(state) == [actor],
+        "latency actor selection changed"
+    );
+    let sim = simulation(state)?;
+    let entity = sim
+        .entities()
+        .get(actor)
+        .context("latency actor disappeared")?;
+    let from = (entity.position.rx(), entity.position.ry());
+    let owner_name = local_owner(state)?;
+    let input = &state.match_state.input;
+    let camera = (input.camera_x, input.camera_y);
+    let zoom = input.zoom_level;
+    let viewport = crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
+    let offsets = [(6, 0), (-6, 0), (0, 6), (0, -6)];
+    let to = offsets
+        .into_iter()
+        .cycle()
+        .skip(direction % 4)
+        .take(4)
+        .find_map(|(dx, dy)| {
+            // Offsets from the partially stopped actor made this route drift
+            // out of view. The prepared origin keeps every waypoint bounded.
+            let desired = latency_waypoint(origin, (dx, dy))?;
+            legal_move_cell(state, actor, desired)
+                .ok()
+                .filter(|cell| *cell != from)
+                .filter(|cell| {
+                    state
+                        .resolved_terrain()
+                        .and_then(|terrain| terrain.cell(cell.0, cell.1))
+                        .is_some_and(|terrain| {
+                            let world = crate::app::input::camera::cell_centre_world_point(
+                                cell.0,
+                                cell.1,
+                                terrain.level,
+                            );
+                            fixed_view_cursor(world, camera, zoom, viewport).is_ok()
+                                && empty_ground_point(
+                                    crate::app::input::entity_pick::presented(state, sim),
+                                    world,
+                                    &owner_name,
+                                )
+                        })
+                })
+        })
+        .context("latency capture has no legal nearby Move goal")?;
+    let world = ground_world_point(state, to)?;
+    let input = &state.match_state.input;
+    let cursor = fixed_view_cursor(
+        world,
+        (input.camera_x, input.camera_y),
+        input.zoom_level,
+        crate::app::input::camera::tactical_viewport_px(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+        ),
+    )?;
+    point_at_cursor(state, cursor);
+    let before = simulation(state)?.pending_local_command_count();
+    let at = left_click_timed(state);
+    let admission = latency_input_admission(
+        &mut state
+            .match_state
+            .sim_runtime
+            .write_sim(SimWrite::Debug)
+            .context("latency simulation")?
+            .simulation,
+        before,
+        actor,
+        Some(to),
+    )?;
+    Ok((to, LatencyInput { at, admission }))
+}
+
+fn latency_waypoint(origin: (u16, u16), offset: (i32, i32)) -> Option<(u16, u16)> {
+    Some((
+        u16::try_from(i32::from(origin.0) + offset.0).ok()?,
+        u16::try_from(i32::from(origin.1) + offset.1).ok()?,
+    ))
 }
 
 /// The bounded live-network input for maps with preplaced mobile units. It uses
@@ -2916,7 +3147,9 @@ pub(super) fn mobile_move_with_mouse(
                         | crate::map::entities::EntityCategory::Infantry
                 )
         })
-        .max_by_key(|entity| entity.stable_id())
+        // Real computer opponents can kill a starting infantryman before the
+        // command observation ends. Prefer a durable local mobile object.
+        .max_by_key(|entity| (entity.health.current(), entity.stable_id()))
         .context("local mobile object")?;
     let id = entity.stable_id();
     let from = (entity.position.rx(), entity.position.ry());
@@ -2929,11 +3162,34 @@ pub(super) fn mobile_move_with_mouse(
             );
             legal_move_cell(state, id, desired)
                 .ok()
-                .filter(|cell| *cell != from)
+                .filter(|cell| *cell != from && clicks_own_cell(state, *cell))
         })
         .context("reachable tactical Move target")?;
     ground_order_with_mouse(state, id, to)?;
     Ok((id, from, to))
+}
+
+/// A click on a cell's centre orders that cell only when no taller cell or
+/// object covers the point: random Quick Match maps put some candidates
+/// behind a cliff.
+fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
+    let (Ok(world), Ok(sim), Ok(owner)) = (
+        ground_world_point(state, cell),
+        simulation(state),
+        local_owner(state),
+    ) else {
+        return false;
+    };
+    crate::app::match_runtime::sim_tick::world_point_to_cell(
+        world.0,
+        world.1,
+        crate::app::match_runtime::sim_tick::tactical_cells(sim),
+    ) == cell
+        && empty_ground_point(
+            crate::app::input::entity_pick::presented(state, sim),
+            world,
+            &owner,
+        )
 }
 
 pub(super) fn mobile_stop_with_keyboard(state: &mut AppState, id: u64) -> Result<()> {
@@ -2942,6 +3198,33 @@ pub(super) fn mobile_stop_with_keyboard(state: &mut AppState, id: u64) -> Result
 }
 
 pub(super) fn selected_stop_with_keyboard(state: &mut AppState) -> Result<()> {
+    selected_stop_with_keyboard_timed(state).map(|_| ())
+}
+
+pub(super) fn latency_stop_with_keyboard(state: &mut AppState, actor: u64) -> Result<LatencyInput> {
+    ensure!(
+        projected_selection(state) == [actor],
+        "latency actor selection changed"
+    );
+    let before = simulation(state)?.pending_local_command_count();
+    let at = selected_stop_with_keyboard_timed(state)?;
+    let admission = latency_input_admission(
+        &mut state
+            .match_state
+            .sim_runtime
+            .write_sim(SimWrite::Debug)
+            .context("latency simulation")?
+            .simulation,
+        before,
+        actor,
+        None,
+    )?;
+    Ok(LatencyInput { at, admission })
+}
+
+fn selected_stop_with_keyboard_timed(
+    state: &mut AppState,
+) -> Result<crate::app::match_diagnostics::ObservationTime> {
     let key = Key::Character("s".into());
     ensure!(
         state.match_state.input.hotkey_bindings.resolve_event(
@@ -2951,8 +3234,9 @@ pub(super) fn selected_stop_with_keyboard(state: &mut AppState) -> Result<()> {
         ) == HotkeyResolution::Command(HotkeyCommand::StopObject),
         "loaded S key is not the Stop binding"
     );
+    let at = crate::app::match_diagnostics::ObservationTime::now();
     chat_key(state, KeyCode::KeyS, &key, Some("s"));
-    Ok(())
+    Ok(at)
 }
 
 /// Select through the configured retail P binding twice: screen then map.
@@ -3013,15 +3297,11 @@ pub(super) fn selected_move_with_mouse(
             };
             let world =
                 crate::app::input::camera::cell_centre_world_point(cell.0, cell.1, terrain.level);
-            if crate::app::input::entity_pick::hover_object_at_point(
+            if empty_ground_point(
                 crate::app::input::entity_pick::presented(state, sim),
-                world.0,
-                world.1,
+                world,
                 &local_owner(state)?,
-                false,
-            )
-            .is_none()
-            {
+            ) {
                 chosen = Some(cell);
                 break;
             }
@@ -3031,9 +3311,7 @@ pub(super) fn selected_move_with_mouse(
         }
     }
     point_at_ground(state, chosen.context("empty ground for mass Move")?)?;
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
+    left_click_timed(state);
     Ok(())
 }
 
@@ -3233,18 +3511,66 @@ fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) ->
 }
 
 fn point_at_ground(state: &mut AppState, cell: (u16, u16)) -> Result<()> {
+    let world = ground_world_point(state, cell)?;
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        cell.0,
+        cell.1,
+    );
+    point_at_world(state, world);
+    Ok(())
+}
+
+fn ground_world_point(state: &AppState, cell: (u16, u16)) -> Result<(f32, f32)> {
     let z = state
         .resolved_terrain()
         .and_then(|terrain| terrain.cell(cell.0, cell.1))
         .context("ground input terrain cell")?
         .level;
-    let world = crate::app::input::camera::cell_centre_world_point(cell.0, cell.1, z);
-    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
+    Ok(crate::app::input::camera::cell_centre_world_point(
+        cell.0, cell.1, z,
+    ))
+}
+
+fn world_cursor(world: (f32, f32), camera: (f32, f32), zoom: f32) -> (f32, f32) {
+    ((world.0 - camera.0) * zoom, (world.1 - camera.1) * zoom)
+}
+
+fn fixed_view_cursor(
+    world: (f32, f32),
+    camera: (f32, f32),
+    zoom: f32,
+    viewport: (u32, u32, u32, u32),
+) -> Result<(f32, f32)> {
+    let cursor = world_cursor(world, camera, zoom);
+    let (x, y, w, h) = viewport;
+    ensure!(
+        cursor.0.is_finite()
+            && cursor.1.is_finite()
+            && cursor.0 >= x as f32
+            && cursor.0 < x.saturating_add(w) as f32
+            && cursor.1 >= y as f32
+            && cursor.1 < y.saturating_add(h) as f32,
+        "latency Move target leaves fixed tactical viewport: cursor={cursor:?}, viewport={viewport:?}"
+    );
+    Ok(cursor)
+}
+
+fn point_at_world(state: &mut AppState, world: (f32, f32)) {
+    let input = &state.match_state.input;
+    let cursor = world_cursor(world, (input.camera_x, input.camera_y), input.zoom_level);
+    point_at_cursor(state, cursor);
+}
+
+fn point_at_cursor(state: &mut AppState, cursor: (f32, f32)) {
     let input = &mut state.match_state.input;
-    input.cursor_x = (world.0 - input.camera_x) * input.zoom_level;
-    input.cursor_y = (world.1 - input.camera_y) * input.zoom_level;
+    input.cursor_x = cursor.0;
+    input.cursor_y = cursor.1;
     dispatch::handle_cursor_moved_in_game(state);
-    Ok(())
 }
 
 fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
@@ -3287,7 +3613,7 @@ pub(super) fn projected_selection(state: &AppState) -> Vec<u64> {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
         state.rules(),
         &state.match_state.input.selection_order,
@@ -3353,7 +3679,7 @@ fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips()
+            .model.cameo_strips()
             .items(*tab)
             .iter()
             .any(|cameo| cameo.id == CameoId::Object(id))),
@@ -3383,9 +3709,7 @@ fn click_entity(state: &mut AppState, id: u64) -> Result<()> {
             .get(id)
             .map(|entity| entity.position)
     );
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
+    left_click_timed(state);
     Ok(())
 }
 
@@ -3397,11 +3721,16 @@ fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
     let cell = (entity.position.rx(), entity.position.ry());
     let world = crate::app::input::entity_pick::presented(state, simulation(state)?)
         .screen_position(entity);
-    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
-    let input = &mut state.match_state.input;
-    input.cursor_x = (world.0 - input.camera_x) * input.zoom_level;
-    input.cursor_y = (world.1 - input.camera_y) * input.zoom_level;
-    dispatch::handle_cursor_moved_in_game(state);
+    crate::app::input::camera::center_camera_on_cell(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        cell.0,
+        cell.1,
+    );
+    point_at_world(state, world);
     let sim = simulation(state)?;
     Ok(crate::app::input::entity_pick::hover_object_at_point(
         crate::app::input::entity_pick::presented(state, sim),
@@ -3448,11 +3777,103 @@ fn placement_cursor(state: &AppState, yard: u64, type_id: &str) -> Result<(u16, 
     anyhow::bail!("no legal {type_id} placement near deployed yard")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod identity_tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
     use crate::sim::house_state::HouseState;
+
+    #[test]
+    fn latency_waypoints_stay_anchored_and_do_not_wrap_at_map_edges() {
+        let origin = (52, 97);
+        assert_eq!(latency_waypoint(origin, (6, 0)), Some((58, 97)));
+        assert_eq!(latency_waypoint(origin, (-6, 0)), Some((46, 97)));
+        assert_eq!(latency_waypoint((3, 97), (-6, 0)), None);
+    }
+
+    #[test]
+    fn latency_fixed_view_projects_inside_and_rejects_offscreen_targets() {
+        let camera = (1_000., 2_000.);
+        let viewport = (0, 0, 472, 448);
+        assert_eq!(
+            fixed_view_cursor((1_100., 2_050.), camera, 2., viewport).unwrap(),
+            (200., 100.)
+        );
+        assert!(
+            fixed_view_cursor((1_236., 2_050.), camera, 2., viewport).is_err(),
+            "sidebar boundary must not recenter"
+        );
+        assert!(
+            fixed_view_cursor((999., 2_050.), camera, 2., viewport).is_err(),
+            "offscreen left must not recenter"
+        );
+    }
+
+    #[test]
+    fn latency_ground_target_rejects_the_friendly_object_picked_by_the_click() {
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Human");
+        let typ = sim.intern("MTNK");
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        sim.fog_mut_for_test().reveal_all_for_owner(owner);
+        let mut unit = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            7,
+            10,
+            10,
+            0,
+            0,
+            owner,
+            crate::sim::combat::Health::new(100),
+            typ,
+            crate::map::entities::EntityCategory::Unit,
+            0,
+            5,
+            false,
+        );
+        unit.lifecycle.set_object_alive_for_test(true);
+        unit.lifecycle.set_in_limbo_for_test(false);
+        let point = crate::render::locomotor_visual::screen_position(&unit);
+        sim.entities_mut_for_test().insert(unit);
+        sim.resubmit_entity_display_for_test(7);
+        assert!(!empty_ground_point(&sim, point, "Human"));
+        assert!(empty_ground_point(&sim, (point.0 + 100., point.1), "Human"));
+    }
+
+    #[test]
+    fn latency_admission_requires_one_actual_matching_outlist_record() {
+        use crate::sim::command::{CommandEnvelope, CommandRecord, IDLE_OPCODE, StopRecord};
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Human");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.entities_mut_for_test()
+            .insert(crate::sim::game_entity::GameEntity::test_default(
+                7, "MTNK", "Human", 10, 10,
+            ));
+        assert!(latency_input_admission(&mut sim, 0, 7, None).is_err());
+        let mut record = CommandRecord::encode(IDLE_OPCODE, 0, 0, &[]).unwrap();
+        StopRecord {
+            house_id: 0,
+            frame: 0,
+            entity_id: 7,
+        }
+        .write_into(&mut record);
+        assert!(sim.issue_local_command(CommandEnvelope::synchronized(record, 0)));
+        assert!(latency_input_admission(&mut sim, 0, 7, Some((10, 10))).is_err());
+        assert!(latency_input_admission(&mut sim, 0, 8, None).is_err());
+        let proof = latency_input_admission(&mut sim, 0, 7, None).unwrap();
+        assert_eq!(proof["outlist_before"], 0);
+        assert_eq!(proof["outlist_after"], 1);
+        assert_eq!(
+            sim.pending_local_command_count(),
+            1,
+            "observation must not drain OutList"
+        );
+    }
 
     fn admitted_pair(
         local_first: bool,
@@ -3475,6 +3896,7 @@ mod identity_tests {
         guest.name = "VG6f7a8b9c0d".into();
         guest.raw_slot_index = Some(1);
         guest.slot.color_index = 2;
+        guest.slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
         launch.humans.push(guest);
         launch.local_player_index = 1;
         if local_first {
@@ -3487,7 +3909,9 @@ mod identity_tests {
         } else {
             NetworkReturnContext::Wol
         });
-        session.accept_network_setup(launch, false, None).unwrap();
+        session
+            .accept_network_setup(launch, false, None, false)
+            .unwrap();
         let mut sim = Simulation::new();
         let host = sim.intern("VH1a2b3c4d5e");
         let guest = sim.intern("VG6f7a8b9c0d");
@@ -3534,7 +3958,7 @@ mod identity_tests {
         let mut launch = host_session.network_setup().unwrap().clone();
         launch.local_player_index = 0;
         host_session
-            .accept_network_setup(launch, true, None)
+            .accept_network_setup(launch, true, None, false)
             .unwrap();
         assert_eq!(battle_owners(&host_session, &sim).unwrap(), owners);
     }

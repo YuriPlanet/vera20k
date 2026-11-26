@@ -1,6 +1,7 @@
 //! The MultiEngineer option's Engineer damage (`InfantryClass` PerCell
 //! building entry, `0x00519D82..0x00519EA5`), through the production entry on
-//! retail rules.
+//! retail rules. Ares replaces this arm (hook `0x519D9C`; see
+//! `sim::ares_rubble`'s tests), so these run without it.
 use super::*;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionId;
@@ -52,10 +53,10 @@ fn enter(sim: &mut Simulation, rules: &RuleSet, building: u64) -> bool {
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let result = sim
-        .infantry_per_cell_building_entry(engineer, rules, None, FrameEffects::default())
+        .infantry_per_cell_building_entry(engineer, rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(result.return_before_foot);
     sim.substrate

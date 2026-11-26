@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "scope": "FFmpeg's xbr filter (libavfilter/vf_xbr.c) at n=2, 3 and 4 on a seeded 10x8 synthetic image that reaches every blend of each factor; render::xbr's test compares the port with it.",
+  "ffmpeg": "7.1.1",
+  "input": "rgba, one hex row per image row, saved as an RGB PNG with its clear pixels black: xbr filters 0RGB32 and reads no alpha.",
+  "replay_command": "ffmpeg -v error -i input.png -vf xbr=n=<n> -f rawvideo -pix_fmt rgb24 scaled.rgb",
+  "outputs": "scaled.<n> holds scaled.rgb for n, one hex row per output row."
+}

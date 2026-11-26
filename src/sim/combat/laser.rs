@@ -22,6 +22,10 @@ pub struct LaserBirth {
     /// Laser+21: the supported Prism main beam's doubled first color.
     pub supported: bool,
     pub color: LaserColor,
+    /// Laser+54, copied by54FE60: the intensity a fading laser starts at.
+    /// Every caller passes 1.0 except the Railgun system's (`0x0062F8A4`),
+    /// which passes 0.5.
+    pub fade_start: NativeF32Bits,
     /// Laser+58, copied by54FE60. Ordinary lasers fade1→0; the delayed
     /// ring caller4A778E/4A785F retains0.5 as its other endpoint.
     pub fade_end: NativeF32Bits,
@@ -57,6 +61,9 @@ pub(crate) fn fired(
     if super::world_fire::fire_at_effect(weapon) != super::world_fire::FireAtEffect::Laser {
         return;
     }
+    // 100563D0 reads the fired weapon's extension (EBX), not the building
+    // arm's re-read below, so it is sampled before the rebind.
+    let thickness = weapon.ares_visuals.laser_thickness;
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
@@ -80,17 +87,46 @@ pub(crate) fn fired(
     } else {
         weapon
     };
-    let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
-    let supported = prism && prism_support_count > 0;
-    // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
-    // 2 wide (a LUNR on MoonPatr, which makes it buildable); a non-Prism
-    // building keeps the constructor's 1.
-    let width = if prism {
-        if supported { 5 } else { 3 }
-    } else if source.category() != EntityCategory::Structure && weapon.is_house_color {
-        2
+    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE) skips the stock
+    // widths (to 0x6FF656). The fired weapon's `LaserThickness=` (unset -1)
+    // sets them: a building's beam is it or 3, and a `PrismForwarding=` tower
+    // that can fire, with SupportingPrisms (Ares: the longest chain behind
+    // it), thickens by `-Intensity` (a negative one) or `Intensity` per link
+    // (a positive one) and is always supported. Any other firer's beam is it
+    // (supported above 3) or 2.
+    let (width, supported) = if rules.ares() {
+        if source.category() == EntityCategory::Structure {
+            let forwarding = obj.building_type_ext().prism_forwarding();
+            let base = if thickness < 0 { 3 } else { thickness };
+            if forwarding.can_attack() && prism_support_count > 0 {
+                let width = match forwarding.intensity() {
+                    intensity @ i32::MIN..0 => base.wrapping_sub(intensity),
+                    0 => base,
+                    intensity => base.wrapping_add(intensity.wrapping_mul(prism_support_count)),
+                };
+                (width, true)
+            } else {
+                (base, false)
+            }
+        } else if thickness < 0 {
+            (2, false)
+        } else {
+            (thickness, thickness > 3)
+        }
     } else {
-        1
+        let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
+        let supported = prism && prism_support_count > 0;
+        // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
+        // 2 wide (a LUNR on MoonPatr, which makes it buildable); a non-Prism
+        // building keeps the constructor's 1.
+        let width = if prism {
+            if supported { 5 } else { 3 }
+        } else if source.category() != EntityCategory::Structure && weapon.is_house_color {
+            2
+        } else {
+            1
+        };
+        (width, supported)
     };
     if let Some(laser) = create(
         world,
@@ -123,8 +159,21 @@ pub(crate) fn create<'w>(
     from: Option<ProjectileCoord>,
 ) -> Option<&'w mut LaserBirth> {
     let source = world.substrate.entities.get(source_id)?;
+    #[cfg(feature = "phobos")]
+    let single_color = weapon.phobos_laser_is_single_color;
+    #[cfg(not(feature = "phobos"))]
+    let single_color = false;
     let color = if weapon.is_house_color {
         LaserColor::House(source.owner())
+    } else if single_color {
+        // Phobos `TechnoClass_LaserZap_IsSingleColor` (`0x6FD446`) flips
+        // `IsHouseColor` after the constructor; the special draw keeps the
+        // stored inner colour and drops the outer pair.
+        LaserColor::Explicit {
+            inner: weapon.laser_inner_color,
+            outer: [0; 3],
+            spread: [0; 3],
+        }
     } else {
         LaserColor::Explicit {
             inner: weapon.laser_inner_color,
@@ -143,7 +192,7 @@ pub(crate) fn create<'w>(
                 &super::fire_coord::FireSource::of_entity(source),
                 object,
                 weapon_index,
-                (source.weapon_burst.index() & 1) as u8,
+                (source.seldom.weapon_burst.index() & 1) as u8,
                 Default::default(),
             )
             .coord;
@@ -158,7 +207,7 @@ pub(crate) fn create<'w>(
             )
         };
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;
-    Some(construct(
+    let birth = construct(
         &world.session,
         &mut world.lifecycle_outputs,
         from,
@@ -167,7 +216,62 @@ pub(crate) fn create<'w>(
         weapon.laser_duration,
         color,
         NativeF32Bits::POSITIVE_ZERO,
-    ))
+    );
+    // Ares 3.0 TechnoClass_FireLaser (100563A0, hook 0x6FD438): a
+    // `LaserThickness=` above 1 replaces the constructed width.
+    if rules.ares() && weapon.ares_visuals.laser_thickness > 1 {
+        birth.width = weapon.ares_visuals.laser_thickness;
+    }
+    Some(birth)
+}
+
+/// Phobos `BulletExt::SimulatedFiringLaser`: the same copied birth from
+/// explicit endpoints and the child's firing House, so a shot whose Techno
+/// already expired still draws. `IsSingleColor`/`LaserThickness` replace the
+/// stock color pair and width; `IsHouseColor` takes the House laser color.
+#[cfg(feature = "phobos")]
+pub(crate) fn create_effect(
+    world: &mut Simulation,
+    house: Option<InternedId>,
+    from: ProjectileCoord,
+    to: ProjectileCoord,
+    weapon: &WeaponType,
+) {
+    let (color, width, supported) = if weapon.is_house_color || weapon.phobos_laser_is_single_color
+    {
+        let color = match (weapon.is_house_color, house) {
+            (true, Some(house)) => LaserColor::House(house),
+            _ => LaserColor::Explicit {
+                inner: weapon.laser_inner_color,
+                outer: [0; 3],
+                spread: [0; 3],
+            },
+        };
+        let width = weapon.phobos_laser_thickness;
+        (color, width, width > 3)
+    } else {
+        (
+            LaserColor::Explicit {
+                inner: weapon.laser_inner_color,
+                outer: weapon.laser_outer_color,
+                spread: weapon.laser_outer_spread,
+            },
+            3,
+            false,
+        )
+    };
+    let birth = construct(
+        &world.session,
+        &mut world.lifecycle_outputs,
+        from,
+        to,
+        0,
+        weapon.laser_duration,
+        color,
+        NativeF32Bits::POSITIVE_ZERO,
+    );
+    birth.width = width;
+    birth.supported = supported;
 }
 
 /// LaserDraw54FE60 initializes every caller's width1/unsupported object;
@@ -191,6 +295,7 @@ pub(crate) fn construct<'a>(
         width: 1,
         supported: false,
         color,
+        fade_start: NativeF32Bits::ONE,
         fade_end,
     }));
     let LifecycleOutput::LaserCreated(laser) = birth else {
@@ -207,32 +312,101 @@ pub(crate) fn support(
     source_id: u64,
     to: ProjectileCoord,
 ) {
-    let Some(source) = world.substrate.entities.get(source_id) else {
+    let Some(from) = support_source(world, rules, source_id) else {
         return;
     };
-    let Some(obj) = world.interner.object_type(source.type_ref(), rules) else {
+    let Some(owner) = world
+        .substrate
+        .entities
+        .get(source_id)
+        .map(|source| source.owner())
+    else {
         return;
     };
-    let from = super::fire_coord::fire_coordinate(
-        world,
-        rules,
-        &super::fire_coord::FireSource::of_entity(source),
-        obj,
-        0,
-        (source.weapon_burst.index() & 1) as u8,
-        Default::default(),
+    support_beam(world, rules, owner, from, to, None, 0, 0);
+}
+
+/// The support beam's source, the building's current weapon-0 FLH.
+pub(crate) fn support_source(
+    world: &Simulation,
+    rules: &RuleSet,
+    source_id: u64,
+) -> Option<ProjectileCoord> {
+    let source = world.substrate.entities.get(source_id)?;
+    let obj = world.interner.object_type(source.type_ref(), rules)?;
+    Some(
+        super::fire_coord::fire_coordinate(
+            world,
+            rules,
+            &super::fire_coord::FireSource::of_entity(source),
+            obj,
+            0,
+            (source.seldom.weapon_burst.index() & 1) as u8,
+            Default::default(),
+        )
+        .coord,
     )
-    .coord;
-    let color = LaserColor::House(source.owner());
-    construct(
+}
+
+/// The support beam's LaserDraw, 3 wide: the House colour for
+/// `PrismSupportDuration=` frames, or, for an Ares Prism `SupportWeapon`
+/// (`10016490`), that weapon's colours (the House's for `IsHouseColor=`)
+/// for its `LaserDuration=`. Ares FireLaser's tail (`10016490`) then
+/// thickens the beam of a tower with `supporting_prisms` by `-intensity` (a
+/// negative one) or `intensity` per link (a positive one), supported above
+/// 5; with none (every stock beam) it stays as drawn.
+pub(crate) fn support_beam(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    from: ProjectileCoord,
+    to: ProjectileCoord,
+    weapon: Option<&WeaponType>,
+    supporting_prisms: i32,
+    intensity: i32,
+) {
+    let (color, duration) = match weapon {
+        None => (
+            LaserColor::House(owner),
+            rules.general.prism_support.duration,
+        ),
+        Some(weapon) if weapon.is_house_color => (LaserColor::House(owner), weapon.laser_duration),
+        Some(weapon) => (
+            LaserColor::Explicit {
+                inner: weapon.laser_inner_color,
+                outer: weapon.laser_outer_color,
+                spread: weapon.laser_outer_spread,
+            },
+            weapon.laser_duration,
+        ),
+    };
+    let birth = construct(
         &world.session,
         &mut world.lifecycle_outputs,
         from,
         to,
         0,
-        rules.general.prism_support.duration,
+        duration,
         color,
         NativeF32Bits::POSITIVE_ZERO,
-    )
-    .width = 3;
+    );
+    birth.width = 3;
+    // 10016490 gives a support weapon's beam its `LaserThickness=` when it
+    // is not negative (the unset -1 keeps 3).
+    if rules.ares()
+        && let Some(weapon) = weapon
+        && weapon.ares_visuals.laser_thickness >= 0
+    {
+        birth.width = weapon.ares_visuals.laser_thickness;
+    }
+    if supporting_prisms > 0 {
+        if intensity < 0 {
+            birth.width = birth.width.wrapping_sub(intensity);
+        } else if intensity > 0 {
+            birth.width = birth
+                .width
+                .wrapping_add(intensity.wrapping_mul(supporting_prisms));
+        }
+        birth.supported = birth.width > 5;
+    }
 }

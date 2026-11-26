@@ -95,10 +95,10 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         };
         world.intern_rule_type_ids(&rules);
         world.resolve_type_handles(&rules);
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
-        world.scenario_rng = SimRng::new(input["scenario_rng_seed"].as_u64().unwrap());
+        *world.scenario_rng = SimRng::new(input["scenario_rng_seed"].as_u64().unwrap());
         let coordinate = ProjectileCoord::new(2688, 5248, 624);
         assert_eq!(
             serde_json::json!([coordinate.x, coordinate.y, coordinate.z]),
@@ -195,6 +195,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                     .entities
                     .get(receiver)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system(),
                 Some(*id)
@@ -206,6 +207,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                     .entities
                     .get(receiver)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system()
                     .is_none()
@@ -430,6 +432,7 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
             (10, 20),
             input["damage"].as_i64().unwrap() as i32,
             rules.warhead("HE").unwrap(),
+            true,
             (RAD_NO_ATTACKER, None, he),
             Some(combat_aoe::AoEAirImpact {
                 sub_x: SimFixed::from_num(128),
@@ -437,7 +440,7 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 z_leptons: 624,
             }),
             6,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             world.scenario_rng.logical_state(),
@@ -460,12 +463,13 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 "{name}"
             );
         }
-        let (_, _, result) = commit_area_with_dispatch(
+        let (_, result) = commit_area_with_dispatch(
             &mut world,
             &mut ReceiverRun::default(),
             &collected.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
         assert_eq!(
             i64::from(result as u8),

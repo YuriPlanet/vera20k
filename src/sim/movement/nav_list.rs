@@ -22,9 +22,9 @@
 //! RESIDUALS: two setters insert their destination at the list's front, and
 //! neither is ported. Both are dormant on retail data.
 //! - Unit Assign_Destination (`0x00741E8E..0x00741F97`), for a moving Unit
-//!   whose type has `Subterranean=` (`+0xD2C`) and whose active locomotor is
-//!   Drive (CLSID `0x007E9A30`). Retail `rulesmd.ini` sets no
-//!   `Subterranean=`.
+//!   whose type's `MovementZone=` is `Subterannean` (TechnoType `+0xD2C`,
+//!   set at `0x0071608A`) and whose active locomotor is Drive (CLSID
+//!   `0x007E9A30`). No retail rules, mode or map file names that zone.
 //! - Infantry Assign_Destination (`0x0051AD17..0x0051AE23`), for a walking
 //!   `JumpJet=` infantryman (see `assign_infantry_destination`). Retail sets
 //!   `HoverAttack=` on each such type.
@@ -54,19 +54,21 @@ impl Simulation {
         target: NavTargetRef,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
         let names_self = TargetKind::from(target) == TargetKind::Entity(id);
-        entity.navigation.queue_nav_list(target, names_self);
+        let note = entity.note_names();
+        entity.navigation.queue_nav_list(target, names_self, note);
         if entity.navigation.nav_com().is_some()
             || entity.mission.effective().known() != Some(MissionType::Guard)
         {
             return;
         }
         let factory_contact = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .is_some_and(|contact| self.is_weapons_factory(contact, rules));
@@ -82,8 +84,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -94,7 +95,7 @@ impl Simulation {
         let Some(&head) = entity.navigation.nav_list().first() else {
             return;
         };
-        self.send_to_navigation_head(id, head, rules, registry, effects);
+        self.send_to_navigation_head(id, head, rules, effects);
     }
 
     /// `FootClass::Mission_Area_Guard`'s list head (`0x004D6B23..0x004D6B8D`),
@@ -107,8 +108,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -116,7 +116,7 @@ impl Simulation {
         let computer = self
             .houses
             .get(&entity.owner())
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()));
         if !computer || entity.navigation.nav_com().is_some() {
             return;
         }
@@ -126,7 +126,7 @@ impl Simulation {
         if entity.archive_target() != Some(TargetKind::from(head)) {
             return;
         }
-        self.send_to_navigation_head(id, head, rules, registry, effects);
+        self.send_to_navigation_head(id, head, rules, effects);
     }
 
     /// The send both consumers make: vt+0x480(head, 1) (`0x004DA062`,
@@ -139,20 +139,18 @@ impl Simulation {
         id: u64,
         head: NavTargetRef,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        if let Err(cause) =
-            self.assign_destination_represented(id, Some(head), rules, registry, effects)
-        {
+        if let Err(cause) = self.assign_destination_represented(id, Some(head), rules, effects) {
             log::debug!("Foot {id} navigation list head: {cause}");
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.navigation.rotate_nav_list(head);
+            let note = entity.note_names();
+            entity.navigation.rotate_nav_list(head, note);
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "nav_list_tests.rs"]
 mod tests;

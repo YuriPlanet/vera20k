@@ -9,6 +9,58 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::world::{SimSoundEvent, Simulation, SoundBoundary};
 
+#[test]
+fn verdict_eva_follows_authored_campaign_construction_in_lockstep() {
+    use crate::audio::events::GameSoundEvent;
+    use crate::rules::rule_policy::RulePolicy;
+    use crate::sim::house_state::{HouseOutcomeKind, HouseState};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::skirmish_modes::MpModeClass;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    sim.register_house(HouseState::new(owner, 0, Some(owner), true, 0, 0));
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    // A scripted slot launch can also play the campaign RulePolicy.
+    // Its original Cooperative result announcement still comes from its slots.
+    for (class, victory, defeat) in [
+        (None, "EVA_MissionAccomplished", "EVA_MissionFailed"),
+        (
+            Some(MpModeClass::Cooperative),
+            "EVA_YouAreVictorious",
+            "EVA_YouHaveLost",
+        ),
+    ] {
+        sim.install_session_admission(ScenarioGameMode::Lan, class, RulePolicy::stock_campaign());
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [
+                SimSoundEvent::MatchOutcome {
+                    owner,
+                    kind: HouseOutcomeKind::Victory,
+                },
+                SimSoundEvent::MatchOutcome {
+                    owner,
+                    kind: HouseOutcomeKind::Defeat,
+                },
+            ],
+            &sim,
+            &rules,
+            Some("Americans"),
+            &mut |_| false,
+            &mut output,
+            None,
+        );
+        assert!(matches!(
+            output.drain().as_slice(),
+            [GameSoundEvent::Eva { event: won, .. }, GameSoundEvent::Eva { event: lost, .. }]
+                if won == victory && lost == defeat
+        ));
+    }
+}
+
 /// Foot4DADF0/750D40 must use the reached phase coordinate and must not
 /// recreate a handle released by a later lifecycle callback. No PCM service
 /// runs here; this checks the production client/SFX handle and gain boundary.
@@ -57,7 +109,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
     let mut output = SoundEventQueue::new();
     let mut radar = |_, _, _: &RuleSet| false;
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.update_looping_sound(
             &sim,
@@ -79,7 +131,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
         "loop identity remains kept"
     );
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.update_looping_sound(&sim, 41, near);
     }
@@ -88,7 +140,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
         "audible phase resumes the kept loop"
     );
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.consume(
             &sim,
@@ -126,7 +178,9 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
         let axis = |index: usize| input["coordinate"][index].as_i64().unwrap() as i32;
         dispatch_sim_sound_events(
             [SimSoundEvent::VocAtCoord {
-                sound_id: "NativeProjectionControl".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted(
+                    "NativeProjectionControl".into(),
+                ),
                 coordinate: crate::sim::components::DriveCoord {
                     x: axis(0),
                     y: axis(1),
@@ -139,6 +193,7 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
             None,
             &mut |_| panic!("coordinate requests have no radar admission"),
             &mut output,
+            None,
         );
         let events = output.drain();
         assert_eq!(events.len(), 1);
@@ -176,7 +231,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
     dispatch_sim_sound_events(
         [
             SimSoundEvent::VocAtCoord {
-                sound_id: "First".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("First".into()),
                 coordinate,
                 flags: 3,
             },
@@ -185,7 +240,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
                 flags: 1,
             },
             SimSoundEvent::VocAtCoord {
-                sound_id: "Later".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("Later".into()),
                 coordinate,
                 flags: 0,
             },
@@ -195,13 +250,14 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
         None,
         &mut |_| panic!("coordinate stop has no radar or owner gate"),
         &mut output,
+        None,
     );
     let events = output.drain();
     assert!(matches!(events.as_slice(), [
         crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: first, coordinate: a, flags: 3, .. },
         crate::audio::events::GameSoundEvent::VocStopAtCoord { coordinate: b, flags: 1 },
         crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: later, coordinate: c, flags: 0, .. },
-    ] if first == "First" && later == "Later" && *a == [-257, 1537, 104] && a == b && b == c));
+    ] if first.resolve(None) == Some("First") && later.resolve(None) == Some("Later") && *a == [-257, 1537, 104] && a == b && b == c));
 }
 
 #[test]
@@ -214,6 +270,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
     let before_main = sim.rng_views().main.native_state_hex();
     let repaired = |owner, rx| SimSoundEvent::UnitRepaired {
         owner,
+        owner_admitted: false,
         radar: RadarEventRequest::new(RadarEventType::UnitRepaired, rx, 7),
     };
     let mut facts = vec![repaired(remote, 1), repaired(local, 2), repaired(local, 99)];
@@ -228,7 +285,8 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
         };
         // Absent output is the ordinary headless/audio-unavailable path.
         // Cue/radar conversion still runs through the production dispatcher.
-        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &facts);
         boundary.consume(&sim, &rules, &facts);
         facts.push(SimSoundEvent::UnitVoiceVisit { owner: 41 });
@@ -261,6 +319,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
             true
         },
         &mut output,
+        None,
     );
     assert_eq!(admitted, [(17, 2), (17, 99), (17, 3), (17, 4)]);
     assert_eq!(output.drain().len(), 1);
@@ -272,7 +331,8 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
             admitted.push((tick, request.rx));
             true
         };
-        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &[repaired(local, 2)]);
         assert_eq!(boundary.delivered(), 1);
     }
@@ -293,20 +353,24 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         heard: &'a RefCell<Vec<(String, bool)>>,
     }
     impl SoundBoundary for Shots<'_> {
-        fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered()..] {
                 let sound_id = match event {
                     SimSoundEvent::VocAt { sound_id, .. } => sound_id,
                     SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
                     _ => continue,
                 };
-                if matches!(sound_id.as_str(), "PillboxAttack" | "ConscriptDie") {
-                    let muzzle_exists = sim.anims().any(|(_, anim)| {
-                        sim.interner().resolve(anim.type_id()).starts_with("MGUN")
-                    });
+                if matches!(sound_id.name_in(rules), "PillboxAttack" | "ConscriptDie") {
+                    // A picture-only flash such as MGUN runs as a presentation
+                    // anim, outside `anims()`.
+                    let muzzle_exists = sim
+                        .anims()
+                        .map(|(_, anim)| anim)
+                        .chain(sim.presentation_anims().filter_map(|(id, _)| sim.anim(id)))
+                        .any(|anim| sim.interner().resolve(anim.type_id()).starts_with("MGUN"));
                     self.heard
                         .borrow_mut()
-                        .push((sound_id.clone(), muzzle_exists));
+                        .push((sound_id.name_in(rules).to_string(), muzzle_exists));
                 }
             }
             self.client.consume(sim, rules, events);
@@ -325,9 +389,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
     let flashes = rules.weapon("Vulcan2").unwrap().anim.clone();
     assert!(!flashes.is_empty());
     for flash in flashes {
-        rules
-            .bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE")
-            .unwrap();
+        rules.bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE");
     }
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
@@ -338,8 +400,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         .spawn_object("E2", "Russians", 14, 12, 0, &rules)
         .unwrap();
     // A wounded Conscript lets the first ordinary stock shot be lethal.
-    sim.entities_mut_for_test()
-        .get_mut(target)
+    sim.entity_mut_for_test(target)
         .unwrap()
         .health
         .set_for_test(5);
@@ -347,15 +408,14 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         gun,
         Some(TargetKind::Entity(target)),
         &rules,
-        None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     )
     .unwrap();
     let heard = RefCell::new(Vec::new());
     let mut output = SoundEventQueue::new();
     for _ in 0..300 {
         let mut admit_radar = |_, _, _: &RuleSet| false;
-        let boundary = Shots {
+        let mut boundary = Shots {
             client: FrameClientBoundary::new(
                 None,
                 Some("Americans"),
@@ -368,10 +428,9 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&boundary),
+                &mut FrameEffects::for_sound(&mut boundary),
             )
             .unwrap();
         // The app dispatches the suffix that was not consumed inline.
@@ -394,5 +453,233 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
     assert!(
         output.is_empty(),
         "the production boundary consumes the cues inline"
+    );
+}
+
+/// Regression: construction/unit-ready facts are emitted inside a frame at a
+/// native handle boundary, so their voice plays in the synchronously delivered
+/// prefix. The frame-tail audio dispatcher deliberately skips that prefix;
+/// an accessibility row attached only there silently vanished. The prefix's
+/// own pass must carry the rows, using the very same voice gates.
+#[test]
+fn synchronous_sound_prefix_keeps_eva_text_rows() {
+    use crate::app::input::messages::HudMessage;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    sim.session_mut_for_test().set_tick_for_test(17);
+    let local = sim.intern("Local");
+    let building = sim.intern("GAPOWR");
+    let unit = sim.intern("HTNK");
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(local));
+    let facts = vec![
+        SimSoundEvent::BuildingComplete {
+            owner: local,
+            type_id: building,
+        },
+        SimSoundEvent::UnitComplete {
+            owner: local,
+            radar: RadarEventRequest::new(RadarEventType::UnitReady, 15, 15),
+            type_id: unit,
+        },
+    ];
+    let mut output = SoundEventQueue::new();
+    let mut rows: Vec<HudMessage> = Vec::new();
+    {
+        let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+                .with_eva_text(Some(&mut rows));
+        boundary.consume(&sim, &rules, &facts);
+        assert_eq!(boundary.delivered(), facts.len());
+    }
+    assert_eq!(
+        rows,
+        vec![
+            HudMessage::EvaObjectLine {
+                label: "VERA:EvaConstructionComplete",
+                type_id: building
+            },
+            HudMessage::EvaObjectLine {
+                label: "VERA:EvaUnitReady",
+                type_id: unit
+            },
+        ]
+    );
+}
+
+/// Regression: the detailed-EVA text rows for attacks and spy cash theft
+/// carry no subject type on their sim events, so they must cross the boundary
+/// as text-only rows (never a type lookup). Each admitted voice arm contributes
+/// exactly one row, keyed to its own alert.
+#[test]
+fn under_attack_and_infiltration_keep_text_only_eva_rows() {
+    use crate::app::input::messages::HudMessage;
+    use crate::sim::radar::{RadarEventRequest, RadarEventType};
+    use crate::sim::spy_infiltration::InfiltrationEffect;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    sim.session_mut_for_test().set_tick_for_test(17);
+    let local = sim.intern("Local");
+    let enemy = sim.intern("Enemy");
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(local));
+    let radar = || RadarEventRequest::new(RadarEventType::BaseUnderAttack, 15, 15);
+    let facts = vec![
+        SimSoundEvent::UnderAttack {
+            rx: 15,
+            ry: 15,
+            owner: local,
+            miner: false,
+            radar: radar(),
+        },
+        SimSoundEvent::UnderAttack {
+            rx: 15,
+            ry: 15,
+            owner: local,
+            miner: true,
+            radar: radar(),
+        },
+        SimSoundEvent::AllyUnderAttack {
+            owner: local,
+            radar: radar(),
+        },
+        SimSoundEvent::BuildingInfiltrated {
+            owner: enemy,
+            infiltrator: local,
+            effect: InfiltrationEffect::Cash,
+            radar: radar(),
+        },
+    ];
+    let mut output = SoundEventQueue::new();
+    let mut rows: Vec<HudMessage> = Vec::new();
+    {
+        let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+                .with_eva_text(Some(&mut rows));
+        boundary.consume(&sim, &rules, &facts);
+    }
+    assert_eq!(
+        rows,
+        vec![
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaBaseUnderAttack"
+            },
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaHarvesterUnderAttack"
+            },
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaAllyUnderAttack"
+            },
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaCashStolen"
+            },
+        ]
+    );
+}
+
+/// A network trigger's authored operand crosses the dispatcher unresolved, and
+/// only the listener's own catalog resolves it at playback: an action-21 EVA
+/// name, an action-99 sound slot on an object, then a slot this catalog lacks,
+/// which stops that object's custom sound as PlayAt7509E0 stops a handle for
+/// an invalid index (7509F5..750A36).
+#[test]
+#[ignore = "requires an audio output device; run when changing trigger audio delivery"]
+fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
+    use crate::app::presentation::building_anim::SoundPlaybackInputs;
+    use crate::audio::events::GameSoundEvent;
+    use crate::audio::sfx::{SfxPlayer, SpatialListener};
+    use crate::rules::sound_ini::SoundReference;
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::world::TriggerSoundTarget;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let mut process = crate::app::process_assets::ProcessAssets::new(
+        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        true,
+    );
+    process.initialize_sources_if_needed(&assets).unwrap();
+    let catalog = process.audio_catalog().unwrap();
+    let mut player =
+        SfxPlayer::new().expect("selected device-dependent regression needs audio output");
+    player.set_volume(0.0);
+    let world = AnimWorldCoord {
+        x: 2688,
+        y: 2688,
+        z: 0,
+    };
+    let source = super::anim_world_sound_source(world);
+    let inputs = SoundPlaybackInputs {
+        assets: &assets,
+        catalog,
+        listener: SpatialListener {
+            tactical_width: 640,
+            tactical_height: 480,
+            origin_x: source.screen_x - 320.0,
+            origin_y: source.screen_y - 240.0,
+            zoom: 1.0,
+        },
+    };
+    let sim = Simulation::new();
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let deliver = |player: &mut SfxPlayer, event: SimSoundEvent| {
+        let mut queue = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [event],
+            &sim,
+            &rules,
+            None,
+            &mut |_| panic!("trigger audio has no radar admission"),
+            &mut queue,
+            None,
+        );
+        let events = queue.drain();
+        assert!(
+            matches!(events.as_slice(), [GameSoundEvent::TriggerAudio { .. }]),
+            "the dispatcher keeps the authored operand"
+        );
+        inputs.consume(player, &events, Some(&sim), Some(rules.sound_names()), None);
+    };
+
+    let eva = catalog.eva().entry_by_index(0).unwrap().name.clone();
+    assert!(player.eva_entry_done(0, catalog.eva()));
+    deliver(
+        &mut player,
+        SimSoundEvent::TriggerAudio {
+            reference: SoundReference::Name(eva.to_ascii_uppercase()),
+            target: TriggerSoundTarget::Eva,
+        },
+    );
+    // QueueVoice752480 queues the line; a later pump starts it.
+    assert!(
+        !player.eva_entry_done(0, catalog.eva()),
+        "the listener's catalog resolves the name and queues its line"
+    );
+
+    let owner = 44;
+    let object = |index| SimSoundEvent::TriggerAudio {
+        reference: SoundReference::Index(index),
+        target: TriggerSoundTarget::Object { owner, world },
+    };
+    let slot = 1;
+    let sound = catalog.sounds().entry_by_index(slot).unwrap().id.clone();
+    deliver(&mut player, object(slot));
+    assert!(
+        player
+            .handle_sound_id(owner)
+            .is_some_and(|id| id.eq_ignore_ascii_case(&sound))
+    );
+    let missing = i32::try_from(catalog.sounds().len()).unwrap();
+    deliver(&mut player, object(missing));
+    assert_eq!(
+        player.handle_sound_id(owner),
+        None,
+        "a slot missing locally stops the object's custom sound"
     );
 }

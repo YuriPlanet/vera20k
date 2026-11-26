@@ -23,6 +23,7 @@ from tools.native_oracle import (
     STACK_BASE, STACK_SIZE, RET_MAGIC, SCRATCH, file_span,
     image_bytes, run_checked, finish_vectors, provenance,
 )
+from tools.native_oracle import require
 from tools.spatial_oracle.map_queries import TABLE, EMPTY_TABLE, DUMMY, dwords, packed
 from tools.spatial_oracle.locomotor_at_coord import OriginalQuery, FAMILIES, LOCO, FOOT, OUTPUT
 
@@ -263,7 +264,7 @@ class OriginalBridgeQuery(OriginalQuery):
         self.stage = 'coordinate'
         required = [0x4DBDF0, 0x4DBE01] if self.case['tube'] is not None else [
             0x4DBDF0, FAMILIES[self.case['family']]['head']]
-        assert self.invoke(0x4DBDF0, FOOT, [OUTPUT, 0], required) == OUTPUT
+        require(self.invoke(0x4DBDF0, FOOT, [OUTPUT, 0], required) == OUTPUT, 'native 0x4DBDF0 returned an unexpected result')
         coordinate = self.coord(OUTPUT)
         self.stage = 'bridge_layer'
         required = [0x4DDC40] if self.case['tube'] is not None else [

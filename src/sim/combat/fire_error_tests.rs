@@ -140,6 +140,8 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
         fire_in_transport: flag(&slot["fire_in_transport"]),
         area_fire: flag(&slot["area_fire"]),
         is_mag_beam: flag(&slot["is_mag_beam"]),
+        no_money_no_talk: slot["no_money_no_talk"].as_i64().unwrap_or(0) as i32,
+        dont_need_money: flag(&slot["dont_need_money"]),
         warhead: Some(WarheadFacts {
             mind_control: flag(&warhead["mind_control"]),
             ivan_bomb: flag(&warhead["ivan_bomb"]),
@@ -150,11 +152,13 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
             bomb_disarm: flag(&warhead["bomb_disarm"]),
             // `FCOMP` then `TEST AH,0x40`: C3 is set for equal and unordered.
             armor_rejects_fire: verses == 0.0 || verses.is_nan(),
+            ..WarheadFacts::default()
         }),
         projectile: ProjectileFacts {
             aa: flag(&projectile["aa"]),
             ag: flag(&projectile["ag"]),
             rot: int(&projectile["rot"]),
+            aa_only: flag(&projectile["aa_only"]),
         },
     })
 }
@@ -182,8 +186,9 @@ fn target_kind(name: &str) -> FireTargetKind {
     }
 }
 
-/// The plain fields of one resolved row.
-fn facts(input: &Value) -> FireFacts {
+/// The plain fields of one resolved row, for a game where Ares plays or does
+/// not ([`FireFacts::ares`]).
+fn facts(input: &Value, ares: bool) -> FireFacts {
     let class = class(input["class"].as_str().unwrap());
     let frame = int(&input["frame"]);
     let f = &input["firer"];
@@ -208,6 +213,8 @@ fn facts(input: &Value) -> FireFacts {
         }
     });
     FireFacts {
+        ares,
+        kratos: flag(&input["kratos"]),
         class,
         frame,
         weapon_index: int(&input["weapon_index"]),
@@ -230,8 +237,13 @@ fn facts(input: &Value) -> FireFacts {
             },
             on_bridge: flag(&f["on_bridge"]),
             z: int(&f["z"]),
+            // The native rows run without Ares: no DisableWeaponTimer.
+            weapons_disabled: false,
+            transporter_gunner_open_topped: false,
+            transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),
             death_frame_counter: int(&f["death_frame_counter"]),
+            webbed: false,
             fire_particles_live: flag(&f["fire_particles_live"]),
             spark_particles_live: flag(&f["spark_particles_live"]),
             railgun_particles_live: flag(&f["railgun_particles_live"]),
@@ -249,6 +261,9 @@ fn facts(input: &Value) -> FireFacts {
                 Some("idle") => Some(Link::None),
                 Some(other) => Some(link(&Value::from(other))),
             },
+            // The native rows run without Ares: no UnitClass_CanFire
+            // (1004BC80) weapon test.
+            temporal_gunner_weapon: false,
             owner_is_human: flag(&f["owner_is_human"]),
             // Foot `0x004DE770` (SETNE); a Building's vt+0x380 is false.
             paralyzed: class.is_foot()
@@ -276,7 +291,10 @@ fn facts(input: &Value) -> FireFacts {
             has_passenger: flag(&f["has_passenger"]),
             effective_mission: effective_mission(&f["mission"], &f["queued_mission"]),
             delayed_fire_counter: int(&f["delayed_fire_counter"]),
-            turret_upgrade: flag(&f["turret_upgrade"]),
+            // The native corpus supplies the host flag and installed-turret
+            // input separately; the production fact now carries the query result.
+            building_has_turret: flag(&ft["turret"]) || flag(&f["turret_upgrade"]),
+            prism_breaks_support: false,
         },
         firer_type: FirerTypeFacts {
             natural: flag(&ft["natural"]),
@@ -307,6 +325,7 @@ fn facts(input: &Value) -> FireFacts {
         target: TargetFacts {
             kind: target_kind(t["kind"].as_str().unwrap()),
             bomb: flag(&t["bomb"]),
+            bomb_fixed: false,
             in_limbo: flag(&t["in_limbo"]),
             on_bridge: flag(&t["on_bridge"]),
             z: int(&t["z"]),
@@ -318,7 +337,7 @@ fn facts(input: &Value) -> FireFacts {
             chrono_warp_latch: flag(&t["chrono_warp_latch"]),
             bunkered: flag(&t["bunkered"]),
             sinking: flag(&t["sinking"]),
-            docked: flag(&t["docked"]),
+            tethered: flag(&t["docked"]),
             health: crate::sim::combat::Health::new(int(&t["health"])),
             parasite_lock_until: int(&t["parasite_lock_until"]),
             deploying: flag(&t["deploying"]) || flag(&t["undeploying"]),
@@ -339,6 +358,7 @@ fn facts(input: &Value) -> FireFacts {
             non_vehicle: flag(&tt["non_vehicle"]),
             // The fixture's BuildingType is not a 1x1 undeployer.
             is_1x1_with_undeploy: false,
+            ..TargetTypeFacts::default()
         },
     }
 }
@@ -407,6 +427,9 @@ impl FireQuery for RowQuery<'_> {
     fn bridge_for_firing(&mut self) -> bool {
         flag(self.verdict("bridge_for_firing"))
     }
+    fn available_money(&mut self) -> i32 {
+        int(self.verdict("available_money"))
+    }
     fn can_infect(&mut self) -> bool {
         flag(self.verdict("can_infect"))
     }
@@ -454,6 +477,7 @@ impl FireQuery for RowQuery<'_> {
         let facts = crate::sim::power_system::OperationalFacts {
             online: flag(&f["online"]),
             tesla_chargers: int(&f["tesla_chargers"]),
+            charger_bypass: 2,
             emp_remaining: int(&f["emp_remaining"]),
             health: int(&f["health"]),
             powered: flag(&ft["powered"]),
@@ -473,8 +497,8 @@ impl FireQuery for RowQuery<'_> {
 }
 
 /// One resolved row through the port: its code and query log.
-fn evaluate(input: &Value) -> (i32, Vec<&'static str>) {
-    let facts = facts(input);
+fn evaluate(input: &Value, ares: bool) -> (i32, Vec<&'static str>) {
+    let facts = facts(input, ares);
     let mut query = RowQuery {
         input,
         weapons: input["weapons"]
@@ -509,9 +533,14 @@ fn original_fire_error_rows() {
     let rows = corpus["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 1191);
     let mut failures = Vec::new();
+    // The rows are the original without Ares, so every row runs as a game
+    // where Ares does not play. Ares replaces U6 (UnitClass_CanFire_Heal
+    // 1004E540, hook 0x741113), U10 (UnitClass_CanFire 1004BC80, hook
+    // 0x741206) and I2 (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
+    // `ares_heal_and_temporal_fire_errors` runs those arms as an Ares game.
     for row in rows {
         let input = resolve(&corpus["defaults"], &row["input"]);
-        let (code, calls) = evaluate(&input);
+        let (code, calls) = evaluate(&input, false);
         let native_calls: Vec<&str> = row["calls"]
             .as_array()
             .unwrap()
@@ -570,7 +599,7 @@ fn original_signed_ammo_check() {
         } else {
             int(&twin["code"])
         };
-        assert_eq!(evaluate(&input).0, expected, "{count}");
+        assert_eq!(evaluate(&input, false).0, expected, "{count}");
     }
 }
 
@@ -603,4 +632,124 @@ fn retail_fire_error_flags() {
     assert!(rules.weapon("DiskLaser").unwrap().fire_while_moving);
     // U7's key is unset in retail: every type keeps the constructor's yes.
     assert!(object("MTNK").mobile_fire);
+}
+
+/// Ares 3.0 on the original rows of the three arms it replaces: a healing
+/// Unit takes any damaged Techno (1004E540, hook 0x741113), a medic any
+/// damaged Techno (1004E270, hook 0x51C913), and a moving Unit holding a
+/// TemporalClass fires unless its selected gunner weapon is Temporal
+/// (1004BC80, hook 0x741206).
+#[test]
+fn ares_heal_and_temporal_fire_errors() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let input = |name: &str| {
+        let row = corpus["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == name)
+            .unwrap_or_else(|| panic!("{name}"));
+        resolve(&corpus["defaults"], &row["input"])
+    };
+    let code = |name: &str| evaluate(&input(name), true).0;
+    // The wounded-infantry twin with a vehicle target.
+    let mut wounded_vehicle = input("I2.twin.medic_vs_wounded_infantry");
+    wounded_vehicle["target"]["kind"] = Value::from("unit");
+    let illegal = FireError::Illegal as i32;
+    assert_ne!(code("U6.healer_vs_infantry"), illegal);
+    assert_ne!(code("U6.healer_vs_non_vehicle"), illegal);
+    assert_eq!(code("U6.healer_vs_full_health_vehicle"), illegal);
+    assert_eq!(code("U6.healer_vs_cell"), illegal);
+    assert_ne!(evaluate(&wounded_vehicle, true).0, illegal);
+    assert_eq!(
+        code("I2.medic_vs_vehicle"),
+        illegal,
+        "a full-health vehicle"
+    );
+    assert_eq!(code("I2.medic_vs_cell"), illegal);
+    assert_eq!(code("I2.medic_vs_healthy_infantry"), illegal);
+    assert_ne!(code("U10.temporal_idle_moving"), FireError::Moving as i32);
+}
+
+/// Kratos `AAOnly` (hook `0x6FC339`, refusal `0x6FCB7E`): a projectile that may
+/// only be fired at a target in the air refuses a grounded one. The corpus
+/// defaults are a Unit firing an AA+AG projectile at a grounded Unit with
+/// LandTargeting 0, which the original allows.
+#[test]
+fn kratos_aa_only_refuses_a_ground_target() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let mut input = resolve(
+        &corpus["defaults"],
+        &serde_json::json!({"name": "kratos.aa_only"}),
+    );
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+
+    input["kratos"] = true.into();
+    input["projectile"]["aa_only"] = true.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    // The projectile's own AA flag is part of the condition.
+    input["projectile"]["aa"] = false.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["projectile"]["aa"] = true.into();
+
+    // A target in the air is what the piece allows.
+    input["verdicts"]["high_flying"] = true.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["verdicts"]["high_flying"] = false.into();
+
+    // LandTargeting 2 (`Land_Secondary`) is not `Land_Not_OK`, so the piece
+    // still stops the shot.
+    input["firer_type"]["land_targeting"] = 2.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    // A game that does not play Kratos keeps the original answer.
+    input["kratos"] = false.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+}
+
+/// Kratos `NoMoneyNoTalk` (hook `0x6FC339`, refusal `0x6FCB7E`): the shot waits
+/// until the firer's house holds the named money, a negative value refuses
+/// while it holds more than the magnitude, and `DontNeedMoney` skips the test.
+#[test]
+fn kratos_no_money_no_talk_gates_the_shot() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let mut input = resolve(
+        &corpus["defaults"],
+        &serde_json::json!({"name": "kratos.no_money"}),
+    );
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["kratos"] = true.into();
+    input["weapons"][0]["no_money_no_talk"] = 1000.into();
+
+    input["verdicts"]["available_money"] = 500.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    input["verdicts"]["available_money"] = 1500.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+
+    // `DontNeedMoney` ignores the price.
+    input["weapons"][0]["dont_need_money"] = true.into();
+    input["verdicts"]["available_money"] = 0.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["weapons"][0]["dont_need_money"] = false.into();
+
+    // A negative value refuses the house that holds too much.
+    input["weapons"][0]["no_money_no_talk"] = (-1000).into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["verdicts"]["available_money"] = 1500.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    // A game that does not play Kratos keeps the original answer.
+    input["kratos"] = false.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
 }

@@ -5,135 +5,14 @@
 //! dialogs. Modal-centered dialogs skip the re-anchor (the caller centers them).
 //! Render-agnostic; consumes only the descriptor + shared geometry primitives.
 
-use super::descriptor::{AnchorRule, ControlKind, DialogDescriptor, RepositionPolicy};
+use super::descriptor::AnchorRule;
 use super::geom::{self, RectPx, RightPanelRects};
 
 /// Centering base width — the logical shell is authored at 800x600 and
 /// horizontally compensated on wider screens. Matches the per-shell helpers.
 const SHELL_BASE_W: i32 = 800;
-/// Centering base height — the in-game Options dialog is authored at 800x600 and
-/// its ordinary controls take the centered vertical offset above this.
+/// Centering base height — the logical shell is authored at 800x600.
 const SHELL_BASE_H: i32 = 600;
-/// Active in-game Options (`0xBBB`) owner-draw button right-edge inset:
-/// `x = screen_w - 147`. A literal pixel inset the native child-resize helper
-/// applies, not a struct field or canvas-size read.
-const IN_GAME_OPTIONS_BUTTON_RIGHT_INSET: i32 = 147;
-
-/// One control's resolved pixel rect, keyed by its resource id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LaidOutControl {
-    pub id: u16,
-    pub rect: RectPx,
-}
-
-/// Run the shell layout pass over a dialog descriptor (contract C7). Returns one
-/// resolved pixel rect per control, in descriptor order.
-pub fn layout_pass(desc: &DialogDescriptor, screen_w: i32, screen_h: i32) -> Vec<LaidOutControl> {
-    let panel = geom::right_panel_rects(screen_w, screen_h);
-    desc.controls
-        .iter()
-        .map(|c| {
-            let rect = match desc.reposition_policy {
-                RepositionPolicy::IncludeSetReanchor => {
-                    apply_anchor(c.anchor, c.dlu_rect, screen_w, screen_h, panel)
-                }
-                // Modal-centered dialogs keep their DLU-derived client rect; the
-                // caller positions the modal panel (no fullscreen re-anchor).
-                RepositionPolicy::ModalCentered => {
-                    geom::child_window(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h)
-                }
-                // Active in-game Options (`0xBBB`). Ordinary controls
-                // (trackbars/checkboxes/statics) take signed screen-centered offsets; owner-draw
-                // buttons additionally pin to the right edge at the SIDEBTTN canvas
-                // with a sidebar-anchored row Y. That button anchoring needs the
-                // runtime SIDEBTTN size + in-game sidebar geometry (above this
-                // layer), so the production overlay resolves the full layout via
-                // `layout_pass_in_game_options`; this bare `layout_pass` applies
-                // only the centered offset every child shares.
-                RepositionPolicy::InGameOptions => {
-                    let (dx, dy) = in_game_options_centered_offset(screen_w, screen_h);
-                    geom::dlu_rect(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h)
-                        .translate(dx, dy)
-                }
-            };
-            LaidOutControl { id: c.id, rect }
-        })
-        .collect()
-}
-
-/// Active-only centered offset for the in-game Options (`0xBBB`) ordinary
-/// controls: `((screen-base)/2).max(0)` per axis (0 at the 800x600 base,
-/// +112/+84 at 1024x768). Owner-draw buttons do NOT take this — they right-edge
-/// anchor instead.
-fn in_game_options_centered_offset(screen_w: i32, screen_h: i32) -> (i32, i32) {
-    ((screen_w - SHELL_BASE_W) / 2, (screen_h - SHELL_BASE_H) / 2)
-}
-
-/// App-supplied anchoring inputs for the active in-game Options (`0xBBB`) overlay
-/// that `ui/shell` cannot compute itself. The native child-resize helper anchors
-/// the owner-draw buttons to the in-game SIDEBAR geometry (a 25-px row stack) and
-/// sizes them to the loaded SIDEBTTN canvas; both live above this layer, so the
-/// render/app layer fills these in and `layout_pass_in_game_options` consumes
-/// them — keeping `ui/shell` render-agnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InGameOptionsAnchor {
-    /// SIDEBTTN SHP canvas width (read from the loaded SHP header; 125 px).
-    pub button_canvas_w: i32,
-    /// SIDEBTTN SHP canvas height (read from the loaded SHP header; 25 px).
-    pub button_canvas_h: i32,
-    /// Top Y of the upper button stack: Sound at +0, Keyboard at +25. Bound to
-    /// the in-game sidebar's button-column anchor (KD-4 — verify at the gate).
-    pub button_stack_top_y: i32,
-    /// Top Y of the bottom-anchored Back button row (sidebar's bottom anchor).
-    pub back_button_y: i32,
-}
-
-/// Resolve the active in-game Options (`0xBBB`) layout with the app-supplied
-/// `anchor`. Ordinary controls (trackbars/checkboxes/statics) take the
-/// screen-centered offset; owner-draw buttons (Back/Keyboard/Sound) render at the
-/// SIDEBTTN canvas size, right-edge anchored at `screen_w - 147`, with a 25-px
-/// row-stack Y bound to the in-game sidebar. `!visible` controls are still laid
-/// out in descriptor order (the emitter skips them); their rect is harmless.
-pub fn layout_pass_in_game_options(
-    desc: &DialogDescriptor,
-    screen_w: i32,
-    screen_h: i32,
-    anchor: InGameOptionsAnchor,
-) -> Vec<LaidOutControl> {
-    use super::in_game_options::control;
-    let (dx, dy) = in_game_options_centered_offset(screen_w, screen_h);
-    desc.controls
-        .iter()
-        .map(|c| {
-            let rect = if c.kind == ControlKind::Button {
-                let y = match c.id {
-                    control::BACK => anchor.back_button_y,
-                    control::KEYBOARD => anchor.button_stack_top_y + anchor.button_canvas_h,
-                    // Sound tops the stack; any other button shares its anchor.
-                    _ => anchor.button_stack_top_y,
-                };
-                RectPx::new(
-                    screen_w - IN_GAME_OPTIONS_BUTTON_RIGHT_INSET,
-                    y,
-                    anchor.button_canvas_w,
-                    anchor.button_canvas_h,
-                )
-            } else if c.id == control::TITLE {
-                // Active branch60B1D0 and title finalizer60B950: no launcher nudge.
-                RectPx::new(screen_w - 165, 2, 162, 16)
-            } else if c.id == control::FOOTER {
-                // Active60B550 footer branch: fixed10px left,1px above bottom.
-                let raw = geom::dlu_rect(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h);
-                RectPx::new(10, screen_h - raw.h - 1, raw.w, raw.h)
-            } else {
-                // 60B7A0 shifts even smaller screens, then clamps final positions.
-                let raw = geom::dlu_rect(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h);
-                RectPx::new((raw.x + dx).max(0), (raw.y + dy).max(0), raw.w, raw.h)
-            };
-            LaidOutControl { id: c.id, rect }
-        })
-        .collect()
-}
 
 /// Status line `0x695` of the right-panel shells outside a suspended game
 /// (`0x0060B550`): the window at `x = dx + 10`, `y = H - h - dy - 1`, where
@@ -149,16 +28,128 @@ pub fn status_line_rect(dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
     RectPx::new(dx + 10, screen_h - h - dy - 1, w, h)
 }
 
-/// Resolve one include-set control outside a descriptor table, with the same
-/// per-control rule `layout_pass` applies.
-pub fn anchor_rect(rule: AnchorRule, dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
-    apply_anchor(
-        rule,
-        dlu,
-        screen_w,
-        screen_h,
-        geom::right_panel_rects(screen_w, screen_h),
-    )
+/// The status line's text box, VERA's own: the window above
+/// ([`status_line_rect`], 456x21 at 800x600 on most pages) runs on to x 628,
+/// the right end of the bar's dark interior, at the window's scale, as
+/// translations run longer than the English it was sized for. A window that
+/// already reaches there, such as `0x102`'s, keeps its width. Retail texts
+/// fit the window and draw as before.
+pub fn status_text_rect(window: RectPx) -> RectPx {
+    // The window's height and the text box's width at 800x600.
+    const WINDOW_H: i32 = 21;
+    const TEXT_W: i32 = 618;
+    RectPx {
+        w: window.w.max(TEXT_W * window.h / WINDOW_H),
+        ..window
+    }
+}
+
+/// Places a dialog's controls on one screen by their resource template and
+/// re-anchor rule. On a scaled mapping the
+/// controls are placed on the 800x600 dialog and scaled with it, so a page's
+/// retail and window-filling layouts come from one table.
+#[derive(Debug, Clone, Copy)]
+pub struct Placer {
+    screen_w: i32,
+    screen_h: i32,
+    panel: RightPanelRects,
+    scale: geom::ShellScale,
+}
+
+impl Placer {
+    /// The retail placement on a `screen_w`x`screen_h` screen.
+    pub fn new(screen_w: i32, screen_h: i32) -> Self {
+        Self::on(geom::RETAIL_SCALE, screen_w, screen_h)
+    }
+
+    /// The placement on `scale`'s mapping: the retail screen for the retail
+    /// mapping, the scaled 800x600 dialog otherwise.
+    pub fn on(scale: geom::ShellScale, screen_w: i32, screen_h: i32) -> Self {
+        let (screen_w, screen_h) = if scale.is_unscaled() {
+            (screen_w, screen_h)
+        } else {
+            (SHELL_BASE_W, SHELL_BASE_H)
+        };
+        Self {
+            screen_w,
+            screen_h,
+            panel: geom::right_panel_rects(screen_w, screen_h),
+            scale,
+        }
+    }
+
+    /// The control with resource template `(x, y, w, h)` DLU under `rule`.
+    pub fn at(&self, rule: AnchorRule, x: i32, y: i32, w: i32, h: i32) -> RectPx {
+        let placed = apply_anchor(
+            rule,
+            RectPx::new(x, y, w, h),
+            self.screen_w,
+            self.screen_h,
+            self.panel,
+        );
+        self.scale.scale_rect(placed)
+    }
+
+    /// A control whose rule reads no resource template (the column's final
+    /// tile, [`AnchorRule::ButtonColumnLast`]).
+    pub fn rule(&self, rule: AnchorRule) -> RectPx {
+        self.at(rule, 0, 0, 0, 0)
+    }
+
+    /// An already-placed 800x600 pixel rect `(x, y, w, h)` on this mapping.
+    pub fn px(&self, x: i32, y: i32, w: i32, h: i32) -> RectPx {
+        self.scale.scale_rect(RectPx::new(x, y, w, h))
+    }
+}
+
+/// A dialog's placed controls: each control's pixel rect by resource id, in
+/// table order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RectTable(Vec<(u16, RectPx)>);
+
+impl RectTable {
+    /// Control `id`'s rect.
+    pub fn get(&self, id: u16) -> Option<RectPx> {
+        self.0.iter().find(|(c, _)| *c == id).map(|(_, rect)| *rect)
+    }
+
+    /// Puts control `id` on `rect`, replacing its earlier rect.
+    pub fn insert(&mut self, id: u16, rect: RectPx) {
+        match self.0.iter_mut().find(|(c, _)| *c == id) {
+            Some(entry) => entry.1 = rect,
+            None => self.0.push((id, rect)),
+        }
+    }
+
+    /// Drops control `id`, which then shows nowhere.
+    pub fn remove(&mut self, id: u16) {
+        self.0.retain(|(c, _)| *c != id);
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (u16, RectPx)> + '_ {
+        self.0.iter().copied()
+    }
+}
+
+impl FromIterator<(u16, RectPx)> for RectTable {
+    fn from_iter<I: IntoIterator<Item = (u16, RectPx)>>(iter: I) -> Self {
+        let mut table = Self::default();
+        for (id, rect) in iter {
+            table.insert(id, rect);
+        }
+        table
+    }
+}
+
+impl geom::ScaledRects for RectTable {
+    fn scaled_rects(&self, scale: geom::ShellScale) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|(id, rect)| (*id, scale.scale_rect(*rect)))
+                .collect(),
+        )
+    }
 }
 
 /// Resolve one control's pixel rect by re-anchor rule. `dlu` is the raw DLU
@@ -180,6 +171,22 @@ fn apply_anchor(
             let x = panel.top.x + (geom::RIGHT_PANEL_WIDTH - cell_w);
             RectPx::new(x, y, cell_w, geom::SDBTNANM_CELL_H)
         }
+        AnchorRule::Resource => geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+        AnchorRule::ChildWindow => geom::child_window(dlu.x, dlu.y, dlu.w, dlu.h),
+        AnchorRule::ButtonColumn { cell_w } => geom::snap_button_biased_truncate(
+            screen_w,
+            screen_h,
+            geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+            panel,
+            cell_w,
+        ),
+        AnchorRule::ButtonColumnLast { cell_w } => RectPx::new(
+            screen_w - geom::center_offset(screen_w, SHELL_BASE_W) - cell_w,
+            panel.tile.y + (panel.tile_count - 1).max(0) * geom::RIGHT_PANEL_TILE_H,
+            cell_w,
+            geom::SDBTNANM_CELL_H,
+        ),
+        AnchorRule::StatusLine => status_line_rect(dlu, screen_w, screen_h),
         AnchorRule::RightAnchor => right_anchor(
             screen_w,
             screen_h,
@@ -223,134 +230,53 @@ fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx, inset: Option<i32>) 
     )
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+#[cfg(all(test, tests_ui))]
+mod tests {
     use super::*;
-    use crate::ui::shell::descriptor::{
-        BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
-    };
+    use crate::ui::shell::descriptor::{HEADING_ANCHOR, MONITOR_ANCHOR};
     use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
-    use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
 
-    /// Child `control` of `dialog` at `width`x`height` after the executed
-    /// WM_INITDIALOG relayout (`tools/storage_oracle/shell_relayout.py`).
-    pub(crate) fn executed_child_window(
-        dialog: u16,
-        control: u16,
-        width: i32,
-        height: i32,
-    ) -> RectPx {
-        executed_child_window_for_side(dialog, control, width, height, 0)
-    }
+    const SNAP: AnchorRule = AnchorRule::OwnerDrawButtonSnap {
+        cell_w: SDBTNANM_CELL_W_NARROW,
+    };
+    const BOTTOM_ROW: AnchorRule = AnchorRule::OwnerDrawButtonBottomRow {
+        cell_w: SDBTNANM_CELL_W_NARROW,
+    };
 
-    /// As [`executed_child_window`] for a case whose relayout depends on the
-    /// campaign side (`0x103`'s `0x72B` override).
-    pub(crate) fn executed_child_window_for_side(
-        dialog: u16,
-        control: u16,
-        width: i32,
-        height: i32,
-        side: i32,
-    ) -> RectPx {
-        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/shell_relayout.json",
-        ))
-        .unwrap();
-        let case = fixture["cases"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|case| {
-                case["dialog_id"] == dialog
-                    && case["width"] == width
-                    && case["height"] == height
-                    && case["side"] == side
-            })
-            .unwrap_or_else(|| {
-                panic!("no relayout of {dialog:#x} at {width}x{height} side {side}")
-            });
-        let child = case["children"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|child| child["id"] == control)
-            .unwrap_or_else(|| panic!("{dialog:#x} has no child {control:#x}"));
-        let rect: Vec<i32> = child["rect"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_i64().unwrap() as i32)
-            .collect();
-        RectPx::new(rect[0], rect[1], rect[2], rect[3])
-    }
-
-    fn ctrl(id: u16, kind: ControlKind, dlu: RectPx, anchor: AnchorRule) -> ControlDescriptor {
-        ControlDescriptor {
-            id,
-            kind,
-            dlu_rect: dlu,
-            anchor,
-            csf_key: None,
-            tooltip_key: None,
-            group: 0,
-            enabled: true,
-            visible: true,
+    /// `0x102`'s status line (410x12 DLU) is wider than the family's and
+    /// already reaches the bar's end, so its text box stays on the screen.
+    #[test]
+    fn a_status_line_that_reaches_the_bar_end_keeps_its_width() {
+        let family = status_line_rect(RectPx::new(2, 355, 303, 12), 800, 600);
+        let skirmish = status_line_rect(RectPx::new(2, 355, 410, 12), 800, 600);
+        for window in [family, skirmish] {
+            let text_box = status_text_rect(window);
+            assert_eq!(text_box.x + text_box.w, 628, "{window:?}");
         }
-    }
-
-    fn rect_for(laid: &[LaidOutControl], id: u16) -> RectPx {
-        laid.iter().find(|c| c.id == id).expect("control id").rect
     }
 
     /// All four anchor rules reproduce the 0xE2 helper outputs at 800x600.
     #[test]
     fn anchor_rules_reproduce_main_menu_rects_800x600() {
-        let desc = DialogDescriptor {
-            id: DialogId(0x00E2),
-            bg_kind: BgKind::RightPanelShell,
-            slide_eligible: true,
-            reposition_policy: RepositionPolicy::IncludeSetReanchor,
-            controls: vec![
-                ctrl(
-                    0x0683,
-                    ControlKind::Button,
-                    RectPx::new(425, 125, 108, 23),
-                    AnchorRule::OwnerDrawButtonSnap {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-                ctrl(
-                    0x03EE,
-                    ControlKind::Button,
-                    RectPx::new(425, 330, 108, 23),
-                    AnchorRule::OwnerDrawButtonBottomRow {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-                ctrl(
-                    0x0694,
-                    ControlKind::Static,
-                    RectPx::new(425, 1, 108, 10),
-                    crate::ui::shell::descriptor::HEADING_ANCHOR,
-                ),
-                ctrl(
-                    0x071C,
-                    ControlKind::Static,
-                    RectPx::new(447, 29, 61, 33),
-                    crate::ui::shell::descriptor::MONITOR_ANCHOR,
-                ),
-            ],
-        };
-        let laid = layout_pass(&desc, 800, 600);
+        let placer = Placer::new(800, 600);
         // Snap button: flush-right 156-cell, first row at y=199.
-        assert_eq!(rect_for(&laid, 0x0683), RectPx::new(644, 199, 156, 42));
+        assert_eq!(
+            placer.at(SNAP, 425, 125, 108, 23),
+            RectPx::new(644, 199, 156, 42)
+        );
         // Exit: same column, in the final tile immediately above the bottom cap.
-        assert_eq!(rect_for(&laid, 0x03EE), RectPx::new(644, 535, 156, 42));
+        assert_eq!(placer.rule(BOTTOM_ROW), RectPx::new(644, 535, 156, 42));
         // Title: compatibility +1w/+1h, right-anchor (635,2,163,17),
         // then the title finalizer adds +7y/+1h.
-        assert_eq!(rect_for(&laid, 0x0694), RectPx::new(635, 9, 163, 18));
+        assert_eq!(
+            placer.at(HEADING_ANCHOR, 425, 1, 108, 10),
+            RectPx::new(635, 9, 163, 18)
+        );
         // 0x71C monitor window: +1w/+1h, x = 800 - 37 - 93.
-        assert_eq!(rect_for(&laid, 0x071C), RectPx::new(670, 47, 93, 55));
+        assert_eq!(
+            placer.at(MONITOR_ANCHOR, 447, 29, 61, 33),
+            RectPx::new(670, 47, 93, 55)
+        );
     }
 
     #[test]
@@ -358,183 +284,26 @@ pub(crate) mod tests {
         // 0x0060B1D0: y = resource y + max(0, (H - 600) / 2), independent of
         // the panel art, which only moves from height 768.
         for (screen_h, heading_y, monitor_y) in [(480, 9, 47), (700, 59, 97), (720, 69, 107)] {
-            let heading = anchor_rect(
-                crate::ui::shell::descriptor::HEADING_ANCHOR,
-                RectPx::new(425, 1, 108, 10),
-                800,
-                screen_h,
-            );
-            let monitor = anchor_rect(
-                crate::ui::shell::descriptor::MONITOR_ANCHOR,
-                RectPx::new(447, 29, 61, 33),
-                800,
-                screen_h,
-            );
+            let placer = Placer::new(800, screen_h);
+            let heading = placer.at(HEADING_ANCHOR, 425, 1, 108, 10);
+            let monitor = placer.at(MONITOR_ANCHOR, 447, 29, 61, 33);
             assert_eq!(heading, RectPx::new(635, heading_y, 163, 18), "{screen_h}");
             assert_eq!(monitor, RectPx::new(670, monitor_y, 93, 55), "{screen_h}");
         }
     }
 
-    #[test]
-    fn production_main_menu_title_uses_exact_runtime_rect_at_required_resolutions() {
-        for (screen_w, screen_h, expected) in [
-            (640, 480, RectPx::new(475, 9, 163, 18)),
-            (800, 600, RectPx::new(635, 9, 163, 18)),
-            (1024, 768, RectPx::new(747, 93, 163, 18)),
-        ] {
-            let actual = crate::ui::main_menu_shell::compute_layout(screen_w, screen_h).title;
-            assert_eq!(actual, expected, "{screen_w}x{screen_h}");
-        }
-    }
-
-    /// Modal-centered dialogs are NOT re-anchored — they keep their DLU->pixel
-    /// client rect (contract C7 include-set gating; 0x120/0xCE are excluded).
-    #[test]
-    fn modal_centered_policy_skips_reanchor() {
-        let desc = DialogDescriptor {
-            id: DialogId(0x0120),
-            bg_kind: BgKind::ModalShp,
-            slide_eligible: false,
-            reposition_policy: RepositionPolicy::ModalCentered,
-            controls: vec![ctrl(
-                0x0001,
-                ControlKind::Button,
-                RectPx::new(425, 125, 108, 23),
-                // Anchor rule is ignored under ModalCentered.
-                AnchorRule::OwnerDrawButtonSnap {
-                    cell_w: SDBTNANM_CELL_W_NARROW,
-                },
-            )],
-        };
-        let laid = layout_pass(&desc, 800, 600);
-        // Common native resize keeps the converted position and adds one to
-        // each extent. No fullscreen snap/anchor applies to this modal.
-        assert_eq!(
-            rect_for(&laid, 0x0001),
-            geom::child_window(425, 125, 108, 23)
-        );
-        assert_eq!(rect_for(&laid, 0x0001), RectPx::new(638, 203, 163, 38));
-    }
-
     /// Re-anchor is oversized-screen aware: 1024x768 reproduces the 0xE2 cells.
     #[test]
     fn snap_and_bottom_row_track_supported_screen_sizes() {
-        let desc = DialogDescriptor {
-            id: DialogId(0x00E2),
-            bg_kind: BgKind::RightPanelShell,
-            slide_eligible: true,
-            reposition_policy: RepositionPolicy::IncludeSetReanchor,
-            controls: vec![
-                ctrl(
-                    0x0683,
-                    ControlKind::Button,
-                    RectPx::new(425, 125, 108, 23),
-                    AnchorRule::OwnerDrawButtonSnap {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-                ctrl(
-                    0x03EE,
-                    ControlKind::Button,
-                    RectPx::new(425, 330, 108, 23),
-                    AnchorRule::OwnerDrawButtonBottomRow {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-            ],
-        };
-        let at_640 = layout_pass(&desc, 640, 480);
-        assert_eq!(rect_for(&at_640, 0x03EE), RectPx::new(484, 409, 156, 42));
-
-        let at_1024 = layout_pass(&desc, 1024, 768);
-        assert_eq!(rect_for(&at_1024, 0x0683), RectPx::new(756, 283, 156, 42));
-        assert_eq!(rect_for(&at_1024, 0x03EE), RectPx::new(756, 619, 156, 42));
-    }
-
-    /// Test anchor with deterministic sidebar-derived button Y values so the
-    /// owner-draw button placement is fixed regardless of the runtime sidebar.
-    fn options_test_anchor() -> InGameOptionsAnchor {
-        InGameOptionsAnchor {
-            button_canvas_w: 125,
-            button_canvas_h: 25,
-            button_stack_top_y: 200,
-            back_button_y: 540,
-        }
-    }
-
-    /// 5a-ii: ordinary in-game Options controls take the screen-centered offset —
-    /// zero at the 800x600 base (== raw DLU), +112/+84 at 1024x768. (Replaces the
-    /// superseded 5a-i screen-invariant raw-DLU baseline.)
-    #[test]
-    fn in_game_options_ordinary_controls_centered_offset() {
-        let desc = build_in_game_options_descriptor();
-        let at800 = layout_pass_in_game_options(&desc, 800, 600, options_test_anchor());
-        // GameSpeed trackbar 0x529 (144,100,128,13): no shift at the base size.
         assert_eq!(
-            rect_for(&at800, control::GAME_SPEED),
-            geom::dlu_rect(144, 100, 128, 13)
+            Placer::new(640, 480).rule(BOTTOM_ROW),
+            RectPx::new(484, 409, 156, 42)
         );
+        let at_1024 = Placer::new(1024, 768);
         assert_eq!(
-            rect_for(&at800, control::GAME_SPEED),
-            RectPx::new(216, 163, 192, 21)
+            at_1024.at(SNAP, 425, 125, 108, 23),
+            RectPx::new(756, 283, 156, 42)
         );
-        let at1024 = layout_pass_in_game_options(&desc, 1024, 768, options_test_anchor());
-        let base = geom::dlu_rect(144, 100, 128, 13);
-        assert_eq!(
-            rect_for(&at1024, control::GAME_SPEED),
-            RectPx::new(base.x + 112, base.y + 84, base.w, base.h)
-        );
-    }
-
-    #[test]
-    fn in_game_options_ordinary_children_match_original_procedure() {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/in_game_shell_geometry.json",
-        ))
-        .unwrap();
-        let cases = native["child_layout"].as_array().unwrap();
-        assert_eq!(cases.len(), 9);
-        let desc = build_in_game_options_descriptor();
-        for case in cases {
-            let integer = |key: &str| case[key].as_i64().unwrap() as i32;
-            let id = integer("control_id") as u16;
-            let expected: Vec<i32> = case["rect"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_i64().unwrap() as i32)
-                .collect();
-            let laid = layout_pass_in_game_options(
-                &desc,
-                integer("width"),
-                integer("height"),
-                options_test_anchor(),
-            );
-            let actual = rect_for(&laid, id);
-            assert_eq!(
-                [actual.x, actual.y, actual.w, actual.h].as_slice(),
-                expected,
-                "{case}"
-            );
-        }
-    }
-
-    /// 5a-ii: owner-draw buttons render at the SIDEBTTN 125x25 canvas, right-edge
-    /// anchored at `screen_w - 147` (NOT their DLU rect), with the sidebar-derived
-    /// 25-px row stack (Sound top, Keyboard +25, Back bottom-anchored).
-    #[test]
-    fn in_game_options_buttons_right_edge_sidebttn_size() {
-        let desc = build_in_game_options_descriptor();
-        let at800 = layout_pass_in_game_options(&desc, 800, 600, options_test_anchor());
-        let back = rect_for(&at800, control::BACK);
-        assert_eq!((back.x, back.y, back.w, back.h), (800 - 147, 540, 125, 25));
-        let sound = rect_for(&at800, control::SOUND);
-        assert_eq!((sound.x, sound.y), (800 - 147, 200));
-        let keyboard = rect_for(&at800, control::KEYBOARD);
-        assert_eq!((keyboard.x, keyboard.y), (800 - 147, 225));
-        // Buttons track the right edge on a wider screen; the centered ordinary
-        // offset never moves them.
-        let at1024 = layout_pass_in_game_options(&desc, 1024, 768, options_test_anchor());
-        assert_eq!(rect_for(&at1024, control::BACK).x, 1024 - 147);
+        assert_eq!(at_1024.rule(BOTTOM_ROW), RectPx::new(756, 619, 156, 42));
     }
 }

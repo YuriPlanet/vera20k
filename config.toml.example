@@ -8,20 +8,36 @@ ra2_dir = "C:/Westwood/RA2"
 # Optional VERA.INI location (defaults to VERA20k's user data folder).
 # Relative paths are resolved beside this config file, outside the game folder.
 # settings_dir = "."
+# Optional mod to play with: the name of a folder in VERA20k's Mods folder,
+# read on top of the game folder (docs/modding.md). Without it, the original game.
+# The game's Mods menu writes this line.
+# mod = "MyMod"
 
 [ini]
-# Root-file selection only, not full MOD gameplay or a different MIX mount policy.
-# Default yr preserves the normal Yuri's Revenge path. mo requires all three MO
-# roots; auto accepts exactly one complete set with no partial alternate set.
-profile = "yr" # yr | mo | auto | custom
+# Host root-file overrides (docs/ini-roots.md). A selected mod can declare its
+# own files and archive names in mod.ini without changing this configuration.
+# Default yr preserves Yuri's Revenge; auto requires its complete root triplet.
+profile = "yr" # yr | auto | custom
 # With profile = "custom", specify all three logical INI basenames:
 # rules = "my-rules.ini"
 # art = "my-art.ini"
 # ai = "my-ai.ini"
+# sound = "my-sound.ini"
+# eva = "my-eva.ini"
+# theme = "my-theme.ini"
+# battle = "my-campaigns.ini"
+# mission = "my-missions.ini"
+# mapsel = "my-map-select.ini"
+# modes = "my-modes.ini"
+# map_catalog = "my-maps.pkt"
+# Theater INI suffix for any profile, the MD of SNOWMD.INI: "md" reads
+# snowmd.ini, "xx" reads snowxx.ini, or snowmd.ini when that is absent.
+# theater_suffix = "md"
 
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)
 translucent_fog = false   # show terrain through fog; unseen enemy objects remain concealed
+high_terrain_building_lift = false   # true draws buildings on terrain level 15+ at their tile row; the original game draws them 1-2 px lower
 # Full screen, zoom and the original 4:3 shape are on the Options page (saved in VERA.INI).
 
 [gameplay]

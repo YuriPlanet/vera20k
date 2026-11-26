@@ -115,6 +115,10 @@ pub(crate) trait JumpjetOrderHost {
     fn floor_height(&self, xy: [i32; 2]) -> i32;
     /// `CellClass+0x140 & 0x100` of the cell holding `xy`.
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool;
+    fn bridge_deck_z(&self, xy: [i32; 2], ground: i32) -> Option<i32> {
+        self.cell_high_bridge(xy)
+            .then(|| ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
+    }
     /// `0x0054D6D0`'s arm for an owner that is not a Unit: `0x004ACA10`
     /// picks the sub-cell, drawing on the Scenario RNG, and the floor is
     /// sampled again at its XY ([`infantry_destination_coordinate`]).
@@ -137,10 +141,8 @@ pub(crate) fn owner_mission_is_enter(owner: &crate::sim::game_entity::GameEntity
 /// a cell, so the arm's NullCoord return (`0x0054D736`) is unreachable.
 fn unit_destination(centre: DriveCoord, host: &impl JumpjetOrderHost) -> DriveCoord {
     let [x, y] = host.cell_coords([centre.x, centre.y]);
-    let mut z = host.floor_height([x, y]);
-    if host.cell_high_bridge([x, y]) {
-        z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+    let ground = host.floor_height([x, y]);
+    let z = host.bridge_deck_z([x, y], ground).unwrap_or(ground);
     DriveCoord { x, y, z }
 }
 
@@ -176,6 +178,8 @@ impl JumpjetRuntime {
     /// returns at54BB32 before Mark and the phase3 write; State3's tail at
     ///54C4FD reads the destination that setter changed. The working value is
     /// never an independent destination authority across either callback.
+    /// A synchronous receiver can remove the owner or replace its locomotor.
+    /// In that case there is no installed Jumpjet to read back.
     pub(crate) fn with_owner_call<R>(
         &mut self,
         sim: &mut Simulation,
@@ -189,14 +193,15 @@ impl JumpjetRuntime {
             .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
             .expect("Jumpjet callback retains its installed instance") = self.clone();
         let result = call(sim);
-        *self = sim
+        if let Some(installed) = sim
             .substrate
             .entities
             .get(id)
             .and_then(|entity| entity.locomotor.as_ref())
             .and_then(|locomotor| locomotor.jumpjet_runtime())
-            .expect("Jumpjet callback retains its installed instance")
-            .clone();
+        {
+            self.clone_from(installed);
+        }
         result
     }
 
@@ -369,10 +374,8 @@ impl JumpjetRuntime {
             return StopOutcome::SearchFailed;
         };
         let WorldCoordinate { x, y, .. } = cell_center(cell.into(), 0);
-        let mut z = host.floor_height([x, y]);
-        if host.cell_high_bridge([x, y]) {
-            z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
+        let ground = host.floor_height([x, y]);
+        let z = host.bridge_deck_z([x, y], ground).unwrap_or(ground);
         StopOutcome::Retargeted(self.move_to(DriveCoord { x, y, z }, host))
     }
 
@@ -409,7 +412,7 @@ pub(crate) fn infantry_destination_coordinate(
     entities: &crate::sim::entity_store::EntityStore,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut crate::util::forked::Forked<crate::sim::rng::SimRng>,
 ) -> Option<DriveCoord> {
     let (slot, bridge) = super::bump_crush::pick_infantry_sublocation(
         Some(terrain),
@@ -432,10 +435,9 @@ pub(crate) fn infantry_destination_coordinate(
     )?;
     let selected_cell =
         terrain.native_cell_identity(((adjusted.x / 256) as i16, (adjusted.y / 256) as i16));
-    if terrain.native_cell_flags(selected_cell) & 0x100 != 0 {
-        adjusted.z = adjusted
-            .z
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    if cells.flags(selected_cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
+        adjusted.z = super::ground_pose::deck_surface_z(&cells, selected_cell, adjusted.z);
     }
     Some(adjusted)
 }
@@ -495,6 +497,7 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
             self.id,
             destination,
             false,
+            self.rules.ares_form(),
         );
     }
     fn owner_kind(&self) -> FlightOwnerKind {
@@ -549,6 +552,12 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
         self.terrain().native_cell_flags(self.cell_identity(xy)) & 0x100 != 0
     }
+    fn bridge_deck_z(&self, xy: [i32; 2], ground: i32) -> Option<i32> {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(self.terrain());
+        let cell = self.cell_identity(xy);
+        (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+            .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground))
+    }
     fn infantry_destination(&mut self, centre: DriveCoord) -> Option<DriveCoord> {
         infantry_destination_coordinate(
             centre,
@@ -566,15 +575,14 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
         let (x, y) = self
             .terrain()
             .native_cell_coord(self.cell_identity([destination.x, destination.y]));
-        self.sim
-            .substrate
-            .entities
-            .get_mut(self.id)
-            .unwrap()
-            .navigation
-            .store_nav_com(Some(crate::sim::components::NavTargetRef::cell(
+        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
+        let note = entity.note_names();
+        entity.navigation.store_nav_com(
+            Some(crate::sim::components::NavTargetRef::cell(
                 x as u16, y as u16,
-            )));
+            )),
+            note,
+        );
     }
 }
 
@@ -596,13 +604,15 @@ impl Simulation {
             .jumpjet_runtime()?
             .clone();
         let result = process(&mut runtime, self);
-        *self
+        if let Some(installed) = self
             .substrate
             .entities
-            .get_mut(id)?
-            .locomotor
-            .as_mut()?
-            .jumpjet_runtime_mut()? = runtime;
+            .get_mut(id)
+            .and_then(|entity| entity.locomotor.as_mut())
+            .and_then(|locomotor| locomotor.jumpjet_runtime_mut())
+        {
+            *installed = runtime;
+        }
         Some(result)
     }
 
@@ -610,7 +620,7 @@ impl Simulation {
     /// Jumpjet's [`JumpjetRuntime::mark_all_occupation_bits_remove`]. For an
     /// infantryman that is what clears his sub-cell: Infantry Mark clears none
     /// (`0x0047EAFE`).
-    pub(crate) fn release_jumpjet_occupation_before_foot_limbo(&mut self, id: u64) {
+    pub(crate) fn release_jumpjet_occupation_before_foot_limbo(&mut self, id: u64, ares: bool) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -633,6 +643,7 @@ impl Simulation {
                     id,
                     head,
                     false,
+                    ares,
                 );
             });
         });
@@ -706,7 +717,7 @@ impl Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if self.object_placement_scope_active() {
             return true;
@@ -749,7 +760,7 @@ impl Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
             return;
@@ -813,7 +824,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -823,6 +834,7 @@ mod tests {
         occupancy::{OccupancyGrid, RawCellOccupationGrid},
         rng::SimRng,
     };
+    use crate::util::forked::Forked;
 
     /// `0x0054D930` on REMOVE: a grounded owner's receiver runs; an airborne
     /// one's runs only for an admitted landing, whose byte clears either way.
@@ -862,7 +874,7 @@ mod tests {
         occupancy: &'a OccupancyGrid,
         entities: &'a EntityStore,
         interner: &'a StringInterner,
-        rng: &'a mut SimRng,
+        rng: &'a mut Forked<SimRng>,
         fail: bool,
     }
 
@@ -968,7 +980,7 @@ mod tests {
             let occupancy = OccupancyGrid::new();
             let entities = EntityStore::new();
             let interner = StringInterner::new();
-            let mut rng = SimRng::new(31);
+            let mut rng = Forked::new(SimRng::new(31));
             let current = DriveCoord {
                 x: 2496,
                 y: 2624,

@@ -54,9 +54,6 @@ fn rules(collision: bool) -> RuleSet {
             .rate_logic_frames,
         1,
     );
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 
@@ -84,7 +81,7 @@ fn world(collision: bool, vat: bool) -> (SimRuntime, InternedId) {
     (
         SimRuntime {
             simulation: sim,
-            resources: SimResources::new(rules),
+            resources: std::sync::Arc::new(SimResources::new(rules)),
         },
         owner,
     )
@@ -106,7 +103,7 @@ fn frame(
             commands,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap()
         .take_admitted_commands()
@@ -155,9 +152,9 @@ fn assert_type(runtime: &SimRuntime, id: u64, family: ObjectCategory, name: &str
         object
     ));
     assert_eq!(entity.health.current(), object.strength);
-    assert_eq!(entity.crushable_facts.crushable(), object.crushable);
+    assert_eq!(entity.seldom.crushable_facts.crushable(), object.crushable);
     assert_eq!(entity.ammo().map(|ammo| ammo.current()), Some(object.ammo));
-    assert_eq!(entity.type_facts.foundation(), &object.foundation);
+    assert_eq!(entity.seldom.type_facts.foundation(), &object.foundation);
     assert_eq!(
         entity
             .locomotor
@@ -328,7 +325,7 @@ fn typed_duplicate_paid_start_place_and_promotion_preserve_constructor_type() {
         let credits = runtime.simulation.houses[&owner].economy().credits();
         runtime.simulation.uninit_with_context(
             1,
-            crate::sim::world::UninitContext::with_rules(&runtime.resources.rules),
+            crate::sim::world::UninitContext::new(&runtime.resources.rules),
         );
         if backup {
             assert_eq!(
@@ -341,7 +338,7 @@ fn typed_duplicate_paid_start_place_and_promotion_preserve_constructor_type() {
             );
             runtime.simulation.uninit_with_context(
                 4,
-                crate::sim::world::UninitContext::with_rules(&runtime.resources.rules),
+                crate::sim::world::UninitContext::new(&runtime.resources.rules),
             );
         }
         assert!(!runtime.simulation.entities().contains(infantry));
@@ -431,7 +428,7 @@ fn typed_duplicate_snapshot_rebind_continues_paid_queue_and_rejects_wrong_identi
         assert!(live.simulation.houses[&owner].economy().spent_credits() > 0);
         // Match native player-load resets of Scenario RNG and the unsaved
         // planner before comparing whole state and continuing both copies.
-        live.simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *live.simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
         live.simulation.reset_planning_after_player_load();
         let rules = &live.resources.rules;
         // Validate player-load admission against the supplied synthetic map
@@ -493,7 +490,7 @@ fn typed_duplicate_snapshot_rebind_continues_paid_queue_and_rejects_wrong_identi
         }
         let mut restored = SimRuntime {
             simulation: restored,
-            resources: SimResources::new(rules.clone()),
+            resources: std::sync::Arc::new(SimResources::new(rules.clone())),
         };
         let mut finished = false;
         for _ in 0..2048 {
@@ -808,6 +805,7 @@ fn name_only_compatibility_and_shared_creators_keep_their_native_type_families()
             .entities()
             .get(spawns[0])
             .unwrap()
+            .seldom
             .type_facts
             .spawned_non_missile_aircraft()
     );

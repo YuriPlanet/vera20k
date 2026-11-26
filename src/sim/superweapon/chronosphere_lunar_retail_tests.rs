@@ -61,9 +61,22 @@ fn advance(scene: &mut HeadlessScenario, command: Option<Command>) {
             )
         })
         .collect();
+    // A local house's mobile product leaves only through the Strip visit's
+    // PLACE event (StripClass::AI 0x6A8B30 -> EventCtor_Place 0x4C6AE0 ->
+    // HouseClass::Place_Production 0x4FB0E0). Headless frames have no sidebar,
+    // so supply the fixture strip or the paid AMCV stays in its Factory.
+    let visits = sim
+        .production()
+        .factories()
+        .strip_visits_for_test(sim.interner.get(OWNER).unwrap());
     scene
         .runtime
-        .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(
+            &commands,
+            22,
+            TickLane::Ordinary,
+            &mut FrameEffects::default().with_production_strip(&visits),
+        )
         .expect("ordinary bound-resource frame");
 }
 
@@ -106,8 +119,8 @@ fn wait_for(
                 entity.mission.queued(),
                 entity.navigation.nav_com(),
                 entity.locomotor.as_ref().map(|loco| loco.active_kind()),
-                entity.radio_contacts.slot(0),
-                entity.tether.partner(),
+                entity.seldom.radio_contacts.slot(0),
+                entity.seldom.tether.partner(),
             )
         })
         .collect();
@@ -138,7 +151,7 @@ fn placed_type(sim: &Simulation, owner: InternedId, name: &str) -> Option<u64> {
 fn placement(scene: &HeadlessScenario, name: &str, anchor: (u16, u16)) -> (u16, u16) {
     let sim = scene.sim();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     let resources: Vec<_> = terrain
         .cells()
@@ -228,7 +241,7 @@ fn buy_building(scene: &mut HeadlessScenario, name: &str, anchor: (u16, u16)) ->
             name,
             rx,
             ry,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
         )
         .unwrap()
         .valid
@@ -243,7 +256,7 @@ fn buy_building(scene: &mut HeadlessScenario, name: &str, anchor: (u16, u16)) ->
                 .unwrap()
                 .cell(rx, ry)
                 .overlay_id
-                .and_then(|id| scene.runtime.resources.overlay_registry.flags(id))
+                .and_then(|id| scene.runtime.resources.rules.overlay_registry().flags(id))
                 .is_some_and(|flags| flags.wall)
         } else {
             scene
@@ -369,7 +382,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         "paid AMCV finishes factory exit",
         |scene| {
             scene.sim().entities().get(mover).is_some_and(|entity| {
-                entity.radio_contacts.is_empty() && entity.tether.partner().is_none()
+                entity.seldom.radio_contacts.is_empty() && entity.seldom.tether.partner().is_none()
             })
         },
     );
@@ -414,7 +427,6 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
                     terrain.native_cell_identity((at.0 as i16, at.1 as i16)),
                     InfantryEntryArgs::REPAIR,
                     rules,
-                    Some(&scene.runtime.resources.overlay_registry),
                 ) == Ok(0)
         })
         .expect("ordinary empty AMCV source choice");
@@ -479,7 +491,8 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
     let flags = scene
         .runtime
         .resources
-        .overlay_registry
+        .rules
+        .overlay_registry()
         .flags(overlay.overlay_id.unwrap())
         .unwrap();
     assert!(flags.wall && !flags.crushable);
@@ -489,7 +502,6 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
             target_cell,
             InfantryEntryArgs::REPAIR,
             &scene.runtime.resources.rules,
-            Some(&scene.runtime.resources.overlay_registry)
         ),
         Ok(7)
     );

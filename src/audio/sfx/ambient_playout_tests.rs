@@ -126,7 +126,7 @@ impl SampleRng for RecordedDraws {
 
 fn clip() -> DecodedAudio {
     DecodedAudio {
-        samples: vec![0.25; 8],
+        samples: vec![0.25; 8].into(),
         sample_rate: 22_050,
         channels: 2,
         native_channels: 1,

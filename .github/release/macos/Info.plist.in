@@ -40,7 +40,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Free software under the GNU GPL version 3. Not affiliated with or endorsed by Electronic Arts.</string>
+	<string>Copyright © 2026 Halvor Nikolai Rusten and VERA20k contributors. Free software under the GNU GPL version 3. Not affiliated with or endorsed by Electronic Arts.</string>
 	<key>NSNetworkVolumesUsageDescription</key>
 	<string>VERA20K reads your Yuri's Revenge game files from this location.</string>
 	<key>NSRemovableVolumesUsageDescription</key>

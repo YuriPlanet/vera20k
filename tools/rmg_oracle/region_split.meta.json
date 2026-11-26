@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "8 whole original SplitOversizedRegions calls (map type 3), each split running RmgRegion::Split, SplitFrontierCost, NextGaussian and the merge/level passes",
+  "assumptions": [
+    "Existing CliffFixture owns original-constructed Cell backing, admission and the stride-33 scratch; bounds 16..48. Scratch coordinates are stamped for in-diamond records only, regions and stamps start -1.",
+    "Declared partition: regions built by the original RmgRegion constructor in id order, list positions equal ids, the water region flag written as the partition fill writes it. Not a complete Generate prefix.",
+    "The linear neighbour offsets written as PathfinderClass::ResizeMapArrays 42AC00 computes them for stride 33. MapType 3, RegionSize and generated dimensions written to their globals. Gaussian cache empty with source 598000. FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No region, RNG, Gaussian or level result is supplied."
+  ],
+  "entry_points": {
+    "split_oversized": "0x0058EBC0",
+    "split": "0x0058D620",
+    "frontier_cost": "0x0058C6F0",
+    "region_ctor": "0x0058BF70",
+    "next": "0x0065C780",
+    "gaussian": "0x005980C0"
+  },
+  "replay_command": "python -m tools.rmg_oracle.region_split",
+  "payload_sha256": "ac522c2d8db2e850d76b3ee4d325e06fa3015e18dc2e5761dd8e2521d82d2d44"
+}

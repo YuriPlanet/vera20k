@@ -4,12 +4,32 @@
 //! whether one outer event-loop iteration may admit a gameplay frame, while the
 //! scenario elapsed clock supplies the score screen's match duration.
 
+use crate::net::live_commands::{SUSTAIN_PERCENT, SequencedTiming};
+use crate::util::time::{Duration, Instant};
+
 const FRAME_BUCKET_SHIFT: u32 = 4;
 const FRAME_BUCKET_MS: u64 = 1 << FRAME_BUCKET_SHIFT;
-/// Wake interval of the hidden-window match service loop: half a pacer
-/// bucket, so an admitted frame is never late by more than half a bucket.
-pub(crate) const HIDDEN_SERVICE_WAKE: std::time::Duration =
+/// One pacer bucket as a span of time.
+pub(crate) const FRAME_BUCKET: std::time::Duration =
+    std::time::Duration::from_millis(FRAME_BUCKET_MS);
+/// Wake interval of a match service pass that draws nothing (a hidden
+/// window, or a visible one whose picture still stands or whose next draw
+/// waits for its limit): half a pacer bucket, so an admitted frame is never
+/// late by more than half a bucket. A visible window's loop wakes sooner for
+/// a frame the local timer has due ([`LocalFramePacer::until_next_frame`]):
+/// on this interval alone a one-bucket frame came out every 11, 11 and
+/// 22 ms, the interval plus a pass, instead of every 16.
+pub(crate) const SERVICE_WAKE: std::time::Duration =
     std::time::Duration::from_millis(FRAME_BUCKET_MS / 2);
+/// A refresh gap the pacer forgives, so a pass at 60 Hz still finds a
+/// one-bucket (GameSpeed 1, 60 FPS) frame on time.
+const CADENCE_SLACK_BUCKETS: u32 = 2;
+/// The shortest time an online continuation may leave the picture standing
+/// (`defer_online_render`).
+const MIN_RENDER_STANDING: Duration = Duration::from_millis(50);
+/// Half the native 256-frame checksum history (`CHECKSUM_HISTORY_LEN`): the
+/// LAN live capture reads that history once per presented frame.
+const MAX_TICKS_BETWEEN_PRESENTS: u32 = 128;
 const MIN_TIMED_GAME_SPEED: u8 = 1;
 const MAX_TIMED_GAME_SPEED: u8 = 6;
 const ELAPSED_CLOCK_STOPPED: u32 = u32::MAX;
@@ -19,6 +39,56 @@ const SCORE_BUCKETS_PER_SECOND: i32 = 60;
 #[link(name = "winmm")]
 unsafe extern "system" {
     fn timeGetTime() -> u32;
+    fn timeBeginPeriod(period_ms: u32) -> u32;
+    fn timeEndPeriod(period_ms: u32) -> u32;
+}
+
+/// The timer period gamemd asks Windows for, in milliseconds.
+#[cfg(windows)]
+const WALL_CLOCK_PERIOD_MS: u32 = 1;
+
+/// Windows' 1 ms timer period, held for as long as this value lives.
+///
+/// gamemd holds it for its whole run: the static initializer `0x0040EB90`
+/// builds the global system timer through `0x005D5870`, which calls
+/// `timeBeginPeriod(1)`, and registers `0x0040EBC0` with `atexit`, which ends
+/// it through `0x005D5880` (`timeEndPeriod(1)`). [`wall_clock_ms`] reads
+/// `timeGetTime`, whose default precision "can be five milliseconds or more"
+/// until a period is requested, and since Windows 10 version 2004 a request
+/// by another program no longer covers this one:
+/// learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timegettime
+/// learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod
+/// Other platforms' clocks need no request, so there this holds nothing.
+pub(crate) struct WallClockPeriod {
+    #[cfg(windows)]
+    held: bool,
+}
+
+impl WallClockPeriod {
+    pub(crate) fn hold() -> Self {
+        Self {
+            #[cfg(windows)]
+            held: {
+                // SAFETY: timeBeginPeriod takes a millisecond count by value
+                // and returns TIMERR_NOERROR (0) or TIMERR_NOCANDO.
+                let held = unsafe { timeBeginPeriod(WALL_CLOCK_PERIOD_MS) } == 0;
+                if !held {
+                    log::warn!("Windows refused the {WALL_CLOCK_PERIOD_MS} ms timer period");
+                }
+                held
+            },
+        }
+    }
+}
+
+impl Drop for WallClockPeriod {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.held {
+            // SAFETY: ends the one successful request above, with its period.
+            unsafe { timeEndPeriod(WALL_CLOCK_PERIOD_MS) };
+        }
+    }
 }
 
 /// Return system uptime for the app's wall-clock consumers.
@@ -32,6 +102,14 @@ unsafe extern "system" {
 /// includes suspend (docs.kernel.org/core-api/timekeeping.html). Exact historic
 /// Windows suspend behavior is not established by the same-boot restart proof.
 pub(crate) fn wall_clock_ms() -> u64 {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        static START: std::sync::OnceLock<crate::util::time::Instant> = std::sync::OnceLock::new();
+        START
+            .get_or_init(crate::util::time::Instant::now)
+            .elapsed()
+            .as_millis() as u64
+    }
     #[cfg(windows)]
     {
         // SAFETY: timeGetTime takes no arguments and returns the process-wide
@@ -62,25 +140,287 @@ pub(crate) fn wall_clock_ms() -> u64 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct LocalFramePacer {
-    /// A display-limited platform needs a clock for the normally untimed
-    /// fastest setting too; otherwise its Logic cadence follows its presents.
-    pace_fastest: bool,
-    /// Start bucket of the last admitted frame. Presentation interpolation and
-    /// diagnostics read this, so it always holds a real admission time.
-    last_frame_start_bucket: Option<u32>,
     last_frame_start_ms: Option<u32>,
-    /// Earliest bucket at which the next frame may run. Distinct from the
-    /// interpolation origin: a present that took several pacing windows leaves
-    /// this behind the wall clock, and the owed frames are admitted without
-    /// stretching game time.
-    next_admit_bucket: Option<u32>,
+    last_presented: Option<crate::util::time::Instant>,
+    /// Recent battlefield draw time, from the draw's start to its present,
+    /// smoothed over a few draws.
+    draw_cost: Option<Duration>,
+    /// The same without the draw's wait for a free picture: what a draw
+    /// costs this thread.
+    draw_work: Option<Duration>,
+    frames_since_present: u32,
+    render_deferred: bool,
+    total_render_deferrals: u64,
+    online: Option<OnlinePacer>,
+    /// DEBUG ONLY, not a gamemd feature: frames run per paced pass in an
+    /// offline Skirmish, 1 to `MAX_DEBUG_SPEED`, set by the Ctrl+Shift dev
+    /// chord. Every frame keeps its own transaction, so the simulation and its
+    /// replay log are unchanged.
+    debug_speed: u8,
+    /// The pass `App::service_match_runtime`'s catch-up loop is running: when
+    /// the service started, how many passes it has finished and whether it
+    /// has a catching-up watcher's budget. `None` outside the loop and when
+    /// the service may not catch up.
+    service_pass: Option<(Instant, usize, bool)>,
+    /// The last frame's tick time: one ticked inline, and one ticked on the
+    /// simulation thread, whose time includes the copies its published frame
+    /// forces.
+    inline_frame_cost: Option<Duration>,
+    lent_frame_cost: Option<Duration>,
+    counts: LoopCounts,
 }
 
-impl Default for LocalFramePacer {
-    fn default() -> Self {
-        Self::new()
+/// Running counts the performance panel reads once a second: the frames
+/// ticked on the main thread and on the simulation thread
+/// ([`LocalFramePacer::record_frame_cost`]), and the event loop's turns
+/// ([`LocalFramePacer::count_loop_turn`]). A loop that never rests shows in
+/// the turns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LoopCounts {
+    pub(crate) inline_frames: u64,
+    pub(crate) lent_frames: u64,
+    pub(crate) turns: u64,
+}
+
+impl LoopCounts {
+    /// The counts since `before`, or `None` when they started over.
+    pub(crate) fn since(self, before: Self) -> Option<Self> {
+        Some(Self {
+            inline_frames: self.inline_frames.checked_sub(before.inline_frames)?,
+            lent_frames: self.lent_frames.checked_sub(before.lent_frames)?,
+            turns: self.turns.checked_sub(before.turns)?,
+        })
+    }
+}
+
+#[cfg(feature = "dev-overlays")]
+const MAX_DEBUG_SPEED: u8 = 10;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OnlineFrameDecision {
+    WaitingForCanonical,
+    HoldUntil(Instant),
+    Run,
+    CatchUp,
+}
+impl OnlineFrameDecision {
+    pub(crate) fn admits(self) -> bool {
+        matches!(self, Self::Run | Self::CatchUp)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OnlinePacingStatus {
+    pub(crate) reserve_micros: u32,
+    pub(crate) underruns: u64,
+    /// How late the waited-for frames arrived after their deadlines, summed
+    /// and at most. A wait that ends in a recovery is counted, not timed.
+    pub(crate) underrun_wait_micros: u64,
+    pub(crate) max_underrun_wait_micros: u64,
+    pub(crate) catching_up: bool,
+}
+
+/// A local playout schedule, never another simulation or relay timeline.
+/// Receipt frames are immutable network facts; `next_frame` always comes
+/// from Simulation. Late jitter changes only the bounded reserve; an early
+/// receipt moves the origin, so no hold exceeds that reserve.
+#[derive(Debug, Clone)]
+struct OnlinePacer {
+    origin_frame: u32,
+    origin_at: Instant,
+    receipt: SequencedTiming,
+    reserve: Duration,
+    decay_at: Instant,
+    stable: Duration,
+    underrun: Option<(u32, Instant)>,
+    underruns: u64,
+    // Match diagnostics only; playout never reads them.
+    underrun_wait: Duration,
+    max_underrun_wait: Duration,
+    catching_up: bool,
+}
+impl OnlinePacer {
+    fn new(receipt: SequencedTiming, now: Instant) -> Self {
+        Self {
+            origin_frame: receipt.frame,
+            origin_at: receipt.received_at,
+            receipt,
+            reserve: Duration::ZERO,
+            decay_at: now,
+            stable: Duration::ZERO,
+            underrun: None,
+            underruns: 0,
+            underrun_wait: Duration::ZERO,
+            max_underrun_wait: Duration::ZERO,
+            catching_up: false,
+        }
+    }
+
+    fn same_clock(&self, receipt: SequencedTiming) -> bool {
+        self.receipt.frames_per_second == receipt.frames_per_second
+            && self.receipt.clock_epoch == receipt.clock_epoch
+    }
+
+    /// A confirmed relay resume starts a new clock at its socket receipt.
+    /// Retain only the bounded jitter estimate, never paused-time debt or an
+    /// underrun from the intentionally closed frontier.
+    fn reset_clock(&mut self, receipt: SequencedTiming, now: Instant) {
+        let reserve = (self.receipt.frames_per_second == receipt.frames_per_second)
+            .then_some(self.reserve)
+            .unwrap_or_default();
+        let (underruns, underrun_wait, max_underrun_wait) =
+            (self.underruns, self.underrun_wait, self.max_underrun_wait);
+        *self = Self::new(receipt, now);
+        self.reserve = reserve.min(Duration::from_millis(20)).min(self.span(1));
+        self.underruns = underruns;
+        self.underrun_wait = underrun_wait;
+        self.max_underrun_wait = max_underrun_wait;
+    }
+
+    fn span(&self, frames: u32) -> Duration {
+        // One division of the whole frame distance avoids rounded per-tick
+        // drift (45Hz is not an integral number of milliseconds/nanoseconds).
+        Duration::from_nanos(
+            u64::from(frames) * 1_000_000_000 / u64::from(self.receipt.frames_per_second),
+        )
+    }
+
+    /// The schedule's receipt time for `frame`, before the reserve.
+    fn scheduled(&self, frame: u32) -> Instant {
+        if frame >= self.origin_frame {
+            self.origin_at
+                .checked_add(self.span(frame - self.origin_frame))
+                .unwrap_or(self.origin_at)
+        } else {
+            self.origin_at
+                .checked_sub(self.span(self.origin_frame - frame))
+                .unwrap_or(self.origin_at)
+        }
+    }
+
+    /// The relay seals a turn's frames at once, sent when its last frame is
+    /// due (relay README, ordering); a watcher's come in larger runs.
+    fn turn(&self) -> u32 {
+        self.receipt.turn_frames.max(1)
+    }
+
+    /// A turn's frames arrive together, so playout runs a turn's span behind
+    /// the schedule to play them evenly until the next turn arrives.
+    fn deadline(&self, frame: u32) -> Instant {
+        let base = self.scheduled(frame);
+        base.checked_add(self.reserve + self.span(self.turn() - 1))
+            .unwrap_or(base)
+    }
+
+    fn learn(&mut self, required: Duration, now: Instant) {
+        let required = required.min(Duration::from_millis(20)).min(self.span(1));
+        if required > self.reserve {
+            self.reserve = required;
+            self.decay_at = now;
+            self.stable = Duration::ZERO;
+        }
+    }
+
+    fn observe(&mut self, receipt: SequencedTiming, now: Instant, recovering: bool) {
+        if receipt.frame > self.receipt.frame {
+            if !recovering && !self.catching_up {
+                let interval = receipt
+                    .received_at
+                    .saturating_duration_since(self.receipt.received_at);
+                self.learn(
+                    interval.saturating_sub(self.span(receipt.frame - self.receipt.frame)),
+                    now,
+                );
+            }
+            // No frame beats the path's fastest delivery, so a receipt before
+            // its scheduled time proves the origin late: a delayed first
+            // receipt, or a re-anchor on a repair burst's arrival. Holding to
+            // that origin would add a delay the reserve never reports.
+            if receipt.received_at < self.scheduled(receipt.frame) {
+                self.origin_frame = receipt.frame;
+                self.origin_at = receipt.received_at;
+            }
+            self.receipt = receipt;
+        }
+        if !recovering && !self.catching_up && self.underrun.is_none() {
+            // Stable delivery returns 1ms per second. Accrue it between
+            // observations: a slow renderer catches up after most passes,
+            // and each burst only pauses the decay instead of restarting it.
+            self.stable += now.saturating_duration_since(self.decay_at);
+            let seconds = self.stable.as_secs();
+            self.reserve = self.reserve.saturating_sub(Duration::from_millis(seconds));
+            self.stable -= Duration::from_secs(seconds);
+        }
+        self.decay_at = now;
+    }
+
+    fn decide(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: SequencedTiming,
+        recovering: bool,
+    ) -> OnlineFrameDecision {
+        self.observe(receipt, now, recovering);
+        let available = if next_frame <= frontier {
+            frontier - next_frame + 1
+        } else {
+            0
+        };
+        let deadline = self.deadline(next_frame);
+        if recovering {
+            self.catching_up = true;
+        }
+        if available == 0 {
+            if !recovering
+                && !self.catching_up
+                && now >= deadline
+                && self.underrun.is_none_or(|(frame, _)| frame != next_frame)
+            {
+                self.underrun = Some((next_frame, deadline));
+                self.underruns = self.underruns.saturating_add(1);
+                self.stable = Duration::ZERO;
+            }
+            return OnlineFrameDecision::WaitingForCanonical;
+        }
+        if let Some((frame, deadline)) = self.underrun.take()
+            && frame == next_frame
+            && !recovering
+        {
+            let wait = receipt.received_at.saturating_duration_since(deadline);
+            self.underrun_wait = self.underrun_wait.saturating_add(wait);
+            self.max_underrun_wait = self.max_underrun_wait.max(wait);
+            self.learn(wait, now);
+        }
+        // A whole turn waiting is on time; two frames beyond it, or one
+        // beyond it two frames late, is a backlog.
+        let turn = self.turn();
+        if !self.catching_up
+            && (available >= turn + 2
+                || (available > turn
+                    && now.saturating_duration_since(self.deadline(next_frame)) > self.span(2)))
+        {
+            self.catching_up = true;
+        }
+        if self.catching_up {
+            if recovering || available > 1 {
+                return OnlineFrameDecision::CatchUp;
+            }
+            // A real recovery/new playout phase may re-anchor. Ordinary late
+            // receipts never move the phase origin later.
+            self.origin_frame = self.receipt.frame;
+            self.origin_at = self.receipt.received_at;
+            self.catching_up = false;
+        }
+        let deadline = self.deadline(next_frame);
+        if now >= deadline {
+            OnlineFrameDecision::Run
+        } else {
+            OnlineFrameDecision::HoldUntil(deadline)
+        }
     }
 }
 
@@ -93,6 +433,9 @@ impl Default for LocalFramePacer {
 pub(crate) struct ScenarioElapsedClock {
     start_bucket: u32,
     accumulated_buckets: u32,
+    // A relay hold preserves the native clock's running intent. It is local
+    // presentation state, never saved with Scenario+614/+61C.
+    multiplayer_resume: Option<bool>,
 }
 
 /// Temporary source-clock continuation across the synchronous save write.
@@ -118,6 +461,7 @@ impl ScenarioElapsedClock {
         Self {
             start_bucket: ELAPSED_CLOCK_STOPPED,
             accumulated_buckets: 0,
+            multiplayer_resume: None,
         }
     }
 
@@ -125,7 +469,9 @@ impl ScenarioElapsedClock {
     /// stream write. The source resumes at689454 only if it was running.
     /// Original wrapping/bucket controls: storage_oracle/saved_game_layout.
     pub(crate) fn begin_save(&mut self, now_ms: u64) -> ScenarioClockSave {
-        let resume_source = self.start_bucket != ELAPSED_CLOCK_STOPPED;
+        let resume_source = self
+            .multiplayer_resume
+            .unwrap_or(self.start_bucket != ELAPSED_CLOCK_STOPPED);
         self.pause(now_ms);
         ScenarioClockSave {
             accumulated_buckets: self.accumulated_buckets,
@@ -145,6 +491,7 @@ impl ScenarioElapsedClock {
         Self {
             start_bucket: frame_bucket(now_ms),
             accumulated_buckets,
+            multiplayer_resume: None,
         }
     }
 
@@ -155,6 +502,7 @@ impl ScenarioElapsedClock {
     /// WallClock__Get16msBucket @ 0x006C8C40 value to ScenarioClass+0x614.
     pub(crate) fn start(&mut self, now_ms: u64) {
         self.accumulated_buckets = 0;
+        self.multiplayer_resume = None;
         self.start_bucket = frame_bucket(now_ms);
     }
 
@@ -164,6 +512,13 @@ impl ScenarioElapsedClock {
     /// StateMachine__EnterPause @ 0x00683EB0 accumulates ScenarioClass+0x61C
     /// and sentinelizes ScenarioClass+0x614 in offline modes 0 and 5.
     pub(crate) fn pause(&mut self, now_ms: u64) {
+        if let Some(resume) = &mut self.multiplayer_resume {
+            *resume = false;
+        }
+        self.accumulate_and_stop(now_ms);
+    }
+
+    fn accumulate_and_stop(&mut self, now_ms: u64) {
         if self.start_bucket == ELAPSED_CLOCK_STOPPED {
             return;
         }
@@ -179,8 +534,29 @@ impl ScenarioElapsedClock {
     /// StateMachine__ExitPause @ 0x00683FB0 writes a fresh 16-ms bucket to
     /// ScenarioClass+0x614 when leaving an offline modal pause.
     pub(crate) fn resume(&mut self, now_ms: u64) {
-        if self.start_bucket == ELAPSED_CLOCK_STOPPED {
+        if let Some(resume) = &mut self.multiplayer_resume {
+            *resume = true;
+        } else if self.start_bucket == ELAPSED_CLOCK_STOPPED {
             self.start_bucket = frame_bucket(now_ms);
+        }
+    }
+
+    /// Compose the relay's completed-frame hold with native clock ownership.
+    /// Native pause/resume calls still update their intent while this hold
+    /// prevents time from accumulating; releasing it never undoes their stop.
+    pub(crate) fn set_multiplayer_paused(&mut self, paused: bool, now_ms: u64) {
+        match (paused, self.multiplayer_resume) {
+            (true, None) => {
+                self.multiplayer_resume = Some(self.start_bucket != ELAPSED_CLOCK_STOPPED);
+                self.accumulate_and_stop(now_ms);
+            }
+            (false, Some(resume)) => {
+                self.multiplayer_resume = None;
+                if resume {
+                    self.resume(now_ms);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -204,7 +580,6 @@ impl ScenarioElapsedClock {
     }
 
     /// Sample the retail raw accumulator without changing clock state.
-    #[cfg(test)]
     fn elapsed_buckets(&self, now_ms: u64) -> u32 {
         self.accumulated_buckets
             .wrapping_add(if self.start_bucket != ELAPSED_CLOCK_STOPPED {
@@ -217,82 +592,384 @@ impl ScenarioElapsedClock {
     /// gamemd provenance: Score elapsed-time formatting; verified
     /// ScoreDialog__WndProc @ 0x005C9B10 reads ScenarioClass+0x614/+0x61C,
     /// treats the wrapped accumulator as signed, and divides it by 60.
-    #[cfg(test)]
+    /// The browser match report reads it after abort/outcome stopped the
+    /// clock; the observer's credits counter reads it while it runs.
     pub(crate) fn elapsed_seconds(&self, now_ms: u64) -> i32 {
         (self.elapsed_buckets(now_ms) as i32) / SCORE_BUCKETS_PER_SECOND
     }
 }
 
 impl LocalFramePacer {
+    /// The sequencer owns the agreed network cadence. Buffered complete
+    /// frames, rather than a second local timer, admit recovery ticks.
+    /// Frame zero is the startup handshake and must keep servicing its owner.
+    pub(crate) fn admits_canonical_frame(frame: u32, committed_frontier: u32) -> bool {
+        frame == 0 || frame <= committed_frontier
+    }
+
+    /// The catch-up service's budget before the next picture: 8 frames or
+    /// 8 ms. VERA watching: a watcher catching up plays minutes of a match,
+    /// so it runs 50 ms of them a picture, about 20 pictures a second
+    /// (docs/Networking.md "Watching").
+    pub(crate) fn permits_catch_up(
+        attempts: usize,
+        elapsed: std::time::Duration,
+        watcher: bool,
+    ) -> bool {
+        if watcher {
+            elapsed < std::time::Duration::from_millis(50)
+        } else {
+            attempts < 8 && elapsed < std::time::Duration::from_millis(8)
+        }
+    }
+
     pub(crate) const fn new() -> Self {
-        Self::with_fastest_pacing(cfg!(target_os = "horizon"))
-    }
-
-    const fn with_fastest_pacing(pace_fastest: bool) -> Self {
         Self {
-            pace_fastest,
-            last_frame_start_bucket: None,
             last_frame_start_ms: None,
-            next_admit_bucket: None,
+            last_presented: None,
+            draw_cost: None,
+            draw_work: None,
+            frames_since_present: 0,
+            render_deferred: false,
+            total_render_deferrals: 0,
+            online: None,
+            debug_speed: 1,
+            service_pass: None,
+            inline_frame_cost: None,
+            lent_frame_cost: None,
+            counts: LoopCounts {
+                inline_frames: 0,
+                lent_frames: 0,
+                turns: 0,
+            },
         }
     }
 
-    /// Buckets one admitted frame consumes, or `None` for an untimed setting.
-    fn window_buckets(&self, game_speed: u8) -> Option<u32> {
-        if game_speed == 0 && !self.pace_fastest {
-            return None;
+    /// Note the pass the catch-up service is about to run, its
+    /// `finished`-th, in a service that began at `started`, with a catching-up
+    /// watcher's budget when `watcher`.
+    pub(crate) fn begin_service_pass(&mut self, started: Instant, finished: usize, watcher: bool) {
+        self.service_pass = Some((started, finished, watcher));
+    }
+
+    pub(crate) fn end_service(&mut self) {
+        self.service_pass = None;
+    }
+
+    /// Record a frame's tick time, for [`Self::another_pass_follows`], and
+    /// count the frame for the thread that ticked it.
+    pub(crate) fn record_frame_cost(&mut self, cost: Duration, lent: bool) {
+        if lent {
+            self.lent_frame_cost = Some(cost);
+            self.counts.lent_frames += 1;
+        } else {
+            self.inline_frame_cost = Some(cost);
+            self.counts.inline_frames += 1;
         }
-        // Fastest runs at the first timed window, matching a 60 Hz PC present.
-        Some(
-            game_speed
-                .clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED)
-                .into(),
-        )
     }
 
-    /// Read the same bucket interval used by `should_admit`, for diagnostics.
-    pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
-        if let Some((fps, delay)) = network_fps {
-            return Some(network_interval_ms(fps).saturating_add(delay) as f32);
-        }
-        self.window_buckets(game_speed)
-            .map(|buckets| buckets as f32 * FRAME_BUCKET_MS as f32)
+    /// Count one turn of the event loop (`about_to_wait`).
+    pub(crate) fn count_loop_turn(&mut self) {
+        self.counts.turns += 1;
     }
 
-    /// Logic frames per second the pacer admits at this speed, for diagnostics.
-    /// A match clock that advances slower than this is running in slow motion.
-    pub(crate) fn target_logic_rate(&self, game_speed: u8) -> f64 {
-        self.budget_ms(game_speed, None)
-            .map_or(0.0, |budget_ms| 1000.0 / f64::from(budget_ms))
+    pub(crate) fn loop_counts(&self) -> LoopCounts {
+        self.counts
     }
 
-    /// Nominal milliseconds represented by one normal wall-clock-paced frame.
+    /// Whether the catch-up service will run another pass after a frame
+    /// admitted now: another frame is already due, and the budget
+    /// ([`Self::permits_catch_up`]) is still open once this one has ticked.
+    /// Ask after recording the frame's admission.
     ///
-    /// This is the same interval `should_admit` uses. Keeping the simulation's
-    /// diagnostic clock in step with it avoids a second, slower timeline when
-    /// catch-up restores the frame count at a low present rate. Untimed
-    /// scenarios fall back to the deterministic tooling step.
-    pub(crate) fn frame_tick_ms(&self, game_speed: u8) -> u32 {
-        self.window_buckets(game_speed)
-            .map_or(crate::app::types::SIM_TICK_MS, |buckets| {
-                buckets * FRAME_BUCKET_MS as u32
+    /// Only one tick can run beside a draw, so only a service's last frame
+    /// goes to the simulation thread (docs/sim-thread.md). The frame's time
+    /// is [`Self::expected_frame_cost`]: a frame that only fills the budget
+    /// because it was lent would otherwise keep every later one lent, one
+    /// frame per service.
+    pub(crate) fn another_pass_follows(
+        &self,
+        now: Instant,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<u16>,
+    ) -> bool {
+        self.catch_up_continues(now) && self.should_admit(now_ms, game_speed, network_fps, false)
+    }
+
+    /// [`Self::another_pass_follows`] for sequenced online play, whose frames
+    /// the relay's frontier and the online pacer admit, not the local timer:
+    /// the service continues while the next frame is admitted
+    /// ([`Self::online_frame_decision`]), asked here of a copy.
+    pub(crate) fn another_online_pass_follows(
+        &self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: Option<(SequencedTiming, bool)>,
+    ) -> bool {
+        self.catch_up_continues(now)
+            && match receipt {
+                Some((receipt, recovering)) if next_frame != 0 => {
+                    receipt.frames_per_second != 0
+                        && self
+                            .online_copy(now, receipt)
+                            .decide(now, next_frame, frontier, receipt, recovering)
+                            .admits()
+                }
+                _ => Self::admits_canonical_frame(next_frame, frontier),
+            }
+    }
+
+    /// Whether the catch-up budget stays open after a frame admitted now.
+    fn catch_up_continues(&self, now: Instant) -> bool {
+        self.service_pass
+            .is_some_and(|(started, finished, watcher)| {
+                Self::permits_catch_up(
+                    finished + 1,
+                    now.saturating_duration_since(started) + self.expected_frame_cost(),
+                    watcher,
+                )
             })
     }
 
-    /// Read-only presentation phase of the existing bucket-paced frame.
-    /// Use the pacer's bucket origin, not the end of a potentially expensive
-    /// simulation/render preparation, to avoid restarting visual time late.
-    pub(crate) fn interpolation_elapsed_ms(&self, now_ms: u64) -> Option<u32> {
-        self.last_frame_start_ms.map(|ms| {
-            (now_ms as u32).wrapping_sub((ms >> FRAME_BUCKET_SHIFT) << FRAME_BUCKET_SHIFT)
+    /// What the next frame's tick is expected to take on this thread: the
+    /// smaller of the last inline and the last lent time, zero before either.
+    pub(crate) fn expected_frame_cost(&self) -> Duration {
+        match (self.inline_frame_cost, self.lent_frame_cost) {
+            (Some(inline), Some(lent)) => inline.min(lent),
+            (inline, lent) => inline.or(lent).unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn debug_speed(&self) -> u8 {
+        self.debug_speed
+    }
+
+    /// Step the debug speed by one within 1x..=10x.
+    #[cfg(feature = "dev-overlays")]
+    pub(crate) fn change_debug_speed(&mut self, faster: bool) -> u8 {
+        let speed = if faster {
+            self.debug_speed + 1
+        } else {
+            self.debug_speed - 1
+        };
+        self.debug_speed = speed.clamp(1, MAX_DEBUG_SPEED);
+        self.debug_speed
+    }
+
+    /// Whether the pass may run `next_frame` online: the online pacer decides
+    /// ([`Self::online_frame_decision`]) with the inputs
+    /// `sim_tick::online_pacing_inputs` gives. Without them (a held match, or
+    /// no relay timing yet) the committed frontier alone admits the frame, as
+    /// in [`Self::another_online_pass_follows`].
+    pub(crate) fn admits_online_frame(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        inputs: Option<(SequencedTiming, bool)>,
+        resuming: bool,
+    ) -> bool {
+        match inputs {
+            Some((receipt, recovering)) => self
+                .online_frame_decision(now, next_frame, frontier, receipt, resuming, recovering)
+                .admits(),
+            None => Self::admits_canonical_frame(next_frame, frontier),
+        }
+    }
+
+    pub(crate) fn online_frame_decision(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: SequencedTiming,
+        resuming: bool,
+        recovering: bool,
+    ) -> OnlineFrameDecision {
+        // A retained transaction already owns its pacing admission. Missing
+        // canonical bytes still block it; a local reserve never does.
+        if next_frame == 0 || resuming {
+            return if Self::admits_canonical_frame(next_frame, frontier) {
+                OnlineFrameDecision::Run
+            } else {
+                OnlineFrameDecision::WaitingForCanonical
+            };
+        }
+        if receipt.frames_per_second == 0 {
+            return OnlineFrameDecision::WaitingForCanonical;
+        }
+        match self.online.as_mut() {
+            Some(online) if !online.same_clock(receipt) => online.reset_clock(receipt, now),
+            None => self.online = Some(OnlinePacer::new(receipt, now)),
+            _ => {}
+        }
+        self.online
+            .as_mut()
+            .unwrap()
+            .decide(now, next_frame, frontier, receipt, recovering)
+    }
+
+    /// Whether the next frame is admitted and its playout deadline has
+    /// passed. A catch-up also admits buffered frames before their deadlines;
+    /// those never hold a draw, or a player whose long draws leave a turn
+    /// waiting would run ahead in bursts and then hold. Read-only
+    /// continuation uses the same policy on a small derived copy; it cannot
+    /// learn a second time or consume any simulation/network state.
+    pub(crate) fn online_frame_due(
+        &self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: SequencedTiming,
+        recovering: bool,
+    ) -> bool {
+        if next_frame == 0 || receipt.frames_per_second == 0 {
+            return false;
+        }
+        let mut online = self.online_copy(now, receipt);
+        online
+            .decide(now, next_frame, frontier, receipt, recovering)
+            .admits()
+            && now >= online.deadline(next_frame)
+    }
+
+    /// The online pacer as [`Self::online_frame_decision`] would find it,
+    /// for read-only questions.
+    fn online_copy(&self, now: Instant, receipt: SequencedTiming) -> OnlinePacer {
+        let mut online = self
+            .online
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| OnlinePacer::new(receipt, now));
+        if !online.same_clock(receipt) {
+            online.reset_clock(receipt, now);
+        }
+        online
+    }
+
+    pub(crate) fn online_pacing_status(&self) -> Option<OnlinePacingStatus> {
+        self.online.as_ref().map(|online| OnlinePacingStatus {
+            reserve_micros: online.reserve.as_micros() as u32,
+            underruns: online.underruns,
+            underrun_wait_micros: online.underrun_wait.as_micros() as u64,
+            max_underrun_wait_micros: online.max_underrun_wait.as_micros() as u64,
+            catching_up: online.catching_up,
         })
+    }
+
+    pub(crate) fn reset_for_new_world(&mut self) {
+        self.reset_for_immediate_frame();
+        self.online = None;
+        self.draw_cost = None;
+        self.draw_work = None;
+        self.debug_speed = 1;
+        self.inline_frame_cost = None;
+        self.lent_frame_cost = None;
+    }
+
+    /// Clear a queued continuation on entry or loss of render eligibility.
+    /// Neither operation pretends its surface was presented.
+    pub(crate) fn clear_render_continuation(&mut self) {
+        self.render_deferred = false;
+    }
+
+    /// Yield to winit between online chunks while the next frame is due, so
+    /// each picture shows every frame the playout schedule has made due: a
+    /// player who draws slower than the match rate shows a steady number of
+    /// frames per picture instead of falling behind and catching up in
+    /// bursts. Only completed transactions count; neither a blocked frame
+    /// nor a modal may defer. The picture stands at most
+    /// `online_render_standing`, and at most `MAX_TICKS_BETWEEN_PRESENTS`
+    /// run between two presents.
+    pub(crate) fn defer_online_render(
+        &mut self,
+        now: crate::util::time::Instant,
+        completed_frames: u32,
+        last_frame_completed: bool,
+        next_canonical: Option<(u32, u32)>,
+    ) -> bool {
+        self.frames_since_present = self.frames_since_present.saturating_add(completed_frames);
+        self.render_deferred = completed_frames > 0
+            && last_frame_completed
+            && next_canonical.is_some_and(|(frame, frontier)| frame > 0 && frame <= frontier)
+            && self.last_presented.is_some_and(|last| {
+                now.saturating_duration_since(last) < self.online_render_standing()
+            })
+            && self.frames_since_present < MAX_TICKS_BETWEEN_PRESENTS;
+        if self.render_deferred {
+            self.total_render_deferrals = self.total_render_deferrals.saturating_add(1);
+        }
+        self.render_deferred
+    }
+
+    /// How long a continuation may leave the picture standing, at least
+    /// `MIN_RENDER_STANDING`: long enough that the simulation may take
+    /// `SUSTAIN_PERCENT` of the time between presents, the share the relay
+    /// expects a player's tick cost to hold before it slows the match, and a
+    /// recent draw time the rest.
+    fn online_render_standing(&self) -> Duration {
+        self.draw_cost
+            .map_or(MIN_RENDER_STANDING, |cost| {
+                cost * SUSTAIN_PERCENT / (100 - SUSTAIN_PERCENT)
+            })
+            .max(MIN_RENDER_STANDING)
+    }
+
+    /// Frames a service completed without a draw judging them, such as the
+    /// one a simulation-thread tick's end wakes (docs/sim-thread.md).
+    pub(crate) fn count_frames_without_present(&mut self, completed_frames: u32) {
+        self.frames_since_present = self.frames_since_present.saturating_add(completed_frames);
+    }
+
+    pub(crate) fn render_deferred(&self) -> bool {
+        self.render_deferred
+    }
+
+    pub(crate) fn total_render_deferrals(&self) -> u64 {
+        self.total_render_deferrals
+    }
+
+    /// Reset only after a successful presentation. A shell/loading surface
+    /// cannot make the first battlefield presentation eligible for deferral.
+    /// `battlefield_draw` is when a battlefield draw started; its time to
+    /// this present feeds the smoothed draw cost (a quarter of each sample),
+    /// and that time less `screen_wait`, the draw's wait for a free picture
+    /// (`GpuContext::acquire_frame`), the smoothed draw work.
+    pub(crate) fn record_presented(
+        &mut self,
+        now: Instant,
+        battlefield_draw: Option<Instant>,
+        screen_wait: Duration,
+    ) {
+        self.last_presented = battlefield_draw.map(|_| now);
+        if let Some(started) = battlefield_draw {
+            let cost = now.saturating_duration_since(started);
+            let work = cost.saturating_sub(screen_wait);
+            self.draw_cost = Some(self.draw_cost.map_or(cost, |old| (old * 3 + cost) / 4));
+            self.draw_work = Some(self.draw_work.map_or(work, |old| (old * 3 + work) / 4));
+        }
+        self.frames_since_present = 0;
+        self.render_deferred = false;
+    }
+
+    /// The recent battlefield draw work ([`Self::record_presented`]), zero
+    /// before the first one.
+    pub(crate) fn draw_work(&self) -> Duration {
+        self.draw_work.unwrap_or_default()
+    }
+
+    /// Read the same interval used by `should_admit`, for diagnostics.
+    pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<u16>) -> Option<f32> {
+        pacing_timer(game_speed, network_fps).map(PacingTimer::length_ms)
     }
 
     pub(crate) fn should_admit(
         &self,
         now_ms: u64,
         game_speed: u8,
-        network_fps: Option<(u16, u32)>,
+        network_fps: Option<u16>,
         paused: bool,
     ) -> bool {
         if paused {
@@ -301,75 +978,164 @@ impl LocalFramePacer {
         // MainTick55D4FB chooses 1000/FPS for network games, and
         // MainThrottle55E1BC consumes that millisecond timer. Offline pacing
         // retains its distinct 16ms bucket clock (55E2B4).
-        if let Some((fps, delay)) = network_fps {
-            return self.last_frame_start_ms.is_none_or(|last| {
-                (now_ms as u32).wrapping_sub(last) as i32
-                    >= network_interval_ms(fps).saturating_add(delay) as i32
-            });
-        }
-        if self.window_buckets(game_speed).is_none() {
-            return true;
-        }
-        let Some(next_bucket) = self.next_admit_bucket else {
-            return true;
-        };
-        frame_bucket(now_ms).wrapping_sub(next_bucket) as i32 >= 0
+        pacing_timer(game_speed, network_fps)
+            .zip(self.last_frame_start_ms)
+            .is_none_or(|(timer, start)| timer.elapsed(now_ms, start) >= timer.length(start) as i32)
     }
 
-    /// Record one admitted frame.
+    /// Start to record for a frame `should_admit` admitted at `now_ms`.
     ///
-    /// When the previous admission is more than one pacing window back — a
-    /// present that blocked in the compositor, a synchronous atlas rebuild —
-    /// advance the anchor by exactly one window instead of snapping it to
-    /// `frame_start_ms`. The next request then admits the frame that window
-    /// still owes, so a slow present rate costs smoothness and never stretches
-    /// game time. Retail ties one Logic pass to one present, which is
-    /// indistinguishable at 60 Hz; below that it runs the match in slow motion.
-    pub(crate) fn record_admitted_frame(&mut self, frame_start_ms: u64, game_speed: u8) {
-        self.last_frame_start_ms = Some(frame_start_ms as u32);
-        let now_bucket = frame_bucket(frame_start_ms);
-        let Some(required) = self.window_buckets(game_speed) else {
-            self.last_frame_start_bucket = Some(now_bucket);
-            self.next_admit_bucket = None;
-            return;
+    /// Main__ThrottleFrame (`0x0055E2B4` buckets, `0x0055E1BC` milliseconds)
+    /// waits until the interval elapses, so the next Main_Tick arms its timer
+    /// (`0x0055D7A8` buckets, `0x0055D568` milliseconds) at the due moment.
+    /// VERA checks only between presented passes, and `service_match_runtime`
+    /// runs every frame due by then. A frame found late by less than its
+    /// interval, or by less than `CADENCE_SLACK_BUCKETS` (one 60 Hz refresh
+    /// plus jitter, for intervals shorter than that), keeps its due time, so
+    /// the display refresh cannot stretch the cadence. Later frames restart
+    /// from now, as native does.
+    ///
+    /// Residuals: native restarts from now after any overrun, so a hitch
+    /// shorter than that window here runs the missed frames next instead.
+    /// Native also runs input and rendering inside the millisecond wait
+    /// (55E23F..55E271) and keeps that overshoot.
+    pub(crate) fn admitted_frame_start_ms(
+        &self,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<u16>,
+    ) -> u64 {
+        let Some((timer, start)) =
+            pacing_timer(game_speed, network_fps).zip(self.last_frame_start_ms)
+        else {
+            return now_ms;
         };
-        self.last_frame_start_bucket = Some(now_bucket);
-        self.next_admit_bucket = Some(match self.next_admit_bucket {
-            // One admission consumes exactly one window, so the debt left by a
-            // slow present is paid off by later passes instead of being folded
-            // into a single anchor jump.
-            Some(next) if now_bucket.wrapping_sub(next) as i32 >= 0 => next.wrapping_add(required),
-            _ => now_bucket.wrapping_add(required),
-        });
+        let late = i64::from(timer.elapsed(now_ms, start)) - i64::from(timer.length(start));
+        if !(0..i64::from(timer.cadence_window())).contains(&late) {
+            return now_ms;
+        }
+        // Only the low 32-bit millisecond word is recorded, as natively.
+        let due = timer.due_ms(start);
+        now_ms.wrapping_sub(u64::from((now_ms as u32).wrapping_sub(due)))
+    }
+
+    pub(crate) fn record_admitted_frame(&mut self, frame_start_ms: u64) {
+        self.last_frame_start_ms = Some(frame_start_ms as u32);
     }
 
     /// Forget the prior pacing window so the next unpaused frame runs now.
     pub(crate) fn reset_for_immediate_frame(&mut self) {
-        self.last_frame_start_bucket = None;
         self.last_frame_start_ms = None;
-        self.next_admit_bucket = None;
     }
 
     /// Suppress another automatic frame until one full pacing window passes.
     ///
     /// This is for explicit single-step/capture work. Normal match entry and
     /// modal resume use `reset_for_immediate_frame`.
-    pub(crate) fn reanchor(&mut self, now_ms: u64, game_speed: u8) {
+    pub(crate) fn reanchor(&mut self, now_ms: u64) {
         self.last_frame_start_ms = Some(now_ms as u32);
-        let now_bucket = frame_bucket(now_ms);
-        let required = self.window_buckets(game_speed).unwrap_or(1);
-        self.last_frame_start_bucket = Some(now_bucket);
-        self.next_admit_bucket = Some(now_bucket.wrapping_add(required));
+    }
+
+    /// How long from `now_ms` until [`Self::should_admit`] admits the next
+    /// frame, zero once it is due, so the frame loop can wake for it instead
+    /// of finding it late on its next [`SERVICE_WAKE`]. `None` when no timer
+    /// paces the match (GameSpeed 0 never waits) or no frame has run yet.
+    pub(crate) fn until_next_frame(
+        &self,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<u16>,
+    ) -> Option<Duration> {
+        let (timer, start) = pacing_timer(game_speed, network_fps).zip(self.last_frame_start_ms)?;
+        // Signed: the millisecond word wraps, and a due frame reads negative.
+        let left = timer.due_ms(start).wrapping_sub(now_ms as u32) as i32;
+        Some(Duration::from_millis(left.max(0) as u64))
     }
 
     #[cfg(test)]
     fn next_deadline_ms(&self, game_speed: u8) -> Option<u64> {
-        if self.window_buckets(game_speed).is_none() {
-            return None;
-        }
-        let next_bucket = self.next_admit_bucket?;
-        Some(u64::from(next_bucket) * FRAME_BUCKET_MS)
+        let timer = pacing_timer(game_speed, None)?;
+        Some(u64::from(timer.due_ms(self.last_frame_start_ms?)))
     }
+}
+
+/// The timer Main_Tick arms for the next frame: network FPS arms
+/// milliseconds (`0x0055D55E`), offline GameSpeed arms 16 ms buckets
+/// (`0x0055D7BC`). GameSpeed 0 never waits.
+#[derive(Debug, Clone, Copy)]
+enum PacingTimer {
+    Buckets(u32),
+    Milliseconds(u32),
+    /// VERA's extra preset uses alternating 11/12 ms deadlines. A fixed
+    /// 11 ms interval would run at 90.9 ticks/s instead of the requested 90.
+    NinetyHz,
+}
+
+impl PacingTimer {
+    /// Signed wrapping time since `start` in the timer's unit, as
+    /// Main__ThrottleFrame subtracts it (`0x0055E1DB`, `0x0055E2C8`).
+    fn elapsed(self, now_ms: u64, start: u32) -> i32 {
+        if matches!(self, Self::Buckets(_)) {
+            frame_bucket(now_ms).wrapping_sub(start >> FRAME_BUCKET_SHIFT) as i32
+        } else {
+            (now_ms as u32).wrapping_sub(start) as i32
+        }
+    }
+
+    fn length(self, start: u32) -> u32 {
+        match self {
+            Self::Buckets(length) | Self::Milliseconds(length) => length,
+            Self::NinetyHz => {
+                let phase = u64::from(start) * 90 % 1000;
+                (1000 - phase).div_ceil(90) as u32
+            }
+        }
+    }
+
+    fn due_ms(self, start: u32) -> u32 {
+        if matches!(self, Self::Buckets(_)) {
+            ((start >> FRAME_BUCKET_SHIFT).wrapping_add(self.length(start))) << FRAME_BUCKET_SHIFT
+        } else {
+            start.wrapping_add(self.length(start))
+        }
+    }
+
+    /// Lateness, in the timer's unit, that still keeps the due time.
+    fn cadence_window(self) -> u32 {
+        let slack = if matches!(self, Self::Buckets(_)) {
+            CADENCE_SLACK_BUCKETS
+        } else {
+            CADENCE_SLACK_BUCKETS << FRAME_BUCKET_SHIFT
+        };
+        self.length(0).max(slack)
+    }
+
+    fn length_ms(self) -> f32 {
+        match self {
+            Self::Buckets(length) => (length << FRAME_BUCKET_SHIFT) as f32,
+            Self::Milliseconds(length) => length as f32,
+            Self::NinetyHz => 1000.0 / 90.0,
+        }
+    }
+}
+
+fn pacing_timer(game_speed: u8, network_fps: Option<u16>) -> Option<PacingTimer> {
+    if let Some(fps) = network_fps {
+        return Some(if fps == 90 {
+            PacingTimer::NinetyHz
+        } else {
+            PacingTimer::Milliseconds(network_interval_ms(fps))
+        });
+    }
+    (game_speed != 0).then(|| {
+        if game_speed == crate::sim::game_options::GAME_SPEED_90_TPS {
+            PacingTimer::NinetyHz
+        } else {
+            PacingTimer::Buckets(u32::from(
+                game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED),
+            ))
+        }
+    })
 }
 
 fn network_interval_ms(frames_per_second: u16) -> u32 {
@@ -390,64 +1156,537 @@ pub(crate) fn wall_clock_bucket() -> u32 {
     frame_bucket(wall_clock_ms())
 }
 
-#[cfg(test)]
-#[path = "frame_pacer_movement_tests.rs"]
-mod movement_tests;
-
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
+
+    fn push_receipt(at: Instant, frame: u32) -> SequencedTiming {
+        SequencedTiming {
+            frame,
+            received_at: at,
+            frames_per_second: 45,
+            clock_epoch: 0,
+            turn_frames: crate::net::live_commands::turn_frames(45),
+        }
+    }
+
+    #[cfg(feature = "dev-overlays")]
+    #[test]
+    fn debug_speed_steps_within_1x_to_10x_and_resets_for_a_new_world() {
+        let mut pacer = LocalFramePacer::new();
+        assert_eq!(pacer.change_debug_speed(false), 1);
+        for _ in 0..12 {
+            pacer.change_debug_speed(true);
+        }
+        assert_eq!(pacer.debug_speed(), 10);
+        pacer.reset_for_new_world();
+        assert_eq!(pacer.debug_speed(), 1);
+    }
+
+    #[test]
+    fn confirmed_resume_reanchors_once_without_pause_debt_or_losing_jitter_reserve() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        let late = push_receipt(start + tick + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        let resumed_at = start + Duration::from_secs(30);
+        let resumed = SequencedTiming {
+            clock_epoch: 1,
+            ..push_receipt(resumed_at, 2)
+        };
+        // A frame, the reserve and the 45 Hz turn's two more frames.
+        let due = resumed_at + tick * 3 + Duration::from_millis(15);
+        assert!(!pacer.online_frame_due(resumed_at, 3, 3, resumed, false));
+        for _ in 0..2 {
+            assert_eq!(
+                pacer.online_frame_decision(resumed_at, 3, 3, resumed, false, false),
+                OnlineFrameDecision::HoldUntil(due)
+            );
+        }
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        assert_eq!(
+            pacer.online_frame_decision(due, 3, 3, resumed, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, resumed_at);
+    }
+
+    #[test]
+    fn early_receipt_moves_a_late_origin_and_repeated_queries_are_idempotent() {
+        let start = Instant::now();
+        // Playout runs the 45 Hz turn's two more frames behind receipt.
+        let turn = Duration::from_nanos(2 * 1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        let delayed = push_receipt(start + Duration::from_millis(15), 1);
+        assert_eq!(
+            pacer.online_frame_decision(delayed.received_at, 1, 1, delayed, false, false),
+            OnlineFrameDecision::HoldUntil(delayed.received_at + turn)
+        );
+        // Frame 2 arrives 15ms before the delayed anchor's schedule. Holding it
+        // to that schedule would delay every later frame without any reserve.
+        let on_time = push_receipt(start + Duration::from_nanos(1_000_000_000 / 45), 2);
+        for _ in 0..2 {
+            assert_eq!(
+                pacer.online_frame_decision(on_time.received_at, 2, 2, on_time, false, false),
+                OnlineFrameDecision::HoldUntil(on_time.received_at + turn)
+            );
+        }
+        assert_eq!(
+            pacer.online.as_ref().unwrap().origin_at,
+            on_time.received_at
+        );
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+        assert_eq!(pacer.online_pacing_status().unwrap().underruns, 0);
+        assert_eq!(
+            pacer.online.as_ref().unwrap().deadline(1_001),
+            on_time.received_at + Duration::from_nanos(999 * 1_000_000_000 / 45) + turn
+        );
+        let duplicate = push_receipt(on_time.received_at + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(duplicate.received_at, 2, 2, duplicate, false, false);
+        assert_eq!(
+            pacer.online.as_ref().unwrap().origin_at,
+            on_time.received_at
+        );
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+    }
+
+    #[test]
+    fn pushed_jitter_and_underruns_learn_once_with_bounded_reserve_and_slow_decay() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        let late = push_receipt(start + tick + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        assert_eq!(
+            pacer.online.as_ref().unwrap().origin_at,
+            start,
+            "ordinary jitter must not move the origin"
+        );
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        let burst = push_receipt(start + tick * 2 + Duration::from_millis(100), 3);
+        pacer.online_frame_decision(burst.received_at, 3, 3, burst, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 20_000);
+
+        pacer.reset_for_new_world();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        let steady = push_receipt(start + Duration::from_nanos(93 * 1_000_000_000 / 45), 94);
+        pacer.online_frame_decision(steady.received_at, 94, 94, steady, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 13_000);
+        let due = pacer.online.as_ref().unwrap().deadline(95);
+        assert_eq!(
+            pacer.online_frame_decision(due, 95, 94, steady, false, false),
+            OnlineFrameDecision::WaitingForCanonical
+        );
+        pacer.online_frame_decision(due + Duration::from_millis(2), 95, 94, steady, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().underruns, 1);
+        let arrived = push_receipt(due + Duration::from_millis(30), 95);
+        pacer.online_frame_decision(arrived.received_at, 95, 95, arrived, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 20_000);
+    }
+
+    /// The match report times each frame wait from the frame's deadline to
+    /// its socket receipt.
+    #[test]
+    fn underrun_waits_are_timed_from_the_deadline_to_the_frame_receipt() {
+        let start = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let first = push_receipt(start, 1);
+        pacer.online_frame_decision(start, 1, 1, first, false, false);
+        // Frame 2 arrives 30 ms late; asking again while it is missing
+        // starts no second wait.
+        let due = pacer.online.as_ref().unwrap().deadline(2);
+        for now in [due, due + Duration::from_millis(2)] {
+            assert_eq!(
+                pacer.online_frame_decision(now, 2, 1, first, false, false),
+                OnlineFrameDecision::WaitingForCanonical
+            );
+        }
+        let second = push_receipt(due + Duration::from_millis(30), 2);
+        pacer.online_frame_decision(second.received_at, 2, 2, second, false, false);
+        // Frame 3 is 5 ms late.
+        let due = pacer.online.as_ref().unwrap().deadline(3);
+        pacer.online_frame_decision(due, 3, 2, second, false, false);
+        let third = push_receipt(due + Duration::from_millis(5), 3);
+        pacer.online_frame_decision(third.received_at, 3, 3, third, false, false);
+        // Frame 4's wait ends in a recovery: counted, not timed.
+        let due = pacer.online.as_ref().unwrap().deadline(4);
+        pacer.online_frame_decision(due, 4, 3, third, false, false);
+        let fourth = push_receipt(due + Duration::from_millis(500), 4);
+        pacer.online_frame_decision(fourth.received_at, 4, 4, fourth, false, true);
+        let status = pacer.online_pacing_status().unwrap();
+        assert_eq!(status.underruns, 3);
+        assert_eq!(status.underrun_wait_micros, 35_000);
+        assert_eq!(status.max_underrun_wait_micros, 30_000);
+    }
+
+    #[test]
+    fn pushed_reserve_decays_across_render_paced_catch_up_bursts() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        let late = push_receipt(start + tick + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        // A 15Hz renderer services three on-time frames per pass, so every
+        // pass starts a short catch-up. Six seconds must still decay.
+        let mut next = 3;
+        for pass in 1..=90 {
+            let frontier = 2 + pass * 3;
+            let receipt = push_receipt(start + tick * (frontier - 1), frontier);
+            let now = receipt.received_at + Duration::from_millis(1);
+            while next <= frontier
+                && pacer
+                    .online_frame_decision(now, next, frontier, receipt, false, false)
+                    .admits()
+            {
+                next += 1;
+            }
+        }
+        assert!(next > 260, "the passes kept up");
+        assert!(pacer.online_pacing_status().unwrap().reserve_micros <= 10_000);
+    }
+
+    #[test]
+    fn pushed_recovery_preserves_canonical_gaps_and_transaction_resume_then_resets() {
+        let start = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let first = push_receipt(start, 1);
+        pacer.online_frame_decision(start, 1, 1, first, false, false);
+        let bulk = push_receipt(start + Duration::from_nanos(19 * 1_000_000_000 / 45), 20);
+        for next in 2..20 {
+            assert_eq!(
+                pacer.online_frame_decision(bulk.received_at, next, 20, bulk, false, true),
+                OnlineFrameDecision::CatchUp
+            );
+        }
+        // Catch-up admits frame 19 before its deadline; only frames past
+        // their deadlines hold the draw.
+        assert!(pacer.online_frame_due(bulk.received_at, 18, 20, bulk, true));
+        assert!(!pacer.online_frame_due(bulk.received_at, 19, 20, bulk, true));
+        let delayed_service = bulk.received_at + Duration::from_millis(80);
+        assert_eq!(
+            pacer.online_frame_decision(delayed_service, 20, 20, bulk, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert!(!pacer.online_pacing_status().unwrap().catching_up);
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, bulk.received_at);
+        assert_eq!(
+            pacer.online_frame_decision(delayed_service, 20, 20, bulk, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, bulk.received_at);
+        assert_eq!(
+            pacer.online_frame_decision(bulk.received_at, 21, 20, bulk, true, false),
+            OnlineFrameDecision::WaitingForCanonical
+        );
+        assert_eq!(
+            pacer.online_frame_decision(bulk.received_at, 21, 21, bulk, true, false),
+            OnlineFrameDecision::Run,
+            "a retained transaction must ignore a future playout deadline"
+        );
+        assert_eq!(
+            pacer.online_frame_decision(bulk.received_at, 0, 0, bulk, false, false),
+            OnlineFrameDecision::Run
+        );
+        pacer.reset_for_new_world();
+        assert!(pacer.online_pacing_status().is_none());
+        let restart = push_receipt(bulk.received_at + Duration::from_secs(10), 1);
+        // A fresh schedule plays a turn's span behind its first receipt.
+        assert_eq!(
+            pacer.online_frame_decision(restart.received_at, 1, 1, restart, false, false),
+            OnlineFrameDecision::HoldUntil(
+                restart.received_at + Duration::from_nanos(2 * 1_000_000_000 / 45)
+            )
+        );
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+    }
+
+    /// At 45 Hz the relay sends three frames a turn, together when the last
+    /// is due: playout spreads them a frame apart, a turn's span behind, and
+    /// only frames past a turn and one more are a backlog.
+    #[test]
+    fn a_three_frame_turn_plays_evenly_and_catches_up_only_past_the_turn() {
+        use OnlineFrameDecision::*;
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        let turn = push_receipt(start, 3);
+        let mut decisions = Vec::new();
+        for (now, next) in [(start, 1), (start, 2), (start + tick, 2), (start + tick, 3)] {
+            decisions.push(pacer.online_frame_decision(now, next, 3, turn, false, false));
+        }
+        assert_eq!(
+            decisions,
+            [
+                Run,
+                HoldUntil(start + tick),
+                Run,
+                HoldUntil(start + tick * 2)
+            ]
+        );
+        let mut pacer = LocalFramePacer::new();
+        let ahead = push_receipt(start, 4);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 4, ahead, false, false),
+            Run
+        );
+        let mut pacer = LocalFramePacer::new();
+        let backlog = push_receipt(start, 5);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 5, backlog, false, false),
+            CatchUp
+        );
+    }
+
+    #[test]
+    fn online_render_continuation_is_bounded_and_resets_only_on_present() {
+        let now = crate::util::time::Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        assert!(
+            !pacer.defer_online_render(now, 8, true, Some((10, 100))),
+            "first surface must present"
+        );
+        pacer.record_presented(now, Some(now), Duration::ZERO);
+        assert!(pacer.defer_online_render(now, 32, true, Some((42, 400))));
+        assert!(pacer.render_deferred());
+        pacer.clear_render_continuation();
+        assert!(
+            !pacer.render_deferred(),
+            "hidden/ineligible windows cancel the queued continuation"
+        );
+        assert_eq!(pacer.total_render_deferrals(), 1);
+        assert!(pacer.defer_online_render(now, 32, true, Some((74, 400))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((106, 400))));
+        assert!(
+            !pacer.defer_online_render(now, 32, true, Some((138, 400))),
+            "128 ticks force a present, below the 256-frame checksum history"
+        );
+        pacer.clear_render_continuation();
+        assert!(
+            !pacer.defer_online_render(now, 1, true, Some((139, 400))),
+            "a failed acquisition cannot reset the budget"
+        );
+        pacer.record_presented(now, Some(now), Duration::ZERO);
+        assert!(pacer.defer_online_render(now, 1, true, Some((44, 100))));
+        assert!(!pacer.defer_online_render(
+            now + std::time::Duration::from_millis(50),
+            1,
+            true,
+            Some((45, 100))
+        ));
+        pacer.record_presented(now, None, Duration::ZERO);
+        assert!(
+            !pacer.defer_online_render(now, 1, true, Some((45, 100))),
+            "a loading surface does not replace the first battlefield present"
+        );
+        pacer.record_presented(now, Some(now), Duration::ZERO);
+        for _ in 0..8 {
+            assert!(
+                pacer.defer_online_render(now, 1, true, Some((45, 100))),
+                "short chunks alone never force a present"
+            );
+        }
+    }
+
+    /// The draw waits for every frame the playout schedule has made due, not
+    /// only for a backlog: with one 45 Hz turn received on time, its first
+    /// frame is due at once and its second a frame later.
+    #[test]
+    fn an_on_time_frame_is_due_without_a_backlog() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let pacer = LocalFramePacer::new();
+        let turn = push_receipt(start, 3);
+        assert!(pacer.online_frame_due(start, 1, 3, turn, false));
+        assert!(!pacer.online_frame_due(start, 2, 3, turn, false));
+        assert!(pacer.online_frame_due(start + tick, 2, 3, turn, false));
+    }
+
+    /// The picture may stand four recent draw times, at least 50 ms; each
+    /// draw moves the smoothed time a quarter of the way.
+    #[test]
+    fn online_render_standing_is_four_recent_draw_times_at_least_50_ms() {
+        let ms = Duration::from_millis;
+        let mut pacer = LocalFramePacer::new();
+        let mut now = Instant::now();
+        // Draws of 5 ms, then 85 ms twice: smoothed 5, 25 and 40 ms. The
+        // wait for the screen counts, as it is part of the time to present.
+        for (draw, standing) in [(5, 50), (85, 100), (85, 160)] {
+            let presented = now + ms(draw);
+            pacer.record_presented(presented, Some(now), ms(draw));
+            let before = presented + ms(standing - 1);
+            assert!(pacer.defer_online_render(before, 1, true, Some((10, 20))));
+            let at = presented + ms(standing);
+            assert!(!pacer.defer_online_render(at, 1, true, Some((10, 20))));
+            now = at;
+        }
+    }
+
+    /// With VSync the main thread waits for a free picture inside the draw,
+    /// for most of a refresh once two are queued. That wait is not the
+    /// draw's work, which a scrolling view weighs against half a refresh.
+    #[test]
+    fn the_wait_for_the_screen_is_not_draw_work() {
+        let ms = Duration::from_millis;
+        let mut pacer = LocalFramePacer::new();
+        let started = Instant::now();
+        pacer.record_presented(started + ms(7), Some(started), ms(6));
+        assert_eq!(pacer.draw_work(), ms(1));
+        assert_eq!(pacer.draw_cost, Some(ms(7)));
+    }
+
+    #[test]
+    fn online_render_continuation_requires_completed_work_and_next_canonical_frame() {
+        let now = crate::util::time::Instant::now();
+        for (completed, last_completed, next) in [
+            (0, true, Some((10, 20))),
+            (1, false, Some((10, 20))),
+            (1, true, None), // offline, focus/modal/terminal, or exact-step exclusion
+            (1, true, Some((0, 20))),
+            (1, true, Some((21, 20))),
+        ] {
+            let mut pacer = LocalFramePacer::new();
+            pacer.record_presented(now, Some(now), Duration::ZERO);
+            assert!(!pacer.defer_online_render(now, completed, last_completed, next));
+        }
+    }
+
+    #[test]
+    fn canonical_frontier_admits_buffered_ticks_without_a_local_timer_and_bounds_work() {
+        assert!(
+            LocalFramePacer::admits_canonical_frame(0, 0),
+            "startup keeps polling"
+        );
+        assert!(LocalFramePacer::admits_canonical_frame(17, 19));
+        assert!(LocalFramePacer::admits_canonical_frame(19, 19));
+        assert!(
+            !LocalFramePacer::admits_canonical_frame(20, 19),
+            "no missing frame is skipped"
+        );
+        assert!(LocalFramePacer::permits_catch_up(
+            7,
+            std::time::Duration::from_millis(7),
+            false
+        ));
+        assert!(!LocalFramePacer::permits_catch_up(
+            8,
+            std::time::Duration::ZERO,
+            false
+        ));
+        assert!(!LocalFramePacer::permits_catch_up(
+            1,
+            std::time::Duration::from_millis(8),
+            false
+        ));
+    }
+
+    /// VERA watching: a catching-up watcher's service goes on past 8 frames
+    /// and 8 ms, to 50 ms, so a big battle's minutes are not played at one
+    /// frame a picture (docs/Networking.md "Watching").
+    #[test]
+    fn a_catching_up_watcher_runs_long_passes() {
+        let mut pacer = LocalFramePacer::new();
+        let started = Instant::now();
+        let later = started + std::time::Duration::from_millis(20);
+        pacer.begin_service_pass(started, 8, true);
+        assert!(pacer.catch_up_continues(later));
+        assert!(!pacer.catch_up_continues(started + std::time::Duration::from_millis(50)));
+        pacer.begin_service_pass(started, 8, false);
+        assert!(!pacer.catch_up_continues(started));
+    }
 
     #[test]
     fn network_fps_uses_millisecond_timer_and_resets_for_rematch() {
         let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(17, 1);
-        assert!(!pacer.should_admit(38, 0, Some((45, 0)), false));
-        assert!(pacer.should_admit(39, 6, Some((45, 0)), false));
-        assert_eq!(pacer.budget_ms(0, Some((45, 0))), Some(22.0));
-        assert!(!pacer.should_admit(68, 0, Some((45, 30)), false));
-        assert!(pacer.should_admit(69, 0, Some((45, 30)), false));
-        assert!(!pacer.should_admit(49, 0, Some((0, 0)), false));
-        assert!(pacer.should_admit(50, 0, Some((0, 0)), false));
-        pacer.record_admitted_frame(u64::from(u32::MAX - 7), 1);
-        assert!(pacer.should_admit(8, 6, Some((60, 0)), false));
+        pacer.record_admitted_frame(17);
+        assert!(!pacer.should_admit(38, 0, Some(45), false));
+        assert!(pacer.should_admit(39, 6, Some(45), false));
+        assert_eq!(pacer.budget_ms(0, Some(45)), Some(22.0));
+        assert!(!pacer.should_admit(49, 0, Some(0), false));
+        assert!(pacer.should_admit(50, 0, Some(0), false));
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert!(pacer.should_admit(8, 6, Some(60), false));
         pacer.reset_for_immediate_frame();
-        assert!(pacer.should_admit(8, 6, Some((30, 0)), false));
+        assert!(pacer.should_admit(8, 6, Some(30), false));
     }
 
-    #[test]
-    fn fastest_on_a_limited_display_has_the_same_logic_cadence_as_speed_one() {
-        let mut limited = LocalFramePacer::with_fastest_pacing(true);
-        let mut desktop = LocalFramePacer::with_fastest_pacing(false);
-        assert_eq!(limited.budget_ms(0, None), Some(16.0));
-        assert_eq!(desktop.budget_ms(0, None), None);
-        assert_eq!(limited.frame_tick_ms(0), limited.frame_tick_ms(1));
-        limited.record_admitted_frame(0, 0);
-        desktop.record_admitted_frame(0, 0);
-        assert!(!limited.should_admit(0, 0, None, false));
-        assert!(desktop.should_admit(0, 0, None, false));
-        assert!(limited.should_admit(40, 0, None, false));
-        limited.record_admitted_frame(40, 0);
-        assert!(
-            limited.should_admit(40, 0, None, false),
-            "a second Logic frame is owed"
-        );
-        limited.record_admitted_frame(40, 0);
-        assert!(!limited.should_admit(40, 0, None, false));
-        assert!(!limited.should_admit(100, 0, None, true));
-        limited.reset_for_immediate_frame();
-        assert!(limited.should_admit(100, 0, None, false));
-    }
-
-    #[test]
-    fn render_interpolation_phase_uses_pacing_bucket_and_wraps_with_uptime() {
+    /// Frames admitted over `duration_ms` by one pass per display refresh,
+    /// each running its due frames as `service_match_runtime` does.
+    fn frames_at_refresh(
+        hz: u64,
+        duration_ms: u64,
+        game_speed: u8,
+        network_fps: Option<u16>,
+    ) -> u32 {
         let mut pacer = LocalFramePacer::new();
-        assert_eq!(pacer.interpolation_elapsed_ms(0), None);
-        pacer.record_admitted_frame(31, 1);
-        assert_eq!(pacer.interpolation_elapsed_ms(31), Some(15));
-        assert_eq!(pacer.interpolation_elapsed_ms(47), Some(31));
-        pacer.record_admitted_frame(u64::from(u32::MAX - 7), 1);
-        assert_eq!(pacer.interpolation_elapsed_ms(8), Some(24));
+        let mut frames = 0;
+        for pass in 0..=duration_ms * hz / 1000 {
+            let now = 1_000 + pass * 1000 / hz;
+            let mut attempts = 0;
+            while pacer.should_admit(now, game_speed, network_fps, false)
+                && LocalFramePacer::permits_catch_up(attempts, std::time::Duration::ZERO, false)
+            {
+                let start = pacer.admitted_frame_start_ms(now, game_speed, network_fps);
+                pacer.record_admitted_frame(start);
+                frames += 1;
+                attempts += 1;
+            }
+        }
+        frames
+    }
+
+    #[test]
+    fn a_60_hz_refresh_keeps_the_native_timer_cadence() {
+        // 45 FPS arms 22 ms (55D55E): frames start at 1000 + 22k up to 4000.
+        assert_eq!(frames_at_refresh(60, 3_000, 0, Some(45)), 137);
+        // GameSpeed 2 waits two buckets (55D7BC): buckets 62, 64, ..., 250.
+        assert_eq!(frames_at_refresh(60, 3_000, 2, None), 95);
+    }
+
+    #[test]
+    fn a_60_hz_refresh_runs_intervals_shorter_than_a_refresh() {
+        // GameSpeed 1 waits one bucket: buckets 62, 63, ..., 250.
+        assert_eq!(frames_at_refresh(60, 3_000, 1, None), 189);
+        // 60 FPS arms 16 ms: frames start at 1000 + 16k up to 4000.
+        assert_eq!(frames_at_refresh(60, 3_000, 0, Some(60)), 188);
+    }
+
+    #[test]
+    fn ninety_ticks_keeps_its_rate_offline_and_on_lan_at_sixty_hz_refresh() {
+        let speed = crate::sim::game_options::GAME_SPEED_90_TPS;
+        assert_eq!(frames_at_refresh(60, 3_000, speed, None), 271);
+        assert_eq!(frames_at_refresh(60, 3_000, speed, Some(90)), 271);
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(1_000);
+        assert!(!pacer.should_admit(1_011, speed, None, false));
+        assert!(pacer.should_admit(1_012, speed, None, false));
+        assert_eq!(pacer.admitted_frame_start_ms(1_017, speed, None), 1_012);
+        assert!(!pacer.should_admit(1_012, speed, None, true));
+        pacer.record_admitted_frame(1_012);
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert!(pacer.should_admit(8, speed, None, false));
+    }
+
+    #[test]
+    fn a_frame_late_by_a_whole_interval_restarts_from_now() {
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(1_000);
+        assert_eq!(pacer.admitted_frame_start_ms(1_030, 0, Some(45)), 1_022);
+        assert_eq!(pacer.admitted_frame_start_ms(1_054, 0, Some(45)), 1_054);
+        // A one-bucket interval still forgives one 60 Hz refresh gap.
+        assert_eq!(pacer.admitted_frame_start_ms(1_030, 1, None), 1_008);
+        assert_eq!(pacer.admitted_frame_start_ms(1_040, 1, None), 1_040);
+        assert_eq!(pacer.admitted_frame_start_ms(1_050, 3, None), 1_040);
+        assert_eq!(pacer.admitted_frame_start_ms(1_090, 3, None), 1_090);
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert_eq!(pacer.admitted_frame_start_ms(20, 0, Some(45)) as u32, 14);
     }
     #[test]
     fn wall_clock_process_probe() {
@@ -491,10 +1730,59 @@ mod tests {
     }
 
     #[test]
+    fn only_a_services_last_frame_has_no_pass_behind_it() {
+        let started = Instant::now();
+        let at = |millis| started + Duration::from_millis(millis);
+        // GameSpeed 0 never waits, so a frame is always due: the budget
+        // alone ends the service, after eight passes or eight milliseconds.
+        let mut pacer = LocalFramePacer::new();
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+        pacer.begin_service_pass(started, 0, false);
+        assert!(pacer.another_pass_follows(started, 0, 0, None));
+        pacer.begin_service_pass(started, 7, false);
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+        // A frame takes the smaller of its last inline and lent times.
+        pacer.begin_service_pass(started, 0, false);
+        pacer.record_frame_cost(Duration::from_millis(9), true);
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+        pacer.record_frame_cost(Duration::from_millis(5), false);
+        assert_eq!(pacer.expected_frame_cost(), Duration::from_millis(5));
+        assert!(pacer.another_pass_follows(at(2), 0, 0, None));
+        assert!(!pacer.another_pass_follows(at(3), 0, 0, None));
+        pacer.end_service();
+        assert!(!pacer.another_pass_follows(started, 0, 0, None));
+
+        // A timed speed's frame admitted on time has nothing due behind it.
+        let mut paced = LocalFramePacer::new();
+        paced.begin_service_pass(started, 0, false);
+        paced.record_admitted_frame(32);
+        assert!(!paced.another_pass_follows(started, 32, 1, None));
+        assert!(paced.another_pass_follows(started, 32 + FRAME_BUCKET_MS, 1, None));
+    }
+
+    /// Online, the relay's frontier admits the next frame, not the local
+    /// timer: a frame the relay has sealed is caught up in another pass, and
+    /// one beyond its frontier is not.
+    #[test]
+    fn an_online_frame_the_relay_sealed_has_another_pass_behind_it() {
+        let started = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        pacer.begin_service_pass(started, 0, false);
+        let receipt = push_receipt(started, 40);
+        assert!(pacer.another_online_pass_follows(started, 11, 40, Some((receipt, false))));
+        assert!(!pacer.another_online_pass_follows(started, 41, 40, Some((receipt, false))));
+        // Without the online clock (a pause), the frontier alone decides.
+        assert!(pacer.another_online_pass_follows(started, 11, 40, None));
+        assert!(!pacer.another_online_pass_follows(started, 41, 40, None));
+        pacer.begin_service_pass(started, 7, false);
+        assert!(!pacer.another_online_pass_follows(started, 11, 40, Some((receipt, false))));
+    }
+
+    #[test]
     fn timed_speeds_require_the_exact_bucket_distance() {
         for speed in MIN_TIMED_GAME_SPEED..=MAX_TIMED_GAME_SPEED {
             let mut pacer = LocalFramePacer::new();
-            pacer.record_admitted_frame(32, speed);
+            pacer.record_admitted_frame(32);
             let deadline = 32 + u64::from(speed) * FRAME_BUCKET_MS;
             assert!(!pacer.should_admit(deadline - 1, speed, None, false));
             assert!(pacer.should_admit(deadline, speed, None, false));
@@ -502,111 +1790,33 @@ mod tests {
         }
     }
 
+    /// The frame loop wakes for the next frame instead of finding it late on
+    /// a service wake: the time left runs out in the bucket where
+    /// `should_admit` first admits the frame.
     #[test]
-    fn frame_tick_matches_the_pacing_window_at_every_speed() {
-        let pacer = LocalFramePacer::with_fastest_pacing(false);
-        assert_eq!(pacer.frame_tick_ms(0), crate::app::types::SIM_TICK_MS);
-        for (speed, expected_ms) in (1..=6).zip([16, 32, 48, 64, 80, 96]) {
-            assert_eq!(pacer.frame_tick_ms(speed), expected_ms);
-            assert_eq!(
-                Some(pacer.frame_tick_ms(speed) as f32),
-                pacer.budget_ms(speed, None)
-            );
-        }
+    fn the_time_to_the_next_frame_ends_where_it_is_admitted() {
+        let mut pacer = LocalFramePacer::new();
+        // No frame has run yet: nothing to wait for.
+        assert_eq!(pacer.until_next_frame(40, 2, None), None);
+        pacer.record_admitted_frame(32);
+        // GameSpeed 2 is two 16 ms buckets: due at 64.
+        let left = |now_ms| pacer.until_next_frame(now_ms, 2, None);
+        assert_eq!(left(40), Some(Duration::from_millis(24)));
+        assert!(!pacer.should_admit(63, 2, None, false));
+        assert_eq!(left(63), Some(Duration::from_millis(1)));
+        assert!(pacer.should_admit(64, 2, None, false));
+        assert_eq!(left(64), Some(Duration::ZERO));
+        assert_eq!(left(90), Some(Duration::ZERO));
+        // GameSpeed 0 never waits.
+        assert_eq!(pacer.until_next_frame(40, 0, None), None);
     }
 
     #[test]
     fn native_signed_bucket_subtraction_stalls_at_uptime_rollover() {
         let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(u64::from(u32::MAX - 7), 1);
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
 
         assert!(!pacer.should_admit(u64::from(u32::MAX) + 1, 1, None, false));
-    }
-
-    #[test]
-    fn a_slow_present_owes_frames_instead_of_stretching_game_time() {
-        // 30 Hz presents: every admission lands two buckets after the previous
-        // one, so the pacer must hand out the second frame rather than move
-        // the anchor forward by two windows at once.
-        let mut pacer = LocalFramePacer::new();
-        pacer.record_admitted_frame(0, 1);
-        assert!(pacer.should_admit(33, 1, None, false));
-        pacer.record_admitted_frame(33, 1);
-        assert!(
-            pacer.should_admit(33, 1, None, false),
-            "the window the present consumed is still owed"
-        );
-        pacer.record_admitted_frame(33, 1);
-        assert!(!pacer.should_admit(33, 1, None, false));
-        // One admission consumes exactly one window, so a long stall leaves a
-        // finite backlog instead of one huge jump.
-        pacer.record_admitted_frame(97, 1);
-        assert_eq!(pacer.next_deadline_ms(1), Some(64));
-    }
-
-    fn run_twenty_five_presents(pace_fastest: bool, game_speed: u8) -> (usize, u32) {
-        // Horizon can present at 25 Hz while the match must keep its 60 Hz
-        // Logic clock. Each present services its own admission and then drains
-        // up to four owed frames, as render_frame does after presenting.
-        let mut pacer = LocalFramePacer::with_fastest_pacing(pace_fastest);
-        let mut logic_frames = 0;
-        let mut represented_ms = 0;
-        for present in 0..25 {
-            let now_ms = present * 40;
-            if pacer.should_admit(now_ms, game_speed, None, false) {
-                pacer.record_admitted_frame(now_ms, game_speed);
-                logic_frames += 1;
-                represented_ms += pacer.frame_tick_ms(game_speed);
-            }
-            // catch_up_match_runtime leaves a desktop's untimed setting alone.
-            if !pace_fastest && game_speed == 0 {
-                continue;
-            }
-            for _ in 0..4 {
-                if !pacer.should_admit(now_ms, game_speed, None, false) {
-                    break;
-                }
-                pacer.record_admitted_frame(now_ms, game_speed);
-                logic_frames += 1;
-                represented_ms += pacer.frame_tick_ms(game_speed);
-            }
-        }
-        (logic_frames, represented_ms)
-    }
-
-    #[test]
-    fn twenty_five_hz_presents_still_run_full_logic_rate() {
-        // An untimed desktop setting follows its presents; on a 25 Hz port that
-        // is 25 Logic frames a second, which is the reported half-speed move.
-        assert_eq!(run_twenty_five_presents(false, 0).0, 25);
-        let (logic_frames, represented_ms) = run_twenty_five_presents(true, 0);
-        assert_eq!(
-            logic_frames, 61,
-            "paced fastest must run the 61 frames due from buckets 0..=60"
-        );
-        assert!(
-            represented_ms.abs_diff(1_000) <= 32,
-            "paced fastest must carry about one second, got {represented_ms} ms"
-        );
-    }
-
-    #[test]
-    fn twenty_five_hz_presents_represent_one_second_at_every_timed_speed() {
-        for speed in MIN_TIMED_GAME_SPEED..=MAX_TIMED_GAME_SPEED {
-            let mut pacer = LocalFramePacer::new();
-            let mut represented_ms = 0;
-            for present in 0..25 {
-                let now_ms = present * 40;
-                while pacer.should_admit(now_ms, speed, None, false) {
-                    pacer.record_admitted_frame(now_ms, speed);
-                    represented_ms += pacer.frame_tick_ms(speed);
-                }
-            }
-            assert!(
-                represented_ms.abs_diff(1_000) <= pacer.frame_tick_ms(speed) * 2,
-                "GameSpeed={speed} represented {represented_ms} ms in one second"
-            );
-        }
     }
 
     #[test]
@@ -618,6 +1828,63 @@ mod tests {
 
         clock.resume(1_070 << 4);
         assert_eq!(clock.stop(1_130 << 4), 2);
+        // A stopped clock (abort/outcome) still reports its accumulated time.
+        assert_eq!(clock.elapsed_seconds(5_000 << 4), 2);
+    }
+
+    #[test]
+    fn multiplayer_clock_preserves_native_pause_and_resume_intent() {
+        let mut clock = ScenarioElapsedClock::new();
+        clock.start(0);
+        clock.set_multiplayer_paused(true, 10 << 4);
+        clock.pause(20 << 4); // A native hold enters while the relay is paused.
+        clock.set_multiplayer_paused(false, 30 << 4);
+        assert_eq!(clock.elapsed_buckets(40 << 4), 10);
+        clock.set_multiplayer_paused(true, 40 << 4);
+        // A native hold ends during the shared pause. Audio remains paused,
+        // while this production owner must remember the elapsed resume.
+        crate::app::match_runtime::scenario_pause::resume_with_owners(
+            &mut clock,
+            None,
+            false,
+            true,
+            50 << 4,
+        );
+        assert_eq!(clock.elapsed_buckets(60 << 4), 10);
+        clock.set_multiplayer_paused(false, 70 << 4);
+        assert_eq!(clock.elapsed_buckets(80 << 4), 20);
+    }
+
+    #[test]
+    fn multiplayer_clock_save_restores_intent_without_releasing_the_hold() {
+        let mut clock = ScenarioElapsedClock::new();
+        clock.start(0);
+        clock.set_multiplayer_paused(true, 10 << 4);
+        let saved = clock.begin_save(20 << 4);
+        assert_eq!(saved.accumulated_buckets(), 10);
+        clock.finish_save(saved, 30 << 4);
+        assert_eq!(clock.elapsed_buckets(40 << 4), 10);
+        clock.set_multiplayer_paused(false, 50 << 4);
+        assert_eq!(clock.elapsed_buckets(60 << 4), 20);
+    }
+
+    #[test]
+    fn multiplayer_clock_terminal_stop_reset_and_load_drop_resume_intent() {
+        let mut clock = ScenarioElapsedClock::new();
+        clock.start(0);
+        clock.set_multiplayer_paused(true, 10 << 4);
+        assert_eq!(clock.stop_buckets(20 << 4), 10);
+        clock.set_multiplayer_paused(false, 30 << 4);
+        assert_eq!(clock.elapsed_buckets(40 << 4), 10);
+        clock.set_multiplayer_paused(true, 50 << 4);
+        clock.reset();
+        clock.set_multiplayer_paused(false, 60 << 4);
+        assert_eq!(clock.elapsed_buckets(70 << 4), 0);
+        clock.set_multiplayer_paused(true, 80 << 4);
+        clock.start(90 << 4);
+        assert_eq!(clock.elapsed_buckets(100 << 4), 10);
+        let loaded = ScenarioElapsedClock::from_saved_accumulator(77, 110 << 4);
+        assert_eq!(loaded.elapsed_buckets(120 << 4), 87);
     }
 
     #[test]
@@ -663,6 +1930,7 @@ mod tests {
             let mut clock = ScenarioElapsedClock {
                 start_bucket: input.elapsed_before[0],
                 accumulated_buckets: input.elapsed_before[2],
+                ..ScenarioElapsedClock::new()
             };
             let saved = clock.begin_save(input.milliseconds[0]);
             assert_eq!(clock.start_bucket, case.saved_elapsed[0], "{}", input.name);

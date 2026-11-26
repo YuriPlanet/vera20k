@@ -4,25 +4,26 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::rng::SimRng;
 
+const CONSTRUCTOR_RULES: &str = "[InfantryTypes]\n0=E1\n1=SLAV\n\n\
+     [VehicleTypes]\n0=MTNK\n1=CARRIER\n2=SMIN\n\n\
+     [AircraftTypes]\n0=ORCA\n1=HORN\n\n\
+     [BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n3=YAREFN\n4=ANYWHERE\n\n\
+     [E1]\nStrength=100\nSpeed=4\n\n\
+     [SLAV]\nStrength=125\nSpeed=4\nStorage=4\n\n\
+     [MTNK]\nStrength=300\nSpeed=6\n\n\
+     [CARRIER]\nStrength=800\nSpeed=4\nSpawns=HORN\nSpawnsNumber=3\nSpawnRegenRate=600\nSpawnReloadRate=25\n\n\
+     [SMIN]\nStrength=2000\nSpeed=3\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
+     [ORCA]\nStrength=200\nSpeed=8\n\n\
+     [HORN]\nStrength=75\nSpeed=14\nAmmo=1\n\n\
+     [BASE]\nStrength=500\nFoundation=2x2\n\n\
+     [UP1]\nStrength=100\nFoundation=1x1\n\n\
+     [UP2]\nStrength=100\nFoundation=1x1\n\n\
+     [YAREFN]\nStrength=2000\nFoundation=2x2\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
+     [ANYWHERE]\nStrength=1\nFoundation=1x1\nPlaceAnywhere=yes\n";
+
 fn constructor_rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=E1\n1=SLAV\n\n\
-         [VehicleTypes]\n0=MTNK\n1=CARRIER\n2=SMIN\n\n\
-         [AircraftTypes]\n0=ORCA\n1=HORN\n\n\
-         [BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n3=YAREFN\n\n\
-         [E1]\nStrength=100\nSpeed=4\n\n\
-         [SLAV]\nStrength=125\nSpeed=4\nStorage=4\n\n\
-         [MTNK]\nStrength=300\nSpeed=6\n\n\
-         [CARRIER]\nStrength=800\nSpeed=4\nSpawns=HORN\nSpawnsNumber=3\nSpawnRegenRate=600\nSpawnReloadRate=25\n\n\
-         [SMIN]\nStrength=2000\nSpeed=3\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
-         [ORCA]\nStrength=200\nSpeed=8\n\n\
-         [HORN]\nStrength=75\nSpeed=14\nAmmo=1\n\n\
-         [BASE]\nStrength=500\nFoundation=2x2\n\n\
-         [UP1]\nStrength=100\nFoundation=1x1\n\n\
-         [UP2]\nStrength=100\nFoundation=1x1\n\n\
-         [YAREFN]\nStrength=2000\nFoundation=2x2\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n",
-    ))
-    .expect("constructor fixture rules parse")
+    RuleSet::from_ini(&IniFile::from_str(CONSTRUCTOR_RULES))
+        .expect("constructor fixture rules parse")
 }
 
 /// Eight original51DFF0 floor/Place controls, including full Scenario buffers.
@@ -36,7 +37,7 @@ fn infantry_unlimbo_placement_matches_original_coordinate_and_rng_controls() {
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_class_before"].as_str().unwrap());
         let input = &row["input"];
         let raw_z = input["raw_z"].as_i64().unwrap() as i32;
@@ -147,7 +148,7 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
         selected_cell.slope_type = cell["level_slope"][1].as_u64().unwrap() as u8;
         sim.install_resolved_terrain_for_new_map(terrain);
         let fields = row["map_fields"].as_array().unwrap();
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
                 fields[0].as_i64().unwrap() as i32,
                 fields[1].as_i64().unwrap() as i32,
@@ -210,12 +211,11 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
                 CellListInsertion::AppendBuilding,
             );
         }
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
-        sim.scenario_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let xyz = &row["requested_xyz"];
         let mut requested = RevealPosition::new(
@@ -275,7 +275,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
     .unwrap();
     for row in corpus["rows"].as_array().unwrap() {
         let raw_z = row["input"]["raw_z"].as_i64().unwrap() as i32;
-        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture();
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture();
         let id = sim
             .construct_object_limbo_at_height(
                 "ENGINEER",
@@ -285,7 +285,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.clear_lifecycle_test_events_for_test();
@@ -304,9 +304,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
         let outcome = sim.try_reveal_entity_with_context(
             id,
             request,
-            UninitContext::with_rules(&rules)
-                .with_registry(Some(&registry))
-                .with_unlimbo_facing(Some(128)),
+            UninitContext::new(&rules).with_unlimbo_facing(Some(128)),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         let entity = sim.substrate.entities.get(id).unwrap();
@@ -342,7 +340,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.clear_lifecycle_test_events_for_test();
@@ -352,7 +350,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
             sim.try_reveal_entity_with_context(
                 failed,
                 refused,
-                UninitContext::with_rules(&rules).with_unlimbo_facing(Some(128))
+                UninitContext::new(&rules).with_unlimbo_facing(Some(128))
             ),
             RevealOutcome::Failed(_)
         ));
@@ -392,7 +390,8 @@ fn map_entity(type_id: &str, category: EntityCategory, cell: (u16, u16)) -> MapE
         recruitable_a: true,
         recruitable_b: true,
         group: -1,
-        structure_upgrades: [None, None, None],
+        follows: None,
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -454,7 +453,7 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
             line.push_str(token);
         }
         let ini = IniFile::from_str(&format!("[{section}]\n0={line}\n"));
-        let placements = crate::map::entities::parse_map_entities(&ini);
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
         assert_eq!(placements.len(), 1, "{id}: {token:?}");
         let native_percent = row["parsed_percent"]
             .as_i64()
@@ -495,15 +494,50 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
     assert_eq!(compared, 81, "native percent and atoi boundary controls");
 }
 
+/// `UnitClass::Read_INI` queues and commences a map line's mission after
+/// Unlimbo (`0x0074361B..0x0074363B`) for every Unit, miners included.
+/// SOV03's Chrono Miner (`Civie2,CMIN,...,Sleep,06B56D1C`) sleeps instead of
+/// keeping the Harvest its Unlimbo idle mode chose. An authored Harvest
+/// leaves the miner harvesting.
+#[test]
+fn a_map_placed_chrono_miner_takes_its_authored_mission() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let place = |mission: &str| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let ini = IniFile::from_str(&format!(
+            "[Units]\n0=Russians,CMIN,256,16,16,64,{mission},None\n"
+        ));
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
+        assert_eq!(sim.spawn_from_map(&placements, Some(rules)), 1);
+        let miner = sim.substrate.entities.values().next().unwrap();
+        assert!(miner.is_harvester());
+        let id = miner.stable_id();
+        (sim, id)
+    };
+    use crate::sim::mission::MissionType;
+    let current = |sim: &Simulation, id: u64| {
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
+        (mission.current().known(), mission.queued().known())
+    };
+
+    let (sim, miner) = place("Sleep");
+    assert_eq!(current(&sim, miner), (Some(MissionType::Sleep), None));
+
+    let (sim, miner) = place("Harvest");
+    assert_eq!(current(&sim, miner), (Some(MissionType::Harvest), None));
+}
+
 /// Radio65A750 and Building43BCBD..43BCD5 execute unchanged in the retained
 /// refinery packet. Both production construction routes must install those
 /// actual slots before any HELLO; the component prefix consumes no RNG.
 #[test]
 fn building_contact_constructor_matches_original_slots_before_hello() {
-    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/refinery_dock.json",
-    ))
-    .unwrap();
+    let native = crate::test_fixture::json("tools/spatial_oracle/refinery_dock.json");
     let rows = native["building_contact_constructor_controls"]
         .as_array()
         .unwrap();
@@ -517,7 +551,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
         .unwrap();
         let expected = &row["after"]["contacts"];
         let check = |entity: &GameEntity| {
-            let contacts = &entity.radio_contacts;
+            let contacts = &entity.seldom.radio_contacts;
             assert_eq!(
                 serde_json::json!(contacts.capacity()),
                 expected["count"],
@@ -582,7 +616,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         check(sim.substrate.entities.get(held).unwrap());
@@ -619,7 +653,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let rng = authored.scenario_rng.logical_state();
@@ -631,19 +665,23 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                     crate::sim::radio::RadioMessage::Hello,
                     crate::sim::radio::RadioPayload::default(),
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 ),
                 crate::sim::radio::RadioResponse::Roger
             );
             let base = authored.substrate.entities.get(base_id).unwrap();
-            assert_eq!(base.radio_contacts.capacity(), pads as usize);
-            assert_eq!(base.radio_contacts.slot(pad as usize), Some(aircraft));
+            assert_eq!(base.seldom.radio_contacts.capacity(), pads as usize);
+            assert_eq!(
+                base.seldom.radio_contacts.slot(pad as usize),
+                Some(aircraft)
+            );
             assert_eq!(
                 authored
                     .substrate
                     .entities
                     .get(aircraft)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .slot(0),
                 Some(base_id)
@@ -730,7 +768,7 @@ fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
         );
         // Match native load-time resets of Scenario RNG and the unsaved
         // active planner before comparing whole state and continuing both.
-        sim.scenario_rng = SimRng::new(0);
+        *sim.scenario_rng = SimRng::new(0);
         sim.reset_planning_after_player_load();
         let hash = sim.state_hash();
         let saved = GameSnapshot::save(&sim, 0, 0, "signed facing ROT", 0);
@@ -802,19 +840,21 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
             .unwrap();
         let row = if sight == 0 { &native[2] } else { &native[1] };
         assert_eq!(
-            serde_json::json!(bytes(entity.discovery)),
+            serde_json::json!(bytes(entity.seldom.discovery)),
             row["output"]["constructor"]["object"]
         );
         let (id, outcome) = sim.unlimbo_after_constructor_managers(
             entity,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         assert!(sim.substrate.occupancy.contains_entity(6, 5, id));
         assert_eq!(
-            serde_json::json!(bytes(sim.substrate.entities.get(id).unwrap().discovery)),
+            serde_json::json!(bytes(
+                sim.substrate.entities.get(id).unwrap().seldom.discovery
+            )),
             row["output"]["sight"]["object"]
         );
         if sight == 0 {
@@ -827,6 +867,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house(),
             "human Conceal retains the actual observation"
@@ -840,29 +881,43 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                 0,
                 PlacementEvidence::EvaluateMark,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .is_some()
         );
         sim.change_owner(id, other);
-        let transferred = sim.substrate.entities.get(id).unwrap().discovery;
+        let transferred = sim.substrate.entities.get(id).unwrap().seldom.discovery;
         assert_eq!(bytes(transferred), [0, 1, 0]);
         // Match the admitted Scenario Seed0 and lost active-planner state
         // before comparing this discovery-state roundtrip's whole hash.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         sim.reset_planning_after_player_load();
         let hash = sim.state_hash();
         let saved = GameSnapshot::save(&sim, 0, 0, "discovery", 0);
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
-            restored.substrate.entities.get(id).unwrap().discovery,
+            restored
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .discovery,
             transferred
         );
         assert_eq!(restored.state_hash(), hash);
         restored.object_conceal(id);
         assert_eq!(
-            bytes(restored.substrate.entities.get(id).unwrap().discovery),
+            bytes(
+                restored
+                    .substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
+            ),
             [0, 0, 0]
         );
         assert!(
@@ -875,13 +930,19 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                     0,
                     PlacementEvidence::MarkSucceeded,
                     &rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .is_some()
         );
         assert_eq!(
             serde_json::json!(bytes(
-                restored.substrate.entities.get(id).unwrap().discovery
+                restored
+                    .substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
             )),
             foreign["output"]["put"]["object"],
             "full reentry includes CellPUT47E8A0 -> Discovered6F4960(PlayerPtr); the original entry/sight boundary alone has [0,0,1]"
@@ -929,6 +990,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -939,6 +1001,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house(),
             "other human Conceal retains historical B"
@@ -961,7 +1024,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
             0,
             placement,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(result.is_some(), placement != PlacementEvidence::MarkFailed);
         let entity = sim.substrate.entities.get(id).unwrap();
@@ -969,9 +1032,15 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
             entity.in_playfield(),
             placement == PlacementEvidence::MarkFailed
         );
-        assert!(!entity.discovery.owned_by_current_house());
-        assert_eq!(entity.discovery.discovered_by_current_house(), expected_b);
-        assert_eq!(entity.discovery.discovered_by_other_house(), expected_c);
+        assert!(!entity.seldom.discovery.owned_by_current_house());
+        assert_eq!(
+            entity.seldom.discovery.discovered_by_current_house(),
+            expected_b
+        );
+        assert_eq!(
+            entity.seldom.discovery.discovered_by_other_house(),
+            expected_c
+        );
         assert_eq!(
             sim.substrate.occupancy.contains_entity(5, 5, id),
             placement != PlacementEvidence::MarkFailed
@@ -1010,7 +1079,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let ambush = MissionId::from_known(MissionType::Ambush);
@@ -1032,12 +1101,12 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
             0,
             PlacementEvidence::MarkSucceeded,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .is_some()
     );
     let entity = sim.substrate.entities.get(id).unwrap();
-    assert!(entity.discovery.discovered_by_other_house());
+    assert!(entity.seldom.discovery.discovered_by_other_house());
     assert_eq!(entity.mission.current(), guard);
     assert_eq!(entity.mission.queued(), MissionId::NONE);
     // The discovery arm itself (`TechnoClass 0x006F4960`, reached again when
@@ -1046,6 +1115,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     for first in [true, false] {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity
+            .seldom
             .discovery
             .set_discovered_by_other_house_for_test(!first);
         entity
@@ -1064,7 +1134,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
         assert_eq!(entity.mission.effective(), ambush);
         sim.discover_techno(id, other, crate::sim::world::UninitContext::default());
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert!(entity.discovery.discovered_by_other_house());
+        assert!(entity.seldom.discovery.discovered_by_other_house());
         assert_eq!(entity.mission.queued(), if first { hunt } else { ambush });
         assert_eq!(
             entity.mission.current(),
@@ -1106,16 +1176,16 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             .unwrap()
             .unwrap();
         assert_eq!(
-            entity.sight.range(),
+            entity.seldom.sight.range(),
             sight,
             "the native signed Type Sight survives construction"
         );
-        assert_eq!(entity.sight.is_zero(), sight == 0);
+        assert_eq!(entity.seldom.sight.is_zero(), sight == 0);
         let (id, outcome) = sim.unlimbo_after_constructor_managers(
             entity,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         sim.object_conceal(id);
@@ -1123,7 +1193,14 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
-            restored.substrate.entities.get(id).unwrap().sight.is_zero(),
+            restored
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .sight
+                .is_zero(),
             sight == 0
         );
         let hash = restored.state_hash();
@@ -1136,6 +1213,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .sight
             .stamp_type_sight(if sight == 0 { 1 } else { 0 });
         assert_ne!(
@@ -1155,6 +1233,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house(),
             sight != 0,
@@ -1202,6 +1281,7 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
             .entities
             .get(id)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     );
@@ -1218,8 +1298,9 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
 
 #[test]
 fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
-    // Retail Building440DFD/446767 allocate a nullable614 only after successful
-    // placement. Exercise both actual Unlimbo paths, including failed marks.
+    // A campaign Unlimbo lights its building (`0x00440D6C..0x00440E02`) only
+    // after a successful placement. Exercise both actual Unlimbo paths,
+    // including failed marks.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=GALITE\n[GALITE]\nStrength=100\n\
          LightVisibility=5000\nLightIntensity=.2\n",
@@ -1240,24 +1321,21 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
         .first_key_value()
         .unwrap();
     assert!(source.active);
-    assert_eq!((source.rx, source.ry), (6, 5));
+    assert_eq!(
+        (source.center_x, source.center_y),
+        (6 * 256 + 128, 5 * 256 + 128)
+    );
     assert_eq!(authored.lighting_sources.pending().len(), 1);
     authored.lighting_sources.discard_pending();
     authored
         .lighting_sources
         .set_building_light_active(authored_id, false);
-    Simulation::allocate_building_light(
-        &authored.interner,
-        &authored.substrate,
-        &mut authored.lighting_sources,
-        authored_id,
-        &rules,
-    );
+    authored.light_building(authored_id, &rules);
     assert!(
-        !authored.lighting_sources.buildings()[&authored_id].active,
-        "a repeated construction callback must not activate an existing614"
+        authored.lighting_sources.buildings()[&authored_id].active,
+        "the light block Enables an existing614 (0x00554A60)"
     );
-    assert_eq!(authored.lighting_sources.pending().len(), 1);
+    assert_eq!(authored.lighting_sources.pending().len(), 2);
 
     let mut held = Simulation::with_seed(0x1a42);
     install_constructor_test_playfield(&mut held);
@@ -1270,7 +1348,7 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct held lamp");
     assert!(held.lighting_sources.buildings().is_empty());
@@ -1284,7 +1362,7 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             0,
             PlacementEvidence::MarkFailed,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .is_none()
     );
@@ -1300,7 +1378,7 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Some(held_id)
     );
@@ -1308,8 +1386,10 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     assert!(held.lighting_sources.buildings()[&held_id].active);
     assert_eq!(held.lighting_sources.pending().len(), 1);
 
+    // Is_Clear_To_Build (`0x0047C620`) refuses (1,1), outside the playfield.
     let mut failed_new = Simulation::with_seed(0x1a43);
     install_constructor_test_playfield(&mut failed_new);
+    install_constructor_flat_terrain(&mut failed_new);
     assert!(
         failed_new
             .spawn_object_at_height("GALITE", "Americans", 1, 1, 0, 0, &rules)
@@ -1319,10 +1399,48 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     assert!(failed_new.lighting_sources.pending().is_empty());
 }
 
+/// A campaign Unlimbo skips the light block for a building the player has
+/// not discovered on ground open to the player (`Cell+0x12C & 0x10`,
+/// `0x00440D25..0x00440D4B`) and discovers it for the player instead
+/// (`0x00440D61`). A human-owned one CellPUT missed, here on open but
+/// unmapped ground, opens and so lights (`0x004466D5`).
+#[test]
+fn campaign_unlimbo_discovers_a_building_on_open_ground_instead_of_lighting_it() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GALITE\n[GALITE]\nStrength=100\n\
+         LightVisibility=5000\nLightIntensity=.2\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(0x1a44);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    *sim.fog = crate::sim::vision::FogState::new(10, 10);
+    sim.fog.set_ground_bits_for_test(player, 6, 5, 0x10);
+    assert_eq!(
+        sim.spawn_from_map(
+            &[map_entity("GALITE", EntityCategory::Structure, (6, 5))],
+            Some(&rules),
+        ),
+        1
+    );
+    let (&id, light) = sim
+        .lighting_sources
+        .buildings()
+        .first_key_value()
+        .expect("the opening lights the lamp");
+    assert!(light.active);
+    let lamp = sim.substrate.entities.get(id).unwrap();
+    assert!(lamp.seldom.discovery.discovered_by_current_house());
+    assert!(lamp.building_art.actually_placed());
+}
+
 fn install_constructor_test_playfield(sim: &mut Simulation) {
     sim.session.set_map_width_for_test(10);
     sim.session.set_map_height_for_test(10);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
         off_100: 0,
@@ -1374,13 +1492,14 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("construct held aircraft");
         sim.substrate
             .entities
             .get_mut(held)
             .unwrap()
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(true);
         sim.reveal_constructed_object_at_height(
@@ -1391,7 +1510,7 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     };
     assert_eq!(reveal(false, false), None);
@@ -1419,7 +1538,7 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
         .find(|&(rx, ry)| {
             !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(rx), i32::from(ry)),
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 sim.resolved_terrain.as_ref(),
             )
         })
@@ -1433,7 +1552,7 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct held aircraft");
     assert!(
@@ -1445,7 +1564,7 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_some()
     );
@@ -1459,6 +1578,46 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
     assert_eq!(
         crate::sim::movement::ground_pose::position_world_coord(&aircraft.position).z,
         flight_level
+    );
+}
+
+/// No Unlimbo layer refuses a building on the playfield: Building
+/// (`0x00440580..0x004415E6`), Techno (`0x006F6CA0`) and Object
+/// (`0x005F4EC0`). Its own Can_Enter_Cell (`0x00449440`) does, through each
+/// foundation cell's Is_Clear_To_Build (`0x0047C620`), unless CanPlaceAt
+/// (`0x00464AC0`) admits a `PlaceAnywhere=` type first. Cell (5,5) lies just
+/// outside this playfield.
+#[test]
+fn a_place_anywhere_building_is_placed_just_outside_the_playfield() {
+    let rules = constructor_rules();
+    let mut sim = Simulation::with_seed(0x2393);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let held = sim
+        .construct_object_limbo_at_height(
+            "ANYWHERE",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .expect("construct held building");
+    assert_eq!(
+        sim.reveal_constructed_object_at_height(
+            held,
+            5,
+            5,
+            0,
+            0,
+            PlacementEvidence::EvaluateMark,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        ),
+        Some(held)
     );
 }
 
@@ -1519,25 +1678,25 @@ fn assert_generated_projection_rejects_before_mutation(
     }
 }
 
-fn constructor_overlay_registry() -> crate::rules::overlay_types::OverlayTypeRegistry {
-    crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
-        &IniFile::from_str(
-            "[OverlayTypes]\n0=TESTORE\n1=TESTWALL\n\
-             [TESTORE]\nTiberium=yes\nLand=Tiberium\n\
-             [TESTWALL]\nWall=yes\nCrushable=yes\nLand=Wall\n",
-        ),
-        None,
-    )
+/// The constructor rules with an ore and a wall OverlayType: the match's
+/// overlay table is its rules'.
+fn constructor_overlay_rules() -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "{CONSTRUCTOR_RULES}\n[OverlayTypes]\n0=TESTORE\n1=TESTWALL\n\
+         [TESTORE]\nTiberium=yes\nLand=Tiberium\n\
+         [TESTWALL]\nWall=yes\nCrushable=yes\nLand=Wall\n"
+    )))
+    .expect("constructor overlay rules parse")
 }
 
 #[test]
 fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
     let seed = 0xC701_0017;
-    let rules = constructor_rules();
-    let registry = constructor_overlay_registry();
+    let rules = constructor_overlay_rules();
+    let registry = rules.overlay_registry();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,
@@ -1562,7 +1721,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
         bridge.bridge_walkable = true;
         bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     }
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(
             sim.resolved_terrain.as_ref().unwrap(),
             true,
@@ -1573,7 +1732,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
     for cell in [ore_authored, ore_runtime, bridge_cell] {
         overlays.place_overlay(cell.0, cell.1, 0, 0);
     }
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
 
     assert_eq!(
         sim.spawn_from_map_with_resolved_and_overlay_registry(
@@ -1586,7 +1745,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
             ],
             &rules,
             None,
-            Some(&registry),
+            Some(registry),
         ),
         2,
     );
@@ -1616,7 +1775,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
             ore_runtime.1,
             0,
             &rules,
-            &registry,
+            registry,
         )
         .expect("non-wall overlay must not veto runtime Unit Unlimbo");
     assert_eq!(
@@ -1637,8 +1796,8 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
 #[test]
 fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spent() {
     let seed = 0xC701_0018;
-    let rules = constructor_rules();
-    let registry = constructor_overlay_registry();
+    let rules = constructor_overlay_rules();
+    let registry = rules.overlay_registry();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
     install_constructor_flat_terrain(&mut sim);
@@ -1647,7 +1806,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
     overlays.place_overlay(wall_cell.0, wall_cell.1, 1, 0);
     // Unit73F0A0 reads the Cell's live overlay identity, which OverlayGrid
     // owns.
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
 
     let parent_id = sim
         .construct_object_limbo_at_height(
@@ -1658,7 +1817,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
             9,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("constructor-complete carrier graph");
     let child_ids = sim
@@ -1683,8 +1842,8 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
             7,
             PlacementEvidence::EvaluateMark,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            Some(registry),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_none()
     );
@@ -1713,7 +1872,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
     assert!(sim.discard_constructed_limbo(
         parent_id,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.substrate.entities.is_empty());
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -1808,6 +1967,9 @@ fn techno_constructor_runtime_fresh_paths_draw_once_after_type_resolution() {
     let rules = constructor_rules();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
+    // BASE fails at (1,1), outside the playfield: Is_Clear_To_Build
+    // (`0x0047C620`) refuses it.
+    install_constructor_flat_terrain(&mut sim);
     let mut expected = SimRng::new(seed);
 
     let before_invalid = sim.scenario_rng.logical_state();
@@ -1868,7 +2030,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("factory-held carrier constructor");
         let parent = sim
@@ -1889,7 +2051,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         for (index, child_id) in child_ids.iter().copied().enumerate() {
             let child = sim.substrate.entities.get(child_id).expect("spawn child");
             assert_eq!(child.techno_ctor_random_word(), words[index + 1]);
-            assert_eq!(child.spawn_owner_id.owner(), Some(parent_id));
+            assert_eq!(child.seldom.spawn_owner_id.owner(), Some(parent_id));
             assert!(child.lifecycle.in_limbo() && !child.lifecycle.cell_marked());
         }
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -1898,7 +2060,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         assert!(sim.discard_constructed_limbo(
             parent_id,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert!(sim.substrate.entities.is_empty());
         assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
@@ -1922,7 +2084,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("factory-held slave miner constructor");
         let slave_ids = sim
@@ -1945,7 +2107,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         for (index, slave_id) in slave_ids.iter().copied().enumerate() {
             let slave = sim.substrate.entities.get(slave_id).expect("slave child");
             assert_eq!(slave.techno_ctor_random_word(), words[index + 1]);
-            assert_eq!(slave.slave.owner(), Some(parent_id));
+            assert_eq!(slave.seldom.slave.owner(), Some(parent_id));
             assert!(slave.lifecycle.in_limbo() && !slave.lifecycle.cell_marked());
         }
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -1954,7 +2116,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         assert!(sim.discard_constructed_limbo(
             parent_id,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert!(sim.substrate.entities.is_empty());
         assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
@@ -1979,7 +2141,7 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("held manager parent");
         let child_ids = if parent_type == "CARRIER" {
@@ -2017,7 +2179,7 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
                 0,
                 PlacementEvidence::EvaluateMark,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             Some(parent_id)
         );
@@ -2058,16 +2220,26 @@ fn techno_constructor_failed_parent_placement_discards_both_manager_pool_kinds_w
     ] {
         let mut sim = Simulation::with_seed(seed);
         install_constructor_test_playfield(&mut sim);
+        install_constructor_flat_terrain(&mut sim);
         let mut expected = SimRng::new(seed);
-        for _ in 0..draw_count {
+        // UnitClass::Can_Enter_Cell refuses the parent on the authored
+        // blocker's cell; the blocker took one draw first.
+        assert_eq!(
+            sim.spawn_from_map(
+                &[map_entity("MTNK", EntityCategory::Unit, (6, 5))],
+                Some(&rules),
+            ),
+            1
+        );
+        for _ in 0..=draw_count {
             let _ = expected.next_u32();
         }
 
         assert!(
-            sim.spawn_object_at_height(parent_type, "Americans", 1, 1, 0, 0, &rules)
+            sim.spawn_object_at_height(parent_type, "Americans", 6, 5, 0, 0, &rules)
                 .is_none()
         );
-        assert!(sim.substrate.entities.is_empty());
+        assert_eq!(sim.substrate.entities.len(), 1);
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }
 }
@@ -2320,6 +2492,473 @@ fn generated_projection_validates_the_whole_table_before_any_mutation() {
     );
 }
 
+fn authored_retail_upgrade_scene(
+    upgrade_keys: &str,
+    weapon_sections: &str,
+    target_type: &str,
+) -> Option<(Simulation, RuleSet, u64)> {
+    // ReadScenarioBuildings44FD50 -> Unlimbo440871 -> GetWeapon4526F0.
+    // The map must admit a real upgrade; its selector alone cannot install one.
+    let map = IniFile::from_str(&format!(
+        "[GAPILL]\nPowersUpBuilding=GAPOWR\n{upgrade_keys}\n{weapon_sections}\n[Structures]\n\
+         0=Americans,GAPOWR,256,10,12,0,None,1,0,1,1,0,GAPILL,None,None,0,1\n",
+    ));
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&map)?;
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4526_F0);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
+    // This bounded arena gives the opponent a vehicle, without a starting base.
+    sim.session.game_options_mut_for_test().short_game = false;
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
+    let host = sim.substrate.entities.get(1).unwrap();
+    assert!(host.building_upgrades().count() > 0);
+    assert!(
+        host.building_upgrades()
+            .types()
+            .contains(&sim.interner.get("GAPILL"))
+    );
+    assert!(!sim.substrate.entities.get(2).unwrap().is_object_alive());
+    let target = sim
+        .spawn_object(target_type, "Russians", 14, 12, 0, &rules)
+        .unwrap();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    Some((sim, rules, target))
+}
+
+#[test]
+fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
+    // ReadScenarioBuildings44FD50 -> Unlimbo4408DF -> PowerUp451400:
+    // Rules.WallTower bypasses the ordinary equal-capacity rejection, so
+    // a first upgrade increments count0 to1 even when Upgrades defaults to0.
+    let map = IniFile::from_str(
+        "[GAPILL]\nPowersUpBuilding=GADUMY\n[Structures]\n\
+         0=Americans,GADUMY,256,10,12,0,None,1,0,1,1,0,GAPILL,None,None,0,1\n",
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&map)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert_eq!(
+        rules.general.building_types.wall_tower.as_deref(),
+        Some("GADUMY")
+    );
+    let host_type = rules.object("GADUMY").unwrap();
+    assert_eq!(host_type.image, "NTIRON");
+    assert!(!host_type.has_turret);
+    assert!(!rules.object("GAPILL").unwrap().has_turret);
+    assert!(!host_type.turret_anim_is_voxel);
+    assert!(host_type.turret_anim.is_none());
+    assert_eq!((host_type.turret_anim_x, host_type.turret_anim_y), (0, 0));
+    //451890 ->427CB0 fails the actual retail registry lookup. Neither an
+    // ART section alone nor this failed lookup may skip retained6E6 sync.
+    assert!(!rules.anim_type_names.contains("NTIRON_B"));
+    assert!(rules.art().get("NTIRON_B").is_none());
+    assert_eq!(host_type.building_upgrade().slots(), 0);
+    assert_eq!(
+        rules.object("GAPILL").unwrap().building_upgrade().level(),
+        -1
+    );
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4514_0000);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
+    sim.session.game_options_mut_for_test().short_game = false;
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
+
+    let host = sim.substrate.entities.get(1).unwrap();
+    assert!(host.is_object_alive());
+    assert!(!host.lifecycle.in_limbo());
+    assert_eq!(sim.interner.resolve(host.type_ref()), "GADUMY");
+    assert_eq!((host.position.rx(), host.position.ry()), (10, 12));
+    assert_eq!(host.health.current(), host_type.strength);
+    assert!(
+        !sim.substrate.entities.get(2).unwrap().is_object_alive(),
+        "the admitted map upgrade must be consumed before checking its host count"
+    );
+    assert_eq!(
+        host.building_upgrades().count(),
+        1,
+        "451400 WallTower must retain its first upgrade despite zero ordinary capacity"
+    );
+    assert_eq!(
+        host.building_upgrades().types()[0],
+        sim.interner.get("GAPILL")
+    );
+    assert_eq!(host.building_art.wall_tower_variant(), 0);
+    assert!(!host.building_art.damage_state_active());
+    assert!(host.building_art.anim_slots()[9].is_none());
+    // The retained pointer must feed the existing shared weapon receiver,
+    // not merely change the count on an otherwise unarmed dummy host.
+    let weapon = crate::sim::combat::combat_weapon::get_weapon(
+        host,
+        host_type,
+        0,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    );
+    assert_eq!(
+        weapon.map(|weapon| weapon.id.as_str()),
+        rules.object("GAPILL").unwrap().primary(),
+    );
+    assert!(crate::sim::combat::combat_weapon::is_armed(
+        host,
+        host_type,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    ));
+}
+
+#[test]
+fn authored_retail_upgrade_lends_its_weapon_and_fire_offset() {
+    let Some((mut sim, rules, target)) = authored_retail_upgrade_scene("", "", "HTNK") else {
+        return;
+    };
+    let host = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(host.building_upgrades().count(), 1);
+    assert_eq!(
+        host.building_upgrades().types()[0],
+        sim.interner.get("GAPILL")
+    );
+    let object = rules
+        .object_in_category(
+            crate::rules::object_type::ObjectCategory::Building,
+            "GAPOWR",
+        )
+        .unwrap();
+    let weapon = crate::sim::combat::combat_weapon::get_weapon(
+        host,
+        object,
+        0,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    );
+    assert_eq!(weapon.map(|weapon| weapon.id.as_str()), Some("Vulcan2"));
+    assert!(crate::sim::combat::combat_weapon::is_armed(
+        host,
+        object,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    ));
+    // GetFLH6F3B28 reads the selected record's coordinates, not the host ART.
+    let source = crate::sim::combat::fire_coord::FireSource::of_entity(host);
+    let fire = crate::sim::combat::fire_coord::fire_coordinate(
+        &sim,
+        &rules,
+        &source,
+        object,
+        0,
+        0,
+        crate::rules::flh::Flh::default(),
+    );
+    assert_eq!(fire.coord.z - fire.source_z, 40);
+    // Mission_Attack44B2C6 queries the first upgrade's normal records at
+    // 712130. Vulcan2's constructor-default Burst=1 and absent Secondary
+    // refuse the special firing arm, although GetWeapon/IsArmed succeed.
+    assert_eq!(rules.weapon("Vulcan2").unwrap().burst, 1);
+    assert!(rules.object("GAPILL").unwrap().secondary().is_none());
+    let mut entered_attack = false;
+    for frame in 1..=360 {
+        sim.session.set_binary_frame_for_test(frame);
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(output.tick.frame_committed);
+        assert!(
+            output
+                .fire_events
+                .iter()
+                .all(|event| event.attacker_id != 1),
+            "a single non-bursting upgrade must not reach FireAt"
+        );
+        let host = sim.substrate.entities.get(1).unwrap();
+        entered_attack |=
+            host.mission.current().known() == Some(crate::sim::mission::MissionType::Attack);
+        assert_eq!(host.seldom.rearm_timer.remaining(frame as i32), 0);
+    }
+    assert!(
+        entered_attack,
+        "the armed host must reach its Attack handler"
+    );
+    assert_eq!(
+        sim.substrate.entities.get(target).unwrap().health.current(),
+        rules.object("HTNK").unwrap().strength
+    );
+    // The upgrade loop always uses the normal record, including on an elite host.
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .veterancy
+        .set_elite();
+    let host = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(
+        crate::sim::combat::combat_weapon::current_weapon(
+            host,
+            object,
+            &sim.substrate.entities,
+            &rules,
+            &sim.interner,
+        )
+        .map(|weapon| weapon.id.as_str()),
+        Some("Vulcan2"),
+    );
+    let record = crate::sim::combat::combat_weapon::get_weapon_record(
+        host,
+        object,
+        0,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    )
+    .unwrap();
+    assert_eq!(
+        [record.flh.forward, record.flh.lateral, record.flh.height],
+        [90, 0, 40]
+    );
+}
+
+#[test]
+fn authored_upgrade_attack_uses_fixed_slots_and_live_target() {
+    //44B2C6/712130: shared records or a bursting Secondary admit the fixed
+    //0->1 pair. A real level-two install leaves slot0 null and instead takes
+    //the ordinary single selected-weapon path. Each goes through real frames
+    //and the existing FireAt receiver, including the first shot's rearm.
+    //FireOnce clears the live target before the second call can reach it.
+    for (upgrade_keys, weapon_sections, expected, slot_zero_hole) in [
+        (
+            "Secondary=Vulcan2\n",
+            "",
+            &["Vulcan2", "Vulcan2"][..],
+            false,
+        ),
+        (
+            "Secondary=105mm\n",
+            "[105mm]\nBurst=2\n",
+            &["Vulcan2", "105mm"][..],
+            false,
+        ),
+        (
+            "PowersUpToLevel=2\nSecondary=Vulcan2\n",
+            "",
+            &["Vulcan2"][..],
+            true,
+        ),
+        (
+            "Secondary=Vulcan2\n",
+            "[Vulcan2]\nFireOnce=yes\n",
+            &["Vulcan2"][..],
+            false,
+        ),
+        ("", "[Vulcan2]\nBurst=2\n", &["Vulcan2"][..], false),
+    ] {
+        let Some((mut sim, rules, target)) =
+            authored_retail_upgrade_scene(upgrade_keys, weapon_sections, "HTNK")
+        else {
+            return;
+        };
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .building_upgrades()
+                .types()[0]
+                .is_none(),
+            slot_zero_hole,
+        );
+        let mut fired = false;
+        for frame in 1..=360 {
+            sim.session.set_binary_frame_for_test(frame);
+            let output = sim
+                .advance_app_frame(
+                    &[],
+                    &rules,
+                    33,
+                    crate::sim::world::TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
+                .unwrap();
+            let shots: Vec<_> = output
+                .fire_events
+                .iter()
+                .filter(|event| event.attacker_id == 1)
+                .collect();
+            if shots.is_empty() {
+                continue;
+            }
+            assert_eq!(
+                shots
+                    .iter()
+                    .map(|event| sim.interner.resolve(event.weapon_id))
+                    .collect::<Vec<_>>(),
+                expected,
+                "{upgrade_keys}",
+            );
+            assert!(
+                shots
+                    .iter()
+                    .all(|event| event.target == crate::sim::combat::TargetKind::Entity(target))
+            );
+            assert_eq!(shots[0].fire_coord.z, 40);
+            if rules.object("GAPILL").unwrap().secondary().is_none() {
+                //712130's Primary.Burst arm still calls the empty second
+                //weapon; FireAt's null-weapon return must keep TarCom.
+                assert_eq!(
+                    sim.substrate
+                        .entities
+                        .get(1)
+                        .unwrap()
+                        .attack_target
+                        .target(),
+                    Some(crate::sim::combat::TargetKind::Entity(target)),
+                );
+            }
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .seldom
+                    .rearm_timer
+                    .remaining(frame as i32)
+                    > 0
+            );
+            fired = true;
+            break;
+        }
+        assert!(
+            fired,
+            "the admitted upgrade must reach its firing arm: {upgrade_keys}"
+        );
+    }
+}
+
+#[test]
+fn authored_upgrade_turret_waits_for_the_host_to_aim_before_firing() {
+    use crate::sim::combat::{TargetKind, combat_weapon, fire_coord, fire_error::FireError};
+
+    // HasTurret4527D0 -> GetFireError447FE3 -> MissionAttack44B187:
+    // a real retained upgrade lends its flag, but the host keeps its facing/ROT.
+    let Some((mut sim, rules, target)) = authored_retail_upgrade_scene(
+        "Turret=yes\nSecondary=Vulcan2\n",
+        "[GAPOWR]\nTurret=no\nTurretAnimIsVoxel=no\nROT=10\n",
+        "SMCV",
+    ) else {
+        return;
+    };
+    let host = sim.substrate.entities.get(1).unwrap();
+    let object = rules.object("GAPOWR").unwrap();
+    assert!(!object.has_turret && !object.turret_anim_is_voxel);
+    assert_eq!(object.turret_rot, 10);
+    assert!(object.turret_anim.is_none());
+    assert_eq!(object.building_upgrade().slots(), 2);
+    assert_eq!(host.building_upgrades().count(), 1);
+    assert_eq!(
+        host.building_upgrades().types()[0],
+        sim.interner.get("GAPILL")
+    );
+    assert!(rules.object("GAPILL").unwrap().has_turret);
+    let enemy = sim.substrate.entities.get(target).unwrap();
+    assert!(!combat_weapon::is_armed(
+        enemy,
+        rules.object("SMCV").unwrap(),
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    ));
+    let target = TargetKind::Entity(target);
+    let initial = host.body_facing_current(sim.session.binary_frame());
+    let desired = fire_coord::building_direction_to(&sim, &rules, host, target).unwrap();
+    assert!(i32::from(initial.wrapping_sub(desired) as i16).abs() > 0x0800);
+    assert_eq!(
+        sim.selected_weapon_fire_error(&rules, 1, target, true),
+        FireError::Facing,
+        "an installed turret must admit the native facing gate",
+    );
+
+    let mut turned = false;
+    for frame in 1..=360 {
+        sim.session.set_binary_frame_for_test(frame);
+        let current = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .body_facing_current(frame);
+        turned |= current != initial;
+        let host = sim.substrate.entities.get(1).unwrap();
+        let desired = fire_coord::building_direction_to(&sim, &rules, host, target).unwrap();
+        if host.attack_target.target() == Some(target) {
+            let fire = fire_coord::fire_coordinate(
+                &sim,
+                &rules,
+                &fire_coord::FireSource::of_entity(host),
+                object,
+                0,
+                0,
+                crate::rules::flh::Flh::default(),
+            );
+            assert_eq!(
+                fire.aim_facing16,
+                u16::from(crate::util::direction_tables::step32_from_facing16(current)) << 11,
+                "GetFireFacing44D80A must use the host Current for an installed turret",
+            );
+        }
+        let before = sim.selected_weapon_fire_error(&rules, 1, target, true);
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
+            .unwrap();
+        let shots: Vec<_> = output
+            .fire_events
+            .iter()
+            .filter(|event| event.attacker_id == 1)
+            .collect();
+        if before == FireError::Facing {
+            assert!(
+                shots.is_empty(),
+                "frame{frame}: fired before the host aimed"
+            );
+        }
+        if shots.is_empty() {
+            continue;
+        }
+        assert!(
+            turned,
+            "the existing host facing must turn through ordinary frames"
+        );
+        assert!(i32::from(current.wrapping_sub(desired) as i16).abs() <= 0x0800);
+        assert_eq!(shots.len(), 2, "712130 admits the shared-record pair");
+        assert!(shots.iter().all(|shot| shot.target == target));
+        return;
+    }
+    panic!("the installed turret never reached its firing arm");
+}
+
 #[test]
 fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
     let seed = 0xC701_0005;
@@ -2331,7 +2970,7 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(seed);
-    sim.native_unique_ids = Some(
+    *sim.native_unique_ids = Some(
         crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
             .into_cursor(),
     );
@@ -2342,7 +2981,9 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
         .current_raw();
     let mut expected = SimRng::new(seed);
     let mut base = map_entity("BASE", EntityCategory::Structure, (10, 12));
-    base.structure_upgrades = [Some("UP1".to_string()), Some("UP2".to_string()), None];
+    base.structure_columns.upgrade_count = 2;
+    base.structure_columns.upgrade_tokens =
+        [Some("UP1".to_string()), Some("UP2".to_string()), None];
     let words = [
         (expected.next_u32() & 0xFFFF) as u16,
         (expected.next_u32() & 0xFFFF) as u16,
@@ -2372,7 +3013,7 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
         assert!(!upgrade.lifecycle.object_alive());
         assert!(upgrade.lifecycle.in_limbo());
         assert!(!upgrade.lifecycle.cell_marked());
-        assert!(!upgrade.in_logic_vector.is_member());
+        assert!(!upgrade.seldom.in_logic_vector.is_member());
     }
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     assert_eq!(
@@ -2387,7 +3028,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
     let seed = 0xC701_0006;
     let rules = constructor_rules();
     let mut sim = Simulation::with_seed(seed);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     let mut expected = SimRng::new(seed);
     let word = (expected.next_u32() & 0xFFFF) as u16;
@@ -2400,7 +3041,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 
@@ -2413,7 +3054,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
             0,
             PlacementEvidence::MarkFailed,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_none()
     );
@@ -2426,7 +3067,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
     assert!(sim.discard_constructed_limbo(
         stable_id,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.substrate.entities.get(stable_id).is_none());
 }
@@ -2668,6 +3309,7 @@ fn a_building_s_ai_sale_byte_follows_its_buildup_or_its_map_line() {
             .entities
             .get(id)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .ai_sellable()
     };
@@ -2740,12 +3382,162 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
         assert_eq!(sim.spawn_from_map(&[line], Some(&rules)), 1);
         let building = sim.substrate.entities.values().next().unwrap();
         assert_eq!(
-            building.ai_sell_repair.ai_repairable(),
+            building.seldom.ai_sell_repair.ai_repairable(),
             expected,
             "game mode {game_mode_nonzero}, {owner}, field {field}"
         );
     }
 }
 
+/// The real map reader's Unit line reaches the shared component installer,
+/// which attaches the type's `AttachEffect.AttachTypes` list: each catalog
+/// name once, paired with its index's `DurationOverrides`/`Delays` and the
+/// documented defaults for an absent list.
+#[cfg(feature = "phobos")]
+#[test]
+fn map_spawn_attaches_the_type_attach_effect_list() {
+    use crate::map::entities::parse_map_entities;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AttachEffectTypes]\n0=ARMOR\n1=SPEEDUP\n\n\
+         [ARMOR]\nDuration=40\n\n\
+         [SPEEDUP]\nDuration=60\n\n\
+         [VehicleTypes]\n0=MTNK\n\n\
+         [MTNK]\nName=Apocalypse\nStrength=300\nSpeed=6\n\
+         AttachEffect.AttachTypes=ARMOR,SPEEDUP,MISSING\n\
+         AttachEffect.DurationOverrides=12,0\n\
+         AttachEffect.Delays=5,7\n\
+         AttachEffect.InitialDelays=3\n",
+    ))
+    .expect("attach effect rules");
+    let placements = parse_map_entities(
+        &IniFile::from_str("[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n"),
+        4,
+    );
+    assert_eq!(placements.len(), 1, "the map reader keeps the Unit line");
+
+    let mut sim = Simulation::with_seed(0xAE6);
+    install_american_house(&mut sim);
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 1);
+    let entity = sim
+        .substrate
+        .entities
+        .values()
+        .next()
+        .expect("spawned unit");
+    let instances = entity.phobos_attach_effects().instances();
+    assert_eq!(instances.len(), 2, "only catalog names attach");
+    assert_eq!(instances[0].type_index, 0, "ARMOR keeps its list index");
+    assert_eq!(
+        instances[0].remaining(),
+        12,
+        "index 0 takes its DurationOverrides entry"
+    );
+    assert_eq!(instances[1].type_index, 1, "SPEEDUP keeps its list index");
+    assert_eq!(
+        instances[1].remaining(),
+        60,
+        "a zero override keeps the type's Duration"
+    );
+    assert!(
+        !instances[0].is_active(true),
+        "InitialDelays=3 holds the effect inactive until its first AI frames"
+    );
+}
+
 #[path = "country_veterancy_tests.rs"]
 mod country_veterancy_tests;
+
+/// ReadScenarioBuildings sets its upgrade slots to -1 once, before the loop
+/// (`0x0044F838..0x0044F846`), and overwrites one only for a present token
+/// (`0x0044FA82..0x0044FAAB`): a line that stops after its count reuses the
+/// previous line's upgrade types.
+#[test]
+fn a_short_structures_line_reuses_the_previous_lines_upgrade_types() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=BASE\n1=UP1\n\
+         [BASE]\nStrength=500\nFoundation=2x2\nUpgrades=1\n\
+         [UP1]\nStrength=100\nPowersUpBuilding=BASE\n",
+    ))
+    .unwrap();
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
+         0=Americans,BASE,256,10,12,0,None,0,0,1,1,0,UP1,None,None,0,0\n\
+         1=Americans,BASE,256,14,12,0,None,0,0,1,1,0\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(0xC701_0007);
+
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 4);
+    let up1 = sim.interner.get("UP1");
+    for parent in sim
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| sim.interner.resolve(entity.type_ref()) == "BASE")
+    {
+        assert_eq!(*parent.building_upgrades().types(), [up1, None, None]);
+    }
+}
+
+/// `0x0044FC07..0x0044FC16` hands field 11 to the light Unlimbo gave a
+/// HasSpotlight building (BuildingLightClass::SetBehaviour `0x00436BE0`); a
+/// line that stops short passes 1. Retail maps author 0, which stops the light.
+#[test]
+fn structures_field_11_sets_the_building_lights_behaviour() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
+         0=Americans,LIGHT,256,4,4,0,None,0,0,1,0,0,None,None,None,0,0\n\
+         1=Americans,LIGHT,256,7,4,0,None,0,0,1\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(0xC701_0008);
+    install_constructor_test_playfield(&mut sim);
+    install_american_house(&mut sim);
+
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 2);
+    let drawn: Vec<bool> = [(4, 4), (7, 4)]
+        .into_iter()
+        .map(|cell| {
+            let light = sim
+                .substrate
+                .entities
+                .values()
+                .find(|entity| (entity.position.rx(), entity.position.ry()) == cell)
+                .and_then(|entity| entity.building.building_light.light())
+                .expect("HasSpotlight building owns a light");
+            sim.building_spotlight(light, None, &rules).is_some()
+        })
+        .collect();
+    assert_eq!(drawn, [false, true]);
+}
+
+/// Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584): the
+/// turret's controller turns at `TurretROT=`, the body at `ROT=`.
+#[test]
+fn ares_turret_rot_sets_the_secondary_rate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nTurret=yes\nROT=5\nTurretROT=2\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(0);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let id = sim
+        .spawn_object_at_height("MTNK", "Americans", 6, 5, 64, 0, &rules)
+        .unwrap();
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let rate = |rot| crate::sim::movement::FacingClass::new(0, rot).rot_per_frame();
+    assert_eq!(entity.barrel_facing.unwrap().rot_per_frame(), rate(2));
+    assert_eq!(entity.body_facing.rot_per_frame(), rate(5));
+}

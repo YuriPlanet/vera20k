@@ -282,11 +282,12 @@ fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
     );
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.install_overlay_grid_for_load(grid);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
     let point = crate::map::terrain::iso_to_screen(4, 4, 0);
     let build = |sim: &Simulation, atlas: &BridgeAtlas| {
         let mut instances = Vec::new();
         build_bridge_shadow_instances_inner(
+            crate::render::cell_window::CellWindow::Whole,
             sim.resolved_terrain().unwrap(),
             atlas,
             &fixture.names,
@@ -324,11 +325,14 @@ fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
         build(&sim, &atlas).is_empty(),
         "live erasure defeats the stale published anchor"
     );
-    let mut restored = GameSnapshot::load(&saved).unwrap().sim;
-    restored.restore_after_snapshot_load().unwrap();
-    restored.rebuild_caches_after_load(terrain, Default::default(), &fixture.rules);
-    restored
-        .restore_map_authority_after_snapshot_load(&fixture.rules, &fixture.registry, None)
+    let restored = GameSnapshot::load(&saved)
+        .unwrap()
+        .restore_checkpoint_map_for_test(
+            &fixture.rules,
+            &fixture.registry,
+            terrain,
+            Default::default(),
+        )
         .unwrap();
     let restored_atlas = fixture.atlas(&gpu, &batch);
     let after = build(&restored, &restored_atlas);
@@ -570,6 +574,7 @@ impl RetailBridgeFixture {
         let (mut instances, mut draws) = (Vec::new(), Vec::new());
         match kind {
             BridgeFrameKind::Shadow => build_bridge_shadow_instances_inner(
+                crate::render::cell_window::CellWindow::Whole,
                 &terrain,
                 atlas,
                 &self.names,
@@ -665,6 +670,7 @@ fn assert_native_cell_sweep_order(
     }
     let mut instances = Vec::new();
     build_bridge_shadow_instances_inner(
+        crate::render::cell_window::CellWindow::Whole,
         &terrain,
         atlas,
         &fixture.names,
@@ -1182,224 +1188,6 @@ fn retail_bridge_body_matches_native_color_and_depth_attachments() {
 }
 
 #[test]
-#[ignore = "bounded bridge GPU/CPU timing; requires retail assets and an uncontended GPU"]
-fn retail_bridge_shadow_workload_timing() {
-    use std::time::{Duration, Instant};
-    let packet = native_bridge_packet();
-    let fixture = RetailBridgeFixture::load(&packet);
-    let gpu = Gpu::with_features(
-        wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
-    );
-    let size = [800, 600];
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let atlas = fixture.atlas(&gpu, &batch);
-    let mut input = packet["rows"][0]["input"].clone();
-    input["cell_point"] = serde_json::json!([180, 200]);
-    let (camera, one, _) = fixture.instances(&input, &atlas, size, BridgeFrameKind::Shadow);
-    batch.write_camera(&gpu.queue, camera);
-    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    let shape = packet["shapes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|shape| shape["image_name"] == "BRIDGE" && shape["frame"] == 18)
-        .unwrap();
-    let rect: [usize; 4] =
-        std::array::from_fn(|i| shape["native_rect"][i].as_u64().unwrap() as usize);
-    let [left, top, width, height] = rect;
-    assert_eq!(one[0].size, [width as f32, height as f32]);
-    // Recreate only the former alpha128 payload from the captured physical
-    // stencil for a dispatch-cost reference. It is never an expected image.
-    let mut legacy_rgba = vec![0; width * height * 4];
-    for run in shape["mask_runs"].as_array().unwrap() {
-        let [x, y, count]: [usize; 3] = std::array::from_fn(|i| run[i].as_u64().unwrap() as usize);
-        for x in x..x + count {
-            legacy_rgba[((y - top) * width + x - left) * 4 + 3] = 128;
-        }
-    }
-    let legacy = batch.create_texture_on_device(
-        &gpu.device,
-        &gpu.queue,
-        &legacy_rgba,
-        width as u32,
-        height as u32,
-        None,
-    );
-    let queries = gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: Some("Bridge shadow dispatch interval"),
-        ty: wgpu::QueryType::Timestamp,
-        count: 2,
-    });
-    let resolved = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 256,
-        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-    let mapped = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut pool = InstanceBufferPool::new();
-    let timestamp_period_ns = gpu.queue.get_timestamp_period() as f64;
-    let mut results = Vec::new();
-    for (count, layout) in [(1usize, "single"), (16, "adjacent"), (128, "repeated")] {
-        let instances: Vec<_> = (0..count)
-            .map(|i| {
-                let mut instance = one[0];
-                if layout == "adjacent" {
-                    instance.position[0] += 30.0 * i as f32;
-                    instance.position[1] += 15.0 * i as f32;
-                }
-                instance
-            })
-            .collect();
-        for native in [false, true] {
-            let upload: Vec<_> = instances
-                .iter()
-                .map(|instance| {
-                    let mut instance = *instance;
-                    if !native {
-                        instance.uv_origin = [0.0; 2];
-                        instance.uv_size = [1.0; 2];
-                    }
-                    instance
-                })
-                .collect();
-            pool.upload_on_device(&gpu.device, &gpu.queue, "bridge-perf", &upload);
-            // Complete setup uploads outside the measured interval. Later
-            // samples begin with the preceding sample's completion fence done.
-            let uploaded = gpu.queue.submit([]);
-            gpu.device
-                .poll(wgpu::PollType::Wait {
-                    submission_index: Some(uploaded),
-                    timeout: Some(Duration::from_secs(60)),
-                })
-                .unwrap();
-            for sample in 0..4 {
-                let begin = Instant::now();
-                terrain.prepare(&gpu.device, &color, &dv, camera);
-                let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                encoder.write_timestamp(&queries, 0);
-                clear(
-                    &mut encoder,
-                    &cv,
-                    &dv,
-                    65535,
-                    wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                );
-                let stats = if native {
-                    draw_bridge_shadows(
-                        &mut encoder,
-                        &cv,
-                        &dv,
-                        &mut terrain,
-                        [0, 0, size[0], size[1]],
-                        &batch,
-                        pool.get("bridge-perf"),
-                        &upload,
-                        Some(&atlas.texture),
-                    )
-                } else {
-                    let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
-                        &mut encoder,
-                        &cv,
-                        &dv,
-                    );
-                    let (buffer, count) = pool.get("bridge-perf").unwrap();
-                    batch.draw_with_buffer_passthrough(&mut pass, &legacy, buffer, count);
-                    drop(pass);
-                    crate::render::terrain_draw::TerrainBatchStats {
-                        pieces: count as usize,
-                        passes: 1,
-                        ..Default::default()
-                    }
-                };
-                encoder.write_timestamp(&queries, 1);
-                let encode_ms = begin.elapsed().as_secs_f64() * 1000.0;
-                encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
-                encoder.copy_buffer_to_buffer(&resolved, 0, &mapped, 0, 16);
-                let final_submit_begin = Instant::now();
-                let submission = gpu.queue.submit([encoder.finish()]);
-                let (tx, rx) = std::sync::mpsc::channel();
-                mapped
-                    .slice(..)
-                    .map_async(wgpu::MapMode::Read, move |result| tx.send(result).unwrap());
-                gpu.device
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: Some(submission),
-                        timeout: Some(Duration::from_secs(60)),
-                    })
-                    .unwrap();
-                rx.recv().unwrap().unwrap();
-                let final_submit_to_completion_ms =
-                    final_submit_begin.elapsed().as_secs_f64() * 1000.0;
-                let wall_prepare_to_completion_ms = begin.elapsed().as_secs_f64() * 1000.0;
-                let data = mapped.slice(..).get_mapped_range();
-                let first = u64::from_le_bytes(data[0..8].try_into().unwrap());
-                let last = u64::from_le_bytes(data[8..16].try_into().unwrap());
-                // wgpu27 encoder timestamps can be reordered. The Metal HAL
-                // defers them to later encoders and documents empty-blit
-                // sampling limits; keep raw values, never invent a duration.
-                // https://docs.rs/wgpu/27.0.1/wgpu/struct.CommandEncoder.html#method.write_timestamp
-                // https://docs.rs/wgpu-hal/27.0.4/src/wgpu_hal/metal/command.rs.html
-                let (timestamp_status, encoder_timestamp_ms) =
-                    if first == 0 || last == 0 || first == u64::MAX || last == u64::MAX {
-                        ("unavailable_zero_or_max_sample", None)
-                    } else if last <= first {
-                        ("unavailable_nonincreasing_samples", None)
-                    } else if !timestamp_period_ns.is_finite() || timestamp_period_ns <= 0.0 {
-                        ("unavailable_timestamp_period", None)
-                    } else {
-                        (
-                            "limited_encoder_boundary",
-                            Some((last - first) as f64 * timestamp_period_ns / 1_000_000.0),
-                        )
-                    };
-                eprintln!(
-                    "BRIDGE timing: count={count}, layout={layout}, native={native}, sample={sample}, timestamp_status={timestamp_status}, first={first}, last={last}, period_ns={timestamp_period_ns}, encoder_timestamp_ms={encoder_timestamp_ms:?}, cpu_prepare_encode_ms={encode_ms}, wall_prepare_to_completion_ms={wall_prepare_to_completion_ms}, final_submit_to_completion_ms={final_submit_to_completion_ms}"
-                );
-                drop(data);
-                mapped.unmap();
-                if native && layout == "repeated" {
-                    assert!(
-                        terrain.submissions() > 0,
-                        "large overlapping bridge sweep uses bounded submission"
-                    );
-                }
-                if sample > 0 {
-                    results.push(serde_json::json!({"count":count,"layout":layout,"native":native,"sample":sample,
-                        "pieces":stats.pieces,"waves":stats.waves,"passes":stats.passes,
-                        "tile_dependencies":stats.tile_dependencies,"bounded_submissions":terrain.submissions(),
-                        "timestamp_status":timestamp_status,"timestamp_first":first,"timestamp_last":last,
-                        "timestamp_period_ns":timestamp_period_ns,"encoder_timestamp_ms":encoder_timestamp_ms,
-                        "cpu_prepare_encode_ms":encode_ms,
-                        "wall_prepare_to_completion_ms":wall_prepare_to_completion_ms,
-                        "final_submit_to_completion_ms":final_submit_to_completion_ms}));
-                }
-            }
-        }
-    }
-    let report = serde_json::json!({"target":size,"format":"Bgra8UnormSrgb",
-        "source":"Physical BRIDGE.TEM frame18 through production atlas/builder/bridge dispatch; supplied adjacent and overlap workloads",
-        "reference":"Former alpha128 passthrough dispatch with the same captured physical stencil; reference pixels are not parity expectations",
-        "interval":"CPU preparation/encoding includes terrain preparation, clear, draw scheduling and any bounded intermediate submissions; excludes setup uploads and the final resolve/finish/submit/wait. Wall preparation-to-completion includes that work plus query resolve/readback and the final submission completion fence. Final-submit-to-completion covers only the final finish/submit/map/wait tail. Warmup omitted. No whole-frame or 20000-unit performance claim.",
-        "gpu_timestamp_limit":"Encoder samples are diagnostic: wgpu27 permits backend/driver reordering, so a positive delta is a limited encoder interval, not an exact sum of GPU pass execution. Zero/max or nonincreasing values are reported with null duration; fence-completion wall measurements remain available.",
-        "samples":results});
-    eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
-    if let Some(path) = std::env::var_os("VERA20K_BRIDGE_SHADOW_PERF_OUTPUT") {
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
-    }
-}
-
-#[test]
 #[ignore = "requires physical high bridges, ordinary Engineer repair and GPU readbacks"]
 fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
     use crate::sim::world::bridge_test_evidence::{
@@ -1454,6 +1242,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
             let overlays = sim.overlay_grid().unwrap();
             let mut instances = Vec::new();
             build_bridge_shadow_instances_inner(
+                crate::render::cell_window::CellWindow::Whole,
                 terrain,
                 &atlas,
                 &fixture.names,

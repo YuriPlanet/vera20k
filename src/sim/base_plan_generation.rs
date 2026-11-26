@@ -15,21 +15,35 @@ use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
 use crate::sim::world::TypeTechLevels;
 
+/// VERA's bound on the nodes one count inserts into a base plan: the extra
+/// refineries (`AIExtraRefineries=`/`AISlaveMinerNumber=`), Ares'
+/// `AIBuildCounts=`/`AIExtraCounts=` copies and the base defenses
+/// (`*BaseDefenseCounts=`). Each insertion draws once and shifts the list, so
+/// a count near `i32::MAX` hangs the AI's base planning; the bound applies
+/// only to these loops, and retail counts are far below it (every count
+/// below it draws as before).
+const BASE_PLAN_INSERT_LIMIT: i32 = 256;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecalcPreflightError {
     UnknownCountry,
     MissingRefineryDifficulty,
     MissingDefenseDifficulty,
+    NoBuildablePower,
 }
 
-/// Validate only the directly indexed malformed-vector branches before an MCV
-/// can be destructively removed. This is a VERA-internal safety boundary; the
-/// native code performs unchecked DynamicVector indexing.
+/// Validate the directly indexed malformed-vector branches and the lookup
+/// Recalc dereferences unchecked, before an MCV can be destructively removed.
+/// This is a VERA-internal safety boundary: the native code performs
+/// unchecked DynamicVector indexing, and pushes the null result of an empty
+/// or unbuildable `[AI] BuildPower=` list into the plan and reads its type
+/// index. (A null `BuildRefinery=` result is only compared, never read.)
 pub(crate) fn preflight_recalc(
     rules: &RuleSet,
     country_name: &str,
     side_index: i32,
     difficulty: HouseDifficulty,
+    super_weapons: bool,
 ) -> Result<(), RecalcPreflightError> {
     rules
         .country_index(country_name)
@@ -45,15 +59,25 @@ pub(crate) fn preflight_recalc(
         .get(difficulty.table_index())
         .ok_or(RecalcPreflightError::MissingRefineryDifficulty)?;
 
-    let defense_counts = match side_index {
-        0 => Some(&rules.allied_base_defense_counts),
-        1 => Some(&rules.soviet_base_defense_counts),
-        2 => Some(&rules.third_base_defense_counts),
-        _ => None,
-    };
+    let defense_counts = rules
+        .side_base_defense_counts(side_index)
+        .or(match side_index {
+            0 => Some(&rules.allied_base_defense_counts[..]),
+            1 => Some(&rules.soviet_base_defense_counts[..]),
+            2 => Some(&rules.third_base_defense_counts[..]),
+            _ => None,
+        });
     if defense_counts.is_some_and(|counts| counts.get(difficulty.table_index()).is_none()) {
         return Err(RecalcPreflightError::MissingDefenseDifficulty);
     }
+    first_buildable_from_array(
+        rules,
+        &rules.build_power_types,
+        country_name,
+        side_index,
+        super_weapons,
+    )
+    .ok_or(RecalcPreflightError::NoBuildablePower)?;
     Ok(())
 }
 
@@ -74,7 +98,10 @@ pub(crate) fn recalc_base_plan(
     super_weapons: bool,
     scenario_rng: &mut SimRng,
 ) {
-    debug_assert!(preflight_recalc(rules, country_name, side_index, difficulty).is_ok());
+    debug_assert!(
+        preflight_recalc(rules, country_name, side_index, difficulty, super_weapons).is_ok()
+    );
+    let ares = rules.ares_form();
 
     let country = CountryBuildMasks::for_country(rules, country_name);
     let mut eligible: Vec<&ObjectType> = rules
@@ -101,7 +128,7 @@ pub(crate) fn recalc_base_plan(
 
     if let Some(build_const) = first_buildable_from_array(
         rules,
-        &rules.build_const_types,
+        rules.build_const_types(),
         country_name,
         side_index,
         super_weapons,
@@ -152,30 +179,29 @@ pub(crate) fn recalc_base_plan(
     while remaining > 0 {
         let pass_start_len = priority.len();
         let mut progressed = false;
-        let mut last_unselected = None;
+        // Only an unselected GAPLUG is the stuck pass's fallback: the index
+        // resets each pass (0x00505890) and only the GAPLUG name match writes
+        // it (0x005058C1..0x005058CD). With none, the loop ends
+        // (0x00505951..0x00505954) and buildings whose prerequisites never
+        // come are left out of the plan. The pass runs to the list's end even
+        // past remaining 0 (0x00505935..0x00505947); 0x005059B7 then ends it.
+        let mut gaplug_fallback = None;
         for index in 0..eligible.len() {
             if selected[index] {
                 continue;
             }
-            last_unselected = Some(index);
             let candidate = eligible[index];
-            if !candidate.id.eq_ignore_ascii_case("GAPLUG")
-                && prerequisites_satisfied(candidate, &priority[..pass_start_len], rules)
-            {
+            if candidate.id.eq_ignore_ascii_case("GAPLUG") {
+                gaplug_fallback = Some(index);
+            } else if prerequisites_satisfied(candidate, &priority[..pass_start_len], rules) {
                 priority.push(candidate);
                 selected[index] = true;
                 remaining = remaining.wrapping_sub(1);
                 progressed = true;
-                if remaining == 0 {
-                    break;
-                }
             }
         }
-        if remaining == 0 {
-            break;
-        }
         if !progressed {
-            let Some(index) = last_unselected else {
+            let Some(index) = gaplug_fallback else {
                 break;
             };
             priority.push(eligible[index]);
@@ -190,20 +216,23 @@ pub(crate) fn recalc_base_plan(
         country_name,
         side_index,
         super_weapons,
-    )
-    .expect("active Recalc BuildRefinery list resolves a buildable type");
+    );
     let has_harvester = first_owner_compatible_harvester(rules, country.owner_bit()).is_some();
     let duplicate_count = if has_harvester {
         rules.ai_extra_refineries[difficulty.table_index()]
     } else {
         rules.ai_slave_miner_number[difficulty.table_index()].wrapping_sub(1)
     };
-    if let Some(refinery_index) = priority
-        .iter()
-        .take(priority.len().saturating_sub(1))
-        .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
+    // 0x005054B0 only compares the BuildRefinery result with each list
+    // entry: a null one (an empty or unbuildable list) matches nothing and
+    // inserts no extra refinery.
+    if let Some(refinery) = refinery
+        && let Some(refinery_index) = priority
+            .iter()
+            .take(priority.len().saturating_sub(1))
+            .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
     {
-        for _ in 0..duplicate_count.max(0) {
+        for _ in 0..duplicate_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
             let insert_after = scenario_rng.next_range_u32_inclusive(
                 refinery_index as u32,
                 priority.len().wrapping_sub(1) as u32,
@@ -212,33 +241,90 @@ pub(crate) fn recalc_base_plan(
         }
     }
 
-    assert!(
-        priority.len() >= 3,
-        "active Recalc priority contains its three native seed entries"
-    );
+    // Ares 3.0 HouseClass_GenerateAIBuildList_CountExtra 10023940 (hook
+    // 0x00505C95) runs on the copied list, which still matches `priority`
+    // node for node: past the yard at 0, each type's first node takes its
+    // AIBuildCounts/AIExtraCounts copies for the House difficulty (+0x184),
+    // each inserted at RandomRanged(i + 1, Count). The count is re-read as
+    // the list grows, so inserted copies are visited (and skipped) too.
+    if ares {
+        let mut index = 1;
+        while index < priority.len() {
+            let candidate = priority[index];
+            if !priority[..index]
+                .iter()
+                .any(|seen| seen.base_plan_type_index == candidate.base_plan_type_index)
+            {
+                let copies = candidate
+                    .building_type_ext()
+                    .ai_extra_copies(difficulty.table_index(), |low, high| {
+                        scenario_rng.next_range_i32_inclusive(low, high)
+                    });
+                for _ in 0..copies.min(BASE_PLAN_INSERT_LIMIT) {
+                    let at = scenario_rng
+                        .next_range_i32_inclusive(index as i32 + 1, priority.len() as i32)
+                        as usize;
+                    priority.insert(at, candidate);
+                }
+            }
+            index += 1;
+        }
+    }
+
+    // Ares 3.0 HouseClass_GenerateAIBuildList_SkipManualCopy 10023BD0 (hook
+    // 0x00505B58) and _FullAutoCopy 10023B10 (hook 0x00505C34, EDI = 0 into
+    // `cmp ecx,edi` at 0x00505C39) copy the whole list from index 0, so a
+    // list shorter than the three hand-copied seeds no longer reads past it.
+    // VERA-only without Ares: native hand-copies three seeds and reads past
+    // a shorter list (a country with fewer than three plannable buildings);
+    // VERA copies what the list holds.
     let mut final_values = Vec::with_capacity(priority.len());
+    let seeds = priority.len().min(3);
     final_values.extend(
-        priority[..3]
+        priority[..seeds]
             .iter()
             .map(|candidate| candidate.base_plan_type_index),
     );
     final_values.extend(
-        priority[3..]
+        priority[seeds..]
             .iter()
             .map(|candidate| candidate.base_plan_type_index),
     );
 
-    let defense_count = match side_index {
-        0 => rules.allied_base_defense_counts[difficulty.table_index()],
-        1 => rules.soviet_base_defense_counts[difficulty.table_index()],
-        2 => rules.third_base_defense_counts[difficulty.table_index()],
-        _ => 0,
+    // Campaign SuperWeapon buildings: Ares 3.0
+    // HouseClass_GenerateAIBuildList_SWAllowed 10023B90 (hook 0x005055D8)
+    // admits them in a campaign whatever the SuperWeapons option says. VERA's
+    // campaign GameOptions never turn SuperWeapons off (`match_bootstrap`
+    // copies only GameSpeed and BuildOffAlly), so `super_weapons` is already
+    // true there.
+    let mut defense_count = match rules.side_base_defense_counts(side_index) {
+        Some(counts) => counts.get(difficulty.table_index()).copied().unwrap_or(0),
+        None => match side_index {
+            0 => rules.allied_base_defense_counts[difficulty.table_index()],
+            1 => rules.soviet_base_defense_counts[difficulty.table_index()],
+            2 => rules.third_base_defense_counts[difficulty.table_index()],
+            _ => 0,
+        },
     };
-    for _ in 0..defense_count.max(0) {
+    // Ares 3.0 HouseClass_GenerateAIBuildList_PadWithN1 10023B30 (hook
+    // 0x00505CF1, reached only past the `jle` at 0x00505CEB, so only with a
+    // positive count): a list of fewer than four entries takes base defense
+    // nodes (-1) at its end until it holds four, each counting as one of the
+    // defenses and drawing no RNG; the count can go negative. The rest are
+    // inserted as below.
+    if ares && defense_count > 0 {
+        while final_values.len() < 4 {
+            final_values.push(-1);
+            defense_count = defense_count.wrapping_sub(1);
+        }
+    }
+    for _ in 0..defense_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
         let insert_after = scenario_rng
             .next_range_u32_inclusive(3, final_values.len().wrapping_sub(1) as u32)
             as usize;
-        final_values.insert(insert_after + 1, -1);
+        // The draw's bounds swap for a list of three or fewer, where native
+        // inserts past the vector's end; VERA appends there.
+        final_values.insert((insert_after + 1).min(final_values.len()), -1);
     }
 
     plan.rebuild(final_values);
@@ -302,14 +388,17 @@ fn move_eligible_seed<'a>(
 /// `+0x900`, `RADAR` BuildRadar `+0xA34`, `TECH` BuildTech `+0x91C`, `PROC`
 /// BuildRefinery `+0x8E4`; jump table `0x0050548C`). Recalc passes the types
 /// it has planned; the base defense choice the house's own building types.
+/// Ares 3.0 replaces the body (hook 0x505360 -> 10024520) with
+/// `PrerequisitesListed @ 10021C50`: any one of the type's prerequisite lists
+/// (`ObjectType::ares_prerequisite_lists`) fully among `present`.
 pub(crate) fn prerequisites_satisfied(
     candidate: &ObjectType,
     present: &[&ObjectType],
     rules: &RuleSet,
 ) -> bool {
-    candidate.prerequisite.iter().all(|entry| {
-        #[cfg(feature = "ares")]
-        if let Some(group) = rules.ares_prerequisite_group(*entry) {
+    let ares = rules.ares_form();
+    let listed = |entry: &Prerequisite| {
+        if ares && let Some(group) = rules.ares_prerequisite_group(*entry) {
             // Ares3.0 hook505360 -> ListContainsAll10008370 inspects only
             // immediate building members. Runtime alternates are unread;
             // a negative member code cannot match a BuildingType index.
@@ -341,14 +430,21 @@ pub(crate) fn prerequisites_satisfied(
             }
             Prerequisite::GenericGroup(_) => false,
         }
-    })
+    };
+    if ares {
+        candidate
+            .ares_prerequisite_lists()
+            .any(|list| list.iter().all(&listed))
+    } else {
+        candidate.prerequisite.iter().all(&listed)
+    }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "base_plan_generation_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -387,10 +483,11 @@ mod tests {
              [BAR]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [WEAP]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
              [RAD]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1\n\
-             {extra_sections}"
+             [TECH]\nOwner=Americans,Russians,YuriCountry\nAIBuildThis=no\nFoundation=1x1"
         );
-        RuleSet::from_ini(&IniFile::from_str(&text)).expect("planner fixture")
+        let mut ini = IniFile::from_str(&text);
+        ini.merge(&IniFile::from_str(extra_sections));
+        RuleSet::from_ini(&ini).expect("planner fixture")
     }
 
     fn basic_rules(extra_registry: &str, extra_sections: &str) -> RuleSet {
@@ -444,6 +541,30 @@ mod tests {
             .collect()
     }
 
+    /// A defense count past VERA's bound inserts only the bound: one more
+    /// than the bound plans the same nodes as the bound itself.
+    #[test]
+    fn a_huge_base_defense_count_inserts_only_the_bound() {
+        let defenses = |count: i32| {
+            let counts = format!("{count},{count},{count}");
+            let rules = planner_rules(
+                "HARV",
+                "Americans,Russians,YuriCountry",
+                "0,0,0",
+                "1,1,1",
+                &counts,
+                "0,0,0",
+                "0,0,0",
+                "",
+                "",
+            );
+            let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 7);
+            values(&plan).iter().filter(|&&value| value == -1).count()
+        };
+        let limit = BASE_PLAN_INSERT_LIMIT;
+        assert_eq!(defenses(limit + 1), limit as usize);
+    }
+
     #[test]
     fn ai_planning_count_respects_the_build_capability() {
         let rules = basic_rules(
@@ -485,21 +606,82 @@ mod tests {
         );
     }
 
+    /// Ares 10023B30 (hook 0x505CF1): a three-node list takes its first base
+    /// defense as a fourth node without a draw; the second then has the one
+    /// slot `RandomRanged(3, 3)`, which draws nothing either. Stock draws
+    /// `RandomRanged(3, 2)` for the first.
+    #[test]
+    fn ares_short_plan_pads_defense_nodes_without_drawing() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nHarvesterUnit=HARV\nAIExtraRefineries=0,0,0\n\
+             AISlaveMinerNumber=1,1,1\nAlliedBaseDefenseCounts=2,2,2\n\
+             SovietBaseDefenseCounts=0,0,0\nThirdBaseDefenseCounts=0,0,0\n\
+             [AI]\nBuildConst=CON\nBuildPower=POW\nBuildRefinery=REF\n\
+             BuildBarracks=REF\nBuildWeapons=REF\nBuildRadar=REF\nBuildTech=REF\n\
+             [Countries]\n0=Americans\n[Sides]\nAllied=Americans\n[Americans]\nSide=Allied\n\
+             [VehicleTypes]\n0=HARV\n[HARV]\nOwner=Americans\nStrength=1\n\
+             [BuildingTypes]\n0=CON\n1=POW\n2=REF\n\
+             [CON]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\n\
+             [POW]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\n\
+             [REF]\nOwner=Americans\nAIBuildThis=no\nTechLevel=1\n",
+        ))
+        .unwrap();
+        let (plan, rng) =
+            generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 0x505CF1);
+        let con = rules.object("CON").unwrap().base_plan_type_index;
+        let pow = rules.object("POW").unwrap().base_plan_type_index;
+        assert_eq!(values(&plan), [con, pow, pow, -1, -1]);
+        assert_eq!(rng.logical_state(), SimRng::new(0x505CF1).logical_state());
+    }
+
+    /// Ares 10023940: `AIBuildCounts=3` plans a type three times (two extra
+    /// nodes after its first), `AIExtraCounts` adds up to its value more, and
+    /// a difficulty without an entry keeps the single node and draws nothing.
+    #[test]
+    fn ares_ai_build_counts_add_copies_after_the_first_node() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = basic_rules(
+            "7=TEST\n",
+            "[TEST]\nOwner=Americans,Russians,YuriCountry\n\
+             AIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             AIBuildCounts=3,3\nAIExtraCounts=0,2\n",
+        );
+        let test_index = rules.object("TEST").unwrap().base_plan_type_index;
+        let copies = |difficulty| {
+            let (plan, rng) = generated_values(&rules, "Americans", 0, difficulty, 0x505C95);
+            let values = values(&plan);
+            let first = values
+                .iter()
+                .position(|value| *value == test_index)
+                .unwrap();
+            assert!(values[..first].iter().all(|value| *value != test_index));
+            (
+                values.iter().filter(|value| **value == test_index).count(),
+                rng,
+            )
+        };
+        assert_eq!(copies(HouseDifficulty::Hard).0, 3);
+        let (normal, _) = copies(HouseDifficulty::Normal);
+        assert!((3..=5).contains(&normal), "{normal}");
+        // The fixture draws nothing else, so no draw at all here.
+        let (easy, rng) = copies(HouseDifficulty::Easy);
+        assert_eq!(easy, 1);
+        assert_eq!(rng.logical_state(), SimRng::new(0x505C95).logical_state());
+    }
+
     /// NPSE C2C331..C2C367 repeats the eligible vector before the
     /// construction-yard seed marks its first entry selected (505714).
     #[test]
     fn ai_planning_count_keeps_counted_seed_candidates() {
-        let mut rules = basic_rules(
+        let rules = basic_rules(
             "7=COUNTED\n",
-            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n",
+            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n[AI]\nBuildConst=COUNTED\n",
         );
         assert_eq!(
             rules.object("COUNTED").unwrap().ai_planning_count,
             if crate::rules::NPATCH_ENABLED { 2 } else { 0 }
         );
-        // Exercise the existing BuildConst selector with this reader-created
-        // type, without relying on a duplicate physical [CON] INI section.
-        rules.build_const_types = vec!["COUNTED".to_owned()];
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
         let index = rules.object("COUNTED").unwrap().base_plan_type_index;
         assert_eq!(
@@ -632,17 +814,30 @@ mod tests {
     }
 
     #[test]
-    fn recalc_withholds_gaplug_and_breaks_cycle_with_last_unselected() {
+    fn recalc_falls_back_only_to_gaplug_and_drops_an_unmeetable_building() {
         // BLOCK waits on a BuildingType the planner never selects; a name no
         // BuildingType has would be dropped by the parser and block nothing.
+        // GAPLUG skips the prerequisite test and enters only as the first
+        // stuck pass's fallback; the next has no GAPLUG and ends, so BLOCK
+        // never enters the plan (0x00505951..0x00505954).
         let rules = basic_rules(
             "7=BLOCK\n8=GAPLUG\n9=NEVER",
             "[BLOCK]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
-             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
              [NEVER]\nOwner=Americans\nTechLevel=1\nFoundation=1x1\n",
         );
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 11);
-        assert_eq!(&values(&plan)[6..], [8, 7]);
+        assert_eq!(&values(&plan)[6..], [8]);
+    }
+
+    /// With no eligible yard to preselect (0x0050571D..0x00505731), the count
+    /// runs out one candidate early; the pass still reaches the list's end
+    /// and plans that last one, the second POW.
+    #[test]
+    fn recalc_pass_continues_past_remaining_zero() {
+        let rules = basic_rules("", "[AI]\nBuildConst=RAD\n");
+        let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
+        assert_eq!(values(&plan), [1, 3, 4, 2, 0, 1]);
     }
 
     #[test]
@@ -740,19 +935,79 @@ mod tests {
     fn recalc_preflight_rejects_only_the_selected_missing_vector_branch() {
         let no_vectors = planner_rules("HARV", "Americans", "", "", "", "", "", "", "");
         assert_eq!(
-            preflight_recalc(&no_vectors, "Americans", 0, HouseDifficulty::Hard),
+            preflight_recalc(&no_vectors, "Americans", 0, HouseDifficulty::Hard, true),
             Err(RecalcPreflightError::MissingRefineryDifficulty)
         );
 
         let no_defense = planner_rules("HARV", "Americans", "0,0,0", "1,1,1", "", "", "", "", "");
         assert_eq!(
-            preflight_recalc(&no_defense, "Americans", 0, HouseDifficulty::Hard),
+            preflight_recalc(&no_defense, "Americans", 0, HouseDifficulty::Hard, true),
             Err(RecalcPreflightError::MissingDefenseDifficulty)
         );
         assert_eq!(
-            preflight_recalc(&no_defense, "Americans", 9, HouseDifficulty::Hard),
+            preflight_recalc(&no_defense, "Americans", 9, HouseDifficulty::Hard, true),
             Ok(()),
             "an unknown side inserts zero and does not require a defense vector"
         );
+    }
+
+    #[test]
+    fn recalc_preflight_rejects_a_country_without_a_buildable_power_plant() {
+        let ok = basic_rules("", "");
+        assert_eq!(
+            preflight_recalc(&ok, "Americans", 0, HouseDifficulty::Hard, true),
+            Ok(())
+        );
+        let mut no_power = basic_rules("", "");
+        no_power.build_power_types.clear();
+        assert_eq!(
+            preflight_recalc(&no_power, "Americans", 0, HouseDifficulty::Hard, true),
+            Err(RecalcPreflightError::NoBuildablePower)
+        );
+        // Native only compares the refinery result: no entry, no extra
+        // refineries, and the plan is the same without them.
+        let mut no_refinery = basic_rules("", "");
+        no_refinery.build_refinery_types.clear();
+        assert_eq!(
+            preflight_recalc(&no_refinery, "Americans", 0, HouseDifficulty::Hard, true),
+            Ok(())
+        );
+        let (with, _) = generated_values(&ok, "Americans", 0, HouseDifficulty::Hard, 7);
+        let (without, _) = generated_values(&no_refinery, "Americans", 0, HouseDifficulty::Hard, 7);
+        assert_eq!(values(&with), values(&without));
+    }
+
+    /// No building passes the House TechLevel, so the list is the power plant
+    /// alone: shorter than the three seeds, with base defenses to insert.
+    /// (Ares pads such a list to four with defense nodes instead.)
+    #[test]
+    fn recalc_survives_a_list_shorter_than_its_three_seeds() {
+        let rules = planner_rules(
+            "HARV",
+            "Americans,Russians,YuriCountry",
+            "0,0,0",
+            "1,1,1",
+            "2,2,2",
+            "2,2,2",
+            "2,2,2",
+            "",
+            "",
+        );
+        let mut plan = BasePlanState::default();
+        let mut rng = SimRng::new(7);
+        recalc_base_plan(
+            &mut plan,
+            &rules,
+            &TypeTechLevels::default(),
+            "Americans",
+            0,
+            HouseDifficulty::Hard,
+            i32::MIN,
+            true,
+            &mut rng,
+        );
+        let values = values(&plan);
+        assert_eq!(values.len(), 3, "{values:?}");
+        assert_eq!(values.iter().filter(|value| **value == -1).count(), 2);
     }
 }

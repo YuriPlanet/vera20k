@@ -9,6 +9,8 @@
 //! sim/ only — never render/ui/audio/net.
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(test, tests_sim_p_s))]
+mod civilian_tests;
 pub mod contacts;
 pub mod receive;
 mod tether;
@@ -107,7 +109,7 @@ pub(crate) fn broadcast_break(
     sim: &mut Simulation,
     sender_sid: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     broadcast(sim, sender_sid, RadioMessage::Break, rules, effects);
 }
@@ -119,20 +121,20 @@ pub(crate) fn broadcast(
     sender_sid: u64,
     message: RadioMessage,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let capacity = sim
         .substrate
         .entities
         .get(sender_sid)
-        .map_or(0, |sender| sender.radio_contacts.capacity());
+        .map_or(0, |sender| sender.seldom.radio_contacts.capacity());
 
     for slot in 0..capacity {
         let target_sid = sim
             .substrate
             .entities
             .get(sender_sid)
-            .and_then(|sender| sender.radio_contacts.slot(slot));
+            .and_then(|sender| sender.seldom.radio_contacts.slot(slot));
 
         #[cfg(any(test, feature = "test-support"))]
         record_test_event(RadioTestEvent::BroadcastSlotRead {
@@ -176,7 +178,7 @@ pub fn transmit(
     msg: RadioMessage,
     payload: RadioPayload,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     #[cfg(any(test, feature = "test-support"))]
     let log_index = TRANSMIT_LOG.with(|log| {
@@ -215,13 +217,13 @@ pub(crate) fn transmit_to_contact(
     sender_sid: u64,
     msg: RadioMessage,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(target_sid) = sim
         .substrate
         .entities
         .get(sender_sid)
-        .and_then(|sender| sender.radio_contacts.slot(0))
+        .and_then(|sender| sender.seldom.radio_contacts.slot(0))
     else {
         return RadioResponse::None;
     };
@@ -259,18 +261,18 @@ fn transmit_hello(
     target_sid: u64,
     filtered: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     let Some(sender) = sim.substrate.entities.get(sender_sid) else {
         return RadioResponse::Negatory;
     };
-    if sender.radio_contacts.contains(target_sid) {
+    if sender.seldom.radio_contacts.contains(target_sid) {
         return RadioResponse::Roger;
     }
-    let slot = match sender.radio_contacts.first_free() {
+    let slot = match sender.seldom.radio_contacts.first_free() {
         Some(slot) => slot,
         None => {
-            if let Some(evicted) = sender.radio_contacts.slot(0) {
+            if let Some(evicted) = sender.seldom.radio_contacts.slot(0) {
                 transmit(
                     sim,
                     sender_sid,
@@ -297,7 +299,8 @@ fn transmit_hello(
         return RadioResponse::Negatory;
     }
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-        sender.radio_contacts.set_slot(slot, target_sid);
+        let note = sender.note_names();
+        sender.seldom.radio_contacts.fill(slot, target_sid, note);
     }
     RadioResponse::Roger
 }
@@ -310,10 +313,10 @@ fn transmit_over_out(
     target_sid: u64,
     filtered: Option<u64>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-        while sender.radio_contacts.remove(target_sid).is_some() {}
+        while sender.seldom.radio_contacts.remove(target_sid).is_some() {}
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -344,7 +347,10 @@ fn transmit_over_out(
 pub enum RadioMessage {
     Hello = 0x02,
     Break = 0x03,
-    DockingComplete = 0x07, // name inferred
+    /// Hold still: a Carryall about to lift a Unit sends it
+    /// (`0x00416EC3`); the Unit drops its destination and Target, queues
+    /// Sleep and tethers itself to the sender (`0x0073750A`).
+    HoldStill = 0x07, // name inferred
     /// Infantry arrival51A80C: the common Techno receiver untethers the
     /// sender and then sends BREAK (`0x006F4C29..0x006F4C47`).
     RequestClearance = 0x08,
@@ -395,9 +401,12 @@ pub enum RadioMessage {
     Reload = 0x1F, // name inferred
     IsRepairing = 0x22,
     IsOccupied = 0x23,
+    /// "Will you be lifted?": a Carryall asks the Unit it will tote
+    /// (`0x00416E84`); the Unit's answer is `0x0073745C`.
+    WantRide = 0x24, // name inferred
 }
 // Deliberately omitted: 0x10 RESERVE_DOCK (a mission-queue verb argument, not a
-// wire message) and 0x24 WANT_RIDE (dormant in stock YR).
+// wire message).
 
 impl RadioMessage {
     /// The wire opcode byte.
@@ -425,6 +434,10 @@ pub enum RadioResponse {
     Queued = 0x17,
     InsufficientFunds = 0x20,
     RepairComplete = 0x21,
+    /// Aircraft DOCK_NOW returns the literal 5, including for a null sender
+    /// (`AircraftClass::Receive_Radio @ 0x0041938E`). Its callers distinguish
+    /// it from ROGER; no additional meaning is inferred from the number.
+    Code5 = 5,
 }
 
 impl RadioResponse {
@@ -469,6 +482,7 @@ fn message_codes_match_wire_opcodes() {
 fn response_codes_match_wire_opcodes() {
     assert_eq!(RadioResponse::None.code(), 0);
     assert_eq!(RadioResponse::Roger.code(), 1);
+    assert_eq!(RadioResponse::Code5.code(), 5);
     assert_eq!(RadioResponse::Negatory.code(), 0x0A);
     assert_eq!(RadioResponse::AlreadyThere.code(), 0x14);
     assert_eq!(RadioResponse::Queued.code(), 0x17);

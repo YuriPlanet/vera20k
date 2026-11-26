@@ -16,8 +16,8 @@ use crate::rules::ini_parser::IniFile;
 use crate::test_fixture::once_per_process;
 
 /// Fixed ARTMD.INI [GI]/[GISequence] inputs for asset-free authored scenarios.
-/// Callers explicitly supply E1 Image=GI and use the existing ART reader and
-/// sequence binder. These are input records, not native replay goldens. The
+/// Callers explicitly supply E1 Image=GI and use the retained type ART reader.
+/// These are input records, not native replay goldens. The
 /// original reader/Ready receipt is in anytown_damage/foot_missions.json.
 pub const GI_ART_EXCERPT: &str = "\
 [GI]
@@ -52,6 +52,15 @@ Paradrop=363,1,0
 Cheer=364,8,0,E
 Panic=8,6,6
 ";
+
+/// A LANGRULE.INI control whose `[Digest]` is the native `SaveToPipe526470`
+/// SHA-1 of the rest of the file, so `ReadCCFile4741F0` accepts it. Use it
+/// wherever a test needs a LANGRULE that survives the startup Digest check.
+pub const DIGESTED_LANGRULE_CONTROL: &str = concat!(
+    "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n",
+    "[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n",
+    "[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n",
+);
 
 /// Physical ARTMD [TRST]/[TerroristSequence] inputs for fatal receiver
 /// fixtures. These are reader inputs; native death goldens remain separate.
@@ -200,14 +209,13 @@ pub fn retail_rulesmd_rules() -> Option<crate::rules::ruleset::RuleSet> {
     .map(crate::rules::ruleset::RuleSet::with_fresh_serial)
 }
 
-/// [`retail_unlayered_rules`] with `artmd.ini`'s art data installed, as the
-/// app installs it before a scenario starts.
+/// [`retail_unlayered_rules`] with `artmd.ini`'s presentation data installed.
+/// Infantry sequences already belong to the retained type state read by Process.
 pub fn retail_unlayered_rules_with_art() -> Option<crate::rules::ruleset::RuleSet> {
     once_per_process("rulesmd.ini over artmd.ini, with art data", || {
         let mut rules = retail_unlayered_rules()?;
-        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&retail_ini(
-            "artmd.ini",
-        )?));
+        let art = retail_ini("artmd.ini")?;
+        rules.install_art_data(art_registry(&art));
         Some(rules)
     })
     .map(crate::rules::ruleset::RuleSet::with_fresh_serial)
@@ -280,19 +288,28 @@ pub fn retail_audio_index() -> Option<&'static crate::assets::asset_manager::Loa
 }
 
 /// [`AudioDefinitions::select`] over [`retail_assets`], selected once per
-/// test process. `None` when the install skips.
+/// test process for each Rules-reading mode: on a thread that reads the
+/// Ares way the install stands for a game that ships `ares.mix`. `None` when
+/// the install skips.
 ///
 /// [`AudioDefinitions::select`]: crate::rules::audio_sources::AudioDefinitions::select
 pub fn retail_audio_definitions() -> Option<&'static crate::rules::audio_sources::AudioDefinitions>
 {
-    static DEFINITIONS: std::sync::OnceLock<Option<crate::rules::audio_sources::AudioDefinitions>> =
-        std::sync::OnceLock::new();
-    DEFINITIONS
+    // One for each Rules-reading mode (`ares_switch::ares_way`).
+    static DEFINITIONS: [std::sync::OnceLock<
+        Option<crate::rules::audio_sources::AudioDefinitions>,
+    >; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+    let ares_way = crate::rules::ares_switch::ares_way();
+    DEFINITIONS[usize::from(ares_way)]
         .get_or_init(|| {
             let (_, assets) = retail_assets()?;
-            Some(crate::rules::audio_sources::AudioDefinitions::select(
-                &assets,
-            ))
+            Some(
+                crate::rules::audio_sources::AudioDefinitions::select_for_game(
+                    &assets,
+                    None,
+                    assets.ships_ares() || ares_way,
+                ),
+            )
         })
         .as_ref()
 }
@@ -375,6 +392,9 @@ pub fn retail_rules_owner(
     ]
     .into_iter()
     .map(|name| {
+        if name == "langrule.ini" && !assets.mod_selected() {
+            return None;
+        }
         assets.resolve_ref(name).map(|entry| {
             (
                 entry.source_archive.to_owned(),
@@ -385,8 +405,14 @@ pub fn retail_rules_owner(
     })
     .collect();
     let (sources, sounds, eva) = once_per_process(entries, || {
-        let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
-        let sources = RetailRulesSources::select(assets).expect("select active-YR startup sources");
+        // The fixture game ships `ares.mix` when its thread reads the Ares
+        // way; the retail archives do not.
+        let ships_ares = assets.ships_ares() || crate::rules::ares_switch::ares_way();
+        let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select_for_game(
+            assets, None, ships_ares,
+        );
+        let sources = RetailRulesSources::select_for_game(assets, ships_ares)
+            .expect("select active-YR startup sources");
         for (name, selected) in [
             (
                 "langrule.ini",
@@ -395,6 +421,9 @@ pub fn retail_rules_owner(
             ("soundmd.ini", audio_definitions.sound_source()),
             ("evamd.ini", audio_definitions.eva_source()),
         ] {
+            if name == "langrule.ini" && !assets.mod_selected() {
+                continue;
+            }
             assert!(
                 selected.is_some() || assets.resolve_ref(name).is_none(),
                 "present optional retail source {name} must parse"
@@ -412,7 +441,8 @@ pub fn retail_rules_owner(
     })
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
-    // derives.
+    // derives. A test of the retail install itself says
+    // `with_ares_mix(false)`.
     sources.into_owner(sounds, eva).expect("cold startup")
 }
 
@@ -521,11 +551,6 @@ fn load_retail_mode_rules_for_map(
         .into_parts();
     let art = art_registry(&fixed_art);
     rules.install_art_data(art);
-    // Match the app's data-only ART sequence binding before a frame fixture
-    // fires or destroys Infantry. Without it death actions cannot finish.
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     Some(RetailBattleRules {
         authored_rules: std::sync::Arc::new(authored_rules),
         fixed_art: std::sync::Arc::new(fixed_art),

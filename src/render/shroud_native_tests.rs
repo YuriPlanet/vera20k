@@ -36,6 +36,69 @@ fn stock_frames(native: &Value) -> Option<(Vec<Vec<u8>>, [u32; 2])> {
     Some((frames, [width, height]))
 }
 
+/// 47EFE0 leaf stores through the production compositor: each draw copies
+/// one frame at `point` into `plane` (`size` wide) within its `clip`, the
+/// way the old CPU leaf wrote a clipped sub-slice. The clip's bytes go up
+/// to a plane of the clip's size, the blit lands at `point - clip`, and the
+/// composed bytes come back.
+fn compose_leaf(
+    gpu: &crate::render::terrain_draw_gpu_tests::Gpu,
+    compositor: &mut Compositor,
+    frames: &mut FrameAtlas,
+    plane: &mut [u8],
+    size: [u32; 2],
+    clip: [i32; 4],
+    frame: u16,
+    point: [i32; 2],
+) {
+    let x = clip[0].max(0);
+    let y = clip[1].max(0);
+    let right = (clip[0] + clip[2]).min(size[0] as i32);
+    let bottom = (clip[1] + clip[3]).min(size[1] as i32);
+    if x >= right || y >= bottom {
+        return;
+    }
+    let extent = [(right - x) as u32, (bottom - y) as u32];
+    let rows = |row: u32| {
+        let start = ((y as u32 + row) * size[0] + x as u32) as usize;
+        start..start + extent[0] as usize
+    };
+    let texture = create_a_plane(&gpu.device, extent);
+    let initial: Vec<u8> = (0..extent[1])
+        .flat_map(|row| plane[rows(row)].to_vec())
+        .collect();
+    crate::render::atlas_growth::write_texels(&gpu.queue, &texture, [0, 0], extent, 1, &initial);
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    compositor.encode_cells(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &texture.create_view(&Default::default()),
+        extent,
+        frames,
+        &[CellBlits {
+            origin: [point[0] - x, point[1] - y],
+            frames: [frame, NO_FRAME],
+        }],
+        false,
+    );
+    let pending = crate::render::frame_readback::PendingTextureReadback::encode_r8(
+        &gpu.device,
+        &mut encoder,
+        &texture,
+        [0, 0],
+        extent,
+    )
+    .unwrap();
+    let submission = gpu.queue.submit([encoder.finish()]);
+    let composed = pending
+        .finish(&gpu.device, submission, std::time::Duration::from_secs(30))
+        .unwrap();
+    for (row, bytes) in composed.chunks_exact(extent[0] as usize).enumerate() {
+        plane[rows(row as u32)].copy_from_slice(bytes);
+    }
+}
+
 #[test]
 #[ignore = "requires GPU and retail assets; FogOfWar A-buffer source/blend/defeat"]
 fn retail_fog_source_and_defeat_gate_reach_the_shared_a_texture() {
@@ -75,7 +138,7 @@ fn retail_fog_source_and_defeat_gate_reach_the_shared_a_texture() {
         [width, height],
         SHROUD_EDGE_LUT,
     );
-    source.install_fog_frames(fog_frames, [fog_width, fog_height]);
+    source.install_fog_frames(&gpu.device, &gpu.queue, fog_frames, [fog_width, fog_height]);
     let mut names = crate::sim::intern::StringInterner::new();
     let owner = names.intern("Local");
     let mut fog = FogState::new(16, 16);
@@ -119,7 +182,7 @@ fn retail_fog_source_and_defeat_gate_reach_the_shared_a_texture() {
             Some(dim),
         ),
     ] {
-        source.rebuild_if_needed(
+        source.rebuild_submitted(
             &gpu.device,
             &gpu.queue,
             &fog,
@@ -147,33 +210,23 @@ fn retail_shroud_pixels_and_clipping_match_original_47efe0() {
     let Some((frames, canvas)) = stock_frames(&native) else {
         return;
     };
-    let frames = frames
-        .into_iter()
-        .map(|pixels| BrightnessFrame::new(pixels, canvas))
-        .collect::<Vec<_>>();
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let mut frames = FrameAtlas::new(&gpu.device, &gpu.queue, frames, canvas);
+    let mut compositor = Compositor::new(&gpu.device);
     let size = dimensions(&native["size"]);
     for row in native["leaf_cases"].as_array().unwrap() {
         let mut pixels =
             vec![native["initial_value"].as_u64().unwrap() as u8; (size[0] * size[1]) as usize];
         for draw in row["draws"].as_array().unwrap() {
-            let [cx, cy, width, height]: [i32; 4] =
-                std::array::from_fn(|i| draw["clip"][i].as_i64().unwrap() as i32);
-            let x = cx.max(0);
-            let y = cy.max(0);
-            let right = (cx + width).min(size[0] as i32);
-            let bottom = (cy + height).min(size[1] as i32);
-            if x >= right || y >= bottom {
-                continue;
-            }
-            let location = point(&draw["point"]);
-            let start = (y as u32 * size[0] + x as u32) as usize;
-            blit_frame_pixels(
-                &mut pixels[start..],
-                size[0] as usize,
-                [(right - x) as u32, (bottom - y) as u32],
-                &frames[draw["frame"].as_u64().unwrap() as usize],
-                [location[0] - x, location[1] - y],
-                BrightnessWrite::Copy,
+            compose_leaf(
+                &gpu,
+                &mut compositor,
+                &mut frames,
+                &mut pixels,
+                size,
+                std::array::from_fn(|i| draw["clip"][i].as_i64().unwrap() as i32),
+                draw["frame"].as_u64().unwrap() as u16,
+                point(&draw["point"]),
             );
         }
         assert_eq!(
@@ -258,7 +311,7 @@ fn production_shroud_rebuild_matches_original_tactical_scenes() {
         // Use the same invalidation as a load, then the ordinary dirty gate
         // and upload, rather than writing private camera/cache fields.
         source.mark_stale();
-        source.rebuild_if_needed(
+        source.rebuild_submitted(
             &gpu.device,
             &gpu.queue,
             &fog,
@@ -289,117 +342,6 @@ fn production_shroud_rebuild_matches_original_tactical_scenes() {
 }
 
 #[test]
-#[ignore = "requires retail archives and GPU; run optimized to measure the actual A raster/upload owners"]
-fn production_shroud_rebuild_workload_timing() {
-    use std::time::{Duration, Instant};
-
-    let native = fixture();
-    let (frames, canvas) = stock_frames(&native).expect("RA2_DIR supplies stock SHROUD");
-    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
-    let screen = [1280, 720];
-    let map = [256u16; 2];
-    let limit = gpu.device.limits().max_texture_dimension_2d;
-    let minimum_zoom = (screen[0] as f32 / limit as f32).max(0.25);
-    let mut interner = crate::sim::intern::StringInterner::new();
-    let owner = interner.intern("Local");
-    let mut results = Vec::new();
-    for scene in ["unrevealed", "frontier"] {
-        let mut fog = FogState::new(map[0], map[1]);
-        // Establish the viewer outside the measured view. The frontier's
-        // sight setup is also excluded from rendering measurements.
-        fog.mark_visible_for_owner(owner, 1, 1);
-        if scene == "frontier" {
-            for ry in 0..map[1] / 2 {
-                for rx in 0..map[0] {
-                    fog.mark_visible_for_owner(owner, rx, ry);
-                }
-            }
-        }
-        for zoom in [1.0, minimum_zoom] {
-            let size = virtual_dimensions(screen, zoom);
-            assert!(size[0] <= limit && size[1] <= limit);
-            let mut source = ShroudBuffer::new(
-                &gpu.device,
-                &gpu.queue,
-                size,
-                map,
-                frames.clone(),
-                canvas,
-                SHROUD_EDGE_LUT,
-            );
-            let mut samples = Vec::new();
-            for frame in 0..22 {
-                // Pan by a native source pixel each frame. The production
-                // dirty gate would rebuild; reuse allocation as steady play
-                // does. Rare resize and unchanged-gate costs are not measured.
-                source.last_cam_x = -(size[0] as f32) / 2.0 + frame as f32;
-                source.last_cam_y = 3840.0 - size[1] as f32 / 2.0;
-                let started = Instant::now();
-                source.rasterize(&fog, owner, None, Default::default());
-                let raster_ms = started.elapsed().as_secs_f64() * 1000.0;
-                let writing = Instant::now();
-                source.upload(&gpu.queue);
-                let queue_write_ms = writing.elapsed().as_secs_f64() * 1000.0;
-                let submitted = Instant::now();
-                let submission = gpu.queue.submit([]);
-                gpu.device
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: Some(submission),
-                        timeout: Some(Duration::from_secs(60)),
-                    })
-                    .unwrap();
-                let completion_ms = submitted.elapsed().as_secs_f64() * 1000.0;
-                let total_ms = started.elapsed().as_secs_f64() * 1000.0;
-                if frame >= 2 {
-                    samples.push(serde_json::json!({
-                        "frame": frame - 2,
-                        "raster_ms": raster_ms,
-                        "queue_write_ms": queue_write_ms,
-                        "submit_to_completion_ms": completion_ms,
-                        "total_ms": total_ms,
-                    }));
-                }
-            }
-            let mean = |field: &str| {
-                samples
-                    .iter()
-                    .map(|sample| sample[field].as_f64().unwrap())
-                    .sum::<f64>()
-                    / samples.len() as f64
-            };
-            eprintln!(
-                "A_REBUILD_TIMING scene={scene} screen={screen:?} virtual={size:?} zoom={zoom} map={map:?} warmups=2 samples=20 raster_mean_ms={:.4} queue_write_mean_ms={:.4} completion_mean_ms={:.4} total_mean_ms={:.4}",
-                mean("raster_ms"),
-                mean("queue_write_ms"),
-                mean("submit_to_completion_ms"),
-                mean("total_ms")
-            );
-            results.push(serde_json::json!({
-                "scene": scene,
-                "virtual_size": size,
-                "zoom": zoom,
-                "upload_bytes": source.row_stride * source.height,
-                "samples": samples,
-            }));
-        }
-    }
-    if let Some(path) = std::env::var_os("VERA20K_SHROUD_PERF_OUTPUT") {
-        let report = serde_json::json!({
-            "scope": "production ShroudBuffer rasterize and upload, sequential queue fence; excludes allocation, resize and unchanged dirty gate",
-            "screen": screen,
-            "map": map,
-            "device_max_texture_dimension_2d": limit,
-            "debug_assertions": cfg!(debug_assertions),
-            "warmup_frames": 2,
-            "measured_frames": 20,
-            "stock_shroud_sha256": native["stock"]["sha256"],
-            "results": results,
-        });
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
-    }
-}
-
-#[test]
 fn clear_tile_shroud_edge_matches_original_a_producer() {
     let packet: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/tmp_clear_render.json",
@@ -416,18 +358,17 @@ fn clear_tile_shroud_edge_matches_original_a_producer() {
         packet["surface"]["height"].as_u64().unwrap() as u32,
     ];
     assert_eq!(edge["clip"], serde_json::json!([0, 0, size[0], size[1]]));
-    let frame = BrightnessFrame::new(
-        frames[edge["frame"].as_u64().unwrap() as usize].clone(),
-        canvas,
-    );
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
     let mut pixels = vec![edge["initial"].as_u64().unwrap() as u8; (size[0] * size[1]) as usize];
-    blit_frame_pixels(
+    compose_leaf(
+        &gpu,
+        &mut Compositor::new(&gpu.device),
+        &mut FrameAtlas::new(&gpu.device, &gpu.queue, frames, canvas),
         &mut pixels,
-        size[0] as usize,
         size,
-        &frame,
+        [0, 0, size[0] as i32, size[1] as i32],
+        edge["frame"].as_u64().unwrap() as u16,
         point(&edge["point"]),
-        BrightnessWrite::Copy,
     );
     let row = packet["rows"]
         .as_array()

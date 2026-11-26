@@ -59,7 +59,7 @@ impl LivePublication<'_> {
             .path_grid
             .as_deref()
             .ok_or("repair has no live path owner")?;
-        let bounds = sim.playfield_bounds;
+        let bounds = *sim.playfield_bounds;
         let result = bridges.validate_repaired_zones(terrain, query, |record| {
             zones.activate_repaired_bridge(terrain, record, bounds)
         });
@@ -81,7 +81,7 @@ impl ZoneBatchHost for LivePublication<'_> {
             .ok_or("zone batch has no live terrain")?;
         Ok(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(coord.0), i32::from(coord.1)),
-            self.sim.playfield_bounds,
+            *self.sim.playfield_bounds,
             Some(terrain),
         ))
     }
@@ -105,7 +105,10 @@ impl ZoneBatchHost for LivePublication<'_> {
         self.recalc_cell(cell, -1)
     }
 
-    fn fine_zone(&self, coord: CellCoord) -> Result<u16, String> {
+    fn fine_zone(
+        &self,
+        coord: CellCoord,
+    ) -> Result<crate::sim::pathfinding::zone_map::ZoneId, String> {
         self.sim
             .zone_grid
             .as_ref()
@@ -130,7 +133,7 @@ impl ZoneBatchHost for LivePublication<'_> {
         repair_zone_hierarchy_around_cell(
             zones,
             coord,
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             terrain,
             bridges.endpoint_records(),
         );
@@ -138,7 +141,7 @@ impl ZoneBatchHost for LivePublication<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     include!("bridge_batch_native_tests.rs");
@@ -147,7 +150,9 @@ mod tests {
     use crate::sim::pathfinding::{PathGrid, zone_map::ZoneGrid};
     use std::sync::Arc;
 
-    fn edge_state(sim: &Simulation) -> Vec<Vec<Vec<(u16, u8)>>> {
+    fn edge_state(
+        sim: &Simulation,
+    ) -> Vec<Vec<Vec<(crate::sim::pathfinding::zone_map::ZoneId, u8)>>> {
         let hierarchy = sim
             .zone_grid
             .as_ref()
@@ -160,7 +165,7 @@ mod tests {
                 (0..graph.record_slot_count())
                     .map(|zone| {
                         graph
-                            .edges(zone as u16)
+                            .edges(zone as crate::sim::pathfinding::zone_map::ZoneId)
                             .iter()
                             .map(|edge| (edge.neighbor, edge.flag))
                             .collect()
@@ -200,42 +205,44 @@ mod tests {
         path.set_blocked(7, 7, true); // Retained structure blocking.
         let mut sim = Simulation::with_seed(31);
         sim.install_resolved_terrain_for_new_map(terrain);
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 8,
             off_fc: 0,
             off_100: 0,
             off_104: 8,
             off_108: 8,
         });
-        sim.zone_grid = Some(ZoneGrid::build_with_native_bridge_geometry(
-            &path,
-            sim.resolved_terrain.as_ref().unwrap(),
-            bridges.endpoint_records(),
-            16,
-            16,
-            Some((8, 8)),
-        ));
-        sim.bridge_state = Some(bridges);
-        sim.path_grid = Some(Arc::new(path.clone()));
+        *sim.zone_grid = Some(
+            ZoneGrid::build_with_native_bridge_geometry(
+                &path,
+                sim.resolved_terrain.as_ref().unwrap(),
+                bridges.endpoint_records(),
+                16,
+                16,
+                Some((8, 8)),
+            )
+            .into(),
+        );
+        *sim.bridge_state = Some(bridges);
+        *sim.path_grid = Some(Arc::new(path.clone()));
         let before = edge_state(&sim);
         let mut host = LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         assert!(!host.validate_bridge_zones((5, 5)).unwrap());
         assert!(sim.bridge_state.as_ref().unwrap().endpoint_records()[0].active);
         let after = edge_state(&sim);
-        let count =
-            |state: &Vec<Vec<Vec<(u16, u8)>>>| state.iter().flatten().map(Vec::len).sum::<usize>();
+        let count = |state: &Vec<Vec<Vec<(crate::sim::pathfinding::zone_map::ZoneId, u8)>>>| {
+            state.iter().flatten().map(Vec::len).sum::<usize>()
+        };
         assert_eq!(count(&after), count(&before) + 18);
         let mut host = LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         assert!(!host.validate_bridge_zones((5, 5)).unwrap());
@@ -251,7 +258,6 @@ mod tests {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         host.rebuild_bridge_connectivity().unwrap();

@@ -75,10 +75,10 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::{PlacementEvidence, RevealRequest, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_oracle_tests.rs"]
 mod oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_tests.rs"]
 mod tests;
 
@@ -107,6 +107,7 @@ impl SpawnOwner {
     /// Install a fixture's owner.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_for_test(&mut self, owner: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.owner = owner;
     }
 }
@@ -157,7 +158,7 @@ pub enum SpawnSlotState {
 }
 
 /// One pool slot (native `SpawnControl`, 0x18 bytes).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SpawnSlot {
     /// Stable id of the child, or `None` while regenerating.
     spawn: Option<u64>,
@@ -199,6 +200,7 @@ impl SpawnSlot {
         timer: CdTimer,
         is_missile_spawn: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             spawn,
             state,
@@ -210,6 +212,7 @@ impl SpawnSlot {
     /// Install a fixture's child.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_spawn_for_test(&mut self, spawn: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.spawn = spawn;
     }
 
@@ -257,6 +260,26 @@ pub struct SpawnManagerState {
 }
 
 impl SpawnManagerState {
+    /// Ares capture10045D76..10045D8B resumes the manager's +50 AI gate
+    /// only from its -1 start sentinel, preserving the retained duration.
+    pub(crate) fn resume_update_timer(&mut self, frame: i32) {
+        self.update_timer.resume(frame);
+    }
+
+    /// Ares EMPulse::updateSpawnManager (10063070) on the manager's two
+    /// timers, the SpawnTimer (`+0x5C`) then the UpdateTimer (`+0x50`):
+    /// `held` pauses each at its time left (0 at least), otherwise each
+    /// resumes from its -1 start.
+    pub(crate) fn ares_hold_timers(&mut self, held: bool, frame: i32) {
+        for timer in [&mut self.spawn_timer, &mut self.update_timer] {
+            if held {
+                timer.pause(frame);
+            } else {
+                timer.resume(frame);
+            }
+        }
+    }
+
     /// The interned `Spawns=` child type.
     pub fn spawn_type(&self) -> InternedId {
         self.spawn_type
@@ -318,6 +341,7 @@ impl SpawnManagerState {
     /// A fixture's idle pool of `slots` with zero rates and timers.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(spawn_type: InternedId, slots: Vec<SpawnSlot>) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             spawn_type,
             missile_family: None,
@@ -349,12 +373,14 @@ impl SpawnManagerState {
     /// Install a fixture's current target.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_target_for_test(&mut self, current_target: Option<TargetKind>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.current_target = current_target;
     }
 
     /// Install a fixture's queued target.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_queued_target_for_test(&mut self, queued_target: Option<TargetKind>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.queued_target = queued_target;
     }
 
@@ -367,6 +393,7 @@ impl SpawnManagerState {
     /// A fixture's slots.
     #[cfg(any(test, feature = "test-support"))]
     pub fn slots_mut_for_test(&mut self) -> &mut Vec<SpawnSlot> {
+        crate::sim::game_entity::NameNote::fixture();
         &mut self.slots
     }
 
@@ -393,6 +420,13 @@ impl SpawnManagerState {
                 )
             })
             .count()
+    }
+
+    /// Phobos `SpawnManagerClass::CountLaunchingSpawns`: children that are
+    /// alive but not docked, i.e. the complement of
+    /// [`Self::count_docked_spawns`] inside [`Self::count_alive_spawns`].
+    pub fn count_launching_spawns(&self) -> usize {
+        self.count_alive_spawns() - self.count_docked_spawns()
     }
 
     /// Native `0x006B7D80`, read by the Drive/Ship Process_Movement gate
@@ -423,10 +457,20 @@ impl SpawnManagerState {
     /// `SpawnManagerClass::SetTarget` (`0x006B7B90`): a target that differs
     /// from the live one is queued, never written straight through. The next AI
     /// pass promotes it.
-    pub fn set_target(&mut self, target: Option<TargetKind>) {
+    pub(crate) fn queue_target(
+        &mut self,
+        target: Option<TargetKind>,
+        _: crate::sim::game_entity::NameNote,
+    ) {
         if target != self.current_target {
             self.queued_target = target;
         }
+    }
+
+    /// [`Self::queue_target`] for a fixture.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target(&mut self, target: Option<TargetKind>) {
+        self.queue_target(target, crate::sim::game_entity::NameNote::fixture());
     }
 
     /// Promote the queued target, as every state branch does before reading
@@ -446,13 +490,14 @@ impl SpawnManagerState {
 /// created here; the world-owned constructor transaction materialises every
 /// child before the parent attempts Unlimbo. The constructor
 /// (`0x006B6C90`) writes every node timer and the SpawnTimer as
-/// `{Frame, 0}` and the UpdateTimer as `{Frame, 20}`.
+/// `{Frame, 0}` and the UpdateTimer as `{Frame, 20}`. Boxed as the entity
+/// keeps it (`GameEntity::spawn_manager`).
 pub fn init_spawn_manager(
     obj: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
     interner: &mut crate::sim::intern::StringInterner,
     frame: u32,
-) -> Option<SpawnManagerState> {
+) -> Option<Box<SpawnManagerState>> {
     let spawn_type_name = obj.spawns.as_deref()?;
     if obj.spawns_number <= 0 {
         return None;
@@ -465,7 +510,10 @@ pub fn init_spawn_manager(
     )?;
 
     let missile_family = rules.missile_spawn.family_of(spawn_type_name);
-    let is_missile_spawn = missile_family.is_some();
+    // The node flag and the post-launch wait: the three Rules families, and
+    // in an Ares game a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
+    let kamikaze_wait_frames = rules.spawn_missile_wait_frames(spawn_type_name);
+    let is_missile_spawn = kamikaze_wait_frames.is_some();
     let frame = frame as i32;
     let slots = (0..obj.spawns_number.max(0) as usize)
         .map(|_| SpawnSlot {
@@ -479,21 +527,19 @@ pub fn init_spawn_manager(
         })
         .collect();
 
-    Some(SpawnManagerState {
+    Some(Box::new(SpawnManagerState {
         spawn_type: interner.intern(spawn_type_name),
         missile_family,
         regen_rate: obj.spawn_regen_rate,
         reload_rate: obj.spawn_reload_rate,
-        kamikaze_wait_frames: missile_family
-            .map(|family| rules.missile_spawn.kamikaze_wait_frames(family))
-            .unwrap_or(0),
+        kamikaze_wait_frames: kamikaze_wait_frames.unwrap_or(0),
         slots,
         update_timer: CdTimer::started(frame, FIRST_UPDATE_DELAY_FRAMES),
         spawn_timer: CdTimer::started(frame, 0),
         current_target: None,
         queued_target: None,
         mode: SpawnManagerMode::Idle,
-    })
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +573,11 @@ trait SpawnHost {
     fn is_owner(&self, id: u64) -> bool;
     /// The pool's type is Rules' `CMislType=` (`0x006B74BC`, `0x006B7513`).
     fn pool_is_cmisl(&self) -> bool;
+    /// The pool's nodes are missiles: its type is one of the three Rules
+    /// families (`0x006B78F8..0x006B790E`), or in an Ares game a
+    /// `Missile.Custom` type (SpawnManagerClass_Update_CustomMissile
+    /// 100613A0).
+    fn pool_is_spawn_missile(&self) -> bool;
     /// The owner's locomotor Is_Moving (ILocomotion `+0x10`, `0x006B731E`).
     fn owner_is_moving(&mut self) -> bool;
     /// The owner's locomotor Is_Moving_Now (ILocomotion `+0x80`, `0x006B7349`).
@@ -610,7 +661,10 @@ fn ai(host: &mut impl SpawnHost) {
 /// The per-node switch (jump table `0x006B7B6C`).
 fn visit_slot(host: &mut impl SpawnHost, index: usize, frame: i32) {
     use SpawnSlotState::*;
-    let slot = host.manager_ref().slots[index].clone();
+    // The slot as the visit read it: the arms below write the live slot
+    // through `host`, and their callbacks (launch, recall, pointer expiry)
+    // write it too.
+    let slot = host.manager_ref().slots[index];
     let Some(child) = slot.spawn else {
         // Only a regenerating node is without a unit.
         if slot.state == Regenerating && slot.timer.expired(frame) {
@@ -703,6 +757,10 @@ fn launch_slot(host: &mut impl SpawnHost, index: usize, child: u64, frame: i32) 
         return;
     }
     // HouseClass::IonSensitivesShouldBeOffline (`0x0053A130`) answers false.
+    // The owner's locomotor queries (`0x006B72FE..0x006B7357`): a Building
+    // owner has none and answers false, the arm Ares'
+    // SpawnManagerClass_Update_Buildings (Ares.dll 10061350, hook 0x6B72F9)
+    // skips to instead of gamemd's E_POINTER.
     if missile && (host.owner_is_moving() || host.owner_is_moving_now()) {
         return;
     }
@@ -745,9 +803,9 @@ fn fill_slot(host: &mut impl SpawnHost, index: usize) {
     let Some(child) = host.create_child() else {
         return;
     };
-    let manager = host.manager();
-    let missile = manager.missile_family.is_some();
-    let slot = &mut manager.slots[index];
+    // `0x006B78F8..0x006B792C`: the node's IsSpawnMissile from the pool type.
+    let missile = host.pool_is_spawn_missile();
+    let slot = &mut host.manager().slots[index];
     slot.spawn = Some(child);
     slot.is_missile_spawn = missile;
     host.limbo(child);
@@ -793,7 +851,8 @@ fn manager_status(host: &mut impl SpawnHost, frame: i32) {
             let mut pushed = false;
             let mut index = 0;
             while index < host.manager_ref().slots.len() {
-                let slot = host.manager_ref().slots[index].clone();
+                // Read before the host's calls below rewrite this slot.
+                let slot = host.manager_ref().slots[index];
                 index += 1;
                 let Some(child) = slot.spawn.filter(|_| slot.state == InFlight) else {
                     continue;
@@ -908,7 +967,8 @@ fn pointer_expired(host: &mut impl SpawnHost, expired: u64) {
 fn clear_all_targets(host: &mut impl SpawnHost) {
     let mut index = 0;
     while index < host.manager_ref().slots.len() {
-        let slot = host.manager_ref().slots[index].clone();
+        // Read before the host's calls below rewrite this slot.
+        let slot = host.manager_ref().slots[index];
         index += 1;
         let Some(child) = slot
             .spawn
@@ -955,7 +1015,8 @@ fn kill_all_spawns(host: &mut impl SpawnHost) {
         host.manager_ref().regen_rate as i32
     };
     for index in (0..host.manager_ref().slots.len()).rev() {
-        let slot = host.manager_ref().slots[index].clone();
+        // Read before the arms below rewrite this slot.
+        let slot = host.manager_ref().slots[index];
         match (slot.state, slot.spawn) {
             (Regenerating, _) => continue,
             (ReadyDocked | Reloading, child) => {
@@ -997,13 +1058,12 @@ pub(crate) fn spawn_manager_ai(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_id: u64,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         ai(&mut host);
     }
@@ -1018,12 +1078,12 @@ pub(crate) fn commit_spawn_manager_pool(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::with_rules(rules).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) else {
         return;
     };
@@ -1051,13 +1111,12 @@ pub(crate) fn notify_pointer_expired(
     listener_id: u64,
     expired_id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         listener_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         pointer_expired(&mut host, expired_id);
     }
@@ -1071,13 +1130,12 @@ pub(crate) fn clear_all_spawn_targets(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         clear_all_targets(&mut host);
     }
@@ -1094,7 +1152,7 @@ pub(crate) fn clear_all_spawn_targets(
 /// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift —
 ///   WIRED, via `Simulation::imbue_locomotor`.
 /// - `TechnoClass::Stun` (`0x006FCD40`) — WIRED via
-///   `Simulation::techno_death_stun`, which a lifted Foot skips.
+///   `Simulation::stun`, which a lifted Foot skips.
 pub(crate) fn kill_all_spawns_with_context(
     sim: &mut Simulation,
     owner_id: u64,
@@ -1149,7 +1207,12 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .substrate
             .entities
             .get_mut(self.owner_id)
-            .and_then(|owner| owner.spawn_manager.as_mut())
+            .and_then(|owner| {
+                // A slot's child and the targets are names the
+                // pointer-expiry index reads.
+                let _ = owner.note_names();
+                owner.spawn_manager.as_mut()
+            })
             .expect("a spawn manager keeps its owner for the call")
     }
 
@@ -1169,6 +1232,13 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     fn pool_is_cmisl(&self) -> bool {
         let rules = self.context.rules();
         cmisl_pool(self.sim, rules, self.manager_ref().spawn_type)
+    }
+
+    fn pool_is_spawn_missile(&self) -> bool {
+        let rules = self.context.rules();
+        rules
+            .spawn_missile_wait_frames(self.sim.interner.resolve(self.manager_ref().spawn_type))
+            .is_some()
     }
 
     fn owner_is_moving(&mut self) -> bool {
@@ -1263,11 +1333,12 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             self.owner_id,
             &target,
             terrain,
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             &crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: sim.overlay_grid.as_ref(),
                 overlay_registry: self.context.registry(),
-                alliances: Some(sim.house_alliances.as_map()),
+                alliances: Some(&sim.house_alliances),
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         )
     }
@@ -1360,14 +1431,14 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         };
         requested.put_location(launch);
         requested.copy_level_from(&owner_position);
-        let context = self.context.with_unlimbo_facing(Some(launch_dir));
-        let Some((position, placement)) = self.sim.unlimbo_class_entry(
-            child,
-            requested,
-            PlacementEvidence::EvaluateMark,
-            rules,
-            context.registry(),
-        ) else {
+        let context = self
+            .context
+            .reborrow()
+            .with_unlimbo_facing(Some(launch_dir));
+        let Some((position, placement)) =
+            self.sim
+                .unlimbo_class_entry(child, requested, PlacementEvidence::EvaluateMark, rules)
+        else {
             return;
         };
         let _ = self.sim.try_reveal_entity_with_context(
@@ -1383,7 +1454,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn reset_owner_burst(&mut self) {
         if let Some(owner) = self.sim.substrate.entities.get_mut(self.owner_id) {
-            owner.weapon_burst.reset();
+            owner.seldom.weapon_burst.reset();
         }
     }
 
@@ -1391,17 +1462,27 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         // `AnimClass(V3TAKOFF, &Location, 2, 1, 0x600, -10, 0)`; `[0x00840098]`
         // names it too. The constructor draws only for `RandomRate=`,
         // `IsMeteor=` or `Bouncer=`, which retail `[V3TAKOFF]` leaves unset.
+        // Ares names the child type's `Missile.TakeOffAnim` and puffs nothing
+        // for a null one (SpawnManagerClass_Update_CustomMissileTakeoff
+        // 10061410, hook 0x6B752E).
         let rules = self.context.rules();
-        let Some(location) =
-            self.sim.substrate.entities.get(child).map(|child| {
-                crate::sim::movement::ground_pose::position_world_coord(&child.position)
-            })
+        let Some((location, type_ref)) = self.sim.substrate.entities.get(child).map(|child| {
+            (
+                crate::sim::movement::ground_pose::position_world_coord(&child.position),
+                child.type_ref(),
+            )
+        }) else {
+            return;
+        };
+        let Some(anim) = rules
+            .rocket_type_ext(self.sim.interner.resolve(type_ref))
+            .takeoff_anim
         else {
             return;
         };
         self.sim.spawn_named_anim(
             rules,
-            crate::rules::effect_asset_catalog::ROCKET_TAKEOFF_ANIM,
+            anim,
             crate::sim::anim_class::AnimWorldCoord {
                 x: location.x,
                 y: location.y,
@@ -1454,8 +1535,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child,
             target,
             self.context.rules(),
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -1469,7 +1549,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .get(child)
             .is_none_or(|child| child.lifecycle.in_limbo());
         if !in_limbo {
-            self.sim.techno_limbo_with_context(child, self.context);
+            self.sim
+                .techno_limbo_with_context(child, self.context.reborrow());
         }
     }
 
@@ -1491,16 +1572,16 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let rules = self.context.rules();
         let spawn_type = self.manager().spawn_type;
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
-        let house = self.sim.interner.resolve(owner.owner()).to_string();
+        let house = owner.owner();
         let (rx, ry, z) = (owner.position.rx(), owner.position.ry(), owner.position.z());
         let facing = owner.body_facing_byte(self.sim.session.binary_frame());
-        let type_name = self.sim.interner.resolve(spawn_type).to_string();
+        let object = rules.object_in_category(
+            crate::rules::object_type::ObjectCategory::Aircraft,
+            self.sim.interner.resolve(spawn_type),
+        )?;
         self.sim.construct_resolved_object_limbo_at_height(
-            rules.object_in_category(
-                crate::rules::object_type::ObjectCategory::Aircraft,
-                &type_name,
-            )?,
-            &house,
+            object,
+            house,
             rx,
             ry,
             facing,
@@ -1512,22 +1593,19 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn adopt(&mut self, child: u64) {
         if let Some(entity) = self.sim.substrate.entities.get_mut(child) {
-            entity.spawn_owner_id.owner = Some(self.owner_id);
+            // The SpawnOwner is a name the pointer-expiry index reads.
+            let _ = entity.note_names();
+            entity.seldom.spawn_owner_id.owner = Some(self.owner_id);
         }
     }
 
     fn uninit(&mut self, child: u64) {
-        self.sim.uninit_with_context(child, self.context);
+        self.sim.uninit_with_context(child, self.context.reborrow());
     }
 
     fn push(&mut self, child: u64, target: Option<TargetKind>) {
-        self.sim.kamikaze_push(
-            child,
-            target,
-            self.context.rules(),
-            self.context.registry(),
-            self.context.effects(),
-        );
+        self.sim
+            .kamikaze_push(child, target, self.context.rules(), self.context.effects());
     }
 
     fn restart_kamikaze(&mut self) {
@@ -1590,7 +1668,7 @@ fn launch_coordinate(
     let obj = sim.object_type(owner.type_ref(), rules)?;
     let weapon = crate::sim::combat::combat_weapon::primary_for_tier(obj, owner.veterancy.rank())
         .and_then(|id| rules.weapon(id));
-    let burst = burst_parity.unwrap_or_else(|| owner.weapon_burst.index());
+    let burst = burst_parity.unwrap_or_else(|| owner.seldom.weapon_burst.index());
     let base = if burst == 0 {
         Default::default()
     } else {

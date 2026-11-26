@@ -17,6 +17,7 @@ from tools.spatial_oracle import factory_cadence as cadence
 from tools.spatial_oracle.building_body_rules import SP
 from tools.spatial_oracle.refinery_dock import cell
 from tools.spatial_oracle.unit_source_scatter import SCENARIO
+from tools.native_oracle import require
 
 WATCH = {0x4C98B0:'factory_ctor',0x4C9C70:'start_production',0x4C9EA0:'start_build',
     0x4C9B20:'factory_ai',0x4CA130:'is_complete',0x4CA160:'get_product',
@@ -56,7 +57,7 @@ def generate(mode, map_prior='legacy', inputs=None):
         bc.invoke(u,0x4E69E0,0)
         tile,name=f.allocate(0x400),f.allocate(32)
         u.mem_write(name,b'Clear01\0')
-        assert bc.invoke(u,0x5447C0,tile,0,0xFFFFFFBF,0,name,0)==tile
+        require(bc.invoke(u,0x5447C0,tile,0,0xFFFFFFBF,0,name,0)==tile, 'native 0x5447C0 returned an unexpected result')
         raw=(ASSETS/'CLEAR01.TEM').read_bytes()
         w,h=struct.unpack_from('<2I',raw)
         if (w,h)!=(1,1):raise ValueError('This selected retail one-subtile cache boundary requires1x1 Clear01')
@@ -87,7 +88,7 @@ def generate(mode, map_prior='legacy', inputs=None):
     door_admission=bc.invoke(u,0x568300,0x87F7E8,door)&255
     assert door_admission==1
     u.mem_write(barracks+0x74,b'\0')
-    assert bc.invoke(u,0x43F180,barracks,3)&255 == 1
+    require(bc.invoke(u,0x43F180,barracks,3)&255 == 1, 'native 0x43F180 returned an unexpected result')
     u.mem_write(barracks+0xAC,bc.dwords(5))
     u.mem_write(barracks+0xB4,bc.dwords(-1))
     u.mem_write(barracks+0x534,bc.dwords(1))

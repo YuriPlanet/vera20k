@@ -43,7 +43,8 @@ pub const RA2_LOGIC_FRAMES_PER_SECOND: u32 = 15;
 
 /// VERA's fixed simulation step rate in Hz (22 ms per tick on the client;
 /// see `app::types::SIM_TICK_MS`). NOT the native logic-frame rate — INI
-/// timing conversions use `RA2_LOGIC_FRAMES_PER_SECOND` above.
+/// timing conversions use `RA2_LOGIC_FRAMES_PER_SECOND` above, and every
+/// admitted frame is one of those frames whatever this rate paces it at.
 pub const SIM_TICK_HZ: u32 = 45;
 
 // ---------------------------------------------------------------------------
@@ -79,7 +80,7 @@ pub fn ra2_speed_to_leptons_per_second(raw_speed: i32) -> SimFixed {
 // Tests
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

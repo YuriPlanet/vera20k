@@ -156,14 +156,16 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_side_index_for_test(input["side"].as_i64().unwrap() as i32);
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
+        .building
         .has_been_captured
         .set_for_test(input["captured"] == true);
     building
+        .seldom
         .selection
         .set_selected_for_test(input["selected"] == true);
     let mut passengers = Vec::new();
     if let Some(names) = input["passengers"].as_array() {
-        building.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        building.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(5, 0.0)));
         for name in names {
             let id = sim
                 .construct_object_limbo_at_height(
@@ -174,11 +176,14 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     0,
                     0,
                     rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                PassengerRole::inside_for_test(refinery, false);
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(refinery, false));
             passengers.push(id);
         }
         // AddPassenger prepends: the list's head is the first passenger.
@@ -187,17 +192,22 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .entities
                 .get_mut(refinery)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .cargo_mut()
                 .unwrap()
                 .board_forced_chain(&[(id, 1.0)]);
         }
     }
-    production::begin_selling(sim, rules, refinery, false);
+    production::begin_selling(
+        sim,
+        rules,
+        refinery,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);
-    sim.scenario_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
     sim.sound_events.clear_for_test();
     (s, passengers)
 }
@@ -242,6 +252,10 @@ fn compare_infantry(s: &SlaveScene, id: u64, expected: &Value, context: &str) {
 /// Sell's stage 1 (`0x0044A2EE..0x0044A8DE`) on each row's building.
 #[test]
 fn sale_stage_one_matches_the_original_survivors_and_sounds() {
+    // Stock oracle; Ares replaces Building and Techno GetCrew (44EB10, 707D20).
+    if crate::rules::ares_switch::ares_way() {
+        return;
+    }
     let corpus = corpus();
     let rows: Vec<&Value> = corpus["crew"]
         .as_array()
@@ -273,7 +287,7 @@ fn replay_crew_row(row: &Value) {
         rules,
         Some(super::harvest_field_oracle_tests::registry()),
         refinery,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     // The crew in construction order; a deleted crewman left nothing.
@@ -318,7 +332,7 @@ fn replay_crew_row(row: &Value) {
             } => {
                 let index = SOUNDS
                     .iter()
-                    .find(|(_, name)| name == sound_id)
+                    .find(|(_, name)| *name == sound_id.name_in(&rules))
                     .map(|(index, _)| *index)?;
                 assert_eq!(*audible_to, Some([owner, owner]), "{context}: the owner's");
                 Some(json!([
@@ -358,7 +372,7 @@ fn replay_crew_row(row: &Value) {
     );
     assert_eq!(
         building
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| i64::from(cargo.count())),
         row["building"]["passengers"].as_i64().unwrap(),
@@ -392,7 +406,10 @@ fn sale_refund_matches_the_original() {
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
         house.set_is_human_for_test(input["human"].as_bool().unwrap());
         house.set_player_control_for_test(input["player_control"] == true);
-        let game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
+        let policy = crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+            input["game_mode"].as_i64().unwrap() as i32,
+        )
+        .stock_rule_policy(None);
         assert_eq!(
             i64::from(production::type_refund(
                 &rules,
@@ -402,7 +419,7 @@ fn sale_refund_matches_the_original() {
                     country: [crate::util::native_x87::NativeF32Bits::ONE; 5],
                     factory_plant: [crate::util::native_x87::NativeF32Bits::ONE; 5],
                 },
-                game_mode_nonzero,
+                policy,
                 false,
             )),
             row["refund"].as_i64().unwrap(),
@@ -472,7 +489,7 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
                     building,
                     production::SellOrder::Player,
                     Some(overlay),
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             let grid = s.sim.path_grid_snapshot();
@@ -597,9 +614,11 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         building.lifecycle.set_in_limbo_for_test(false);
         building.set_in_playfield(true);
         building
+            .seldom
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(input["attacked"] == true);
         building
+            .seldom
             .ai_sell_repair
             .set_ai_sellable_for_test(input["ai_sellable"] == true);
         if input["mission"] == "construction" || input["queued"] == "construction" {
@@ -643,11 +662,12 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
                 &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
                 None,
                 None,
+                None,
             );
             sim.attach_object_trigger_tag(1, Some("SALE_KEEP_TAG"));
             assert!(sim.object_has_trigger_tag(1), "{name}: actual attachment");
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         let cursors = |sim: &crate::sim::world::Simulation| {
             let view = sim.scenario_rng.logical_view();
             json!([view.index_a, view.index_b])
@@ -662,7 +682,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             cursors(&sim),

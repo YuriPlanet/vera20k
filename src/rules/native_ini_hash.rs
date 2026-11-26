@@ -56,7 +56,7 @@ impl NativeIniHashes {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::NativeIniHashes;
     use crate::rules::ini_parser::IniFile;
@@ -77,22 +77,30 @@ mod tests {
 
     #[test]
     fn synthetic_controls_hash_as_native_get_crc() {
-        for case in corpus()["synthetic"]
-            .as_array()
-            .expect("synthetic controls")
-        {
-            let ini = if case["absent"].as_bool() == Some(true) {
-                IniFile::empty()
-            } else {
-                let input = case["input"].as_str().expect("input text");
-                IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap()
-            };
-            assert_eq!(
-                ini.native_crc(),
-                case["crc_unsigned"].as_u64().unwrap() as u32,
-                "{}",
-                case["name"]
-            );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            for case in corpus()["synthetic"]
+                .as_array()
+                .expect("synthetic controls")
+            {
+                // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+                // of two equal keys; this control records the vanilla reader.
+                if ares_way && case["name"] == "duplicate_key" {
+                    continue;
+                }
+                let ini = if case["absent"].as_bool() == Some(true) {
+                    IniFile::empty()
+                } else {
+                    let input = case["input"].as_str().expect("input text");
+                    IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap()
+                };
+                assert_eq!(
+                    ini.native_crc(),
+                    case["crc_unsigned"].as_u64().unwrap() as u32,
+                    "{}",
+                    case["name"]
+                );
+            }
         }
     }
 

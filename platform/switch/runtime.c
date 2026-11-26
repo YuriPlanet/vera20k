@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef VERA_PERF
+#include "perf.h"
+#endif
 #ifndef VERA_WGPU
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -50,10 +53,20 @@ int main(int argc, char **argv) {
     if (getenv("VERA_MESA_DEBUG")) {
         setenv("MESA_LOG_LEVEL", "debug", 1);
     } else {
+#ifdef VERA_PERF
+        setenv("MESA_LOG_LEVEL", "info", 1);
+#else
         unsetenv("MESA_LOG_LEVEL");
+#endif
     }
+#ifdef VERA_PERF
+    setenv("NVK_SWITCH_PERF_LOG", "true", 1);
+#endif
     // See third_party/mesa-switch-graphics-ubo.patch for the NVK/Eden path.
     setenv("NVK_SWITCH_GRAPHICS_UBO_CBUF", "true", 1);
+#endif
+#ifdef VERA_PERF
+    platform_perf_thread_enter("main");
 #endif
     return rust_main();
 }
@@ -64,7 +77,13 @@ static void rust_thread_start(void *argument) {
     setup_rust_tls();
     ThreadStart start = *(ThreadStart *)argument;
     free(argument);
+#ifdef VERA_PERF
+    platform_perf_thread_enter("runtime");
+#endif
     start.entry(start.argument);
+#ifdef VERA_PERF
+    platform_perf_thread_exit();
+#endif
 }
 
 Result __wrap_threadCreate(Thread *thread, ThreadFunc entry, void *argument,
@@ -154,10 +173,15 @@ bool platform_mouse(int32_t *delta_x, int32_t *delta_y, int32_t *wheel_x,
                     uint32_t *released_buttons) {
     static uint64_t last_sample;
     static uint32_t last_buttons;
+    // Handheld mode allows a USB or Bluetooth mouse too, so the display mode
+    // no longer gates it. Instead the mouse stays authoritative only while it
+    // is actually being used: after this idle period the caller falls back to
+    // the sticks and the touch screen.
+    static uint64_t last_activity_tick;
+    const uint64_t idle_limit = armGetSystemTickFreq() * 10ULL; // 10 s
     HidMouseState states[17] = {0};
     size_t count = hidGetMouseStates(states, 17);
-    if (appletGetOperationMode() != AppletOperationMode_Console ||
-        !count || !(states[0].attributes & HidMouseAttribute_IsConnected)) {
+    if (!count || !(states[0].attributes & HidMouseAttribute_IsConnected)) {
         last_sample = 0;
         last_buttons = 0;
         return false;
@@ -173,22 +197,37 @@ bool platform_mouse(int32_t *delta_x, int32_t *delta_y, int32_t *wheel_x,
         wx += states[index].wheel_delta_x;
         wy += states[index].wheel_delta_y;
     }
+    uint64_t now = armGetSystemTick();
+    bool moved = dx != 0 || dy != 0 || wx != 0 || wy != 0;
+    // A button edge must also count: a click right after the idle limit would
+    // otherwise be dropped while the pointer sits where the sticks left it.
+    uint32_t pressed_now = 0, released_now = 0;
+    {
+        uint32_t previous = last_buttons;
+        for (size_t index = available; index-- > 0;) {
+            pressed_now |= states[index].buttons & ~previous;
+            released_now |= ~states[index].buttons & previous;
+            previous = states[index].buttons;
+        }
+    }
+    if (moved || pressed_now || released_now) {
+        last_activity_tick = now;
+    } else if (last_activity_tick
+               && now - last_activity_tick > idle_limit) {
+        last_sample = 0;
+        last_buttons = 0;
+        last_activity_tick = 0;
+        return false;
+    }
     if (delta_x) *delta_x = dx;
     if (delta_y) *delta_y = dy;
     if (wheel_x) *wheel_x = wx;
     if (wheel_y) *wheel_y = wy;
     if (buttons) *buttons = states[0].buttons;
-    uint32_t pressed = 0, released = 0;
-    uint32_t previous = last_buttons;
-    for (size_t index = available; index-- > 0;) {
-        pressed |= states[index].buttons & ~previous;
-        released |= ~states[index].buttons & previous;
-        previous = states[index].buttons;
-    }
     last_sample = states[0].sampling_number;
     last_buttons = states[0].buttons;
-    if (pressed_buttons) *pressed_buttons = pressed;
-    if (released_buttons) *released_buttons = released;
+    if (pressed_buttons) *pressed_buttons = pressed_now;
+    if (released_buttons) *released_buttons = released_now;
     return true;
 }
 uint64_t platform_keyboard(uint64_t *keys) {
@@ -199,6 +238,28 @@ uint64_t platform_keyboard(uint64_t *keys) {
         !hidGetKeyboardStates(&state, 1)) return 0;
     for (uint32_t index = 0; index < 4; ++index) keys[index] = state.keys[index];
     return state.modifiers;
+}
+Result platform_soft_keyboard_show(const char *initial_text, char *output, size_t output_size) {
+    if (!output || output_size < 2) return 1;
+    output[0] = '\0';
+    SwkbdConfig config;
+    Result result = swkbdCreate(&config, 0);
+    if (R_FAILED(result)) return result;
+    swkbdConfigMakePresetDefault(&config);
+    swkbdConfigSetType(&config, SwkbdType_All);
+    swkbdConfigSetStringLenMax(&config, 1024);
+    swkbdConfigSetHeaderText(&config, "VERA20k");
+    swkbdConfigSetGuideText(&config, "A 确定   B 取消");
+    // Show what the edit already holds, so confirming returns the whole
+    // value and the caller can replace it instead of appending.
+    if (initial_text && *initial_text) {
+        swkbdConfigSetInitialText(&config, initial_text);
+        // Put the caret after the existing text.
+        swkbdConfigSetInitialCursorPos(&config, 1);
+    }
+    result = swkbdShow(&config, output, output_size);
+    swkbdClose(&config);
+    return result;
 }
 bool platform_touch_finger(uint32_t finger_id, uint32_t *x, uint32_t *y) {
     HidTouchScreenState state = {0};
@@ -246,8 +307,6 @@ Result platform_mount_user_save(void) {
     }
     return result;
 }
-bool platform_romfs_init(void) { return R_SUCCEEDED(romfsInit()); }
-void platform_romfs_exit(void) { romfsExit(); }
 void platform_present(void) { consoleUpdate(NULL); }
 void platform_console_exit(void) { consoleExit(NULL); }
 extern const uint8_t _start[] __attribute__((visibility("hidden")));

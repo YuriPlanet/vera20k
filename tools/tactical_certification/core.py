@@ -1,7 +1,9 @@
 """Small fail-closed filesystem and JSON primitives for tactical evidence.
 
 This package intentionally does not import the shell-certification package.
-The two evidence formats have different schemas and lifecycle guarantees.
+The two evidence formats have different schemas and lifecycle guarantees, but
+shell tools take their strict JSON reader/writer, digests and error types from
+here, so a capture one tool accepts is not reinterpreted by another.
 """
 
 from __future__ import annotations

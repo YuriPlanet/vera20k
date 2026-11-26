@@ -67,10 +67,19 @@ pub struct FlyRuntime {
     /// Landing reads this instance value; BeginLanding separately reads live type.
     #[serde(default)]
     airport_bound: bool,
-    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`) and
-    /// only Process's fall block writes it (`0x004CD6C6`), never resetting it.
+    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`),
+    /// Process's fall block adds to it (`0x004CD6C6`) and Power_Off of a
+    /// moving Fly (`0x004CFD20`) clears it again.
     #[serde(default)]
     fall_counter: i32,
+    /// Fly+53, Spinning: Power_Off of a moving Fly (`0x004CFD20`) sets it,
+    /// and Process's spin step (`0x004CE5A0`) clears it once power is back.
+    #[serde(default)]
+    spinning: bool,
+    /// Fly+54, SpinRate: what the spin step turns the owner by, in steps of
+    /// 256, before it moves one toward 0. Read only while spinning.
+    #[serde(default)]
+    spin_rate: i32,
     /// Fly+40, the target speed fraction the ramp chases. The constructor
     /// (`0x004CC9E5`) starts it at 0; Process's slowdown
     /// ([`Self::write_target_speed`]), Horizontal_Step's arrival
@@ -365,6 +374,45 @@ impl FlyRuntime {
         self.fall_counter
     }
 
+    /// Power_Off for a moving Fly (`0x004CFD20`): it spins at `rate`.
+    pub(crate) fn start_spin(&mut self, rate: i32) {
+        self.spinning = true;
+        self.spin_rate = rate;
+    }
+
+    /// See the field.
+    pub(crate) fn clear_fall(&mut self) {
+        self.fall_counter = 0;
+    }
+
+    /// SpinRate while the Fly spins, else None.
+    pub(crate) fn spin(&self) -> Option<i32> {
+        self.spinning.then_some(self.spin_rate)
+    }
+
+    /// The spin step (`0x004CE5A0`) for a Fly whose owner is alive: None
+    /// while it does not spin, and a powered one stops spinning
+    /// (`0x004CE636`). An unpowered one answers the PrimaryFacing turn,
+    /// `SpinRate << 8` as a 16-bit direction, and steps SpinRate one toward
+    /// 0 (`0x004CE60A..0x004CE62E`).
+    pub(crate) fn spin_step(&mut self, powered: bool) -> Option<u16> {
+        if !self.spinning {
+            return None;
+        }
+        if powered {
+            self.spinning = false;
+            return None;
+        }
+        let turn = self.spin_rate.wrapping_shl(8) as u16;
+        let step = self.spin_rate.wrapping_abs().min(1);
+        self.spin_rate = if self.spin_rate < 0 {
+            self.spin_rate.wrapping_add(step)
+        } else {
+            self.spin_rate.wrapping_sub(step)
+        };
+        Some(turn)
+    }
+
     ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.
     pub(crate) fn admit_landing_effect(&mut self, height: i32) -> bool {
         if self.landing_effect_latched || height >= 300 {
@@ -455,6 +503,20 @@ impl FlyRuntime {
     /// `0x004CF4CF`), rewritten on each step.
     pub(crate) fn set_flight_level(&mut self, flight_level: i32) {
         self.target_height = flight_level;
+    }
+
+    /// Ares 3.0 FlyLocomotionClass_UpdateLanding 1004D8A0 (hook 0x4CE85A):
+    /// a HunterSeeker that found a target stops landing (+0x51) and climbs
+    /// back to its type's flight level (+0x38).
+    pub(crate) fn resume_hunt(&mut self, flight_level: i32) {
+        self.landing = false;
+        self.target_height = flight_level;
+    }
+
+    /// Ares 3.0 1004DA90 (hook 0x4CD9C8): a HunterSeeker's
+    /// MovingDestination (`+0x1C`) follows its Target every frame.
+    pub(crate) fn hunt_destination(&mut self, at: DriveCoord) {
+        self.destination = [at.x, at.y, at.z];
     }
 
     /// Process4CD664..4CD67F, before its power/health branches. The effective
@@ -578,39 +640,44 @@ impl FlyRuntime {
             world_z,
             ground_z,
             mut on_bridge,
-            structural_bridge,
+            bridge_deck_z,
             health,
             has_passenger,
             is_dropship,
             flight_level,
+            hunter_seeker,
         } = input;
-        // Object GetHeight5F5F40 subtracts ground and its current OnBridge
-        // adjustment. Fly then independently normalizes an unattached deck.
-        let mut height = super::ground_pose::height_at_z(world_z, ground_z, on_bridge);
-        let mut bridge_bonus = 0;
-        if !on_bridge
-            && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-            && structural_bridge
-        {
-            height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-            bridge_bonus = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
-        }
+        // Object GetHeight5F5F40 subtracts the current surface. The Fly
+        // height step (4CDD0D..4CDFB6) also uses an unattached structural deck
+        // once the aircraft's Location reaches it.
+        let on_bridge_surface_z = bridge_deck_z
+            .unwrap_or_else(|| super::ground_pose::z_at_height(ground_z, 0, true));
+        let reached_bridge = !on_bridge && bridge_deck_z.is_some_and(|deck| world_z >= deck);
+        let surface_z = if on_bridge || reached_bridge {
+            on_bridge_surface_z
+        } else {
+            ground_z
+        };
+        let mut height = world_z.wrapping_sub(surface_z);
         let mut output_z = world_z;
         if height < self.target_height && health > 0 {
-            let rate = if is_dropship {
-                16
-            } else if has_passenger {
-                10
-            } else {
-                20
-            };
+            let ordinary = if has_passenger { 10 } else { 20 };
+            // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_Ascent
+            // 1004D930 (hook 0x4CDE64): a HunterSeeker that is not a
+            // Dropship climbs at its EmergeSpeed while taking off (+0x50),
+            // else at its AscentSpeed. `hunter_seeker` is `None` without
+            // Ares, which leaves the stock rate.
+            let ordinary = hunter_seeker.map_or(ordinary, |climb| {
+                if self.taking_off {
+                    climb.emerge
+                } else {
+                    climb.ascent
+                }
+            });
+            let rate = if is_dropship { 16 } else { ordinary };
             let step = self.target_height.wrapping_sub(height).min(rate);
             // SetHeight happens BEFORE OnBridge is cleared (4CDE9D/4CDEA6).
-            output_z = super::ground_pose::z_at_height(
-                ground_z,
-                height.wrapping_add(step).wrapping_add(bridge_bonus),
-                on_bridge,
-            );
+            output_z = surface_z.wrapping_add(height).wrapping_add(step);
             on_bridge = false;
         }
         // Native compares the original normalized height again. Health==0
@@ -629,28 +696,27 @@ impl FlyRuntime {
                     })
                 }
             } else {
-                delta.min(delta / 20).clamp(20, 50)
+                // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_Descent
+                // 1004DA20 (hook 0x4CDF54): a HunterSeeker descends at its
+                // DescentSpeed, at most the remaining distance (to 0x4CDF81).
+                let hunter_descent = hunter_seeker.map(|climb| delta.min(climb.descent));
+                hunter_descent.unwrap_or_else(|| delta.min(delta / 20).clamp(20, 50))
             };
             height = height.wrapping_sub(step);
             if health == 0 && height <= 1 {
                 height = 1;
             } else if height <= 0 {
                 height = 0;
-                if bridge_bonus > 0 {
+                if reached_bridge {
                     on_bridge = true;
-                    bridge_bonus = 0;
                 }
             }
-            output_z = super::ground_pose::z_at_height(
-                ground_z,
-                height.wrapping_add(bridge_bonus),
-                on_bridge,
-            );
+            output_z = surface_z.wrapping_add(height);
         }
         HeightOutput {
             world_z: output_z,
             on_bridge,
-            height: super::ground_pose::height_at_z(output_z, ground_z, on_bridge),
+            height: output_z.wrapping_sub(if on_bridge { on_bridge_surface_z } else { ground_z }),
             descended,
         }
     }
@@ -660,11 +726,14 @@ pub(crate) struct HeightInput {
     pub world_z: i32,
     pub ground_z: i32,
     pub on_bridge: bool,
-    pub structural_bridge: bool,
+    pub bridge_deck_z: Option<i32>,
     pub health: i32,
     pub has_passenger: bool,
     pub is_dropship: bool,
     pub flight_level: i32,
+    /// A `HunterSeeker=` type's climb and descent speeds when Ares plays,
+    /// else `None`.
+    pub hunter_seeker: Option<crate::rules::ares_techno_type::HunterSeekerClimb>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -684,7 +753,7 @@ impl HeightOutput {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 
@@ -757,7 +826,8 @@ mod tests {
                 world_z: integer("z", 0),
                 ground_z,
                 on_bridge: flag("on_bridge"),
-                structural_bridge: flag("bridge"),
+                bridge_deck_z: flag("bridge")
+                    .then(|| super::super::ground_pose::z_at_height(ground_z, 0, true)),
                 health: integer("health", 100),
                 has_passenger: flag("loaded") && c["kind"].as_str() != Some("unit"),
                 is_dropship: flag("dropship"),
@@ -766,6 +836,7 @@ mod tests {
                 } else {
                     authored_level
                 },
+                hunter_seeker: None,
             });
             assert_eq!(
                 (actual.world_z, actual.on_bridge, actual.height),
@@ -778,5 +849,43 @@ mod tests {
                 c["name"]
             );
         }
+    }
+
+    /// Ares HunterSeeker_Ascent (1004D930, hook 0x4CDE64) and _Descent
+    /// (1004DA20, hook 0x4CDF54): a HunterSeeker climbs at EmergeSpeed while
+    /// taking off, else at AscentSpeed, and descends at DescentSpeed, each
+    /// capped by the remaining distance; stock would step 20 each way.
+    #[test]
+    fn ares_hunter_seeker_climbs_and_descends_at_its_speeds() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let climb = crate::rules::ares_techno_type::HunterSeekerClimb {
+            ascent: 7,
+            descent: 9,
+            emerge: 3,
+        };
+        let step = |state: &FlyRuntime, world_z| {
+            state
+                .step_height(HeightInput {
+                    world_z,
+                    ground_z: 0,
+                    on_bridge: false,
+                    bridge_deck_z: None,
+                    health: 100,
+                    has_passenger: false,
+                    is_dropship: false,
+                    flight_level: 600,
+                    hunter_seeker: Some(climb),
+                })
+                .height
+        };
+        let mut state = FlyRuntime::default();
+        state.begin_takeoff(600);
+        assert_eq!(step(&state, 100), 103);
+        state.set_flight_level(600);
+        state.taking_off = false;
+        assert_eq!(step(&state, 100), 107);
+        assert_eq!(step(&state, 596), 600);
+        assert_eq!(step(&state, 700), 691);
+        assert_eq!(step(&state, 605), 600);
     }
 }

@@ -6,7 +6,7 @@
 //! production implementation. The caller module includes this file under
 //! `#[cfg(test)]`.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
@@ -26,6 +26,10 @@ mod tests {
             .map_or(default, |value| value as i32)
     }
 
+    // The stock free-fall gravity these executions record; Ares 3.0
+    // ObjectClass_Update_MaxFallRate (10049BA0, hook 0x5F3FB2) steps by the
+    // type's FallRate.* and selects by the Parachute pointer instead
+    // (`object_fall::tests::ares_fall_rate_steps_by_type_and_parachute_pointer`).
     #[test]
     fn production_object_ai_free_fall_matches_native_rate_and_caps() {
         for row in vectors().into_iter().filter(|row| {
@@ -53,16 +57,17 @@ mod tests {
             rules.general.parachute_max_fall_rate = int(input, "parachute_cap", -3);
             rules.general.no_parachute_max_fall_rate = int(input, "free_cap", -100);
             let mut sim = Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let mut entity = GameEntity::test_default(1, "E1", "Americans", 10, 10);
             let z = int(input, "z", 416);
+            entity.set_fall_rate_for_test(int(input, "rate", 0));
             if input["parachuted"].as_i64() == Some(1) {
                 entity.begin_parachute_fall(z);
+                entity.set_attached_anim_flag(true);
             } else {
                 entity.position.set_exact_z_leptons_for_test(Some(z));
                 entity.begin_bomb_fall();
             }
-            entity.set_fall_rate_for_test(int(input, "rate", 0));
             if int(input, "falling", 1) == 0 {
                 entity.finish_fall();
             }
@@ -71,7 +76,7 @@ mod tests {
                 .set_in_limbo_for_test(int(input, "limbo", 0) != 0);
             entity.health.set_for_test(int(input, "health", 100));
             sim.substrate.entities.insert(entity);
-            sim.object_ai_fall(1, &rules, None, FrameEffects::default())
+            sim.object_ai_fall(1, &rules, None, &mut FrameEffects::default())
                 .expect("production object falling AI");
             let entity = sim
                 .substrate
@@ -130,8 +135,8 @@ mod tests {
         use crate::sim::snapshot::GameSnapshot;
 
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
-        sim.scenario_rng = SimRng::new(0);
+        *sim.interner = crate::sim::intern::test_interner();
+        *sim.scenario_rng = SimRng::new(0);
         let house = sim.interner.intern("Americans");
         sim.houses
             .register(HouseState::new(house, 0, None, true, 0, 10));

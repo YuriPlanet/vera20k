@@ -3,18 +3,34 @@
 The native guard is treated as immutable evidence. This module only reads it,
 validates its sealed content hash and schema, point-scales the full logical
 production frame, and compares tight physical presentation-region BGRA8 bytes.
+
+JSON parsing and writing, digests and the error types are the tactical owner's
+(`tools.tactical_certification.core`): one strict policy (unique keys, finite
+numbers, no NaN output) for every capture tool. File reads differ on purpose:
+shell inputs reject a final link only, because guards, configs and bundles are
+read where they are written, including linked checkouts and temporary
+directories under a linked root (/tmp, /var on macOS); tactical sealed runs
+reject every link ancestor.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import stat
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+
+from tools.tactical_certification.core import (
+    OutputExistsError,
+    ValidationError,
+    absolute_path,
+    canonical_json_bytes,
+    parse_json_bytes,
+    sha256_bytes,
+    utc_now,
+)
 
 
 MATCH = "MATCH"
@@ -66,14 +82,6 @@ EXPECTED_REGION_ORDER = tuple(EXPECTED_REGION_RECTS)
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _MAX_JSON_BYTES = 4 * 1024 * 1024
-
-
-class ValidationError(ValueError):
-    """An evidence input violated a required comparability contract."""
-
-
-class OutputExistsError(FileExistsError):
-    """An evidence output already exists and must not be overwritten."""
 
 
 @dataclass(frozen=True)
@@ -138,26 +146,6 @@ class ValidatedCapture:
     surface_format: str
     cursor_x: int
     cursor_y: int
-
-
-def utc_now() -> str:
-    """Return an unambiguous UTC timestamp for generated reports."""
-
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
-        "+00:00", "Z"
-    )
-
-
-def sha256_bytes(data: bytes) -> str:
-    """Hash bytes using the evidence digest contract."""
-
-    return hashlib.sha256(data).hexdigest()
-
-
-def absolute_path(path: str | os.PathLike[str]) -> Path:
-    """Make a path absolute without resolving away a final symlink."""
-
-    return Path(os.path.abspath(os.fspath(path)))
 
 
 def _require_regular_file(path: Path, label: str) -> os.stat_result:
@@ -294,39 +282,6 @@ def sha256_file(path: Path, label: str = "file") -> str:
     if len(set(identities)) != 1:
         raise ValidationError(f"{label} changed while it was being hashed: {path}")
     return digest.hexdigest()
-
-
-def _reject_json_constant(value: str) -> None:
-    raise ValidationError(f"non-finite JSON number is not allowed: {value}")
-
-
-def _unique_object(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValidationError(f"duplicate JSON object key: {key}")
-        result[key] = value
-    return result
-
-
-def _parse_json_bytes(raw: bytes, label: str) -> Mapping[str, Any]:
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValidationError(f"{label} is not valid UTF-8: {exc}") from exc
-    try:
-        parsed = json.loads(
-            text,
-            object_pairs_hook=_unique_object,
-            parse_constant=_reject_json_constant,
-        )
-    except ValidationError:
-        raise
-    except json.JSONDecodeError as exc:
-        raise ValidationError(f"{label} is not valid JSON: {exc}") from exc
-    if not isinstance(parsed, dict):
-        raise ValidationError(f"{label} root must be a JSON object")
-    return parsed
 
 
 def _require_object(value: Any, field: str) -> Mapping[str, Any]:
@@ -617,7 +572,7 @@ def validate_guard(
             "native shell guard SHA-256 mismatch: "
             f"got {actual_digest}, expected {expected_digest}"
         )
-    document = _parse_json_bytes(raw, "native shell guard")
+    document = parse_json_bytes(raw, "native shell guard")
     _require_keys(
         document,
         (
@@ -1050,7 +1005,7 @@ def validate_capture_bundle(
         manifest_path, "capture manifest", maximum_length=_MAX_JSON_BYTES
     )
     manifest_sha256 = sha256_bytes(manifest_raw)
-    manifest = _parse_json_bytes(manifest_raw, "capture manifest")
+    manifest = parse_json_bytes(manifest_raw, "capture manifest")
     values = _validate_capture_manifest(manifest)
     if (
         required_schema_version is not None
@@ -1360,27 +1315,9 @@ def build_comparison_report(
 def write_json_exclusive(
     output_path: str | os.PathLike[str], document: Mapping[str, Any]
 ) -> Path:
-    """Write one JSON artifact exactly once, never replacing existing data."""
+    """Write one canonical JSON artifact exactly once, never replacing existing data."""
 
-    path = absolute_path(output_path)
-    parent = path.parent
-    if not parent.exists() or not parent.is_dir():
-        raise ValidationError(f"output parent directory does not exist: {parent}")
-    try:
-        with path.open("x", encoding="utf-8", newline="\n") as stream:
-            json.dump(
-                document,
-                stream,
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-            )
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-    except FileExistsError as exc:
-        raise OutputExistsError(f"refusing to overwrite output: {path}") from exc
-    return path
+    return write_bytes_exclusive(output_path, canonical_json_bytes(document))
 
 
 def write_bytes_exclusive(

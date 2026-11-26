@@ -92,7 +92,10 @@ pub struct ShieldState {
     self_healing_enabled: bool,
     /// `ShieldClass::LastBreakFrame`: retained state for the later
     /// `Shield.MinimumReplaceDelay`/idle-anim chain; no consumer in this one.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(feature = "phobos"),
+        expect(dead_code, reason = "only the Phobos state hash reads it so far")
+    )]
     last_break_frame: u32,
     timers: ShieldTimers,
 }
@@ -207,7 +210,7 @@ fn shield_armor(
 /// neutral, owner and ally/enemy gates in that native order. A null source
 /// house passes, as native does. `HouseClass::IsNeutral` reads the house's
 /// passive flag, which VERA stamps from `MultiplayPassive=`.
-fn can_target_house(
+pub(crate) fn can_target_house(
     warhead: &crate::rules::warhead_type::WarheadType,
     source_house: Option<crate::sim::intern::InternedId>,
     target_owner: crate::sim::intern::InternedId,
@@ -228,11 +231,9 @@ fn can_target_house(
     if warhead.affects_owner.unwrap_or(affects_allies) && target_owner == source {
         return true;
     }
-    let allied = crate::map::houses::is_allied_with(
-        sim.house_alliances(),
-        sim.interner.resolve(source),
-        sim.interner.resolve(target_owner),
-    );
+    let allied = sim
+        .house_alliances
+        .is_allied(&sim.interner, source, target_owner);
     if affects_allies && allied {
         return target_owner != source;
     }
@@ -243,6 +244,10 @@ fn can_target_house(
 /// the native Techno receiver, or `None` when no shield owns this hit.
 pub(crate) struct ShieldReceipt {
     pub(crate) remaining: i32,
+    /// The shield took a post-clamp positive hit; Phobos `ShieldClass.cpp`
+    /// 249..255 then exposes the `DecloakDamagedTargets` uncloak to the
+    /// caller before the native receiver body runs.
+    pub(crate) shield_damage_positive: bool,
 }
 
 /// `ShieldClass::ReceiveDamage` (`0x701900+0x6`). `receiver_input` is the
@@ -257,32 +262,12 @@ pub(crate) fn pre_receive_damage(
 ) -> Option<ShieldReceipt> {
     let result = shield_stage(sim, rules, event, receiver_input, divisors)?;
     if let Some(target) = sim.substrate.entities.get_mut(event.target_id) {
-        target.shield = Some(result.state);
+        target.seldom.shield = Some(result.state);
     }
     Some(ShieldReceipt {
         remaining: result.remaining,
+        shield_damage_positive: result.shield_damage_positive,
     })
-}
-
-/// The same stage without writing the shield state: the surviving damage the
-/// receiver would see. The wave lookahead needs the value before its commit
-/// runs the real stage, which applies the absorption exactly once.
-pub(crate) fn preview_receive_damage(
-    sim: &Simulation,
-    rules: &RuleSet,
-    event: &EntityDamageEvent,
-    receiver_input: i32,
-) -> Option<i32> {
-    let target = sim.substrate.entities.get(event.target_id)?;
-    let target_type = sim.interner.object_type(target.type_ref(), rules)?;
-    let divisors = crate::sim::combat::receiver_divisors(
-        target,
-        Some(target_type),
-        rules,
-        &sim.interner,
-        &sim.houses,
-    );
-    shield_stage(sim, rules, event, receiver_input, &divisors).map(|result| result.remaining)
 }
 
 fn shield_stage(
@@ -298,15 +283,16 @@ fn shield_stage(
     }
     let target = sim.substrate.entities.get(event.target_id)?;
     let target_type = sim.interner.object_type(target.type_ref(), rules)?;
-    let warhead = rules.warhead(sim.interner.resolve(event.warhead_ref))?;
+    let warhead = sim.interner.warhead_type(event.warhead_ref, rules)?;
     let frame = sim.session.binary_frame() as i32;
 
-    let mut state = target.shield.clone()?;
+    let mut state = target.seldom.shield.clone()?;
     let ty = rules.shield_type(state.type_name())?;
     let shield_was_active = state.is_active();
 
     // Keep ShieldClass::ReceiveDamage's early returns inside its body. The
     // enclosing hook applies the recovery policy once to the surviving packet.
+    let mut shield_damage_positive = false;
     let shield_return = (|| {
         // `!health || Temporal || damage == 0` returns the damage unchanged.
         let temporal = target.is_warped_out();
@@ -439,6 +425,9 @@ fn shield_stage(
         );
 
         if shield_damage > 0 {
+            // `ShieldClass.cpp:249..255` gates the firer-visible response and
+            // the `DecloakDamagedTargets` uncloak on this post-clamp value.
+            shield_damage_positive = true;
             let residue = shield_damage - state.hp;
             if residue >= 0 {
                 if ty.absorb_over_damage() {
@@ -500,7 +489,36 @@ fn shield_stage(
         warhead,
         restart_armor(&state, ty, warhead, target_type),
     );
-    Some(finish_stage(state, ty, frame, remaining, restart))
+    Some(finish_stage(
+        state,
+        ty,
+        frame,
+        remaining,
+        restart,
+        shield_damage_positive,
+    ))
+}
+
+/// `GeneralUtils::GetWarheadVersusArmor(WH, Techno, Type)` for the split
+/// targeting check: the shield's armor while it is active and the warhead
+/// cannot penetrate it, else the TechnoType's.
+#[cfg(feature = "phobos")]
+pub(crate) fn warhead_armor_for_target(
+    sim: &Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    warhead: &crate::rules::warhead_type::WarheadType,
+) -> crate::rules::armor::ArmorId {
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+        return crate::rules::armor::ArmorId::NONE;
+    };
+    let Some(state) = entity.seldom.shield.as_ref() else {
+        return object.armor_id();
+    };
+    let Some(ty) = rules.shield_type(state.type_name()) else {
+        return object.armor_id();
+    };
+    restart_armor(state, ty, warhead, object)
 }
 
 /// Phobos `ShieldClass::CanBePenetrated`, used by the receive hook at
@@ -518,6 +536,23 @@ fn can_be_penetrated(
         !ty.immune_to_berserk()
     } else {
         warhead.shield.penetrate
+    }
+}
+
+/// `GeneralUtils::GetWarheadVersusArmor(WH, Techno, Type)`'s armor for a live
+/// target: [`restart_armor`] when it carries a shield, else its type's armor.
+pub(crate) fn warhead_versus_armor(
+    target: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target_type: &crate::rules::object_type::ObjectType,
+) -> crate::rules::armor::ArmorId {
+    match target
+        .shield()
+        .and_then(|state| Some((state, rules.shield_type(state.type_name())?)))
+    {
+        Some((state, ty)) => restart_armor(state, ty, warhead, target_type),
+        None => target_type.armor_id(),
     }
 }
 
@@ -566,6 +601,9 @@ fn restart_is_due(
 struct ShieldStageResult {
     state: ShieldState,
     remaining: i32,
+    /// Post-clamp `shieldDamage > 0`: `ShieldClass.cpp:249..255` gates the
+    /// shield owner's `DecloakDamagedTargets` uncloak on it.
+    shield_damage_positive: bool,
 }
 
 /// Finish the stage's state locally; the committing caller writes it back.
@@ -575,11 +613,16 @@ fn finish_stage(
     frame: i32,
     remaining: i32,
     restart: bool,
+    shield_damage_positive: bool,
 ) -> ShieldStageResult {
     if restart {
         restart_recovery_in_combat(&mut state, ty, frame);
     }
-    ShieldStageResult { state, remaining }
+    ShieldStageResult {
+        state,
+        remaining,
+        shield_damage_positive,
+    }
 }
 
 /// The techno armour multiplier `GetCurrentArmorMultiplier` reads for the
@@ -640,7 +683,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(mut state) = entity.shield.clone() else {
+    let Some(mut state) = entity.seldom.shield.clone() else {
         return;
     };
     let Some(ty) = rules.shield_type(state.type_name()) else {
@@ -654,7 +697,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
     if entity.health.current() <= 0 || !entity.lifecycle.object_alive() {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.shield = None;
+            entity.seldom.shield = None;
         }
         return;
     }
@@ -671,7 +714,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
             state.timers.self_healing.pause(frame);
         }
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.shield = Some(state);
+            entity.seldom.shield = Some(state);
         }
         return;
     }
@@ -722,7 +765,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
 
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.shield = Some(state);
+        entity.seldom.shield = Some(state);
     }
 }
 
@@ -759,7 +802,7 @@ fn self_healing(state: &mut ShieldState, ty: &ShieldType, frame: i32) {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 #[path = "shield_tests.rs"]
 mod tests;
 

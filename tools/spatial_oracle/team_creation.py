@@ -23,6 +23,7 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX,
     UC_X86_REG_EDX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_EIP, UC_X86_REG_ESP)
 from tools.native_oracle import SCRATCH, RET_MAGIC, run_checked, finish_vectors, provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.aircraft_fire_location import Fixture, SCENARIO, MAP, cell
 from tools.spatial_oracle.map_queries import dwords, packed
 
@@ -984,7 +985,7 @@ def execute_member_tag_rows():
     if not m.read32(0xB0E780):
         u.mem_write(0xB0E780,dwords(0x7EB6D4,m.alloc(4096),1024,1,0,10))
     u.mem_write(q.house+0x1EC,b'\0\0')
-    assert (m.invoke(0x50B730,q.house)&255)==0
+    require((m.invoke(0x50B730,q.house)&255)==0, 'native 0x50B730 returned an unexpected result')
     def rng():
         return {key:bytes(u.mem_read(ptr,0x3F4)).hex() for key,ptr in q.resident.rngs.items()}
     def new_object():

@@ -108,7 +108,8 @@ impl BlitPolicy {
 pub struct ObjectDraw {
     pub id: DrawId,
     pub layer: TacticalLayer,
-    /// Position in the retained Display vector, including its sort history.
+    /// Position in the layer's draw order (`Simulation::picture_draw_order`,
+    /// which places the presentation anims among the Display members).
     pub display_order: u64,
     pub policy: BlitPolicy,
 }
@@ -120,6 +121,9 @@ pub enum BuildingPieceKind {
     Body,
     Shadow,
     Bib,
+    /// The bib's own DrawSHP shadow half, drawn right after the bib
+    /// (`TechnoClass_DrawSHP @ 0x00705E00` from `0x0043D8E9`).
+    BibShadow,
     /// A war factory's `UnderDoorAnim=` and its shadow, drawn after the bib
     /// (`BuildingClass::DrawIt @ 0x0043D8EE`).
     UnderDoor,
@@ -181,9 +185,10 @@ pub struct TacticalDrawPlan {
 }
 
 impl TacticalDrawPlan {
-    /// Reassemble class-specific draws in retained Display order. The sim owns
-    /// Submit4A9720 and the single adjacent Ground pass551A30. Tactical6D8F19
-    /// walks each vector forward; a fresh full Y-sort here would erase history.
+    /// Reassemble class-specific draws in Display draw order. The sim owns
+    /// Submit4A9720; the presentation sorts Ground by GetYSort
+    /// (`Simulation::ground_draw_order`). Tactical6D8F19 walks each layer
+    /// forward.
     pub fn build(inputs: impl IntoIterator<Item = TacticalDrawInput>) -> Self {
         let mut plan = Self::default();
         let mut entries = Vec::new();
@@ -230,9 +235,10 @@ fn building_piece_order(kind: BuildingPieceKind) -> u8 {
         BuildingPieceKind::Body => 2,
         BuildingPieceKind::Shadow => 3,
         BuildingPieceKind::Bib => 4,
-        BuildingPieceKind::UnderDoor => 5,
-        BuildingPieceKind::PoweredOrActiveOverlay => 6,
-        BuildingPieceKind::SplitFront => 7,
+        BuildingPieceKind::BibShadow => 5,
+        BuildingPieceKind::UnderDoor => 6,
+        BuildingPieceKind::PoweredOrActiveOverlay => 7,
+        BuildingPieceKind::SplitFront => 8,
     }
 }
 
@@ -244,7 +250,7 @@ fn native_layer_order(left: &LayerEntry, right: &LayerEntry) -> Ordering {
         .then_with(|| left.display_order.cmp(&right.display_order))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

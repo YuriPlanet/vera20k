@@ -35,7 +35,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
         )
     };
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain,
         true,
         300,
@@ -73,7 +73,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
     let mut replacement =
         BridgeRuntimeState::from_resolved_terrain_with_map_size(&terrain, true, 300, (8, 10));
     replacement.test_set_endpoint_records(vec![record]);
-    sim.bridge_state = Some(replacement);
+    *sim.bridge_state = Some(replacement);
     assert_ne!(hash_before, sim.state_hash());
     sim.rebuild_zone_grid(&path);
     // Side19 maps the identical endpoint to (7,1), on the source side.
@@ -107,7 +107,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
     let mut replacement =
         BridgeRuntimeState::from_resolved_terrain_with_map_size(&terrain, true, 300, (8, 8));
     replacement.test_set_endpoint_records(vec![record]);
-    restored.bridge_state = Some(replacement);
+    *restored.bridge_state = Some(replacement);
     restored.rebuild_zone_grid(&path);
     assert!(reachable(&restored));
     let mut inactive = record;
@@ -188,7 +188,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
         zones: &mut sim.zone_grid,
         path: &mut sim.path_grid,
         overlays: sim.overlay_grid.as_ref(),
-        playfield_bounds: sim.playfield_bounds,
+        playfield_bounds: *sim.playfield_bounds,
     }
     .publish_recalculated_cell(
         terrain,
@@ -254,7 +254,7 @@ fn assert_retained_roles(sim: &Simulation, parent_id: u64, upgrade_id: u64, held
     if let Some(upgrade) = sim.substrate.entities.get(upgrade_id) {
         assert!(!upgrade.lifecycle.object_alive());
         assert!(upgrade.lifecycle.in_limbo() && !upgrade.lifecycle.cell_marked());
-        assert!(!upgrade.in_logic_vector.is_member());
+        assert!(!upgrade.seldom.in_logic_vector.is_member());
     }
     let held = sim.substrate.entities.get(held_id).unwrap();
     assert!(held.lifecycle.in_limbo() && !held.lifecycle.cell_marked());
@@ -283,7 +283,7 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
     let terrain = gsi_04_10_clear_terrain(16, 16);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     let overlay_grid = OverlayGrid::from_overlay_entries(&[], 16, 16);
-    sim.overlay_grid = Some(overlay_grid);
+    *sim.overlay_grid = Some(overlay_grid);
     sim.intern_rule_type_ids(&rules);
     let owner = sim.interner.intern("Americans");
     sim.houses
@@ -293,7 +293,8 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
     let mut yard = make_test_entity("YARD", EntityCategory::Structure);
     yard.cell_x = 6;
     yard.cell_y = 6;
-    yard.structure_upgrades = [Some("UPGRADE".to_owned()), None, None];
+    yard.structure_columns.upgrade_count = 1;
+    yard.structure_columns.upgrade_tokens = [Some("UPGRADE".to_owned()), None, None];
     assert_eq!(sim.spawn_from_map(&[yard], Some(&rules)), 2);
     sim.resolve_type_handles(&rules);
     let parent_id = sim
@@ -317,7 +318,7 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
         &rules,
         "Americans",
         "HELD",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let held_id = sim
@@ -347,10 +348,9 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert_eq!(output.overlay_updates.len(), 1);
@@ -416,7 +416,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
     let (rules, overlays) = rules_and_overlays();
     let mut sim = Simulation::with_seed(0x442048);
     sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
-    sim.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *sim.overlay_grid = Some(OverlayGrid::new(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let open = sim.path_grid_snapshot().unwrap();
     let zone_storage = |sim: &Simulation| {
@@ -467,8 +467,8 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
 
 #[test]
 fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
-    let (rules, overlays) = rules_and_overlays();
-    let context = super::UninitContext::new(&rules, Some(&overlays));
+    let (rules, _overlays) = rules_and_overlays();
+    let mut context = super::UninitContext::new(&rules);
     let mut sim = Simulation::with_seed(0x43f180);
     sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));
@@ -484,10 +484,11 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
         );
         structure.set_type_ref_for_test(sim.interner.intern("YARD"));
         structure
+            .seldom
             .type_facts
             .set_foundation_for_test(rules.object("YARD").unwrap().foundation.clone().into());
         sim.substrate.entities.insert(structure);
-        assert!(sim.mark_entity_put(id, context));
+        assert!(sim.mark_entity_put(id, context.reborrow()));
         assert_only_marked_foundation(&sim);
     }
     let placed = sim.path_grid_snapshot().unwrap();
@@ -497,9 +498,9 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
         .unwrap()
         .death
         .set_dying_for_test(true);
-    assert!(sim.unmark_entity_remove(9, context));
+    assert!(sim.unmark_entity_remove(9, context.reborrow()));
     assert_only_marked_foundation(&sim);
-    assert!(sim.unmark_entity_remove(10, context));
+    assert!(sim.unmark_entity_remove(10, context.reborrow()));
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *empty);
     assert!(
         !placed.is_walkable(6, 6),
@@ -508,7 +509,7 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
     assert!(!sim.unmark_entity_remove(10, context));
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *empty);
     assert_eq!(
-        sim.structure_navigation_cells,
+        *sim.structure_navigation_cells,
         super::navigation::structure_movement_cells(&sim.substrate.entities, &sim.interner, &rules),
         "the published structure-cell cache follows the same Mark authority"
     );

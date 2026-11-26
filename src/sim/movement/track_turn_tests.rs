@@ -145,7 +145,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
         _ => unreachable!(),
     }
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     sim
 }
@@ -427,7 +427,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
                 ai_counter: 11,
                 dispatch_timer: MissionDispatchTimer::from_raw(3, 90),
             });
-        let before = sim.substrate.entities.get(1).unwrap().mission;
+        let before = sim.substrate.entities.get(1).unwrap().mission.clone();
         sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
             .unwrap();
         assert!(!retained(sim.substrate.entities.get(1).unwrap(), kind).1);
@@ -439,9 +439,9 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
             PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
-        let mission = sim.substrate.entities.get(1).unwrap().mission;
+        let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         assert_eq!(mission.current().known(), Some(MissionType::Unload));
         assert_eq!(mission.queued(), MissionId::NONE);
         assert_eq!(mission.handler_state(), 0);
@@ -724,7 +724,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     blocker.lifecycle.set_in_limbo_for_test(false);
                     blocker.lifecycle.set_cell_marked_for_test(true);
                     sim.substrate.entities.insert(blocker);
-                    sim.substrate.occupancy =
+                    *sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
                 }
                 let stats = sim
@@ -823,7 +823,7 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(20, 20, cells));
         assert_eq!(
             sim.resolved_terrain
@@ -964,7 +964,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.set_is_voxel_for_test(false);
                         victim.set_sub_cell(Some(0));
                         victim.position = position;
-                        victim.crushable_facts.set_crushable_for_test(true);
+                        victim.seldom.crushable_facts.set_crushable_for_test(true);
                         victim.lifecycle.set_object_alive_for_test(true);
                         victim.lifecycle.set_in_limbo_for_test(false);
                         victim.lifecycle.set_cell_marked_for_test(true);
@@ -974,7 +974,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         ));
                         sim.substrate.entities.insert(victim);
                     }
-                    sim.substrate.occupancy =
+                    *sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
                     sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
                         .unwrap();

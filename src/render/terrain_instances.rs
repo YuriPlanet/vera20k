@@ -17,8 +17,20 @@ const CULL_MARGIN: f32 = 120.0;
 
 /// Visible ordinary terrain instances drawn in the base terrain pass.
 pub struct TerrainInstances {
-    /// Normal terrain — drawn in the base terrain pass.
+    /// Normal terrain — drawn in the base terrain pass, in walk order.
     pub normal: Vec<SpriteInstance>,
+    /// Each tile's [`walk_key`], ascending.
+    pub walk: Vec<u32>,
+}
+
+/// A cell's place in the tile walk (`Render_Tiles_In_Rect @ 0x006D7560`):
+/// X+Y ascending, then X ascending. Each tile draws with LessEqual and writes
+/// Z, so where overlapping tiles store equal Z the later one shows; and
+/// `CellOverlay_TileDraw @ 0x00480350` blits each cell's smudge right after
+/// its tile (`0x004804F5`), without Z, so only the tiles walked after it
+/// can cover it.
+pub fn walk_key(rx: u16, ry: u16) -> u32 {
+    ((u32::from(rx) + u32::from(ry)) << 16) | u32::from(rx)
 }
 
 fn visible_cell_slice(grid: &TerrainGrid, view_top: f32, view_bottom: f32) -> &[TerrainCell] {
@@ -37,6 +49,9 @@ fn visible_cell_slice(grid: &TerrainGrid, view_top: f32, view_bottom: f32) -> &[
 /// tiles are fully opaque inside the diamond shape (confirmed via diagnostics),
 /// so no base clear-ground layer is needed. Missing tiles are skipped —
 /// the caller's UV lookup should provide fallbacks if desired.
+///
+/// The instances go into `buffer`, emptied first: a draw hands back the list
+/// of the draw before, so its allocation is reused.
 pub fn build_visible_instances(
     grid: &TerrainGrid,
     lighting_grid: Option<&CellLightGrid>,
@@ -46,14 +61,17 @@ pub fn build_visible_instances(
     screen_height: f32,
     uv_fn: UvLookupFn<'_>,
     live_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    mut buffer: Vec<SpriteInstance>,
 ) -> TerrainInstances {
     let view_left: f32 = camera_x - CULL_MARGIN;
     let view_right: f32 = camera_x + screen_width + CULL_MARGIN;
     let view_top: f32 = camera_y - CULL_MARGIN;
     let view_bottom: f32 = camera_y + screen_height + CULL_MARGIN;
 
+    buffer.clear();
     let mut instances = TerrainInstances {
-        normal: Vec::with_capacity(grid.cells.len() / 2),
+        normal: buffer,
+        walk: Vec::new(),
     };
 
     for cell in visible_cell_slice(grid, view_top, view_bottom) {
@@ -152,11 +170,119 @@ pub fn build_visible_instances(
             ..Default::default()
         };
         instances.normal.push(inst);
+        instances.walk.push(walk_key(cell.rx, cell.ry));
+    }
+    // The grid is sorted by lifted screen row for the cull above; the walk
+    // orders by cell.
+    if !instances.walk.is_sorted() {
+        let mut walked: Vec<(u32, SpriteInstance)> = instances
+            .walk
+            .drain(..)
+            .zip(instances.normal.drain(..))
+            .collect();
+        walked.sort_unstable_by_key(|&(key, _)| key);
+        for (key, instance) in walked {
+            instances.walk.push(key);
+            instances.normal.push(instance);
+        }
     }
 
     instances
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "bridge_pavement_caller_tests.rs"]
 mod pavement_caller_tests;
+
+#[cfg(all(test, tests_render_s_z))]
+mod tests {
+    use super::*;
+
+    /// A draw hands back the list of the draw before; none of it may reach
+    /// this draw's tiles.
+    #[test]
+    fn a_handed_back_buffer_holds_only_this_draws_tiles() {
+        let grid = TerrainGrid {
+            cells: vec![TerrainCell {
+                screen_x: 0.0,
+                screen_y: 0.0,
+                tile_id: 0,
+                sub_tile: 0,
+                z: 0,
+                rx: 1,
+                ry: 1,
+                variant: 0,
+                tint: [1.0; 3],
+                radar_left: [0; 3],
+                radar_right: [0; 3],
+            }],
+            world_width: TILE_WIDTH,
+            world_height: TILE_HEIGHT,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            bridge_middle_tiles: None,
+            deformation_tiles: Vec::new(),
+            ice_tiles: Vec::new(),
+        };
+        let draw = |buffer| {
+            build_visible_instances(&grid, None, 0.0, 0.0, 800.0, 600.0, None, None, buffer).normal
+        };
+        let fresh = draw(Vec::new());
+        assert_eq!(fresh.len(), 1);
+        let stale = vec![SpriteInstance::default(); 3];
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&draw(stale)),
+            bytemuck::cast_slice::<_, u8>(&fresh)
+        );
+    }
+
+    /// The grid is sorted by lifted screen row for culling; the tiles draw
+    /// in the walk's order (0x006D7560), so a raised cell lifted above a
+    /// lower one walked before it still draws after it.
+    #[test]
+    fn tiles_draw_in_the_tile_walk_order() {
+        let cell = |rx: u16, ry: u16, z: u8| {
+            let (screen_x, screen_y) = crate::map::terrain::iso_to_screen(rx, ry, z);
+            TerrainCell {
+                screen_x,
+                screen_y,
+                tile_id: 0,
+                sub_tile: 0,
+                z,
+                rx,
+                ry,
+                variant: 0,
+                tint: [1.0; 3],
+                radar_left: [0; 3],
+                radar_right: [0; 3],
+            }
+        };
+        // Lifted rows 30, 60 and 90: the raised (5,4) sorts before (3,2).
+        let cells = vec![cell(1, 0, 0), cell(5, 4, 6), cell(3, 2, 0)];
+        assert!(cells.is_sorted_by(|a, b| a.screen_y <= b.screen_y));
+        let grid = TerrainGrid {
+            cells,
+            world_width: 600.0,
+            world_height: 600.0,
+            origin_x: -300.0,
+            origin_y: 0.0,
+            bridge_middle_tiles: None,
+            deformation_tiles: Vec::new(),
+            ice_tiles: Vec::new(),
+        };
+        let tiles = build_visible_instances(
+            &grid,
+            None,
+            -300.0,
+            0.0,
+            800.0,
+            600.0,
+            None,
+            None,
+            Vec::new(),
+        );
+        assert_eq!(tiles.walk, [walk_key(1, 0), walk_key(3, 2), walk_key(5, 4)]);
+        let rows: Vec<f32> = tiles.normal.iter().map(|tile| tile.position[1]).collect();
+        assert_eq!(rows, [30.0, 90.0, 60.0]);
+    }
+}

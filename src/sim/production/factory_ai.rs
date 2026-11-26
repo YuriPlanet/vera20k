@@ -41,7 +41,8 @@
 //! - A placed object plays the building type's `CreateUnitSound=`
 //!   (`+0xE74`, read at `0x004607C8..0x004607F8`) at the building
 //!   (`0x00450198`); among retail types only the Cloning Vats set it, which
-//!   have no `Factory=`.
+//!   have no `Factory=`. `HouseClass::Place_Production` plays the same key
+//!   for a player's delivery (`0x004FB50D`), also unported.
 //! - The try-later branch also copies an uninitialised stack word into the
 //!   timer's middle field (`+0x554`, `0x004501F1`), which no reader uses.
 //! - Mobile products leave through [`exit_produced_object`], the same
@@ -73,7 +74,7 @@ pub(crate) fn factory_ai(
     rules: &RuleSet,
     building: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(owner) = sim.substrate.entities.get(building).map(|b| b.owner()) else {
         return;
@@ -123,21 +124,22 @@ fn exit_finished_object(
     building: u64,
     owner: InternedId,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
-    let Some(object) = sim
+    let Some(product) = sim
         .production
         .factories()
         .building_factory(building)
         .filter(|factory| factory.progress() >= PRODUCTION_STEPS)
-        .and_then(|factory| factory.object().cloned())
+        .and_then(|factory| factory.object())
+        .map(|object| object.entity_id)
     else {
         return;
     };
     if !placement_wait_over(sim, building) {
         return;
     }
-    let Some(product) = object.entity_id else {
+    let Some(product) = product else {
         return;
     };
     let Some(product_type) = sim
@@ -163,6 +165,12 @@ fn exit_finished_object(
     }
     match exit {
         BuildingExit::Placed => {
+            // Ares' and Phobos' `BuildingClass_KickOutUnit_BuildingType`
+            // (0x44531F, Ares `10024D80`) never run: the building arm sets
+            // the house's choice to -1 at its start (0x444F3F), so the compare
+            // at 0x44531B never reaches them. A placed structure keeps the
+            // building slot; abandonment and removal free it. Unit, Infantry
+            // and Aircraft clear in Exit_Object's prelude.
             //4501A4 reads after exit. A consumed wall is still retained at
             //its constructor Location until the frame's shared725C70 drain.
             let object = BuiltObject::capture(sim, product);
@@ -177,14 +185,14 @@ fn exit_finished_object(
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
             sim.production
-                .factories_mut()
+                .edit_factories()
                 .remove_building_factory(building);
         }
         BuildingExit::TryLater => {
             let frame = sim.session.binary_frame() as i32;
             let delay = rules.general.placement_delay_frames();
             if let Some(entity) = sim.substrate.entities.get_mut(building) {
-                entity.ai_placement_timer.restart(frame, delay);
+                entity.building.ai_placement_timer.restart(frame, delay);
             }
         }
         BuildingExit::Failed => {
@@ -217,7 +225,7 @@ fn abandon_stopped_factory(
     rules: &RuleSet,
     building: u64,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if !placement_wait_over(sim, building) {
         return;
@@ -246,11 +254,8 @@ fn start_factory(
     building: u64,
     owner: InternedId,
     factory_rtti: i32,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
-    if crate::sim::credit_income::available_money(&sim.houses, owner) <= 10 {
-        return;
-    }
     // The producing building's `Naval=` decides which vehicle choice
     // `Suggest_New_Object` reads (NPSE `0xC2F130`), so resolve it first.
     let factory_naval = sim
@@ -259,6 +264,14 @@ fn start_factory(
         .get(building)
         .and_then(|entity| sim.entity_object_type(entity, rules))
         .is_some_and(|ty| ty.naval);
+    // The `0x4502F4` hooks run before the money gate, so a claimed slot
+    // survives a start that stops here.
+    if !parallel_start_allowed(sim, rules, building, owner, factory_rtti, factory_naval) {
+        return;
+    }
+    if crate::sim::credit_income::available_money(&sim.houses, owner) <= 10 {
+        return;
+    }
     let Some(object) =
         ai_base_building::suggest_new_object(sim, rules, owner, factory_rtti, factory_naval)
     else {
@@ -276,6 +289,19 @@ fn start_factory(
         clear_aibuild_limit_choice(sim, owner, object);
         return;
     }
+    // NPSE 2.0 Factory_AI C2F07C..C2F11F reserves the fetched type's
+    // class before naval admission, allocation and construction. The House
+    // owner retains failed-start/expired reservations until a native release.
+    #[cfg(feature = "npatch")]
+    if rules.general.disable_parallel_ai_queues
+        && !sim.houses.get_mut(&owner).is_some_and(|house| {
+            house
+                .ai_production_mut()
+                .reserve_parallel(object.category, object.naval)
+        })
+    {
+        return;
+    }
     if object.category == ObjectCategory::Vehicle && object.naval != factory_naval {
         return;
     }
@@ -284,16 +310,8 @@ fn start_factory(
     let cost = sim.cost_of(owner, object, rules);
     // The FactoryClass constructor joins the factory vector
     // (`0x004C9974..0x004C9989`) before StartProduction constructs the object.
-    let insertion_seq = sim.production.next_enqueue_order();
-    sim.production.spend_enqueue_order();
-    sim.production.factories_mut().create_building_factory(
-        building,
-        owner,
-        category,
-        type_id,
-        insertion_seq,
-        cost,
-    );
+    sim.production
+        .create_building_factory(building, owner, category, type_id, cost);
     if start_active_production(
         sim,
         rules,
@@ -306,9 +324,95 @@ fn start_factory(
     {
         // `0x004503A7 -> 0x004502DC`: deleted, nothing held to abandon.
         sim.production
-            .factories_mut()
+            .edit_factories()
             .remove_building_factory(building);
     }
+}
+
+/// The `0x4502F4` hooks: the first factory building of a category claims
+/// the house's slot, and a second one may be refused, which skips to the
+/// function's exit `0x4503CA`.
+/// - Ares `BuildingClass_Update_Factory` (Ares.dll `10024E00`), with
+///   `AllowParallelAIQueues=no`: refused whenever another building holds the
+///   slot, so the house produces one per category at a time.
+/// - Phobos `BuildingClass_Update_Factory_Phobos`, with the gate on: refused
+///   while the category or the type in current production forbids parallel
+///   queues. The type check reads the same native `Producing*TypeIndex`
+///   choice fields that [`ai_base_building::suggest_new_object`] consumes.
+///
+/// Ares raises an error for a `Factory=` of no category
+/// ([`AiFactorySlot::for_producer`] `None`); VERA lets that factory start.
+fn parallel_start_allowed(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    building: u64,
+    owner: InternedId,
+    factory_rtti: i32,
+    naval: bool,
+) -> bool {
+    use crate::sim::ai_base_building::AiFactorySlot;
+    use crate::sim::ai_unit_choice::UnitChoiceKind;
+    let serial = rules.serial_ai_queues_act();
+    if !serial && !rules.parallel_ai_queues_act() {
+        return true;
+    }
+    let switches = rules.parallel_ai_queues();
+    let Some(slot) = AiFactorySlot::for_producer(factory_rtti, naval) else {
+        return true;
+    };
+    let current = sim
+        .houses
+        .get(&owner)
+        .and_then(|house| house.ai_production().parallel_factory(slot));
+    let Some(current) = current else {
+        if let Some(house) = sim.houses.get_mut(&owner) {
+            house
+                .ai_production_mut()
+                .set_parallel_factory(slot, Some(building));
+        }
+        return true;
+    };
+    if current == building {
+        return true;
+    }
+    if serial {
+        return false;
+    }
+    let category = match slot {
+        AiFactorySlot::Building => ObjectCategory::Building,
+        AiFactorySlot::Infantry => ObjectCategory::Infantry,
+        AiFactorySlot::Vehicle | AiFactorySlot::Navy => ObjectCategory::Vehicle,
+        AiFactorySlot::Aircraft => ObjectCategory::Aircraft,
+    };
+    if switches.forbids_category(category, naval) {
+        return false;
+    }
+    let choice = match slot {
+        AiFactorySlot::Building => rules.building_type_at(
+            sim.houses
+                .get(&owner)
+                .map_or(-1, |house| house.ai_production().building_choice()),
+        ),
+        AiFactorySlot::Infantry => choice_product(sim, rules, owner, UnitChoiceKind::Infantry),
+        AiFactorySlot::Aircraft => choice_product(sim, rules, owner, UnitChoiceKind::Aircraft),
+        AiFactorySlot::Vehicle | AiFactorySlot::Navy => {
+            let Some(kind) = UnitChoiceKind::of(ObjectCategory::Vehicle, naval) else {
+                return true;
+            };
+            choice_product(sim, rules, owner, kind)
+        }
+    };
+    !choice.is_some_and(|object| object.forbid_parallel_ai_queues)
+}
+
+fn choice_product<'r>(
+    sim: &Simulation,
+    rules: &'r RuleSet,
+    owner: InternedId,
+    kind: crate::sim::ai_unit_choice::UnitChoiceKind,
+) -> Option<&'r ObjectType> {
+    let index = sim.houses.get(&owner)?.ai_unit_choices().get(kind);
+    rules.type_array_at(kind.category(), index)
 }
 
 /// `CDTimerClass` at `+0x550` has run out (`0x00450115..0x00450136`).
@@ -317,7 +421,7 @@ fn placement_wait_over(sim: &Simulation, building: u64) -> bool {
     sim.substrate
         .entities
         .get(building)
-        .is_some_and(|entity| entity.ai_placement_timer.expired(frame))
+        .is_some_and(|entity| entity.building.ai_placement_timer.expired(frame))
 }
 
 /// NP `BuildingClass::Factory_AI` count comparison: NPSE #359
@@ -410,7 +514,7 @@ pub(crate) fn detach_all(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(factory) = sim.production.factories().building_factory(building) else {
         return;
@@ -425,6 +529,6 @@ pub(crate) fn detach_all(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "factory_ai_tests.rs"]
 mod tests;

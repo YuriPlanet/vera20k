@@ -19,9 +19,11 @@ use wgpu::util::DeviceExt;
 
 use super::batch::{CameraUniform, SpriteInstance};
 use super::draw_state::DrawState;
-use super::frame_readback::PendingBgra8Readback;
+use super::frame_readback::PendingTextureReadback;
 use super::gpu::block_on;
-use super::native_z::{Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG, ZGradient};
+use super::native_z::{
+    Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG, ZGradient, zshape_skip_overshoot,
+};
 
 const SIDE: u32 = 8;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -64,6 +66,9 @@ struct Layer {
     z_bytes: Vec<u8>,
     source_size: [u32; 2],
     indices: Vec<u8>,
+    /// The skip table's one slot for this layer (`render::zshape_skips`): a
+    /// byte per frame row, read when `fx_params.w` is 1. Empty binds no rows.
+    skip_rows: Vec<u8>,
     palette_override: Option<Vec<u8>>,
     /// A palette-indexed SHP page: these palette rows take the colour binding
     /// in place of `rgba`, and the instance's `source_palette` picks the row.
@@ -89,6 +94,7 @@ impl Layer {
             z_bytes: vec![0; (SIDE * SIDE) as usize],
             source_size: [SIDE; 2],
             indices: vec![33; (SIDE * SIDE) as usize],
+            skip_rows: Vec::new(),
             palette_override: None,
             palette_rows: None,
         }
@@ -108,9 +114,9 @@ struct Gpu {
 
 impl Gpu {
     fn new() -> Self {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
-            ..wgpu::InstanceDescriptor::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: None,
@@ -173,7 +179,7 @@ impl Gpu {
                     _pad: 0.0,
 
                     native_z_origin_y: 0.0,
-                    _native_z_pad: 0.0,
+                    native_z_pan: 0.0,
                 }),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
@@ -221,16 +227,20 @@ impl Gpu {
                         } else {
                             "vs_main"
                         }),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: size_of::<SpriteInstance>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &crate::render::batch::SPRITE_INSTANCE_ATTRIBUTES,
-                        }],
+                        })],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &module,
-                        entry_point: Some("fs_main"),
+                        entry_point: Some(if matches!(layer.shader, Shader::SpriteWrite) {
+                            "fs_write"
+                        } else {
+                            "fs_main"
+                        }),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: FORMAT,
                             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -241,21 +251,21 @@ impl Gpu {
                     primitive: Default::default(),
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: layer.shader.writes_depth(),
+                        depth_write_enabled: Some(layer.shader.writes_depth()),
                         // TMP leaf 0x547CF0 admits equality. Ordinary SHP leaves
                         // 0x494B60/0x497FD0 and building leaves 0x4958D0/0x4990E0
                         // use strict less-than. This exercises those contracts,
                         // not production BatchRenderer's pipeline selection.
-                        depth_compare: if matches!(layer.shader, Shader::Terrain) {
+                        depth_compare: Some(if matches!(layer.shader, Shader::Terrain) {
                             wgpu::CompareFunction::LessEqual
                         } else {
                             wgpu::CompareFunction::Less
-                        },
+                        }),
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
                     multisample: Default::default(),
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
             let camera_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -285,13 +295,18 @@ impl Gpu {
                 )
             } else if let Some(rows) = &layer.palette_rows {
                 self.texture(
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    wgpu::TextureFormat::Rgba8Unorm,
                     rows,
                     [256, (rows.len() / 1024) as u32],
                 )
             } else {
+                // Tile pages are encoded, like production's; RGBA pages are sRGB.
                 self.texture(
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    if matches!(layer.shader, Shader::Terrain) {
+                        wgpu::TextureFormat::Rgba8Unorm
+                    } else {
+                        wgpu::TextureFormat::Rgba8UnormSrgb
+                    },
                     &layer.rgba,
                     layer.source_size,
                 )
@@ -326,18 +341,13 @@ impl Gpu {
             if let Some(bytes) = &layer.palette_override {
                 palette_bytes.clone_from(bytes);
             }
-            let palette = self.texture(
-                wgpu::TextureFormat::Rgba8UnormSrgb,
-                &palette_bytes,
-                [256, 1],
-            );
+            let palette = self.texture(wgpu::TextureFormat::Rgba8Unorm, &palette_bytes, [256, 1]);
             let ramp_bytes = if layer.palette_override.is_some() {
                 palette_bytes[16 * 4..32 * 4].repeat(2)
             } else {
                 [RED.repeat(16), GREEN.repeat(16)].concat()
             };
-            let house_ramp =
-                self.texture(wgpu::TextureFormat::Rgba8UnormSrgb, &ramp_bytes, [16, 2]);
+            let house_ramp = self.texture(wgpu::TextureFormat::Rgba8Unorm, &ramp_bytes, [16, 2]);
             let voxel_palette_group = voxel.then(|| {
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Depth test indexed VXL palette and house ramp"),
@@ -379,15 +389,30 @@ impl Gpu {
                 layout: &pipeline.get_bind_group_layout(1),
                 entries: &texture_entries,
             });
+            let skip_table = self.texture(
+                wgpu::TextureFormat::R8Uint,
+                if layer.skip_rows.is_empty() {
+                    &[0]
+                } else {
+                    &layer.skip_rows
+                },
+                [layer.skip_rows.len().max(1) as u32, 1],
+            );
             let zshape_group = matches!(layer.shader, Shader::SpriteRead | Shader::SpriteWrite)
                 .then(|| {
                     self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("Depth test zshape group"),
                         layout: &pipeline.get_bind_group_layout(2),
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&z_source),
-                        }],
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&z_source),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(&skip_table),
+                            },
+                        ],
                     })
                 });
             let instances = self
@@ -426,6 +451,7 @@ impl Gpu {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
@@ -440,7 +466,7 @@ impl Gpu {
             pass.draw(0..6, 0..1);
         }
 
-        let readback = PendingBgra8Readback::encode(
+        let readback = PendingTextureReadback::encode(
             &self.device,
             &mut encoder,
             &color,
@@ -488,6 +514,18 @@ fn cliff_depth_lanes() -> Layer {
     for row in terrain.z_bytes.as_chunks_mut::<{ SIDE as usize }>().0 {
         row.copy_from_slice(&[0, 1, 12, 13, 21, 22, 23, 0]);
     }
+    terrain
+}
+
+/// A 20x24 TMP whose columns repeat ten ground rows, Z 32768 less 5..23.
+fn staggered_depth_lanes() -> Layer {
+    let mut terrain = Layer::solid(Shader::Terrain, RED, -40.0);
+    terrain.source_size = [20, 24];
+    terrain.instance.size = [20.0, 24.0];
+    terrain.rgba = RED.repeat(20 * 24);
+    terrain.z_bytes = (0..20 * 24)
+        .map(|pixel| 40 - [5, 10, 11, 12, 18, 19, 20, 21, 22, 23][pixel % 10])
+        .collect();
     terrain
 }
 
@@ -615,6 +653,49 @@ fn cliff_voxel_hull_turret_and_barrel_use_the_shared_composite_seed() {
     }
 }
 
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn turreted_shp_body_and_turret_take_the_voxel_composites_depth() {
+    use super::native_z::pack_voxel_z_gradient;
+
+    // A turreted SHP Unit draws its body and turret into the Unit composite
+    // and blits it once (0x0073B140, called at 0x0073CDDB), as a voxel body
+    // does: each SHP part decides depth as the voxel composite on the shared
+    // rectangle does at that pixel.
+    let gpu = Gpu::new();
+    let composite = pack_voxel_z_gradient(ZGradient::Vertical, false);
+    let mut voxel = Layer::solid(Shader::Voxel, BLUE, -10.0);
+    voxel.instance.z_gradient = composite;
+    let baseline = gpu.render(&[cliff_depth_lanes(), voxel]);
+    let bounds = [([0.0, 2.0], [8.0, 6.0]), ([1.0, 0.0], [6.0, 5.0])];
+    let mut layers = vec![cliff_depth_lanes()];
+    for (position, size) in bounds {
+        let mut part = Layer::solid(Shader::SpriteRead, BLUE, -10.0);
+        part.instance.position = position;
+        part.instance.size = size;
+        part.instance.z_gradient = composite;
+        part.instance.zshape_origin = [0.0, SIDE as f32];
+        layers.push(part);
+    }
+    let actual = gpu.render(&layers);
+    for y in 0..SIDE {
+        for x in 0..SIDE {
+            let covered = bounds.iter().any(|(position, size)| {
+                (position[0]..position[0] + size[0]).contains(&(x as f32))
+                    && (position[1]..position[1] + size[1]).contains(&(y as f32))
+            });
+            let pixel = (y * SIDE + x) as usize;
+            let expected = if covered { baseline[pixel] } else { RED };
+            assert_eq!(actual[pixel], expected, "at ({x},{y})");
+        }
+    }
+    // Each part seeding from its own frame, as a lone SHP draw does, differs.
+    for layer in &mut layers[1..] {
+        layer.instance.z_gradient = ZGradient::Vertical as u32;
+    }
+    assert_ne!(gpu.render(&layers), actual, "fixture missed per-part seeds");
+}
+
 fn indexed_bridge_test_layer(position: [f32; 2], size: [u32; 2], index: u8) -> Layer {
     let mut layer = Layer::solid(Shader::Voxel, BLUE, 0.0);
     layer.instance.position = position;
@@ -634,13 +715,7 @@ fn bridge_split_shared_parts_match_two_clipped_indexed_composite_blits() {
 
     let gpu = Gpu::new();
     let size = [20, 24];
-    let mut terrain = Layer::solid(Shader::Terrain, RED, -40.0);
-    terrain.source_size = size;
-    terrain.instance.size = [20.0, 24.0];
-    terrain.rgba = RED.repeat(20 * 24);
-    terrain.z_bytes = (0..20 * 24)
-        .map(|pixel| 40 - [5, 10, 11, 12, 18, 19, 20, 21, 22, 23][pixel % 10])
-        .collect();
+    let terrain = staggered_depth_lanes();
 
     // Native contract: one 20x32 rectangle at y=-4; original split y=12.
     // Tactical clipping leaves upper y=0/h=12 and lower y=12/h=8. These
@@ -838,6 +913,81 @@ fn bridge_direct_shp_unit_uses_whole_body_flat_fudge_even_below_split_height() {
 }
 
 #[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn unsplit_voxel_body_seeds_from_its_view_clipped_bottom() {
+    use super::native_z::pack_voxel_z_gradient;
+
+    // Bit_Blit clips an unsplit composite's rectangle to the view before it
+    // seeds (0x00437461, 0x004374BB..0x004375A7): a body running 12 rows past
+    // a 20-row view walks Z as if its bottom row were the view's last.
+    let gpu = Gpu::new();
+    let size = [20, 24];
+    let terrain = staggered_depth_lanes();
+
+    let mut cut = indexed_bridge_test_layer([0.0, 4.0], [20, 16], 33);
+    cut.instance.zshape_origin = [4.0, 16.0];
+    cut.instance.z_gradient = ZGradient::Vertical as u32;
+    let expected = gpu.render_sized(&[terrain.clone(), cut], size);
+
+    let mut body = indexed_bridge_test_layer([0.0, 4.0], [20, 28], 33);
+    body.instance.zshape_origin = [4.0, 28.0];
+    body.instance.z_gradient = pack_voxel_z_gradient(ZGradient::Vertical, false);
+    body.instance.draw_state.fx_params[3] = 20.0;
+    let actual = gpu.render_sized(&[terrain.clone(), body.clone()], size);
+    assert_eq!(actual, expected, "unsplit body ignored the view clip");
+
+    body.instance.z_gradient = ZGradient::Vertical as u32;
+    assert_ne!(
+        gpu.render_sized(&[terrain, body], size),
+        actual,
+        "fixture missed the clipped seed"
+    );
+}
+
+/// Bit_Blit clips a raw SHP frame to the view before it seeds either
+/// gradient kind (0x00437461, 0x0043751A, 0x0043754A). The RLE walker seeds
+/// a top-seeded entry from the clipped top (0x00437BAB), entry 2 from the
+/// whole rectangle (0x00437C39).
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn shp_frames_seed_from_their_view_clipped_rows() {
+    use super::native_z::Z_GRADIENT_RAW_FRAME_FLAG;
+
+    // A 20-row view over a 24-row target; the frames start 3 rows above it.
+    let gpu = Gpu::new();
+    let visible = 20 * 20;
+    let render = |top: f32, height: u32, z_gradient: u32| {
+        let mut frame = Layer::solid(Shader::SpriteRead, BLUE, 0.0);
+        frame.instance.position = [0.0, top];
+        frame.instance.size = [20.0, height as f32];
+        frame.instance.z_gradient = z_gradient;
+        frame.instance.draw_state.fx_params[3] = 20.0;
+        frame.source_size = [20, height];
+        frame.rgba = BLUE.repeat((20 * height) as usize);
+        frame.z_bytes = vec![0; (20 * height) as usize];
+        frame.indices = vec![33; (20 * height) as usize];
+        let mut pixels = gpu.render_sized(&[staggered_depth_lanes(), frame], [20, 24]);
+        pixels.truncate(visible);
+        pixels
+    };
+
+    let vertical = ZGradient::Vertical as u32;
+    let raw = render(-3.0, 31, vertical | Z_GRADIENT_RAW_FRAME_FLAG);
+    assert_eq!(raw, render(0.0, 20, vertical), "raw frame seeded unclipped");
+    assert_ne!(
+        render(-3.0, 31, vertical),
+        raw,
+        "RLE entry 2 seeded from the clipped rows"
+    );
+    let moderate = ZGradient::Moderate as u32;
+    assert_eq!(
+        render(-3.0, 23, moderate),
+        render(0.0, 20, moderate),
+        "RLE top-seeded frame seeded above the view"
+    );
+}
+
+#[test]
 #[ignore = "requires installed stock YR assets and a wgpu adapter; run explicitly"]
 fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
     use std::collections::HashSet;
@@ -925,6 +1075,8 @@ fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
         origin_x: 0.0,
         origin_y: -100.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
+        ice_tiles: Vec::new(),
     };
     let lookup = |id, sub, variant| {
         assert_eq!((id, sub, variant), (tile_id, 2, 0));
@@ -939,6 +1091,7 @@ fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
         60.0,
         Some(&lookup),
         None,
+        Vec::new(),
     )
     .normal;
     assert_eq!(instances.len(), 1);
@@ -1063,6 +1216,29 @@ fn terrain_and_building_depth_hide_only_behind_pixels_and_preserve_holes() {
     );
 }
 
+/// The Z leaves compare the signed candidate (0x00497FD0, 0x00494B60): one
+/// above 65535 never draws, even over empty Z, and a negative one always
+/// does, whatever its low 16 bits.
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn sprite_candidates_outside_the_stored_word_compare_signed() {
+    let gpu = Gpu::new();
+    // Flat rows at seed 32768: z = 32768 + z_adjust - row.
+    let pixels = gpu.render(&[Layer::solid(Shader::SpriteRead, BLUE, 40_000.0)]);
+    assert!(
+        pixels.iter().all(|pixel| *pixel == [0, 0, 0, 255]),
+        "a candidate above 65535 drew through its low 16 bits"
+    );
+    let pixels = gpu.render(&[
+        Layer::solid(Shader::SpriteWrite, RED, -32_668.0),
+        Layer::solid(Shader::SpriteRead, BLUE, -32_800.0),
+    ]);
+    assert!(
+        pixels.iter().all(|pixel| *pixel == BLUE),
+        "a negative candidate was refused over stored Z near 100"
+    );
+}
+
 #[test]
 #[ignore = "requires a wgpu adapter; run explicitly"]
 fn shaped_sprites_use_original_gradient_seed() {
@@ -1141,6 +1317,59 @@ fn building_zshape_uses_constant_raw_seed_and_signed_shape_bytes() {
             "-1 zshape lane must be farther at every row {y}"
         );
     }
+}
+
+/// The RLE ZReadWrite leaf (0x004990E0) skips the columns left of the view a
+/// token at a time (0x00499141..0x00499154). A skip ending inside a
+/// transparent run moves dest, Z and A on to the run's end
+/// (0x0049915D..0x0049918F) but not the z-shape pointer, which drawn pixels
+/// and later runs advance (0x00499234, 0x004991C7): the rest of the row reads
+/// its shape that many columns back, by the skip table's byte for the row.
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn building_zshape_trails_a_left_edge_skip_that_ends_inside_a_run() {
+    let gpu = Gpu::new();
+    // `width` source columns, `clear` of them transparent from column 0, the
+    // view's left edge `skip` columns in, and the +1 shape lane at `lane`.
+    // A 1-row body's raw seed equals the flat terrain's Z, so only the +1
+    // lane draws.
+    let render = |width: u32, clear: u32, skip: u32, lane: std::ops::Range<u32>| {
+        let mut terrain = Layer::solid(Shader::Terrain, RED, 0.0);
+        terrain.source_size = [width, 1];
+        terrain.instance.size = [width as f32, 1.0];
+        terrain.rgba = RED.repeat(width as usize);
+        terrain.z_bytes = vec![0; width as usize];
+        let mut building = Layer::solid(Shader::SpriteWrite, BLUE, 0.0);
+        building.instance.position = [-(skip as f32), 0.0];
+        building.instance.size = [width as f32, 1.0];
+        building.instance.zshape_origin = building.instance.position;
+        building.instance.z_gradient = ZGradient::Vertical as u32 | Z_GRADIENT_ZSHAPE_FLAG;
+        building.source_size = [width, 1];
+        building.rgba = BLUE.repeat(width as usize);
+        building.indices = vec![33; width as usize];
+        building.z_bytes = vec![128; width as usize];
+        for x in 0..clear {
+            building.hole(x, 0);
+        }
+        // Slot 1 of the skip table holds the row's overshoot.
+        building.skip_rows = vec![zshape_skip_overshoot(&building.indices, skip as usize)];
+        building.instance.draw_state.fx_params[3] = 1.0;
+        for x in lane {
+            building.z_bytes[x as usize] = 129;
+        }
+        let pixels = gpu.render_sized(&[terrain, building], [width, 1]);
+        // The source columns that drew.
+        (0..width)
+            .filter(|&column| pixels[column as usize] == BLUE)
+            .map(|column| column + skip)
+            .collect::<Vec<_>>()
+    };
+
+    // A 4-column run cut 2 in: source columns 4 and 5 take shape 2 and 3.
+    assert_eq!(render(8, 4, 2, 2..4), [4, 5]);
+    // A 300-column run encodes as 255 + 45: the skip ends 245 short of the
+    // first token's end, so source column 300 takes shape column 55.
+    assert_eq!(render(320, 300, 10, 55..57), [300, 301]);
 }
 
 #[test]
@@ -1504,6 +1733,7 @@ pub(crate) fn render_terrain_lighting_probe(
         z_bytes: tile.depth.clone(),
         source_size: [tile.width, tile.height],
         indices: Vec::new(),
+        skip_rows: Vec::new(),
         palette_override: None,
         palette_rows: None,
     };
@@ -1515,7 +1745,7 @@ pub(crate) fn render_terrain_lighting_probe(
 fn bunker_front_wall_interleaves_with_indexed_voxel_without_writing_z() {
     use super::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
     use crate::app::presentation::render::draw_plan_lowering::{
-        NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+        NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, OwnedPlannedObject,
         lower_ground_object_instances,
     };
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1550,7 +1780,7 @@ fn bunker_front_wall_interleaves_with_indexed_voxel_without_writing_z() {
             } else {
                 SpriteEncoding::Plain
             };
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(ids[index], encoding).unwrap(),
                 vec![ObjectPieceInstance {
                     target: if index == 1 {

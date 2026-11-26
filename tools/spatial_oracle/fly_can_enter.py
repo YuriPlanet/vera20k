@@ -8,6 +8,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ECX
 from tools.native_oracle import SCRATCH, finish_vectors, provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.aircraft_fire_location import Fixture, OWNER, BLOCKER, cell, dwords
 
 OUT = SCRATCH + 0x30000
@@ -28,7 +29,7 @@ def execute(case):
     f.call(0x49F2F0, 0, [])
     query = case.get('query', [16512, 16512, 0])
     u.mem_write(OUT+16, dwords(*query))
-    assert f.call(0x565730, 0x87F7E8, [OUT+16]) == target
+    require(f.call(0x565730, 0x87F7E8, [OUT+16]) == target, 'native 0x565730 returned an unexpected result')
     f.call(0x486840, target, [OUT])
     coord = list(struct.unpack('<iii', u.mem_read(OUT, 12)))
     # Set known input knowledge on both possible projected cells. This setup

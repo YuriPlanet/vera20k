@@ -6,27 +6,30 @@
     1,
     33621247
   ],
-  "scope": "BuildingClass::GetFLH 0x00453840's voxel-turret arm (0x00453A12..0x00453A4C): TechnoClass::GetFLH 0x006F3AD0 plus TacticalClass::IsometricPixelToWorld 0x006D2070 of the BuildingType's +0x11E0/+0x11E4 for a +0x16C5 type, its +0x11E0/+0x11E4/+0x16C5/+0xE44/+0x1764/+0x89C/+0x8B8 inputs, the +0x16C6-gated alternative arm's unreached state, the building's own GetCoords 0x00459EF0, and the FacingClass 0x4C91E0/0x4C9300 heading the FLH turns by.",
+  "scope": "BuildingClass::GetFLH 0x00453840's voxel-turret arm (0x00453A12..0x00453A4C): TechnoClass::GetFLH 0x006F3AD0 plus TacticalClass::IsometricPixelToWorld 0x006D2070 of the BuildingType's +0x11E0/+0x11E4 for a +0x16C5 type; and its voxel-barrel arm (0x004539A1..0x004539DE): GetTurretDrawPosition 0x00453BF0's 0x00458810 matrix chain over the +0x1730/+0x173C/+0x1748/+0x1754 pivots and the burst-signed barrel end, which the chain's uninitialized +0x1728 scale, held at 0.0, removes, with the tail's own +0x11E0/+0x11E4 pixel add. Both arms' +0x16C5/+0x16C6/+0xE44/+0x1764/+0x89C/+0x8B8 inputs, the building's own GetCoords 0x00459EF0, and the FacingClass 0x4C91E0/0x4C9300 heading the FLH turn and the chain's Rz read.",
   "assumptions": [
     "the building_prism LaserScene fixture building is the firer: the building_construction fixture BuildingClass (vtable 0x7E3EBC) whose type is the slave_manager type; the TacticalClass singleton at 0x887324 has its native matrix initializer run",
-    "each row states every input the fixture writes: the type's TurretAnimIsVoxel/TurretAnimX/TurretAnimY (+0x16C5/+0x11E0/+0x11E4), PrimaryFirePixelOffset/PrimaryFireDualOffset (+0xE44/+0x1764, the stock constructor state being 0xFFFF/0xFFFF and 0), the primary and secondary FLH (+0x89C/+0x8B8) and the building Location",
+    "each row states every input the fixture writes: the type's TurretAnimIsVoxel/TurretAnimX/TurretAnimY (+0x16C5/+0x11E0/+0x11E4), BarrelAnimIsVoxel and the four VoxelBarrelOffsetTo* triples (+0x16C6, +0x1730/+0x173C/+0x1748/+0x1754), the +0x1728 scale double (0.0), PrimaryFirePixelOffset/PrimaryFireDualOffset (+0xE44/+0x1764, the stock constructor state being 0xFFFF/0xFFFF and 0), the primary and secondary FLH (+0x89C/+0x8B8), the fixture weapon's Burst (+0x9C) and the building Location",
+    "nothing initializes +0x1728: no instruction stores it (only this chain's read at 0x0045897B and ComputeCRC 0x00464B30's read at 0x00464F5E reference it), the constructor 0x0045DD90 skips +0x1718..+0x175F, and FindOrAllocate 0x004653C0 allocates the type through a non-zeroing HeapAlloc (0x007C94B3), so native reads stale heap content; every row holds 0.0, a never-used page's content and VERA's value, so the chain's Scale 0x5AEAD0/0x5AEAF0/0x5AEB20 zeroes its basis and the point transform answers the pivot translation",
     "the stock rows use the retail-authored values the comparison rests on: GTGCAN 3/28 with PrimaryFireFLH 250,0,230 and YAGGUN 0/15 with Weapon1FLH 150,60,200. A later layer could override them; the production reader owns that selection",
-    "the facing slot +0x388 is constructed at rate 0 and snapped to the row heading; +0x3B8 is the row burst index",
-    "the weapon index selects the type's GetWeapon slot natively (0x006F3B23), so the row FLH values are read exactly as the ART reader merged them",
+    "the facing slots +0x388 (heading) and +0x370 (barrel elevation) are constructed at rate 0 and snapped to the row values; +0x3B8 is the row burst index",
+    "the weapon index selects the type's GetWeapon slot natively (0x006F3B23 and 0x00453C02), so the row FLH values and the Burst-backed barrel index are read exactly as the ART reader merged them",
     "FPCW 0x0E7F; the fixture is one building, one shot per row"
   ],
   "substitutions": [
     "the building fixture's unrelated hooks (SelectWeapon, PlayAnim, Is_Operational and the other LaserScene boundaries) stay installed but are not reached by GetFLH",
-    "no GetFLH, TechnoClass::GetFLH, IsometricPixelToWorld or GetCoords output is substituted: all four execute natively"
+    "no GetFLH, TechnoClass::GetFLH, GetTurretDrawPosition, matrix chain, IsometricPixelToWorld or GetCoords output is substituted: all execute natively"
   ],
   "entry_points": {
     "building_get_flh": "0x00453840",
     "techno_get_flh": "0x006F3AD0",
+    "get_turret_draw_position": "0x00453BF0",
+    "barrel_matrix_chain": "0x00458810",
     "isometric_pixel_to_world": "0x006D2070",
     "building_get_coords": "0x00459EF0",
     "facing_rate_ctor": "0x004C91E0",
     "facing_set_current": "0x004C9300"
   },
   "replay_command": "python -m tools.spatial_oracle.building_voxel_flh",
-  "payload_sha256": "3f737d59f8e520a96282d74074e3659c6f409af465d3628a33a751c373d45a1f"
+  "payload_sha256": "1b2195017aba8b3d934d9b516f9eb88ed4c1ec433d6775de18f303daff53d792"
 }

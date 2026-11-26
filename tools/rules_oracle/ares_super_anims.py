@@ -12,6 +12,7 @@ from pathlib import Path
 import os,sys,struct,json,time
 from tools.rules_oracle.ares_emp import EmpProbe,identified_bytes,ARES_SHA256,native
 from tools.native_oracle import run_checked, finish_vectors
+from tools.native_oracle import require
 from tools.input_oracle.fast_scroll import return_from_sink
 from unicorn.x86_const import *
 FIXTURE=Path(__file__).with_suffix('.json')
@@ -46,7 +47,7 @@ class SuperAnimProbe(EmpProbe):
    typ=self.alloc(0x120);self.write(typ+0x98,index);self.write(typ+0xb4,2)
    ext=self.alloc(0x500);self.call(0x10031460,typ,ecx=ext)
    self.call(0x10057cf0,typ,ext,ecx=0x100c1c54)
-   assert self.call(0x10057c70,typ,ecx=0x100c1c54)==ext
+   require(self.call(0x10057c70,typ,ecx=0x100c1c54)==ext, 'native 0x10057C70 returned an unexpected result')
    self.types.append((typ,ext))
   return [dict(index=i,defaults={f'{o:X}':self.read(e+o) for o in [0x1e4,0x1e8,0x25c,0x260,0x264,0x268,0x270,0x274,0x280]}) for i,(t,e) in enumerate(self.types)]
  def prepare_world(self):

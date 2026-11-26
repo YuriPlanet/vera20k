@@ -1,7 +1,7 @@
 # VERA20k Switch 移植
 
 这是原生 Horizon / 大气层移植入口，使用独立 Cargo workspace 构建。
-当前分支为 `feature/switch-port`，客户端版本为 `0.0.2`。本分支也调整了共享
+当前分支为 `feature/yuris-wgpu30`，Switch 客户端版本为 `0.0.6`。本分支也调整了共享
 渲染代码及桌面依赖；Horizon 专用依赖补丁通过生成的 Switch Cargo 配置启用。
 
 客户端包含菜单、战役、遭遇战、音频和账号 SaveData 支持，仍处于实验阶段。
@@ -12,6 +12,7 @@
 鼠标键位同时支持中键与前进/后退，滚轮复用现有滚轮语义。剧情影片会从资源根
 读取 UTF-16LE `subtitlemd.txt` / `subtitle.txt`，按影片自身帧时钟绘制字幕。
 零售字幕、MIX 和其他游戏资源不入 Git。
+右摇杆按摇杆力度提供镜头速度，绘制前按经过的时间结算位移。
 
 当前 Switch 客户端由主线程调度共享 Rust 游戏核心和 wgpu/Vulkan 绘制；Rayon
 三线程池用于部分寻路和目标扫描，体素图集用 scoped `std::thread` 分摊姿态光栅化，
@@ -27,71 +28,81 @@
 python3 build.py --client
 ```
 
-当前客户端版本为 `0.0.2`，NSP 命名格式为
-`dist/vera20-client-v<VERSION>.nsp`，本版产物为
-`dist/vera20-client-v0.0.2.nsp`，标题 ID
-`0100f52556458000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
-错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。资源优先从包内 RomFS
-读取，配置和日志目录为
+NSP 命名格式为 `dist/ver20k-Yuris-Revenge-v<VERSION>.nsp`，
+本版产物为 `dist/ver20k-Yuris-Revenge-v0.0.6.nsp`，主机菜单中的名称为
+`VER20K:红警2`，标题 ID
+`0100f52556454000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
+错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。配置和日志目录为
 `sdmc:/switch/vera20k`。存档根为 `vera20k-user:/saves`，挂载到所选账号的
 系统 SaveData；NACP 要求选择用户，预设 256 MiB 数据空间和 64 MiB 日志空间。
 随构建生成的 NRO 留作诊断，当前客户端启动要求 NSP 的账号上下文。
 窗口后端来源与当前手柄映射见 [winit-horizon/UPSTREAM.md](winit-horizon/UPSTREAM.md)。
 
-完整客户端的 NSP 主机菜单图标和 NRO 图标统一使用 `icon.jpg`，
+完整客户端的 NSP 主机菜单图标和 NRO 图标统一使用 `yuris-revenge-icon.jpg`，
 格式为 256×256 RGB JPEG。
 
-## 把游戏资源一起打入 NSP
+## 手动放置游戏资源
 
-完整客户端链接构建默认把本机资源目录打入 Program RomFS，`--check` 只检查编译。
-可显式指定不同资源目录：
+从 `0.0.5` 起，NSP 只交付客户端程序和安装元数据，不包含游戏资源。
 
-```bash
-# 从仓库根目录执行。
-cd platform/switch
-python3 build.py --client --nsp \
-  --nsp-assets target/emulator/master-xdg-data/eden/sdmc/game
+1. 从自己的《红色警戒 2：尤里的复仇》安装目录准备游戏文件。
+2. 在 Switch SD 卡的根目录创建 `game` 文件夹。
+3. 将安装目录中的游戏资源直接复制到 `game`，不要再套一层安装目录。
+4. 从 [Release 页面](https://github.com/Fisheatingcats/vera20k-switch/releases/latest)下载并安装 NSP，然后启动游戏。
+
+两套主 MIX 文件必须直接放在 `game` 下，使用小写文件名：
+
+```text
+SD:/
+└── game/
+    ├── ra2.mix
+    ├── ra2md.mix
+    ├── language.mix
+    ├── langmd.mix
+    └── ...
 ```
 
-也可以把 `--nsp-assets` 指向单独准备的资源目录。目录根必须有非空的
-`ra2.mix`、`ra2md.mix`（小写文件名）；指定目录的全部文件和子目录原样入包，
-因此请只放需要随包携带的资源。原始资源留在本机，不加入 Git。
+主 MIX 以外，请一并复制安装目录中的语言、补丁和媒体归档，例如 `language.mix`、
+`langmd.mix`、`expandmd01.mix`、`theme.mix`、`thememd.mix`、`movmd03.mix`、
+`movies01.mix` 和 `movies02.mix`。如有 UTF-16LE 的 `subtitlemd.txt` 或
+`subtitle.txt`，放在同一目录。使用实际资源文件，避免复制零字节占位文件。
 
-客户端链接构建默认打入游戏资源，并按 `vera20-client-v<VERSION>.nsp` 命名。
-本版资源内置 NSP 为 1,986,971,864 字节，SHA256
-`d9b3e2e9e05bac5a8b515e347d881165f3903d2b666109bbd870937e675dc71f`。
-构建也会生成诊断 NRO；NRO 本身不内置这些资源。
-
-客户端挂载 `romfs:/`；没有配置覆盖时优先从包内读取资源，找不到包内资源时
-回退到 `sdmc:/game`。配置、日志和录像保存在
-`sdmc:/switch/vera20k`；普通存档改用账号 SaveData。首次发现旧 SD `saves` 目录时，
+客户端默认从 `sdmc:/game` 读取。旧 `sdmc:/switch/vera20k/config.toml` 的
+`[paths] ra2_dir` 继续具有优先权；如果它指向旧路径，请先备份配置，再改为
+`ra2_dir = "sdmc:/game"` 或移开旧配置，以使用 SD 卡默认目录。
+配置、日志和录像保存在 `sdmc:/switch/vera20k`。
+首次发现旧 SD `saves` 目录时，
 导入其中 `.bin` / `.sav` 文件，保留原件及账号下已有文件；导入完成标记按账号保存。
-旧 `config.toml` 的 `[paths] ra2_dir` 继续具有优先权；
-测试包内资源时，应先备份并移开旧配置，让默认资源发现生效。
 
-已在独立 Eden 配置下验证：SD 中没有 `game` 目录，NSP 能启动完整主菜单并
-进入 URBAN 遭遇战，完整侧栏和单位可见。首次配置需沿用现有的
+用 `run_client_eden.sh` 验证时，也需手动把资源放到
+`target/emulator/master-xdg-data/eden/sdmc/game/`。首次配置需沿用现有的
 `disable_macro_jit=true` / `disable_macro_hle=true`，同时将各自的
 `\default` 设为 `false`，否则 Eden 会恢复默认值。
 `run_eden.sh --client` 仍是旧 NRO 诊断入口；验证当前客户端须将 Eden 的 `-g`
 指向上述 NSP，以提供账号存档上下文。
 
-USB 键盘、鼠标仅在底座/TV 模式启用；掌机模式使用手柄和触摸。
+USB 键盘仅底座/TV 模式启用。鼠标掌机模式也可用：显示模式不再限制它，但鼠标只在
+正在使用时才有优先权，连续 10 秒没有移动、滚轮或按键就自动交还给摇杆和触摸屏；
+再次动鼠标即刻接管。
 切回掌机会释放 USB 按键状态。手柄 A/B、单指触摸和 USB 鼠标共用点击事件，
 任一来源释放时不会打断其他来源仍按住的按钮。双指拖图整段抑制触摸点击。
+编辑框获得文本焦点时自动打开系统软键盘，另一个编辑框接着获焦会再次唤起，实体 Plus
+同样可以唤起，且不再合成为
+Escape；确认后的 UTF-8 文本提交给当前聊天、玩家名或联机输入框。键盘是阻塞调用，
+由事件轮询代为执行，因此获取焦点不会卡住状态转换；双指平移手势会取消待弹出的
+键盘。键盘打开时会带入编辑框现有内容，确认后替换而不是追加（聊天类输入框仍为追加）。
+USB 键盘本身仍可直接输入。
 
-`v0.0.2` 手柄映射：左摇杆移动指针，右摇杆平移镜头；十字键上／下选择
+手柄映射中，左摇杆移动指针，右摇杆平移镜头。十字键上／下选择
 编队 1／2，左为警戒（G），右为路径点模式（Z）。选中单位后，按住 R 再按
 上／下可建立编队 1／2；按住十字键右并依次点击地面设置路径点，松开后执行。
 X 为部署（D），Y 为切换同盟（A），L／R 为 Shift／Ctrl，ZL／ZR 为 Tab／Space，
 Plus／Minus 为 Escape／F10。以上功能遵循当前游戏热键配置；剧情用实体 Plus
 跳过，不添加屏幕 `+` 按钮。
 
-Horizon 对局呈现默认设置 30 FPS 上限；可在主菜单 `Options → Vera Options →
-Developer Options` 勾选 `60 FPS Limit`，切换为 60 FPS 上限，取消勾选恢复 30。
-选择保存在 `VERA.INI` 的 `[VERA] Switch60Fps=`，切换即时生效，只影响画面
-呈现，不改变模拟速度或屏幕刷新率；实际帧率仍取决于性能。原有 `FPS Counter`
-保持每次启动默认隐藏。所有呈现路径都接入
+Horizon 对局呈现默认上限为 30 FPS。勾选 `Options → Display →
+High Refresh Rate in Battle` 可切换到 60 FPS。设置保存为 `[VERA] HighRefreshRateInBattle=`，
+旧配置的 `Switch60Fps=` 仍可作为默认值。此项只控制呈现节奏。所有呈现路径都接入
 SaltyNX 共享页上报，无服务时跳过；已有 NX-FPS 上报者活跃时交由它负责。
 外部插件读数、实际帧率及用户存档隔离仍需用最终 NSP 在真机确认。
 
@@ -110,12 +121,6 @@ cc -std=gnu11 -Wall -Wextra -Werror -Iplatform/switch/tests/include \
 ```
 
 这些检查验证上报器的状态和字段写入，不能代替真机插件读数验收。
-
-资源打包不会补齐源目录缺少的音乐、影片或字幕。按需准备
-`theme.mix`、`thememd.mix`、`movmd03.mix`、`movies01.mix`、`movies02.mix`，
-以及 UTF-16LE `subtitlemd.txt`、`subtitle.txt`。
-随机地图生成仍有向资源目录写 `RandMap.Sed` / 预览文件的路径，在只读 RomFS
-模式下尚未适配，当前请使用已有地图。
 
 ## 已实现并验证
 
@@ -207,9 +212,11 @@ VERA_RETAIL_DIR=/path/to/retail bash run_eden.sh --gpu
 
 `dist/vera20k-gpu.nro` 通过 Switch 原生 `NWindow` 直接调用项目的
 `src/render/gpu.rs`，不复制 GPU 初始化和取帧实现。
-已在带补丁的 Eden master 中通过 wgpu 27 / NVK 使用生产 `BatchRenderer` 显示
-12 个合成 RGBA 精灵。像素回读覆盖透明边缘、纹理颜色、全部实例以及相机平移和
-2 倍缩放。同一 GPU 探针还从模拟器内的 `temperat.mix` 经生产
+当前分支使用 wgpu 30.0.1 和 Horizon Vulkan 补丁。最终 NSP 仍需在 Eden 和真机
+复验。以下是 wgpu 27 阶段已建立的生产渲染路径回归证据：带补丁的
+Eden master 通过 NVK 使用生产 `BatchRenderer` 显示 12 个合成 RGBA 精灵。
+像素回读覆盖透明边缘、纹理颜色、全部实例以及相机平移和 2 倍缩放。
+同一 GPU 探针还从模拟器内的 `temperat.mix` 经生产
 `AssetManager`、`load_theater` 和 `load_tile_images` 加载 INI、三套 PAL 与
 5 个 TMP。地图 fixture 再通过生产 `MapFile` 解析 9 条 `IsoMapPack5` 记录，
 经 Size diamond 与 `ResolvedTerrainGrid` 物化 15 格，并由主循环以生产
@@ -273,6 +280,7 @@ python3 build.py --nsp
 生成 `dist/vera20k-core.nro` 和 `dist/vera20k-core.nsp`。
 NSP 的应用 ID 为 `0100f52556455241`，直接包含核心程序，不依赖 SD 卡上的 NRO。
 打包器用独立 hactool 解密并校验 Program/Control/Meta NCA 的内容哈希与 NPDM，
+并要求 Program NCA 只有 ExeFS，杜绝随包附带游戏资源。
 仅容许自制包预期的固定密钥/ACID 未签名项。核心 NSP 已安装并通过真机运行验证。
 
 ```bash
@@ -283,6 +291,15 @@ python3 deploy_ftp.py --host "$SWITCH_FTP_HOST" --port 5000
 上传核心和基础 Rust 测试的 NRO/NSP；NRO 放在各自的 `/switch/` 子目录，NSP 放在 `/nsp/`。
 上传先写临时文件，再下载逐字节核对后更名；已有不同内容的目标文件会保留备份。
 传输清单为 `target/hardware/deployment.json`。
+
+上传完整客户端程序 NSP 时加 `--client`，游戏资源需事先手动复制到 SD 卡：
+
+```bash
+python3 deploy_ftp.py --host "$SWITCH_FTP_HOST" --port 5000 --client
+```
+
+它按 `dist/ver20k-Yuris-Revenge-v*.nsp` 选包，随包生成并上传 `.sha256`，
+同样走临时文件加逐字节回读；不要用手动复制绕过这道校验。
 
 分别从 hbmenu 启动 NRO、从主菜单启动已安装的 NSP，按 A 后按 `+` 退出。
 重开 FTP 后下载报告：
@@ -304,7 +321,7 @@ NRO 与 NSP 分别写 `sdmc:/switch/vera20k/core-probe-{nro,nsp}.txt`。
 | MIX、INI、模拟核心 / Rayon | 核心 NSP 已通过模拟器和真机验证；范围为合成资源与空场景 |
 | Switch SDL2 / EGL / GLES 库 | 早期核心图形探针需要对应 portlibs |
 | Switch 原生窗口 / EGL / GLES2 图形层 | 已在 NRO 和 NSP 的 Eden 运行中画出 1280×720 画面；尚不是 Vera 生产渲染器 |
-| wgpu 27 | 使用 Horizon 补丁、Vulkan-only 配置，已链接并通过生产 `GpuContext`、`BatchRenderer`、TMP 图集与可见地形实例显示合成场景；真实地图和游戏客户端未接入 |
+| wgpu 30.0.1 | Switch 使用 Vulkan 和仓库内的 Horizon 补丁，完整客户端仍需真机复验 |
 | rodio 0.22 / cpal 0.17 | 使用 Horizon 补丁后依赖编译检查通过；尚未链接和播放声音 |
 | 桌面 winit / Wayland / rustix | 无法直接用于 Horizon；包含窗口栈的实际依赖检查在 rustix 0.38 报错，winit 本身也没有 Horizon backend |
 | Switch NVK 静态驱动 | 已从 Mesa `606441c90e` 交叉编译，生成本地化 `libvulkan_bh.a`；实例、能力枚举、Vi 表面和逻辑设备已通过 |
@@ -323,11 +340,14 @@ python3 build.py --check-client-deps --without-winit
 ```
 
 检查从桌面 Cargo.toml 读取依赖，并锁定桌面 Cargo.lock 中的对应版本。
-上游的 libc、memmap2、wgpu 27、raw-window-handle、cpal 补丁仅通过生成的 Switch
-配置启用。当前分支的共享渲染 API 和桌面依赖也有调整，桌面平台兼容性需要单独验证。
+生成的 Switch Cargo 配置启用固定版本的 libc、memmap2、raw-window-handle 和 cpal 补丁。
+构建脚本校验 wgpu 30.0.1 源码包的 SHA-256 后应用 `third_party/wgpu-30.0.1-horizon.patch`。
+Horizon 使用解压后的模组目录，桌面端支持 ZIP 模组导入。
 补丁源码和许可来源见 `UPSTREAM.md`。
 
-当前堆内存后备映射会把 MIX 整包读入内存；真实资源加载后还需要测量峰值内存。
+顶层 MIX 使用 mmap，影片解码直接使用 MIX 内的共享切片，不再复制整段 BIK；
+但进程 RSS 仍会计入实际访问过的文件映射页，释放影片对象不等于立即归还这些页。
+地图加载会复用 LZO 输出容量并避免拼接整段 Base64，仍需用真机日志测量峰值内存。
 此探针不验证大型纹理图集、所有文件操作或真实对局性能。
 
 下一阶段是接入生产地形与 SHP/VXL 渲染，并逐步接通客户端事件、菜单与音频。

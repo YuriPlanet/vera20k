@@ -81,6 +81,6 @@ pub(crate) fn recheck_occupants<H: BridgeOccupantHost>(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "occupants_tests.rs"]
 mod tests;

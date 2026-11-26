@@ -2,14 +2,19 @@
 //! the local frame pacer, and the scenario exit cascade.
 
 pub(crate) mod beacons;
+mod deferred_effects;
 pub(crate) mod eva_producers;
 mod frame_effects;
 pub(crate) mod frame_pacer;
-pub(crate) mod network_failure;
+pub(crate) mod narrative_sync;
 pub(crate) mod network_match;
+pub(crate) mod network_quality;
+pub(crate) mod network_failure;
+pub(crate) mod redraw_gate;
 pub(crate) mod scenario_exit;
 pub(crate) mod scenario_pause;
 pub(crate) mod session;
+pub(crate) mod sim_host;
 pub(crate) mod sim_tick;
 pub(crate) mod sound_dispatch;
 pub(crate) mod state;
@@ -17,6 +22,8 @@ mod super_selection;
 
 pub(crate) mod restore;
 pub(crate) mod startup;
+pub(crate) mod stage_result;
+pub(crate) mod watching;
 
 #[cfg(feature = "telemetry-dashboard")]
 pub mod telemetry;

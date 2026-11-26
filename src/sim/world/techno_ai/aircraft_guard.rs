@@ -31,7 +31,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let facts = self.aircraft_guard_facts(id, rules);
         guard_mission::guard_visit(
@@ -40,7 +40,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -50,7 +50,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let facts = self.aircraft_guard_facts(id, rules);
         guard_mission::area_guard_visit(
@@ -59,7 +59,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -70,14 +70,21 @@ impl Simulation {
         GuardFacts {
             height: air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()),
             flight_level: air_movement::type_flight_level(entity, Some((rules, &self.interner))),
-            team: self.team_script_vm.team_for_member(id).is_some(),
+            team: self.team_script_vm.team_of(id).is_some(),
             nav_com: entity.navigation.nav_com().is_some(),
             weapon: object.is_some_and(|object| {
                 crate::sim::combat::combat_weapon::primary_for_tier(object, entity.veterancy.rank())
                     .is_some()
             }),
-            armed: object
-                .is_some_and(|object| crate::sim::combat::combat_weapon::is_armed(entity, object)),
+            armed: object.is_some_and(|object| {
+                crate::sim::combat::combat_weapon::is_armed(
+                    entity,
+                    object,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                )
+            }),
             ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
             type_ammo: object.map_or(0, |object| object.ammo),
             human: self.owner_is_human(entity.owner()),
@@ -119,7 +126,7 @@ impl Simulation {
             }
             let owner = unit.owner();
             if crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 house,
                 owner,
@@ -210,7 +217,7 @@ impl GuardHost for WorldGuard<'_> {
             self.id,
             Some(NavTargetRef::cell(x as u16, y as u16)),
             self.rules,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
@@ -219,18 +226,17 @@ impl GuardHost for WorldGuard<'_> {
             self.sim,
             self.id,
             self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     fn find_dock(&mut self) -> Option<u64> {
         self.sim
-            .aircraft_find_docking_bay(self.id, self.rules, self.ctx.effects)
+            .aircraft_find_docking_bay(self.id, self.rules, &mut self.ctx.effects)
     }
 
     fn assign_dock(&mut self, dock: u64) {
@@ -238,7 +244,7 @@ impl GuardHost for WorldGuard<'_> {
             self.id,
             Some(NavTargetRef::object(dock)),
             self.rules,
-            self.ctx.effects,
+            &mut self.ctx.effects,
         );
     }
 
@@ -248,8 +254,7 @@ impl GuardHost for WorldGuard<'_> {
                 self.id,
                 None,
                 self.rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("aircraft dispatch");
     }
@@ -257,7 +262,7 @@ impl GuardHost for WorldGuard<'_> {
     /// `Mission_Guard @ 0x0041A5C0`'s contact 0: a Building whose type is
     /// `UnitReload=` (`+0x16AA`, `0x0041A73F`).
     fn contact_reloads(&mut self) -> bool {
-        let Some(contact) = self.entity().radio_contacts.slot(0) else {
+        let Some(contact) = self.entity().seldom.radio_contacts.slot(0) else {
             return false;
         };
         self.sim
@@ -288,8 +293,7 @@ impl GuardHost for WorldGuard<'_> {
                 self.id,
                 Some(TargetKind::Entity(unit)),
                 self.rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("aircraft dispatch");
         self.queue(MissionType::Attack);
@@ -313,12 +317,17 @@ impl GuardHost for WorldGuard<'_> {
     fn foot_guard(&mut self) -> i32 {
         let mission = self.current();
         mission_handlers::evaluate_foot_guard_cadence(
-            self.sim, self.rules, self.id, mission, self.ctx,
+            self.sim,
+            self.rules,
+            self.id,
+            mission,
+            &mut self.ctx,
         )
         .delay()
     }
 
     fn foot_area_guard(&mut self) -> i32 {
-        mission_handlers::evaluate_foot_area_guard(self.sim, self.id, self.rules, self.ctx).delay()
+        mission_handlers::evaluate_foot_area_guard(self.sim, self.id, self.rules, &mut self.ctx)
+            .delay()
     }
 }

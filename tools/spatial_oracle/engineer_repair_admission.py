@@ -13,6 +13,7 @@ import struct
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP
 from tools.native_oracle import load_image, run_checked, STACK_BASE, STACK_SIZE, SCRATCH, RET_MAGIC, finish_vectors, provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.map_queries import dwords
 
 ACTOR, HUT, OTHER, KIND, CELL = [SCRATCH + n * 0x2000 for n in range(1, 6)]
@@ -794,7 +795,7 @@ class EngineerJoinedFixture(construction.JoinedFixture):
         assert self.audio_parent and self.read32(self.audio_parent + 0xF0) == 16
         self.phase = 'audio_pools'
         u.reg_write(UC_X86_REG_EDX, inputs.audio_index)
-        assert construction.invoke(u, 0x403ED0, self.audio_parent) == 1
+        require(construction.invoke(u, 0x403ED0, self.audio_parent) == 1, 'native 0x403ED0 returned an unexpected result')
         # 403ED0 resets the type-list sentinel. The actual constructed Sound
         # objects remain valid prior input; original node insertion reinstalls
         # those same objects. No selected sound fields or samples are supplied.
@@ -991,7 +992,7 @@ class EngineerJoinedFixture(construction.JoinedFixture):
         position = self.heap
         self.heap += 0x20
         u.mem_write(position, dwords(start[0] * 256 + 128, start[1] * 256 + 128, 0))
-        assert construction.invoke(u, 0x51DFF0, actor, position, 128) & 255 == 1
+        require(construction.invoke(u, 0x51DFF0, actor, position, 128) & 255 == 1, 'native 0x51DFF0 returned an unexpected result')
         assert self.read32(actor + 0x34) == 0
         return actor
 

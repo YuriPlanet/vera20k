@@ -42,9 +42,10 @@ fn generated_houses(rules: &RuleSet, native: &Value) -> Simulation {
                 team: LaunchTeam::None,
                 is_human: house["generated_kind"] == "human",
                 observer: false,
-                source_human_index: None,
+                controllers: Vec::new(),
                 handle: None,
                 difficulty: HouseDifficulty::Normal,
+                commander: None,
             }
         })
         .collect();
@@ -133,7 +134,12 @@ fn rejected_authored_buildings_match_original_without_constructing() {
             row["basic"]["NewINIFormat"].as_str().unwrap(),
             row["structures"]["0"].as_str().unwrap()
         ));
-        let entities = crate::map::entities::parse_map_entities(&ini);
+        let entities = crate::map::entities::parse_map_entities(
+            &ini,
+            crate::map::basic::parse_basic_section(&ini)
+                .new_ini_format
+                .unwrap_or(0),
+        );
         assert_eq!(entities.len(), 1);
         let before = sim.state_hash();
         let rng = sim.rng_state();
@@ -177,7 +183,7 @@ fn mobile_readers_admit_current_house_and_resolve_first_computer() {
     let ini = IniFile::from_str(
         "[Units]\n0=<human player>,HTNK,256,8,8,0,Guard,None\n1=Computer,HTNK,256,12,8,0,Guard,None\n[Infantry]\n0=<human player>,E2,256,8,12,0,Guard,0,None\n[Aircraft]\n0=<human player>,BEAG,256,12,12,0,Guard,None\n",
     );
-    let entities = crate::map::entities::parse_map_entities(&ini);
+    let entities = crate::map::entities::parse_map_entities(&ini, 4);
     assert_eq!(sim.spawn_from_map(&entities, Some(&retail.rules)), 4);
     for (cell, owner, type_name) in [
         ((8, 8), human, "HTNK"),
@@ -192,6 +198,55 @@ fn mobile_readers_admit_current_house_and_resolve_first_computer() {
             .unwrap();
         assert_eq!(actor.owner(), owner);
         assert_eq!(sim.interner.resolve(actor.type_ref()), type_name);
+    }
+}
+
+/// BuildingReadINI (`0x0044F8CB..0x0044F8DB`) drops the current House's
+/// structure in skirmish. PlayerPtr differs per network peer, so a LAN game
+/// keeps it on every peer.
+#[test]
+fn authored_buildings_follow_the_owner_exclusion_policy_and_topology() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let lan = ScenarioGameMode::Lan;
+    let skirmish_rules = skirmish.stock_rule_policy(None);
+    for (mode, policy, spawned) in [
+        (campaign, campaign.stock_rule_policy(None), 1),
+        (skirmish, skirmish_rules, 0),
+        (lan, lan.stock_rule_policy(None), 1),
+        (
+            skirmish,
+            skirmish_rules.with_skips_local_player_authored_buildings(false),
+            1,
+        ),
+    ] {
+        let mut sim = generated_houses(&retail.rules, &corpus());
+        let human = sim.houses.order()[0];
+        sim.session.set_current_house_for_test(Some(human));
+        sim.install_session_admission(mode, None, policy);
+        sim.intern_rule_type_ids(&retail.rules);
+        sim.resolve_type_handles(&retail.rules);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &retail.rules);
+        let ini = IniFile::from_str(
+            "[Basic]\nNewINIFormat=4\n[Structures]\n0=<human player>,NAHAND,256,20,20,0,None,0,0,1,0\n",
+        );
+        let entities = crate::map::entities::parse_map_entities(
+            &ini,
+            crate::map::basic::parse_basic_section(&ini)
+                .new_ini_format
+                .unwrap_or(0),
+        );
+        assert_eq!(
+            sim.spawn_from_map(&entities, Some(&retail.rules)),
+            spawned,
+            "{mode:?}"
+        );
+        assert!(sim.entities().values().all(|actor| actor.owner() == human));
     }
 }
 

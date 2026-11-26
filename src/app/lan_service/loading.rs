@@ -40,6 +40,10 @@ impl<'a> LoadingNetworkService<'a> {
             service.transport.is_some(),
             "loading transport is not available"
         );
+        // The others left their loading long ago and consume no more progress.
+        if service.online_restore {
+            return Ok(None);
+        }
         Ok(Some(Self {
             session,
             service: Some(service),
@@ -59,19 +63,43 @@ impl<'a> LoadingNetworkService<'a> {
         };
         service.drain_loading_reports(self.session)?;
         let now = loading_bucket();
-        let drain = crate::sim::timer::CdTimer::started(now as i32, 240);
-        loop {
-            self.pump(rows, loading_bucket())?;
-            if self.service.as_deref().unwrap().queued_setup_count() <= 5
-                || drain.expired(loading_bucket() as i32)
-            {
-                break;
-            }
-            //69B015..69B079 services ACK/retry traffic while the existing
-            //global queue exceeds5, bounded by240 wall buckets with20ms waits.
+        self.pump(rows, now)?;
+        self.service
+            .as_deref_mut()
+            .expect("the service was present at the top")
+            .defer_loading_drain(now);
+        // The browser cannot block its event loop: the loading pump calls
+        // `resume` on later turns in place of these 20 ms waits (69B05E).
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        while !self
+            .service
+            .as_deref_mut()
+            .expect("the service was present at the top")
+            .finish_loading_drain(loading_bucket())
+        {
             std::thread::sleep(std::time::Duration::from_millis(20));
+            self.pump(rows, loading_bucket())?;
         }
         Ok(())
+    }
+
+    /// Resume the same bounded ACK wait after the browser has delivered events.
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    pub(crate) fn resume(&mut self, rows: &mut LoadingProgressRowSnapshot) -> anyhow::Result<bool> {
+        if self
+            .service
+            .as_deref()
+            .is_none_or(|service| service.loading_drain.is_none())
+        {
+            return Ok(true);
+        }
+        let now = loading_bucket();
+        self.pump(rows, now)?;
+        Ok(self
+            .service
+            .as_deref_mut()
+            .expect("the drain check found the service")
+            .finish_loading_drain(now))
     }
 
     fn pump(&mut self, rows: &mut LoadingProgressRowSnapshot, now: u32) -> anyhow::Result<()> {
@@ -101,26 +129,12 @@ impl<'a> LoadingNetworkService<'a> {
             }
             match decode_progress(self.session, scope, incoming) {
                 Ok(Some((source, percent))) => {
-                    let sequence = incoming.sequence;
-                    let applied = super::super::loading::pump::accept_network_loading_progress_row(
+                    super::super::loading::pump::accept_network_loading_progress_row(
                         self.session,
                         rows,
                         source,
                         percent,
                     );
-                    if let Some(displayed) = rows
-                        .participants
-                        .get(source)
-                        .and_then(|row| row.remote_progress.as_ref())
-                    {
-                        global.observe_loading_application(
-                            source,
-                            sequence,
-                            percent,
-                            displayed.current_percent(),
-                            applied,
-                        );
-                    }
                 }
                 Ok(None) => {}
                 Err(error) => log::debug!("Ignored loading progress: {error:#}"),
@@ -160,7 +174,10 @@ pub(super) fn decode_progress(
     scope: Option<SessionScope>,
     incoming: GlobalMessageRef<'_>,
 ) -> anyhow::Result<Option<(usize, i32)>> {
-    anyhow::ensure!(incoming.product_id == 0xaa04, "different loading product");
+    anyhow::ensure!(
+        incoming.product_id == LAN_PRODUCT_ID,
+        "different loading product"
+    );
     let progress = if session
         .network_return_context()
         .map(|context| context.session_mode())
@@ -179,7 +196,7 @@ pub(super) fn decode_progress(
             .iter()
             .enumerate()
             .find_map(|(source, human)| {
-                (human.name.eq_ignore_ascii_case(&progress.name())
+                (crate::net::lan_messages::wire_name_matches(&human.name, progress.name_bytes())
                     && session
                         .network_endpoint(source)
                         .is_some_and(|endpoint| endpoint.ip() == incoming.source.ip()))
@@ -189,10 +206,10 @@ pub(super) fn decode_progress(
     Ok(source.map(|source| (source, progress.percent())))
 }
 
-/// One encoder/recipient policy shared with the normal MatchSession request
-/// drain.51-byte native progress is lossy below100 and reliable per remote at
-/// terminal100 (69AF45..69B013); LAN adds its existing accepted scope envelope.
-pub(super) fn progress_packets(
+/// The loading report's encoder and recipients.51-byte native progress is lossy
+/// below100 and reliable per remote at terminal100 (69AF45..69B013); LAN adds
+/// its existing accepted scope envelope.
+fn progress_packets(
     session: &MatchSession,
     scope: Option<SessionScope>,
     percent: i32,
@@ -234,6 +251,30 @@ pub(super) fn progress_packets(
 }
 
 impl LanService {
+    /// LoadingCallback 0x0069AE90 waits for ACKs when its pump leaves more
+    /// than five messages queued (69B015..69B027), for at most 240 wall
+    /// buckets from the timer it starts before reporting (69AF21,
+    /// 69B033..69B058). Only the browser reaches a later callback during a
+    /// wait; that callback keeps the first deadline.
+    fn defer_loading_drain(&mut self, now: u32) {
+        if self.queued_setup_count() > 5 && self.loading_drain.is_none() {
+            self.loading_drain = Some(crate::sim::timer::CdTimer::started(now as i32, 240));
+        }
+    }
+
+    /// The wait's test after each later pump (69B062..69B079): it ends once
+    /// five or fewer messages are queued or the deadline has passed.
+    fn finish_loading_drain(&mut self, now: u32) -> bool {
+        if self
+            .loading_drain
+            .is_some_and(|deadline| self.queued_setup_count() > 5 && !deadline.expired(now as i32))
+        {
+            return false;
+        }
+        self.loading_drain = None;
+        true
+    }
+
     /// A pre-install Departure has no private connection table yet in VERA.
     /// Preserve the admitted exact endpoint and current LAN proof instead of
     /// the native48D81A private-table lookup. No display name selects a source.
@@ -271,7 +312,7 @@ impl LanService {
         Ok(Some(source))
     }
 
-    pub(super) fn queue_loading_progress(
+    fn queue_loading_progress(
         &mut self,
         session: &MatchSession,
         percent: i32,
@@ -289,36 +330,60 @@ impl LanService {
         }
     }
 
-    fn drain_loading_reports(&mut self, session: &mut MatchSession) -> anyhow::Result<()> {
-        let mut reports = session.take_network_loading_progress_reports().into_iter();
-        while let Some(percent) = reports.next() {
-            match self.queue_loading_progress(session, percent) {
-                Ok(true) => {}
-                Ok(false) => session.report_network_loading_progress(percent),
-                Err(error) => {
-                    session.report_network_loading_progress(percent);
-                    for pending in reports {
-                        session.report_network_loading_progress(pending);
-                    }
-                    return Err(error);
-                }
+    /// The one drain of the session's loading reports, for the held loader
+    /// and the ordinary service pass alike. A full setup FIFO keeps a report
+    /// for the next pass; an error drops the rest and the caller fails the load.
+    pub(super) fn drain_loading_reports(
+        &mut self,
+        session: &mut MatchSession,
+    ) -> anyhow::Result<()> {
+        for percent in session.take_network_loading_progress_reports() {
+            if !self.queue_loading_progress(session, percent)? {
+                session.report_network_loading_progress(percent);
             }
         }
         Ok(())
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
     #[test]
-    fn controlled_loading_retains_report_intents_without_masking_a_broken_live_service() {
-        use crate::app::match_runtime::session::NetworkLoadingRequest;
+    fn deferred_loading_drain_keeps_its_deadline_and_reliable_queue() {
+        let mut service = super::super::tests::service();
+        let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 12345);
+        for value in 0..6 {
+            assert!(service.send(&[value], direct(peer), true));
+        }
+        service.defer_loading_drain(100);
+        assert!(!service.finish_loading_drain(339));
+        service.defer_loading_drain(339);
+        assert!(
+            service.finish_loading_drain(340),
+            "a later callback must not extend the drain"
+        );
+        assert_eq!(
+            service.queued_setup_count(),
+            6,
+            "only the reliable owner retires messages"
+        );
+        service.defer_loading_drain(400);
+        service.clear_setup();
+        assert!(
+            service.loading_drain.is_none(),
+            "a cancelled setup cannot retain its wait"
+        );
+    }
 
+    #[test]
+    fn controlled_loading_retains_report_intents_without_masking_a_broken_live_service() {
         let (mut service, mut session, _, _, _, _) = super::super::loading_test_pair();
-        let mut rows =
-            LoadingProgressRowSnapshot::from_launch_session(session.network_setup().unwrap());
+        let mut rows = LoadingProgressRowSnapshot::from_launch_session(
+            session.network_setup().unwrap(),
+            crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
+        );
         assert!(LoadingNetworkService::borrow(&mut session, None, false).is_err());
         {
             let mut controlled = LoadingNetworkService::borrow(&mut session, None, true)
@@ -328,11 +393,8 @@ mod tests {
             controlled.milestone(100, &mut rows).unwrap();
         }
         assert_eq!(
-            session.take_network_loading_requests(),
-            [
-                NetworkLoadingRequest::ReportProgress(30),
-                NetworkLoadingRequest::ReportProgress(100)
-            ],
+            session.take_network_loading_progress_reports(),
+            [30, 100],
             "controlled LAN/WOL drivers must still see the actual terminal report"
         );
         let transport = service.transport.take().unwrap();
@@ -343,6 +405,53 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    /// An online name may be 24 characters; the message's name field holds 19.
+    #[test]
+    fn online_name_longer_than_the_name_field_still_reports_loading() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        use crate::net::udp::relay_peer_endpoint;
+
+        let long = "Host_with_24_letter_name";
+        assert_eq!(long.len(), 24);
+        let (_, _, _, _, original_guest, _) = super::super::loading_test_pair();
+        let mut setup = original_guest.network_setup().unwrap().clone();
+        setup.humans[0].name = long.to_owned();
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(setup.clone(), false, None, false)
+            .unwrap();
+        let host_endpoint = relay_peer_endpoint(0).unwrap();
+        session.bind_network_endpoint(long, host_endpoint).unwrap();
+        session.prepare_wol_timing([0; 2], false).unwrap();
+        session.freeze_network_start(77, None).unwrap();
+
+        // The long-named player's own report must encode, not fail the load.
+        let mut sender = setup;
+        sender.local_player_index = 0;
+        let mut sending = MatchSession::default();
+        sending.enter_network(NetworkReturnContext::Wol);
+        sending
+            .accept_network_setup(sender, true, None, false)
+            .unwrap();
+        let packets = progress_packets(&sending, None, 50).unwrap();
+        assert_eq!(packets.len(), 1);
+
+        // The receiver binds it to that player's row by the same cut name.
+        let decoded = decode_progress(
+            &session,
+            None,
+            GlobalMessageRef {
+                source: host_endpoint,
+                product_id: 0xaa04,
+                sequence: 1,
+                payload: &packets[0].0,
+            },
+        )
+        .unwrap();
+        assert_eq!(decoded, Some((0, 50)));
     }
 
     #[test]
@@ -363,13 +472,18 @@ mod tests {
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::Wol);
         session
-            .accept_network_setup(original_guest.network_setup().unwrap().clone(), false, None)
+            .accept_network_setup(
+                original_guest.network_setup().unwrap().clone(),
+                false,
+                None,
+                false,
+            )
             .unwrap();
         session
             .bind_network_endpoint("Host", relay_peer_endpoint(0).unwrap())
             .unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
-        session.freeze_network_start(77).unwrap();
+        session.freeze_network_start(77, None).unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -492,19 +606,10 @@ mod tests {
         let (mut host, host_session, _, mut guest, mut guest_session, _) =
             super::super::loading_test_pair();
         let guest_address = guest.transport.as_ref().unwrap().primary_addr().unwrap();
-        host.transport
-            .as_mut()
-            .unwrap()
-            .global_mut()
-            .observe_loading();
-        guest
-            .transport
-            .as_mut()
-            .unwrap()
-            .global_mut()
-            .observe_loading();
-        let mut guest_rows =
-            LoadingProgressRowSnapshot::from_launch_session(guest_session.network_setup().unwrap());
+        let mut guest_rows = LoadingProgressRowSnapshot::from_launch_session(
+            guest_session.network_setup().unwrap(),
+            crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
+        );
         let host_address = host.transport.as_ref().unwrap().primary_addr().unwrap();
         let proof = host.control_proof().unwrap();
         guest.commit_peer_admission(host_address, "Host", &proof);
@@ -562,10 +667,18 @@ mod tests {
             .unwrap();
         let rate = NonZeroU32::new(5).unwrap();
         let agreement =
-            StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0).unwrap();
-        let mut live =
-            LiveCommandSession::new(agreement, transport, 0, 77, rate, LiveCommandMode::Lan)
+            StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0, 0, "", "")
                 .unwrap();
+        let mut live = LiveCommandSession::new(
+            agreement,
+            transport,
+            0,
+            77,
+            rate,
+            LiveCommandMode::Lan,
+            None,
+        )
+        .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         let mut now = loading_bucket();
         let mut controls = 0;
@@ -628,42 +741,6 @@ mod tests {
         assert_eq!(controls, slots);
         assert!(host.pending_setup.is_empty());
         assert_eq!(live.global().queued_send_count(), 0);
-        let log = live.global().loading_observation().unwrap().clone();
-        assert!(!log.overflowed());
-        let (sequence, destination) = log
-            .records()
-            .iter()
-            .find_map(|r| match r {
-                crate::net::global::LoadingObservation::Admitted {
-                    sequence,
-                    destination,
-                    percent: 100,
-                    reliable: true,
-                } => Some((*sequence, *destination)),
-                _ => None,
-            })
-            .expect("actual terminal admission");
-        assert!(log.records().iter().any(|r|matches!(r,crate::net::global::LoadingObservation::Retired{sequence:s,destination:d} if *s==sequence && *d==destination)),
-            "a zero queue alone is not ACK proof");
-        let records = guest
-            .transport
-            .as_ref()
-            .unwrap()
-            .global()
-            .loading_observation()
-            .unwrap()
-            .records()
-            .to_vec();
-        assert!(records.iter().any(|r| matches!(
-            r,
-            crate::net::global::LoadingObservation::Applied {
-                source: 0,
-                percent: 100,
-                displayed,
-                applied: true,
-                ..
-            } if *displayed == 100.0
-        )));
 
         //A delayed native lossy report can arrive AFTER100 was ACKed. It
         //must reach the existing row admission owner without reopening wait.
@@ -712,30 +789,10 @@ mod tests {
                 .queued_receive_count(),
             0
         );
-        assert!(
-            guest
-                .transport
-                .as_ref()
-                .unwrap()
-                .global()
-                .loading_observation()
-                .unwrap()
-                .records()
-                .iter()
-                .any(|r| matches!(
-                    r,
-                    crate::net::global::LoadingObservation::Applied {
-                        source: 0,
-                        percent: 98,
-                        displayed,
-                        applied: false,
-                        ..
-                    } if *displayed == 100.0
-                )),
-            "actual delayed98 was observed after the same row owner retained terminal100"
+        let mut fresh = LoadingProgressRowSnapshot::from_launch_session(
+            guest_session.network_setup().unwrap(),
+            crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
         );
-        let mut fresh =
-            LoadingProgressRowSnapshot::from_launch_session(guest_session.network_setup().unwrap());
         assert!(
             fresh.update_remote_progress(0, 98),
             "new attempt resets terminal state"
@@ -766,5 +823,15 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn failed_loading_report_is_dropped_not_retried() {
+        let (mut host, mut session, _, _, _, _) = super::super::loading_test_pair();
+        host.setup_scope = None;
+        session.report_network_loading_progress(30);
+        session.report_network_loading_progress(100);
+        assert!(host.drain_loading_reports(&mut session).is_err());
+        assert!(session.take_network_loading_progress_reports().is_empty());
     }
 }

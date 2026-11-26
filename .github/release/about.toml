@@ -17,12 +17,16 @@ accepted = [
     "Unicode-3.0",
     "MPL-2.0",
     "NCSA",
+    # webpki-roots trust data; section 2.1 requires the license text we ship.
+    # https://spdx.org/licenses/CDLA-Permissive-2.0.html
+    "CDLA-Permissive-2.0",
 ]
 # The platforms release.yml builds.
 targets = [
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
     "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
 ]
 # Build scripts and test-only crates are not part of the shipped program.
 ignore-build-dependencies = true

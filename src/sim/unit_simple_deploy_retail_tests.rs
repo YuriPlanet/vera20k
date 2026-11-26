@@ -101,8 +101,11 @@ fn scene(extra_clear: bool) -> Option<(Simulation, RuleSet, u64)> {
         .terrain_rules
         .semantics_for_land_type(LandType::Rock.as_index())
         .unwrap();
-    assert_eq!(rock.speed_costs.hover, Some(0));
-    assert!(clear.speed_costs.hover.unwrap() > 0);
+    assert_eq!(
+        rock.speed_costs.hover,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
+    assert!(!clear.speed_costs.hover.unwrap().is_zero());
     let mut sim = Simulation::with_seed(0x739d62);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -120,8 +123,8 @@ fn scene(extra_clear: bool) -> Option<(Simulation, RuleSet, u64)> {
     }
     sim.session
         .set_current_house_for_test(sim.interner.get("Russians"));
-    sim.fog = crate::sim::vision::FogState::new(96, 96);
-    sim.overlay_grid = Some(OverlayGrid::new(96, 96));
+    *sim.fog = crate::sim::vision::FogState::new(96, 96);
+    *sim.overlay_grid = Some(OverlayGrid::new(96, 96));
     let clear_cells = [START, (84, 84), (86, 86), (88, 84)];
     sim.install_resolved_terrain_for_new_map(test_grid(96, 96, |x, y| {
         let is_clear = clear_cells.contains(&(x, y)) || (extra_clear && (x, y) == (49, 56));

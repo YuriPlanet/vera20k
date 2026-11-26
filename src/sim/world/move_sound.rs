@@ -7,10 +7,11 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
+use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
-use crate::sim::world::MainRng;
 use crate::sim::world::ObjectSubstrate;
+use crate::util::forked::Forked;
 
 /// Foot+0x53C and signed dword+0x540. The sound may have finished (or playback
 /// may have been rejected) while the latch remains set. Device state must
@@ -48,12 +49,14 @@ impl Simulation {
     /// Ordinary unlinked SQD is covered; linked actors can retain/start a
     /// sound and spend a Main draw wrongly.
     /// Held locomotor routes retain their existing moving-now/cadence limits.
+    /// The Main stream and the sound channel are written only by a draw or
+    /// an event (`util::forked`).
     pub(super) fn tick_move_sound_after_process(
         interner: &StringInterner,
         session: &ScenarioSession,
-        main_rng: &MainRng,
+        main_rng: &mut Forked<SimRng>,
         substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         houses: &Houses,
         stable_id: u64,
         body_frame_before_process: u32,
@@ -91,16 +94,19 @@ impl Simulation {
                 let index = main_rng.next_u32() as usize % sounds.len();
                 sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: stable_id,
-                    sound_id: sounds[index].clone(),
+                    sound_id: rules.sound_name(&sounds[index]),
                     world,
                 });
                 // 0x4DAAE7 does not depend on PlayAt's device/admission result.
                 started = true;
             }
-            let entity = substrate.entities.get_mut(stable_id).unwrap();
-            entity.move_sound.active = state.active || started;
             // 0x4DAA87 reaches this even when the configured vector is empty.
-            entity.move_sound.countdown = 3;
+            // A sound already running with a full countdown keeps both.
+            if started || state.countdown != 3 {
+                let entity = substrate.entities.get_mut(stable_id).unwrap();
+                entity.move_sound.active = state.active || started;
+                entity.move_sound.countdown = 3;
+            }
         } else if state.active {
             let entity = substrate.entities.get_mut(stable_id).unwrap();
             if state.countdown == 0 || falling_or_crashing {

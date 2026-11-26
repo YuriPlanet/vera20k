@@ -157,7 +157,11 @@ impl GpuFrameTimer {
             })
             .unwrap();
         rx.recv().unwrap().unwrap();
-        let data = self.mapped.slice(..).get_mapped_range();
+        let data = self
+            .mapped
+            .slice(..)
+            .get_mapped_range()
+            .expect("map the GPU timestamp buffer");
         let first = u64::from_le_bytes(data[0..8].try_into().unwrap());
         let last = u64::from_le_bytes(data[8..16].try_into().unwrap());
         assert!(
@@ -176,11 +180,11 @@ impl Gpu {
         Self::with_features(wgpu::Features::empty())
     }
     pub(crate) fn with_features(features: wgpu::Features) -> Self {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             // Use the production owner's standard WGPU_BACKEND override so
             // the same native readbacks can exercise Windows DX12 explicitly.
             backends: wgpu::Backends::PRIMARY.with_env(),
-            ..wgpu::InstanceDescriptor::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = block_on(instance.request_adapter(&Default::default()))
             .expect("explicit GPU check needs an adapter");
@@ -318,7 +322,10 @@ impl Gpu {
             .poll(wgpu::PollType::wait_indefinitely())
             .unwrap();
         rx.recv().unwrap().unwrap();
-        let data = read.slice(..).get_mapped_range();
+        let data = read
+            .slice(..)
+            .get_mapped_range()
+            .expect("map the GPU timestamp buffer");
         data.as_chunks::<4>()
             .0
             .iter()
@@ -392,7 +399,10 @@ impl Gpu {
         reads
             .iter()
             .map(|(buffer, pitch)| {
-                let data = buffer.slice(..).get_mapped_range();
+                let data = buffer
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("map the readback buffer");
                 let bytes = data
                     .chunks_exact(*pitch as usize)
                     .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
@@ -420,7 +430,7 @@ pub(crate) fn camera(size: [u32; 2]) -> CameraUniform {
         world_height: 1000.0,
         _pad: 0.0,
         native_z_origin_y: 0.0,
-        _native_z_pad: 0.0,
+        native_z_pan: 0.0,
     }
 }
 pub(crate) fn encoded(word: u16, format: wgpu::TextureFormat) -> [u8; 4] {
@@ -467,9 +477,58 @@ pub(crate) fn clear(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
-
+        multiview_mask: None,
     });
 }
+/// Draw `strokes` through the production stroke draw over the loaded
+/// `color` and `depth`.
+pub(crate) fn draw_strokes(
+    gpu: &Gpu,
+    batch: &crate::render::batch::BatchRenderer,
+    encoder: &mut wgpu::CommandEncoder,
+    color: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    strokes: &[crate::render::surface_line::SurfaceStroke],
+) {
+    use wgpu::util::DeviceExt;
+    let mut pieces = Vec::new();
+    crate::render::batch::stroke_pieces(strokes, &mut pieces);
+    if pieces.is_empty() {
+        return;
+    }
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Surface stroke pieces"),
+            contents: bytemuck::cast_slice(&pieces),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Surface strokes"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: color,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    batch.draw_surface_strokes(&mut pass, &buffer, pieces.len() as u32);
+}
+
 pub(crate) fn sprite(position: [f32; 2], size: [f32; 2], z_adjust: f32) -> SpriteInstance {
     SpriteInstance {
         position,
@@ -587,7 +646,7 @@ fn production_no_z_mask_exhausts_words_and_preserves_depth() {
         let cv = color.create_view(&Default::default());
         let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let dv = depth.create_view(&Default::default());
-        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv);
+        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1.0);
         let offset = [137.25, -31.5];
         let ui = CameraUniform {
             camera_pos: offset,
@@ -713,7 +772,7 @@ fn production_no_z_ui_half_blend_matches_native_controls() {
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
     let dv = depth.create_view(&Default::default());
     renderer.prepare(&gpu.device, &color, &dv, camera(size));
-    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv);
+    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1.0);
     let bytes: Vec<_> = rows
         .iter()
         .flat_map(|row| encoded(row["raw"].as_u64().unwrap() as u16, format))
@@ -853,18 +912,37 @@ fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {
                 contents: bytemuck::cast_slice(&instances),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-        for repeated in [false, true] {
+        // Disjoint pieces are one snapshot/edit wave. Repeated in one span,
+        // each overlaps itself: on the same atlas slot the repeat replays the
+        // first inside their wave (`replays`); on another slot (the same
+        // texture) they need two waves, which draw against the live depth
+        // test where the adapter has it.
+        for (repeated, slot) in [(false, 0), (true, 0), (true, 1)] {
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
-            if !repeated {
-                clear(
-                    &mut encoder,
-                    &cv,
-                    &dv,
-                    old,
-                    wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                );
-            }
-            terrain.draw_span(
+            clear(
+                &mut encoder,
+                &cv,
+                &dv,
+                old,
+                wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+            );
+            let commands = |atlas_slot| {
+                selected
+                    .iter()
+                    .enumerate()
+                    .map(move |(i, c)| DestinationEditCommand {
+                        atlas_slot,
+                        ..terrain_command(
+                            i as u32,
+                            if c[0].as_i64() == Some(1) {
+                                TerrainPiece::Shadow
+                            } else {
+                                TerrainPiece::Body
+                            },
+                        )
+                    })
+            };
+            let stats = terrain.draw_span(
                 &mut encoder,
                 &cv,
                 &dv,
@@ -872,18 +950,15 @@ fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {
                 |_| Some(&atlas),
                 &buffer,
                 &instances,
-                selected.iter().enumerate().map(|(i, c)| {
-                    terrain_command(
-                        i as u32,
-                        if c[0].as_i64() == Some(1) {
-                            TerrainPiece::Shadow
-                        } else {
-                            TerrainPiece::Body
-                        },
-                    )
-                }),
+                commands(0).chain(commands(slot).take(if repeated { usize::MAX } else { 0 })),
                 [0, 0, size[0], size[1]],
             );
+            let waves = if slot == 1 && !terrain.depth_tested_edits() {
+                2
+            } else {
+                1
+            };
+            assert_eq!(stats.waves, waves, "repeat={repeated}, slot={slot}");
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -1148,7 +1223,7 @@ fn production_tree_camera_zoom_matches_unscissored_shp_coverage() {
                 0.0,
                 "frame camera must reset previous origin"
             );
-            batch.update_native_z_origin(&gpu.queue, 7.0 / zoom);
+            batch.update_native_z_origin(&gpu.queue, 7.0 / zoom, 0);
             let cam = batch.camera_uniform();
             assert_eq!(cam.camera_pos, raw_camera.map(f32::round));
             assert_eq!(cam.native_z_origin_y, 7.0 / zoom);
@@ -1581,162 +1656,161 @@ fn production_mixed_destination_waves_preserve_pixels_depth_and_atlas_order() {
 }
 
 #[test]
-#[ignore = "bounded GPU/CPU timing; close other renderers before uncontended measurements"]
-fn production_tree_piece_workload_timing() {
-    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let size = [800, 600];
-    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    batch.write_camera(&gpu.queue, camera(size));
-    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-    let atlas = batch.create_texture_on_device(
-        &gpu.device,
-        &gpu.queue,
-        &[80, 180, 80, 255],
-        1,
-        1,
-        Some(&[1]),
-    );
-    let timer = GpuFrameTimer::new(&gpu);
-    let mut results = Vec::new();
-    // Original frozen800x600 workloads remain literal. The added32-pair
-    // disjoint grids fit this target;512 full-size disjoint pairs cannot.
-    // Pixel-disjoint rectangles can still share conservative dependency tiles.
-    for count in [1usize, 32, 128, 512] {
-        for layout in ["dispersed", "repeated", "pixel_disjoint", "tile_disjoint"] {
-            if layout.ends_with("disjoint") && count != 32 {
-                continue;
+#[ignore = "requires GPU; overlapping read-write edits replayed inside waves"]
+fn production_replayed_wave_edits_match_one_pass_each() {
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        // Replays and strict waves alone, as on an adapter without the live
+        // depth test; `terrain` draws what still needs two waves against it.
+        let mut waves_only = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        waves_only.disable_depth_tested_edits();
+        // Pages of a texel per pixel with source holes; the second draws
+        // other colours.
+        let indices: Vec<u8> = (0..256u32)
+            .map(|i| if i % 7 == 3 { 0 } else { 1 + (i % 4) as u8 })
+            .collect();
+        let page = |green: u8| {
+            let rgba: Vec<u8> = indices
+                .iter()
+                .flat_map(|&i| [40 * i, green, 255 - 50 * i, 255])
+                .collect();
+            batch.create_texture_on_device(&gpu.device, &gpu.queue, &rgba, 16, 16, Some(&indices))
+        };
+        let pages = [page(30), page(200)];
+        // Overlapping bodies and shadows with varied Z, more of them than a
+        // window or a tile's list holds. A compat body before shadows, a
+        // second page and a fractional quad each send their later overlaps to
+        // another wave.
+        let mut instances = Vec::new();
+        let mut commands = Vec::new();
+        for i in 0..150u32 {
+            let position = [(i * 5 % 23) as f32, (i * 3 % 17) as f32];
+            let mut instance = sprite(position, [16.0; 2], (i * 13 % 29) as f32 - 14.0);
+            if i == 9 {
+                instance.palette_light = Default::default();
             }
-            let instances = (0..count)
-                .flat_map(|i| {
-                    let [x, y] = match layout {
-                        "repeated" => [350.0, 250.0],
-                        "pixel_disjoint" => {
-                            [10.0 + (i % 8) as f32 * 96.0, 10.0 + (i / 8) as f32 * 80.0]
-                        }
-                        "tile_disjoint" => {
-                            [4.0 + (i % 6) as f32 * 128.0, 4.0 + (i / 6) as f32 * 96.0]
-                        }
-                        _ => [
-                            10.0 + (i % 10) as f32 * 70.0,
-                            10.0 + ((i / 10) % 6) as f32 * 80.0,
-                        ],
-                    };
-                    [
-                        SpriteInstance {
-                            z_gradient: 2,
-                            ..sprite([x, y], [33.0, 78.0], -12.0 - i as f32)
-                        },
-                        sprite([x + 18.0, y + 42.0], [74.0, 36.0], -3.0 - i as f32),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            let buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Tree workload instances"),
-                    contents: bytemuck::cast_slice(&instances),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-            for batched in [false, true] {
-                eprintln!("TREE timing begins: pairs={count}, layout={layout}, batched={batched}");
-                for sample in 0..4 {
-                    // Exactly one application frame per submission preserves
-                    // the established command-buffer-memory measurement bound.
-                    let (stats, encode_ms, gpu_ms) = timer.measure(&gpu, |encoder| {
-                        clear(
-                            encoder,
+            if i == 30 {
+                instance.position[0] += 0.5;
+            }
+            instances.push(instance);
+            commands.push(DestinationEditCommand {
+                index: i,
+                piece: if i % 3 == 1 {
+                    TerrainPiece::Shadow
+                } else {
+                    TerrainPiece::Body
+                },
+                render_z: RenderZPolicy::ReadWrite,
+                atlas_slot: usize::from(i == 20),
+            });
+        }
+        let buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Replayed wave inputs"),
+                contents: bytemuck::cast_slice(&instances),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let size = [48, 40];
+        let tactical = [1, 2, size[0] - 3, size[1] - 4];
+        let mut waves = Vec::new();
+        for (camera_pos, zoom) in [
+            ([0., 0.], 1.),
+            ([3., -2.], 1.),
+            ([0.5, 0.25], 1.),
+            ([1., 1.], 1.25),
+        ] {
+            let mut camera = camera(size);
+            camera.camera_pos = camera_pos;
+            camera.zoom = zoom;
+            batch.write_camera(&gpu.queue, camera);
+            let mut outputs = Vec::new();
+            for mode in ["serial", "waves", "depth-tested"] {
+                let terrain = if mode == "waves" {
+                    &mut waves_only
+                } else {
+                    &mut terrain
+                };
+                let color = gpu.target(size, format);
+                let cv = color.create_view(&Default::default());
+                let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+                let dv = depth.create_view(&Default::default());
+                terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                clear(
+                    &mut encoder,
+                    &cv,
+                    &dv,
+                    32760,
+                    wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                );
+                if mode != "serial" {
+                    let stats = terrain.draw_span(
+                        &mut encoder,
+                        &cv,
+                        &dv,
+                        &batch,
+                        |slot| pages.get(slot),
+                        &buffer,
+                        &instances,
+                        commands.iter().copied(),
+                        tactical,
+                    );
+                    if mode == "waves" {
+                        waves.push(stats.waves);
+                    } else {
+                        assert_eq!(stats.waves, 1, "{stats:?}");
+                    }
+                } else {
+                    for (instance, &command) in instances.iter().zip(&commands) {
+                        terrain.draw_piece(
+                            &mut encoder,
                             &cv,
                             &dv,
-                            65535,
-                            wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                        );
-                        let kind = |i| {
-                            if i % 2 == 0 {
-                                TerrainPiece::Body
-                            } else {
-                                TerrainPiece::Shadow
-                            }
-                        };
-                        let stats = if batched {
-                            terrain.draw_span(
-                                encoder,
-                                &cv,
-                                &dv,
-                                &batch,
-                                |_| Some(&atlas),
-                                &buffer,
-                                &instances,
-                                (0..instances.len()).map(|i| terrain_command(i as u32, kind(i))),
-                                [0, 0, 800, 600],
-                            )
-                        } else {
-                            for (i, instance) in instances.iter().enumerate() {
-                                terrain.draw_piece(
-                                    encoder,
-                                    &cv,
-                                    &dv,
-                                    &batch,
-                                    &atlas,
-                                    &buffer,
-                                    instance,
-                                    terrain_command(i as u32, kind(i)),
-                                    [0, 0, 800, 600],
-                                );
-                            }
-                            super::terrain_draw::TerrainBatchStats {
-                                pieces: instances.len(),
-                                waves: instances.len(),
-                                passes: instances.len() * 2,
-                                tile_dependencies: 0,
-                            }
-                        };
-                        stats
-                    });
-                    if batched {
-                        let expected_waves = match layout {
-                            "repeated" => 2 * count,
-                            "pixel_disjoint" => 22,
-                            "tile_disjoint" => 2,
-                            _ => match count {
-                                1 => 2,
-                                32 => 24,
-                                128 => 34,
-                                512 => 58,
-                                _ => unreachable!(),
-                            },
-                        };
-                        assert_eq!(
-                            stats.waves, expected_waves,
-                            "independent scheduling prototype"
+                            &batch,
+                            &pages[command.atlas_slot],
+                            &buffer,
+                            instance,
+                            command,
+                            tactical,
                         );
                     }
-                    assert_eq!(stats.pieces, count * 2);
-                    if sample > 0 {
-                        eprintln!(
-                            "TREE timing sample: pairs={count}, layout={layout}, batched={batched}, sample={sample}, waves={}, passes={}, tile_dependencies={}, gpu_ms={gpu_ms}, cpu_prepare_encode_ms={encode_ms}",
-                            stats.waves, stats.passes, stats.tile_dependencies
-                        );
-                        results.push(serde_json::json!({"tree_pairs":count,"layout":layout,"overlap":layout=="repeated","batched":batched,"sample":sample,
-                            "frames":1,"pieces":stats.pieces,"waves":stats.waves,"passes":stats.passes,"tile_dependencies":stats.tile_dependencies,
-                            "gpu_ms_per_frame":gpu_ms,"cpu_prepare_encode_ms_per_frame":encode_ms}));
-                    }
+                }
+                let reads = [
+                    gpu.read(&mut encoder, &color),
+                    gpu.read(&mut encoder, &depth),
+                ];
+                outputs.push(gpu.finish(encoder, &reads, size));
+            }
+            for (mode, scheduled) in ["waves", "depth-tested"].iter().zip(&outputs[1..]) {
+                for (attachment, (serial, batched)) in outputs[0].iter().zip(scheduled).enumerate()
+                {
+                    let mismatches = serial
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .zip(batched.as_chunks::<4>().0)
+                        .enumerate()
+                        .filter(|(_, (a, b))| a != b)
+                        .take(8)
+                        .collect::<Vec<_>>();
+                    assert!(
+                        mismatches.is_empty(),
+                        "{mode}, {format:?}, {camera_pos:?}, zoom {zoom}, attachment {attachment}: {mismatches:?}"
+                    );
                 }
             }
         }
-    }
-    let report = serde_json::json!({"target":[800,600],"color_format":"Bgra8UnormSrgb",
-        "source":"frozen original opaque TREE01-sized workload positions plus32 pixel-disjoint and tile-disjoint pairs; actual sequential and batched snapshot/edit owner",
-        "interval":"GPU includes frame clears, every snapshot/edit and the final one-workgroup timestamp marker. CPU includes scheduler reset/preparation, encoder construction and commands, excludes finish/submit/wait. Setup excluded. tile_dependencies counts covered tiles per command, each queried then updated.",
-        "samples":results});
-    eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
-    if let Some(path) = std::env::var_os("VERA20K_TERRAIN_PERF_OUTPUT") {
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+        // Whole-pixel cameras at zoom 1 replay; the others keep strict waves.
+        assert!(
+            waves[0] * 4 < waves[2] && waves[1] * 4 < waves[2],
+            "waves {waves:?}"
+        );
     }
 }
 
@@ -1795,13 +1869,13 @@ pub(crate) fn seed_depth_grid(
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
     let binding = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1825,7 +1899,7 @@ pub(crate) fn seed_depth_grid(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
-
+        multiview_mask: None,
     });
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &binding, &[]);
@@ -2022,5 +2096,58 @@ pub(crate) fn assert_native_color_and_depth(
             index % size[0] as usize,
             index / size[0] as usize,
         );
+    }
+}
+
+/// A frame's instance uploads are copies recorded ahead of its passes, out of
+/// staging chunks the pool reuses once a submission has copied out of them.
+#[test]
+#[ignore = "requires a GPU; draws instances the pool's recorded uploads wrote"]
+fn recorded_uploads_reach_the_passes_after_them_frame_after_frame() {
+    use crate::render::batch::InstanceBufferPool;
+    let gpu = Gpu::new();
+    let size = [16, 4];
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let atlas =
+        batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255; 4], 1, 1, Some(&[1]));
+    let color = gpu.target(size, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    let mut pool = InstanceBufferPool::new();
+    // The left half; the right half from more instances than the pool's first
+    // buffer holds; the left half again, from a reused chunk.
+    for (left, count) in [(0, 1), (8, 65), (0, 1)] {
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let instance = sprite([left as f32, 0.0], [8.0, 4.0], 0.0);
+        pool.record_uploads(&gpu.device, &mut encoder)
+            .upload("recorded", &vec![instance; count]);
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            65535,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        );
+        {
+            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                &mut encoder,
+                &cv,
+                &dv,
+            );
+            let (buffer, drawn) = pool.get("recorded").unwrap();
+            assert_eq!(drawn, count as u32);
+            batch.draw_with_buffer_no_depth(&mut pass, &atlas, buffer, drawn);
+        }
+        let read = gpu.read(&mut encoder, &color);
+        let output = gpu.finish(encoder, &[read], size).remove(0);
+        let painted: Vec<bool> = output.as_chunks::<4>().0[..16]
+            .iter()
+            .map(|pixel| *pixel != [0, 0, 0, 255])
+            .collect();
+        let expected: Vec<bool> = (0..16).map(|x| (left..left + 8).contains(&x)).collect();
+        assert_eq!(painted, expected, "instances drawn from x {left}");
     }
 }

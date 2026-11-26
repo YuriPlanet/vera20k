@@ -80,7 +80,7 @@ fn first_process_publishes_raw_head_and_matching_progress_for_drive_and_ship() {
             ))
             .unwrap();
         let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let grid = crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.substrate.entities.insert(entity);
         assert!(sim.set_unit_destination(
@@ -88,10 +88,10 @@ fn first_process_publishes_raw_head_and_matching_progress_for_drive_and_ship() {
             crate::sim::components::NavTargetRef::cell(11, 8),
             &rules,
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(committed_track_head(sim.substrate.entities.get(1).unwrap()).is_none());
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
@@ -351,7 +351,7 @@ fn production_process_admission_uses_valid_selector_independently_of_head() {
                         );
                     }
                     let mut sim = crate::sim::world::Simulation::new();
-                    sim.interner = crate::sim::intern::test_interner();
+                    *sim.interner = crate::sim::intern::test_interner();
                     sim.substrate.entities.insert(entity);
                     let grid = PathGrid::new(20, 20);
                     // A non-null head away from the owner is Is_Moving, so the
@@ -368,11 +368,11 @@ fn production_process_admission_uses_valid_selector_independently_of_head() {
                     let entity = sim.substrate.entities.get(1).unwrap();
                     assert_eq!(
                         entity.foot_speed.applied_fraction(),
-                        // Drive4B0828 clears a fully empty mover at the
-                        // common tail even after its active prefix ran.
+                        // Drive4B0828 / Ship69FEF0 clear a fully empty mover
+                        // at the common tail even after its active prefix ran.
                         // Head/selector admission remains independent; a
                         // retained head suppresses that later rest write.
-                        SimFixed::lit(if kind == LocomotorKind::Drive && !nonnull_head {
+                        SimFixed::lit(if !nonnull_head {
                             "0"
                         } else if valid && selector != -1 {
                             "0.75"

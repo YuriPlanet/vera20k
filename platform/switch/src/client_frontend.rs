@@ -4,6 +4,13 @@ use anyhow::{Context, Result};
 
 const DIRECTORY: &str = "sdmc:/switch/vera20k";
 
+#[cfg(feature = "horizon-frame-profile")]
+#[unsafe(no_mangle)]
+unsafe extern "C" fn platform_perf_log(message: *const std::ffi::c_char) {
+    let message = unsafe { std::ffi::CStr::from_ptr(message) };
+    log::info!(target: "switch::perf", "{}", message.to_string_lossy());
+}
+
 // C diagnostics use the same persistent logger as the client.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn platform_fps_log(message: *const std::ffi::c_char) {
@@ -22,8 +29,6 @@ unsafe extern "C" {
     fn platform_commit_user_save() -> u32;
     fn platform_unmount_user_save();
     fn platform_commit_sdmc() -> u32;
-    fn platform_romfs_init() -> bool;
-    fn platform_romfs_exit();
 }
 
 fn run() -> Result<()> {
@@ -37,34 +42,36 @@ fn run() -> Result<()> {
         save_result == 0,
         "mount user save data failed: {save_result:#010x}; launch the installed NSP and select a user"
     );
-    let romfs_mounted = unsafe { platform_romfs_init() };
-    let result = run_mounted(romfs_mounted);
+    let result = run_mounted();
     // The file logger buffers. Publish its tail before the save unmount and the
     // SD commit, so an error return that skips winit's exiting hook still leaves
     // the run's log on the card.
     log::logger().flush();
     // App::run has returned and dropped its file handles before the final commit.
     let commit = commit_user_save();
-    if romfs_mounted {
-        unsafe { platform_romfs_exit() };
-    }
     unsafe { platform_unmount_user_save() };
     result.and(commit)
 }
 
-fn run_mounted(romfs_mounted: bool) -> Result<()> {
+fn run_mounted() -> Result<()> {
     std::fs::create_dir_all(DIRECTORY).context("create client data directory")?;
     std::env::set_current_dir(DIRECTORY).context("enter client data directory")?;
     import_legacy_saves()?;
     let log_path =
         vera20k::util::logging::init_file_logger("client").context("initialize client log")?;
-    vera20k::util::logging::install_panic_hook(Some(&log_path));
+    vera20k::util::logging::install_panic_hook(Some(&log_path), None);
     // GPU, applet and audio initialization consume kernel sessions. Connect to
     // the optional SaltyNX reporter before them so its port gets a free slot.
     unsafe { platform_fps_start() };
+    #[cfg(feature = "horizon-frame-profile")]
+    log::info!(
+        target: "switch::perf",
+        "Hardware profiling build={} target=horizon profile=release; \
+         emulator timings are functional validation only",
+        option_env!("VERA_SWITCH_BUILD").unwrap_or("unspecified")
+    );
     install_worker_pool();
     log::info!("Starting shared VERA20k client on Horizon");
-    log::info!("romfs_mounted={romfs_mounted}");
     vera20k::app::App::default().run()
 }
 
@@ -77,6 +84,19 @@ fn install_worker_pool() {
     let workers = vera20k::util::parallel::worker_count();
     match rayon::ThreadPoolBuilder::new()
         .num_threads(workers)
+        .thread_name(|index| format!("rayon-{index}"))
+        .start_handler(|index| {
+            #[cfg(feature = "horizon-frame-profile")]
+            {
+                unsafe extern "C" {
+                    fn platform_perf_thread_name(name: *const std::ffi::c_char);
+                }
+                let name = std::ffi::CString::new(format!("rayon-{index}")).unwrap();
+                unsafe { platform_perf_thread_name(name.as_ptr()) };
+            }
+            #[cfg(not(feature = "horizon-frame-profile"))]
+            let _ = index;
+        })
         .build_global()
     {
         Ok(()) => log::info!("Global worker pool: {workers} thread(s)"),

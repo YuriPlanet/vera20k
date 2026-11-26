@@ -44,7 +44,7 @@ fn factory_fixture(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct actual held graph");
     let type_id = saved.interner().get(type_name).unwrap();
@@ -81,9 +81,8 @@ fn prepare_saved(
     let path = repository
         .write_named("factory.bin", &snapshot_bytes(saved, &rules))
         .expect("write matching-header snapshot");
-    state.runtime.resources.rules = rules;
-    state.runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-    state.runtime.resources.terrain_template = Some(load_fixture_terrain());
+    state.runtime.resources_mut().rules = rules;
+    state.runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
     let before = state.baseline();
     let result = PreparedLoad::from_repository(
         LoadPreparationView::from_runtime(
@@ -105,6 +104,10 @@ fn prepare_saved(
 
 #[test]
 fn wallet_survives_prepared_load_and_active_cancellation() {
+    crate::test_fixture::on_game_stack(wallet_survives_prepared_load_and_active_cancellation_body);
+}
+
+fn wallet_survives_prepared_load_and_active_cancellation_body() {
     let rules = factory_rules();
     let mut saved = load_fixture_simulation(true);
     saved.intern_rule_type_ids(&rules);
@@ -153,7 +156,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         &rules,
         "Americans",
         "PARENT",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     // Seed a partially paid held object, then exercise a different live credit
@@ -184,7 +187,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     resources.rules = factory_rules();
     let mut runtime = crate::sim::runtime::SimRuntime {
         simulation: Simulation::new(),
-        resources,
+        resources: resources.into(),
     };
     prepared.commit_into(&mut runtime);
     assert_eq!(*runtime.simulation.houses()[&owner].economy(), expected);
@@ -192,7 +195,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     reference_resources.rules = factory_rules();
     let mut reference = crate::sim::runtime::SimRuntime {
         simulation: saved,
-        resources: reference_resources,
+        resources: reference_resources.into(),
     };
     for frame in 0..30 {
         runtime
@@ -200,7 +203,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored active frame");
         reference
@@ -208,7 +211,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("uninterrupted active frame");
         assert_eq!(
@@ -240,11 +243,11 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         &runtime.resources.rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "PARENT",
+            type_id: "PARENT".into(),
             naval: false
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert_eq!(
         crate::sim::production::credits_for_owner(&runtime.simulation, "Americans"),
@@ -255,7 +258,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             &[],
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("restored frame");
     let economy = runtime.simulation.houses()[&owner].economy();
@@ -361,7 +364,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                 if label != "unpublished-complete" {
                     assert!(
                         !crate::sim::production::dispatch_production_changes_for_tests(
-                            &mut saved, &rules, None
+                            &mut saved, &rules
                         )
                     );
                     assert!(
@@ -378,8 +381,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
             }
             "retained-playfield" => {
                 saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .set_in_playfield(true);
             }
@@ -396,7 +398,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                         0,
                         0,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
             }
@@ -432,7 +434,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     entity.lifecycle,
                     entity.in_playfield(),
                     entity.techno_ctor_random_word(),
-                    entity.spawn_owner_id,
+                    entity.seldom.spawn_owner_id,
                     entity.spawn_manager.as_ref().map(|manager| {
                         manager
                             .slots()
@@ -440,7 +442,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                             .map(|slot| slot.spawn())
                             .collect::<Vec<_>>()
                     }),
-                    entity.slave.owner(),
+                    entity.seldom.slave.owner(),
                     entity.slave_manager.clone(),
                 )
             })
@@ -481,13 +483,13 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     entity.lifecycle,
                     entity.in_playfield(),
                     entity.techno_ctor_random_word(),
-                    entity.spawn_owner_id,
+                    entity.seldom.spawn_owner_id,
                     entity.spawn_manager.as_ref().map(|manager| manager
                         .slots()
                         .iter()
                         .map(|slot| slot.spawn())
                         .collect::<Vec<_>>()),
-                    entity.slave.owner(),
+                    entity.seldom.slave.owner(),
                     entity.slave_manager.clone(),
                 ))
                 .collect::<Vec<_>>(),
@@ -519,7 +521,6 @@ fn factory_restore_rejects_inconsistent_roots() {
         "concrete-category",
         "manager-owned-root",
         "child-root-alias",
-        "tail-without-head",
         "early-accounting",
     ] {
         let (mut saved, rules, owner, parent) =
@@ -583,13 +584,12 @@ fn factory_restore_rejects_inconsistent_roots() {
                     .entity_id = Some(parent);
             }
             "revealed-root" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .lifecycle
                 .set_in_limbo_for_test(false),
             "marked-root" => {
-                let entity = saved.entities_mut_for_test().get_mut(parent).unwrap();
+                let entity = saved.entity_mut_for_test(parent).unwrap();
                 entity.lifecycle.set_cell_marked_for_test(true);
             }
             "logic-root" => saved.set_logic_order_for_test(vec![parent]),
@@ -642,27 +642,24 @@ fn factory_restore_rejects_inconsistent_roots() {
                 .entities_mut_for_test()
                 .change_owner(parent, InternedId::from_index(u32::MAX)),
             "wrong-type" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
                 .set_type_ref_for_test(other),
             "concrete-category" => {
                 saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .set_category_for_test(crate::map::entities::EntityCategory::Infantry);
             }
             "manager-owned-root" => saved
-                .entities_mut_for_test()
-                .get_mut(parent)
+                .entity_mut_for_test(parent)
                 .unwrap()
+                .seldom
                 .spawn_owner_id
                 .set_for_test(Some(parent)),
             "child-root-alias" => {
                 let manager = saved
-                    .entities_mut_for_test()
-                    .get_mut(parent)
+                    .entity_mut_for_test(parent)
                     .unwrap()
                     .slave_manager
                     .as_mut()
@@ -671,18 +668,6 @@ fn factory_restore_rejects_inconsistent_roots() {
                 nodes[0].set_slave_for_test(Some(parent));
                 let (state, frame, timer) = (manager.state(), manager.frame(), manager.ai_timer());
                 manager.set_for_test(state, frame, nodes, timer);
-            }
-            "tail-without-head" => {
-                saved
-                    .production_mut_for_test()
-                    .factories_mut_for_test()
-                    .test_enqueue_kernel(owner, category, parent_type, 2, 1000);
-                saved
-                    .production_mut_for_test()
-                    .factories_mut_for_test()
-                    .test_first_mut()
-                    .unwrap()
-                    .set_object_for_test(None);
             }
             "early-accounting" => {
                 saved
@@ -703,8 +688,42 @@ fn factory_restore_rejects_inconsistent_roots() {
                 source_registry: "FactoryRegistry",
                 ..
             })) if label == "missing-entity" => {}
+            // The snapshot's saved-id walk refuses an id past the
+            // save's name table before the factory checks run.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownSavedId(_)))
+                if matches!(label, "idle-owner-index" | "tail-type-index") => {}
+            // The held object's owner is checked by the entity walk.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownInternedId {
+                field: "owner",
+                ..
+            })) if label == "unknown-held-owner" => {}
             Err(error) => panic!("{label}: unexpected earlier failure {error}"),
             Ok(_) => panic!("{label}: inconsistent factory was admitted"),
         }
+    }
+}
+
+/// A Factory with queued types and no object is live state, not a broken save:
+/// StartNext4CA5A0's forced Begin (4CA60A) refuses while the only factory
+/// building sells, and Factory Save4CA3C0/Load4CA270 keep the queue.
+#[test]
+fn factory_restore_admits_a_queued_tail_without_an_object() {
+    let (mut saved, rules, owner, _) = factory_fixture("PARENT", ProductionCategory::Building);
+    let parent_type = saved.interner().get("PARENT").unwrap();
+    let factories = saved.production_mut_for_test().factories_mut_for_test();
+    factories.test_enqueue_kernel(owner, ProductionCategory::Building, parent_type, 2, 1000);
+    factories
+        .test_first_mut()
+        .unwrap()
+        .set_object_for_test(None);
+    let view = saved
+        .production()
+        .factories()
+        .view(owner, ProductionCategory::Building)
+        .unwrap();
+    assert!(view.object.is_none());
+    assert_eq!(view.queue.len(), 1);
+    if let Err(error) = prepare_saved(&saved, rules, "tail-without-head") {
+        panic!("a queued tail without an object must load: {error}");
     }
 }

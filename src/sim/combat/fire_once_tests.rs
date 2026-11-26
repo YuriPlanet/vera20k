@@ -123,6 +123,7 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
                 integer(&before["dispatch_timer"][2]),
             );
             actor
+                .seldom
                 .rearm_timer
                 .set_for_test(timer(&before["rearm_timer"]));
             actor
@@ -208,12 +209,12 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
         }
         team["advance_pending"] = row["before"]["team"]["advance_pending"].clone();
         team["leaving_map"] = row["before"]["team"]["is_leaving_map"].clone();
-        sim.team_script_vm = serde_json::from_value(vm).unwrap();
+        *sim.team_script_vm = serde_json::from_value(vm).unwrap();
         Some(id)
     };
-    sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
-    sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
-    sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
+    *sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
+    *sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
+    *sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
     (sim, members, targets, team)
 }
 
@@ -258,12 +259,12 @@ fn assert_boundary(
             "{name}: status"
         );
         assert_eq!(
-            actor.weapon_burst.index(),
+            actor.seldom.weapon_burst.index(),
             integer(&after["burst"]),
             "{name}: burst"
         );
         assert_eq!(
-            actor.rearm_timer.timer(),
+            actor.seldom.rearm_timer.timer(),
             timer(&after["rearm_timer"]),
             "{name}: rearm"
         );
@@ -363,10 +364,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
     else {
         return;
     };
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/projectile_oracle/fire_once.json",
-    ))
-    .unwrap();
+    let corpus = crate::test_fixture::json("tools/projectile_oracle/fire_once.json");
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 13);
     let mut compared = 0;
     for row in corpus["cases"].as_array().unwrap() {
@@ -400,8 +398,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
                 &snap,
                 &weapon,
                 bullet,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
         assert!(draws.is_empty());
@@ -412,12 +409,12 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
             restored.restore_after_snapshot_load().unwrap();
             // Keep the separate save reader's Scenario reseed out of this
             // FireOnce retained-state comparison.
-            restored.scenario_rng = sim.scenario_rng.clone();
+            *restored.scenario_rng = (*sim.scenario_rng).clone();
             assert_boundary(&restored, row, &members, targets, team);
             restored.run_team_ai_pass(
                 &retail.rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let state = restored.team_script_vm.team(team.unwrap()).unwrap();
             assert_eq!(state.cursor(), 1);

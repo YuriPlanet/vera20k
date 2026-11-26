@@ -13,7 +13,7 @@ fn action(kind: i32, waypoint: u32) -> RuntimeAction {
         params: vec!["0".into(); 6],
         waypoint_index: Some(waypoint),
     };
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn run(
@@ -32,7 +32,7 @@ fn run(
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -111,7 +111,7 @@ fn numeric_action(kind: i32, value: &str) -> RuntimeAction {
         .unwrap()
         .entries()[0]
         .clone();
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn scenario_hash(sim: &Simulation) -> String {
@@ -144,7 +144,7 @@ fn legacy_storm_actions_match_original_empty_target_rng_and_countdown_gates() {
     ] {
         let (rules, mut sim, houses) =
             crate::sim::superweapon::lightning_storm_tests::trigger_control_fixture(seed, size);
-        sim.lightning_storm =
+        *sim.lightning_storm =
             LightningStorm::for_test(false, false, 0, -1, 900, (7, 8), Some(houses[0]));
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
@@ -246,7 +246,7 @@ fn legacy_storm_stop_keeps_retail_clouds_until_production_process_finishes_them(
     let rng = sim.rng_state();
     assert!(!run(&mut sim, &rules, &numeric_action(45, "0"), None));
     assert_eq!(sim.rng_state(), rng);
-    sim.lightning_storm = lightning_storm::LightningStorm::raging_for_test(owner, (30, 31));
+    *sim.lightning_storm = lightning_storm::LightningStorm::raging_for_test(owner, (30, 31));
     assert!(run(&mut sim, &rules, &action(90, 7), None));
     let (present, manifesting) = sim.lightning_storm.clouds_for_test();
     let before = (present.to_vec(), manifesting.to_vec());

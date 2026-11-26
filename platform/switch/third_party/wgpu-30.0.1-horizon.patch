@@ -1,0 +1,605 @@
+--- a/wgpu/build.rs
++++ b/wgpu/build.rs
+@@ -17,6 +17,8 @@
+         vulkan: { any(
+             // The `vulkan` feature enables the Vulkan backend only on "native Vulkan" platforms, i.e. Windows/Linux/Android
+             all(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd"), feature = "vulkan"),
++            // bevy-horizon: Nintendo Switch homebrew, through NVK.
++            all(target_os = "horizon", feature = "vulkan"),
+             // On Apple platforms, however, we require the `vulkan-portability` feature
+             // to explicitly opt-in to Vulkan since it's meant to be used with MoltenVK.
+             all(target_vendor = "apple", feature = "vulkan-portability")
+--- a/wgpu-core/Cargo.toml
++++ b/wgpu-core/Cargo.toml
+@@ -212,7 +212,7 @@
+ version = "30.0.0"
+ optional = true
+ 
+-[target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd"))'.dependencies.wgpu-core-deps-windows-linux-android]
++[target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "horizon"))'.dependencies.wgpu-core-deps-windows-linux-android]
+ version = "30.0.0"
+ optional = true
+ 
+--- a/wgpu-core/build.rs
++++ b/wgpu-core/build.rs
+@@ -1,6 +1,8 @@
+ fn main() {
+     cfg_aliases::cfg_aliases! {
+         windows_linux_android: { any(windows, target_os = "linux", target_os = "android", target_os = "freebsd") },
++        // bevy-horizon: Nintendo Switch homebrew gets Vulkan (through NVK) and nothing else.
++        horizon: { target_os = "horizon" },
+         send_sync: { all(
+             feature = "std",
+             any(
+@@ -18,6 +20,7 @@
+         ) },
+         vulkan: { any(
+             all(windows_linux_android, feature = "vulkan"), // Regular Vulkan
++            all(horizon, feature = "vulkan"), // bevy-horizon
+             all(target_vendor = "apple", feature = "vulkan-portability") // Vulkan Portability on Apple
+         ) },
+         drm: { all(
+--- a/wgpu-core/src/device/resource.rs
++++ b/wgpu-core/src/device/resource.rs
+@@ -698,7 +698,15 @@
+             .map_err(|e| self.handle_hal_error(e));
+     }
+ 
++    // bevy-horizon: on Horizon, logs which wgpu-core call hit the error. `track_caller` reports
++    // the line of the `map_err` closure that called this, which names the operation.
++    #[cfg_attr(target_os = "horizon", track_caller)]
+     pub fn handle_hal_error(&self, error: hal::DeviceError) -> DeviceError {
++        #[cfg(target_os = "horizon")]
++        log::error!(
++            "wgpu-core: the device is lost to {error:?} ({error}), returned to the call at {}",
++            core::panic::Location::caller()
++        );
+         match error {
+             hal::DeviceError::OutOfMemory
+             | hal::DeviceError::Lost
+@@ -709,6 +717,7 @@
+         DeviceError::from_hal(error)
+     }
+ 
++    #[cfg_attr(target_os = "horizon", track_caller)]
+     pub fn handle_hal_error_with_nonfatal_oom(&self, error: hal::DeviceError) -> DeviceError {
+         match error {
+             hal::DeviceError::OutOfMemory => DeviceError::from_hal(error),
+--- a/wgpu-core/src/instance.rs
++++ b/wgpu-core/src/instance.rs
+@@ -68,6 +68,19 @@
+         mut instance_desc: wgt::InstanceDescriptor,
+         telemetry: Option<hal::Telemetry>,
+     ) -> Self {
++        // bevy-horizon: Bevy keeps indirect-call validation in release builds only when its
++        // backends include DX12 (bevy_render `settings.rs`), and its default, `Backends::all()`,
++        // includes it on every platform. Horizon has only the Vulkan backend, so apply Bevy's rule
++        // for a platform without DX12: keep the validation only alongside `VALIDATION`, which
++        // debug builds set. In the Ryujinx harness the validation zeroed every indirect draw;
++        // see bevy-horizon's docs/rendering.md.
++        #[cfg(target_os = "horizon")]
++        if !instance_desc.flags.contains(wgt::InstanceFlags::VALIDATION) {
++            instance_desc
++                .flags
++                .remove(wgt::InstanceFlags::VALIDATION_INDIRECT_CALL);
++        }
++
+         let mut this = Self {
+             _name: name.to_owned(),
+             instance_per_backend: Vec::new(),
+--- a/wgpu-core-deps-windows-linux-android/Cargo.toml
++++ b/wgpu-core-deps-windows-linux-android/Cargo.toml
+@@ -39,7 +39,7 @@
+ name = "wgpu_core_deps_windows_linux_android"
+ path = "src/lib.rs"
+ 
+-[target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "netbsd"))'.dependencies.wgpu-hal]
++[target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "netbsd", target_os = "horizon"))'.dependencies.wgpu-hal]
+ version = "30.0.0"
+ 
+ [lints.clippy]
+--- a/wgpu-hal/Cargo.toml
++++ b/wgpu-hal/Cargo.toml
+@@ -325,9 +325,18 @@
+ ]
+ default-features = false
+ 
+-[target.'cfg(not(target_arch = "wasm32"))'.dependencies.ash]
++[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "horizon")))'.dependencies.ash]
+ version = "0.38"
+ optional = true
++
++# bevy-horizon: Horizon has no dynamic loader, and libloading has a compile_error! for OSes it
++# doesn't know. ash's default `loaded` feature pulls libloading in, so it's off here; the Vulkan
++# driver (NVK) is linked statically and src/vulkan/instance.rs calls its vkGetInstanceProcAddr.
++[target.'cfg(target_os = "horizon")'.dependencies.ash]
++version = "0.38"
++optional = true
++default-features = false
++features = ["debug", "std"]
+ 
+ [target.'cfg(not(target_arch = "wasm32"))'.dependencies.gpu-allocator]
+ version = "0.28"
+@@ -340,7 +349,7 @@
+ features = ["dynamic"]
+ optional = true
+ 
+-[target.'cfg(not(target_arch = "wasm32"))'.dependencies.libloading]
++[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "horizon")))'.dependencies.libloading]
+ version = "0.8"
+ optional = true
+ 
+--- a/wgpu-hal/src/auxil/renderdoc.rs
++++ b/wgpu-hal/src/auxil/renderdoc.rs
+@@ -1,5 +1,7 @@
+ //! RenderDoc integration - <https://renderdoc.org/>
+ #![cfg_attr(not(any(feature = "gles", feature = "vulkan")), allow(dead_code))]
++// bevy-horizon: on Horizon, `RenderDoc::new` never loads RenderDoc, so some of this goes unused.
++#![cfg_attr(target_os = "horizon", allow(unused_imports, dead_code))]
+ 
+ use alloc::format;
+ use alloc::string::String;
+@@ -10,6 +12,8 @@
+ #[derive(Debug)]
+ pub struct RenderDocApi {
+     api: renderdoc_sys::RENDERDOC_API_1_4_1,
++    // bevy-horizon: libloading doesn't build for Horizon (see `RenderDoc::new` below).
++    #[cfg(not(target_os = "horizon"))]
+     lib: libloading::Library,
+ }
+ 
+@@ -32,10 +36,20 @@
+ }
+ 
+ // TODO: replace with libloading API once supported
+-#[cfg(unix)]
++#[cfg(all(unix, not(target_os = "horizon")))]
+ const RTLD_NOLOAD: i32 = 0x4;
+ 
+ impl RenderDoc {
++    /// bevy-horizon: Horizon (Nintendo Switch) has no dynamic loader to find RenderDoc with, and
++    /// RenderDoc doesn't run there anyway.
++    #[cfg(target_os = "horizon")]
++    pub unsafe fn new() -> Self {
++        RenderDoc::NotAvailable {
++            reason: "RenderDoc isn't available on Horizon".into(),
++        }
++    }
++
++    #[cfg(not(target_os = "horizon"))]
+     pub unsafe fn new() -> Self {
+         type GetApiFn = unsafe extern "C" fn(version: u32, out: *mut *mut ffi::c_void) -> i32;
+ 
+--- a/wgpu-hal/src/lib.rs
++++ b/wgpu-hal/src/lib.rs
+@@ -441,6 +441,16 @@
+         // account.
+         const MB: u64 = 1024 * 1024;
+ 
++        // [bevy-horizon patch] On Horizon, NVK takes every VkDeviceMemory from the process's
++        // malloc heap (mesa-switch `nouveau_horizon_memory.c`), the same ~3 GiB the game's own
++        // allocations come from. `Performance`'s 128-256 MiB device blocks and 64-128 MiB host
++        // blocks would hold back a large part of it, so the default hint gets the `MemoryUsage`
++        // sizes there.
++        #[cfg(target_os = "horizon")]
++        let memory_hints = match memory_hints {
++            wgt::MemoryHints::Performance => &wgt::MemoryHints::MemoryUsage,
++            other => other,
++        };
+         match memory_hints {
+             wgt::MemoryHints::Performance => Self {
+                 min_device_memblock_size: 128 * MB,
+--- a/wgpu-hal/src/vulkan/adapter.rs
++++ b/wgpu-hal/src/vulkan/adapter.rs
+@@ -10,6 +10,64 @@
+ 
+ fn depth_stencil_required_flags() -> vk::FormatFeatureFlags {
+     vk::FormatFeatureFlags::SAMPLED_IMAGE | vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT
++}
++
++/// [bevy-horizon patch] What keeps shaders' buffer accesses inside their bindings on Horizon,
++/// from `BH_ROBUST_BUFFER_ACCESS`. Elsewhere it is always [`Driver`](Self::Driver), wgpu's own
++/// behaviour.
++///
++/// With the driver's robustness, NVK checks every storage-buffer access against the buffer's size
++/// in the shader, a component at a time (mesa-switch `src/nouveau/vulkan/nvk_shader.c`,
++/// `nvk_ssbo_addr_format`: `nir_address_format_64bit_bounded_global`). NAK can fold the check into
++/// a load only on SM 7.3 and later, so on the Switch's GM20B (SM 5.3) each check is a branch, and
++/// vector loads become one load per component (mesa `nir_lower_explicit_io.c`). Bevy builds its
++/// shaders without naga's own bounds checks (bevy_render `src/renderer/render_device.rs`,
++/// `ShaderRuntimeChecks::unchecked()`), so the driver's are the only ones those shaders have.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum HorizonBufferChecks {
++    /// `1` or `driver`: `robustBufferAccess`, and `robustBufferAccess2` where `VK_EXT_robustness2`
++    /// has it, as wgpu asks for everywhere else. An access past a binding reads 0 or is dropped.
++    Driver,
++    /// `clamp`, the default: no driver robustness, and naga's `Restrict` checks in every shader,
++    /// the unchecked ones included. They clamp an index to its array's last element (its
++    /// `arrayLength` for a runtime-sized one) with a `min`, no branch: what wgpu has naga do on a
++    /// device without `robustBufferAccess2` (`naga_options` below), and inside what core
++    /// `robustBufferAccess` allows, which returns any value from within the buffer. Bindings
++    /// themselves stay checked by wgpu against the shader's minimum sizes. Image loads keep the
++    /// driver's image robustness. In the nakhost harness, Skate 3's world fragment shader takes
++    /// 3,595 instructions without checks, 3,708 with these and 4,118 with the driver's.
++    Clamp,
++    /// `0` or `off`: neither. A shader that indexes past a binding reads or writes whatever GPU
++    /// memory is there, or faults the GPU, which loses the device.
++    Off,
++}
++
++fn horizon_buffer_checks() -> HorizonBufferChecks {
++    if !cfg!(target_os = "horizon") {
++        return HorizonBufferChecks::Driver;
++    }
++    let value = std::env::var("BH_ROBUST_BUFFER_ACCESS").ok();
++    let checks = match value.as_deref().map(str::trim) {
++        None | Some("" | "clamp") => HorizonBufferChecks::Clamp,
++        Some("1" | "driver") => HorizonBufferChecks::Driver,
++        Some("0" | "off") => HorizonBufferChecks::Off,
++        Some(other) => {
++            log::warn!("BH_ROBUST_BUFFER_ACCESS={other:?} isn't 1, clamp or 0; using clamp");
++            HorizonBufferChecks::Clamp
++        }
++    };
++    match checks {
++        HorizonBufferChecks::Driver => {
++            log::info!("BH_ROBUST_BUFFER_ACCESS: the driver's buffer robustness");
++        }
++        HorizonBufferChecks::Clamp => log::info!(
++            "BH_ROBUST_BUFFER_ACCESS: naga's clamping bounds checks in every shader, no driver buffer robustness"
++        ),
++        HorizonBufferChecks::Off => {
++            log::warn!("BH_ROBUST_BUFFER_ACCESS=0: buffer robustness is off");
++        }
++    }
++    checks
+ }
+ 
+ const INDEXING_FEATURES: wgt::Features = wgt::Features::TEXTURE_BINDING_ARRAY
+@@ -2315,6 +2373,11 @@
+                     .shared
+                     .flags
+                     .contains(wgt::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER)
++                    // bevy-horizon: on Horizon the only Vulkan driver is NVK, linked into the
++                    // executable, and NVK reports conformance version 0 on every Tegra GPU, the
++                    // Switch's included (nvk_is_conformant in Mesa's nvk_physical_device.c).
++                    // Hiding it would leave no adapter at all.
++                    || cfg!(target_os = "horizon")
+                 {
+                     log::debug!("Adapter is not Vulkan compliant: {}", info.name);
+                 } else {
+@@ -2382,15 +2445,19 @@
+                 ),
+         );
+ 
++        let buffer_checks = horizon_buffer_checks();
++        let robust_buffers = buffer_checks == HorizonBufferChecks::Driver;
+         let has_robust_buffer_access2 = phd_features
+             .robustness2
+             .as_ref()
+             .map(|r| r.robust_buffer_access2 == 1)
+-            .unwrap_or_default();
++            .unwrap_or_default()
++            && robust_buffers;
+ 
+         let alignments = phd_capabilities.to_hal_alignments(has_robust_buffer_access2);
+ 
+         let private_caps = super::PrivateCapabilities {
++            horizon_naga_bounds_checks: buffer_checks == HorizonBufferChecks::Clamp,
+             image_view_usage: phd_capabilities.device_api_version >= vk::API_VERSION_1_1
+                 || phd_capabilities.supports_extension(khr::maintenance2::NAME),
+             timeline_semaphores: match phd_features.timeline_semaphore {
+@@ -2425,7 +2492,7 @@
+             non_coherent_map_mask: phd_capabilities.properties.limits.non_coherent_atom_size - 1,
+             can_present: true,
+             //TODO: make configurable
+-            robust_buffer_access: phd_features.core.robust_buffer_access != 0,
++            robust_buffer_access: phd_features.core.robust_buffer_access != 0 && robust_buffers,
+             robust_image_access: match phd_features.robustness2 {
+                 Some(ref f) => f.robust_image_access2 != 0,
+                 None => phd_features
+--- a/wgpu-hal/src/vulkan/device.rs
++++ b/wgpu-hal/src/vulkan/device.rs
+@@ -14,6 +14,61 @@
+ 
+ use super::{conv, descriptor::DescriptorCounts, RawTlasInstance};
+ use crate::TlasInstance;
++
++/// [bevy-horizon patch] Whether `BH_RT_COMPRESSION=1` gives this texture memory of its own, on
++/// Horizon.
++///
++/// NVK compresses an image only when its memory was allocated for it alone, with
++/// `VkMemoryDedicatedAllocateInfo` naming it: mesa-switch's `nvk_device_memory.c` maps such an
++/// allocation with NIL's compressed PTE kind on the Switch, and `nvk_image_plane_bind` marks the
++/// image compressed. wgpu otherwise places every texture inside a larger allocation; gpu-allocator's
++/// `AllocationScheme::DedicatedImage` names the image. Compressed render targets get the GPU's fast
++/// clears and compressed depth. Only single-sampled colour targets of 4, 8 or 16 bytes a texel and
++/// `Depth32Float` targets over 1 MiB qualify, as NVK prefers (`nvk_GetImageMemoryRequirements2`);
++/// NIL has no compressed kind for smaller texels. Storage images are left out, to start with the
++/// targets whose clears and blends compression is for. Off by default: mesa-switch's compressed
++/// path hadn't run on a Switch before this. The Bevy 0.18 copy (wgpu-hal 27, gpu-alloc) does the
++/// same in `Device::horizon_dedicated_texture`.
++fn horizon_rt_compression(desc: &crate::TextureDescriptor, size: u64) -> bool {
++    if !cfg!(target_os = "horizon") {
++        return false;
++    }
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    static LOGGED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
++    let on = *ON.get_or_init(|| {
++        let on = std::env::var("BH_RT_COMPRESSION").is_ok_and(|value| value.trim() == "1");
++        if on {
++            log::warn!("BH_RT_COMPRESSION=1: render targets get memory of their own, for NVK to compress");
++        }
++        on
++    });
++    if !on || size <= 1 << 20 || desc.sample_count != 1 {
++        return false;
++    }
++    let usage = conv::map_texture_usage(desc.usage);
++    let format = match desc.format {
++        wgt::TextureFormat::Depth32Float => true,
++        format if format.is_depth_stencil_format() || format.is_compressed() => false,
++        format => matches!(format.block_copy_size(None), Some(4 | 8 | 16)),
++    };
++    let dedicated = format
++        && usage.intersects(
++            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
++        )
++        && !usage.contains(vk::ImageUsageFlags::STORAGE);
++    if dedicated && LOGGED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 32 {
++        log::warn!(
++            "BH_RT_COMPRESSION: {:?} ({}x{}x{} {:?}, {} KiB) gets memory of its own",
++            desc.label.unwrap_or("Unlabeled texture"),
++            desc.size.width,
++            desc.size.height,
++            desc.size.depth_or_array_layers,
++            desc.format,
++            size >> 10,
++        );
++    }
++    dedicated
++}
+ 
+ impl super::DeviceShared {
+     /// Set the name of `object` to `name`.
+@@ -726,7 +781,11 @@
+                 let mut temp_options;
+                 let options = if needs_temp_options {
+                     temp_options = self.naga_options.clone();
+-                    if !runtime_checks.bounds_checks {
++                    // [bevy-horizon patch] With `BH_ROBUST_BUFFER_ACCESS=clamp`, naga's checks
++                    // stand in for the driver's robustness, so they stay.
++                    if !runtime_checks.bounds_checks
++                        && !self.shared.private_caps.horizon_naga_bounds_checks
++                    {
+                         temp_options.bounds_check_policies = naga::proc::BoundsCheckPolicies {
+                             index: naga::proc::BoundsCheckPolicy::Unchecked,
+                             buffer: naga::proc::BoundsCheckPolicy::Unchecked,
+@@ -1189,6 +1248,13 @@
+ 
+         let name = desc.label.unwrap_or("Unlabeled texture");
+ 
++        // [bevy-horizon patch] `BH_RT_COMPRESSION=1`: see `horizon_rt_compression`.
++        let allocation_scheme = if horizon_rt_compression(desc, image.requirements.size) {
++            gpu_allocator::vulkan::AllocationScheme::DedicatedImage(image.raw)
++        } else {
++            gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged
++        };
++
+         let allocation = self
+             .mem_allocator
+             .lock()
+@@ -1201,7 +1267,7 @@
+                 },
+                 location: gpu_allocator::MemoryLocation::GpuOnly,
+                 linear: false,
+-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
++                allocation_scheme,
+             })
+             .inspect_err(|_| {
+                 unsafe { self.shared.raw.destroy_image(image.raw, None) };
+@@ -1881,7 +1947,10 @@
+                             file_name: d.file_name.as_ref(),
+                             language: naga::back::spv::SourceLanguage::WGSL,
+                         });
+-                if !desc.runtime_checks.bounds_checks {
++                // [bevy-horizon patch] As in `compile_stage`.
++                if !desc.runtime_checks.bounds_checks
++                    && !self.shared.private_caps.horizon_naga_bounds_checks
++                {
+                     naga_options.bounds_check_policies = naga::proc::BoundsCheckPolicies {
+                         index: naga::proc::BoundsCheckPolicy::Unchecked,
+                         buffer: naga::proc::BoundsCheckPolicy::Unchecked,
+--- a/wgpu-hal/src/vulkan/instance.rs
++++ b/wgpu-hal/src/vulkan/instance.rs
+@@ -241,7 +241,9 @@
+         if cfg!(all(
+             unix,
+             not(target_os = "android"),
+-            not(target_os = "macos")
++            not(target_os = "macos"),
++            // bevy-horizon: the Switch has none of X11, Wayland or DRM.
++            not(target_os = "horizon")
+         )) {
+             // VK_KHR_xlib_surface
+             extensions.push(khr::xlib_surface::NAME);
+@@ -263,6 +265,11 @@
+             extensions.push(ext::metal_surface::NAME);
+             extensions.push(khr::portability_enumeration::NAME);
+         }
++        // bevy-horizon
++        if cfg!(target_os = "horizon") {
++            // VK_NN_vi_surface
++            extensions.push(ash::nn::vi_surface::NAME);
++        }
+         if cfg!(drm) {
+             // VK_EXT_acquire_drm_display -> VK_EXT_direct_mode_display -> VK_KHR_display
+             extensions.push(ext::acquire_drm_display::NAME);
+@@ -272,7 +279,12 @@
+             extensions.push(khr::get_display_properties2::NAME);
+         }
+ 
+-        if flags.contains(wgt::InstanceFlags::DEBUG) {
++        // bevy-horizon: on Horizon the messenger is always wanted. NVK attaches the reason, with
++        // its source file and line, to every error it returns (vk_error, vk_errorf), and a
++        // release build of Mesa sends those messages only to a VK_EXT_debug_utils messenger
++        // (`__vk_log_impl` in mesa src/vulkan/runtime/vk_log.c). The Switch has no other log for
++        // them, so without one a driver failure reaches wgpu as a bare VkResult.
++        if flags.contains(wgt::InstanceFlags::DEBUG) || cfg!(target_os = "horizon") {
+             // VK_EXT_debug_utils
+             extensions.push(ext::debug_utils::NAME);
+         }
+@@ -545,6 +557,30 @@
+         Ok(self.create_surface_from_vk_surface_khr(surface, None))
+     }
+ 
++    // bevy-horizon
++    #[cfg(target_os = "horizon")]
++    fn create_surface_from_vi(
++        &self,
++        n_window: *mut c_void,
++    ) -> Result<super::Surface, crate::InstanceError> {
++        if !self.shared.extensions.contains(&ash::nn::vi_surface::NAME) {
++            return Err(crate::InstanceError::new(String::from(
++                "Vulkan driver does not support VK_NN_vi_surface",
++            )));
++        }
++
++        let surface = {
++            let vi_loader = ash::nn::vi_surface::Instance::new(&self.shared.entry, &self.shared.raw);
++            let info = vk::ViSurfaceCreateInfoNN::default().window(n_window);
++
++            unsafe { vi_loader.create_vi_surface(&info, None) }.map_err(|err| {
++                crate::InstanceError::with_source(String::from("vkCreateViSurfaceNN failed"), err)
++            })?
++        };
++
++        Ok(self.create_surface_from_vk_surface_khr(surface, None))
++    }
++
+     pub(super) fn create_surface_from_vk_surface_khr(
+         &self,
+         surface: vk::SurfaceKHR,
+@@ -573,6 +609,7 @@
+     ) -> Result<Self, crate::InstanceError> {
+         profiling::scope!("Init Vulkan Backend");
+ 
++        #[cfg(not(target_os = "horizon"))]
+         let entry = unsafe {
+             profiling::scope!("Load vk library");
+             // ohos support is already fixed on ash main, but it's unclear when
+@@ -586,6 +623,30 @@
+         .map_err(|err| {
+             crate::InstanceError::with_source(String::from("missing Vulkan entry points"), err)
+         })?;
++        // bevy-horizon: Horizon has no dynamic loader, so the driver (NVK, for Switch homebrew) is
++        // linked into the executable and provides vkGetInstanceProcAddr itself. An app built
++        // without a driver links a stub that returns null for every name.
++        #[cfg(target_os = "horizon")]
++        let entry = {
++            unsafe extern "system" {
++                fn vkGetInstanceProcAddr(
++                    instance: vk::Instance,
++                    p_name: *const core::ffi::c_char,
++                ) -> vk::PFN_vkVoidFunction;
++            }
++            let create_instance =
++                unsafe { vkGetInstanceProcAddr(vk::Instance::null(), c"vkCreateInstance".as_ptr()) };
++            if create_instance.is_none() {
++                return Err(crate::InstanceError::new(String::from(
++                    "no Vulkan driver is linked into this executable",
++                )));
++            }
++            unsafe {
++                ash::Entry::from_static_fn(ash::StaticFn {
++                    get_instance_proc_addr: vkGetInstanceProcAddr,
++                })
++            }
++        };
+         let version = {
+             profiling::scope!("vkEnumerateInstanceVersion");
+             unsafe { entry.try_enumerate_instance_version() }
+@@ -909,6 +970,9 @@
+             (Rwh::AndroidNdk(handle), _) => {
+                 self.create_surface_android(handle.a_native_window.as_ptr())
+             }
++            // bevy-horizon
++            #[cfg(target_os = "horizon")]
++            (Rwh::Horizon(handle), _) => self.create_surface_from_vi(handle.n_window.as_ptr()),
+             (Rwh::Win32(handle), _) => {
+                 let hinstance = handle.hinstance.ok_or_else(|| {
+                     crate::InstanceError::new(String::from(
+--- a/wgpu-hal/src/vulkan/mod.rs
++++ b/wgpu-hal/src/vulkan/mod.rs
+@@ -380,6 +380,11 @@
+     robust_buffer_access2: bool,
+ 
+     robust_image_access2: bool,
++
++    /// [bevy-horizon patch] Have naga bounds-check shaders made with
++    /// `ShaderRuntimeChecks { bounds_checks: false, .. }` too: `BH_ROBUST_BUFFER_ACCESS=clamp`
++    /// on Horizon (adapter.rs, `HorizonBufferChecks`).
++    horizon_naga_bounds_checks: bool,
+     zero_initialize_workgroup_memory: bool,
+     image_format_list: bool,
+     maximum_samplers: u32,
+@@ -1667,6 +1672,11 @@
+ /// Returns [`crate::DeviceError::Unexpected`] or panics if the `internal_error_panic`
+ /// feature flag is enabled.
+ fn get_unexpected_err(_err: vk::Result) -> crate::DeviceError {
++    // bevy-horizon: `DeviceError::Unexpected` drops the VkResult, and on the Switch this log line
++    // is the only place it survives.
++    #[cfg(target_os = "horizon")]
++    log::error!("Vulkan returned {_err:?}, which wgpu reports as an unexpected driver error");
++
+     #[cfg(feature = "internal_error_panic")]
+     panic!("Unexpected Vulkan error: {_err:?}");
+ 
+--- a/wgpu-hal/src/vulkan/swapchain/native.rs
++++ b/wgpu-hal/src/vulkan/swapchain/native.rs
+@@ -436,6 +436,26 @@
+         // Android 11 corresponds to an SDK_INT/ro.build.version.sdk of 30
+         if cfg!(target_os = "android") && self.device.instance.android_sdk_version < 30 {
+             timeout_ns = u64::MAX;
++        }
++
++        // bevy-horizon: on Horizon, wait for the next image for as long as it takes, as above for
++        // Android before 11. wgpu-core asks for 1 s (`FRAME_TIMEOUT_MS`), and Bevy panics when that
++        // runs out ("Couldn't get swap chain texture", bevy_render's `src/view/window/mod.rs`), so a
++        // single frame of more than a second, or a wait that spans the app being suspended, would end
++        // the game. NVK's Horizon swapchain waits without a limit for `u64::MAX` (mesa-switch
++        // `src/vulkan/wsi/wsi_common_switch.c`, `wsi_switch_dequeue_buffer`). A longer wait than wgpu
++        // asked for is logged below.
++        #[cfg(target_os = "horizon")]
++        let horizon_wait = (timeout_ns != u64::MAX).then(|| (std::time::Instant::now(), timeout_ns));
++        if cfg!(target_os = "horizon") {
++            // Keep bevy-horizon's long wait (a missed frame must not panic),
++            // but not an unbounded one: under an emulator the present signal
++            // can be missed for good, and waiting forever freezes the
++            // render thread. A 2 s cap still covers a slow frame or a
++            // suspend/resume, and surfaces as SurfaceError::Timeout, which
++            // the caller answers by skipping this frame.
++            const HORIZON_MAX_WAIT_NS: u64 = 2_000_000_000;
++            timeout_ns = timeout_ns.min(HORIZON_MAX_WAIT_NS);
+         }
+ 
+         let acquire_semaphore_arc = self.get_acquire_semaphore();
+@@ -513,6 +533,18 @@
+             }
+         }
+ 
++        #[cfg(target_os = "horizon")]
++        if let Some((start, asked_ns)) = horizon_wait {
++            let waited = start.elapsed();
++            if waited.as_nanos() > u128::from(asked_ns) {
++                log::warn!(
++                    "wgpu-hal: waited {:.1} s for the window's next image, longer than the {:.1} s wgpu asks for; on Horizon it waits for as long as it takes",
++                    waited.as_secs_f64(),
++                    asked_ns as f64 / 1e9
++                );
++            }
++        }
++
+         drop(acquire_semaphore_guard);
+         // We only advance the surface semaphores if we successfully acquired an image, otherwise
+         // we should try to re-acquire using the same semaphores.

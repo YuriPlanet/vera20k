@@ -49,6 +49,16 @@ fn rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(RULES)).expect("flash rules")
 }
 
+/// [`rules`] with the Phobos selection-flash duration read from
+/// `[AudioVisual]` through the production INI reader.
+#[cfg(feature = "phobos")]
+fn selection_flash_rules(duration: i32) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "{RULES}\n[AudioVisual]\nSelectionFlashDuration={duration}\n"
+    )))
+    .expect("selection flash rules")
+}
+
 /// Americans and Russians, enemies; the current player is `player`.
 fn arena(rules: &RuleSet, player: &str) -> (Simulation, crate::sim::pathfinding::PathGrid) {
     let mut sim = Simulation::with_seed(7);
@@ -166,7 +176,7 @@ fn receive(sim: &mut Simulation, rules: &RuleSet, id: u64, damage: i32) {
             arg6: false,
         },
     );
-    sim.commit_direct_damage_receiver(rules, None, hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(rules, None, hit, &mut FrameEffects::default());
 }
 
 #[test]
@@ -194,6 +204,7 @@ fn a_unit_disguised_without_a_house_stays_dark_to_the_enemy_player() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .disguise
             .get_or_insert_with(|| DisguiseRuntime::new(0))
             .acquire(0, worn, None);
@@ -286,6 +297,7 @@ fn a_building_flashes_unless_its_raw_disguise_flag_is_up() {
         .entities
         .get_mut(power)
         .unwrap()
+        .seldom
         .disguise
         .get_or_insert_with(|| DisguiseRuntime::new(0))
         .acquire(0, None, Some(americans));
@@ -321,6 +333,81 @@ fn the_order_flash_prefers_the_destination_object() {
         "Americans",
     );
     assert_eq!((flash(&sim, tank), flash(&sim, other)), (0, 7));
+}
+
+/// Phobos `ShowFlashOnSelecting` (client) + `[AudioVisual]
+/// SelectionFlashDuration`: `ObjectClass_Select` flashes only newly selected
+/// objects the current player controls (`0x005F46AE`/`0x005F4718`).
+#[cfg(feature = "phobos")]
+#[test]
+fn a_new_selection_flashes_only_the_current_players_objects() {
+    let rules = selection_flash_rules(12);
+    let (mut sim, _grid) = arena(&rules, "Americans");
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
+    let enemy = spawn(&mut sim, &rules, "HTNK", "Russians", 16, 10);
+
+    sim.flash_selected_for_current_player(&[gi, tank, enemy], &rules);
+
+    assert_eq!(flash(&sim, gi), 12);
+    assert_eq!(flash(&sim, tank), 12);
+    assert_eq!(flash(&sim, enemy), 0, "another house's object is not ours");
+}
+
+/// In a campaign, `IsControlledByCurrentPlayer` (`0x0050B6F0`) answers from
+/// the house flags, so a `PlayerControl=` ally's object flashes as the
+/// player's own; other modes compare with the current house.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_campaign_selection_flashes_a_player_controlled_allys_objects() {
+    let rules = selection_flash_rules(12);
+    for skirmish in [false, true] {
+        let (mut sim, _grid) = arena(&rules, "Americans");
+        if skirmish {
+            sim.session
+                .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        }
+        let british = sim.interner.intern("British");
+        sim.houses
+            .get_mut(&british)
+            .unwrap()
+            .set_player_control_for_test(true);
+        let ally = spawn(&mut sim, &rules, "E1", "British", 10, 10);
+
+        sim.flash_selected_for_current_player(&[ally], &rules);
+
+        let expected = if skirmish { 0 } else { 12 };
+        assert_eq!(flash(&sim, ally), expected, "skirmish={skirmish}");
+    }
+}
+
+/// The duration is the only rules gate: the reader's 0 disables the flash and
+/// a negative value is likewise inert (the hook tests `> 0`).
+#[cfg(feature = "phobos")]
+#[test]
+fn a_zero_or_negative_selection_flash_duration_flashes_nothing() {
+    for duration in [0, -1] {
+        let rules = selection_flash_rules(duration);
+        let (mut sim, _grid) = arena(&rules, "Americans");
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
+        sim.flash_selected_for_current_player(&[gi], &rules);
+        assert_eq!(flash(&sim, gi), 0, "duration {duration}");
+    }
+}
+
+/// A building takes its own Flash owner through the same selection hook.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_selected_building_flashes_through_its_own_flash_owner() {
+    let rules = selection_flash_rules(5);
+    let mut sim = Simulation::with_seed(7);
+    let americans = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(americans, 0, None, true, 0, 10));
+    sim.session.set_current_house_for_test(Some(americans));
+    let power = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
+    sim.flash_selected_for_current_player(&[power], &rules);
+    assert_eq!(flash(&sim, power), 5);
 }
 
 /// A building's slot anims take their light from the flash phase its body

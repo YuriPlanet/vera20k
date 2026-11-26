@@ -102,4 +102,4 @@ Physical INI ingestion, primary-Rules GUI fields, full constructors, startup
 scheduling, nondefault CRT locales, whole House lifecycle, save relocation,
 spy/Academy effects, promotion art, rendering and whole-match behavior require
 their own integration evidence. This is bounded native execution evidence,
-not a claim of complete Ares or MO compatibility.
+not a claim of complete Ares compatibility.

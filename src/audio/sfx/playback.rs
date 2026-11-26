@@ -324,7 +324,10 @@ impl RingState {
                 continue;
             };
             // The clip plays in the buffer's format (see chained_samples).
-            let samples = self.reinterpreted.get(&index).unwrap_or(&clip.samples);
+            let samples = self
+                .reinterpreted
+                .get(&index)
+                .map_or(&*clip.samples, Vec::as_slice);
             let available = samples.len().saturating_sub(self.clip_offset);
             if available == 0 {
                 empty_selections += 1;
@@ -500,6 +503,8 @@ impl PlaybackObservation {
     }
 }
 
+/// Shared by the audio output thread, which fills the ring as it plays, and
+/// the main thread's [`PlaybackControl`]: hence the lock and atomics.
 struct SharedOutput {
     state: Mutex<RingState>,
     cancelled: AtomicBool,
@@ -704,13 +709,14 @@ impl Iterator for RingSource {
         if self.shared.cancelled.load(Ordering::Acquire) {
             return None;
         }
+        let channels = usize::from(self.channels.get());
         let generation = self.shared.generation.load(Ordering::Acquire);
         if self.generation != generation {
             self.generation = generation;
             self.valid = 0;
-            self.position = 0;
+            self.position %= channels;
         }
-        if self.position == self.valid {
+        if self.position >= self.valid {
             let mut state = self
                 .shared
                 .state
@@ -735,13 +741,18 @@ impl Iterator for RingSource {
             }
             self.sample_rate = state.rate;
             self.valid = state.next_quarter(&mut self.cache, self.provenance.as_deref_mut());
-            self.position = 0;
+            // Native `DSoundBuffer::StartPlayback @ 0x0040A340` refills the
+            // whole buffer (`0x0040A463`). Rodio can pull one stereo sample
+            // before that restart and the next after it, so keep the pending
+            // channel offset. A normal quarter ends at a frame boundary, so
+            // this also resets its next cache offset to zero.
+            self.position %= channels;
             if self.valid == 0 {
                 return None;
             }
         }
         let value = self.cache[self.position];
-        let channel = self.position % usize::from(self.channels.get());
+        let channel = self.position % channels;
         if let Some(trace) = &self.observation {
             let slot = self.provenance.as_ref().unwrap()[self.position];
             if slot != usize::MAX {
@@ -801,7 +812,99 @@ impl Source for RingSource {
     }
 }
 
-#[cfg(test)]
+/// One start of a whole decoded clip, reading the [`DecodedAudio`] samples
+/// the clip cache shares instead of a copy: rodio 0.22.2's `SamplesBuffer`
+/// takes its samples only as an owned `Vec`. The start's pan scales each
+/// stereo pair as it is read and leaves a trailing odd sample as decoded.
+/// It reports the span, format and duration `SamplesBuffer` reports for the
+/// same samples, so the mixer plays both alike. Nothing seeks a start.
+pub(super) struct ClipSource {
+    samples: Arc<[f32]>,
+    position: usize,
+    channels: NonZero<u16>,
+    sample_rate: NonZero<u32>,
+    duration: Duration,
+    /// The left and right gains of an off-centre pan; `None` plays the
+    /// samples as decoded.
+    gains: Option<(f32, f32)>,
+}
+
+impl ClipSource {
+    pub(super) fn new(
+        samples: Arc<[f32]>,
+        channels: NonZero<u16>,
+        sample_rate: NonZero<u32>,
+    ) -> Self {
+        // `SamplesBuffer::new`'s duration; it panics where this saturates,
+        // past 18 billion samples.
+        let nanos = 1_000_000_000_u64.saturating_mul(samples.len() as u64)
+            / u64::from(sample_rate.get())
+            / u64::from(channels.get());
+        Self {
+            samples,
+            position: 0,
+            channels,
+            sample_rate,
+            duration: Duration::from_nanos(nanos),
+            gains: None,
+        }
+    }
+
+    /// Play the samples at `pan` (`0..=0x4000`, see [`super::pan_channel_gains`]).
+    pub(super) fn panned(self, pan: i32) -> Self {
+        let gains = super::pan_channel_gains(pan);
+        Self {
+            gains: (gains != (1.0, 1.0)).then_some(gains),
+            ..self
+        }
+    }
+}
+
+impl Iterator for ClipSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        let index = self.position;
+        let sample = *self.samples.get(index)?;
+        self.position += 1;
+        match self.gains {
+            Some((left, right)) if index < self.samples.len() & !1 => {
+                Some(sample * if index % 2 == 0 { left } else { right })
+            }
+            _ => Some(sample),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.samples.len() - self.position;
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for ClipSource {}
+
+impl Source for ClipSource {
+    fn current_span_len(&self) -> Option<usize> {
+        // rodio 0.22.2 `SamplesBuffer`: the whole buffer is one span, and
+        // `Some(0)` marks it exhausted.
+        if self.position >= self.samples.len() {
+            Some(0)
+        } else {
+            Some(self.samples.len())
+        }
+    }
+    fn channels(&self) -> NonZero<u16> {
+        self.channels
+    }
+    fn sample_rate(&self) -> NonZero<u32> {
+        self.sample_rate
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        Some(self.duration)
+    }
+}
+
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::super::tests::build_test_wav;
     use super::super::{SoundRegistry, decode_wav};
@@ -875,5 +978,65 @@ mod tests {
         assert_eq!(source.sample_rate().get(), 11_025);
         let state = source.shared.state.lock().unwrap();
         assert_eq!(state.ring[..4], [0.5, 0.5, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn release_mid_stereo_frame_keeps_decay_channels_aligned() {
+        let mut tail_pcm = vec![
+            0x00, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x00, 0x60,
+        ];
+        for _ in 3..256 {
+            tail_pcm.extend_from_slice(&[0x00, 0x10, 0x00, 0x20]);
+        }
+        tail_pcm.extend_from_slice(&[0x00, 0x70, 0x00, 0x50, 0x00, 0x60, 0x00, 0x40]);
+        let tail = wav(30, 16, 2, &tail_pcm);
+        let (mut source, control) = ring(
+            "loop decay",
+            &[
+                ("body", wav(30, 16, 2, &[0x00, 0x70, 0x00, 0x80])),
+                ("tail", tail.clone()),
+            ],
+        );
+        control.set_pan(super::super::PAN_SCALE);
+
+        source.next();
+        assert!(control.release_to_decay());
+
+        assert_eq!(source.next(), Some(tail.samples[1]));
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[3]));
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[5]));
+
+        source.by_ref().take(506).for_each(drop);
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[513]));
+    }
+
+    /// A start plays the cached samples themselves, not a copy, and the
+    /// mixer gets what rodio's `SamplesBuffer` over a panned copy gave it:
+    /// the same samples, the trailing odd one unpanned, and the same span,
+    /// format and duration.
+    #[test]
+    fn a_clip_start_shares_the_cached_samples_and_plays_a_panned_copy() {
+        let cached: Arc<[f32]> = vec![1.0, 1.0, 0.5, -0.5, 0.25].into();
+        let (channels, rate) = (NonZero::new(2).unwrap(), NonZero::new(22050).unwrap());
+        let pan = 12288;
+        let mut source = ClipSource::new(Arc::clone(&cached), channels, rate).panned(pan);
+        assert_eq!(Arc::strong_count(&cached), 2);
+
+        let (left, right) = super::super::pan_channel_gains(pan);
+        let copy = vec![1.0 * left, 1.0 * right, 0.5 * left, -0.5 * right, 0.25];
+        let mut buffer = rodio::buffer::SamplesBuffer::new(channels, rate, copy);
+        assert_eq!(source.total_duration(), buffer.total_duration());
+        assert_eq!(source.size_hint(), buffer.size_hint());
+        loop {
+            assert_eq!(source.current_span_len(), buffer.current_span_len());
+            let (ours, theirs) = (source.next(), buffer.next());
+            assert_eq!(ours.map(f32::to_bits), theirs.map(f32::to_bits));
+            if ours.is_none() {
+                break;
+            }
+        }
     }
 }

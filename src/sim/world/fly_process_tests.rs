@@ -154,7 +154,7 @@ fn retail_harrier_move_preserves_native_acceleration_across_save() {
             let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
             loaded
                 .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-            loaded.resolved_terrain = sim.resolved_terrain.clone();
+            *loaded.resolved_terrain = (*sim.resolved_terrain).clone();
             loaded.restore_after_snapshot_load().unwrap();
             let loaded_plane = loaded.entities().get(plane.stable_id()).unwrap();
             assert_eq!(
@@ -277,17 +277,17 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.session.set_map_width_for_test(128);
     sim.session.set_map_height_for_test(128);
     let [left, top, local_width, local_height] = ints(&input["local"], [0, 0, 64, 64]);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64,
         left,
         top,
         local_width,
         local_height,
     ));
-    sim.playfield_size_height = Some(64);
+    *sim.playfield_size_height = Some(64);
     install_common_raw_terrain(&mut sim, 128, 128, 0, None);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
-    sim.scenario_rng = SimRng::new(31);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+    *sim.scenario_rng = SimRng::new(31);
     sim.session.set_binary_frame_for_test(frame);
     let [x, y] = ints(&input["cell"], [60, 64]);
     assert_eq!(sim.substrate.allocate_stable_id(), AIRCRAFT);
@@ -335,7 +335,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             _ => None,
         });
     if flag(input, "loaner", false) {
-        entity.mission_only.mark();
+        entity.seldom.mission_only.mark();
     }
     entity.set_in_playfield(flag(input, "in_playfield", true));
     entity
@@ -377,7 +377,6 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.add_entity_occupancy(AIRCRAFT);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         AIRCRAFT,
@@ -432,18 +431,24 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         );
         building.lifecycle.set_object_alive_for_test(true);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test(format!("{width}x{height}").into());
         building.position.set_exact_z_leptons_for_test(Some(0));
         building
+            .seldom
             .radio_contacts
             .set_capacity(dock_offsets(dock).len());
         if let Some(slot) = dock["slot"].as_u64() {
-            building.radio_contacts.set_slot(slot as usize, AIRCRAFT);
+            building
+                .seldom
+                .radio_contacts
+                .set_slot(slot as usize, AIRCRAFT);
             sim.substrate
                 .entities
                 .get_mut(AIRCRAFT)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(DOCK);
         }
@@ -551,6 +556,7 @@ fn stop_fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         );
         structure.lifecycle.set_object_alive_for_test(true);
         structure
+            .seldom
             .type_facts
             .set_foundation_for_test(format!("{width}x{height}").into());
         structure.position.set_exact_z_leptons_for_test(Some(0));
@@ -653,6 +659,14 @@ fn fly_process_matches_native_frames() {
     for row in rows {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
+        // The oracle is stock gamemd. Under Ares a `HunterSeeker=` Fly takes
+        // the Ares flight instead: Process (1004D7A0, hook 0x4CCB84),
+        // UpdateTarget (1004DA90, hook 0x4CD9C8), Horizontal_Step (1004DC30,
+        // hook 0x4CF3D0) and the climb (1004D930/1004DA20, hooks 0x4CDE64/
+        // 0x4CDF54), which `sim::hunter_seeker` and `fly_height` test.
+        if crate::rules::ares_switch::ares_way() && flag(input, "hunter_seeker", false) {
+            continue;
+        }
         let (mut sim, rules) = fixture(input);
         let start = sim.session.binary_frame();
         let frames = row["frames"].as_array().unwrap();
@@ -665,7 +679,7 @@ fn fly_process_matches_native_frames() {
                     AIRCRAFT,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             });
@@ -777,7 +791,7 @@ fn fly_map_edge_gate_matches_native_rows() {
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
         if flag(input, "mission_only", true) {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         entity.set_in_playfield(flag(input, "in_playfield", true));
         if flag(input, "target", false) {
@@ -904,10 +918,7 @@ fn fly_death_stun_matches_native_rows() {
                 .set_for_test(Some(TargetKind::Entity(10 + n)));
         }
         sim.clear_lifecycle_test_events_for_test();
-        sim.techno_death_stun(
-            AIRCRAFT,
-            crate::sim::world::UninitContext::new(&rules, None),
-        );
+        sim.stun(AIRCRAFT, crate::sim::world::UninitContext::new(&rules));
         let orders: Vec<_> = sim
             .lifecycle_test_events_for_test()
             .iter()
@@ -934,4 +945,62 @@ fn fly_death_stun_matches_native_rows() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Fly's Power_Off (`0x004CFD20`) through Deactivate, as Ares EMP reaches
+/// it on an aircraft at height 0: a Harrier given a destination spins at a
+/// SpinRate of 20 to 30 either way. Unpowered, each Process's spin step
+/// (`0x004CE5A0`) turns its PrimaryFacing by `SpinRate << 8` and steps
+/// SpinRate one toward 0; once Reactivate powers it on, the next Process
+/// ends the spin.
+#[test]
+fn a_harrier_powered_off_while_moving_spins_until_power_returns() {
+    use crate::sim::world::FrameEffects;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 17, 128);
+    let plane = sim
+        .spawn_object("ORCA", "Americans", 50, 64, 0, &rules)
+        .unwrap();
+    sim.assign_aircraft_destination(
+        plane,
+        Some(NavTargetRef::Cell { rx: 100, ry: 64 }),
+        &rules,
+        &mut FrameEffects::default(),
+    );
+    sim.techno_deactivate(plane, &rules, &mut FrameEffects::default());
+    let spin = |sim: &Simulation| {
+        let entity = sim.entities().get(plane).unwrap();
+        entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .spin()
+    };
+    let facing = |sim: &Simulation| {
+        let frame = sim.session.binary_frame();
+        sim.entities()
+            .get(plane)
+            .unwrap()
+            .body_facing
+            .current(frame)
+    };
+    let step = |sim: &mut Simulation| {
+        let grid = sim.path_grid_snapshot();
+        sim.advance_tick(&[], Some(&rules), grid.as_deref(), None, 33);
+    };
+    let rate = spin(&sim).expect("a moving Fly spins");
+    assert!((20..=30).contains(&rate.abs()), "{rate}");
+    for turned in [rate, rate - rate.signum()] {
+        let before = facing(&sim);
+        step(&mut sim);
+        assert_eq!(facing(&sim), before.wrapping_add((turned << 8) as u16));
+        assert_eq!(spin(&sim), Some(turned - turned.signum()));
+    }
+    sim.techno_reactivate(plane, &rules, &mut FrameEffects::default());
+    step(&mut sim);
+    assert_eq!(spin(&sim), None);
 }

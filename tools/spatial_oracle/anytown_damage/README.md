@@ -59,8 +59,11 @@ MPBattleMD.ini and the selected map. Original lookup/scalar/type readers run;
 physical INI parsing and full native Rules chronology do not. The reused Rules
 bootstrap first reads its original Shrapnel scalar setup; the explicit Anytown
 family pass follows. Anytown has no selected General/land override. Native
-CliffBack constructor 0 versus the production missing-key default remains a
-separate follow-up; the selected retail layer explicitly supplies 2.
+CliffBack starts at the constructor's 0, as the production missing-key
+default does; the selected retail layer explicitly supplies 2. The `mission*`
+and `mtnk_attack` sidecars, and the producers that write them, still call
+this a follow-up; that text predates the production change, and
+`receipt.json` pins the sidecars.
 
 For the first six witnesses and `hut`, the original theater scalar readers and
 ordinal projection run, but ordinal

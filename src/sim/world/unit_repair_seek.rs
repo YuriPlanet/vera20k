@@ -6,7 +6,9 @@
 //! The station search is `0x00455DD0`. It admits any nonzero CAN_LOAD
 //! answer, not only ROGER: a Naval Yard answers a land vehicle NEGATORY
 //! (`0x0043C3F3`), so a damaged computer tank near its own Naval Yard takes
-//! that yard as its station.
+//! that yard as its station. Ares 3.0 (`1005CB50`, hook `0x455E4C`) asks only
+//! a bay of the unit's own Naval kind that is no aircraft pad, and takes only
+//! ROGER.
 //!
 //! The separate `UnitClass::Mission_Repair @ 0x00740EF0` handler, also
 //! accepted by the map placement reader, uses the retained `[General]
@@ -14,7 +16,6 @@
 //! the existing docking service owns movement, payment, healing and release.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
@@ -51,7 +52,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> i32 {
         use crate::sim::miner::miner_system::find_docking_bay;
 
@@ -125,8 +126,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if self.session.binary_frame() & 0xF != 0 {
             return;
@@ -141,7 +141,7 @@ impl Simulation {
             || self
                 .houses
                 .get(&unit.owner())
-                .is_none_or(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
+                .is_none_or(|house| house.is_controlled_by_human(self.session.rule_policy()))
             || unit.mission.queued() != MissionId::NONE
         {
             return;
@@ -174,12 +174,11 @@ impl Simulation {
             now,
             &LiveReadyInputProvider { rules },
         );
-        let _ = self.assign_target_represented(id, None, rules, registry, effects);
+        let _ = self.assign_target_represented(id, None, rules, effects);
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(station)),
             rules,
-            registry,
             effects,
         );
     }
@@ -194,13 +193,20 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let owner = self.substrate.entities.get(id)?.owner();
         let reach = unit_repair_reach();
         let mut best = None;
         let mut best_distance = i32::MAX;
         for station in self.house_unit_repair_stations(owner, rules) {
+            // Ares 3.0 HouseClass_FindRepairBay (1005CB50, hook 0x455E4C):
+            // a BalloonHover unit, a bay of the other Naval kind, an
+            // aircraft factory, a helipad, or a hover pad without
+            // `SeparateAircraft=` is passed over without the query.
+            if rules.ares() && !self.ares_repair_bay_accepts(id, station, rules) {
+                continue;
+            }
             let answer = transmit(
                 self,
                 id,
@@ -210,7 +216,8 @@ impl Simulation {
                 rules,
                 effects,
             );
-            if answer == RadioResponse::None {
+            // 1005CB50 also takes only ROGER; the original any answer.
+            if answer == RadioResponse::None || rules.ares() && answer != RadioResponse::Roger {
                 continue;
             }
             let (Some(unit), Some(building)) = (
@@ -230,8 +237,34 @@ impl Simulation {
         }
         best
     }
+
+    /// The type tests of `HouseClass_FindRepairBay @ 1005CB50` (Ares 3.0,
+    /// hook 0x455E4C) ahead of the CAN_LOAD query: the unit is not
+    /// `BalloonHover=` (UnitType `+0xD6A`), the bay's `Naval=` matches the
+    /// unit's (`+0xCCE`), and the bay is no aircraft factory (`Factory=` RTTI
+    /// 3, `+0xEB8`), no `Helipad=` (`+0x16CB`) and no `HoverPad=` (`+0x154E`)
+    /// unless `[General] SeparateAircraft=yes`.
+    fn ares_repair_bay_accepts(&self, unit: u64, bay: u64, rules: &RuleSet) -> bool {
+        let (Some(unit), Some(bay)) = (
+            self.substrate
+                .entities
+                .get(unit)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules)),
+            self.substrate
+                .entities
+                .get(bay)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules)),
+        ) else {
+            return false;
+        };
+        !(unit.balloon_hover
+            || bay.naval != unit.naval
+            || bay.factory_rtti() == 3
+            || bay.helipad
+            || bay.hover_pad && !rules.general.separate_aircraft)
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "unit_repair_seek_tests.rs"]
 mod tests;

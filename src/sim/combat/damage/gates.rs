@@ -50,7 +50,10 @@ pub(crate) fn evaluate_late_gates(g: &ImmunityInputs) -> DamageGate {
         return DamageGate::Nullified { clear_damage: true };
     }
     // 8. !AffectsAllies && attacker present && allied (AffectsAllies default true).
-    if !g.affects_allies && g.attacker_present && g.attacker_is_allied {
+    if !g
+        .ares_house_damage_allowed
+        .unwrap_or(g.affects_allies || !g.attacker_present || !g.attacker_is_allied)
+    {
         return DamageGate::Nullified { clear_damage: true };
     }
     // 9. Psychedelic/MindControl: allied -> 0; psionics-immune -> 0; building ->

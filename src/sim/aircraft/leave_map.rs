@@ -8,6 +8,10 @@
 //! The surviving aircraft then drops a NavCom or Target that names the
 //! shared dummy cell (`0x00414FDF..0x00415046`), before Ready/Commence.
 //! A Spy Plane's next Overfly visit can then choose another exit cell.
+//!
+//! The preceding Trailer/SpawnDelay step (`0x00414ED0..0x00414F42`) is
+//! owned by [`Simulation::emit_aircraft_trailer`]. No retail aircraft image
+//! supplies Trailer, but authored fixed-ART values reach that producer.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -28,8 +32,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .substrate
@@ -56,9 +59,9 @@ impl Simulation {
                 == Some(crate::map::cell_index::NativeCellIdentity::Dummy);
             if dummy {
                 self.assign_aircraft_destination(id, None, rules, effects);
-                self.assign_target_represented(id, None, rules, registry, effects)
+                self.assign_target_represented(id, None, rules, effects)
                     .expect("live aircraft clears its dummy-cell target");
-                super::enter_idle_mode_for(self, id, rules, registry, effects);
+                super::enter_idle_mode_for(self, id, rules, effects);
             }
         }
     }
@@ -78,8 +81,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -107,10 +109,7 @@ impl Simulation {
         if (passes_playfield && self.map_cell_in_bounds(cell)) || !self.aircraft_may_leave_map(id) {
             return false;
         }
-        self.uninit_with_context(
-            id,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.uninit_with_context(id, UninitContext::new(rules).with_effects(effects));
         true
     }
 
@@ -139,7 +138,7 @@ impl Simulation {
         {
             return false;
         }
-        match self.team_script_vm.team_for_member(id) {
+        match self.team_script_vm.team_of(id) {
             Some(_) => self.member_team_is_moving_outside_playfield(id),
             None => entity.is_mission_only(),
         }

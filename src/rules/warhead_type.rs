@@ -74,18 +74,6 @@ pub struct WarheadType {
     /// at `0x0075d47c`, key string `0x00847e54`).
     pub delay_kill_at_max_f64: f64,
     /// Whether this warhead can damage walls/bridges (Wall=yes).
-    /// `Sparky=`, `Bullets=`, `Deform=` and `DeformThreshhold=` are retained
-    /// from their WarheadTypeClass ReadINI fields; their gameplay effects are
-    /// outside these state-retention issues. `Sparky` has one consumer:
-    /// `BuildingClass::ReceiveDamage @ 0x00442230` tests it for each
-    /// foundation cell of its NowYellow/NowRed loop (`0x00442785`) and, by
-    /// Scenario `RandomRanged` draws (`0x004427C0`, `0x00442804`), may build
-    /// one of Rules' `OnFire` anims (`+0xB78`) there. That arm is dormant:
-    /// the constructor stores `false` (`0x0075CF77`), and all 28 stock
-    /// `Sparky=` entries are `no`, including `[Fire]` and `[Fire2]`. The
-    /// `Apply_area_damage @ 0x00489280` helper does not read the retained
-    /// metadata above.
-    ///
     /// The field itself is `WarheadTypeClass+0x144` (ReadINI `0x0075d508`,
     /// key string `0x0081ac58`).
     pub wall: bool,
@@ -94,6 +82,13 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
+    /// BuildingReceiveDamage442785 tests +14A for the per-foundation-cell
+    /// OnFire loop after NowYellow/NowRed. WarheadCtor75CF77 starts false;
+    /// ReadINI75D576..75D58A and Save75E2D1/Load75E0F0 retain the byte.
+    /// The ordered Rules processor owns its current-default read. Ares 3.0's
+    /// TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook 0x71B99E) also
+    /// sets a flammable tree it hurts alight (`sim::terrain_fire`).
+    pub sparky: bool,
     /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
     /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
     /// What_Action on a Cell keeps a Fire warhead off a destroyable cliff
@@ -141,6 +136,16 @@ pub struct WarheadType {
     /// @0x005276D0 at ReadINI @0x0075D7A7 stores the signed value at +0x100;
     /// constructor default is 0 (`0x0075CEF8`) and there is no post-read clamp.
     pub deform_threshold: i32,
+    /// VERA's `DeformDepth=`, which gamemd does not read: how many levels one
+    /// dent sinks the middle of its crater, as deep as the open ground around
+    /// it allows. A signed int, default 1 (Tiberian Sun's single level);
+    /// terrain deformation reads it as `1..=16`.
+    pub deform_depth: i32,
+    /// VERA's `DeformRadius=`, which gamemd does not read: how many cells
+    /// around the hit cell one dent sinks, deepest in the middle. A signed
+    /// int, default 0 (Tiberian Sun's single cell); terrain deformation reads
+    /// it as `0..=11`.
+    pub deform_radius: i32,
     /// `Bullets=` at +0x17A, ReadBool @0x005295F0 called from ReadINI
     /// @0x0075DA01; constructor default false (`0x0075D04A`).
     pub bullets: bool,
@@ -259,6 +264,10 @@ pub struct WarheadType {
     /// Calls in airstrike. `WarheadTypeClass+0x16C` (ReadINI `0x0075D8F0`),
     /// read by `TechnoClass::What_Weapon_Should_I_Use @ 0x006F3481`.
     pub airstrike: bool,
+    /// Phobos `AirstrikeTargets=`: which target kinds an `Airstrike=` warhead
+    /// may designate. Default `buildings`.
+    #[cfg(feature = "phobos")]
+    pub airstrike_targets: crate::rules::airstrike_targets::AirstrikeTargets,
     /// Radiation contamination. `WarheadTypeClass+0x177`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d9c7` from the key string at
     /// `0x00839e80`. (`+0x179` is `AffectsAllies=`, not this.)
@@ -301,6 +310,19 @@ pub struct WarheadType {
     /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
     /// mounted by no stock weapon.
     pub em_effect: bool,
+    /// Tiberian Sun's `LimpetFactor=` (docs/ts-limpets.md): the speed a
+    /// limpeted vehicle loses, in percent. Firestorm 2.0
+    /// `WarheadTypeClass::Read_INI @ 0x0066EE30` reads it on every pass
+    /// (`0x0066F15B..0x0066F19F`) through `INIClass::Get_Double @ 0x004DD970`
+    /// (gamemd's ReadDouble: `35%` is 0.35), defaulted to the current int,
+    /// and truncates it with `__ftol @ 0x006B2020` into WarheadType+0xCC; the
+    /// constructor zeroes it (`0x0066EBA4`). Any nonzero value turns a shot
+    /// into a limpet attach (`sim::limpet`), so `35%` truncates to 0 and
+    /// fires as an ordinary bullet.
+    pub limpet_factor: i32,
+    /// Tiberian Sun Firestorm's web keys (`docs/ts-webs.md`), projected from
+    /// the Rules passes. `None` is the constructor's: not `Webby=`.
+    pub web: Option<WarheadWeb>,
 
     // --- List fields ---
     /// `[VoxelAnims]` type names thrown on detonation.
@@ -323,6 +345,9 @@ pub struct WarheadType {
     /// General Airburst child emission (`0x00469EBA..0x0046A28A`) is a
     /// separate later mechanism.
     pub debris_types: Vec<String>,
+    /// Derived: `debris_types` as the RuleSet that holds the warhead
+    /// resolved it (`RuleSet::resolve_handles`).
+    resolved_debris: crate::rules::ruleset::ResolvedDebris,
     /// Per-type debris count cap.
     ///
     /// gamemd-derived: `WarheadTypeClass::ReadINI` "DebrisMaximums" @
@@ -339,17 +364,249 @@ pub struct WarheadType {
     /// -> warhead `+0x1C4`. Native RAISES this to `min_debris` when it is
     /// lower (`0x0075DAE0`); it never lowers `min_debris` to meet it.
     pub max_debris: i32,
+    /// Phobos `WarheadTypeExt::AllowDamageOnSelf` (`Nullable<bool>`): this
+    /// warhead may deal damage and damage-adjacent effects to the object that
+    /// fired it even when that object's type keeps `DamageSelf=no`.
+    /// `Explosion_Damage_DamageSelf @ 0x004896EC` skips the area-list source
+    /// exclusion, `BuildingClass_ReceiveDamage_DamageSelf @ 0x0044224F` skips
+    /// the building wrapper's self return, and
+    /// `MapClass_DamageArea_AirDamageSelfFix @ 0x00489416` applies the same
+    /// rule to the airborne phase. `None` falls back to
+    /// [`crate::rules::ruleset::RuleSet::allow_damage_on_self_for`]'s
+    /// `[General] AllowDamageOnSelf` value.
+    #[cfg(feature = "phobos")]
+    allow_damage_on_self: Option<bool>,
+    /// Phobos `WarheadTypeExt::DecloakDamagedTargets` (`Nullable<bool>`): a
+    /// surviving object this warhead damages calls native
+    /// `StartUncloaking(0)` (`TechnoClass::ReceiveDamage @ 0x0070281D`) only
+    /// when this is true. `None` falls back to
+    /// [`crate::rules::ruleset::RuleSet::decloak_damaged_targets_for`]'s
+    /// `[General] DecloakDamagedTargets` value.
+    #[cfg(feature = "phobos")]
+    decloak_damaged_targets: Option<bool>,
     /// Phobos warhead shield overrides (`Shield.Penetrate`,
     /// `Shield.AffectTypes`, `Shield.Penetrate.Types`, absorb/pass and
     /// received-damage bounds). Phobos `WarheadTypeExt` reads them after the
     /// stock keys; a build without the capability carries only the defaults.
     #[cfg(feature = "phobos")]
     pub shield: crate::rules::phobos_shields::ShieldWarheadRules,
+    /// Phobos `WarheadTypeExt`'s `Crit.*` block, read in `LoadFromINI` order.
+    #[cfg(feature = "phobos")]
+    pub crit: crate::rules::phobos_crit::CritRules,
+    /// Phobos `WarheadTypeExt::Jumpjet*`: overrides for an `IsLocomotor=`
+    /// warhead whose installed locomotor is Jumpjet.
+    #[cfg(feature = "phobos")]
+    pub jumpjet_override: crate::rules::jumpjet_params::JumpjetOverride,
+    /// Phobos `WarheadTypeExt::MindControl_Anim` (`MindControl.Anim=`): the
+    /// ring animation this warhead gives a captured object; `None` uses
+    /// `[CombatDamage] ControlledAnimationType`.
+    #[cfg(feature = "phobos")]
+    pub mind_control_anim: Option<String>,
+    /// Phobos AttachEffect attach/remove lists and the reflected-damage
+    /// suppressor this warhead carries.
+    #[cfg(feature = "phobos")]
+    pub attach_effect: WarheadAttachEffectRules,
+    /// Phobos `WarheadTypeExt::AffectsGround`/`AffectsAir` (`Body.cpp:413..414`,
+    /// `Valueable<bool>` default true): `CanAffectTarget`'s air/ground split.
+    #[cfg(feature = "phobos")]
+    pub affects_ground: bool,
+    #[cfg(feature = "phobos")]
+    pub affects_air: bool,
+    /// Phobos `EffectsRequireVerses` (`Body.cpp:501`, default true): the
+    /// per-target pass skips a target whose armor this warhead's Verses zero.
+    #[cfg(feature = "phobos")]
+    pub effects_require_verses: bool,
+    /// Phobos `ApplyPerTargetEffectsOnDetonate` (`Body.cpp:442`,
+    /// `Nullable<bool>`); `None` inherits `[CombatDamage]`.
+    #[cfg(feature = "phobos")]
+    pub apply_per_target_effects_on_detonate: Option<bool>,
+    /// Phobos animation-list enhancement settings (`AnimList.*`,
+    /// `SplashList.*`, `CreateAnimsOnZeroDamage`, `Conventional.IgnoreUnits`).
+    #[cfg(feature = "phobos")]
+    pub phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules,
+}
+
+/// Tiberian Sun Firestorm's web keys of one warhead (`docs/ts-webs.md`).
+/// gamemd reads none of them; Firestorm 2.0 `WarheadTypeClass::Read_INI`
+/// `0x0066EE30` reads them through `INIClass::Get_Bool` `0x004DE0C0` and
+/// `Get_Int` `0x004DD0C0`, the same readers as gamemd's `ReadBool` and
+/// `ReadInt`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct WarheadWeb {
+    /// `Webby=` (WarheadType `+0xD5`): a detonation webs infantry instead of
+    /// doing area damage.
+    pub webby: bool,
+    /// `WebDuration=` (`+0xC0`), frames.
+    pub duration: i32,
+    /// `WebDurationVariation=` (`+0xC4`), frames either side of the duration.
+    pub duration_variation: i32,
+    /// `WebRadius=` (`+0xC8`), cells.
+    pub radius: i32,
+}
+
+impl WarheadWeb {
+    /// Constructor `0x0066EB10`: `Webby` false (`0x0066EBB6`), `WebDuration`
+    /// 300 (`0x0066EB86`), `WebDurationVariation` 25 (`0x0066EB90`) and
+    /// `WebRadius` 2 (`0x0066EB9A`).
+    pub const CONSTRUCTED: Self = Self {
+        webby: false,
+        duration: 300,
+        duration_variation: 25,
+        radius: 2,
+    };
+
+    /// One Rules pass of `Read_INI` `0x0066F0FE..0x0066F15B`: `Webby` with its
+    /// current value as default, then, only when the value it now holds is
+    /// true (`0x0066F10B`), the three numbers with theirs. `None` stands for
+    /// the constructor's values, so a game without webs keeps no state.
+    pub(crate) fn read_pass(current: Option<Self>, section: &IniSection) -> Option<Self> {
+        let mut web = current.unwrap_or(Self::CONSTRUCTED);
+        web.webby = section.read_bool("Webby", web.webby);
+        if web.webby {
+            web.duration = section.read_int("WebDuration", web.duration);
+            web.duration_variation =
+                section.read_int("WebDurationVariation", web.duration_variation);
+            web.radius = section.read_int("WebRadius", web.radius);
+        }
+        (web != Self::CONSTRUCTED).then_some(web)
+    }
 }
 
 impl WarheadType {
+    /// The web keys of a `Webby=` warhead.
+    pub fn webby(&self) -> Option<&WarheadWeb> {
+        self.web.as_ref().filter(|web| web.webby)
+    }
+}
+
+/// Phobos `AEAttachInfoTypeClass` as a warhead carries it: the AE lists a
+/// detonation applies to every target it reaches, the attach parameters its
+/// `Attach` call passes (`hasDelay = false`, so the delay lists never apply),
+/// and the reflect suppressor.
+#[cfg(feature = "phobos")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WarheadAttachEffectRules {
+    /// `AttachEffect.AttachTypes`.
+    pub attach_types: Vec<String>,
+    /// `AttachEffect.DurationOverrides`, paired with `attach_types`.
+    pub duration_overrides: Vec<i32>,
+    /// `AttachEffect.CumulativeSourceMaxCount`; negative means no cap.
+    pub cumulative_source_max_count: i32,
+    pub cumulative_refresh_all: bool,
+    pub cumulative_refresh_all_on_attach: bool,
+    pub cumulative_refresh_same_source_only: bool,
+    /// `AttachEffect.ReplaceLongerDuration`; `None` inherits `[General]`.
+    pub replace_longer_duration: Option<bool>,
+    /// `AttachEffect.RemoveTypes`.
+    pub remove_types: Vec<String>,
+    /// `AttachEffect.RemoveGroups`.
+    pub remove_groups: Vec<String>,
+    /// `AttachEffect.CumulativeRemoveMinCounts`, paired by list position.
+    pub cumulative_remove_min_counts: Vec<i32>,
+    /// `AttachEffect.CumulativeRemoveMaxCounts`, paired by list position.
+    pub cumulative_remove_max_counts: Vec<i32>,
+    /// `SuppressReflectDamage`: the warhead turns reflection off. With
+    /// `.Types`/`.Groups` listed it suppresses only those effects; alone it
+    /// suppresses every effect's reflection.
+    pub suppress_reflect_damage: bool,
+    pub suppress_reflect_damage_types: Vec<String>,
+    pub suppress_reflect_damage_groups: Vec<String>,
+}
+
+#[cfg(feature = "phobos")]
+impl Default for WarheadAttachEffectRules {
+    /// `AEAttachInfoTypeClass`'s constructor defaults.
+    fn default() -> Self {
+        Self {
+            attach_types: Vec::new(),
+            duration_overrides: Vec::new(),
+            cumulative_source_max_count: -1,
+            cumulative_refresh_all: false,
+            cumulative_refresh_all_on_attach: false,
+            cumulative_refresh_same_source_only: true,
+            replace_longer_duration: None,
+            remove_types: Vec::new(),
+            remove_groups: Vec::new(),
+            cumulative_remove_min_counts: Vec::new(),
+            cumulative_remove_max_counts: Vec::new(),
+            suppress_reflect_damage: false,
+            suppress_reflect_damage_types: Vec::new(),
+            suppress_reflect_damage_groups: Vec::new(),
+        }
+    }
+}
+
+#[cfg(feature = "phobos")]
+impl WarheadAttachEffectRules {
+    fn from_section(section: &IniSection) -> Self {
+        let list = |key: &str| {
+            section
+                .read_list(key, 0x800)
+                .map(|tokens| tokens.into_iter().map(str::to_string).collect())
+                .unwrap_or_default()
+        };
+        Self {
+            attach_types: list("AttachEffect.AttachTypes"),
+            duration_overrides: section
+                .read_int_list("AttachEffect.DurationOverrides")
+                .unwrap_or_default(),
+            cumulative_source_max_count: section
+                .read_int("AttachEffect.CumulativeSourceMaxCount", -1),
+            cumulative_refresh_all: section.read_bool("AttachEffect.CumulativeRefreshAll", false),
+            cumulative_refresh_all_on_attach: section
+                .read_bool("AttachEffect.CumulativeRefreshAll.OnAttach", false),
+            cumulative_refresh_same_source_only: section
+                .read_bool("AttachEffect.CumulativeRefreshSameSourceOnly", true),
+            replace_longer_duration: section
+                .read_phobos_nullable_bool("AttachEffect.ReplaceLongerDuration", None),
+            remove_types: list("AttachEffect.RemoveTypes"),
+            remove_groups: list("AttachEffect.RemoveGroups"),
+            cumulative_remove_min_counts: section
+                .read_int_list("AttachEffect.CumulativeRemoveMinCounts")
+                .unwrap_or_default(),
+            cumulative_remove_max_counts: section
+                .read_int_list("AttachEffect.CumulativeRemoveMaxCounts")
+                .unwrap_or_default(),
+            suppress_reflect_damage: section.read_bool("SuppressReflectDamage", false),
+            suppress_reflect_damage_types: list("SuppressReflectDamage.Types"),
+            suppress_reflect_damage_groups: list("SuppressReflectDamage.Groups"),
+        }
+    }
+
+    /// The detonation applies nothing to its targets.
+    pub fn is_empty(&self) -> bool {
+        self.attach_types.is_empty()
+            && self.remove_types.is_empty()
+            && self.remove_groups.is_empty()
+    }
+}
+
+impl WarheadType {
+    /// `debris_types` as its RuleSet resolved it; reads go through
+    /// `RuleSet::warhead_debris_types`, which checks the resolving set.
+    pub(crate) fn resolved_debris(&self) -> &crate::rules::ruleset::ResolvedDebris {
+        &self.resolved_debris
+    }
+
+    /// Store `debris_types` resolved against the current `[VoxelAnims]`.
+    pub(crate) fn project_resolved_debris(
+        &mut self,
+        debris: crate::rules::ruleset::ResolvedDebris,
+    ) {
+        self.resolved_debris = debris;
+    }
+
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
+    }
+    pub(crate) fn ares_rules_mut(
+        &mut self,
+    ) -> Option<&mut crate::rules::ares_warhead::AresWarheadRules> {
+        self.ares.as_mut()
+    }
+    /// The Ares 3.0 damage-modifier group of this warhead's WarheadTypeExt.
+    pub(crate) fn ares_combat(&self) -> Option<&crate::rules::ares_warhead::WarheadCombatRules> {
+        self.ares.as_ref().map(|ares| ares.combat())
     }
     pub(crate) fn bind_ares_rules(
         &mut self,
@@ -362,34 +619,23 @@ impl WarheadType {
     /// `0x0075CED0`): what a warhead whose sections name no `InfDeath=` keeps.
     pub(crate) const DEFAULT_INF_DEATH: i32 = 0;
 
+    /// A warhead read the Ares way holds the retained Ares verses; a stock
+    /// read leaves them `None` and uses the original WH+A0 array.
     pub fn interaction(&self, armor: ArmorId) -> ArmorInteraction {
-        #[cfg(feature = "ares")]
-        {
-            self.ares_verses
-                .as_ref()
-                .expect("Ares build requires its retained warhead extension")
-                .interaction(armor)
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
+        match &self.ares_verses {
+            Some(verses) => verses.interaction(armor),
+            None => ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
                 self.verses_f64[armor.index()].to_bits(),
-            ))
+            )),
         }
     }
 
     /// WH+149 controls an Infantry passive-target class shortcut. The
     /// installed Ares75DDCC hook skips its native derivation and clears it;
-    /// effective extension entries must never reintroduce that shortcut.
+    /// effective extension entries must never reintroduce that shortcut, so
+    /// a warhead read the Ares way (it holds Ares verses) never uses it.
     pub fn uses_medium_wood_target_mask(&self) -> bool {
-        #[cfg(feature = "ares")]
-        {
-            false
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
-        }
+        self.ares_verses.is_none() && self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
     }
 
     pub(crate) fn install_ares_verses(&mut self, state: Option<&AresWarheadVerses>) {
@@ -398,6 +644,20 @@ impl WarheadType {
 
     pub(crate) fn ares_verses_hash_state(&self) -> Option<&AresWarheadVerses> {
         self.ares_verses.as_ref()
+    }
+
+    /// Phobos `AllowDamageOnSelf`: `Some` is the authored per-warhead value;
+    /// `None` falls back to the `[General]` global.
+    #[cfg(feature = "phobos")]
+    pub fn allow_damage_on_self(&self) -> Option<bool> {
+        self.allow_damage_on_self
+    }
+
+    /// Phobos `DecloakDamagedTargets`: `Some` is the authored per-warhead
+    /// value; `None` falls back to the `[General]` global.
+    #[cfg(feature = "phobos")]
+    pub fn decloak_damaged_targets(&self) -> Option<bool> {
+        self.decloak_damaged_targets
     }
 
     /// Parse a WarheadType from a rules.ini section.
@@ -411,8 +671,18 @@ impl WarheadType {
         let percent_at_max_f64 = f64::from(percent_at_max_native);
         let delay_kill_at_max_f64 = f64::from(section.read_float("DelayKillAtMax", 1.0));
 
-        // The IntVector reader (`0x0075DD22` -> `0x00475D70`).
-        let debris_maximums: Vec<i32> = section.read_int_list("DebrisMaximums").unwrap_or_default();
+        // The IntVector reader (`0x0075DD22` -> `0x00475D70`). Ares 3.0
+        // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
+        // reads it through ParseList<int> (1005B030) instead when the Rules
+        // are read the Ares way.
+        let debris_maximums = if crate::rules::ares_switch::ares_way() {
+            crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int_list("DebrisMaximums")
+            })
+        } else {
+            section.read_int_list("DebrisMaximums")
+        };
+        let debris_maximums: Vec<i32> = debris_maximums.unwrap_or_default();
 
         // `WarheadTypeClass::ReadINI @ 0x0075DA95..0x0075DAE6`: MaxDebris is
         // read first (`0x0075DA95 PUSH 0x84439C` -> `0x0075DAB1` +0x1C4),
@@ -428,15 +698,19 @@ impl WarheadType {
         // (`0x0084439C`) and `MinDebris` (`0x00844390`). No stock `[Warheads]`
         // section mis-spells either — only `Smashing` and `TRexWH` author them
         // at all — so this changes nothing in retail and is right in principle.
-        let max_debris = section.read_int("MaxDebris", 0);
-        let min_debris = section.read_int("MinDebris", 0).max(0);
+        let max_debris = section
+            .read_int("MaxDebris", 0)
+            .min(crate::rules::object_type::DEBRIS_LIMIT);
+        let min_debris = section
+            .read_int("MinDebris", 0)
+            .clamp(0, crate::rules::object_type::DEBRIS_LIMIT);
         let max_debris = max_debris.max(min_debris);
 
         Self {
             id: id.to_string(),
             particle_system: None,
             verses_f64,
-            ares_verses: cfg!(feature = "ares").then(AresWarheadVerses::default),
+            ares_verses: crate::rules::ares_switch::ares_way().then(AresWarheadVerses::default),
             ares: None,
             cell_spread_f64,
             cell_inset_f32,
@@ -446,6 +720,7 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
+            sparky: false,
             fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
@@ -455,13 +730,15 @@ impl WarheadType {
             affects_enemies: section.read_bool("AffectsEnemies", true),
             affects_neutral: section.read_bool("AffectsNeutral", true),
             psychic_damage: section.read_bool("PsychicDamage", false),
-            // Conventional, AnimList and EMEffect keep the constructor's false
-            // and empty values (`0x0075CF89`, `0x0075CFB3`): the ordered Rules
-            // processor owns those reads and RuleSet publishes its result.
+            // Conventional, Sparky, AnimList and EMEffect keep constructor
+            // defaults here: the ordered Rules processor owns those reads
+            // and RuleSet publishes its result.
             anim_list: Vec::new(),
             inf_death: section.read_int("InfDeath", Self::DEFAULT_INF_DEATH),
             deform_f64: section.read_double("Deform", 0.0),
             deform_threshold: section.read_int("DeformThreshhold", 0),
+            deform_depth: section.read_int("DeformDepth", 1),
+            deform_radius: section.read_int("DeformRadius", 0),
             bullets: section.read_bool("Bullets", false),
             veinhole: section.read_bool("Veinhole", false),
             // ReadInt current defaults fold each projected Rules pass; there
@@ -494,6 +771,12 @@ impl WarheadType {
             mind_control: section.read_bool("MindControl", false),
             poison: section.read_bool("Poison", false),
             airstrike: section.read_bool("Airstrike", false),
+            #[cfg(feature = "phobos")]
+            airstrike_targets: {
+                let raw = section.read_string("AirstrikeTargets", "", 0x100);
+                crate::rules::airstrike_targets::AirstrikeTargets::parse(&raw)
+                    .unwrap_or(crate::rules::airstrike_targets::AirstrikeTargets::DEFAULT)
+            },
             radiation: section.read_bool("Radiation", false),
             culling: section.read_bool("Culling", false),
             paralyzes: section.read_int("Paralyzes", 0),
@@ -503,14 +786,47 @@ impl WarheadType {
             bomb_disarm: section.read_bool("BombDisarm", false),
             nuke_maker: section.read_bool("NukeMaker", false),
             em_effect: false,
+            limpet_factor: X87Chop53::ftol_f64_low_masked(section.read_double("LimpetFactor", 0.0)),
+            web: None,
 
             // List fields
             debris_types: Vec::new(),
+            resolved_debris: Default::default(),
             debris_maximums,
             min_debris,
             max_debris,
             #[cfg(feature = "phobos")]
+            allow_damage_on_self: section.read_phobos_nullable_bool("AllowDamageOnSelf", None),
+            #[cfg(feature = "phobos")]
+            decloak_damaged_targets: section
+                .read_phobos_nullable_bool("DecloakDamagedTargets", None),
+            #[cfg(feature = "phobos")]
             shield: crate::rules::phobos_shields::ShieldWarheadRules::from_section(section),
+            #[cfg(feature = "phobos")]
+            crit: crate::rules::phobos_crit::CritRules::from_section(section),
+            #[cfg(feature = "phobos")]
+            attach_effect: WarheadAttachEffectRules::from_section(section),
+            #[cfg(feature = "phobos")]
+            affects_ground: section.read_bool("AffectsGround", true),
+            #[cfg(feature = "phobos")]
+            affects_air: section.read_bool("AffectsAir", true),
+            #[cfg(feature = "phobos")]
+            effects_require_verses: section.read_bool("EffectsRequireVerses", true),
+            #[cfg(feature = "phobos")]
+            apply_per_target_effects_on_detonate: section
+                .read_phobos_nullable_bool("ApplyPerTargetEffectsOnDetonate", None),
+            #[cfg(feature = "phobos")]
+            phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::from_section(
+                section,
+            ),
+            #[cfg(feature = "phobos")]
+            jumpjet_override: crate::rules::jumpjet_params::JumpjetOverride::from_section(section),
+            #[cfg(feature = "phobos")]
+            // The name resolves at the capture site; an unknown later-layer
+            // name replaces an earlier valid one, where Phobos keeps it.
+            mind_control_anim: section.read_phobos_nullable_with("MindControl.Anim", None, |raw| {
+                Some(raw.to_owned())
+            }),
         }
     }
 }
@@ -564,7 +880,7 @@ pub(crate) fn verses_value(token: &str) -> f64 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -600,6 +916,79 @@ mod tests {
         }
         assert_eq!(completed, 13);
         assert_eq!(native_faults, 4);
+    }
+
+    /// Phobos `AEAttachInfoTypeClass` and `SuppressReflectDamage` on a
+    /// warhead, through the production Rules reader, plus the `ReflectDamage`
+    /// warhead the AttachEffect catalog alone names.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn attach_effect_lists_and_reflect_suppressor_read_through_rules() {
+        use crate::rules::ruleset::RuleSet;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=W\n\
+             [Warheads]\n0=PLAIN\n1=HIT\n\
+             [W]\nDamage=1\nWarhead=HIT\n\
+             [HIT]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             AttachEffect.AttachTypes=AE1,AE2\nAttachEffect.RemoveTypes=AE3\n\
+             AttachEffect.RemoveGroups=tag\n\
+             AttachEffect.DurationOverrides=40,60\n\
+             AttachEffect.CumulativeSourceMaxCount=2\n\
+             AttachEffect.CumulativeRefreshAll=yes\n\
+             AttachEffect.CumulativeRefreshAll.OnAttach=yes\n\
+             AttachEffect.CumulativeRefreshSameSourceOnly=no\n\
+             AttachEffect.ReplaceLongerDuration=yes\n\
+             AttachEffect.CumulativeRemoveMinCounts=2\n\
+             AttachEffect.CumulativeRemoveMaxCounts=3,4\n\
+             SuppressReflectDamage=yes\nSuppressReflectDamage.Types=AE1\n\
+             SuppressReflectDamage.Groups=tag\n\
+             [AttachEffectTypes]\n0=AE1\n1=AE2\n2=AE3\n\
+             [AE1]\nReflectDamage.Warhead=SPIKE\n[AE2]\n[AE3]\n\
+             [SPIKE]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        ))
+        .expect("rules");
+        let warhead = rules.warhead("HIT").expect("warhead");
+        assert_eq!(warhead.attach_effect.attach_types, vec!["AE1", "AE2"]);
+        assert_eq!(warhead.attach_effect.duration_overrides, vec![40, 60]);
+        assert_eq!(warhead.attach_effect.cumulative_source_max_count, 2);
+        assert!(warhead.attach_effect.cumulative_refresh_all);
+        assert!(warhead.attach_effect.cumulative_refresh_all_on_attach);
+        assert!(!warhead.attach_effect.cumulative_refresh_same_source_only);
+        assert_eq!(warhead.attach_effect.replace_longer_duration, Some(true));
+        assert_eq!(warhead.attach_effect.remove_types, vec!["AE3"]);
+        assert_eq!(warhead.attach_effect.remove_groups, vec!["tag"]);
+        assert_eq!(warhead.attach_effect.cumulative_remove_min_counts, vec![2]);
+        assert_eq!(
+            warhead.attach_effect.cumulative_remove_max_counts,
+            vec![3, 4]
+        );
+        assert!(warhead.attach_effect.suppress_reflect_damage);
+        assert_eq!(
+            warhead.attach_effect.suppress_reflect_damage_types,
+            vec!["AE1"]
+        );
+        assert_eq!(
+            warhead.attach_effect.suppress_reflect_damage_groups,
+            vec!["tag"]
+        );
+        assert!(!warhead.attach_effect.is_empty());
+
+        let plain = rules.warhead("PLAIN").expect("plain warhead");
+        assert!(plain.attach_effect.is_empty());
+        // `AEAttachInfoTypeClass`'s constructor defaults.
+        assert_eq!(plain.attach_effect.cumulative_source_max_count, -1);
+        assert!(!plain.attach_effect.cumulative_refresh_all);
+        assert!(!plain.attach_effect.cumulative_refresh_all_on_attach);
+        assert!(plain.attach_effect.cumulative_refresh_same_source_only);
+        assert_eq!(plain.attach_effect.replace_longer_duration, None);
+        assert!(plain.attach_effect.duration_overrides.is_empty());
+        assert!(!plain.attach_effect.suppress_reflect_damage);
+        assert!(plain.attach_effect.suppress_reflect_damage_types.is_empty());
+        assert!(
+            rules.warhead("SPIKE").is_some(),
+            "the AttachEffect catalog keeps the warhead it alone names"
+        );
     }
 
     #[test]
@@ -705,7 +1094,8 @@ mod tests {
         // only reader is `TiberiumClass::ReadINI_Fields @ 0x00721B4F`. The
         // warhead key is "DebrisTypes" @ 0x0075DAF5.
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
+            // TIRE is registered for Ares's Find-only DebrisTypes read.
+            "[VoxelAnims]\n0=TIRE\n[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
         ))
         .unwrap();
         assert_eq!(rules.warhead("W").unwrap().debris_types, ["TIRE"]);
@@ -729,5 +1119,81 @@ MaxDebris=2
         assert_eq!((neg.min_debris, neg.max_debris), (0, 2));
         let inv = WarheadType::from_ini_section("Inverted", ini.section("Inverted").unwrap());
         assert_eq!((inv.min_debris, inv.max_debris), (7, 7));
+    }
+
+    /// The `[General] AllowDamageOnSelf` fallback and per-warhead override
+    /// that Phobos `WarheadTypeExt::AllowDamageOnSelf.Get(...)` applies.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn allow_damage_on_self_falls_back_to_general() {
+        let read = |text: &str, warhead: &str| {
+            let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(text)).unwrap();
+            rules.allow_damage_on_self_for(rules.warhead(warhead).unwrap())
+        };
+        let with_global = "[General]\nAllowDamageOnSelf=yes\n\
+             [Warheads]\n0=Unset\n1=Off\n2=On\n\
+             [Unset]\nFixtureOnly=1\n[Off]\nAllowDamageOnSelf=no\n[On]\nAllowDamageOnSelf=yes\n";
+        assert!(
+            read(with_global, "Unset"),
+            "global yes reaches an unset warhead"
+        );
+        assert!(
+            !read(with_global, "Off"),
+            "per-warhead no overrides global yes"
+        );
+        assert!(read(with_global, "On"), "per-warhead yes overrides global");
+
+        let no_global =
+            "[Warheads]\n0=Unset\n1=On\n[Unset]\nFixtureOnly=1\n[On]\nAllowDamageOnSelf=yes\n";
+        assert!(!read(no_global, "Unset"), "absent global defaults to no");
+        assert!(read(no_global, "On"));
+    }
+
+    /// The `[General] DecloakDamagedTargets` fallback (default yes) and the
+    /// per-warhead override that Phobos
+    /// `WarheadTypeExt::DecloakDamagedTargets.Get(...)` applies.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn decloak_damaged_targets_falls_back_to_general() {
+        let read = |text: &str, warhead: &str| {
+            let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(text)).unwrap();
+            rules.decloak_damaged_targets_for(rules.warhead(warhead).unwrap())
+        };
+        let no_global =
+            "[Warheads]\n0=Unset\n1=Off\n[Unset]\nFixtureOnly=1\n[Off]\nDecloakDamagedTargets=no\n";
+        assert!(read(no_global, "Unset"), "absent global defaults to yes");
+        assert!(!read(no_global, "Off"), "per-warhead no overrides");
+
+        let with_global = "[General]\nDecloakDamagedTargets=no\n\
+             [Warheads]\n0=Unset\n1=On\n\
+             [Unset]\nFixtureOnly=1\n[On]\nDecloakDamagedTargets=yes\n";
+        assert!(
+            !read(with_global, "Unset"),
+            "global no reaches an unset warhead"
+        );
+        assert!(
+            read(with_global, "On"),
+            "per-warhead yes overrides global no"
+        );
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn mind_control_anim_reads_nullable_name() {
+        let ini = IniFile::from_str(
+            "[WH]\nMindControl.Anim=ALTANIM\n\
+             [RESET]\nKeep=1\nMindControl.Anim=<default>\n\
+             [EMPTY]\nKeep=1\n",
+        );
+        let warhead = WarheadType::from_ini_section("WH", ini.section("WH").unwrap());
+        assert_eq!(warhead.mind_control_anim.as_deref(), Some("ALTANIM"));
+        assert_eq!(
+            WarheadType::from_ini_section("RESET", ini.section("RESET").unwrap()).mind_control_anim,
+            None
+        );
+        assert_eq!(
+            WarheadType::from_ini_section("EMPTY", ini.section("EMPTY").unwrap()).mind_control_anim,
+            None
+        );
     }
 }

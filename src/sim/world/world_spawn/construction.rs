@@ -4,7 +4,7 @@
 //! callers share one constructor. Child allocation still belongs to the parent
 //! store transaction in world_spawn, after these manager descriptors exist.
 
-use super::{GeneratedTechnoInitError, object_uses_voxel};
+use super::GeneratedTechnoInitError;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::object_type::ObjectType;
@@ -13,12 +13,15 @@ use crate::sim::animation::{Animation, SequenceKind};
 use crate::sim::combat::Health;
 use crate::sim::game_entity::{GameEntity, TechnoConstructorInit};
 use crate::sim::houses::Houses;
-use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId, StringInterner};
 use crate::sim::miner::{Miner, MinerConfig, miner_kind_for_object};
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::MAX_SIGHT_RANGE;
 use crate::sim::world::Simulation;
+
+/// Grants the type projection its write to the actor's retained house-count inputs.
+pub(in crate::sim) struct TypeProjectionWrite(());
 
 /// Existing initialization differences are explicit here. In particular map
 /// import currently omits Ship state and Fly Idle setup.
@@ -44,10 +47,24 @@ impl Simulation {
             .object_type_in_category(entity.type_ref(), entity.category().into(), rules)
     }
 
-    pub(super) fn construct_runtime_techno(
+    /// Eligibility helper FUN_00413CD0: only an actual InfantryType's Civilian+EC1 and
+    /// the instance's clear nominal-survivor+6D9 qualify. Neither health nor
+    /// limbo adds a gate. Shared by Fly evacuation and Aircraft DOCK_NOW;
+    /// source: original gamemd.exe instructions.
+    pub(crate) fn is_evacuation_civilian(&self, id: u64, rules: &RuleSet) -> bool {
+        self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.category() == EntityCategory::Infantry
+                && !entity.is_nominal_survivor()
+                && self
+                    .entity_object_type(entity, rules)
+                    .is_some_and(|object| object.civilian)
+        })
+    }
+
+    pub(super) fn construct_runtime_techno<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -55,9 +72,12 @@ impl Simulation {
         rules: &RuleSet,
         init: TechnoConstructorInit,
     ) -> Result<Option<GameEntity>, GeneratedTechnoInitError> {
-        let Some(obj) = rules.object(type_id) else {
+        let type_id = type_id.into();
+        let Some(obj) = self.interner.key_object_type(type_id, rules) else {
             return Ok(None);
         };
+        let owner = self.interner.intern_key(owner.into());
+        let type_id = self.interner.intern_key(type_id);
         self.construct_resolved_runtime_techno(obj, type_id, owner, rx, ry, facing, z, rules, init)
     }
 
@@ -66,8 +86,8 @@ impl Simulation {
     pub(super) fn construct_resolved_runtime_techno(
         &mut self,
         obj: &ObjectType,
-        type_id: &str,
-        owner: &str,
+        type_iid: InternedId,
+        owner_iid: InternedId,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -79,11 +99,9 @@ impl Simulation {
         // Original copy slices: object_health corpus / constructors.
         let health = Health::new(obj.strength);
         let category = EntityCategory::from(obj.category);
-        let uses_voxel = object_uses_voxel(type_id, obj, rules);
+        let uses_voxel = GameEntity::object_uses_voxel(self.interner.resolve(type_iid), obj, rules);
         let sight_range = (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE);
         let stable_id = self.substrate.allocate_stable_id();
-        let owner_iid = self.interner.intern(owner);
-        let type_iid = self.interner.intern(type_id);
         let techno_ctor_random_word =
             super::resolve_techno_constructor_word(&mut self.scenario_rng, init, None)?;
         let native_unique_id = self.next_native_runtime_id();
@@ -115,6 +133,20 @@ impl Simulation {
             rules,
             ComponentOrigin::Runtime,
         );
+        // Ares ApplyAcademy10020750 closes each class's InitFromType hook,
+        // after the spy veterancy above; a map's authored objects are read
+        // inside the A8E7AC scope, which skips it.
+        if rules.ares() {
+            self.apply_ares_academy(&mut ge, obj, rules);
+        }
+        // Ares TechnoClass_Init_1 (1004A530, hook 0x6F407D): an object
+        // constructed inside the A8E7AC scope after frame 0 (a conversion
+        // or deploy product) never makes an InitialPayload. A map's authored
+        // objects are constructed at frame 0 (`sim::ares_transports`).
+        if rules.ares() && self.object_placement_scope_active() && self.session.binary_frame() != 0
+        {
+            ge.seldom.ares.ares_initial_payload.mark_created();
+        }
         Ok(Some(ge))
     }
 
@@ -130,19 +162,36 @@ impl Simulation {
         let category = ge.category();
         let initial = ge.body_facing.destination();
         let uses_voxel = ge.is_voxel();
+        // Phobos attaches the type's AttachEffect.AttachTypes at creation,
+        // before the object can be observed or act. The list mutably borrows
+        // the entity, so the gate's target facts are read first.
+        #[cfg(feature = "phobos")]
+        if let Some(obj) = obj {
+            let invulnerability = ge.invulnerability.clone();
+            crate::sim::attach_effect::attach_initial_effects(
+                ge.phobos_attach_effects_mut(),
+                category.into(),
+                invulnerability.as_ref(),
+                obj,
+                rules,
+                session.binary_frame(),
+                None,
+            );
+        }
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
-        ge.discovery
-            .classify_owner(session.current_house() == Some(ge.owner()));
+        let owner_is_playing = session.current_house() == Some(ge.owner());
+        ge.seldom.discovery.classify_owner(owner_is_playing);
 
-        #[cfg(feature = "ares")]
-        ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
-            crate::sim::factory_owners::parent_or_self_country(
-                rules,
-                interner.resolve(house.house_type_id()),
-            )
-        }));
+        if rules.ares() {
+            ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
+                crate::sim::factory_owners::parent_or_self_country(
+                    rules,
+                    interner.resolve(house.house_type_id()),
+                )
+            }));
+        }
 
         // Building InitManagers442C48..442C5C records the owner's Country
         // array index (+0xB8), not its House registration index. Capture and
@@ -154,7 +203,7 @@ impl Simulation {
             ge.initialize_building_loss_index(i32::from(index.0));
         }
 
-        stamp_scoring_flags(ge, obj, rules);
+        ge.refresh_type_projection(obj, rules);
         // Phobos `TechnoClass_Init` (`Hooks.cpp:297..301`): allocate the
         // ShieldClass only when the bound type resolves and its `Strength` is
         // above zero; `SetHP(InitialStrength.Get(Strength))` clamps at creation.
@@ -164,14 +213,11 @@ impl Simulation {
             && let Some(ty) = rules.shield_type(name)
             && ty.strength() > 0
         {
-            ge.shield = Some(crate::sim::shield::ShieldState::new(
+            ge.seldom.shield = Some(crate::sim::shield::ShieldState::new(
                 name.to_owned(),
                 ty.initial_strength(),
                 ty.strength(),
             ));
-        }
-        if let Some(object) = obj {
-            ge.sight.stamp_type_sight(object.sight);
         }
         // The class constructor's one `+0x388` rate write (`Set_ROT`): `ROT=`
         // for a unit (`0x00735579`), an aircraft (`0x00413FE7`) and a building
@@ -181,13 +227,18 @@ impl Simulation {
         if let Some(obj) = obj {
             ge.set_body_facing_rot(obj.turret_rot);
         }
-        // `+0x3A0`: a turreted unit's turret and every aircraft's Secondary. A
-        // building aims its `+0x388`.
-        if let Some(obj) = obj.filter(|obj| {
-            (obj.has_turret && category != EntityCategory::Structure)
-                || category == EntityCategory::Aircraft
-        }) {
-            let mut secondary = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
+        if let Some(obj) = obj.filter(|obj| GameEntity::type_has_secondary_facing(obj, category)) {
+            // Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584) and
+            // AircraftClass_Init_TurretROT (10048AC0, hook 0x413FFA) give the
+            // secondary controller `TurretROT=`, else `ROT=`.
+            let rot = if rules.ares()
+                && matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
+            {
+                obj.secondary_turn_rate()
+            } else {
+                obj.turret_rot
+            };
+            let mut secondary = crate::sim::movement::FacingClass::new(initial, rot);
             if category == EntityCategory::Aircraft {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
                 // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
@@ -201,7 +252,7 @@ impl Simulation {
         if category == EntityCategory::Infantry {
             match origin {
                 ComponentOrigin::Authored { sub_cell, .. } => {
-                    ge.sub_cell.hold(sub_cell);
+                    ge.seldom.sub_cell.hold(sub_cell);
                     let (lx, ly) = crate::util::lepton::subcell_lepton_offset(ge.sub_cell());
                     ge.position.put_cell_offset(lx, ly);
                 }
@@ -210,7 +261,7 @@ impl Simulation {
                     // the caller's actual XY/Z and live occupation bytes.
                     // Constructor-held objects reserve no spot and retain
                     // their requested XY until the shared placement boundary.
-                    ge.sub_cell.release();
+                    ge.seldom.sub_cell.release();
                 }
             }
         }
@@ -228,45 +279,54 @@ impl Simulation {
             // NumberOfDocks floored at one. Both authored and runtime objects
             // own their actual slots before any scan or HELLO. Original
             // constructor controls: tools/spatial_oracle/refinery_dock.json.
-            ge.radio_contacts =
+            ge.seldom.radio_contacts =
                 crate::sim::radio::Contacts::with_capacity(obj.dock_contact_capacity() as usize);
         }
         // Unit constructor735678 and InitFromType74689B initialize the empty
         // Gunner through the shared selector, including its charge-type gate.
         if category == EntityCategory::Unit && obj.gunner {
-            ge.set_gunner_weapon(0, obj);
+            ge.set_gunner_weapon(0, obj, rules.ares());
         }
         ge.initialize_voxel_recoil(obj.recoil);
-        ge.crushable_facts = CrushableFacts::stamp(obj);
-        ge.mover_facts = MoverFacts::stamp(obj);
-        ge.removal_facts.stamp_occupier(obj.occupier);
         if category == EntityCategory::Structure && obj.gate {
-            ge.building_gate = Some(crate::sim::game_entity::BuildingGateRuntime::at_frame(
-                session.binary_frame(),
-            ));
+            ge.building.building_gate = Some(
+                crate::sim::game_entity::BuildingGateRuntime::at_frame(session.binary_frame()),
+            );
         }
         if category == EntityCategory::Structure && obj.bunker {
-            ge.bunker_runtime = Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
+            ge.building.bunker_runtime =
+                Some(crate::sim::docking::bunker_install::BunkerRuntime::idle());
         }
         // BuildingClass::Init_Managers, from the constructor (`0x0043BB29`):
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
         if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
+            // Ares' sale rate, which the body folds into its hash once bound.
+            if rules.ares_form() {
+                ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
+            }
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
         }
-        ge.ai_sell_repair
+        ge.seldom
+            .ai_sell_repair
             .construct(category == EntityCategory::Structure && rules.has_buildup(&obj.id));
-        if should_construct_locomotor(category, obj) {
+        // Every Foot constructor allocates, constructs and links its type's
+        // locomotor without a Speed test: InfantryClass's `0x00517A50` at
+        // `0x517B44..0x517BBA`, UnitClass's at `0x007354CE..0x00735566`,
+        // AircraftClass's at `0x00413DB1..0x00413E2C`. A zero-`Speed=` Jumpjet
+        // Unit is a Foot with an instance all the same; Structures own none.
+        if category.is_foot() {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
                 session.binary_frame(),
             ));
             if matches!(origin, ComponentOrigin::Runtime)
-                && ge.locomotor.as_ref().is_some_and(|locomotor| {
-                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Ship
-                })
+                && ge
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Ship)
             {
                 ge.locomotor
                     .as_mut()
@@ -302,19 +362,18 @@ impl Simulation {
         if let Some(kind) = miner_kind_for_object(obj) {
             let mcfg = MinerConfig::default();
             let storage = obj.storage.max(0) as u16;
-            ge.miner = Some(Miner::new(kind, &mcfg, storage));
+            ge.miner = Some(Box::new(Miner::new(kind, &mcfg, storage)));
         }
         // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(obj.passengers as u32, obj.size_limit),
-            );
+            ge.passenger_role_mut()
+                .install_hold(obj.passengers as u32, obj.size_limit);
         }
 
-        stamp_building_cell_profile(ge, Some(obj));
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
-        ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+        ge.capture_manager =
+            crate::sim::capture_manager::init_capture_manager(obj, rules).map(Box::new);
         ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
         ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
             obj,
@@ -328,17 +387,22 @@ impl Simulation {
         // no owner guard; a Techno without a represented house is a
         // fixture case. Rust never re-runs this InitFromType tail (Unit
         // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        // Ares 3.0 Sides_Disguise (1002F9C0, hook 0x6F422F) wears the owner
+        // house's GetDisguise instead, which `side_disguise` answers.
         if obj.can_disguise
             && obj.perma_disguise
             && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
         {
-            let worn = rules.general.infantry_disguises[match side {
-                0 => 0,
-                1 => 1,
-                _ => 2,
-            }]
-            .as_deref()
-            .map(|name| interner.intern(name));
+            let worn = match rules.side_disguise(side) {
+                Some(value) => value.map(|name| interner.intern(name)),
+                None => rules.general.infantry_disguises[match side {
+                    0 => 0,
+                    1 => 1,
+                    _ => 2,
+                }]
+                .as_deref()
+                .map(|name| interner.intern(name)),
+            };
             let owner = ge.owner();
             let frame = session.binary_frame();
             ge.disguise_mut(frame).wear_from_construction(worn, owner);
@@ -374,9 +438,59 @@ impl Simulation {
                 }
                 _ => false,
             });
+        // Ares 3.0 100237C0, 10023600 and 100236D0 (hooks 0x00735678 and
+        // 0x0074689B, 0x00413FD2, 0x00442D1B): the owner's SpyEffect
+        // veterancy (HouseExt +0x48..+0x4A, `sim::spy_infiltration`) makes a
+        // `Trainable=` naval unit, aircraft or building veteran too.
+        let veteran = if rules.ares() {
+            veteran
+                || obj.trainable
+                    && house.is_some_and(|house| match category {
+                        EntityCategory::Unit => obj.naval && house.naval_veterancy(),
+                        EntityCategory::Aircraft => house.aircraft_veterancy(),
+                        EntityCategory::Structure => house.building_veterancy(),
+                        EntityCategory::Infantry => false,
+                    })
+        } else {
+            veteran
+        };
         if veteran {
             ge.veterancy.set_veteran();
         }
+    }
+}
+
+impl GameEntity {
+    pub(in crate::sim) fn refresh_after_type_store(
+        &mut self,
+        _: crate::sim::game_entity::LiveTypeStore,
+        destination: &ObjectType,
+        rules: &RuleSet,
+    ) {
+        self.refresh_type_projection(Some(destination), rules);
+    }
+
+    /// Derived reads of the live Type pointer. Construction, native bare type
+    /// stores and Ares conversion10043740 share these caches without replaying constructors,
+    /// manager allocation, passenger setup or discovery-history writes.
+    fn refresh_type_projection(&mut self, object: Option<&ObjectType>, rules: &RuleSet) {
+        self.stamp_scoring_flags(TypeProjectionWrite(()), object, rules);
+        if let Some(object) = object {
+            self.seldom.sight.stamp_type_sight(object.sight);
+            self.seldom.crushable_facts = CrushableFacts::stamp(object);
+            self.mover_facts = MoverFacts::stamp(object);
+            self.seldom.removal_facts.stamp_occupier(object.occupier);
+            stamp_building_cell_profile(self, Some(object));
+        }
+    }
+
+    /// Whether `barrel_facing` models the `+0x3A0` Secondary: a turreted
+    /// unit's turret and every aircraft's Secondary. A building aims its
+    /// `+0x388`, and `barrel_facing.is_some()` means "has a turret" to its
+    /// readers, so every other object keeps none.
+    pub(crate) fn type_has_secondary_facing(object: &ObjectType, category: EntityCategory) -> bool {
+        (object.has_turret && category != EntityCategory::Structure)
+            || category == EntityCategory::Aircraft
     }
 }
 
@@ -395,22 +509,6 @@ fn install_authored_bridge(ge: &mut GameEntity, origin: ComponentOrigin) {
     }
 }
 
-/// Copy the rules-derived scoring and house-count flags onto a freshly built
-/// entity.
-///
-/// Every spawn path calls this, so a type that must not appear on the score
-/// screen is honored no matter how the object came into the world. The flags
-/// are copied rather than looked up later because the score bookkeeping and
-/// the house counts run in the lifecycle authority, which deliberately holds
-/// no `RuleSet` borrow.
-fn stamp_scoring_flags(
-    ge: &mut GameEntity,
-    obj: Option<&crate::rules::object_type::ObjectType>,
-    rules: &RuleSet,
-) {
-    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
-}
-
 fn stamp_building_cell_profile(
     ge: &mut GameEntity,
     obj: Option<&crate::rules::object_type::ObjectType>,
@@ -418,13 +516,18 @@ fn stamp_building_cell_profile(
     let Some(obj) = obj else {
         return;
     };
-    ge.building_light.stamp(obj.has_spotlight);
-    ge.type_facts.stamp(ge.category(), obj);
+    // Written only on a change, so a type without a spotlight leaves a unit's
+    // building part unwritten.
+    if ge.building.building_light.spotlight_capable() != obj.has_spotlight {
+        ge.building.building_light.stamp(obj.has_spotlight);
+    }
+    let category = ge.category();
+    ge.seldom.type_facts.stamp(category, obj);
 }
 
 /// `Crushable=` and `DeployedCrushable=`, copied when the object is built for
 /// the crush passes (natively read through the type pointer). Only the
-/// construction stamp writes them.
+/// shared type projection writes them.
 ///
 /// Nothing reads the `DeployedCrushable=` copy: the deploy completion
 /// re-reads the type's key (`0x00520B3B`, `0x00520B9A`) and stamps the
@@ -593,9 +696,11 @@ pub struct TypeFacts {
     foundation: crate::rules::foundation::Foundation,
     /// A building's hidden-object counter inputs
     /// (`ObjectType::hidden_occupancy`), so cell-list exit can reverse its
-    /// contribution.
+    /// contribution. Boxed: every object carries these facts, and only a
+    /// building has a profile.
     #[serde(default)]
-    building_hidden_occupancy: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
+    building_hidden_occupancy:
+        Option<Box<crate::rules::object_type::BuildingHiddenOccupancyProfile>>,
     /// `[AI] AIBaseSpacing=` for a building that runs the House base
     /// reservation writer; `None` is the native BuildingType gate.
     #[serde(default)]
@@ -632,8 +737,7 @@ impl TypeFacts {
         Self {
             spawned_non_missile_aircraft: false,
             foundation: default_foundation(),
-            building_hidden_occupancy: (category == EntityCategory::Structure)
-                .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
+            building_hidden_occupancy: (category == EntityCategory::Structure).then(Box::default),
             base_reservation_spacing: None,
             build_const_eligible: false,
             base_plan_type_index: default_base_plan_type_index(),
@@ -649,9 +753,9 @@ impl TypeFacts {
             category == EntityCategory::Aircraft && obj.spawned && !obj.missile_spawn;
         self.foundation = obj.foundation.clone();
         if category == EntityCategory::Structure {
-            self.building_hidden_occupancy = Some(obj.hidden_occupancy);
+            self.building_hidden_occupancy = Some(Box::new(obj.hidden_occupancy));
             self.base_reservation_spacing = obj.base_reservation_spacing;
-            self.build_const_eligible = obj.build_const_eligible;
+            self.build_const_eligible = obj.build_const_eligible();
             self.base_plan_type_index = obj.base_plan_type_index;
             self.base_plan_is_defense = obj.is_base_defense;
             self.base_plan_has_undeploy_target = obj.undeploys_into.is_some();
@@ -671,7 +775,7 @@ impl TypeFacts {
     pub(crate) fn building_hidden_occupancy(
         &self,
     ) -> Option<crate::rules::object_type::BuildingHiddenOccupancyProfile> {
-        self.building_hidden_occupancy
+        self.building_hidden_occupancy.as_deref().copied()
     }
 
     /// `[AI] AIBaseSpacing=` for a base-reserving building.
@@ -711,7 +815,7 @@ impl TypeFacts {
         &mut self,
         value: Option<crate::rules::object_type::BuildingHiddenOccupancyProfile>,
     ) {
-        self.building_hidden_occupancy = value;
+        self.building_hidden_occupancy = value.map(Box::new);
     }
 
     /// Install a fixture's `base_reservation_spacing`.
@@ -745,20 +849,86 @@ impl TypeFacts {
     }
 }
 
-/// A Foot object owns its configured locomotor independently of the parsed
-/// `Speed=` scalar. `DriveLocomotionClass::Process @ 0x004B0500` and
-/// `ShipLocomotionClass::Process @ 0x0069FC10` consume their class-local state
-/// without a Speed gate. That state is therefore load-bearing at Speed=0,
-/// while Structures remain outside Foot and other zero-speed custom
-/// locomotors retain the existing inactive compatibility behavior.
-fn should_construct_locomotor(category: EntityCategory, object: &ObjectType) -> bool {
-    object.speed > 0
-        || (matches!(
-            category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-        ) && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "perma_disguise_tests.rs"]
 mod perma_disguise_tests;
+
+#[cfg(test)]
+#[test]
+fn zero_speed_infantry_keeps_walk_instance_through_spawn_and_save() {
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::movement::locomotor::LocomotorState;
+
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n0=STATIC\n\
+         [STATIC]\nStrength=100\nSpeed=0\nSpeedType=Foot\nMovementZone=Normal\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
+    let actor = sim
+        .spawn_object_at_height("STATIC", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let locomotor = sim
+        .substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .expect("Infantry517B44 constructs its locomotor even at Speed0");
+    assert_eq!(locomotor.active_kind(), LocomotorKind::Walk);
+    locomotor.power_off();
+    let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "stationary-infantry", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    let locomotor: &LocomotorState = restored
+        .entities()
+        .get(actor)
+        .unwrap()
+        .locomotor
+        .as_ref()
+        .unwrap();
+    assert_eq!(locomotor.active_kind(), LocomotorKind::Walk);
+    assert!(
+        !locomotor.is_powered(),
+        "the actual saved instance survives"
+    );
+    assert_eq!(rules.object("STATIC").unwrap().speed, 0);
+}
+
+/// #4974: a map registered `YANH` as `Image=MTNK` with a Jumpjet locomotor
+/// and no `Speed=`, so the type's speed stayed at its default 0. Native's
+/// Unit constructor still creates the instance (`0x007354CE..0x00735566`);
+/// VERA's old zero-speed gate left it out and a chrono reinforcement then
+/// panicked on the missing instance.
+#[cfg(test)]
+#[test]
+fn zero_speed_jumpjet_unit_keeps_its_constructed_locomotor() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::rules::ruleset::RuleSet;
+
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=YANH\n\
+         [YANH]\nStrength=100\nImage=MTNK\nMovementZone=Fly\n\
+         Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
+    let actor = sim
+        .spawn_object_at_height("YANH", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    assert_eq!(rules.object("YANH").unwrap().speed, 0);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(actor)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .expect("the Unit constructor (0x7354CE) builds its instance without a Speed test")
+            .active_kind(),
+        LocomotorKind::Jumpjet
+    );
+}

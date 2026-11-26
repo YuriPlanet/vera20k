@@ -23,6 +23,7 @@ from tools.native_oracle import (
     RET_MAGIC, SCRATCH, SCRATCH_SIZE, STACK_BASE, STACK_SIZE,
     finish_vectors, load_image, provenance, run_checked,
 )
+from tools.native_oracle import require
 
 RIGHT_DRAG = 0x00693440
 SCROLL_MAP = 0x004A9840
@@ -1177,7 +1178,7 @@ def radar_click_generate():
     rows = [RadarClickFixture(spec).execute() for spec in radar_click_inputs()]
     startup = rows[0]['geometry_startup']
     for row in rows:
-        assert row.pop('geometry_startup') == startup
+        require(row.pop('geometry_startup') == startup, 'geometry_startup differs from the shared value')
         admitted = row['input']['name'] in ('moving_occupied', 'stopped_occupied', 'empty_physical_ramp')
         assert row['refresh_calls'] == int(admitted)
         assert any(call['name'] == 'cell_center' for call in row['calls']) == admitted

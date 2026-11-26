@@ -21,13 +21,22 @@ pub(crate) struct MatchState {
     /// Input state for ExecuteDoList's blocking checksum-error message box.
     /// The suspended frame and mismatch remain owned by Simulation.
     pub(crate) network_failure: Option<super::network_failure::NetworkFailureModal>,
+    /// VERA-only: a network frame failed before commit (`FrameAdvanceError`).
+    /// The world keeps partial writes, so it never advances again; the same
+    /// checksum box ends the match instead of resuming a suspended frame, with
+    /// a body that calls it an error rather than a desync.
+    pub(crate) frame_stopped: bool,
     /// Physical byte transport and packet progress for an installed match.
-    /// Session owns the accepted participant roster and checksum history.
+    /// Session owns the accepted participant roster; `sim_runtime` (`SimHost`)
+    /// owns the checksum history.
     pub(crate) live_network: Option<crate::net::live_commands::LiveCommandSession>,
     /// LAN visit transport before the match, then discovery metadata while the
     /// same sockets are owned by live_network. Session owns admitted endpoints.
     pub(crate) lan_service: Option<crate::app::lan_service::LanService>,
-    pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
+    /// The process-lifetime simulation host and its installed runtime, if
+    /// any. Reads take `runtime()`; writes name a
+    /// [`SimWrite`](super::sim_host::SimWrite) route.
+    pub(crate) sim_runtime: super::sim_host::SimHost,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,
     /// Match presentation owner (F12), part 1: per-match atlases + cursor.
@@ -38,6 +47,8 @@ pub(crate) struct MatchState {
     /// App-owned diagnostic recording (F10) — never inside the simulation, so
     /// no load/install path can silently drop an unflushed segment.
     pub(crate) match_diagnostics: crate::app::match_diagnostics::MatchDiagnosticsState,
+    /// Online match network quality record; wall-clock, never simulation input.
+    pub(crate) network_quality: super::network_quality::NetworkQualityStats,
     /// Read-only process measurements; never inputs to the simulation.
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_timing: super::telemetry::TickTimingRing,
@@ -78,18 +89,11 @@ pub(crate) struct MatchState {
     pub(crate) scenario_elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
     /// Config-sourced input delay — copied to each new Simulation instance at game start.
     pub(crate) configured_input_delay_ticks: u64,
-    /// Explicit development HUD/command preference. Only consulted when the
-    /// live scenario has no current House; ordinary matches derive their
-    /// identity from serialized `Simulation.session.current_house`.
-    pub(crate) local_owner_override: Option<String>,
     /// Seeded empty-map sandbox keeps full map visibility while still locking control.
     pub(crate) sandbox_full_visibility: bool,
     /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
-    /// Effective simulation ticks per second — controls game speed.
-    /// Default follows retail/YR skirmish stored game speed 1.
-    pub(crate) sim_speed_tps: u32,
 }
 
 impl MatchState {
@@ -99,19 +103,65 @@ impl MatchState {
         presentation_pause_for_screen(
             screen,
             self.paused(),
-            self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
+            self.sim_runtime.runtime().map(|rt| rt.simulation.session()),
         )
     }
-    /// True when the game is paused and the simulation frozen: an in-scenario
-    /// modal is open, or the debug pause is on.
+    /// Native elapsed-clock intent excludes the relay hold and network
+    /// menus: those menus never stop the score clock. Audio still combines
+    /// every physical pause through presentation_paused.
+    pub(crate) fn elapsed_clock_paused(&self, screen: &crate::ui::game_screen::GameScreen) -> bool {
+        self.match_presentation.narrative_sync.pending()
+            || elapsed_clock_pause_for_screen(
+                screen,
+                self.session_mode(),
+                self.match_presentation.in_game_menu.is_open(),
+                self.match_presentation
+                    .radar_anim
+                    .as_ref()
+                    .is_some_and(|radar| radar.movie_pause()),
+                self.sim_runtime
+                    .runtime()
+                    .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
+                self.match_presentation.commander_feedback.result_waits(),
+            )
+    }
+
     pub(crate) fn paused(&self) -> bool {
+        self.local_paused() || self.multiplayer_paused()
+    }
+
+    pub(crate) fn local_paused(&self) -> bool {
         self.match_presentation.in_game_menu.is_open()
+            || self.match_presentation.narrative_sync.pending()
             || self.debug_pause
             || self
                 .match_presentation
                 .radar_anim
                 .as_ref()
                 .is_some_and(|radar| radar.movie_pause())
+    }
+
+    /// The relay's marker applies after the entire barrier frame, including a
+    /// retained post-Logic transaction. This is a view of network authority,
+    /// not an app-owned pause flag or a Scenario pause credit.
+    pub(crate) fn multiplayer_paused(&self) -> bool {
+        self.live_network
+            .as_ref()
+            .and_then(|live| live.multiplayer_pause())
+            .zip(self.sim_runtime.runtime())
+            .is_some_and(|(pause, runtime)| {
+                multiplayer_pause_reached(
+                    pause,
+                    runtime.simulation.session().binary_frame(),
+                    runtime.simulation.pending_network_wait(),
+                )
+            })
+    }
+
+    pub(crate) fn sync_multiplayer_pause_clock(&mut self, wall_ms: u64) {
+        let paused = self.multiplayer_paused();
+        self.scenario_elapsed_clock
+            .set_multiplayer_paused(paused, wall_ms);
     }
 
     /// Main_Tick (`0x0055D360`) is not running. A LAN/WOL modal's pump
@@ -121,13 +171,15 @@ impl MatchState {
     /// local diagnostic gate; native offline Scenario62C gates all its holds.
     pub(crate) fn main_tick_frozen(&self) -> bool {
         self.sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
             || self.debug_pause
+            || self.multiplayer_paused()
+            || self.match_presentation.narrative_sync.pending()
             || super::scenario_pause::blocks_main_tick(
                 self.session_mode(),
                 self.sim_runtime
-                    .as_ref()
+                    .runtime()
                     .is_some_and(|rt| rt.simulation.session().scenario_paused()),
             )
             || (self.match_presentation.in_game_menu.is_open() && !self.session_mode().is_network())
@@ -139,16 +191,79 @@ impl MatchState {
     pub(crate) fn session_mode(&self) -> super::session::SessionMode {
         held_session_mode(
             &self.session,
-            self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
+            self.sim_runtime.runtime().map(|rt| rt.simulation.session()),
         )
     }
 
     /// The live scenario's pinned player, including a successfully restored save.
     pub(crate) fn local_player_owner(&self) -> Option<&str> {
         self.sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
     }
+
+    /// Immutable view of the running simulation (F10): the read boundary
+    /// presentation cones consume. `None` outside a match. Sites that also
+    /// hold `&mut` match parts keep the `sim_runtime` field chain and call
+    /// `rt.view()` directly for split borrows.
+    pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
+        self.sim_runtime.runtime().map(|rt| rt.view())
+    }
+
+    /// Current terrain authority, replaced together with the running world on
+    /// map load and restore. No presentation height projection is retained.
+    pub(crate) fn resolved_terrain(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime.runtime()?.simulation.resolved_terrain()
+    }
+
+    /// The immutable base resolved-terrain template for the active match
+    /// (static rendering + restore); never the live sim grid.
+    pub(crate) fn terrain_template(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.sim_runtime
+            .runtime()
+            .and_then(|rt| rt.resources.terrain_template.as_ref())
+    }
+
+    /// Bring VERA's relation colours up to date with the world, as the local
+    /// house sees it.
+    pub(crate) fn refresh_relation_colors(&mut self) {
+        if let Some(runtime) = self.sim_runtime.runtime() {
+            let sim = &runtime.simulation;
+            self.match_presentation
+                .rebuild_relation_color_map(sim, scenario_local_owner(sim));
+        }
+    }
+}
+
+fn multiplayer_pause_reached(
+    pause: crate::net::live_commands::MultiplayerPauseStatus,
+    next_frame: u32,
+    transaction_pending: bool,
+) -> bool {
+    pause.available && pause.paused && next_frame > pause.frame && !transaction_pending
+}
+
+/// `result_waits` is VERA's: a published result the exit router leaves
+/// waiting for a commander clip. Native routes a result after the frame that
+/// publishes it, so its score time ends on that frame; the clip's own pause
+/// and resume must not restart the clock.
+fn elapsed_clock_pause_for_screen(
+    screen: &crate::ui::game_screen::GameScreen,
+    mode: super::session::SessionMode,
+    menu_open: bool,
+    movie_paused: bool,
+    scenario_paused: bool,
+    result_waits: bool,
+) -> bool {
+    matches!(screen, crate::ui::game_screen::GameScreen::InGame)
+        && (movie_paused
+            || result_waits
+            || (menu_open && !mode.is_network())
+            || super::scenario_pause::blocks_main_tick(mode, scenario_paused))
 }
 
 /// A retained runtime can outlive its tactical screen. This is a physical
@@ -173,12 +288,33 @@ fn held_session_mode(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
-    use super::{held_session_mode, presentation_pause_for_screen};
+    use super::{
+        elapsed_clock_pause_for_screen, held_session_mode, multiplayer_pause_reached,
+        presentation_pause_for_screen,
+    };
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
     use crate::sim::world::Simulation;
     use crate::ui::game_screen::GameScreen;
+
+    #[test]
+    fn shared_pause_waits_for_the_complete_barrier_and_survives_pending_resume() {
+        let mut pause = crate::net::live_commands::MultiplayerPauseStatus {
+            available: true,
+            paused: true,
+            frame: 42,
+            epoch: 1,
+            pending: false,
+        };
+        assert!(!multiplayer_pause_reached(pause, 42, false));
+        assert!(!multiplayer_pause_reached(pause, 43, true));
+        assert!(multiplayer_pause_reached(pause, 43, false));
+        pause.pending = true;
+        assert!(multiplayer_pause_reached(pause, 43, false));
+        pause.paused = false;
+        assert!(!multiplayer_pause_reached(pause, 43, false));
+    }
 
     #[test]
     fn game_mode_reads_from_its_one_holder() {
@@ -205,8 +341,50 @@ mod tests {
         );
     }
 
+    /// A result the exit router leaves waiting for a commander clip keeps the
+    /// score clock stopped, although the clip itself does not pause the match.
+    #[test]
+    fn a_result_waiting_for_a_clip_keeps_the_score_clock_stopped() {
+        let paused = |result_waits| {
+            elapsed_clock_pause_for_screen(
+                &GameScreen::InGame,
+                SessionMode::Skirmish,
+                false,
+                false,
+                false,
+                result_waits,
+            )
+        };
+        assert!(!paused(false));
+        assert!(paused(true));
+    }
+
     #[test]
     fn retained_pause_does_not_leak_into_result_or_shell_audio() {
+        assert!(elapsed_clock_pause_for_screen(
+            &GameScreen::InGame,
+            SessionMode::Skirmish,
+            true,
+            false,
+            false,
+            false
+        ));
+        assert!(!elapsed_clock_pause_for_screen(
+            &GameScreen::InGame,
+            SessionMode::Wol,
+            true,
+            false,
+            true,
+            false
+        ));
+        assert!(elapsed_clock_pause_for_screen(
+            &GameScreen::InGame,
+            SessionMode::Wol,
+            true,
+            true,
+            false,
+            false
+        ));
         let mut sim = Simulation::with_seed(0);
         sim.publish_scenario_started();
         sim.pause_scenario_for_test(2);
@@ -254,7 +432,6 @@ mod tests {
 /// Native current House A83D4C is saved67F802, loaded67F9F3 and swizzled67FA0E.
 /// Do not retain a separate app owner across Simulation replacement or infer it
 /// from selection/human flags. Save validation owns reference validity.
-/// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
 pub(crate) fn scenario_local_owner(simulation: &crate::sim::world::Simulation) -> Option<&str> {
     simulation
         .session()

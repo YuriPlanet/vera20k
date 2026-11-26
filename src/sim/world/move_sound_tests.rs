@@ -46,9 +46,9 @@ fn assert_rng(sim: &Simulation, expected: &Value, context: &str) {
 fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     let seed = input["seed"].as_u64().unwrap_or(31);
     let mut sim = Simulation::with_seed(seed);
-    sim.main_rng = SimRng::new(seed).into();
-    sim.scenario_rng = SimRng::new(seed);
-    sim.mapgen_rng = SimRng::new(seed);
+    *sim.main_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
+    *sim.mapgen_rng = SimRng::new(seed);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Americans");
@@ -121,7 +121,7 @@ fn native_effects(step: &Value, coordinates: bool) -> Vec<Value> {
         .collect()
 }
 
-fn effects(id: u64, events: &[SimSoundEvent], coordinates: bool) -> Vec<Value> {
+fn effects(rules: &RuleSet, id: u64, events: &[SimSoundEvent], coordinates: bool) -> Vec<Value> {
     events
         .iter()
         .filter_map(|event| match event {
@@ -138,9 +138,13 @@ fn effects(id: u64, events: &[SimSoundEvent], coordinates: bool) -> Vec<Value> {
                 sound_id,
                 world,
             } if *anim_id == id => Some(if coordinates {
-                json!(["playback", sound_id, [world.x, world.y, world.z]])
+                json!([
+                    "playback",
+                    sound_id.name_in(rules),
+                    [world.x, world.y, world.z]
+                ])
             } else {
-                json!(["playback", sound_id])
+                json!(["playback", sound_id.name_in(rules)])
             }),
             SimSoundEvent::ObjectSoundReleased { owner } if *owner == id => {
                 Some(json!(["release"]))
@@ -172,8 +176,8 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         .get();
     let object = rules.object("SQD").unwrap();
     let (_, draws) = crate::sim::rng::trace_draws(|| {
-        crate::sim::animation::tick_foot_body_frame_counter(
-            sim.substrate.entities.get_mut(id).unwrap(),
+        let due = crate::sim::animation::foot_body_frame_due(
+            sim.substrate.entities.get(id).unwrap(),
             crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
             crate::sim::animation::FootBodyCadence {
                 walk_rate: object.walk_rate,
@@ -181,13 +185,18 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             },
             object.hover_attack,
             object.deploy_to_land,
+            0,
             None,
             sim.session.binary_frame(),
+        );
+        crate::sim::animation::tick_foot_body_frame_counter(
+            sim.substrate.entities.get_mut(id).unwrap(),
+            due,
         );
         Simulation::tick_move_sound_after_process(
             &sim.interner,
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.substrate,
             &mut sim.sound_events,
             &sim.houses,
@@ -220,7 +229,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         native_draws,
         "{context}: raw draw count/order"
     );
-    let actual = effects(id, &sim.sound_events, true);
+    let actual = effects(&rules, id, &sim.sound_events, true);
     assert_eq!(
         actual.len(),
         sim.sound_events.len(),
@@ -344,7 +353,7 @@ fn native_foot_load_reset_runs_through_snapshot_restore_then_the_next_visit() {
         // Native Scenario reload reseeds separately. This bounded raw-object
         // load fixture does not execute that operation; restore the explicitly
         // supplied Scenario boundary before comparing its next Foot visit.
-        loaded.scenario_rng = SimRng::from_native_state_hex_for_test(
+        *loaded.scenario_rng = SimRng::from_native_state_hex_for_test(
             row["next_visit"]["before"]["rng"]["scenario"]
                 .as_str()
                 .unwrap(),
@@ -373,7 +382,7 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
             MoveSoundState::from_raw_for_test(active, 3);
         sim.uninit_with_rules(id, &rules);
         assert_eq!(
-            effects(id, &sim.sound_events, true),
+            effects(&rules, id, &sim.sound_events, true),
             native_effects(original_limbo, true)
         );
         assert!(sim.substrate.pending_delete.contains_object(&id));
@@ -381,13 +390,12 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
         expected.extend(native_effects(original_destructor, true));
         sim.process_pending_delete_with(
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
         assert_eq!(
-            effects(id, &sim.sound_events, true),
+            effects(&rules, id, &sim.sound_events, true),
             expected,
             "latch {active}: original Limbo then physical Foot release; Object+3C/+50 are different handles"
         );
@@ -423,14 +431,14 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
         visits: RefCell<Vec<(u64, u32, crate::sim::anim_class::AnimWorldCoord, bool)>>,
     }
     impl super::SoundBoundary for LoopPhase {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             self.delivered.set(events.len());
         }
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
         fn update_looping_sound(
-            &self,
+            &mut self,
             sim: &Simulation,
             owner: u64,
             world: crate::sim::anim_class::AnimWorldCoord,
@@ -476,15 +484,14 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
     let main = sim.main_rng.native_state_hex();
     let scenario = sim.scenario_rng.native_state_hex();
     let before = Simulation::movement_sound_world(sim.substrate.entities.get(actor).unwrap());
-    let phase = LoopPhase::default();
+    let mut phase = LoopPhase::default();
     let output = sim
         .advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
-            super::FrameEffects::for_sound(&phase),
+            &mut super::FrameEffects::for_sound(&mut phase),
         )
         .unwrap();
     let entity = sim.substrate.entities.get(actor).unwrap();
@@ -515,10 +522,9 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
         .advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
-            super::FrameEffects::for_sound(&phase),
+            &mut super::FrameEffects::for_sound(&mut phase),
         )
         .unwrap();
     assert!(
@@ -533,7 +539,7 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
     assert_eq!(phase.visits.borrow().len(), 2);
     assert!(output.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-            if *anim_id == actor && sound_id.eq_ignore_ascii_case("YuriPrimeMoveLoop"))));
+            if *anim_id == actor && sound_id.name_in(&rules).eq_ignore_ascii_case("YuriPrimeMoveLoop"))));
 }
 
 fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
@@ -569,7 +575,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
                 ry,
                 0,
                 &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
+                runtime.resources.rules.overlay_registry(),
             )
         })
         .expect("ordinary SQD placement on physical retail water");
@@ -583,9 +589,8 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
     // dispatch intact. This is not a whole-map startup RNG comparison.
     sim.session
         .set_binary_frame_for_test(steps[0]["frame"].as_u64().unwrap() as u32);
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap())
-            .into();
+    *sim.main_rng =
+        SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap());
     for step in steps {
         let native_frame = step["frame"].as_u64().unwrap() as u32;
         assert_eq!(
@@ -598,7 +603,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("paid ordinary production frame");
         assert!(output.tick.frame_committed);
@@ -617,7 +622,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
             "{name}: paid original frame {native_frame}"
         );
         assert_eq!(
-            effects(id, &output.sound_events, false),
+            effects(&runtime.resources.rules, id, &output.sound_events, false),
             native_effects(step, false),
             "{name}: paid original frame {native_frame}: captured-before-Process counter reaches sound owner"
         );

@@ -66,28 +66,17 @@
 //!   idle slaves and hunts.
 //!
 //! ## Residuals
-//! - FootClass::Mission_Hunt's reset when it picks a destination
-//!   (`0x004D553D..0x004D5547`) has no VERA anchor: VERA's Hunt port has no
-//!   destination step. Trigger: a Slave Miner on Hunt (an AI's failed Unload
-//!   deploy). Effect: retail resets the hunt, VERA does not. Frequency: rare.
-//!   Downstream: none.
 //! - The Slave Miner carries a Miner component (`MinerKind::Slave`) as
 //!   VERA's order marker: input issues the Harvest order for it where native
 //!   `UnitClass::What_Action` gives the Harvest action to a
 //!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
 //!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).
-//! - FreeSlaves callers other than the death arm (`0x00702065`), the Temporal
-//!   erase (`0x0071AAA7`) and the destructor (`0x006F4571`): the Teleport
-//!   post-warp (`0x00718998`, `0x00718AEF`) and the Jumpjet crash
-//!   (`0x0054CEDF`) pass their own killer; VERA's destructor fallback hands
-//!   those slaves to the Civilian house instead. No stock Slave Miner warps or
-//!   flies.
 //!
 //! ## Dependency rules
 //! - Part of sim/; sim/ never depends on render/, ui/, audio/, net/.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::overlay_types::{OverlayTypeRegistry, TiberiumImageError};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::game_entity::GameEntity;
@@ -268,6 +257,20 @@ impl SlaveManager {
         self.ai_timer
     }
 
+    /// SlaveManagerClass::SuspendWork as Ares inlines it (EnableEMPEffect2
+    /// 10062980, the driver change 100458F3..10045953): the AI timer's start
+    /// becomes -1 and keeps its duration, a duration of 0 raised to 1.
+    pub(crate) fn suspend_work(&mut self) {
+        let duration = self.ai_timer.duration();
+        self.ai_timer = CdTimer::from_raw(-1, if duration == 0 { 1 } else { duration });
+    }
+
+    /// SlaveManagerClass::ResumeWork as Ares inlines it (DisableEMPEffect2
+    /// 10062650, the driver change): a -1 start becomes `now`.
+    pub(crate) fn resume_work(&mut self, now: i32) {
+        self.ai_timer.resume(now);
+    }
+
     /// The slaves the nodes hold, in node order.
     pub(crate) fn slaves(&self) -> impl Iterator<Item = u64> + '_ {
         self.nodes.iter().filter_map(|node| node.slave)
@@ -298,7 +301,10 @@ impl SlaveManager {
 
 /// The slave side, on the slave itself: SlaveOwner (`TechnoClass+0x2DC`),
 /// the master whose manager holds it, and its Storage (`+0x33C`), one bale
-/// per level of ore or gems. Only this module writes it.
+/// per level of ore or gems. The cargo is the Storage of every object
+/// without a [`crate::sim::miner::Miner`], which covers all infantry, a
+/// freed slave and a Full team's masterless SLAV or WEEDGUY. Only this
+/// module writes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SlaveLink {
     owner: Option<u64>,
@@ -314,6 +320,12 @@ impl SlaveLink {
     /// The Storage levels the slave carries, in the order it cut them.
     pub fn cargo(&self) -> &[CargoBale] {
         &self.cargo
+    }
+
+    /// [`crate::sim::miner::add_amount`] on this hold: the slave's harvest
+    /// and [`GameEntity::add_storage_bales`].
+    pub(crate) fn add_bales(&mut self, bale: CargoBale, amount: u16) {
+        crate::sim::miner::add_amount(&mut self.cargo, bale, amount);
     }
 
     /// A slave of `master` carrying `cargo`, for fixtures.
@@ -411,7 +423,11 @@ fn cell_distance(dx: i16, dy: i16) -> i32 {
 
 impl Simulation {
     fn slave_manager(&self, master: u64) -> Option<&SlaveManager> {
-        self.substrate.entities.get(master)?.slave_manager.as_ref()
+        self.substrate
+            .entities
+            .get(master)?
+            .slave_manager
+            .as_deref()
     }
 
     fn now_frame(session: &ScenarioSession) -> i32 {
@@ -428,7 +444,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((slave_type, count, regen, reload, owner, cell, facing, z)) =
             self.substrate.entities.get(master).and_then(|parent| {
@@ -444,7 +460,7 @@ impl Simulation {
                     object.slaves_number.max(0),
                     object.slave_regen_rate,
                     object.slave_reload_rate,
-                    self.interner.resolve(parent.owner()).to_string(),
+                    parent.owner(),
                     (parent.position.rx(), parent.position.ry()),
                     parent.body_facing_byte(self.session.binary_frame()),
                     parent.position.z(),
@@ -457,7 +473,7 @@ impl Simulation {
         for _ in 0..count {
             let slave = self.construct_resolved_object_limbo_at_height(
                 slave_type,
-                &owner,
+                owner,
                 cell.0,
                 cell.1,
                 facing,
@@ -466,14 +482,16 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(entity) = slave.and_then(|slave| self.substrate.entities.get_mut(slave)) {
-                entity.slave.owner = Some(master);
+                entity.seldom.slave.owner = Some(master);
             }
             slaves.push(slave);
         }
         let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
-            parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));
+            parent.slave_manager = Some(Box::new(SlaveManager::new(
+                slave_type, slaves, regen, reload, now,
+            )));
         }
     }
 
@@ -484,18 +502,19 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
         let Some(manager) = self.substrate.slave_manager_mut(master) else {
-            return;
+            return Ok(());
         };
         if !manager.ai_timer.expired(now) {
-            return;
+            return Ok(());
         }
         manager.ai_timer.start(now, 10);
-        self.slave_ai_update(master, rules, registry, frame_effects);
-        self.slave_manager_step(master, rules, registry, frame_effects);
+        self.slave_ai_update(master, rules, registry, frame_effects)?;
+        self.slave_manager_step(master, rules, registry, frame_effects)?;
+        Ok(())
     }
 
     /// `SlaveManagerClass::AI_Update @ 0x006AF6C0`: each node in order.
@@ -504,15 +523,15 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
         let count = self.slave_manager(master).map_or(0, |m| m.nodes.len());
         for index in 0..count {
             let Some(manager) = self.slave_manager(master) else {
-                return;
+                return Ok(());
             };
             let Some(mut node) = manager.nodes.get(index).copied() else {
-                return;
+                return Ok(());
             };
             let regen_rate = manager.regen_rate;
             // 0x006AF6EB..0x006AF724: a node whose slave is gone is lost.
@@ -520,7 +539,7 @@ impl Simulation {
                 node.state = SlaveState::Dead;
                 node.timer.start(Self::now_frame(&self.session), regen_rate);
             }
-            self.slave_node_step(master, &mut node, rules, registry, frame_effects);
+            let result = self.slave_node_step(master, &mut node, rules, registry, frame_effects);
             if let Some(slot) = self
                 .substrate
                 .slave_manager_mut(master)
@@ -528,7 +547,11 @@ impl Simulation {
             {
                 *slot = node;
             }
+            // Preserve this node's writes preceding a failed native image
+            // read, but stop before the next node or the manager's own AI.
+            result?;
         }
+        Ok(())
     }
 
     fn slave_node_step(
@@ -537,21 +560,33 @@ impl Simulation {
         node: &mut SlaveNode,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
         match node.state {
             SlaveState::Ready => {}
             SlaveState::Scanning => {
-                let Some(slave) = node.slave else { return };
-                // 0x006AF73B: the Foot Scan_For_Tiberium over SlaveMinerSlaveScan.
-                let range =
-                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_slave_scan);
+                let Some(slave) = node.slave else {
+                    return Ok(());
+                };
+                // 0x006AF73B: the Foot Scan_For_Tiberium over SlaveMinerSlaveScan;
+                // Ares 3.0 1004D560 (hook 0x6AF748): the slave's
+                // Harvester.ShortScan.
+                let range = crate::sim::miner::ore_scan::scan_cells(
+                    crate::sim::miner::ore_scan::harvester_value(
+                        self.substrate
+                            .entities
+                            .get(slave)
+                            .and_then(|entity| self.entity_object_type(entity, rules)),
+                        crate::sim::miner::ore_scan::HarvesterKey::ShortScan,
+                        rules.general.slave_miner_slave_scan,
+                    ),
+                );
                 match crate::sim::miner::ore_scan::scan_for_tiberium(
                     self, rules, registry, slave, range,
-                ) {
+                )? {
                     Some(cell) => {
-                        self.send_slave(slave, cell, rules, registry, frame_effects);
+                        self.send_slave(slave, cell, rules, frame_effects);
                         node.state = SlaveState::Moving;
                     }
                     None => {
@@ -559,16 +594,18 @@ impl Simulation {
                             entity.set_archive_target(None);
                         }
                         if let Some(drop) = self.slave_drop_cell(master, rules) {
-                            self.send_slave(slave, drop, rules, registry, frame_effects);
+                            self.send_slave(slave, drop, rules, frame_effects);
                         }
                         node.state = SlaveState::Returning;
                     }
                 }
             }
             SlaveState::Moving => {
-                let Some(slave) = node.slave else { return };
+                let Some(slave) = node.slave else {
+                    return Ok(());
+                };
                 let Some(entity) = self.substrate.entities.get(slave) else {
-                    return;
+                    return Ok(());
                 };
                 let cell = (entity.position.rx(), entity.position.ry());
                 let driving = entity.navigation.nav_com().is_some();
@@ -581,9 +618,11 @@ impl Simulation {
                 }
             }
             SlaveState::Harvesting => {
-                let Some(slave) = node.slave else { return };
+                let Some(slave) = node.slave else {
+                    return Ok(());
+                };
                 let Some(entity) = self.substrate.entities.get(slave) else {
-                    return;
+                    return Ok(());
                 };
                 let cell = (entity.position.rx(), entity.position.ry());
                 // 0x00522FC0: Get_Mission (vt+0x184 = 0x005B3040, the current
@@ -595,7 +634,7 @@ impl Simulation {
                         entity.set_archive_target(Some(TargetKind::Cell(cell.0, cell.1)));
                     }
                     if let Some(drop) = self.slave_drop_cell(master, rules) {
-                        self.send_slave(slave, drop, rules, registry, frame_effects);
+                        self.send_slave(slave, drop, rules, frame_effects);
                     }
                     node.state = SlaveState::Returning;
                 } else if !crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell)
@@ -610,12 +649,14 @@ impl Simulation {
                 }
             }
             SlaveState::Returning => {
-                let Some(slave) = node.slave else { return };
-                self.slave_returning_step(master, slave, node, rules, registry, frame_effects);
+                let Some(slave) = node.slave else {
+                    return Ok(());
+                };
+                self.slave_returning_step(master, slave, node, rules, frame_effects);
             }
             SlaveState::Reloading => {
                 if !node.timer.expired(now) {
-                    return;
+                    return Ok(());
                 }
                 // 0x006AFCDF..0x006AFCF4: Strength and EstimatedHealth back to
                 // the type's Strength, then ready.
@@ -637,10 +678,11 @@ impl Simulation {
             }
             SlaveState::Dead => {
                 if node.timer.expired(now) {
-                    self.regrow_slave(master, node, rules, registry, frame_effects);
+                    self.regrow_slave(master, node, rules, frame_effects);
                 }
             }
         }
+        Ok(())
     }
 
     /// AI_Update state 4 (`0x006AF9FE..0x006AFCD4`).
@@ -650,8 +692,7 @@ impl Simulation {
         slave: u64,
         node: &mut SlaveNode,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(drop) = self.slave_drop_cell(master, rules) else {
             return;
@@ -682,12 +723,12 @@ impl Simulation {
         if cell == drop && nav_com.is_none() {
             // 0x006AFBCC: pay, go inside and reload.
             self.slave_deposit(slave, master, rules);
-            self.limbo_slave(slave, rules, registry, frame_effects);
+            self.limbo_slave(slave, rules, frame_effects);
             let reload = self.slave_manager(master).map_or(0, |m| m.reload_rate);
             node.state = SlaveState::Reloading;
             node.timer.start(Self::now_frame(&self.session), reload);
         } else if nav_com.is_none() || drifted {
-            self.send_slave(slave, drop, rules, registry, frame_effects);
+            self.send_slave(slave, drop, rules, frame_effects);
         }
     }
 
@@ -697,21 +738,21 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
         let now = Self::now_frame(&self.session);
         let Some(owner) = self.substrate.entities.get(master) else {
-            return;
+            return Ok(());
         };
         let building = owner.category() == EntityCategory::Structure;
         let unit = owner.category() == EntityCategory::Unit;
         let driving = owner.navigation.nav_com().is_some();
-        let deploy_pending = owner.mcv_deploy_pending.is_pending();
+        let deploy_pending = owner.seldom.mcv_deploy_pending.is_pending();
         let guarding = owner.mission.current().known() == Some(MissionType::Guard);
         let constructing_or_selling = owner.constructing_or_selling();
         let built = !owner.in_construction_bstate();
         let Some(state) = self.slave_manager(master).map(SlaveManager::state) else {
-            return;
+            return Ok(());
         };
         match state {
             ManagerState::Ready => {
@@ -727,16 +768,25 @@ impl Simulation {
                 if unit && driving {
                     self.substrate
                         .set_manager_state(master, ManagerState::Travelling, i32::MAX);
-                    return;
+                    return Ok(());
                 }
                 // 0x006AFDF2..0x006AFEBF: the nearest field within
                 // SlaveMinerLongScan (the owner's Scan_For_Tiberium), a cell
-                // there to deploy on, and the drive to it.
-                let range =
-                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_long_scan);
+                // there to deploy on, and the drive to it. Ares 3.0 1004D470
+                // (hook 0x6AFDFC): the owner's Harvester.LongScan.
+                let range = crate::sim::miner::ore_scan::scan_cells(
+                    crate::sim::miner::ore_scan::harvester_value(
+                        self.substrate
+                            .entities
+                            .get(master)
+                            .and_then(|entity| self.entity_object_type(entity, rules)),
+                        crate::sim::miner::ore_scan::HarvesterKey::LongScan,
+                        rules.general.slave_miner_long_scan,
+                    ),
+                );
                 let target = crate::sim::miner::ore_scan::scan_for_tiberium(
                     self, rules, registry, master, range,
-                )
+                )?
                 .and_then(|field| self.find_deploy_cell(master, field, rules));
                 match target {
                     None => self
@@ -798,20 +848,29 @@ impl Simulation {
                     // 0x006B003C: an undeployed Slave Miner stops working.
                     self.substrate
                         .set_manager_state(master, ManagerState::Ready, now);
-                    return;
+                    return Ok(());
                 }
                 // 0x006B0062..0x006B009A: no ore within SlaveMinerShortScan
-                // of the refinery puts its relocation to the test.
-                let short =
-                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_short_scan);
+                // of the refinery puts its relocation to the test. Ares 3.0
+                // 1004D510 (hooks 0x6B006D/0x6B026C): Harvester.ShortScan.
+                let short = crate::sim::miner::ore_scan::scan_cells(
+                    crate::sim::miner::ore_scan::harvester_value(
+                        self.substrate
+                            .entities
+                            .get(master)
+                            .and_then(|entity| self.entity_object_type(entity, rules)),
+                        crate::sim::miner::ore_scan::HarvesterKey::ShortScan,
+                        rules.general.slave_miner_short_scan,
+                    ),
+                );
                 if crate::sim::miner::ore_scan::scan_for_tiberium(
                     self, rules, registry, master, short,
-                )
+                )?
                 .is_none()
-                    && self.refinery_should_relocate(master, rules, registry)
+                    && self.refinery_should_relocate(master, rules, registry)?
                 {
                     self.relocate_refinery(master, rules);
-                    return;
+                    return Ok(());
                 }
                 self.deploy_slaves(master, rules, registry, frame_effects);
             }
@@ -825,6 +884,7 @@ impl Simulation {
                 }
             }
         }
+        Ok(())
     }
 
     /// `UnitClass::Deploy` (`deploy_mcv`) from states 2 and 3, which write
@@ -839,7 +899,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.substrate
             .set_manager_state(master, ManagerState::Deployed, i32::MAX);
@@ -863,16 +923,25 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> bool {
-        let long = crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_long_scan);
+    ) -> Result<bool, TiberiumImageError> {
+        // Ares 3.0 1004D470 (hooks 0x6B00BD/0x6B02CC): Harvester.LongScan.
+        let long =
+            crate::sim::miner::ore_scan::scan_cells(crate::sim::miner::ore_scan::harvester_value(
+                self.substrate
+                    .entities
+                    .get(master)
+                    .and_then(|entity| self.entity_object_type(entity, rules)),
+                crate::sim::miner::ore_scan::HarvesterKey::LongScan,
+                rules.general.slave_miner_long_scan,
+            ));
         let field =
-            crate::sim::miner::ore_scan::scan_for_tiberium(self, rules, registry, master, long)
+            crate::sim::miner::ore_scan::scan_for_tiberium(self, rules, registry, master, long)?
                 .unwrap_or((0, 0));
         let spot = self
             .find_deploy_cell(master, field, rules)
             .unwrap_or((0, 0));
         let Some(owner) = self.substrate.entities.get(master) else {
-            return false;
+            return Ok(false);
         };
         let own = owner_cell(owner);
         let (fx, fy) = (field.0 as i16, field.1 as i16);
@@ -882,9 +951,17 @@ impl Simulation {
             (spot.1 as i16).wrapping_sub(fy),
         );
         let to_own = cell_distance(own.0.wrapping_sub(fx), own.1.wrapping_sub(fy));
+        // Ares 3.0 1004D4C0 (hook 0x6B01A3): Harvester.ScanCorrection.
         let correction =
-            crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_scan_correction);
-        correction.wrapping_add(to_spot) < to_own
+            crate::sim::miner::ore_scan::scan_cells(crate::sim::miner::ore_scan::harvester_value(
+                self.substrate
+                    .entities
+                    .get(master)
+                    .and_then(|entity| self.entity_object_type(entity, rules)),
+                crate::sim::miner::ore_scan::HarvesterKey::ScanCorrection,
+                rules.general.slave_miner_scan_correction,
+            ));
+        Ok(correction.wrapping_add(to_spot) < to_own)
     }
 
     /// The relocation (`0x006B01C1..0x006B01F5`): the refinery archives its
@@ -903,7 +980,7 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get_mut(master) else {
             return;
         };
-        owner.suppress_deploy_voice.suppress();
+        owner.seldom.suppress_deploy_voice.suppress();
         let (x, y) = owner_cell(owner);
         owner.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             x as u16, y as u16,
@@ -928,7 +1005,7 @@ impl Simulation {
         master: u64,
         cell: (u16, u16),
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !self.set_unit_destination(
             master,
@@ -947,7 +1024,12 @@ impl Simulation {
     /// to Guard (`vt+0x3D0`, `TechnoClass::ResetOrdersToGuard`): the loop
     /// 0x006B0490, 0x006B0C80, 0x006B0CC0, 0x006B0D10 and
     /// HandleReturnedSlaves each run.
-    fn reset_live_slaves(&mut self, master: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
+    fn reset_live_slaves(
+        &mut self,
+        master: u64,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
         let slaves: Vec<u64> = self.slave_manager(master).map_or_else(Vec::new, |manager| {
             manager
                 .nodes
@@ -973,16 +1055,16 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> bool {
+    ) -> Result<bool, TiberiumImageError> {
         let Some(manager) = self.slave_manager(master) else {
-            return false;
+            return Ok(false);
         };
         if manager.state != ManagerState::Ready {
-            return false;
+            return Ok(false);
         }
         let stamp = manager.frame;
         let Some(owner) = self.substrate.entities.get(master) else {
-            return false;
+            return Ok(false);
         };
         let cell = (owner.position.rx(), owner.position.ry());
         if !self
@@ -990,25 +1072,39 @@ impl Simulation {
             .get(&owner.owner())
             .is_some_and(|house| house.is_human())
         {
-            return true;
+            return Ok(true);
         }
         if crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell) {
-            return true;
+            return Ok(true);
         }
-        if rules
-            .general
-            .slave_miner_kick_frame_delay
-            .wrapping_add(stamp)
-            < Self::now_frame(&self.session)
+        // Ares 3.0 1004D3F0 (hook 0x6B1065): the owner's Harvester.KickDelay,
+        // where a negative delay never wakes, then its Harvester.ShortScan.
+        let object = self
+            .substrate
+            .entities
+            .get(master)
+            .and_then(|entity| self.entity_object_type(entity, rules));
+        let delay = crate::sim::miner::ore_scan::harvester_value(
+            object,
+            crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
+            rules.general.slave_miner_kick_frame_delay,
+        );
+        if !(rules.ares() && delay < 0)
+            && delay.wrapping_add(stamp) < Self::now_frame(&self.session)
         {
-            let range =
-                crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_short_scan);
-            return crate::sim::miner::ore_scan::scan_for_tiberium(
+            let range = crate::sim::miner::ore_scan::scan_cells(
+                crate::sim::miner::ore_scan::harvester_value(
+                    object,
+                    crate::sim::miner::ore_scan::HarvesterKey::ShortScan,
+                    rules.general.slave_miner_short_scan,
+                ),
+            );
+            return Ok(crate::sim::miner::ore_scan::scan_for_tiberium(
                 self, rules, registry, master, range,
-            )
-            .is_some();
+            )?
+            .is_some());
         }
-        false
+        Ok(false)
     }
 
     /// `0x006B0CC0`: an idle manager (state 0) starts its owner's hunt for a
@@ -1017,7 +1113,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .slave_manager(master)
@@ -1032,14 +1128,14 @@ impl Simulation {
 
     /// `0x006B0C80`: back to state 0 at now, with the live slaves reset. The
     /// order that takes a Slave Miner off its hunt runs it: a MEGAMISSION
-    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event
-    /// (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
-    /// destination (`0x004D553D..0x004D5547`).
+    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event for a
+    /// Unit (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
+    /// destination (`0x004D553D..0x004D5547`, `hunt_march_on_player`).
     pub(crate) fn reset_slave_manager(
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self.slave_manager(master).is_none() {
             return;
@@ -1063,7 +1159,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let now = Self::now_frame(&self.session);
         let Some(owner) = self.substrate.entities.get(master) else {
@@ -1174,6 +1270,7 @@ impl Simulation {
                 footprint: NearbyFootprint::new(search.footprint.0, search.footprint.1),
                 allow_bridge_cells: search.allow_bridge_cells,
                 check_height: search.check_height,
+                require_burrowable: false,
                 check_occupancy: search.check_occupancy,
                 target_cell: Some(search.target),
                 options: NearbySearchOptions {
@@ -1200,30 +1297,41 @@ impl Simulation {
         mission: MissionType,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) -> Option<i32> {
-        let entity = self.substrate.entities.get(id)?;
-        entity.slave_manager.as_ref()?;
-        let started = entity.mission.mission_start_frame() as i32;
-        if rules
-            .general
-            .slave_miner_kick_frame_delay
-            .wrapping_add(started)
-            >= Self::now_frame(&self.session)
-        {
-            return None;
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<Option<i32>, TiberiumImageError> {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(None);
+        };
+        if entity.slave_manager.is_none() {
+            return Ok(None);
         }
-        if !self.should_recall_slaves(id, rules, registry) {
-            return None;
+        let started = entity.mission.mission_start_frame() as i32;
+        // Ares 3.0 1004D5F0/1004D5A0 (hooks 0x74081F/0x74410D): the Unit's
+        // Harvester.KickDelay; a negative delay never kicks.
+        let delay = crate::sim::miner::ore_scan::harvester_value(
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.entity_object_type(entity, rules)),
+            crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
+            rules.general.slave_miner_kick_frame_delay,
+        );
+        if rules.ares() && delay < 0
+            || delay.wrapping_add(started) >= Self::now_frame(&self.session)
+        {
+            return Ok(None);
+        }
+        if !self.should_recall_slaves(id, rules, registry)? {
+            return Ok(None);
         }
         self.begin_slave_hunt(id, rules, frame_effects);
-        Some(Self::mission_rate_epilogue_for(
+        Ok(Some(Self::mission_rate_epilogue_for(
             &mut self.scenario_rng,
             &self.substrate,
             rules,
             id,
             mission,
-        ))
+        )))
     }
 
     /// The master's drop cell ([`deploy_center`]).
@@ -1243,14 +1351,12 @@ impl Simulation {
         slave: u64,
         cell: (u16, u16),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Err(cause) = self.assign_destination_represented(
             slave,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
             rules,
-            registry,
             frame_effects,
         ) {
             log::debug!("slave {slave} could not be sent to {cell:?}: {cause}");
@@ -1268,7 +1374,7 @@ impl Simulation {
         let storage = self
             .object_type(entity.type_ref(), rules)
             .map_or(0, |object| object.storage);
-        storage > 0 && entity.slave.cargo.len() as i64 == i64::from(storage)
+        storage > 0 && entity.seldom.slave.cargo.len() as i64 == i64::from(storage)
     }
 
     /// DeploySlaves (`0x006B04C0`): every node in state 0, last first. The
@@ -1283,7 +1389,7 @@ impl Simulation {
         master: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let count = self.slave_manager(master).map_or(0, |m| m.nodes.len());
         for index in (0..count).rev() {
@@ -1327,7 +1433,7 @@ impl Simulation {
                 continue;
             };
             let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
-            if !self.unlimbo_slave(slave, drop, (sub_x, sub_y), rules, registry, frame_effects) {
+            if !self.unlimbo_slave(slave, drop, (sub_x, sub_y), rules, frame_effects) {
                 continue;
             }
             if let Some(source) = self.slave_owner_centre(master)
@@ -1376,8 +1482,7 @@ impl Simulation {
             crate::util::fixed_math::SimFixed,
         ),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let z = self.terrain_cell_level(cell.0, cell.1).unwrap_or(0);
         // DeploySlaves6B04C0's Map4ACA10 caller placement remains in
@@ -1387,7 +1492,6 @@ impl Simulation {
             RevealPosition::new(cell.0, cell.1, z, None, request.0, request.1),
             PlacementEvidence::EvaluateMark,
             rules,
-            registry,
         ) else {
             return false;
         };
@@ -1398,7 +1502,7 @@ impl Simulation {
                 placement,
                 logic_eligible: true,
             },
-            UninitContext::new(rules, registry)
+            UninitContext::new(rules)
                 .with_effects(frame_effects)
                 .with_unlimbo_facing(Some(0)),
         );
@@ -1406,16 +1510,10 @@ impl Simulation {
     }
 
     /// The slave's Limbo (`vt+0xD4`, `InfantryClass::Limbo @ 0x0051DF10`).
-    fn limbo_slave(
-        &mut self,
-        slave: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+    fn limbo_slave(&mut self, slave: u64, rules: &RuleSet, frame_effects: &mut FrameEffects<'_>) {
         let _ = self.techno_limbo_with_context(
             slave,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
+            UninitContext::new(rules).with_effects(frame_effects),
         );
     }
 
@@ -1428,15 +1526,14 @@ impl Simulation {
         master: u64,
         node: &mut SlaveNode,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((slave_type, owner, cell, z)) =
             self.substrate.entities.get(master).and_then(|m| {
                 let manager = m.slave_manager.as_ref()?;
                 Some((
-                    self.interner.resolve(manager.slave_type).to_string(),
-                    self.interner.resolve(m.owner()).to_string(),
+                    manager.slave_type,
+                    m.owner(),
                     (m.position.rx(), m.position.ry()),
                     m.position.z(),
                 ))
@@ -1445,8 +1542,8 @@ impl Simulation {
             return;
         };
         let slave = self.construct_object_limbo_at_height(
-            &slave_type,
-            &owner,
+            slave_type,
+            owner,
             cell.0,
             cell.1,
             0,
@@ -1458,9 +1555,9 @@ impl Simulation {
         let Some(slave) = slave else {
             return;
         };
-        self.limbo_slave(slave, rules, registry, frame_effects);
+        self.limbo_slave(slave, rules, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(slave) {
-            entity.slave.owner = Some(master);
+            entity.seldom.slave.owner = Some(master);
         }
         node.state = SlaveState::Ready;
         node.timer.start(Self::now_frame(&self.session), 0);
@@ -1478,13 +1575,13 @@ impl Simulation {
         slave: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) -> (i32, bool) {
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(i32, bool), TiberiumImageError> {
         let Some(entity) = self.substrate.entities.get(slave) else {
-            return (1, false);
+            return Ok((1, false));
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
-            return (1, false);
+            return Ok((1, false));
         };
         let storage = object.storage;
         let harvest_rate = object.harvest_rate;
@@ -1511,14 +1608,14 @@ impl Simulation {
                 rules,
                 registry,
                 cell,
-            ) && let Some(entity) = self.substrate.entities.get_mut(slave)
+            )? && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.cargo.push(bale);
+                entity.seldom.slave.add_bales(bale, 1);
             }
-            return (harvest_rate, false);
+            return Ok((harvest_rate, false));
         }
         self.slave_do_action(slave, DO_READY, rules, frame_effects);
-        (1, true)
+        Ok((1, true))
     }
 
     fn slave_do_action(
@@ -1526,7 +1623,7 @@ impl Simulation {
         slave: u64,
         action: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // Mission_Harvest (`0x00522E87`, `0x00522EEB`, `0x00522F90`)
         // pushes force0. Cheer uses the shared Infantry virtual388 owner.
@@ -1545,7 +1642,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(slave)
-            .map(|entity| std::mem::take(&mut entity.slave.cargo))
+            .map(|entity| std::mem::take(&mut entity.seldom.slave.cargo))
         else {
             return;
         };
@@ -1576,7 +1673,7 @@ impl Simulation {
         let Some(master) = substrate
             .entities
             .get(slave)
-            .and_then(|entity| entity.slave.owner)
+            .and_then(|entity| entity.seldom.slave.owner)
         else {
             return;
         };
@@ -1593,7 +1690,7 @@ impl Simulation {
             node.timer.start(now, manager.regen_rate);
         }
         if let Some(entity) = substrate.entities.get_mut(slave) {
-            entity.slave.owner = None;
+            entity.seldom.slave.owner = None;
         }
     }
 
@@ -1612,13 +1709,35 @@ impl Simulation {
         house: Option<InternedId>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
+        let _ = self.free_slaves_retaining_storage(
+            master,
+            killer,
+            house,
+            rules,
+            registry,
+            frame_effects,
+        );
+    }
+
+    // FreeSlaves clears Native+24 but does not destroy the manager's storage.
+    // Ordinary callers retire it; Ares100458F3 reattaches this same manager
+    // after clearing its nodes. Move it at that boundary, never clone it.
+    fn free_slaves_retaining_storage(
+        &mut self,
+        master: u64,
+        killer: Option<u64>,
+        house: Option<InternedId>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Option<SlaveManager> {
         let Some(count) = self
             .slave_manager(master)
             .map(|manager| manager.nodes.len())
         else {
-            return;
+            return None;
         };
         let civilian = self.civilian_side_house(rules);
         let killer_house = killer
@@ -1640,9 +1759,9 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
-            entity.slave.owner = None;
+            entity.seldom.slave.owner = None;
             if entity.lifecycle.in_limbo() {
-                self.slave_dies_inside(slave, killer, rules, registry, frame_effects);
+                self.slave_dies_inside(slave, killer, rules, frame_effects);
                 continue;
             }
             let Some(new_house) = new_house else {
@@ -1654,15 +1773,59 @@ impl Simulation {
             self.infantry_cheer(slave, true, rules, frame_effects);
             first_freed.get_or_insert(slave);
         }
-        if let (Some(slave), Some(sound)) = (first_freed, rules.general.slaves_free_sound.clone())
+        if let (Some(slave), Some(sound)) =
+            (first_freed, rules.general.slaves_free_sound.as_deref())
             && let Some(entity) = self.substrate.entities.get(slave)
         {
-            self.sound_events
-                .emit(SimSoundEvent::voc_at(sound, &entity.position));
+            self.sound_events.emit(SimSoundEvent::voc_at(
+                rules.sound_name(sound),
+                &entity.position,
+            ));
         }
         // 6B0C67 clears the manager's owner only after callbacks and sound.
-        if let Some(entity) = self.substrate.entities.get_mut(master) {
-            entity.slave_manager = None;
+        self.substrate
+            .entities
+            .get_mut(master)?
+            .slave_manager
+            .take()
+            .map(|manager| *manager)
+    }
+
+    /// Ares100458F3..10045953: FreeSlaves, then100038E0 clears every node,
+    /// reattach the owner and pause/resume its AI clock before ChangeOwner.
+    pub(crate) fn free_slaves_for_driver_change(
+        &mut self,
+        master: u64,
+        invoker: Option<u64>,
+        passive: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(mut manager) =
+            self.free_slaves_retaining_storage(master, invoker, None, rules, registry, effects)
+        else {
+            return;
+        };
+        let now = Self::now_frame(&self.session);
+        for node in &mut manager.nodes {
+            if let Some(slave) = node.slave.take()
+                && let Some(entity) = self.substrate.entities.get_mut(slave)
+            {
+                entity.seldom.slave.owner = None;
+            }
+            node.state = SlaveState::Dead;
+            node.timer.start(now, manager.regen_rate);
+        }
+        if passive {
+            manager.suspend_work();
+        } else {
+            manager.resume_work(now);
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(master)
+            && entity.slave_manager.is_none()
+        {
+            entity.slave_manager = Some(Box::new(manager));
         }
     }
 
@@ -1673,19 +1836,15 @@ impl Simulation {
         slave: u64,
         killer: Option<u64>,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.record_the_kill(
             slave,
             crate::sim::combat::KillSource::Techno(killer),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
+            UninitContext::new(rules).with_effects(frame_effects),
         );
-        self.uninit_with_context(
-            slave,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
-        );
+        self.uninit_with_context(slave, UninitContext::new(rules).with_effects(frame_effects));
     }
 
     /// `vt+0x16C(&Strength, 0, C4Warhead, 0, 0, 0, 0)` (`0x006B0BDF..`).
@@ -1694,7 +1853,7 @@ impl Simulation {
         slave: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate
@@ -1731,7 +1890,7 @@ impl Simulation {
         &mut self,
         master: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .slave_manager(master)
@@ -1756,7 +1915,7 @@ impl Simulation {
         deploying: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if deploying {
             self.slave_manager_hand_off(from, rules, frame_effects);
@@ -1772,7 +1931,7 @@ impl Simulation {
         self.free_slaves(to, None, None, rules, registry, frame_effects);
         for slave in manager.slaves() {
             if let Some(entity) = self.substrate.entities.get_mut(slave) {
-                entity.slave.owner = Some(to);
+                entity.seldom.slave.owner = Some(to);
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(to) {
@@ -1783,7 +1942,10 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
-        self.entities.get_mut(master)?.slave_manager.as_mut()
+        self.entities
+            .get_mut_if(master, |entity| entity.slave_manager.is_some())?
+            .slave_manager
+            .as_deref_mut()
     }
     fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
         if let Some(manager) = self.slave_manager_mut(master) {
@@ -1806,7 +1968,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -1822,7 +1984,7 @@ mod tests {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -1839,8 +2001,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(
             sim.substrate
@@ -1866,8 +2027,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default(),
         )));
         let entity = sim.substrate.entities.get(slave).unwrap();
         assert!(!entity.lifecycle.in_limbo());
@@ -1896,7 +2056,7 @@ mod tests {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -1910,8 +2070,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default(),
         )));
         assert!(sim.substrate.entities.get(slave).unwrap().on_bridge());
     }

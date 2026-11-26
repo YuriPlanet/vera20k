@@ -87,6 +87,7 @@ fn the_lines_match_native() {
                         json!(view.place()),
                     ),
                     TimerSource::Blackout(blackout) => (blackout, json!("Blackout"), Value::Null),
+                    TimerSource::Team(_) => unreachable!("the native list has no team lines"),
                 };
                 json!(["line", index, scheme(owner), line.seconds, label, blink])
             })
@@ -190,6 +191,31 @@ fn each_line_prints_as_native() {
     }
 }
 
+/// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the named `[Colors]` entry
+/// prints the blinking time; the key absent, or `none` (scheme -1), prints the
+/// native third entry.
+#[cfg(feature = "phobos")]
+#[test]
+fn timer_blink_color_scheme_selects_the_named_colors_entry() {
+    let colors = "[Colors]\nGold=43,239,255\nGrey=0,0,131\nLightGrey=0,0,240\n";
+    let blink_rgb_of = |audio_visual: &str| {
+        let ini = crate::rules::ini_parser::IniFile::from_str(&format!("{colors}{audio_visual}"));
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules read");
+        blink_rgb(&rules)
+    };
+    let white = crate::rules::color_scheme::hsv_to_rgb([0, 0, 240]);
+    // `[Colors]` entry 2 is the native ColorScheme::Array[5].
+    assert_eq!(blink_rgb_of(""), white);
+    assert_eq!(
+        blink_rgb_of("[AudioVisual]\nTimerBlinkColorScheme=none\n"),
+        white
+    );
+    assert_eq!(
+        blink_rgb_of("[AudioVisual]\nTimerBlinkColorScheme=Gold\n"),
+        crate::rules::color_scheme::hsv_to_rgb([43, 239, 255])
+    );
+}
+
 /// A new grant clears the blink (`+0x40`, Grant `0x006CB580`) but leaves its
 /// deadline (`+0x48`).
 #[test]
@@ -205,4 +231,98 @@ fn a_new_grant_clears_the_blink_but_not_its_deadline() {
     assert_eq!((blink.on, blink.deadline_ms), (false, 6000));
     assert!(!blink.step(0, 5999));
     assert!(blink.step(0, 6000));
+}
+
+fn dock_lines(count: usize) -> Vec<TimerLine> {
+    (0..count)
+        .map(|i| TimerLine {
+            source: TimerSource::Super(SuperTimerView::for_test(
+                house(i / 2),
+                InternedId::from_index(i as u32),
+                (i as i32 + 1) * 15,
+                false,
+                900,
+                i as u32,
+            )),
+            seconds: i as i32 + 1,
+        })
+        .collect()
+}
+
+#[test]
+fn small_timer_lists_keep_native_rows_and_no_control() {
+    let mut lines = dock_lines(6);
+    lines.insert(
+        0,
+        TimerLine {
+            source: TimerSource::Scenario,
+            seconds: 60,
+        },
+    );
+    lines.push(TimerLine {
+        source: TimerSource::Blackout(house(2)),
+        seconds: 20,
+    });
+    let mut dock = TimerDock::default();
+    let rows = dock.rows(&lines, Some(house(0)), [800, 600], 12, true);
+    assert_eq!(rows, (0..8).map(DockRow::Line).collect::<Vec<_>>());
+    assert!(dock.toggle_rect().is_none());
+    assert!(!dock.wheel(790, 590, -1.0));
+}
+
+/// With the option off, as by default, every line stacks as gamemd draws
+/// it (`0x006D4941..0x006D4B25`), with no arrow.
+#[test]
+fn sixty_supers_with_the_option_off_stack_every_line() {
+    let lines = dock_lines(60);
+    let mut dock = TimerDock::default();
+    let rows = dock.rows(&lines, Some(house(29)), [800, 600], 12, false);
+    assert_eq!(rows, (0..60).map(DockRow::Line).collect::<Vec<_>>());
+    assert!(dock.toggle_rect().is_none());
+}
+
+#[test]
+fn sixty_supers_fold_page_and_shrink_without_losing_local_or_mission_rows() {
+    let mut lines = dock_lines(60);
+    lines.insert(
+        0,
+        TimerLine {
+            source: TimerSource::Scenario,
+            seconds: 60,
+        },
+    );
+    let mut dock = TimerDock::default();
+    let rows = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
+    assert_eq!(
+        rows,
+        vec![
+            DockRow::Line(0),
+            DockRow::Line(4),
+            DockRow::Line(3),
+            DockRow::Line(2),
+            DockRow::Line(1),
+            DockRow::Line(60),
+            DockRow::Line(59),
+            DockRow::Toggle
+        ]
+    );
+    let rect = dock.toggle_rect().unwrap();
+    assert!(rect.y >= 0 && rect.y + rect.h <= 600);
+    dock.toggle();
+    let expanded = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
+    assert_eq!(expanded.len(), 12); // mission + arrow + two local + eight others
+    assert_eq!(expanded[1], DockRow::Toggle);
+    dock.scroll_rows
+        .push(crate::ui::shell::geom::RectPx::new(700, 500, 97, 14));
+    assert!(!dock.wheel(699, 505, -1.0));
+    assert!(dock.wheel(750, 505, -1.0));
+    let scrolled = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
+    assert!(!scrolled.contains(&DockRow::Line(1)));
+    assert!(scrolled.contains(&DockRow::Line(9)));
+    assert!(scrolled.contains(&DockRow::Line(59)) && scrolled.contains(&DockRow::Line(60)));
+    dock.offset = usize::MAX;
+    let end = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
+    assert!(end.contains(&DockRow::Line(58)));
+    dock.rows(&lines[..7], Some(house(0)), [800, 600], 12, true);
+    assert!(!dock.expanded && dock.offset == 0 && dock.toggle_rect().is_none());
 }

@@ -4,10 +4,11 @@
 
 use crate::sim::intern::InternedId;
 use crate::sim::production::{
-    BuildOption, CameoDrawState, PRODUCTION_STEPS, ProducerFocusView, ProductionCategory,
-    QueueItemView, ReadyBuildingView,
+    BuildOption, CameoDrawState, PRODUCTION_STEPS, ProductionCategory, QueueItemView,
+    ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
+use crate::util::lookup_hash::LookupMap;
 
 use super::cameo_order::{CameoId, CameoRequestState, CameoStrips};
 use super::gadget_flash::SidebarGadgetState;
@@ -42,6 +43,14 @@ pub(crate) struct ObjectCameoDrawInputs {
     pub(crate) status: Option<CameoFactoryStatus>,
     /// The armed building placement names this type.
     pub(crate) armed: bool,
+    /// The House's primary Factory for this type's kind holds this type,
+    /// finished or not: `StripClass::Draw` fetches it with BuildCat 0
+    /// (`0x006A9C52..0x006A9C67`,
+    /// [`primary_factory_category`](crate::sim::production::primary_factory_category))
+    /// and compares its product (`Factory+0x58`) with the entry's type
+    /// (`0x006A9CB0..0x006A9CC3`) before drawing a count of one. The cameo's
+    /// own Factory link plays no part.
+    pub(crate) primary_holds_type: bool,
 }
 
 /// The one rule for a retained object cameo's drawn state: the unavailable
@@ -68,6 +77,7 @@ pub(crate) fn draw_object_cameo(item: &mut SidebarItem, inputs: &ObjectCameoDraw
         .clamp(0.0, 1.0);
     item.is_ready = status.is_some_and(|status| status.is_ready);
     item.is_building_this_type = status.is_some_and(|status| status.is_building);
+    item.is_held_this_type = inputs.primary_holds_type;
     item.is_on_hold = status.is_some_and(|status| status.is_on_hold);
     item.is_armed = item.is_ready && inputs.armed;
 }
@@ -100,9 +110,9 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarControlButton, SidebarItem,
+    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarFrame, SidebarItem, SidebarPart,
     SidebarScrollButton, SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView,
-    compute_layout_with_spec, scroll_button_rects,
+    compute_layout_with_spec,
 };
 
 #[cfg(test)]
@@ -118,7 +128,6 @@ pub(crate) fn build_sidebar_view(
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
-    producer_focus: &[ProducerFocusView],
     scroll_rows: usize,
     interner: Option<&crate::sim::intern::StringInterner>,
     gadget_state: &SidebarGadgetState,
@@ -130,8 +139,7 @@ pub(crate) fn build_sidebar_view(
     cameos.set_scroll_row(active_tab, scroll_rows);
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
+        SidebarFrame::native(screen_w as u32, screen_h as u32),
         active_tab,
         credits,
         power_produced,
@@ -141,7 +149,6 @@ pub(crate) fn build_sidebar_view(
         build_options,
         ready_buildings,
         armed,
-        producer_focus,
         interner,
         &[],
         gadget_state,
@@ -156,8 +163,7 @@ pub(crate) fn build_sidebar_view(
 
 pub(crate) fn build_sidebar_view_with_spec(
     layout_spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
+    frame: SidebarFrame,
     active_tab: SidebarTab,
     credits: i32,
     power_produced: i32,
@@ -167,7 +173,6 @@ pub(crate) fn build_sidebar_view_with_spec(
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
-    producer_focus: &[ProducerFocusView],
     interner: Option<&crate::sim::intern::StringInterner>,
     sw_views: &[SuperWeaponView],
     gadget_state: &SidebarGadgetState,
@@ -182,170 +187,327 @@ pub(crate) fn build_sidebar_view_with_spec(
     // strip entries, including ready buildings and superweapons. This builder
     // consumes those retained entries for the selected strip only; the button
     // bits and the active tab arrive as event-driven state.
-    let mut strips = SidebarTab::all().map(|tab| {
-        let entries = collect_build_entries(
-            tab.category(),
+    // The active tab is owned by the switch itself: native switches on the
+    // four tab commands, on the tab buttons and on the two AddCameo/Recalculate
+    // transitions, and it never substitutes another strip because the selected
+    // one is empty (HasEntries refuses the switch instead).
+    let all_entries = strip_entries(
+        active_tab,
+        queue_items,
+        build_options,
+        ready_buildings,
+        armed,
+        interner,
+        sw_views,
+        cameo_order,
+    );
+    let scroll_rows = cameo_order.scroll_row(active_tab);
+    let total_items = all_entries.len();
+    let columns = layout_spec.columns();
+    let total_rows = total_items.div_ceil(columns);
+
+    // Native screen capacity is independent of the item count.
+    let layout = compute_layout_with_spec(layout_spec, frame);
+    let (side_width, side_height) = frame.surface_size();
+    let panel_rect = Rect {
+        x: layout.sidebar_x,
+        y: 0.0,
+        w: side_width as f32,
+        h: side_height as f32,
+    };
+    let low_power = power_produced < power_drained;
+
+    // 6ABD30 positions the four SBGadgets, Repair and Sell, and the two
+    // strip arrows. A button's actual SHP canvas determines its size
+    // (`69DE00`); without the atlas (a `None` size) its rect is empty, so
+    // hit-testing never matches. A part the layout leaves out keeps its place
+    // with an empty rect, so nothing hits it; the chrome builder skips its
+    // picture.
+    let shows = |part| layout_spec.shows(part);
+    let rect = |part: SidebarPart, size: Option<[f32; 2]>, shown: bool| {
+        let [x, y] = layout.origin(&layout_spec, part);
+        let [w, h] = size.unwrap_or([0.0, 0.0]);
+        Rect { x, y, w, h }.shown(shown)
+    };
+    let tabs: Vec<SidebarTabButton> = SidebarTab::all()
+        .into_iter()
+        .zip(SidebarPart::TABS)
+        .enumerate()
+        .map(|(idx, (tab, part))| SidebarTabButton {
+            tab,
+            rect: rect(part, tab_button_size, shows(SidebarPart::Tabs)),
+            active: tab == active_tab,
+            disabled: gadget_state.tab_disabled[idx],
+            frame_index: gadget_state.tab_frame(idx, tab == active_tab),
+        })
+        .collect();
+    // Native never disables Repair or Sell; the frame comes from
+    // SidebarGadgetState.
+    let [repair_button, sell_button] = [
+        (
+            SidebarPart::Repair,
+            repair_button_size,
+            SidebarAction::ToggleRepairMode,
+            gadget_state.repair_mode_on,
+            gadget_state.repair_frame(),
+        ),
+        (
+            SidebarPart::Sell,
+            sell_button_size,
+            SidebarAction::ToggleSellMode,
+            gadget_state.sell_mode_on,
+            gadget_state.sell_frame(),
+        ),
+    ]
+    .map(
+        |(part, size, action, active, frame_index)| SidebarToggleButton {
+            rect: rect(part, size, shows(part)),
+            action,
+            active,
+            frame_index,
+        },
+    );
+    // `RadarClass::AddOrRemoveButtons @ 0x00652E50` adds both top buttons to
+    // the gadget list whenever ToggleSidebar shows the sidebar, which every
+    // scenario keeps shown (Init and Action pass 1), so they are always laid out.
+    let top_buttons = std::array::from_fn(|i| {
+        let part = [SidebarPart::Diplomacy, SidebarPart::Options][i];
+        SidebarScrollButton {
+            rect: rect(part, top_button_sizes[i], shows(part)),
+            disabled: false,
+            frame_index: gadget_state.top_button_frame(i),
+        }
+    });
+    // Ordinary local-player branch of 6A6610: both arrows share capacity
+    // availability, independent of the current end position.
+    let scroll_disabled = total_items <= layout.side2_tile_count * columns;
+    let [scroll_down_button, scroll_up_button] = [
+        (
+            SidebarPart::ScrollDown,
+            scroll_down_button_size,
+            gadget_state.scroll_down_frame(scroll_disabled),
+        ),
+        (
+            SidebarPart::ScrollUp,
+            scroll_up_button_size,
+            gadget_state.scroll_up_frame(scroll_disabled),
+        ),
+    ]
+    .map(|(part, size, frame_index)| SidebarScrollButton {
+        rect: rect(part, size, shows(SidebarPart::Cameos)),
+        disabled: scroll_disabled,
+        frame_index,
+    });
+
+    // Cameo grid positioning.
+    let grid_origin = layout.grid_origin(&layout_spec);
+    let visible_rows = layout.side2_tile_count;
+    let max_scroll_rows = total_rows.saturating_sub(visible_rows);
+    let scroll_rows = scroll_rows.min(max_scroll_rows);
+
+    let visible_items = scroll_rows * columns;
+    // Without the strip no cameo is laid out; its retained order and scroll
+    // row stay as they are.
+    let max_visible = if shows(SidebarPart::Cameos) {
+        visible_rows * columns
+    } else {
+        0
+    };
+    let items = grid_items(
+        all_entries
+            .into_iter()
+            .skip(visible_items)
+            .take(max_visible),
+        grid_origin,
+        columns,
+        layout_spec,
+        cameo_order,
+    );
+    // StripDraw's empty-slot path (6A99BE -> 6A9B4B) still darkens a visible
+    // record past the strip's count that FlashCameo 6AC5F0 lit.
+    let records = cameo_order.items(active_tab).len();
+    let flash_empty_slots = (visible_items..visible_items + max_visible)
+        .filter(|&slot| slot >= records && cameo_order.empty_slot_flash_darkened(active_tab, slot))
+        .map(|slot| grid_slot_rect(grid_origin, slot - visible_items, columns, layout_spec))
+        .collect();
+
+    SidebarView {
+        panel_rect,
+        layout,
+        credits,
+        observer: None,
+        power_produced,
+        power_drained,
+        low_power,
+        scroll_rows,
+        max_scroll_rows,
+        tabs,
+        items,
+        flash_empty_slots,
+        added_grids: Vec::new(),
+        repair_button,
+        sell_button,
+        top_buttons,
+        scroll_down_button,
+        scroll_up_button,
+    }
+}
+
+/// One strip's retained entries in its cameo order, each with the name its
+/// cameo draws under.
+fn strip_entries<'a>(
+    tab: SidebarTab,
+    queue_items: &[QueueItemView],
+    build_options: &[BuildOption],
+    ready_buildings: &[ReadyBuildingView],
+    armed: Option<&ArmedSidebarEntry>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    sw_views: &[SuperWeaponView],
+    cameo_order: &'a CameoStrips,
+) -> Vec<(BuildEntry, &'a str)> {
+    let mut entries: LookupMap<_, _> = collect_build_entries(
+        tab.category(),
+        queue_items,
+        build_options,
+        ready_buildings,
+        armed,
+        interner,
+        sw_views,
+    )
+    .into_iter()
+    .map(|entry| (entry.identity, entry))
+    .collect();
+    // Each entry draws under its retained cameo's name.
+    cameo_order
+        .items(tab)
+        .iter()
+        .filter_map(|cameo| Some((entries.remove(&cameo.id)?, cameo.key.name())))
+        .collect()
+}
+
+/// The grids a layout adds beside the sidebar's own, appended to a built
+/// view: each shows one tab's strip from its own scroll row, clamped to the
+/// rows the strip has. The sidebar's own grid, tabs and scroll row are as the
+/// builder left them.
+pub(crate) fn append_added_grids(
+    view: &mut SidebarView,
+    layout_spec: SidebarChromeLayoutSpec,
+    grids: &[super::AddedGrid],
+    queue_items: &[QueueItemView],
+    build_options: &[BuildOption],
+    ready_buildings: &[ReadyBuildingView],
+    armed: Option<&ArmedSidebarEntry>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    sw_views: &[SuperWeaponView],
+    cameo_order: &CameoStrips,
+) {
+    for grid in grids {
+        let (columns, rows) = (grid.columns.max(1), grid.rows);
+        let entries = strip_entries(
+            grid.tab,
             queue_items,
             build_options,
             ready_buildings,
             armed,
             interner,
             sw_views,
+            cameo_order,
         );
-        let mut entries: std::collections::HashMap<_, _> = entries
-            .into_iter()
-            .map(|entry| (entry.identity, entry))
-            .collect();
-        cameo_order
-            .items(tab)
-            .iter()
-            .filter_map(|cameo| {
-                let mut entry = entries.remove(&cameo.id)?;
-                entry.display_name = cameo.key.name().to_string();
-                Some(entry)
-            })
-            .collect::<Vec<_>>()
-    });
-    // The active tab is owned by the switch itself: native switches on the
-    // four tab commands, on the tab buttons and on the two AddCameo/Recalculate
-    // transitions, and it never substitutes another strip because the selected
-    // one is empty (HasEntries refuses the switch instead).
-    let scroll_rows = cameo_order.scroll_row(active_tab);
-    let selected_category = active_tab.category();
-    let mut all_entries = std::mem::take(&mut strips[active_tab.tab_index()]);
-    let total_items = all_entries.len();
-    let total_rows = total_items.div_ceil(CAMEO_COLUMNS);
-
-    // Native screen capacity is independent of the item count.
-    let layout = compute_layout_with_spec(layout_spec, screen_w, screen_h, total_rows);
-    let panel_rect = Rect {
-        x: layout.sidebar_x,
-        y: 0.0,
-        w: layout_spec.sidebar_width,
-        h: screen_h,
-    };
-    let low_power = power_produced < power_drained;
-
-    // 6ABD30 positions the four SBGadgets with the side-specific tab pitch.
-    // Their actual SHP canvas determines size (`69DE00`), not the pitch.
-    let [tab_w, tab_h] = tab_button_size.unwrap_or([0.0, 0.0]);
-    let tabs: Vec<SidebarTabButton> = SidebarTab::all()
-        .into_iter()
-        .enumerate()
-        .map(|(idx, tab)| SidebarTabButton {
-            tab,
+        let max_scroll_rows = entries.len().div_ceil(columns).saturating_sub(rows);
+        let scroll_rows = grid.scroll_rows.min(max_scroll_rows);
+        let items = grid_items(
+            entries
+                .into_iter()
+                .skip(scroll_rows * columns)
+                .take(rows * columns),
+            grid.origin,
+            columns,
+            layout_spec,
+            cameo_order,
+        );
+        let [w, h] = layout_spec.grid_size(columns, rows);
+        view.added_grids.push(super::AddedGridView {
+            part: grid.part,
+            first: view.items.len(),
+            len: items.len(),
             rect: Rect {
-                x: layout.sidebar_x + layout_spec.tab_x + idx as f32 * layout_spec.tab_pitch,
-                y: layout.tabs_y,
-                w: tab_w,
-                h: tab_h,
-            },
-            active: tab == active_tab,
-            disabled: gadget_state.tab_disabled[idx],
-            frame_index: gadget_state.tab_frame(idx, tab == active_tab),
-        })
-        .collect();
-
-    // Repair / Sell SHP-driven toggle buttons. Position comes from
-    // SidebarChromeLayoutSpec (already-scaled). Dimensions come from the
-    // chrome atlas via repair_button_size / sell_button_size (already × ui_scale
-    // at the call site) — matches the tab_button_size convention so hit-test
-    // and render rects agree at every UI scale. When the atlas is unavailable
-    // (callers passing None), rects collapse to zero size so hit-test never
-    // matches. Frame index comes from SidebarGadgetState.
-    let [repair_w, repair_h] = repair_button_size.unwrap_or([0.0, 0.0]);
-    let [sell_w, sell_h] = sell_button_size.unwrap_or([0.0, 0.0]);
-    let side1_y_local = layout.side1_y;
-    let repair_rect = Rect {
-        x: layout.sidebar_x + layout_spec.repair_x,
-        y: side1_y_local + layout_spec.repair_y,
-        w: repair_w,
-        h: repair_h,
-    };
-    let sell_rect = Rect {
-        x: layout.sidebar_x + layout_spec.sell_x,
-        y: side1_y_local + layout_spec.sell_y,
-        w: sell_w,
-        h: sell_h,
-    };
-    let repair_button = SidebarToggleButton {
-        rect: repair_rect,
-        action: SidebarAction::ToggleRepairMode,
-        active: gadget_state.repair_mode_on,
-        disabled: gadget_state.repair_disabled,
-        frame_index: gadget_state.repair_frame(),
-    };
-    let sell_button = SidebarToggleButton {
-        rect: sell_rect,
-        action: SidebarAction::ToggleSellMode,
-        active: gadget_state.sell_mode_on,
-        disabled: gadget_state.sell_disabled,
-        frame_index: gadget_state.sell_frame(),
-    };
-    let (scroll_down_rect, scroll_up_rect) = scroll_button_rects(
-        &layout,
-        layout_spec,
-        scroll_down_button_size,
-        scroll_up_button_size,
-    );
-    // Ordinary local-player branch of 6A6610: both arrows share capacity
-    // availability, independent of the current end position.
-    let scroll_disabled = total_items <= layout.side2_tile_count * CAMEO_COLUMNS;
-    let top_buttons = std::array::from_fn(|i| {
-        let [w, h] = top_button_sizes[i].unwrap_or([0.0, 0.0]);
-        SidebarScrollButton {
-            rect: Rect {
-                x: layout.sidebar_x + layout_spec.top_button_x + 72.0 * i as f32,
-                y: layout_spec.top_button_y,
+                x: grid.origin[0].round(),
+                y: grid.origin[1].round(),
                 w,
                 h,
             },
-            disabled: false,
-            frame_index: gadget_state.top_button_frame(i),
-        }
-    });
-    let scroll_down_button = SidebarScrollButton {
-        rect: scroll_down_rect,
-        disabled: scroll_disabled,
-        frame_index: gadget_state.scroll_down_frame(scroll_disabled),
-    };
-    let scroll_up_button = SidebarScrollButton {
-        rect: scroll_up_rect,
-        disabled: scroll_disabled,
-        frame_index: gadget_state.scroll_up_frame(scroll_disabled),
-    };
+            scroll_rows,
+            max_scroll_rows,
+        });
+        view.items.extend(items);
+    }
+}
 
-    // Cameo grid positioning.
-    let grid_top = layout.cameo_grid_top + layout_spec.cameo_inset_y;
-    let row_height = layout_spec.cameo_row_height;
-    let visible_rows = layout.side2_tile_count;
-    let max_scroll_rows = total_rows.saturating_sub(visible_rows);
-    let scroll_rows = scroll_rows.min(max_scroll_rows);
+/// The observer's strip over a built view. `StripClass::Draw @ 0x006A9540`
+/// draws, for the observer (`0x006AA043..0x006AA59B`), `rows / 2` Houses
+/// from the strip's TopRow, each two cameo rows (`2 * [0xB0B500]`) below the
+/// last from the cameo grid's origin. `SidebarClass::UpdateScrollButtons @
+/// 0x006A6610`'s observer branch (`0x006A66EA..`) enables both arrows while
+/// they do not all fit (`count * 4 > rows * 2`). A layout without the strip
+/// shows no House.
+pub(crate) fn apply_observer_strip(
+    view: &mut SidebarView,
+    layout_spec: SidebarChromeLayoutSpec,
+    houses: Vec<super::ObserverEntry>,
+    top: usize,
+    gadget_state: &SidebarGadgetState,
+) {
+    let rows = view.layout.side2_tile_count;
+    let max_top = houses.len().saturating_sub(rows / 2);
+    let top = top.min(max_top);
+    let shown = if layout_spec.shows(SidebarPart::Cameos) {
+        rows / 2
+    } else {
+        0
+    };
+    let origin = view.layout.grid_origin(&layout_spec);
+    let disabled = houses.len() * 2 <= rows;
+    view.observer = Some(
+        houses
+            .into_iter()
+            .skip(top)
+            .take(shown)
+            .enumerate()
+            .map(|(index, house)| super::ObserverEntry {
+                origin: [
+                    origin[0].round(),
+                    (origin[1] + index as f32 * 2.0 * layout_spec.cameo_row_height).round(),
+                ],
+                ..house
+            })
+            .collect(),
+    );
+    // The observer branch of StripDraw draws Houses, not empty records.
+    view.flash_empty_slots.clear();
+    view.scroll_rows = top;
+    view.max_scroll_rows = max_top;
+    view.scroll_down_button.disabled = disabled;
+    view.scroll_down_button.frame_index = gadget_state.scroll_down_frame(disabled);
+    view.scroll_up_button.disabled = disabled;
+    view.scroll_up_button.frame_index = gadget_state.scroll_up_frame(disabled);
+}
 
-    let visible_items = scroll_rows * CAMEO_COLUMNS;
-    let max_visible = visible_rows * CAMEO_COLUMNS;
-    let items: Vec<SidebarItem> = all_entries
-        .drain(..)
-        .skip(visible_items)
-        .take(max_visible)
+/// The cameos of one grid: `entries` in rows of `columns`, the first at
+/// `origin`, each `cameo_column_pitch` and `cameo_row_height` on.
+fn grid_items<'a>(
+    entries: impl Iterator<Item = (BuildEntry, &'a str)>,
+    origin: [f32; 2],
+    columns: usize,
+    layout_spec: SidebarChromeLayoutSpec,
+    cameo_order: &CameoStrips,
+) -> Vec<SidebarItem> {
+    entries
         .enumerate()
-        .map(|(idx, entry)| {
-            let row = idx / CAMEO_COLUMNS;
-            let col = idx % CAMEO_COLUMNS;
-            let x = (layout.sidebar_x
-                + layout_spec.cameo_inset_x
-                + col as f32 * (layout_spec.cameo_width + layout_spec.cameo_gap_x))
-                .round();
-            let y = (grid_top + row as f32 * row_height).round();
+        .map(|(idx, (entry, display_name))| {
             SidebarItem {
-                rect: Rect {
-                    x,
-                    y,
-                    w: layout_spec.cameo_width.round(),
-                    h: layout_spec.cameo_height.round(),
-                },
+                rect: grid_slot_rect(origin, idx, columns, layout_spec),
                 type_id: entry.type_id,
-                display_name: entry.display_name,
+                display_name: display_name.to_owned(),
                 cost: entry.cost,
                 has_cameo_art: false,
                 alt_cameo: false,
@@ -356,6 +518,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 progress: entry.progress,
                 queued_count: entry.queued_count,
                 is_building_this_type: entry.is_building_this_type,
+                // `draw_object_cameo` owns this one for every object entry.
+                is_held_this_type: false,
                 is_ready: entry.is_ready,
                 is_on_hold: entry.is_on_hold,
                 is_armed: entry.is_armed,
@@ -364,160 +528,24 @@ pub(crate) fn build_sidebar_view_with_spec(
                 super_weapon_display: entry.super_weapon_display,
             }
         })
-        .collect();
-
-    // Control buttons at bottom of sidebar (below side3).
-    // VERA-local development actions have no painted controls in the
-    // ordinary retail shell. Keep their semantic projection, but give them
-    // no hit area over native ADDON artwork (dev hotkeys remain available).
-    let btn_w = 0.0;
-    let btn_h = 0.0;
-    let btn_y = layout.side3_y + layout_spec.side3_height + layout_spec.control_block_top_pad;
-    let btn_pad = 4.0 * (layout_spec.sidebar_width / 168.0); // scale padding proportionally
-    let btn_x1 = layout.sidebar_x + btn_pad;
-    let btn_x2 = layout.sidebar_x + layout_spec.sidebar_width - btn_w - btn_pad;
-
-    // The producer button is an app-local control, not a native sidebar
-    // gadget. A native unit-tab cameo retains its own FactoryPtr/category, so
-    // the combined presentation tab is not authority for a House factory slot.
-    // When exactly one real queue category is present, use it. With multiple
-    // independent categories there is no evidenced global selector; omitting
-    // the ambiguous control is safer than emitting a command for Vehicle.
-    let active_queue_category = unique_category_for_tab(
-        selected_category,
-        queue_items.iter().map(|item| item.queue_category),
-    );
-    let producer_category = active_queue_category
-        .filter(|category| {
-            producer_focus
-                .iter()
-                .any(|focus| focus.category == *category)
-        })
-        .or_else(|| {
-            if queue_items
-                .iter()
-                .any(|item| category_is_on_tab(selected_category, item.queue_category))
-            {
-                None
-            } else {
-                unique_category_for_tab(
-                    selected_category,
-                    producer_focus.iter().map(|focus| focus.category),
-                )
-            }
-        });
-
-    SidebarView {
-        panel_rect,
-        layout,
-        credits,
-        power_produced,
-        power_drained,
-        low_power,
-        scroll_rows,
-        max_scroll_rows,
-        tabs,
-        items,
-        repair_button,
-        sell_button,
-        top_buttons,
-        scroll_down_button,
-        scroll_up_button,
-        producer_button: producer_category.map(|category| SidebarControlButton {
-            rect: Rect {
-                x: btn_x2,
-                y: btn_y,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::CycleProducer(category),
-            label: "Factory".to_string(),
-        }),
-        cycle_owner_button: SidebarControlButton {
-            rect: Rect {
-                x: btn_x2,
-                y: btn_y + btn_h + layout_spec.control_button_gap,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::CycleOwner,
-            label: "Owner".to_string(),
-        },
-        starter_base_button: SidebarControlButton {
-            rect: Rect {
-                x: btn_x1,
-                y: btn_y + (btn_h + layout_spec.control_button_gap) * 2.0,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::PlaceStarterBase,
-            label: "Base".to_string(),
-        },
-        spawn_test_units_button: SidebarControlButton {
-            rect: Rect {
-                x: btn_x2,
-                y: btn_y + (btn_h + layout_spec.control_button_gap) * 2.0,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::SpawnTestUnits,
-            label: "Spawn".to_string(),
-        },
-    }
+        .collect()
 }
 
-/// Build the retained sidebar for a frontend that owns the same simulation,
-/// rules and camera as the desktop client. This is the public adapter; the
-/// private builder above remains the narrow desktop seam.
-#[allow(clippy::too_many_arguments)]
-pub fn build_sidebar_view_for_frontend(
+/// Slot `idx` of a grid of `columns` whose first cameo is at `origin`.
+fn grid_slot_rect(
+    origin: [f32; 2],
+    idx: usize,
+    columns: usize,
     layout_spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
-    active_tab: SidebarTab,
-    credits: i32,
-    power_produced: i32,
-    power_drained: i32,
-    tab_button_size: Option<[f32; 2]>,
-    queue_items: &[QueueItemView],
-    build_options: &[BuildOption],
-    ready_buildings: &[ReadyBuildingView],
-    armed: Option<&ArmedSidebarEntry>,
-    producer_focus: &[ProducerFocusView],
-    interner: Option<&crate::sim::intern::StringInterner>,
-    sw_views: &[SuperWeaponView],
-    gadget_state: &SidebarGadgetState,
-    repair_button_size: Option<[f32; 2]>,
-    sell_button_size: Option<[f32; 2]>,
-    scroll_down_button_size: Option<[f32; 2]>,
-    scroll_up_button_size: Option<[f32; 2]>,
-    top_button_sizes: [Option<[f32; 2]>; 2],
-    cameo_order: &CameoStrips,
-) -> SidebarView {
-    build_sidebar_view_with_spec(
-        layout_spec,
-        screen_w,
-        screen_h,
-        active_tab,
-        credits,
-        power_produced,
-        power_drained,
-        tab_button_size,
-        queue_items,
-        build_options,
-        ready_buildings,
-        armed,
-        producer_focus,
-        interner,
-        sw_views,
-        gadget_state,
-        repair_button_size,
-        sell_button_size,
-        scroll_down_button_size,
-        scroll_up_button_size,
-        top_button_sizes,
-        cameo_order,
-    )
+) -> Rect {
+    let row = idx / columns;
+    let col = idx % columns;
+    Rect {
+        x: (origin[0] + col as f32 * layout_spec.cameo_column_pitch).round(),
+        y: (origin[1] + row as f32 * layout_spec.cameo_row_height).round(),
+        w: layout_spec.cameo_width.round(),
+        h: layout_spec.cameo_height.round(),
+    }
 }
 
 fn category_is_on_tab(
@@ -527,28 +555,9 @@ fn category_is_on_tab(
     SidebarTab::for_category(actual_category) == SidebarTab::for_category(selected_category)
 }
 
-fn unique_category_for_tab(
-    selected_category: ProductionCategory,
-    categories: impl IntoIterator<Item = ProductionCategory>,
-) -> Option<ProductionCategory> {
-    let mut unique = None;
-    for category in categories {
-        if !category_is_on_tab(selected_category, category) {
-            continue;
-        }
-        match unique {
-            None => unique = Some(category),
-            Some(existing) if existing == category => {}
-            Some(_) => return None,
-        }
-    }
-    unique
-}
-
 struct BuildEntry {
     identity: CameoId,
     type_id: String,
-    display_name: String,
     cost: Option<i32>,
     /// Exact House factory/queue slot represented by this cameo. The Vehicle
     /// tab is presentation-only grouping and must not replace Ship/Aircraft.
@@ -581,7 +590,7 @@ fn collect_build_entries(
     // cameo's armed state is part of its drawn state (`draw_object_cameo`).
     let armed_sw_section: Option<&str> = armed.and_then(ArmedSidebarEntry::as_super_weapon);
     let resolve = |id: InternedId| -> String {
-        interner.map_or(format!("#{}", id.index()), |i| i.resolve(id).to_string())
+        interner.map_or_else(|| format!("#{}", id.index()), |i| i.resolve(id).to_string())
     };
 
     // Resolve presentation for Super entries. Retained strip order above
@@ -589,6 +598,9 @@ fn collect_build_entries(
     let mut sw_entries: Vec<BuildEntry> = Vec::new();
     if category == ProductionCategory::Defense {
         for sw in sw_views {
+            if !sw.ares_show_cameo {
+                continue;
+            }
             // The existing type identity selects its own atlas namespace. An
             // image filename cannot identify two types with different fallbacks.
             let type_id = interner.map_or_else(
@@ -598,13 +610,13 @@ fn collect_build_entries(
             sw_entries.push(BuildEntry {
                 identity: CameoId::SuperWeapon(sw.type_id),
                 type_id,
-                display_name: sw.display_name.clone(),
                 cost: None,
                 queue_category: ProductionCategory::Defense,
-                enabled: sw.is_online && sw.can_afford,
+                enabled: sw.sidebar_enabled(),
                 at_build_limit: false,
                 progress: sw.progress,
-                queued_count: 0,
+                // VERA's Superweapon Limit: the shots charged and waiting.
+                queued_count: sw.ready_shots,
                 is_building_this_type: !sw.is_ready && sw.is_online && sw.progress > 0.0,
                 is_ready: sw.is_ready,
                 is_on_hold: !sw.is_online,
@@ -637,7 +649,6 @@ fn collect_build_entries(
             BuildEntry {
                 identity: CameoId::Object(opt.type_id),
                 type_id: resolve(opt.type_id),
-                display_name: opt.display_name.clone(),
                 cost: Some(opt.cost),
                 queue_category: opt.queue_category,
                 enabled: true,
@@ -669,7 +680,6 @@ fn collect_build_entries(
             entries.push(BuildEntry {
                 identity: CameoId::Object(r.type_id),
                 type_id: r_type_str,
-                display_name: r.display_name.clone(),
                 cost: None,
                 queue_category: r.queue_category,
                 enabled: true,
@@ -696,7 +706,7 @@ fn collect_build_entries(
     entries
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
 
     use crate::rules::object_type::ObjectCategory;
@@ -710,6 +720,7 @@ mod tests {
         for (online, affordable) in [(true, true), (true, false), (false, true), (false, false)] {
             let views = [crate::sim::superweapon::SuperWeaponView {
                 type_id: id,
+                use_ai_targeting: false,
                 display_name: "Paid".to_owned(),
                 progress: 1.0,
                 is_ready: true,
@@ -718,6 +729,10 @@ mod tests {
                 display: Default::default(),
                 can_fire: online,
                 can_afford: affordable,
+                constraints_blocked: false,
+                ares_refusal: None,
+                ready_shots: 0,
+                ares_show_cameo: true,
             }];
             let entries = super::collect_build_entries(
                 ProductionCategory::Defense,
@@ -729,7 +744,8 @@ mod tests {
                 &views,
             );
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].enabled, online && affordable);
+            // Only a firable Super darkens; on hold it never does.
+            assert_eq!(entries[0].enabled, !online || affordable);
             assert!(entries[0].is_ready, "cash does not erase the charged Super");
         }
     }
@@ -741,7 +757,6 @@ mod tests {
     ) -> BuildOption {
         BuildOption {
             type_id: interner.intern(id),
-            display_name: id.to_string(),
             cost: 900,
             object_category: ObjectCategory::Vehicle,
             queue_category: category,
@@ -832,7 +847,6 @@ mod tests {
                 &options,
                 &[],
                 None,
-                &[],
                 0,
                 Some(&interner),
                 &SidebarGadgetState::new(),
@@ -870,6 +884,9 @@ mod tests {
                             is_on_hold: !complete && !running,
                         }),
                         armed: false,
+                        // The sidecar's one Factory is the House's primary
+                        // Infantry Factory.
+                        primary_holds_type: factory["held_type"].as_str().unwrap() == name,
                     },
                 );
                 assert_eq!(

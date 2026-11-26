@@ -26,7 +26,7 @@ fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
             0,
             0,
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -38,7 +38,7 @@ fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
             0,
             PlacementEvidence::EvaluateMark,
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .is_some()
     );
@@ -56,7 +56,14 @@ fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
 }
 
 fn open(sim: &mut Simulation, id: u64, captured: bool, rules: &RuleSet) {
-    sim.grand_opening(id, captured, false, rules, None, FrameEffects::default());
+    sim.grand_opening(
+        id,
+        captured,
+        false,
+        rules,
+        None,
+        &mut FrameEffects::default(),
+    );
 }
 
 fn dispatch(sim: &mut Simulation, rules: &RuleSet) {
@@ -163,7 +170,7 @@ fn a_captured_shipyard_replaces_the_previous_owners_rally_through_the_event_tail
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 0, 10,
         ));
-    sim.change_owner_with_rules(id, owner, rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(id, owner, rules, None, &mut FrameEffects::default());
     assert_eq!(sim.entities().get(id).unwrap().owner(), owner);
     assert_eq!(sim.entities().get(id).unwrap().archive_target(), None);
     assert_eq!(sim.pending_command_snapshot().len(), 1);
@@ -182,18 +189,13 @@ fn an_accepted_default_survives_capture_when_the_replacement_event_is_refused() 
     let rules = &retail.rules;
     let (mut sim, id) = yard_fixture(rules, "GAYARD", true);
     let old_owner = sim.entities().get(id).unwrap().owner();
-    for _ in 0..127 {
-        assert!(
-            sim.issue_local_command(crate::sim::command::CommandEnvelope::new(
-                old_owner,
-                1,
-                Command::Stop { entity_id: 999 },
-            ))
-        );
-    }
+    let capacity = sim.available_local_command_slots();
+    let stop =
+        crate::sim::command::CommandEnvelope::new(old_owner, 1, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, capacity - 1)));
     open(&mut sim, id, false, rules);
     let accepted = sim.pending_command_snapshot();
-    assert_eq!(accepted.len(), 128);
+    assert_eq!(accepted.len(), capacity);
     let expected = match accepted.last().unwrap().payload {
         Command::SetRally { rx, ry, .. } => Some((rx, ry)),
         _ => panic!("the last slot belongs to the default rally"),
@@ -203,7 +205,7 @@ fn an_accepted_default_survives_capture_when_the_replacement_event_is_refused() 
         .register(crate::sim::house_state::HouseState::new(
             new_owner, 0, None, true, 0, 10,
         ));
-    sim.change_owner_with_rules(id, new_owner, rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(id, new_owner, rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.pending_command_snapshot(),
         accepted,
@@ -226,17 +228,12 @@ fn naval_default_rally_obeys_outlist_saturation_and_recorded_replay() {
     let rules = &retail.rules;
     let (mut sim, id) = yard_fixture(rules, "GAYARD", true);
     let owner = sim.substrate.entities.get(id).unwrap().owner();
-    for _ in 0..128 {
-        assert!(
-            sim.issue_local_command(crate::sim::command::CommandEnvelope::new(
-                owner,
-                1,
-                Command::Stop { entity_id: 999 },
-            ))
-        );
-    }
+    let capacity = sim.available_local_command_slots();
+    let stop =
+        crate::sim::command::CommandEnvelope::new(owner, 1, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, capacity)));
     open(&mut sim, id, false, rules);
-    assert_eq!(sim.pending_command_snapshot().len(), 128);
+    assert_eq!(sim.pending_command_snapshot().len(), capacity);
     assert_eq!(
         sim.substrate.entities.get(id).unwrap().archive_target(),
         None
@@ -299,7 +296,7 @@ fn default_rally_reaches_the_first_paid_destroyer_exit_without_an_explicit_click
         rules,
         "Americans",
         "DEST",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     let ship = sim
@@ -319,7 +316,7 @@ fn default_rally_reaches_the_first_paid_destroyer_exit_without_an_explicit_click
             .test_arm_ready(owner, ProductionCategory::Ship)
     );
     assert!(production::dispatch_production_changes_for_tests(
-        &mut sim, rules, None
+        &mut sim, rules
     ));
     let ship = sim.substrate.entities.get(ship).unwrap();
     assert!(!ship.lifecycle.in_limbo());
@@ -428,11 +425,11 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         actor.lifecycle.set_in_limbo_for_test(false);
         actor.position.put_world_xy([1344, 1344]);
         sim.substrate.entities.insert(actor);
-        sim.resolved_terrain = Some(terrain);
-        sim.zone_grid = Some(zones);
-        sim.substrate.raw_cell_occupation = raw;
-        sim.playfield_bounds = Some(bounds());
-        sim.playfield_size_height = Some(8);
+        *sim.resolved_terrain = Some(terrain);
+        *sim.zone_grid = Some(zones.into());
+        *sim.substrate.raw_cell_occupation = raw;
+        *sim.playfield_bounds = Some(bounds());
+        *sim.playfield_size_height = Some(8);
         sim.session.set_binary_frame_for_test(frame);
         sim.initialize_naval_rally_point(1, &rules);
         let pending = sim.pending_command_snapshot();

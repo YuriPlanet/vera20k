@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Create annotated tag $1 on commit $2 for the Release workflow
-# (.github/workflows/release.yml), refusing a tag that already exists.
+# Create annotated tag $1 on commit $2 for a dev build of the Release workflow
+# (.github/workflows/release.yml), refusing a tag that already exists. Release
+# tags are the maintainer's; the workflow's token cannot create them.
 #
 # An annotated tag names its tagger. A lightweight one names nobody, and GitHub
 # then shows the tagged commit's author as having tagged the release. The API

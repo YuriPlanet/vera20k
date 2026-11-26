@@ -16,10 +16,9 @@ fn ordinary_frame(sim: &mut Simulation, rules: &RuleSet) -> Vec<super::SimFireEv
         .advance_app_frame(
             &commands,
             rules,
-            None,
             33,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary retail Kirov frame");
     assert!(output.tick.frame_committed);
@@ -46,13 +45,13 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     assert!(projectile.vertical && projectile.voxel);
     // Read the real resolved Bullet image and physical model, not an ART
     // lookup under the projectile's rules name or a supplied loaded flag.
-    let (model, _) = crate::rules::voxel_asset_catalog::load_main_voxel(
+    let model = crate::rules::voxel_asset_catalog::load_voxel_model(
         &assets,
         projectile.voxel_image_load().unwrap(),
         Some(&rules),
     )
     .expect("physical retail Kirov bomb model");
-    assert!(!model.vxl().limbs.is_empty());
+    assert!(!model.main().unwrap().vxl().limbs.is_empty());
     let warhead = rules.warhead("BlimpHE").unwrap();
     assert!(warhead.rocker);
     assert!(warhead.cell_spread_f64 > 0.0);
@@ -62,7 +61,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x489b49, 64);
     // The arena supplies terrain/navigation; establish this visibility
     // domain before Unlimbo can create source and border viewer planes.
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);
@@ -96,6 +95,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
         // Establish the AI's guard posture through the class receiver; this
         // fixture does not originate a player event for the computer House.
         assert!(sim.apply_command_with_overlays(
+            None,
             "Russians",
             &Command::Guard {
                 entity_id: id,
@@ -103,7 +103,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             },
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
     }
     let source = sim.substrate.entities.get(kirov).unwrap();
@@ -454,7 +454,9 @@ impl AreaScene {
                 impact,
                 damage,
                 warhead,
+                true,
                 origin,
+                &mut Vec::new(),
             );
         } else {
             world_receiver::apply_area_damage(
@@ -464,8 +466,9 @@ impl AreaScene {
                 impact,
                 damage,
                 warhead,
+                true,
                 origin,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         }
     }
@@ -780,7 +783,7 @@ fn real_wall_routing_still_reaches_the_area_rocker_continuation() {
         .overlays
         .id_for_name("GAWALL")
         .expect("retail concrete wall");
-    scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     scene
         .sim
         .overlay_grid
@@ -856,7 +859,7 @@ fn primary_wall_route_reads_the_fixed_stride_alias_before_the_real_wall_is_remov
         return;
     };
     let wall = scene.overlays.id_for_name("GAWALL").unwrap();
-    scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     scene
         .sim
         .overlay_grid

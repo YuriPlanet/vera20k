@@ -6,14 +6,16 @@ The construction slice starts after the asset lookup and receives a supplied SHP
 pointer/header; it does not claim filename resolution, theater selection or IO.
 """
 import hashlib
+import mmap
 import struct
 import sys
 from pathlib import Path
 
-from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
+from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import *
 from tools.native_oracle import (load_image, run_checked, call, SCRATCH,
     STACK_BASE, STACK_SIZE, RET_MAGIC, finish_vectors, provenance)
+from tools.native_oracle import require
 
 TYPE = SCRATCH
 SECTION = SCRATCH + 0x3000
@@ -198,10 +200,10 @@ def generate_lights():
         rows.append(dict(name=name, **f.light_pass(values, admitted=admitted)))
     # The literal constructor tint must also survive an admitted section
     # whose nonzero intensity is explicit but all three tint keys are absent.
-    assert f.light_constructor() == constructor
+    require(f.light_constructor() == constructor, 'light constructor stores changed')
     rows.append(dict(name='constructor_tints_with_explicit_intensity',
                      reset_constructor=True, **f.light_pass(dict(LightIntensity='.2'))))
-    assert f.light_constructor() == constructor
+    require(f.light_constructor() == constructor, 'light constructor stores changed')
     rows.append(dict(name='stock_snow_day', reset_constructor=True,
                      **f.light_pass(dict(LightVisibility='3000', LightIntensity='0.005',
                                          LightRedTint='0.1', LightGreenTint='0.1', LightBlueTint='0.00'))))
@@ -227,6 +229,139 @@ def light_metadata():
         entry_points=dict(constructor=0x45DE12, read_begin=0x460C8C, read_end=0x460DCA,
                           building_reader=0x45FE50, has_section=0x526810,
                           read_int=0x5276D0, read_double=0x5283D0, ftol=0x7C5F00))
+
+
+def generate_render_bounds():
+    """Whole465570 with declared loaded images and original metadata getters."""
+    from tools import native_oracle as native
+    from tools.sidebar_oracle.stock import mix, mix_hash
+    from tools.spatial_oracle.bridge_damage_admission import call as fixture_call
+
+    f = Fixture()
+    u = f.u
+    image = native.image_bytes()
+    executable = [(native.IMAGE_BASE + rva, image[raw:raw + size])
+                  for rva, raw, size, _, flags in native._sections(image)
+                  if flags & 0x20000000]
+
+    def word(address):
+        return struct.unpack('<I', u.mem_read(address, 4))[0]
+
+    def rectangle(address):
+        return list(struct.unpack('<4i', u.mem_read(address, 16)))
+
+    getter_visits = 0
+
+    def observe(_vm, pc, _size, _data):
+        nonlocal getter_visits
+        require(pc not in (0x65C780, 0x65C7E0), 'render bounds drew RNG')
+        if pc in (0x45F040, 0x465960, 0x69E7E0):
+            getter_visits += 1
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    # Execute the registered initializers through the original CRT table loop.
+    # No default rectangle, native getter or rectangle arithmetic is hooked.
+    for slot, initializer in ((0x8127E8, 0x45B190), (0x814A40, 0x69E070)):
+        require(word(slot) == initializer, 'render bounds CRT initializer identity')
+        fixture_call(u, 0x7CBED3, 0, (slot, slot + 4))
+    require(rectangle(0x89C8A0) == [0, 0, 0, 0], 'native default rectangle token')
+    require(word(0x7E4570 + 0x9C) == 0x45F040
+            and word(0x7E4570 + 0xC0) == 0x465960, 'native image getters')
+
+    def construct():
+        u.mem_write(TYPE, bytes(0x1900))
+        u.reg_write(UC_X86_REG_ESI, TYPE)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        for begin, end in ((0x45DF99, 0x45DFCC), (0x45E248, 0x45E260),
+                           (0x45E2CD, 0x45E2D3)):
+            run_checked(u, begin, end)
+        require(rectangle(TYPE + 0x1538) == [0, 0, 0, 0], 'native bounds cache reset')
+
+    def execute(main, buildup, bib, output):
+        nonlocal getter_visits
+        for offset, pointer in ((0xA4, main), (0xE00, buildup), (0x1518, bib)):
+            f.write(TYPE + offset, pointer)
+        getter_visits = 0
+        returned = fixture_call(u, 0x465570, TYPE, (output,))
+        require(returned == output and getter_visits > 0, 'native cold bounds path')
+        result = rectangle(output)
+        require(rectangle(TYPE + 0x1538) == result, 'native type bounds cache publication')
+        f.write(TYPE + 0xA4, 0)
+        getter_visits = 0
+        returned = fixture_call(u, 0x465570, TYPE, (output,))
+        require(returned == output and rectangle(output) == result and getter_visits == 0,
+                'native cached bounds path')
+        return result
+
+    def header(pointer, part):
+        # Declared header words only; original69E7E0 interprets frame bounds.
+        frames = part['frames']
+        raw = struct.pack('<4h', 0, *part['canvas'], len(frames))
+        raw += b''.join(struct.pack('<4h', *frame) + bytes(16) for frame in frames)
+        u.mem_write(pointer, raw)
+
+    cases = []
+    for name, frames in (
+        ('right_expansion', [[0, 0, 1, 1], [1, 0, 1, 1]]),
+        ('reversed_left_preserves_far_edge', [[1, 0, 1, 1], [0, 0, 1, 1]]),
+        ('empty_loaded_main_canvas', []),
+    ):
+        row = dict(name=name, main=dict(canvas=[-5, -3], frames=frames),
+                   buildup=dict(canvas=[101, 201], frames=[[0, 1, 1, 1]]),
+                   bib=dict(canvas=[65, 35], frames=[[-1, 0, 1, 1], [1000, 1000, 5, 5]]))
+        if not frames:
+            row['buildup']['frames'] = []
+            row['bib']['frames'] = []
+        construct()
+        for pointer, part in ((SHP, row['main']), (SHP + 0x1000, row['buildup']),
+                              (SHP + 0x2000, row['bib'])):
+            header(pointer, part)
+        row['bounds'] = execute(SHP, SHP + 0x1000, SHP + 0x2000, SHP + 0x3000)
+        cases.append(row)
+
+    # Targeted archive lookup uses the existing MIX owner with views, avoiding
+    # copies of every SHP in the archive. Only the selected raw image is copied.
+    archive = native.configured_gamemd().parent / 'ra2md.mix'
+    with archive.open('rb') as handle, mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+        view = memoryview(mapped)
+        top = mix(view)
+        inner = top[mix_hash('isoubn.mix')]
+        nested = mix(inner)
+        raw = bytes(nested[mix_hash('CNNEWY06.SHP')])
+        del nested, inner, top, view
+    source_sha256 = hashlib.sha256(raw).hexdigest()
+    require(source_sha256 == '3c8789d408b490679ac82f11d5c3c2f7efb9333015824d77e3eb93ac9c3f2ca0',
+            'declared CNNEWY06.SHP input')
+    body = 0x31000000
+    output = body + ((len(raw) + 4095) & ~4095)
+    u.mem_map(body, output - body + 0x1000)
+    u.mem_write(body, raw)
+    construct()
+    result = execute(body, 0, 0, output)
+    cases.append(dict(name='retail_cnnewy06', physical_shp='CNNEWY06.SHP',
+                      source_sha256=source_sha256, bounds=result))
+    require(all(bytes(u.mem_read(address, len(raw))) == raw for address, raw in executable),
+            'render bounds changed original executable bytes')
+    return dict(cases=cases)
+
+
+def render_bounds_metadata():
+    return provenance(
+        scope='Whole BuildingType465570 bounds on supplied loaded image metadata, with original CRT initializers, constructor slices and image getters',
+        assumptions=[
+            'CRT slots8127E8 and814A40 run original45B190 and69E070 through7CBED3. Constructor slices45DF99..45DFCC,45E248..45E260 and45E2CD..45E2D3 establish the cache, flags and vtable with supplied Type storage and EBX0; full type construction is excluded.',
+            'Three synthetic controls supply signed canvas words and frame rectangles, varying main-frame order and a loaded empty main image. Main and buildup enumerate every frame while the bib uses frame0. Whole465570 and original45F040,465960,69E7E0 own interpretation, integer centering, ordered rectangle unions and cache publication/reuse.',
+            'The retail control supplies raw CNNEWY06.SHP from ra2md.mix/isoubn.mix using the existing MIX reader, with no buildup or bib supplied. Its source hash identifies asset bytes only. No full type/file/theater binding, physical SHP loader, Building455C20, Object43CEA0, pixel decoding or rendered parity is claimed.',
+            'Harness guards require unchanged executable bytes, reject RNG entry and check the warm-cache path without serializing traces. Selected bounds calculations have no gameplay timer write or detach.',
+        ],
+        substitutions=[
+            'Declared loaded SHP pointers/header tables and writable Type/output storage only; no original body, numeric result, getter or rectangle operation is substituted.',
+        ],
+        entry_points=dict(bounds=0x465570, image=0x45F040, buildup=0x465960,
+                          frame_bounds=0x69E7E0, crt_loop=0x7CBED3,
+                          rectangle_initializer=0x45B190, shp_initializer=0x69E070,
+                          constructor_cache=0x45DF99, constructor_flags=0x45E248,
+                          constructor_vtable=0x45E2CD))
 
 
 def generate():
@@ -272,7 +407,11 @@ def metadata():
 
 
 if __name__=='__main__':
-    if '--lights' in sys.argv:
+    if '--render-bounds' in sys.argv:
+        finish_vectors(generate_render_bounds, Path(__file__).with_name('building_render_bounds.json'),
+                       provenance=render_bounds_metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != '--render-bounds'])
+    elif '--lights' in sys.argv:
         finish_vectors(generate_lights, Path(__file__).with_name('building_light_fields.json'),
                        provenance=light_metadata,
                        argv=[arg for arg in sys.argv[1:] if arg != '--lights'])

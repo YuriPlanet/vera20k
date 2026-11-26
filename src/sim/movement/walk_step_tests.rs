@@ -73,6 +73,7 @@ fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
             &mut entity,
             SimFixed::from_num(speed * 15),
             None,
+            None,
             100,
             Some(&terrain),
             None,
@@ -112,7 +113,7 @@ fn idle_walk_scold_tails_match_original_through_ordinary_process() {
             _ => continue,
         };
         let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 9, 10);
         actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
@@ -182,7 +183,15 @@ fn same_cell_paid_walk_scold_clear_matches_original_commit_tail() {
             .navigation
             .path_runtime_mut()
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
-        advance(&mut actor, SimFixed::from_num(90), None, 100, None, None);
+        advance(
+            &mut actor,
+            SimFixed::from_num(90),
+            None,
+            None,
+            100,
+            None,
+            None,
+        );
         let position = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
         assert_eq!((position.x / 256, position.y / 256), (9, 10));
         assert_eq!(

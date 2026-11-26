@@ -50,33 +50,40 @@ fn map_music_action_follows_native_read_and_queue() {
             .as_bytes(),
         )
         .unwrap();
+        let mut theme = ThemeRuntime::with_entries(catalog_from_ini(&IniFile::from_str(
+            fixture["theme_ini"].as_str().unwrap(),
+        )));
         let mut sim = Simulation::with_seed(31);
-        sim.initialize_trigger_definitions(&map, &TeamAiIniRegistry::default(), None, None);
+        sim.initialize_trigger_definitions(
+            &map,
+            &TeamAiIniRegistry::default(),
+            None,
+            None,
+            theme.catalog(),
+        );
         sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
         sim.set_trigger_variable_for_test(false, 9, true);
         let effects = sim.advance_triggers(
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(effects.len(), actions.len(), "{case}");
 
         let prior = &fixture["default_prior"];
-        let theme = ThemeRuntime {
-            catalog_loaded: input["scores"].as_bool().unwrap_or(true),
-            entries: catalog_from_ini(&IniFile::from_str(fixture["theme_ini"].as_str().unwrap())),
-            slots: ThemeSlots {
-                retained: input["retained"]
-                    .as_i64()
-                    .unwrap_or(prior["slots"][1].as_i64().unwrap())
-                    as i32,
-                ..slots(&prior["slots"])
-            },
-            score_volume: input["volume"]
+        if !input["scores"].as_bool().unwrap_or(true) {
+            theme.catalog = None;
+            theme.resolved_sides.clear();
+        }
+        theme.slots = ThemeSlots {
+            retained: input["retained"]
                 .as_i64()
-                .unwrap_or(prior["volume"].as_i64().unwrap()) as i32,
-            ..ThemeRuntime::default()
+                .unwrap_or(prior["slots"][1].as_i64().unwrap()) as i32,
+            ..slots(&prior["slots"])
         };
+        theme.score_volume = input["volume"]
+            .as_i64()
+            .unwrap_or(prior["volume"].as_i64().unwrap()) as i32;
         let mut audio = AppAudioRuntime {
             theme,
             service_clock: Default::default(),
@@ -85,7 +92,7 @@ fn map_music_action_follows_native_read_and_queue() {
             launcher_audio_available: input["device"].as_bool().unwrap_or(true),
             theme_startup_suppressed: input["suppressed"].as_bool().unwrap_or(false),
             master_groups: Default::default(),
-            output: None,
+            restore_muted: false,
         };
         for (index, effect) in effects.iter().enumerate() {
             let TriggerEffect::MusicTheme { request } = effect else {
@@ -209,14 +216,18 @@ fn saved_theme_load_and_volume_ai_follow_native_transitions() {
         }
         let input = &case["input"];
         let name = input["name"].as_str().unwrap();
-        let mut theme = ThemeRuntime::with_entries(entries.clone());
-        theme.catalog_loaded = input["scores_present"].as_i64().unwrap() != 0;
+        let mut case_entries = entries.clone();
+        for index in input["repeat_entries"].as_array().unwrap() {
+            case_entries[index.as_u64().unwrap() as usize].repeat = true;
+        }
+        let mut theme = ThemeRuntime::with_entries(case_entries);
+        if input["scores_present"].as_i64().unwrap() == 0 {
+            theme.catalog = None;
+            theme.resolved_sides.clear();
+        }
         theme.slots = slots(&input["outgoing_slots"]);
         theme.set_volume(input["volume"].as_i64().unwrap() as i32);
         theme.global_repeat = input["global_repeat"].as_i64().unwrap() != 0;
-        for index in input["repeat_entries"].as_array().unwrap() {
-            theme.entries[index.as_u64().unwrap() as usize].repeat = true;
-        }
         theme.fading = input["fading"].as_i64().unwrap() != 0;
         let interpolating = input["interpolating"].as_bool().unwrap_or(false);
         let gates = ThemeGates {

@@ -102,6 +102,7 @@ impl StartupProgressPresentation {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             batch.draw_with_buffer_ui_passthrough(
                 &mut pass,
@@ -112,7 +113,7 @@ impl StartupProgressPresentation {
         }
         presenter.encode_present(&mut encoder, &output.texture);
         gpu.queue.submit(std::iter::once(encoder.finish()));
-        crate::render::present::present(output);
+        output.present(&gpu.queue);
         Ok(true)
     }
 }

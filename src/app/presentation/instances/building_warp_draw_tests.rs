@@ -1,6 +1,7 @@
 //! A warping building's translucency as `TechnoClass_DrawSHP @ 0x00705E00`
 //! selects it, read through retail ART.
 use super::observer_draw_context;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::draw_state::DrawState;
 use crate::sim::world::Simulation;
 
@@ -41,14 +42,18 @@ fn an_erased_double_thick_building_draws_at_seventy_five_percent() {
     let selector = |sim: &Simulation, id: u64| {
         let building = sim.entities().get(id).unwrap();
         let observer = observer_draw_context(sim, building, Some("Americans"), viewer, Some(rules));
-        let decision = DrawState::for_entity(building, sim.session().binary_frame(), 0, observer);
+        let decision = DrawState::for_entity(
+            &ObjectRecord::of_test_sim(sim, rules, id),
+            sim.session().binary_frame(),
+            0,
+            observer,
+        );
         assert!(decision.visible);
         decision.state.native_selector_bits()
     };
     assert_eq!((selector(&sim, vats), selector(&sim, reactor)), (0, 0));
     for id in [vats, reactor] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(id));
     }

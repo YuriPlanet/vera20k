@@ -1,5 +1,7 @@
 //! Selling44A002/44A16B: real Track-on-Water refusal, refund and kept constructor.
 //! Legal custom-map placement; no shipped water-yard or native playback claim.
+//! Ares BuildingClass_Mi_Selling_PutMcv (1005C5D0, hook 0x449FF8) forces the
+//! Put, so there the water cell takes the MCV.
 use super::*;
 use crate::map::map_file::{MapCell, MapFile};
 use crate::rules::locomotor_type::SpeedType;
@@ -8,7 +10,7 @@ use crate::sim::command::Command;
 use crate::sim::house_state::HouseState;
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::snapshot::GameSnapshot;
-use crate::sim::world::{CellActionQuery, MasterFrameTestRung, MoveAction, TickLane};
+use crate::sim::world::{CellActionQuery, FrameStep, MoveAction, TickLane};
 
 fn scene() -> Option<(SimRuntime, u64)> {
     let mut retail = crate::rules::retail_ini_fixture::retail_battle_rules()?;
@@ -47,6 +49,7 @@ fn scene() -> Option<(SimRuntime, u64)> {
         .recalc_cells()
         .into_iter()
         .map(|(x, y)| MapCell {
+            legacy_ice_byte: 0,
             rx: x as u16,
             ry: y as u16,
             tile_index: if (14..=22).contains(&x) && (14..=22).contains(&y) {
@@ -59,19 +62,21 @@ fn scene() -> Option<(SimRuntime, u64)> {
         })
         .collect();
     let rules = retail.rules;
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let terrain = ResolvedTerrainGrid::build(
         &map,
         Some(&theater),
         Some(&assets),
         Some(&rules.terrain_rules),
-        Some(&registry),
+        Some(rules.overlay_registry()),
         false,
         0,
     );
     let failed_cell = terrain.cell(17, 17).unwrap();
     assert_eq!(failed_cell.land_type, LandType::Water.as_index());
-    assert_eq!(failed_cell.speed_costs.track, Some(0));
+    assert_eq!(
+        failed_cell.speed_costs.track,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
     assert_eq!(failed_cell.slope_type, 0);
     assert!(!failed_cell.bridge_facts.has_structural_bridge());
     assert_eq!(
@@ -89,13 +94,13 @@ fn scene() -> Option<(SimRuntime, u64)> {
     sim.resolve_type_handles(&rules);
     // Supplied ordinary human roster; authored entities still go through the
     // same Scenario population/placement-scope owner used by app loading.
-    crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+    crate::sim::runtime::populate_staged_fixture(
         &mut sim,
         &map,
         &terrain,
         "TEMPERATE",
         &rules,
-        Some(&registry),
+        Some(rules.overlay_registry()),
         None,
         crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
         &crate::sim::scenario_session::ScenarioDescriptor::default(),
@@ -123,11 +128,10 @@ fn scene() -> Option<(SimRuntime, u64)> {
     Some((
         SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template: Some(terrain),
-            },
+            }),
         },
         yard,
     ))
@@ -146,7 +150,12 @@ fn assert_retained(sim: &Simulation, owner: InternedId, id: u64) {
         (unit.position.rx(), unit.position.ry(), unit.position.z()),
         (0, 0, 0)
     );
-    assert_eq!(unit.body_facing_byte(sim.session().binary_frame()), 0);
+    // 28058fc9d constructs the repacked unit with the yard's DeployFacing
+    // (retail GACNST sets none: 0x80). Residual: gamemd applies it only in a
+    // successful Unlimbo (`TechnoClass::Unlimbo @ 0x006F6CA0` returns at
+    // `0x006F6CB1`'s refusal before its Set_Current), so its kept unit keeps
+    // the constructor's facing; the unit stays in limbo, where none shows.
+    assert_eq!(unit.body_facing_byte(sim.session().binary_frame()), 0x80);
     assert!(!sim.logic_order().contains(&id));
     let tracked = sim.houses.get(&owner).unwrap().tracking();
     assert_eq!(
@@ -158,6 +167,67 @@ fn assert_retained(sim: &Simulation, owner: InternedId, id: u64) {
         0
     );
     assert_eq!(tracked.buildings(), 0);
+}
+
+#[test]
+fn ares_forces_the_repacked_mcv_onto_the_water_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some((mut runtime, yard)) = scene() else {
+        return;
+    };
+    let owner = runtime.simulation.entities().get(yard).unwrap().owner();
+    let initial = i32::MAX - 1000;
+    runtime
+        .simulation
+        .houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(initial);
+    let archive = runtime
+        .simulation
+        .factory_rally_cell_input(yard, (12, 14), &runtime.resources.rules)
+        .unwrap()
+        .expect("the repack's archive");
+    assert!(runtime.apply_command_for_test(
+        "Americans",
+        &Command::SetRally {
+            rx: archive.0,
+            ry: archive.1,
+            producer_ids: vec![yard],
+        }
+    ));
+    assert!(
+        runtime.apply_command_for_test("Americans", &Command::SellBuilding { entity_id: yard })
+    );
+    let [_, frames, rate] = runtime.resources.rules.buildup_control("GACNST");
+    for _ in 0..(frames * rate * 4 + 240) {
+        runtime
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
+            .unwrap();
+        if runtime.simulation.entities().get(yard).is_none() {
+            break;
+        }
+    }
+    assert!(runtime.simulation.entities().get(yard).is_none());
+    let mcv = runtime
+        .simulation
+        .entities()
+        .values()
+        .find(|entity| runtime.simulation.interner().resolve(entity.type_ref()) == "AMCV")
+        .expect("the repacked MCV");
+    assert!(!mcv.in_limbo() && mcv.lifecycle.cell_marked());
+    assert_eq!(
+        runtime
+            .simulation
+            .houses
+            .get(&owner)
+            .unwrap()
+            .economy()
+            .credits(),
+        initial,
+        "no refund"
+    );
 }
 
 #[test]
@@ -195,7 +265,6 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                 yard,
                 (clicked.0 as i16, clicked.1 as i16),
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry),
             )
             .unwrap(),
         0,
@@ -213,7 +282,6 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                     shift: false
                 },
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry)
             )
             .unwrap(),
         MoveAction::Move
@@ -248,7 +316,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
     let [_, frames, rate] = runtime.resources.rules.buildup_control("GACNST");
     for _ in 0..(frames * rate * 4 + 240) {
         runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         if runtime.simulation.entities().get(yard).is_none() {
             break;
@@ -276,15 +344,15 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
         .expect("real Track/Water Unlimbo refusal retains the constructor")
         .stable_id();
     assert_retained(&runtime.simulation, owner, held);
-    runtime.simulation.take_master_frame_test_trace();
+    runtime.simulation.take_frame_step_trace();
     runtime
-        .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     assert!(
         runtime
             .simulation
-            .take_master_frame_test_trace()
-            .contains(&MasterFrameTestRung::Houses)
+            .take_frame_step_trace()
+            .contains(&FrameStep::Houses)
     );
     assert!(!runtime.simulation.houses.get(&owner).unwrap().is_defeated());
     assert_retained(&runtime.simulation, owner, held);
@@ -308,9 +376,10 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
         .map(|name| runtime.simulation.interner().get(name))
         .collect::<Vec<_>>();
     let tracked = runtime.simulation.houses.get(&owner).unwrap().tracking();
-    assert!(tracked.game_alive(true, base_units.iter().copied(), None, |_| false));
+    let ares = runtime.resources.rules.ares_form();
+    assert!(tracked.game_alive(ares, true, base_units.iter().copied(), None, |_| false));
     assert!(
-        !tracked.game_alive(false, base_units.iter().copied(), None, |_| false),
+        !tracked.game_alive(ares, false, base_units.iter().copied(), None, |_| false),
         "normal-game active counters stay empty"
     );
     let saved = GameSnapshot::save_validated(&runtime.simulation, 0, 0, "failed-yard-repack", 0);

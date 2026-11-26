@@ -24,7 +24,7 @@ impl Simulation {
         weapon_index: i32,
         waypoint: i32,
         overlays: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<bool> {
         // 6E23A8..6E2426: signed centre, ground, then separate raw bridge
         // flag queries. Share their existing owner, including Dummy writes.
@@ -34,16 +34,16 @@ impl Simulation {
         let damage = weapon.damage;
         // A null Warhead makes SelectAnim (48A4FF), Flash (48A652) and
         // AreaDamage (4892D7) each return early; 6E2513 still succeeds.
-        let Some(warhead) = weapon.warhead.as_deref().and_then(|id| rules.warhead(id)) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return Some(false);
         };
 
         // 6E244F..6E24B8: raw cell land feeds SelectAnim48A4F0. Construct
         // immediately (2600h/-15), so Anim.Start precedes the outer damage.
         let land = detonation_anim::land_at(self, coordinate);
-        if let Some(effect) =
-            detonation_anim::effect(self, rules, warhead, damage, land, coordinate, coordinate)
-        {
+        if let Some(effect) = detonation_anim::effect(
+            self, rules, warhead, damage, land, coordinate, coordinate, false,
+        ) {
             super::damage_consequences::admit_explosion_effect(self, rules, effect);
         }
 
@@ -58,15 +58,19 @@ impl Simulation {
             force_create: false,
             flags: 0,
         });
-        Some(world_receiver::apply_area_damage(
-            self,
-            rules,
-            overlays,
-            coordinate,
-            damage,
-            warhead,
-            (RAD_NO_ATTACKER, None, warhead_ref),
-            frame_effects,
-        ))
+        Some(
+            world_receiver::apply_area_damage(
+                self,
+                rules,
+                overlays,
+                coordinate,
+                damage,
+                warhead,
+                true,
+                (RAD_NO_ATTACKER, None, warhead_ref),
+                frame_effects,
+            )
+            .bridge_state_changed,
+        )
     }
 }

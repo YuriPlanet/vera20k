@@ -1,0 +1,217 @@
+name: Determinism
+
+# Plays long retail-map skirmishes headlessly on every platform VERA20k builds
+# for, and in wasm, and fails unless every frame's state hash and multiplayer
+# sync checksum match across them (`sim-bench --scenario skirmish --lan
+# --frame-hashes`). It also plays the scale benchmark's 20,000-unit battle
+# (docs/scale-benchmark.md) the same way. Each native platform plays with a
+# different number of worker threads, and wasm with none, so equal hashes also
+# show that no result depends on the thread count. The runners hold no retail
+# game data, so each job fetches
+# a zip of the retail install from the URL in the RETAIL_GAME_DATA_URL secret
+# and fails without it. The zip needs the install folder's .mix, .mmx and .yro
+# files; MOVIES01.MIX, MOVIES02.MIX, THEME.MIX and THEMEMD.MIX can be left out,
+# but the stock digital start requires MOVMD03.MIX. Manual only: run it from
+# the Actions tab or with `gh workflow run determinism.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+    inputs:
+      maps:
+        description: Retail maps to play, separated by spaces
+        default: Death.mmx Hills.mmx Dustbowl.mmx
+      ticks:
+        description: Frames per skirmish (9000 is ten minutes of game time)
+        default: '9000'
+      battle_ticks:
+        description: Frames of the scale battle (its armies meet by frame 300; 0 skips it)
+        default: '900'
+
+permissions:
+  contents: read
+
+env:
+  MAPS: ${{ inputs.maps }}
+  TICKS: ${{ inputs.ticks }}
+  BATTLE_TICKS: ${{ inputs.battle_ticks }}
+
+jobs:
+  native:
+    name: play (${{ matrix.os }}, ${{ matrix.threads || 'every' }} threads)
+    strategy:
+      fail-fast: false
+      matrix:
+        # `threads` is sim-bench's worker pool: empty plays with every CPU
+        # thread the runner has.
+        include:
+          - {os: ubuntu-latest, threads: ''}
+          - {os: ubuntu-24.04-arm, threads: '1'}
+          - {os: macos-latest, threads: '2'}
+          - {os: windows-latest, threads: '4'}
+          - {os: windows-11-arm, threads: '3'}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Fetch the retail game data
+        shell: bash
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: |
+          python - <<'EOF'
+          import os, pathlib, shutil, sys, urllib.request, zipfile
+          if not os.environ.get('RETAIL_GAME_DATA_URL'):
+              print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
+              sys.exit(1)
+          # Cloudflare refuses Python's default user agent (error 1010).
+          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
+                                           headers={'User-Agent': 'vera20k-ci'})
+          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
+              shutil.copyfileobj(response, out)
+          with zipfile.ZipFile('retail.zip') as archive:
+              archive.extractall('retail')
+          os.remove('retail.zip')
+          mix = next(p for p in pathlib.Path('retail').rglob('*') if p.name.lower() == 'ra2md.mix')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'RA2_DIR={mix.parent.resolve()}\n')
+          EOF
+      - name: Build sim-bench
+        run: cargo build --locked --release -p vera20k-core --bin sim-bench
+      - name: Play the skirmishes
+        shell: bash
+        env:
+          THREADS: ${{ matrix.threads }}
+        run: |
+          set -euo pipefail
+          mkdir -p hashes
+          for map in $MAPS; do
+            target/release/sim-bench --ra2-dir "$RA2_DIR" --scenario skirmish --lan \
+              --map "$map" --ticks "$TICKS" --frame-hashes "hashes/$map.txt" \
+              ${THREADS:+--threads "$THREADS"}
+          done
+      - name: Play the scale battle
+        if: inputs.battle_ticks != '0'
+        shell: bash
+        env:
+          THREADS: ${{ matrix.threads }}
+        run: |
+          set -euo pipefail
+          python -m tools.scale_map battle30.map --size 250 --starts 30 --battle
+          # sim-bench looks a bare map name up in the retail install.
+          map="$(python -c 'import os; print(os.path.abspath("battle30.map"))')"
+          target/release/sim-bench --ra2-dir "$RA2_DIR" --scenario battle \
+            --map "$map" --ticks "$BATTLE_TICKS" --frame-hashes hashes/battle30.txt \
+            ${THREADS:+--threads "$THREADS"}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hashes-${{ matrix.os }}
+          path: hashes/
+          if-no-files-found: error
+
+  wasm:
+    name: play (wasm32-wasip1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          # Node 22 crashes (SIGSEGV) running sim-bench.wasm; 24 and 26 do not.
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Fetch the retail game data
+        shell: bash
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: |
+          python - <<'EOF'
+          import os, pathlib, shutil, sys, urllib.request, zipfile
+          if not os.environ.get('RETAIL_GAME_DATA_URL'):
+              print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
+              sys.exit(1)
+          # Cloudflare refuses Python's default user agent (error 1010).
+          request = urllib.request.Request(os.environ['RETAIL_GAME_DATA_URL'],
+                                           headers={'User-Agent': 'vera20k-ci'})
+          with urllib.request.urlopen(request) as response, open('retail.zip', 'wb') as out:
+              shutil.copyfileobj(response, out)
+          with zipfile.ZipFile('retail.zip') as archive:
+              archive.extractall('retail')
+          os.remove('retail.zip')
+          mix = next(p for p in pathlib.Path('retail').rglob('*') if p.name.lower() == 'ra2md.mix')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'RA2_DIR={mix.parent.resolve()}\n')
+          EOF
+      - name: Build sim-bench
+        # The default 1 MiB wasm stack is too small for a map load.
+        run: >
+          cargo rustc --locked --release -p vera20k-core --bin sim-bench
+          --target wasm32-wasip1 -- -C link-arg=-zstack-size=8388608
+      - name: Play the skirmishes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p hashes
+          for map in $MAPS; do
+            node tools/wasm/wasi_run.mjs target/wasm32-wasip1/release/sim-bench.wasm \
+              --dir "/game=$RA2_DIR" --dir "/Terrain=$PWD/Terrain" --dir "/out=$PWD/hashes" -- \
+              --ra2-dir /game --scenario skirmish --lan \
+              --map "$map" --ticks "$TICKS" --frame-hashes "/out/$map.txt"
+          done
+      - name: Play the scale battle
+        if: inputs.battle_ticks != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p battle
+          python -m tools.scale_map battle/battle30.map --size 250 --starts 30 --battle
+          node tools/wasm/wasi_run.mjs target/wasm32-wasip1/release/sim-bench.wasm \
+            --dir "/game=$RA2_DIR" --dir "/Terrain=$PWD/Terrain" --dir "/out=$PWD/hashes" \
+            --dir "/battle=$PWD/battle" -- \
+            --ra2-dir /game --scenario battle \
+            --map /battle/battle30.map --ticks "$BATTLE_TICKS" --frame-hashes /out/battle30.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hashes-wasm32-wasip1
+          path: hashes/
+          if-no-files-found: error
+
+  compare:
+    name: compare
+    needs: [native, wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: hashes-*
+      - name: Every platform played the same frames
+        shell: bash
+        run: |
+          set -euo pipefail
+          reference=hashes-ubuntu-latest
+          status=0
+          if [ "$BATTLE_TICKS" != 0 ]; then MAPS="$MAPS battle30"; fi
+          for map in $MAPS; do
+            echo "$map: $(wc -l < "$reference/$map.txt") frames"
+            for platform in hashes-*; do
+              if ! cmp -s "$reference/$map.txt" "$platform/$map.txt"; then
+                echo "::error::$platform differs from $reference on $map"
+                diff "$reference/$map.txt" "$platform/$map.txt" | head -n 4 || true
+                status=1
+              fi
+            done
+          done
+          exit $status

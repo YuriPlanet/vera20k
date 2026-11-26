@@ -121,7 +121,7 @@ fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
         }
         let rules = rules();
         let mut sim = bridge_scene("TANK");
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         for id in [1, 2] {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.position.set_rx_for_test((x.max(0) / 256) as u16);
@@ -140,7 +140,6 @@ fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
         let subject = FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),
@@ -239,7 +238,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
         if row.name == "target_cloaked" {
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(2);
-            target.cloak = Some(cloak);
+            target.cloak = Some(Box::new(cloak));
         }
         let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
         let [x, y] = row.supplied.initial_dummy_xy;
@@ -247,8 +246,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
         let subject = FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
-            fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+            fog: Some(sim.fog.fire_view(&sim.house_alliances)),
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),
             target: Some(TargetKind::Entity(2)),
@@ -297,7 +295,7 @@ fn original_cell_center_query_reads_the_retained_receiver_coordinate() {
         cells[20 * 32 + 10].level = 6;
         let mut terrain = ResolvedTerrainGrid::from_cells(32, 32, cells);
         terrain.test_set_native_allocated_cells(&[(10, 20)]);
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         let dummy = terrain.shared_cell_dummy();
         dummy.stamp_coord(111, -222);
@@ -340,7 +338,6 @@ fn original_cell_center_query_reads_the_retained_receiver_coordinate() {
         let subject = FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),

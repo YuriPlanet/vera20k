@@ -15,7 +15,7 @@ use crate::map::theater::{self, BridgeMiddleTiles};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::rules::native_processing::ProcessedRulesLayers;
 use crate::rules::process_owner::NativeRulesProcessOwner;
-use crate::sim::rng::{MainRng, MainRngDraws};
+use crate::sim::rng::{MainRng, SimRng};
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::snapshot::scenario_resources::SavedMapMetadata;
 use crate::sim::snapshot::{GameSnapshot, SnapshotError};
@@ -50,6 +50,7 @@ struct PreparedSavedResources {
     local_view: PreparedSavedLocalView,
     power_bar_anim: PowerBarAnimState,
     radar_events: crate::render::radar::ClientRadarEvents,
+    radar_housing: Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     credits_counter: Option<i32>,
     lighting: crate::map::lighting::SavedCellLighting,
     scheme_normal_rgb: [i32; 3],
@@ -65,6 +66,7 @@ pub(crate) struct CommittedSavedGame {
     pub(crate) local_view: PreparedSavedLocalView,
     pub(crate) power_bar_anim: PowerBarAnimState,
     pub(crate) radar_events: crate::render::radar::ClientRadarEvents,
+    pub(crate) radar_housing: Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     pub(crate) credits_counter: Option<i32>,
     pub(crate) details: CommittedLoadPresentation,
     pub(crate) elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -114,6 +116,7 @@ impl PreparedSavedGame {
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
         let credits_counter = saved_view.take_credits_counter();
+        let radar_housing = saved_view.take_radar_housing();
         let radar_events = crate::render::radar::ClientRadarEvents::from_saved(
             saved_view
                 .take_radar_events()
@@ -127,22 +130,28 @@ impl PreparedSavedGame {
         saved.terrain().validate()?;
         if saved.terrain().dimensions()
             != (
-                snapshot.sim.session().map_width(),
-                snapshot.sim.session().map_height(),
+                snapshot.session().map_width(),
+                snapshot.session().map_height(),
             )
         {
             return Err(PreparedLoadError::Resources(
                 "saved terrain and scenario dimensions disagree".into(),
             ));
         }
-        let theater_name = snapshot.sim.session().theater().to_owned();
-        let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
+        let theater_name = snapshot.session().theater().to_owned();
+        let theater = theater::load_theater_with_bundled_ice(
+            assets,
+            &theater_name,
+            saved.map().uses_bundled_ice(),
+            false,
+        )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?
+        .ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
         let mut rules = view
             .rules_owner
             .project_saved_scenario_rules(saved.processed_rules())?;
-        let overlay_registry = rules.overlay_registry().clone();
         init_helpers::bind_rules_art_metadata(
             &mut rules,
             view.rules_owner.fixed_art(),
@@ -152,9 +161,8 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            view.rules_owner.fixed_art(),
-            &overlay_registry,
             saved.scheduler_anim_roots(),
+            &[],
             assets,
             theater.extension,
             &theater_name,
@@ -163,8 +171,11 @@ impl PreparedSavedGame {
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
         // Asset-dependent simulation metadata participates in this digest.
         // Compare after binding, not against the outgoing world's rules.
+        // A converted save takes the rules this game has.
         let expected = rules.simulation_config_hash();
-        if snapshot.rules_hash != expected {
+        if snapshot.rules_hash != expected
+            && snapshot.rules_hash != crate::sim::snapshot::migration::CONVERTED_RULES_HASH
+        {
             return Err(SnapshotError::RulesMismatch {
                 expected,
                 found: snapshot.rules_hash,
@@ -182,7 +193,6 @@ impl PreparedSavedGame {
         // OverlayLoad5FEB45 and MouseLoad5BE668 can replace the restored
         // shape policy. Refresh this immutable projection from the same
         // incoming record, rather than retaining its pre-load registry.
-        let overlay_registry = rules.overlay_registry().clone();
         init_helpers::bind_rules_art_metadata(
             &mut rules,
             view.rules_owner.fixed_art(),
@@ -192,26 +202,21 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            view.rules_owner.fixed_art(),
-            &overlay_registry,
             saved.scheduler_anim_roots(),
+            &[],
             assets,
             theater.extension,
             &theater_name,
             crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Saved,
         )
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
-        // The saved hash was checked above against the unchanged incoming
-        // Type state. TerrainTypeLoad71E22D now binds even a ctor-null list;
-        // carry that legitimate same-envelope mutation into runtime admission.
-        snapshot.rules_hash = rules.simulation_config_hash();
         // Only a live-value capture can run the native user-file Cell reset.
         // Baseline-only headless payloads remain on their separate adapter.
         let saved_land = saved.terrain().user_load_land_values()?;
         let (mut resources, processed_rules, map) =
-            saved.into_restored_parts(rules, overlay_registry, SharedCellDummy::fresh())?;
+            saved.into_restored_parts(rules, SharedCellDummy::fresh())?;
         let rules = &resources.rules;
-        let overlay_types = &resources.overlay_registry;
+        let overlay_types = rules.overlay_registry();
         let terrain_speed =
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
                 rules.general.tracked_uphill,
@@ -221,7 +226,7 @@ impl PreparedSavedGame {
             );
         let mut tile_cache = view.tile_cache.detached();
         let mut bind_loaded_cells =
-            |terrain: &mut ResolvedTerrainGrid, main: MainRngDraws, size_width: i32| {
+            |terrain: &mut ResolvedTerrainGrid, main: &mut SimRng, size_width: i32| {
                 let mut draw = || main.next_u32();
                 let mut selector = tile_cache.begin_load(&mut draw);
                 terrain
@@ -241,7 +246,7 @@ impl PreparedSavedGame {
             SnapshotProcessState::Cold(view.frontend_main),
             SnapshotProcessState::Live,
         );
-        let mut world = PreparedLoad::prepare_snapshot(
+        let world = PreparedLoad::prepare_snapshot(
             snapshot,
             process,
             rules,
@@ -251,9 +256,10 @@ impl PreparedSavedGame {
                 .expect("saved terrain restored")
                 .clone(),
             terrain_speed,
-            overlay_types,
-            Some(&mut bind_loaded_cells),
-            Some(saved_land),
+            crate::sim::snapshot::PlayerSaveCells::Saved {
+                land: saved_land,
+                prepare_assets: &mut bind_loaded_cells,
+            },
         )?;
         resources
             .terrain_template
@@ -268,20 +274,11 @@ impl PreparedSavedGame {
                 rules.general.cliff_back_impassability,
                 tile_cache.selector(),
             )?;
-        // MouseLoad reads a different theater through 545150 (5BE647), which
-        // republishes ClearTile/WaterSet at 545D27/545E17 for a later map's
-        // Fill; the same theater keeps the values its own load published.
-        // Like the fresh loader's, this reaches the process cache on commit.
-        tile_cache.complete_theater_registry_load(
-            theater.rmg_tiles.clear_tile,
-            theater.rmg_tiles.water_set,
-        );
         let local_view = PreparedSavedLocalView::new(saved_view, &world.simulation, rules)?;
         crate::app::presentation::lighting::validate_saved_lighting(&lighting, &world.simulation)?;
-        // Load685120 ->53AB50 calls the canonical selector after restoring
-        // incoming effects. Its one Cell refresh is staged below; outgoing
-        // process palette/cache state stays immutable during preparation.
-        world.simulation.reinitialize_lighting_after_user_load();
+        // Shared user-load preparation reselected the incoming effects'
+        // lighting before refreshing Anim conversions. The one Cell refresh
+        // is staged below; outgoing process palettes remain unchanged.
         let scheme_normal_rgb = view
             .lighting
             .normal_scheme_for_user_load(view.current_simulation, &theater_name);
@@ -293,6 +290,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            radar_housing,
             credits_counter,
             lighting,
             scheme_normal_rgb,
@@ -338,6 +336,7 @@ impl PreparedSavedGame {
             &theater.iso_palette,
             theater.extension,
             &terrain_grid,
+            rules.combat_damage.terrain_deformation,
             gpu,
             batch,
         );
@@ -349,11 +348,11 @@ impl PreparedSavedGame {
             theater.extension,
             theater_name,
             Some(rules),
-            &resources.overlay_registry,
             map.house_colors(),
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
-        );
+        )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?;
         let overlays = crate::app::frontend::skirmish::build_overlay_presentation(
             &world.map_restore.occupied_overlays,
             map.terrain_objects(),
@@ -363,7 +362,6 @@ impl PreparedSavedGame {
             theater.extension,
             theater_name,
             rules,
-            &resources.overlay_registry,
             Some(&theater.iso_palette),
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),
@@ -407,7 +405,7 @@ impl PreparedSavedGame {
         self,
         process: &mut ProcessAssets,
         process_main: &MainRng,
-        runtime: &mut Option<SimRuntime>,
+        runtime: &mut crate::app::match_runtime::sim_host::SimHost,
     ) -> CommittedSavedGame {
         let PreparedSavedResources {
             world,
@@ -417,6 +415,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            radar_housing,
             credits_counter,
             tile_cache,
             elapsed_clock,
@@ -439,10 +438,10 @@ impl PreparedSavedGame {
             .expect("prepared saved terrain");
         template.bind_shared_cell_dummy(dummy);
         template.bind_tile_variant_selector(selector);
-        *runtime = Some(SimRuntime {
+        runtime.install(Some(SimRuntime {
             simulation,
-            resources,
-        });
+            resources: resources.into(),
+        }));
         CommittedSavedGame {
             map,
             presentation: self.presentation,
@@ -450,6 +449,7 @@ impl PreparedSavedGame {
             local_view,
             power_bar_anim,
             radar_events,
+            radar_housing,
             credits_counter,
             details,
             elapsed_clock,
@@ -457,6 +457,20 @@ impl PreparedSavedGame {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "resource_load_tests.rs"]
 mod tests;
+
+// These files were written by the stock desktop release configurations.
+#[cfg(all(
+    test,
+    tests_app,
+    not(any(
+        feature = "phobos",
+        feature = "npatch",
+        feature = "verax",
+        feature = "npbug"
+    ))
+))]
+#[path = "release_save_tests.rs"]
+mod release_save_tests;

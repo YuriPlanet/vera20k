@@ -1,16 +1,17 @@
 //! Original AllToCheer536C00 ->730F30 admission histories. The bounded
-//! OutList comparison connects the production input clock to the existing
-//! SynchronizedCommandQueue explicitly; ordinary app scheduling uses the same
-//! local capacity owner and is tested separately. Ring storage
-//! indices and timeGetTime imports are native observations, not Rust layout
-//! or wall-clock claims. No House receiver or device audio runs in this leaf.
+//! OutList comparison runs the production input clock against the OutList
+//! owner, `LocalCommandStage`, at its native 128 events; ordinary app
+//! scheduling uses the same owner at VERA's capacity and is tested
+//! separately. Ring storage indices and timeGetTime imports are native
+//! observations, not Rust layout or wall-clock claims. No House receiver or
+//! device audio runs in this leaf.
 
 use super::{MatchInputState, PreparedSavedLocalView};
 use crate::app::input::commands::queue_house_cheer_in_sim;
 use crate::app::input::hotkeys::{HotkeyBindings, HotkeyCommand, HotkeyResolution};
-use crate::net::lockstep::{SynchronizedCommand, SynchronizedCommandQueue};
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
-use crate::sim::command::{Command, CommandRecord};
+use crate::sim::command::{Command, CommandEnvelope, CommandRecord};
+use crate::sim::command_queue::LocalCommandStage;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
@@ -52,7 +53,10 @@ fn rules_with_rate(rate: i64) -> RuleSet {
     .unwrap()
 }
 
-fn event_header(record: &CommandRecord) -> Value {
+fn event_header(event: &CommandEnvelope) -> Value {
+    let Command::SynchronizedRecord { record } = &event.payload else {
+        panic!("the OutList holds only native records here");
+    };
     json!({
         "opcode": record.opcode(),
         "house_index": record.house_id(),
@@ -83,19 +87,16 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
             .unwrap()
             .set_is_defeated_for_test(initial["input_locked"].as_u64().unwrap() != 0);
         assert!(!sim.session().input_locked());
-        let mut queue = SynchronizedCommandQueue::new();
+        let mut queue = LocalCommandStage::<CommandEnvelope>::default();
         for _ in 0..initial["queue_count"].as_u64().unwrap() {
-            assert!(
-                queue.issue(SynchronizedCommand::opaque(
-                    CommandRecord::encode(
-                        0x15,
-                        initial["house_index"].as_i64().unwrap() as i32,
-                        0,
-                        &[]
-                    )
-                    .unwrap(),
-                ))
-            );
+            let record = CommandRecord::encode(
+                0x15,
+                initial["house_index"].as_i64().unwrap() as i32,
+                0,
+                &[],
+            )
+            .unwrap();
+            assert!(queue.try_push(CommandEnvelope::synchronized(record, 0)));
         }
         for (ordinal, phase) in case["phases"].as_array().unwrap().iter().enumerate() {
             let label = format!("{} phase{ordinal}", case["name"]);
@@ -111,11 +112,11 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
             }
             if let Some(count) = boundary["queue_count"].as_u64() {
                 // This history declares an external OutList drain between
-                // presses. Use the real transfer owner rather than a test ring.
+                // presses: the FIFO removal a transfer makes.
                 assert_eq!(count, 0, "{label}: only the declared drain is supplied");
-                queue.transfer_single_player();
+                queue.take_prefix(queue.len()).for_each(drop);
             }
-            let before = queue.local_len();
+            let before = queue.len();
             let mut constructed = Vec::new();
             match boundary["kind"].as_str().unwrap() {
                 "press" => {
@@ -131,7 +132,7 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
                                 "house_index": record.house_id(),
                             }));
                             queue
-                                .issue(SynchronizedCommand::opaque(record))
+                                .try_push(CommandEnvelope::synchronized(record, 0))
                                 .then_some(sim.session().tick())
                         },
                     );
@@ -148,11 +149,7 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
                 }
                 kind => panic!("{label}: unknown original phase {kind}"),
             }
-            let actual_events: Vec<_> = queue
-                .local_records()
-                .skip(before)
-                .map(|command| event_header(command.record()))
-                .collect();
+            let actual_events: Vec<_> = queue.iter().skip(before).map(event_header).collect();
             let expected_events: Vec<_> = expected["new_events"]
                 .as_array()
                 .unwrap()
@@ -185,7 +182,7 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
                 "{label}: constructor/read value"
             );
             assert_eq!(
-                queue.local_len() as u64,
+                queue.len() as u64,
                 expected["queue_count"].as_u64().unwrap(),
                 "{label}: authoritative OutList count"
             );

@@ -2,8 +2,9 @@
 //! producer, retail resources and production replay. Location, HP, selection,
 //! hover and surface planes are consumer inputs, not lifecycle parity claims.
 use super::draw_plan_lowering::{
-    NativeDisplayOrder, PlannedObjectInstance, lower_ground_object_instances,
+    NativeDisplayOrder, OwnedPlannedObject, lower_ground_object_instances,
 };
+use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::ui_overlays::{StatusViewport, techno_extras_for_parent};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::entities::EntityCategory;
@@ -16,7 +17,249 @@ use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
 use crate::sim::{
     combat::Health, components::DriveCoord, game_entity::GameEntity, world::Simulation,
 };
+use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use serde_json::Value;
+
+#[test]
+#[ignore = "requires retail assets and GPU; screen-pixel health bars across wheel zoom"]
+fn wheel_zoom_keeps_mobile_health_pixels_identical() {
+    wheel_zoom_health_pixels("MTNK", EntityCategory::Unit);
+}
+
+#[test]
+#[ignore = "requires retail assets and GPU; issue3097 infantry health across wheel zoom"]
+fn wheel_zoom_keeps_infantry_health_pixels_identical() {
+    wheel_zoom_health_pixels("E1", EntityCategory::Infantry);
+}
+
+fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
+    use crate::render::upscale_pass::WorldZoomPass;
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        .expect("physical Battle rules");
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [256, 256];
+    let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let object = retail.rules.object(type_name).unwrap();
+    let type_ref = sim.intern(type_name);
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        1,
+        20,
+        20,
+        0,
+        0,
+        owner,
+        // Damaged infantry also exercises the filled/empty pip boundary.
+        Health::new(if category == EntityCategory::Infantry {
+            object.strength / 2
+        } else {
+            object.strength
+        }),
+        type_ref,
+        category,
+        0,
+        5,
+        false,
+    );
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
+    sim.entities_mut_for_test().insert(entity);
+    sim.resubmit_entity_display_for_test(1);
+    let entity = sim.entities().get(1).unwrap();
+    let coord = crate::sim::movement::ground_pose::object_get_coords(entity, None);
+    let point = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    let mut cam = camera(size);
+    cam.camera_pos = [point.0 - 63.0, point.1 - 180.0];
+    let anchor = point;
+    let pip_count = if category == EntityCategory::Infantry {
+        8
+    } else {
+        17
+    };
+    let mut reference: Option<(Vec<u8>, [u32; 2], [i32; 2])> = None;
+    let mut native_infantry_fills = None;
+    for zoom in [1.0, 1.25, 0.8, 1.0 / 1.5] {
+        cam.zoom = zoom;
+        batch.write_camera(&gpu.queue, cam);
+        let resolve =
+            (zoom != 1.0).then(|| WorldZoomPass::new(&gpu.device, &gpu.queue, format, size, zoom));
+        let source_size = resolve.as_ref().map_or(size, WorldZoomPass::source_size);
+        if resolve.is_some() {
+            batch.set_native_world_resolution(&gpu.queue, source_size);
+        }
+        let status = techno_extras_for_parent(
+            &sim,
+            &ObjectRecord::of_test_sim(&sim, &retail.rules, 1),
+            Some(&retail.rules),
+            &overlay,
+            None,
+            Some("Americans"),
+            StatusViewport {
+                camera: cam.camera_pos,
+                size: size.map(|n| n as f32 / zoom),
+                zoom,
+                ignore_visibility: true,
+            },
+            HealthBarMode::Vanilla,
+        );
+        assert!(status.background.is_some());
+        let visible_pips = if category == EntityCategory::Infantry {
+            // Compare the damaged bar with its native-zoom fill count without
+            // duplicating the health-to-pip rounding performed by the producer.
+            *native_infantry_fills.get_or_insert_with(|| {
+                assert_eq!(zoom, 1.0);
+                assert!(status.fills.len() > 0 && status.fills.len() < pip_count);
+                status.fills.len()
+            })
+        } else {
+            pip_count
+        };
+        assert_eq!(status.fills.len(), visible_pips);
+        let display = NativeDisplayOrder::new(&[1]);
+        let draw = display.object_draw(1, SpriteEncoding::Plain).unwrap();
+        let mut parent = OwnedPlannedObject::object(draw, vec![]);
+        parent.status = Some(status);
+        let mut layer = lower_ground_object_instances(vec![parent]);
+        super::object_extras::defer_health_to_frame(&mut layer, cam.camera_pos, zoom);
+        let mut pool = InstanceBufferPool::new();
+        pool.upload_on_device(
+            &gpu.device,
+            &gpu.queue,
+            "object_extras",
+            &layer.extras_instances,
+        );
+        let a = ShroudBuffer::fixture(
+            &gpu.device,
+            &gpu.queue,
+            source_size,
+            cam.camera_pos,
+            // The mobile border straddles an A boundary at its parent point.
+            // It must still sample live A in frame pixels, while fills bypass A.
+            &(0..source_size[0] * source_size[1])
+                .map(|index| if index % source_size[0] < 63 { 0 } else { 127 })
+                .collect::<Vec<_>>(),
+        );
+        batch.bind_shroud(&gpu.device, Some(&a));
+        let color = gpu.target(source_size, format);
+        let depth = gpu.target(source_size, wgpu::TextureFormat::Depth32Float);
+        let cv = color.create_view(&Default::default());
+        let dv = depth.create_view(&Default::default());
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            u16::MAX,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        );
+        let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+        super::object_extras::draw_object_extras(
+            &mut encoder,
+            &cv,
+            &dv,
+            &mut terrain,
+            [0, 0, source_size[0], source_size[1]],
+            &batch,
+            Some(&overlay),
+            pool.get("object_extras").map(|(buffer, _)| buffer),
+            None,
+            &layer,
+        );
+        let output = if let Some(resolve) = &resolve {
+            resolve.composite(
+                &gpu.device,
+                &mut encoder,
+                &color,
+                [0, 0, size[0], size[1]],
+                wgpu::Color::BLACK,
+            );
+            let cameras = batch.create_frame_world_cameras(&gpu.device, zoom, Some(&a));
+            {
+                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                    &mut encoder,
+                    resolve.color_view(),
+                    resolve.frame_depth_view(),
+                );
+                super::object_extras::draw_frame_health(
+                    &mut pass,
+                    &batch,
+                    Some(&overlay),
+                    pool.get("object_extras").map(|(buffer, _)| buffer),
+                    &layer,
+                    [&cameras[0], &cameras[1]],
+                );
+            }
+            resolve.color_texture()
+        } else {
+            &color
+        };
+        let read = gpu.read(&mut encoder, output);
+        let pixels = gpu.finish(encoder, &[read], size).remove(0);
+        let mut bounds = [size[0], size[1], 0, 0];
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            if pixel[..3] != [0; 3] {
+                let x = index as u32 % size[0];
+                let y = index as u32 / size[0];
+                bounds = [
+                    bounds[0].min(x),
+                    bounds[1].min(y),
+                    bounds[2].max(x + 1),
+                    bounds[3].max(y + 1),
+                ];
+            }
+        }
+        assert!(
+            bounds[0] < bounds[2] && bounds[1] < bounds[3],
+            "visible health pixels"
+        );
+        let extent = [bounds[2] - bounds[0], bounds[3] - bounds[1]];
+        let frame_anchor = [
+            ((anchor.0 - cam.camera_pos[0]) * zoom + 0.5).floor() as i32,
+            ((anchor.1 - cam.camera_pos[1]) * zoom + 0.5).floor() as i32,
+        ];
+        let mut strip = Vec::new();
+        for y in bounds[1]..bounds[3] {
+            let offset = ((y * size[0] + bounds[0]) * 4) as usize;
+            strip.extend_from_slice(&pixels[offset..offset + extent[0] as usize * 4]);
+        }
+        let offset = [
+            bounds[0] as i32 - frame_anchor[0],
+            bounds[1] as i32 - frame_anchor[1],
+        ];
+        if let Some((reference, reference_extent, reference_offset)) = &reference {
+            assert_eq!(
+                extent, *reference_extent,
+                "zoom {zoom}: fixed health footprint"
+            );
+            assert!(
+                &strip == reference,
+                "zoom {zoom}: health border, pip texels and spacing; first differing byte {:?}",
+                strip
+                    .iter()
+                    .zip(reference)
+                    .position(|(actual, expected)| actual != expected)
+            );
+            // Allow whole-strip rounding by one screen pixel; every internal
+            // pixel above must remain identical and the roof/parent attachment
+            // must still follow the projected world point.
+            assert!(
+                (0..2).all(|axis| (offset[axis] - reference_offset[axis]).abs() <= 1),
+                "zoom {zoom}: health follows its projected anchor"
+            );
+        } else {
+            reference = Some((strip, extent, offset));
+        }
+    }
+}
 
 #[test]
 #[ignore = "requires retail assets and GPU; original MTNK health strip A/Z and Display replay"]
@@ -66,13 +309,16 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             0,
             0,
             &retail.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.discovery.set_owned_by_current_house_for_test(true);
-    entity.selection.set_selected_for_test(true);
+    entity
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
     // The held constructor binds the shield but deliberately skips Unlimbo's
     // Display submission. Establish that drawing prior for this consumer test.
     sim.resubmit_entity_display_for_test(id);
@@ -84,9 +330,11 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let mut cam = camera(size);
     cam.camera_pos = [x - 64.0, y - 60.0];
+    let record =
+        crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &retail.rules, id);
     let strip = techno_extras_for_parent(
         &sim,
-        entity,
+        &record,
         Some(&retail.rules),
         &overlay,
         None,
@@ -94,8 +342,10 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
         StatusViewport {
             camera: cam.camera_pos,
             size: size.map(|n| n as f32),
+            zoom: 1.0,
             ignore_visibility: true,
         },
+        HealthBarMode::Vanilla,
     );
     assert_eq!(strip.fills.len(), 17, "the empty shield adds no PIPS fills");
     let background = strip.shield_background.expect("selected shield border");
@@ -121,7 +371,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             ..Default::default()
         },
     ] {
-        let mut parent = PlannedObjectInstance::object(
+        let mut parent = OwnedPlannedObject::object(
             display.object_draw(id, SpriteEncoding::Plain).unwrap(),
             vec![],
         );
@@ -169,6 +419,88 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     );
 }
 
+/// `0x006F6A8E..0x006F6AB0`: the mobile scale row starts at the draw point
+/// (-10,+10) without `PixelSelectionBracketDelta=`, which only moves the
+/// health bar.
+#[test]
+#[ignore = "requires retail assets and GPU; bracket delta leaves the scale pips in place"]
+fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
+    use crate::rules::ini_parser::IniFile;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let strip = |delta: i32| {
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &IniFile::from_str(&format!(
+                "[MTNK]\nPipScale=Ammo\nAmmo=3\nPixelSelectionBracketDelta={delta}\n"
+            )),
+        )
+        .expect("physical Battle rules");
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Americans");
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        let id = sim
+            .construct_object_limbo_at_height(
+                "MTNK",
+                "Americans",
+                20,
+                20,
+                0,
+                0,
+                &retail.rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
+        entity.install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(3)));
+        sim.resubmit_entity_display_for_test(id);
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+        sim.fog_mut_for_test().reveal_all_for_owner(owner);
+        let entity = sim.entities().get(id).unwrap();
+        let coord = crate::sim::movement::ground_pose::object_get_coords(entity, None);
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+        let extras = techno_extras_for_parent(
+            &sim,
+            &ObjectRecord::of_test_sim(&sim, &retail.rules, id),
+            Some(&retail.rules),
+            &overlay,
+            None,
+            Some("Americans"),
+            StatusViewport {
+                camera: [x - 64.0, y - 60.0],
+                size: [128.0, 96.0],
+                zoom: 1.0,
+                ignore_visibility: true,
+            },
+            HealthBarMode::Vanilla,
+        );
+        let y = |list: &[crate::render::batch::SpriteInstance]| {
+            list.iter().map(|pip| pip.position).collect::<Vec<_>>()
+        };
+        (y(&extras.fills), y(&extras.scale))
+    };
+    let (flat_fills, flat_scale) = strip(0);
+    let (raised_fills, raised_scale) = strip(-12);
+    assert_eq!(flat_scale.len(), 3, "three Ammo pips");
+    assert_eq!(raised_scale, flat_scale, "the scale row ignores the delta");
+    assert_eq!(raised_fills[0][1], flat_fills[0][1] - 12.0, "the bar moves");
+}
+
 /// The disguised hover arm (`0x006F5E37..0x006F5E87`) through the strip
 /// production draws: an enemy Mirage worn as terrain (Unit `+0xD0(1)`
 /// `0x007465F0` NULL) draws no health while hovered until it is selected; a
@@ -196,6 +528,9 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
         let mut sim = Simulation::new();
         let player = sim.intern("Player");
         let owner = sim.intern("Enemy");
+        // The frame's records capture what the local player sees.
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(player));
         let object = rules.object(name).unwrap();
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -212,17 +547,17 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(selected);
+        entity.seldom.selection.set_selected_for_test(selected);
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, None, None);
-        entity.disguise = Some(disguise);
+        entity.seldom.disguise = Some(disguise);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
         sim.fog_mut_for_test().reveal_all_for_owner(player);
         sim.entities_mut_for_test().insert(entity);
         sim.resubmit_entity_display_for_test(1);
         techno_extras_for_parent(
             &sim,
-            sim.entities().get(1).unwrap(),
+            &ObjectRecord::of_test_sim(&sim, rules, 1),
             Some(rules),
             &overlay,
             Some(1),
@@ -230,8 +565,10 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
             StatusViewport {
                 camera: [center.0 - 400.0, center.1 - 300.0],
                 size: [800.0, 600.0],
+                zoom: 1.0,
                 ignore_visibility: false,
             },
+            HealthBarMode::Vanilla,
         )
         .fills
         .len()
@@ -281,6 +618,7 @@ fn native_carrier_spawn_pips_preserve_color_a_z_and_parent_order() {
     );
 }
 
+// Ares GetPassengerPips (10044C90, hook 0x709D38) starts at the cargo tail.
 #[test]
 #[ignore = "requires retail assets and GPU; original Bio Reactor PIPS cargo-head order and Building pip rows"]
 fn native_bio_reactor_pips_preserve_color_a_z_and_parent_order() {
@@ -381,238 +719,43 @@ fn native_self_heal_draw_fault_order() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.selection.set_selected_for_test(true);
-        entity.discovery.set_owned_by_current_house_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
+        entity
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
         sim.fog_mut_for_test().reveal_all_for_owner(owner);
         sim.entities_mut_for_test().insert(entity);
         sim.resubmit_entity_display_for_test(1);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            techno_extras_for_parent(
-                &sim,
-                sim.entities().get(1).unwrap(),
-                Some(&rules),
-                &overlay,
-                None,
-                Some("Owner"),
-                StatusViewport {
-                    camera: [-380.0, 400.0],
-                    size: [160.0, 120.0],
-                    ignore_visibility: true,
-                },
-            )
-        }));
+        let strip = techno_extras_for_parent(
+            &sim,
+            &ObjectRecord::of_test_sim(&sim, &rules, 1),
+            Some(&rules),
+            &overlay,
+            None,
+            Some("Owner"),
+            StatusViewport {
+                camera: [-380.0, 400.0],
+                size: [160.0, 120.0],
+                zoom: 1.0,
+                ignore_visibility: true,
+            },
+            HealthBarMode::Vanilla,
+        );
         // The original HasSelfHeal query precedes the divide. Drawing does
         // not skip the admitted divide for full health, unlike the AI arm.
-        assert_eq!(result.is_err(), !row["fault"].is_null(), "{row}");
-        if let Ok(strip) = result {
-            assert!(strip.self_heal.is_none());
-        }
+        // gamemd traps there (IDIV at 0x0070A549 / 0x0070A5B5); VERA keeps
+        // the marker on its steady frame instead, so the marker shows
+        // exactly where gamemd faulted.
+        assert_eq!(strip.self_heal.is_some(), !row["fault"].is_null(), "{row}");
         checked += 1;
     }
     assert_eq!(checked, 8);
 }
 
-/// Production status cost, with a one-parent replay comparison. Use release
-/// for performance; debug execution only diagnoses the timer and composition.
-/// Setup/upload is excluded; both intervals include clears and every draw.
-#[test]
-#[ignore = "release CPU/GPU timing; requires retail assets and an uncontended GPU"]
-fn production_self_heal_status_workload_timing() {
-    use crate::render::terrain_draw_gpu_tests::GpuFrameTimer;
-
-    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
-        .expect("physical Battle rules");
-    let rules = &retail.rules;
-    let assets = AssetManager::new(
-        &std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap()),
-        MediaArchiveMode::STOCK_DIGITAL,
-    )
-    .unwrap();
-    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
-    let timer = GpuFrameTimer::new(&gpu);
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let size = [1920, 1080];
-    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
-    let mut pool = InstanceBufferPool::new();
-    let center = crate::util::lepton::absolute_leptons_to_screen(48 * 256 + 128, 48 * 256 + 128, 0);
-    let mut cam = camera(size);
-    cam.camera_pos = [center.0 - 960.0, center.1 - 540.0];
-    batch.write_camera(&gpu.queue, cam);
-    let color = gpu.target(size, format);
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let cv = color.create_view(&Default::default());
-    let dv = depth.create_view(&Default::default());
-    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
-    let mut samples = Vec::new();
-    for count in [1usize, 32, 252] {
-        for layout in ["dispersed", "overlap"] {
-            let mut sim = Simulation::new();
-            let owner = sim.intern("Owner");
-            let type_ref = sim.intern("MTNK");
-            let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
-            crate::sim::arena_fixture::install_status_self_heal(&mut house, 0, 1);
-            sim.houses_mut_for_test().register(house);
-            *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
-            sim.fog_mut_for_test().reveal_all_for_owner(owner);
-            let ids: Vec<_> = (1..=count as u64).collect();
-            for (i, &id) in ids.iter().enumerate() {
-                let (x, y) = if layout == "overlap" {
-                    (48, 48)
-                } else {
-                    (40 + (i % 16) as u16, 40 + (i / 16) as u16)
-                };
-                let mut entity = GameEntity::new_at_frame_zero_for_test(
-                    id,
-                    x,
-                    y,
-                    0,
-                    0,
-                    owner,
-                    Health::new(150),
-                    type_ref,
-                    EntityCategory::Unit,
-                    0,
-                    5,
-                    false,
-                );
-                entity.lifecycle.set_in_limbo_for_test(false);
-                entity.discovery.set_owned_by_current_house_for_test(true);
-                entity.selection.set_selected_for_test(true);
-                sim.entities_mut_for_test().insert(entity);
-                sim.resubmit_entity_display_for_test(id);
-            }
-            let display = NativeDisplayOrder::new(&ids);
-            for (phase, frame, selector) in [("ordinary", 6, 0), ("pulse", 5, 1)] {
-                sim.session_mut_for_test().set_binary_frame_for_test(frame);
-                let parents = ids
-                    .iter()
-                    .map(|&id| {
-                        let mut parent = PlannedObjectInstance::object(
-                            display.object_draw(id, SpriteEncoding::Plain).unwrap(),
-                            vec![],
-                        );
-                        let strip = techno_extras_for_parent(
-                            &sim,
-                            sim.entities().get(id).unwrap(),
-                            Some(rules),
-                            &overlay,
-                            None,
-                            Some("Owner"),
-                            StatusViewport {
-                                camera: cam.camera_pos,
-                                size: size.map(|n| n as f32),
-                                ignore_visibility: false,
-                            },
-                        );
-                        assert_eq!(
-                            strip
-                                .self_heal
-                                .as_ref()
-                                .unwrap()
-                                .draw_state
-                                .native_selector_bits(),
-                            selector
-                        );
-                        parent.status = Some(strip);
-                        parent
-                    })
-                    .collect();
-                let layer = lower_ground_object_instances(parents);
-                assert_eq!(layer.extras_runs.len(), count);
-                pool.upload_on_device(
-                    &gpu.device,
-                    &gpu.queue,
-                    "object_extras",
-                    &layer.extras_instances,
-                );
-                let mut reference = None;
-                for sequential in [true, false] {
-                    eprintln!(
-                        "STATUS timing begins: parents={count} layout={layout} phase={phase} one_parent_calls={sequential}"
-                    );
-                    for sample in 0..4 {
-                        terrain.prepare(&gpu.device, &color, &dv, cam);
-                        let (_, cpu_ms, gpu_ms) = timer.measure(&gpu, |encoder| {
-                            clear(
-                                encoder,
-                                &cv,
-                                &dv,
-                                u16::MAX,
-                                wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                            );
-                            if sequential {
-                                for run in &layer.extras_runs {
-                                    super::object_extras::draw_status_runs(
-                                        encoder,
-                                        &cv,
-                                        &dv,
-                                        &mut terrain,
-                                        [0, 0, size[0], size[1]],
-                                        &batch,
-                                        Some(&overlay),
-                                        pool.get("object_extras").map(|(buffer, _)| buffer),
-                                        &layer.extras_instances,
-                                        None,
-                                        std::slice::from_ref(run),
-                                    );
-                                }
-                            } else {
-                                super::object_extras::draw_status_runs(
-                                    encoder,
-                                    &cv,
-                                    &dv,
-                                    &mut terrain,
-                                    [0, 0, size[0], size[1]],
-                                    &batch,
-                                    Some(&overlay),
-                                    pool.get("object_extras").map(|(buffer, _)| buffer),
-                                    &layer.extras_instances,
-                                    None,
-                                    &layer.extras_runs,
-                                );
-                            }
-                        });
-                        if sample > 0 {
-                            samples.push(serde_json::json!({
-                                "parents": count, "layout": layout, "phase": phase,
-                                "one_parent_calls": sequential, "sample": sample,
-                                "cpu_encode_ms": cpu_ms, "gpu_ms": gpu_ms,
-                            }));
-                        }
-                    }
-                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    let reads = [
-                        gpu.read(&mut encoder, &color),
-                        gpu.read(&mut encoder, &depth),
-                    ];
-                    let output = gpu.finish(encoder, &reads, size);
-                    if let Some(expected) = &reference {
-                        assert!(
-                            &output == expected,
-                            "{count} {layout} {phase}: parent replay color/depth"
-                        );
-                    } else {
-                        reference = Some(output);
-                    }
-                }
-            }
-        }
-    }
-    let report = serde_json::json!({
-        "build_profile": if cfg!(debug_assertions) { "debug-diagnostic" } else { "release" },
-        "target": size, "color_format": "Bgra8UnormSrgb",
-        "scope": "Actual selected MTNK producer, lowering and status replay; House-count/HP/position consumer priors, not full gameplay or20k performance",
-        "interval": "GPU includes clears, all status passes and the final one-workgroup timestamp marker. CPU includes encoder construction/draw commands/intermediate submits; excludes setup/upload/prepare/final submit/wait. One warmup and3samples per case. Every whole-run result matches one-parent color/depth.",
-        "samples": samples,
-    });
-    eprintln!("{report}");
-    if let Some(path) = std::env::var_os("VERA20K_STATUS_PERF_OUTPUT") {
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
-    }
-}
-
+// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C) replaces
+// the wrench frame.
 #[test]
 #[ignore = "requires retail assets and GPU; original GAPOWR wrench prefix, MOUSEPAL N1 and both Extras visits"]
 fn native_repair_wrenches_preserve_color_a_z_and_parent_order() {
@@ -860,6 +1003,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     false,
                 );
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(object.foundation.clone().into());
                 entity.position.put_location(DriveCoord {
@@ -872,6 +1016,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     .lifecycle
                     .set_cell_marked_for_test(actor["marked"].as_bool().unwrap());
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
                 sim.entities_mut_for_test().insert(entity);
@@ -901,6 +1046,7 @@ fn native_building_status_labels(fixture: &'static str) {
             }
             let labels = build_building_status_render_instances(
                 &sim,
+                &crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules),
                 &opportunities,
                 owner,
                 &colors,
@@ -908,8 +1054,12 @@ fn native_building_status_labels(fixture: &'static str) {
                 &font,
                 &csf,
                 cam.camera_pos,
+                1.0,
                 clip.map(|value| value as i32),
                 rules,
+                // The native comparison draws gamemd's labels only.
+                false,
+                false, // VERA convenience help off for the native comparison
             );
             assert_eq!(
                 labels.runs.len(),
@@ -922,13 +1072,35 @@ fn native_building_status_labels(fixture: &'static str) {
                 .iter()
                 .zip(row["text_draws"].as_array().unwrap())
             {
-                let first = &labels.instances[run.text.start as usize];
+                let at = |field: &str, index: usize| draw[field][index].as_i64().unwrap() as f32;
+                // The backing gamemd fills, clipped to the view.
+                let backing = &labels.instances[run.rectangles.start as usize];
                 assert_eq!(
-                    first.position,
-                    [
-                        draw["result_position"][0].as_i64().unwrap() as f32 + cam.camera_pos[0],
-                        draw["result_position"][1].as_i64().unwrap() as f32 + cam.camera_pos[1],
-                    ],
+                    (backing.position, backing.size),
+                    (
+                        [
+                            at("rect", 0) + cam.camera_pos[0],
+                            at("rect", 1) + cam.camera_pos[1]
+                        ],
+                        [at("rect", 2), at("rect", 3)],
+                    ),
+                    "{} original clipped text rect",
+                    row["name"]
+                );
+                // A glyph's instance sits at its ink, not at the pen, so the
+                // origin is checked as where the font puts the first glyph
+                // of gamemd's text drawn from gamemd's origin.
+                let native_text = font.build_text(
+                    draw["text"].as_str().unwrap(),
+                    at("result_position", 0) + cam.camera_pos[0],
+                    at("result_position", 1) + cam.camera_pos[1],
+                    1.0,
+                    0.0,
+                    [1.0; 3],
+                    [0.0, 0.0],
+                );
+                assert_eq!(
+                    labels.instances[run.text.start as usize].position, native_text[0].position,
                     "{} original centered text origin",
                     row["name"]
                 );
@@ -972,6 +1144,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 pool.get("building_status_text").map(|(buffer, _)| buffer),
                 Some(font.atlas()),
                 &labels.runs,
+                batch.surface_camera_bind_group(),
             );
             let reads = [
                 gpu.read(&mut encoder, &color),
@@ -1167,6 +1340,9 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
             }
             let owner = sim.intern("Owner");
             let enemy = sim.intern("Enemy");
+            // The frame's records capture what the local player sees.
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(owner));
             if input.get("self_heal_infantry").is_some() || input.get("self_heal_units").is_some() {
                 let mut house =
                     crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
@@ -1264,6 +1440,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     false,
                 );
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test(object.foundation.clone().into());
                 entity.position.put_location(DriveCoord {
@@ -1276,9 +1453,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     crate::sim::arena_fixture::install_status_repair(&mut entity, repairing);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
-                entity.discovery.set_owned_by_current_house_for_test(
+                entity.seldom.discovery.set_owned_by_current_house_for_test(
                     actor["owned_by_current_house"].as_bool().unwrap_or(true),
                 );
                 if let Some(state) = actor["cloak_state"].as_i64() {
@@ -1289,7 +1467,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                     cloak.set_state_for_test(state as i32);
-                    entity.cloak = Some(cloak);
+                    entity.cloak = Some(Box::new(cloak));
                 }
                 if actor["disguised"].as_bool().unwrap_or(false) {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
@@ -1301,7 +1479,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .unwrap_or(false)
                             .then_some(owner),
                     );
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 let cell = ((xyz[0] / 256) as u16, (xyz[1] / 256) as u16);
                 if let Some(bits) = input["cell_bits"].as_u64() {
@@ -1370,7 +1548,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         "{} original CountDockedSpawns6B7D50",
                         row["name"]
                     );
-                    entity.spawn_manager = Some(manager);
+                    entity.spawn_manager = Some(Box::new(manager));
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
@@ -1461,10 +1639,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         // Retain the same supplied drawing order in its
                         // canonical store; transport rows still own Cargo.
                         entity
-                            .passenger_role
+                            .passenger_role_mut_for_test()
                             .set_occupants_for_test(cargo.passengers().to_vec(), 0);
                     } else {
-                        entity.passenger_role = PassengerRole::transport(cargo);
+                        entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
                     }
                 }
                 if let Some(count) = actor["capture_count"].as_u64() {
@@ -1500,7 +1678,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         );
                     let result = &row["actor_results"][index];
                     assert_eq!(
-                        i64::from(entity.techno_pip_fill_level(object, rules)),
+                        i64::from(entity.techno_pip_fill_level(object, rules, None)),
                         result["fill_count"].as_i64().unwrap(),
                     );
                     assert_eq!(
@@ -1611,6 +1789,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .get(id)
                             .unwrap()
                             .bomb
+                            .as_ref()
                             .unwrap()
                             .clock_frame(
                                 frame as i32,
@@ -1641,11 +1820,15 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                 }
                 if actor["sinking"].as_bool().unwrap_or(false) {
-                    sim.begin_ship_sinking(id, rules, crate::sim::world::FrameEffects::default());
+                    sim.begin_ship_sinking(
+                        id,
+                        rules,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    );
                 }
                 let mut strip = techno_extras_for_parent(
                     &sim,
-                    sim.entities().get(id).unwrap(),
+                    &ObjectRecord::of_test_sim(&sim, rules, id),
                     Some(rules),
                     &overlay,
                     actor["hovered"].as_bool().unwrap_or(false).then_some(id),
@@ -1653,8 +1836,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     StatusViewport {
                         camera: cam.camera_pos,
                         size: size.map(|x| x as f32),
+                        zoom: 1.0,
                         ignore_visibility: false,
                     },
+                    HealthBarMode::Vanilla,
                 );
                 if input["entry_boundary"] == "extras_prefix" {
                     // The original component stops6F534E before rank/health.
@@ -1900,9 +2085,9 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 let draw = display.object_draw(id, SpriteEncoding::Plain).unwrap();
                 let mut parent = if actor_category == EntityCategory::Structure {
-                    PlannedObjectInstance::building(draw, vec![])
+                    OwnedPlannedObject::building(draw, vec![])
                 } else {
-                    PlannedObjectInstance::object(draw, vec![])
+                    OwnedPlannedObject::object(draw, vec![])
                 };
                 parent.status = Some(strip);
                 if wrench_composed && actor["selected"] == true {
@@ -1931,7 +2116,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
             }
             if let Some(font) = &font {
                 let labels = crate::app::presentation::ui_overlays::build_control_group_status_render_instances(
-                    &sim, &groups,
+                    &sim, &crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules), &groups,
                     input["actors"].as_array().unwrap().iter().enumerate()
                         .find(|(_, actor)| actor["hovered"].as_bool().unwrap_or(false))
                         .map(|(index, _)| if index == 0 { 901 } else { 2 }),
@@ -1988,6 +2173,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
             let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
             if wrench_composed {
+                terrain.bind_surface_line_a(&gpu.device, Some(&a));
                 terrain.begin_surface_lines();
                 let viewport = crate::render::surface_line::SurfaceLineViewport {
                     camera: cam.camera_pos.map(|value| value as i32),
@@ -2009,7 +2195,6 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             &[],
                             viewport,
                             |_| false,
-                            |_| input["a_value"].as_u64().unwrap() as u16,
                         )
                     })
                     .collect();
@@ -2031,7 +2216,6 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             &[],
                             viewport,
                             |_| false,
-                            |_| input["a_value"].as_u64().unwrap() as u16,
                         );
                     }
                 }
@@ -2164,13 +2348,17 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             parent,
                             bomb_clock: None,
                             wrench: None,
+                            power_off: None,
                             rank: *rank,
+                            rank_insignia: None,
                             background: *background,
                             shield_background: None,
                             fills: fills.clone(),
                             scale: scale.clone(),
                             group_rectangles: 0..0,
                             group_text: 0..0,
+                            digital_text: Vec::new(),
+                            digital_shapes: Vec::new(),
                             talk_bubble: None,
                             self_heal: None,
                         });

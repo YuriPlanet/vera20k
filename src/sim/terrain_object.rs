@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::Hash;
 
-use crate::map::cell_index::canonical_cell_coord;
+use crate::map::cell_index::CellGrid;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
@@ -18,7 +18,7 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::occupancy::{RawCellKey, RawCellOccupationGrid};
 use crate::sim::terrain_spawn::TerrainAnimationState;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "terrain_coordinate_tests.rs"]
 mod coordinate_tests;
 
@@ -68,6 +68,11 @@ pub struct TerrainObjectState {
     /// Immutable type projection used to maintain cell admission after unlink.
     spawns_tiberium: bool,
     lifecycle: TerrainObjectLifecycle,
+    /// `TerrainClass+0xCC` IsOnFire (constructor false). Only the Ares
+    /// terrain fire sets it (`sim::terrain_fire`); stock YR never calls
+    /// `Catch_Fire @ 0x0071C5B0`.
+    #[serde(default)]
+    on_fire: bool,
 }
 
 impl std::hash::Hash for TerrainObjectState {
@@ -82,10 +87,19 @@ impl std::hash::Hash for TerrainObjectState {
         self.occupation_bits.hash(state);
         self.spawns_tiberium.hash(state);
         self.lifecycle.hash(state);
+        if self.on_fire {
+            b"ares-terrain-on-fire-v1".hash(state);
+        }
     }
 }
 
 impl TerrainObjectState {
+    /// The map/RMG constructor `TerrainClass::Constructor @ 0x0071BB90`.
+    /// `TerrainClass::Constructor_Default @ 0x0071BDF0` (typeless, no
+    /// Health/Create_ID/Unlimbo) has one caller, TClassFactory<TerrainClass>
+    /// CreateInstance at 0x006BF3CF, a COM factory reached only through its
+    /// vtable (0x007F37BC) to rebuild objects from a native save stream.
+    /// VERA restores this state from its own snapshot instead.
     pub fn new(
         stable_id: u64,
         type_ref: InternedId,
@@ -130,6 +144,7 @@ impl TerrainObjectState {
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
             spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle,
+            on_fire: false,
         }
     }
 
@@ -229,6 +244,7 @@ impl TerrainObjectState {
             occupation_bits: 0,
             spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
+            on_fire: false,
         }
     }
 
@@ -259,7 +275,10 @@ impl TerrainObjectState {
                 if terrain.is_some_and(|grid| grid.native_fixed_cell_index(x, y).is_none()) {
                     return None;
                 }
-                canonical_cell_coord(i32::from(x), i32::from(y))
+                terrain
+                    .map(|grid| grid.cell_grid())
+                    .unwrap_or_default()
+                    .canonical_coord(i32::from(x), i32::from(y))
             })
             .collect()
     }
@@ -344,16 +363,27 @@ impl TerrainObjectState {
     /// ObjectClass::Unlimbo5F4FEF..5F5040 (original instructions): Terrain
     /// joins Logic only for IsLogic/SpawnsTiberium types. Modes0/5 bypass
     /// the native non-player identity (-2) exclusion; Display is independent.
+    /// `ares` is the caller's `RuleSet::ares_form`.
     pub(crate) fn joins_logic_on_unlimbo(
         &self,
         terrain_type: &TerrainObjectType,
-        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+        policy: crate::rules::rule_policy::RulePolicy,
+        ares: bool,
     ) -> bool {
+        // Ares 3.0 ObjectClass_Put_IsFlammable (1004F470, hook 0x5F4FF9):
+        // an `IsFlammable=` type joins too, so a burning tree can spread.
+        let needs_update = if ares {
+            terrain_type.spawns_tiberium || terrain_type.is_flammable
+        } else {
+            terrain_type.spawns_tiberium
+        };
         terrain_type.is_logic()
-            && terrain_type.spawns_tiberium
-            && (game_mode.is_single_player() || self.native_unique_id != Some(-2))
+            && needs_update
+            && (policy.allows_ownerless_terrain_logic() || self.native_unique_id != Some(-2))
     }
 
+    /// `TerrainClass::Class_Of @ 0x0071D150` (vtable slot +0x88) returns
+    /// Type (+0xC8); its virtual callers read this one immutable reference.
     pub const fn type_ref(&self) -> InternedId {
         self.type_ref
     }
@@ -422,6 +452,11 @@ impl TerrainObjectState {
     pub(crate) fn object_alive(&self) -> bool {
         self.lifecycle != TerrainObjectLifecycle::Destroyed
     }
+
+    /// `TerrainClass+0xCC` IsOnFire.
+    pub(crate) const fn on_fire(&self) -> bool {
+        self.on_fire
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -463,8 +498,12 @@ pub(crate) enum TerrainAreaReceiveResult {
 /// outside this owner writes them.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TerrainObjectStore {
+    /// Derived from the loaded map; restored before membership validation.
+    #[serde(skip)]
+    cell_grid: CellGrid,
     animations: BTreeMap<u64, TerrainAnimationState>,
-    objects: BTreeMap<u64, TerrainObjectState>,
+    /// Synced into the presentation copy (docs/sim-thread.md).
+    objects: crate::util::synced::Synced<BTreeMap<u64, TerrainObjectState>>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,
     #[serde(skip)]
@@ -476,6 +515,9 @@ pub struct TerrainObjectStore {
 }
 
 impl TerrainObjectStore {
+    pub(crate) fn configure_cell_grid(&mut self, grid: CellGrid) {
+        self.cell_grid = grid;
+    }
     /// Every represented object by stable id.
     pub fn objects(&self) -> &BTreeMap<u64, TerrainObjectState> {
         &self.objects
@@ -491,7 +533,9 @@ impl TerrainObjectStore {
     }
 
     pub fn id_at(&self, cell: (u16, u16)) -> Option<u64> {
-        let key = canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))?;
+        let key = self
+            .cell_grid
+            .canonical_coord(i32::from(cell.0), i32::from(cell.1))?;
         self.cells.get(&key).copied()
     }
 
@@ -537,7 +581,11 @@ impl TerrainObjectStore {
     /// ObjectLoad5F5E80 swizzles the saved Next; it does not reconstruct order.
     pub(crate) fn validate_membership(&self) -> Result<(), String> {
         for (&cell, &head) in &self.cells {
-            if canonical_cell_coord(i32::from(cell.0), i32::from(cell.1)) != Some(cell) {
+            if self
+                .cell_grid
+                .canonical_coord(i32::from(cell.0), i32::from(cell.1))
+                != Some(cell)
+            {
                 return Err(format!(
                     "Terrain cell {cell:?} is not a canonical real slot"
                 ));
@@ -559,7 +607,7 @@ impl TerrainObjectStore {
                 next = object.next_in_cell;
             }
         }
-        for (&id, object) in &self.objects {
+        for (&id, object) in self.objects.iter() {
             // TerrainTypeCtor71DA80 at71DAF1 leaves Occupy_List null;
             // TerrainTypeOccupyList71DE40 returns a sentinel-only list while
             // ObjectUnlimbo5F4EC0 still succeeds. CellLoad483B9F restores its own head;
@@ -603,6 +651,16 @@ impl TerrainObjectStore {
         &self.animations
     }
 
+    /// Write `TerrainClass+0xCC` IsOnFire, the Ares terrain fire's one
+    /// writer (`sim::terrain_fire`). False for an object not stored.
+    pub(crate) fn set_on_fire(&mut self, stable_id: u64, on_fire: bool) -> bool {
+        let Some(terrain) = self.objects.get_mut(&stable_id) else {
+            return false;
+        };
+        terrain.on_fire = on_fire;
+        true
+    }
+
     /// Cells whose first Terrain has `SpawnsTiberium=yes`. This is a
     /// different gate from [`Self::animations`]: a non-animated spawner
     /// rejects new ore, while an animated non-spawner still draws RNG.
@@ -616,7 +674,7 @@ impl TerrainObjectStore {
             stable_id.hash(hasher);
             spawner.hash(hasher);
         }
-        for (&stable_id, terrain) in &self.objects {
+        for (&stable_id, terrain) in self.objects.iter() {
             stable_id.hash(hasher);
             terrain.hash(hasher);
         }
@@ -634,7 +692,9 @@ impl TerrainObjectStore {
     /// `[Terrain]` construction starts from an empty store.
     pub(crate) fn clear(&mut self) {
         let next_epoch = self.membership_epoch.wrapping_add(1);
+        let grid = self.cell_grid;
         *self = Self::default();
+        self.cell_grid = grid;
         self.membership_epoch = next_epoch;
     }
 
@@ -657,6 +717,7 @@ impl TerrainObjectStore {
         self.objects.insert(terrain.stable_id, terrain);
     }
 
+    /// `TerrainClass::Mark @ 0x0071BFB0` places through
     /// CellAddContent47E913..47E91F, original instructions: prepend to
     /// this recipient unless its head.Next already equals the object. Every
     /// recipient overwrites the same Object+30, never a per-cell successor.
@@ -771,7 +832,10 @@ impl TerrainObjectStore {
     }
 
     fn refresh_spawning_cell(&mut self, cell: (u16, u16)) {
-        let Some(cell) = canonical_cell_coord(i32::from(cell.0), i32::from(cell.1)) else {
+        let Some(cell) = self
+            .cell_grid
+            .canonical_coord(i32::from(cell.0), i32::from(cell.1))
+        else {
             return;
         };
         // CanPlaceTiberium483969..48399A stops at the first Terrain and
@@ -957,6 +1021,24 @@ impl TerrainObjectStore {
             return TerrainAreaReceiveResult::Ignored;
         }
 
+        // Ares ObjectClass_ReceiveDamage_Relative (10053A80, hook 0x5F53E5)
+        // runs for TerrainClass too: RelativeDamage.Terrain of the type's
+        // Strength or the current Health, with the packet's sign.
+        if rules.ares_form()
+            && let Some(relative) = warhead.ares_combat().and_then(|combat| {
+                combat.relative_damage(
+                    Some(crate::rules::ares_warhead::RelativeDamageKind::Terrain),
+                    snapshot.health,
+                    Some(snapshot.max_health),
+                )
+            })
+        {
+            *raw_damage = if *raw_damage < 0 {
+                relative.wrapping_neg()
+            } else {
+                relative
+            };
+        }
         // TerrainClass 0071B920 always checks Wood/Immune above, then forwards
         // ignore_defenses to ObjectClass 005F5390. BlowUpBridge 0047DD70 passes
         // true: current Health bypasses verses, falloff, NoDamage and MaxDamage.
@@ -1000,6 +1082,12 @@ impl TerrainObjectStore {
             return TerrainAreaReceiveResult::Damaged { remaining };
         }
 
+        // Take_Damage71B920's ordinary lethal arm (71BAEF..71BB22) sets
+        // IsCrumbling and restarts Stage at rate2/value0, the body of the
+        // unreferenced `TerrainClass::Start_To_Crumble @ 0x0071C8E0`, then
+        // UnInits in the same call (71BB2C..71BB73). No crumble frame or
+        // AI71C730 crumble test runs, so no IsCrumbling is retained. Its
+        // IsOnFire arm is dormant: only the uncalled Catch_Fire71C5B0 sets it.
         terrain.health = 0;
         finalizing_terrain.insert(stable_id);
         TerrainAreaReceiveResult::Lethal(TerrainLethalDamage {
@@ -1043,7 +1131,7 @@ impl TerrainObjectStore {
     pub fn objects_mut_for_test(&mut self) -> &mut BTreeMap<u64, TerrainObjectState> {
         self.touched.note_all();
         self.membership_epoch = self.membership_epoch.wrapping_add(1);
-        &mut self.objects
+        &mut *self.objects
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1267,7 +1355,32 @@ pub(crate) fn damage_terrain_object_at_cell(
     result
 }
 
-#[cfg(test)]
+impl TerrainObjectStore {
+    /// Bring `mirror`, the presentation copy of the world's terrain objects,
+    /// up to this store (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cell_grid,
+            animations,
+            objects,
+            cells,
+            tiberium_spawning_cells,
+            touched,
+            membership_epoch,
+        } = self;
+        mirror.cell_grid.clone_from(cell_grid);
+        mirror.animations.clone_from(animations);
+        objects.sync_into(&mut mirror.objects);
+        mirror.cells.clone_from(cells);
+        mirror
+            .tiberium_spawning_cells
+            .clone_from(tiberium_spawning_cells);
+        mirror.touched = touched.clone();
+        mirror.membership_epoch = *membership_epoch;
+    }
+}
+
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::map::overlay::TerrainObject;
@@ -1340,7 +1453,7 @@ mod tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let terrain = &sim.terrain_objects.objects()[&stable_id];
         assert_eq!(terrain.health, 0);
@@ -1376,7 +1489,7 @@ mod tests {
                     near_center_ic_isolation_eligible: false,
                 },
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(sim.terrain_objects.objects()[&stable_id].health, health);
             assert!(sim.terrain_objects.objects()[&stable_id].is_live());
@@ -1411,7 +1524,7 @@ mod tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.objects()[&stable_id].health, 0);
         assert!(
@@ -1446,13 +1559,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ownerless_terrain_logic_honors_an_independent_policy_override() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let rules = terrain_rules("TREE01", true, "SpawnsTiberium=yes\nIsAnimated=yes\n");
+        let terrain_type = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap();
+        let mut sim = Simulation::new();
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let id = sim.terrain_objects.cell_index()[&(1, 1)];
+        let terrain = sim.terrain_objects.objects()[&id]
+            .clone()
+            .with_native_unique_id(Some(-2));
+        let campaign = ScenarioGameMode::Campaign.stock_rule_policy(None);
+        let skirmish = ScenarioGameMode::Skirmish.stock_rule_policy(None);
+
+        assert!(terrain.joins_logic_on_unlimbo(terrain_type, campaign, false));
+        assert!(terrain.joins_logic_on_unlimbo(terrain_type, skirmish, false));
+        assert!(!terrain.joins_logic_on_unlimbo(
+            terrain_type,
+            skirmish.with_allows_ownerless_terrain_logic(false),
+            false,
+        ));
+    }
+
     fn resolved_clear_grid() -> ResolvedTerrainGrid {
         crate::map::resolved_terrain::test_grid(2, 2, ResolvedTerrainCell::clear_for_test)
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_custom_armor_terrain_receiver_uses_the_same_effective_record() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[ArmorTypes]\npaper=steel\n[General]\nTreeStrength=100\n\
              [TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\nArmor=paper\n\

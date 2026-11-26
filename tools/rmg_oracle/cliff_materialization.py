@@ -284,8 +284,13 @@ def stamp_results(calls):
 
 
 class CliffFixture:
-    """Compose one existing PaletteReader VM; no gameplay return substitutions."""
-    def __init__(self):
+    """Compose one existing PaletteReader VM; no gameplay return substitutions.
+
+    `extra` names further tile-set globals `(address, span)` whose first
+    `span` tiles a consumer stamps; their physical TMPs are registered too.
+    `size` is the square map's side: backing 2*size, scratch stride
+    2*size+1 and diamond bounds size..3*size (16 for every older corpus)."""
+    def __init__(self, extra=(), size=MAP_SIZE[0]):
         from tools import native_oracle as native
         from tools.projectile_oracle.bridge_render_inputs_palette import PaletteReader
         from tools.spatial_oracle import tmp_clear_render as tmp
@@ -316,6 +321,10 @@ class CliffFixture:
         # on cliff controls. Load physical descriptors rather than fake types.
         if self.bases['shore'] != 0xFFFFFFFF:
             ids += list(range(self.bases['shore'], self.bases['shore'] + 42))
+        for address, span in extra:
+            base = m.read32(address)
+            assert base != 0xFFFFFFFF and base + span <= len(tiles), ('Unpublished extra tile set', hex(address))
+            ids += list(range(base, base + span))
         ids = sorted(set(ids))
         names = [tiles[n] for n in ids]
         assert len(names) == len(set(names)), 'Distinct native primary IDs alias a filename; registration needs review'
@@ -336,9 +345,12 @@ class CliffFixture:
         u.mem_write(0xA8ED38, words(len(tiles)))
         m.invoke(0x579320, 0)  # Original CRT anchor initializer; BSS is not a file table.
         m.invoke(0x49F2F0, 0)  # Original neighbor direction initializer.
-        self.table, pointers = _prepare_flat_cells(m, range(32), range(32))
+        self.size, self.stride = size, 2 * size + 1
+        side = 2 * size
+        self.table, pointers = _prepare_flat_cells(m, range(side), range(side))
+        u.mem_write(MAP + 0xF4, words(size, size))
         m.invoke(0x47BBF0, DUMMY)
-        self.backing = {(x, y): pointers[y * 32 + x] for y in range(32) for x in range(32)}
+        self.backing = {(x, y): pointers[y * side + x] for y in range(side) for x in range(side)}
         # Original admission supplies the component's lookup membership. This
         # is deliberately not a host diamond predicate or allocation-history
         # claim. Retain every admitted cell and all rejected backing storage.
@@ -377,21 +389,22 @@ class CliffFixture:
                                for xy, p in self.backing.items() if xy not in admitted_set}
         m.invoke(0x47BBF0, DUMMY)
         self.pointer_coords = {p: xy for xy, p in self.cells.items()}
-        self.scratch = m.alloc(STRIDE * STRIDE * RECORD_BYTES)
-        for index in range(STRIDE * STRIDE):
+        stride = self.stride
+        self.scratch = m.alloc(stride * stride * RECORD_BYTES)
+        for index in range(stride * stride):
             m.invoke(0x58BDC0, self.scratch + index * RECORD_BYTES)
         u.mem_write(SCRATCH_PTR, words(self.scratch))
-        u.mem_write(STRIDE_AT, words(STRIDE))
+        u.mem_write(STRIDE_AT, words(stride))
         # Supplied component bounds mirror this declared diamond, not a claim
         # that a complete native Generate initialized the fixture.
-        u.mem_write(0xABED04, words(16, 48))
+        u.mem_write(0xABED04, words(size, 3 * size))
         u.mem_write(MAP + 0x117C, words(0))
         u.mem_write(0x8A03F8, struct.pack('<hh', -32768, -32768))
         u.mem_write(0x88098C, words(0, 0))
         self.out = m.alloc(4)
         self.rngs = dict(scenario=m.read32(0xA8B230) + 0x218, main=0x886B88, mapgen=0xABE890)
         self.cell_prior = {xy: bytes(u.mem_read(p, CELL_BYTES)) for xy, p in self.cells.items()}
-        self.scratch_prior = bytes(u.mem_read(self.scratch, STRIDE * STRIDE * RECORD_BYTES))
+        self.scratch_prior = bytes(u.mem_read(self.scratch, stride * stride * RECORD_BYTES))
         self.map_prior = bytes(u.mem_read(MAP, 0x1200))
         self.dummy_prior = bytes(u.mem_read(DUMMY, CELL_BYTES))
         assert m.read32(DUMMY + 0x38) == 0xFFFF and u.mem_read(DUMMY + 0x11B, 1) == b'\0', f'Native Dummy prior differs: tile={m.read32(DUMMY + 0x38):08X}, level={u.mem_read(DUMMY + 0x11B, 1).hex()}'
@@ -402,7 +415,7 @@ class CliffFixture:
         self.inputs = dict(
             bases=self.bases, family_globals={f'{p:08X}': m.read32(p) for p in FAMILY_GLOBALS},
             registered_tiles=[self.registered_input(n) for n in ids],
-            scene=dict(map_size=list(MAP_SIZE), scratch_stride=STRIDE,
+            scene=dict(map_size=[size, size], scratch_stride=stride,
                        admitted_cells=[list(xy) for xy in admitted],
                        common=dict(tile=0, subtile=0, level=0, slope=0),
                        tagged_regions=[dict(coords=list(xy), region=1 + (xy[0] + xy[1]) % 3)
@@ -441,7 +454,7 @@ class CliffFixture:
         self.m.ret = guarded
 
     def region_at(self, xy, scratch=None):
-        return (self.scratch if scratch is None else scratch) + (xy[1] * STRIDE + xy[0]) * RECORD_BYTES + 0x38
+        return (self.scratch if scratch is None else scratch) + (xy[1] * self.stride + xy[0]) * RECORD_BYTES + 0x38
 
     def states(self):
         return {name: bytes(self.u.mem_read(p, self.struct_len)).hex() for name, p in self.rngs.items()}

@@ -252,6 +252,8 @@ fn a_drag_between_offline_polls_remains_a_cancel_click() {
         if decision.scroll_input {
             mouse.poll_right_drag((500.0, 300.0), (4, 4), false, 1.0);
         }
+        // The camera's own scroll steps between polls have nothing to pan.
+        assert!(!mouse.right_pan_active(), "{}", row["name"]);
         // Moving far and releasing during the throttle wait cannot cross a
         // latch which only the native admitted poll is allowed to write.
         assert_eq!(mouse.end_right_press(), Some(true), "{}", row["name"]);
@@ -485,11 +487,12 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         Some(&saved_view),
                         None,
                         None,
-                    );
+                    )
+                    .unwrap();
                     let snapshot = GameSnapshot::load(&bytes).unwrap();
                     let restored = snapshot.tactical_view().unwrap();
                     super::validate_saved_tactical_view(restored).unwrap();
-                    assert_eq!(snapshot.sim.session().binary_frame(), frame);
+                    assert_eq!(snapshot.session().binary_frame(), frame);
                     if let Some(rect) = step.get("local_size") {
                         let mut geometry = sequence.clone();
                         geometry.local_size = serde_json::from_value(rect.clone()).unwrap();

@@ -7,7 +7,7 @@
 //! from the loaded assets and fixed 60×48 cameo hit zones (`6A8220`).
 
 pub(crate) mod cameo_order;
-#[cfg(test)]
+#[cfg(all(test, any(tests_ui, tests_app_presentation)))]
 mod cameo_order_tests;
 pub mod command_bar;
 mod frame;
@@ -18,16 +18,16 @@ mod sidebar_view;
 
 use crate::sim::production::ProductionCategory;
 
-pub use frame::{BOTTOM_STRIP_HEIGHT_PX, SIDEBAR_WIDTH_PX, SidebarFrame};
-pub use layout_spec::{SidebarChromeLayoutSpec, SidebarTheme};
+pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SidebarFrame};
+pub use layout_spec::{ArtKey, PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
+#[cfg(test)]
+pub(crate) use sidebar_view::build_sidebar_view;
+pub(crate) use sidebar_view::append_added_grids;
+pub(crate) use sidebar_view::apply_observer_strip;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
-pub(crate) use sidebar_view::build_sidebar_view_for_frontend;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
-
-/// Cameo hit zones are fixed 60×48 (`6A8220`), independent of artwork size.
-pub(crate) const CAMEO_COLUMNS: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
@@ -41,20 +41,19 @@ impl Rect {
     pub fn contains(&self, px: f32, py: f32) -> bool {
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
     }
-}
 
-#[cfg(test)]
-pub fn radar_minimap_rect(screen_w: f32) -> Rect {
-    radar_minimap_rect_with_spec(screen_w, SidebarChromeLayoutSpec::stock())
-}
-
-pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec) -> Rect {
-    // Radar One_Time 652CF0 and Init_For_House 652E90: fixed aperture.
-    Rect {
-        x: screen_w - spec.sidebar_width + 16.0,
-        y: 49.0,
-        w: 140.0,
-        h: 108.0,
+    /// This rect for a part the layout has, and an empty one in its place for
+    /// a part it leaves out: nothing hits it and nothing is drawn in it.
+    pub fn shown(self, shown: bool) -> Self {
+        if shown {
+            self
+        } else {
+            Self {
+                w: 0.0,
+                h: 0.0,
+                ..self
+            }
+        }
     }
 }
 
@@ -67,6 +66,9 @@ pub enum SidebarTab {
 }
 
 impl SidebarTab {
+    /// TypeToTab 6ABC60 / GetObjectTabIdx 6ABCD0: buildings 0, or 1 with a
+    /// combat BuildCat (production_tech's Defense), infantry 2, units and
+    /// aircraft 3. Super weapons take strip 1 in `CameoStrips`.
     pub(crate) fn for_category(category: ProductionCategory) -> Self {
         match category {
             ProductionCategory::Building => Self::Building,
@@ -135,10 +137,6 @@ pub enum SidebarAction {
         section: String,
         right: bool,
     },
-    CycleProducer(ProductionCategory),
-    CycleOwner,
-    PlaceStarterBase,
-    SpawnTestUnits,
     /// Toggle Repair-mode (cursor stays armed for clicking buildings to repair).
     /// Clears Sell; pending building placement refuses the transition.
     ToggleRepairMode,
@@ -148,7 +146,7 @@ pub enum SidebarAction {
     Deploy,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarItem {
     pub rect: Rect,
     pub type_id: String,
@@ -170,6 +168,12 @@ pub struct SidebarItem {
     pub queued_count: usize,
     /// True when this cameo's linked Factory is actively producing.
     pub is_building_this_type: bool,
+    /// True when the House's primary Factory for this type's kind holds this
+    /// entry's type, finished or not. `StripClass::Draw` reads that Factory's
+    /// `+0x58` and compares its type with the requested one at
+    /// `0x006A9CBF..0x006A9CC3` to decide whether a count of one is the held
+    /// product rather than a queued copy.
+    pub is_held_this_type: bool,
     pub is_ready: bool,
     /// True when the linked Factory has no rate or is suspended. A cash stall
     /// retains its running rate and draws a frozen clock without `TXT_HOLD`.
@@ -192,7 +196,7 @@ impl SidebarItem {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarTabButton {
     pub tab: SidebarTab,
     pub rect: Rect,
@@ -209,21 +213,20 @@ pub struct SidebarTabButton {
 
 /// View entry for an SHP-driven toggle button (Repair, Sell).
 /// Rect for hit-testing, action to dispatch on click, frame index for the
-/// 5-frame SHP state table.
-#[derive(Debug, Clone)]
+/// 5-frame SHP state table. Native never disables either button
+/// (see [`gadget_flash::SidebarGadgetState::repair_frame`]).
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarToggleButton {
     pub rect: Rect,
     pub action: SidebarAction,
     /// Externally driven latch state for the toggle gadget.
     pub active: bool,
-    /// Retained gadget disabled bit for hit-testing and tooltip presentation.
-    pub disabled: bool,
     /// SHP frame index (0..=4) for the button's per-theme SHP atlas.
     pub frame_index: u8,
 }
 
 /// View entry for one of the two SHP-driven strip scroll buttons.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarScrollButton {
     pub rect: Rect,
     /// Retained gadget disabled bit. Scroll capacity comes from `6A6610`.
@@ -232,20 +235,87 @@ pub struct SidebarScrollButton {
     pub frame_index: u8,
 }
 
-#[derive(Debug, Clone)]
-pub struct SidebarControlButton {
-    pub rect: Rect,
-    pub action: SidebarAction,
-    pub label: String,
+impl SidebarLayout {
+    /// The top-left corner of `part` on the layout screen: its place in its
+    /// panel's corner, the sidebar's for a part with no panel, and for the
+    /// scroll buttons the cameo strip's left edge at the bottom of its last
+    /// row.
+    pub fn origin(&self, spec: &SidebarChromeLayoutSpec, part: SidebarPart) -> [f32; 2] {
+        let [x, y] = spec.place(part);
+        match part.panel() {
+            None => [self.sidebar_x + x, y],
+            Some(SidebarPart::Cameos) => [
+                self.sidebar_x + spec.place(SidebarPart::Cameos)[0] + x,
+                self.cameo_grid_bottom + y,
+            ],
+            Some(panel) => {
+                let [panel_x, panel_y] = self.origin(spec, panel);
+                [panel_x + x, panel_y + y]
+            }
+        }
+    }
+
+    /// The radar's map picture: the minimap's corner in the radar housing,
+    /// which the GDI/NOD tables move, and the aperture's size
+    /// (`RadarClass::One_Time @ 0x00652CF0`). Empty for a layout without the
+    /// radar.
+    pub fn minimap_rect(&self, spec: &SidebarChromeLayoutSpec) -> Rect {
+        let [x, y] = self.origin(spec, SidebarPart::Minimap);
+        Rect {
+            x,
+            y,
+            w: spec.radar_width,
+            h: spec.radar_height,
+        }
+        .shown(spec.shows(SidebarPart::Radar))
+    }
+
+    /// The height of the cameo strip's rows.
+    pub fn cameo_grid_height(&self) -> f32 {
+        self.cameo_grid_bottom - self.cameo_grid_top
+    }
+
+    /// The top-left corner of the cameo grid's first picture: the strip's
+    /// corner and the cameo inset.
+    pub fn grid_origin(&self, spec: &SidebarChromeLayoutSpec) -> [f32; 2] {
+        [
+            self.origin(spec, SidebarPart::Cameos)[0] + spec.cameo_inset_x,
+            self.cameo_grid_top + spec.cameo_inset_y,
+        ]
+    }
 }
 
-/// Computed vertical offsets for each chrome section, based on screen height.
-#[derive(Debug, Clone, Copy)]
+impl SidebarView {
+    /// A button part's rect and the frame its picture shows: the top
+    /// buttons, Repair and Sell, the tabs and the scroll buttons. `None` for
+    /// any other part, or a tab the view has no button for.
+    pub fn button(&self, part: SidebarPart) -> Option<(Rect, u8)> {
+        let scroll = |button: &SidebarScrollButton| (button.rect, button.frame_index);
+        let toggle = |button: &SidebarToggleButton| (button.rect, button.frame_index);
+        match part {
+            SidebarPart::Diplomacy => Some(scroll(&self.top_buttons[0])),
+            SidebarPart::Options => Some(scroll(&self.top_buttons[1])),
+            SidebarPart::Repair => Some(toggle(&self.repair_button)),
+            SidebarPart::Sell => Some(toggle(&self.sell_button)),
+            SidebarPart::ScrollDown => Some(scroll(&self.scroll_down_button)),
+            SidebarPart::ScrollUp => Some(scroll(&self.scroll_up_button)),
+            _ => {
+                let index = SidebarPart::TABS.iter().position(|&tab| tab == part)?;
+                self.tabs
+                    .iter()
+                    .find(|button| button.tab.tab_index() == index)
+                    .map(|button| (button.rect, button.frame_index))
+            }
+        }
+    }
+}
+
+/// Where each chrome section sits on the layout screen, computed from the
+/// layout table and the screen size.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarLayout {
     pub sidebar_x: f32,
-    pub radar_y: f32,
-    pub side1_y: f32,
-    pub tabs_y: f32,
+    /// The top and the bottom of the cameo strip's rows.
     pub cameo_grid_top: f32,
     pub cameo_grid_bottom: f32,
     pub side3_y: f32,
@@ -253,18 +323,74 @@ pub struct SidebarLayout {
     pub side2_tile_count: usize,
 }
 
-#[derive(Debug, Clone)]
+/// A grid of build pictures a layout adds beside the sidebar's own: one
+/// tab's strip from `scroll_rows` rows down, in `rows` rows of `columns`,
+/// its first picture at `origin` in the sidebar's layout pixels. `part` is
+/// the grid's place in the layout's list of added parts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AddedGrid {
+    pub part: usize,
+    pub tab: SidebarTab,
+    pub origin: [f32; 2],
+    pub columns: usize,
+    pub rows: usize,
+    pub scroll_rows: usize,
+}
+
+/// Where a view holds an added grid's cameos: `len` items from `first`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AddedGridView {
+    pub part: usize,
+    pub first: usize,
+    pub len: usize,
+    /// The grid's whole area, for the wheel.
+    pub rect: Rect,
+    /// The row it shows first, and the last row it can start at.
+    pub scroll_rows: usize,
+    pub max_scroll_rows: usize,
+}
+
+/// One House on the observer's strip (`StripClass::Draw @ 0x006A9540`,
+/// `0x006AA043..0x006AA59B`), two cameo rows tall.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObserverEntry {
+    /// Its background's top left, in the sidebar's layout pixels: the cameo
+    /// grid's origin, two rows a House.
+    pub origin: [f32; 2],
+    /// The country's side (`HouseType+0xBC`): 0, 1 and 2 draw `OBSALLI`,
+    /// `OBSSOVI` and `OBSYURI`, any other none.
+    pub side: i32,
+    /// The country's index (`HouseType+0xB8`), which picks the flag.
+    pub country: i32,
+    pub name: String,
+    pub rgb: [u8; 3],
+    /// Rank (online only), then kills, units and credits, a line each.
+    pub lines: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarView {
     pub panel_rect: Rect,
     pub layout: SidebarLayout,
+    /// The credits counter's value; the observer's elapsed seconds while
+    /// [`Self::observer`] is set (`CreditsClass::AI @ 0x004A2600`).
     pub credits: i32,
+    /// The observer's strip, drawn over the cameo grid while the local
+    /// player is an observer: the Houses its rows show.
+    pub observer: Option<Vec<ObserverEntry>>,
     pub power_produced: i32,
     pub power_drained: i32,
     pub low_power: bool,
     pub scroll_rows: usize,
     pub max_scroll_rows: usize,
     pub tabs: Vec<SidebarTabButton>,
+    /// The cameos of the sidebar's own grid, then those of each grid a
+    /// layout adds ([`Self::added_grids`]).
     pub items: Vec<SidebarItem>,
+    /// Empty slots of the sidebar's own grid that a cameo flash darkens this
+    /// frame ([`cameo_order::CameoStrips::empty_slot_flash_darkened`]).
+    pub flash_empty_slots: Vec<Rect>,
+    pub added_grids: Vec<AddedGridView>,
     /// Repair button (toggle mode). Rendered from the per-theme atlas's
     /// `repair_frames[frame_index]`. Hit-test routes to
     /// `SidebarAction::ToggleRepairMode`.
@@ -277,45 +403,51 @@ pub struct SidebarView {
     pub top_buttons: [SidebarScrollButton; 2],
     pub scroll_down_button: SidebarScrollButton,
     pub scroll_up_button: SidebarScrollButton,
-    pub cycle_owner_button: SidebarControlButton,
-    pub starter_base_button: SidebarControlButton,
-    pub spawn_test_units_button: SidebarControlButton,
-    pub producer_button: Option<SidebarControlButton>,
 }
 
 pub fn default_active_tab() -> SidebarTab {
     SidebarTab::Building
 }
 
-/// Compute the vertical layout of chrome sections for a given screen height.
-/// The sidebar shell fills the available height; item count only affects scrolling.
-pub fn compute_layout(screen_w: f32, screen_h: f32, item_rows: usize) -> SidebarLayout {
-    compute_layout_with_spec(
-        SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
-        item_rows,
-    )
-}
-
+/// Where the chrome sections sit on `frame`'s layout screen
+/// ([`SidebarFrame::layout_screen`]): the sidebar at the frame's left edge
+/// for it, filling the screen's height. The item count only affects
+/// scrolling.
 pub(crate) fn compute_layout_with_spec(
     spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
-    _item_rows: usize,
+    frame: SidebarFrame,
 ) -> SidebarLayout {
+    let (_, screen_h) = frame.layout_screen();
     // Original 6A5090/6A5130: capacity depends on screen height and side,
     // never on build-item count. Integer division truncates toward zero.
-    let rows = ((screen_h as i32 - 227 - spec.footer_allowance - 7) / 50).max(0) as usize;
+    // Native keeps 60 select buttons per strip (0x3C stride, InitSelectZones
+    // 6A8220). Above 30 rows (screens 1810 px or taller) strips 0..2 write into
+    // the next strip's buttons, and the Vehicle strip runs past the array's
+    // end at B0B300 (a static coordinate, then the R-DN ShapeButton at B0B328).
+    // Activate 6A8330 then adds that vtable-less memory as gadgets. Native has
+    // no defined result here, so VERA keeps a working uncapped grid; the
+    // maintainer chose to keep it (2026-11-15).
+    // GetVisibleSlotCount 6AC430 and StripClass Activate 6A8330 count 2 * rows
+    // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set,
+    // plus 7, which the table carries as one height.
+    let row_height = (spec.cameo_row_height as i32).max(1);
+    let strip_y = spec.place(SidebarPart::Cameos)[1];
+    let rows = ((screen_h as i32 - strip_y as i32 - spec.strip_footer as i32) / row_height).max(0)
+        as usize;
     SidebarLayout {
-        sidebar_x: screen_w - spec.sidebar_width,
-        radar_y: spec.top_inset,
-        side1_y: 158.0,
-        tabs_y: 197.0,
-        cameo_grid_top: 227.0,
-        cameo_grid_bottom: 227.0 + rows as f32 * 50.0,
-        // Native 6A6C30 advances by the loaded SIDE2 canvas height.
-        side3_y: 227.0 + rows as f32 * spec.side2_height,
+        sidebar_x: frame.layout_left(),
+        cameo_grid_top: strip_y,
+        cameo_grid_bottom: strip_y + (rows as i32 * row_height) as f32,
+        // Native 6A6C30 advances by the loaded SIDE2 canvas height. VERA's
+        // columns shrink the row, so there SIDE3 follows the row's own
+        // height instead; the original table sets both to the same 50.
+        side3_y: strip_y
+            + rows as f32
+                * if spec.cameo_columns > 2.0 {
+                    row_height as f32
+                } else {
+                    spec.side2_height
+                },
         side2_tile_count: rows,
     }
 }
@@ -323,34 +455,14 @@ pub(crate) fn compute_layout_with_spec(
 /// Native PowerClass tooltip (`6403A0`). The 8-pixel hit width is distinct
 /// from POWERP's actual canvas width and the 3-pixel paint stride.
 pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> Rect {
+    let [x, y] = layout.origin(&spec, SidebarPart::Power);
     Rect {
-        x: layout.sidebar_x + spec.power_bar_x,
-        y: 227.0,
+        x,
+        y,
         w: 8.0,
-        h: layout.cameo_grid_bottom - layout.cameo_grid_top,
+        h: layout.cameo_grid_height(),
     }
-}
-
-/// Native R-DN/R-UP anchors (`6ABD30`), with actual SHP canvas hit sizes.
-pub fn scroll_button_rects(
-    layout: &SidebarLayout,
-    spec: SidebarChromeLayoutSpec,
-    down_size: Option<[f32; 2]>,
-    up_size: Option<[f32; 2]>,
-) -> (Rect, Rect) {
-    let [dw, dh] = down_size.unwrap_or([0.0, 0.0]);
-    let [uw, uh] = up_size.unwrap_or([0.0, 0.0]);
-    let x = layout.sidebar_x + spec.scroll_x;
-    let y = layout.cameo_grid_bottom + 7.0;
-    (
-        Rect { x, y, w: dw, h: dh },
-        Rect {
-            x: x + spec.scroll_pitch,
-            y,
-            w: uw,
-            h: uh,
-        },
-    )
+    .shown(spec.shows(SidebarPart::Power))
 }
 
 /// Forward cameo presses to the live Super or Factory click decision.
@@ -376,10 +488,10 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
 }
 
 // `sidebar::hit_test` (the legacy press-path hit-test) was retired in A6: every
-// in-game surface — tabs/repair/sell/scroll (A1), cameos (A2), tactical/minimap
-// (A3), and the control/dev buttons (A6) — is now owned by the `app::input::gadget_input`
-// retained list (one order = hit + draw, R7 complete). `hit_test_item` (the cameo
-// click→action map) stays public for the driver.
+// in-game surface — tabs/repair/sell/scroll (A1), cameos (A2) and tactical/minimap
+// (A3) — is now owned by the match's chrome (`app::input::chrome_input`, the
+// GUI's chrome layer). `hit_test_item` (the cameo click→action map) stays
+// public for it.
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_geometry_tests;

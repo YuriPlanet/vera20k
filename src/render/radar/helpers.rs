@@ -11,7 +11,7 @@ use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bridge_state::{ordinary, ramp_repair::Family};
 use crate::sim::intern::InternedId;
-use crate::sim::vision::{FogState, OwnerVisibility};
+use crate::sim::vision::FogState;
 use std::collections::HashMap;
 
 use super::geometry::{RADAR_APERTURE_HEIGHT, RADAR_APERTURE_WIDTH};
@@ -28,9 +28,6 @@ pub(super) const MINIMAP_DEPTH: f32 = 0.0;
 
 /// Shrouded / unexplored area color (pure black, matches original PutPixel(0)).
 pub(super) const COLOR_SHROUD: [u8; 4] = [0, 0, 0, 255];
-
-const THEATER_BRIGHTNESS_DEFAULT: f32 = 1.0;
-const THEATER_BRIGHTNESS_SNOW: f32 = 0.8;
 
 /// Classification of an overlay for minimap coloring.
 ///
@@ -69,30 +66,49 @@ pub(super) struct TerrainPixel {
     pub color: [u8; 4],
 }
 
-/// Immutable projection pixels and their derived cell lookup. Replacing a
-/// playfield projection replaces both together; dirty radar updates never
-/// mutate these source pixels. The index retains the first pixel for duplicate
-/// coordinates, matching the former forward scan without scanning the whole
-/// map for every dirty cell in a large movement batch.
-pub(super) struct TerrainPixels {
-    pixels: Vec<TerrainPixel>,
-    by_cell: Vec<(u32, usize)>,
-}
+/// First-occurrence lookup from a cell to its slot in a retained radar list.
+/// Duplicate coordinates keep the first slot, matching a forward scan, so a
+/// dirty batch costs one binary search per cell instead of a list scan.
+#[derive(Debug, Clone)]
+pub(super) struct RadarCellIndex(Vec<(u32, usize)>);
 
-impl TerrainPixels {
-    pub fn new(pixels: Vec<TerrainPixel>) -> Self {
-        let mut by_cell: Vec<_> = pixels
-            .iter()
+impl RadarCellIndex {
+    pub fn new(cells: impl IntoIterator<Item = (u16, u16)>) -> Self {
+        let mut by_cell: Vec<_> = cells
+            .into_iter()
             .enumerate()
-            .map(|(index, pixel)| (Self::key(pixel.rx, pixel.ry), index))
+            .map(|(slot, (rx, ry))| (Self::key(rx, ry), slot))
             .collect();
         by_cell.sort_unstable();
         by_cell.dedup_by_key(|entry| entry.0);
-        Self { pixels, by_cell }
+        Self(by_cell)
     }
 
     fn key(rx: u16, ry: u16) -> u32 {
         (u32::from(rx) << 16) | u32::from(ry)
+    }
+
+    pub fn slot(&self, rx: u16, ry: u16) -> Option<usize> {
+        let entry = self
+            .0
+            .binary_search_by_key(&Self::key(rx, ry), |entry| entry.0)
+            .ok()?;
+        Some(self.0[entry].1)
+    }
+}
+
+/// Immutable projection pixels and their derived cell lookup. Replacing a
+/// playfield projection replaces both together; dirty radar updates never
+/// mutate these source pixels.
+pub(super) struct TerrainPixels {
+    pixels: Vec<TerrainPixel>,
+    by_cell: RadarCellIndex,
+}
+
+impl TerrainPixels {
+    pub fn new(pixels: Vec<TerrainPixel>) -> Self {
+        let by_cell = RadarCellIndex::new(pixels.iter().map(|pixel| (pixel.rx, pixel.ry)));
+        Self { pixels, by_cell }
     }
 
     pub fn len(&self) -> usize {
@@ -104,29 +120,22 @@ impl TerrainPixels {
     }
 
     pub fn cell(&self, rx: u16, ry: u16) -> Option<&TerrainPixel> {
-        let entry = self
-            .by_cell
-            .binary_search_by_key(&Self::key(rx, ry), |entry| entry.0)
-            .ok()?;
-        Some(&self.pixels[self.by_cell[entry].1])
+        self.by_cell.slot(rx, ry).map(|slot| &self.pixels[slot])
     }
 }
 
-pub(crate) fn minimap_overlay_datum(
-    rx: u16,
-    ry: u16,
+/// The kind of overlay `overlay_id` is, for the minimap and for VERA's map
+/// pictures' ore and gem marks (`app::map_picture`). Only Ore against Gem
+/// reads the stock three-character name family.
+pub(crate) fn overlay_classification(
     overlay_id: u8,
-    frame: u8,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    rules: Option<&RuleSet>,
-) -> MinimapOverlayDatum {
+) -> OverlayClassification {
     let flags = overlay_registry.and_then(|registry| registry.flags(overlay_id));
-    let name = overlay_registry
-        .and_then(|registry| registry.name(overlay_id))
-        .unwrap_or("");
-    let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
-    let has_cell_anim = flags.is_some_and(|flags| flags.cell_anim.is_some());
-    let classification = if is_tiberium {
+    if flags.is_some_and(|flags| flags.tiberium) {
+        let name = overlay_registry
+            .and_then(|registry| registry.name(overlay_id))
+            .unwrap_or("");
         if name
             .get(..3)
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case("GEM"))
@@ -141,12 +150,32 @@ pub(crate) fn minimap_overlay_datum(
         OverlayClassification::Bridge
     } else {
         OverlayClassification::Other
-    };
+    }
+}
+
+pub(crate) fn minimap_overlay_datum(
+    rx: u16,
+    ry: u16,
+    overlay_id: u8,
+    frame: u8,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    rules: Option<&RuleSet>,
+) -> MinimapOverlayDatum {
+    let flags = overlay_registry.and_then(|registry| registry.flags(overlay_id));
+    let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
+    let has_cell_anim = flags.is_some_and(|flags| flags.cell_anim.is_some());
+    let classification = overlay_classification(overlay_id, overlay_registry);
     let has_tiberium_type = is_tiberium
         && overlay_registry
             .zip(rules)
             .and_then(|(registry, rules)| {
-                registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+                match registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id) {
+                    Ok(class) => class,
+                    Err(error) => {
+                        log::warn!("Cannot classify radar Tiberium at ({rx},{ry}): {error}");
+                        None
+                    }
+                }
             })
             .is_some();
     MinimapOverlayDatum {
@@ -161,18 +190,6 @@ pub(crate) fn minimap_overlay_datum(
             has_tiberium_type,
         },
     }
-}
-
-/// One generated-primary terrain pixel plus the exact cell gamemd queries for
-/// shroud/fog when `RenderCellPixel @ 0x00655C50` refreshes that pixel.
-#[derive(Clone, Copy)]
-pub(super) struct RadarSurfacePixel {
-    pub rx: u16,
-    pub ry: u16,
-    pub px: u32,
-    pub py: u32,
-    pub packed_rgb565: u16,
-    pub color: [u8; 4],
 }
 
 /// Compute the minimap color for a terrain cell.
@@ -386,12 +403,10 @@ pub(super) fn cell_visibility_color(
     fog: &FogState,
     pixel: &TerrainPixel,
 ) -> Option<[u8; 4]> {
-    // Hostile gap generator: terrain renders black like unexplored shroud.
-    // Checked before fog so black wins over half-bright on overlap (native order).
-    if fog.is_cell_gap_covered(local_owner, pixel.rx, pixel.ry) {
-        return Some(COLOR_SHROUD);
-    }
-    // Friendly (own/allied) gap generator: half-bright fog over the terrain.
+    // RenderCellPixel @ 0x00655E7E: IsFogged (an own or allied gap
+    // generator, Cell+13C) half-brightens before the shroud test blackens,
+    // so it wins where a hostile gap generator overlaps. A hostile gap's
+    // cover clears the revealed bit, which the shroud test reads.
     if fog.is_cell_gap_fog(local_owner, pixel.rx, pixel.ry) {
         return Some(dim_color(pixel.color, 0.5));
     }
@@ -410,21 +425,6 @@ pub(super) fn dim_color(color: [u8; 4], factor: f32) -> [u8; 4] {
         (color[2] as f32 * factor).round().clamp(0.0, 255.0) as u8,
         color[3],
     ]
-}
-
-/// Get the terrain brightness multiplier for a theater.
-///
-/// Live TheaterType table field read by `CellClass::GetRadarColor`.
-///
-/// The `TEMPERATE,SNOW,URBAN,DESERT,NEWURBAN,LUNAR` records at
-/// `0x007E1B78 + index*0x70` carry brightness at `+0x58`: Snow is 0.8 and
-/// every other retail theater is 1.0. The later unsigned `>>1` is separate.
-pub(super) fn terrain_brightness_for_theater(theater_name: &str) -> f32 {
-    if theater_name.eq_ignore_ascii_case("SNOW") {
-        THEATER_BRIGHTNESS_SNOW
-    } else {
-        THEATER_BRIGHTNESS_DEFAULT
-    }
 }
 
 /// Resolve a gamemd foundation name into minimap footprint dimensions.
@@ -452,6 +452,16 @@ pub(super) fn minimap_entity_visible(
     ) || fog.is_cell_revealed(local_owner, pos.rx(), pos.ry())
 }
 
+/// The live ally table of a world whose graph is `graph` (test helper).
+#[cfg(test)]
+pub(super) fn test_alliances(
+    graph: crate::map::houses::HouseAllianceMap,
+) -> crate::sim::house_diplomacy::HouseAlliances {
+    let mut sim = crate::sim::world::Simulation::new();
+    *sim.house_alliances_mut_for_test() = graph;
+    sim.house_alliances().clone()
+}
+
 /// Default minimap screen rectangle (bottom-left corner with margin).
 pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     let mm_w = MINIMAP_WIDTH as f32;
@@ -461,23 +471,7 @@ pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     (mm_x, mm_y, mm_w, mm_h)
 }
 
-pub(super) fn surface_visibility_color(
-    visibility: Option<&OwnerVisibility>,
-    pixel: &RadarSurfacePixel,
-) -> Option<[u8; 4]> {
-    let visibility = visibility?;
-    if visibility.is_gap_covered(pixel.rx, pixel.ry) {
-        return Some(COLOR_SHROUD);
-    }
-    if visibility.is_gap_fog(pixel.rx, pixel.ry) {
-        return Some(super::terrain::half_bright_rgb565(pixel.packed_rgb565));
-    }
-    visibility
-        .is_revealed(pixel.rx, pixel.ry)
-        .then_some(pixel.color)
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod terrain_pixel_tests {
     use super::*;
 
@@ -511,7 +505,7 @@ mod terrain_pixel_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod radar_color_tests {
     use super::*;
     use crate::map::terrain::TerrainCell;
@@ -557,15 +551,23 @@ mod radar_color_tests {
     fn native_tmp_color_is_identical_truncated_shifted_and_has_explicit_absence() {
         let sample = cell([144, 151, 64], [3, 5, 7]);
         assert_eq!(
-            radar_colors_for_cell(&sample, true, terrain_brightness_for_theater("TEMPERATE")),
+            radar_colors_for_cell(
+                &sample,
+                true,
+                crate::map::theater::theater_radar_brightness("TEMPERATE")
+            ),
             ([72, 75, 32], [72, 75, 32]),
         );
         assert_eq!(
-            radar_colors_for_cell(&sample, true, terrain_brightness_for_theater("SNOW")),
+            radar_colors_for_cell(
+                &sample,
+                true,
+                crate::map::theater::theater_radar_brightness("SNOW")
+            ),
             ([57, 60, 25], [57, 60, 25]),
             "x87 144*.8 truncates to 115 before >>1",
         );
-        assert_eq!(terrain_brightness_for_theater("URBAN"), 1.0);
+        assert_eq!(crate::map::theater::theater_radar_brightness("URBAN"), 1.0);
         assert_eq!(
             radar_colors_for_cell(&cell([0; 3], [9; 3]), true, 1.0),
             ([0; 3], [0; 3]),
@@ -676,4 +678,14 @@ mod radar_color_tests {
             "the terminal overlay retains its current frame and valid black",
         );
     }
+}
+
+#[cfg(test)]
+pub(super) fn test_radar_session(
+    mode: crate::sim::scenario_session::ScenarioGameMode,
+) -> crate::sim::scenario_session::ScenarioSession {
+    use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioSession};
+    let mut session = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
+    session.set_game_mode(mode);
+    session
 }

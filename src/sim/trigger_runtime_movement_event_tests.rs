@@ -4,6 +4,8 @@
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};
 use super::*;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::RulePolicy;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
@@ -40,11 +42,10 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         let first_change = control["first_change"].as_bool().unwrap();
         let second_change = control["second_change"].as_bool().unwrap();
         let expected_index = usize::try_from(control["owner"].as_u64().unwrap()).unwrap();
-        let (mut sim, rules, registry, initial_houses) =
-            super::tests::event_ingress_fixture_with_rules(
-                "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
+        let (mut sim, rules, _, initial_houses) = super::tests::event_ingress_fixture_with_rules(
+            "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
                  Capturable=yes\nRepairable=yes\n",
-            );
+        );
         let country2 = sim.interner.intern("Country2");
         sim.houses
             .get_mut(&initial_houses[2])
@@ -148,10 +149,9 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
                 .advance_app_frame(
                     &[],
                     &rules,
-                    Some(&registry),
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             arrivals.extend(
@@ -190,7 +190,7 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
             "first={first_change}, second={second_change}"
         );
         assert_eq!(
-            target.capture_infantry_type_index.get(),
+            target.seldom.capture_infantry_type_index.get(),
             rules
                 .type_array_index(
                     crate::rules::object_type::ObjectCategory::Infantry,
@@ -283,7 +283,11 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         for index in entry_triggers {
             let trigger = sim.trigger_runtime.trigger(index).unwrap();
             let typ = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index];
-            let entered_index = typ.events.iter().position(|event| event.kind == 1).unwrap();
+            let entered_index = typ
+                .events
+                .iter()
+                .position(|event| event.condition.kind == 1)
+                .unwrap();
             assert_eq!(trigger.completed & (1 << entered_index), 0);
             let source = if typ.id == "T1" && first_change { 1 } else { 0 };
             assert_eq!(trigger.retained_house, Some(houses[source]));
@@ -298,11 +302,14 @@ fn tag(sim: &mut Simulation, name: &str) -> (usize, usize) {
 }
 
 fn install(sim: &mut Simulation, rules: &RuleSet, event: &str) -> (usize, usize) {
+    // These native predicate controls supply existing TeamTypes before
+    // TEvent::Read71F595 binds them; that reader must not construct them.
     install_event_ingress_map(
         sim,
         rules,
         &format!(
-            "[Triggers]\nMOVE=Country0,<none>,Move,0,1,1,1,0\n[Tags]\nMOVETAG=0,Move,MOVE\n[Events]\nMOVE=1,{event}\n[Actions]\nMOVE=1,28,0,7,0,0,0,0,A\n"
+            "[TeamTypes]\n0=MATCH\n1=OTHER\n[MATCH]\nName=MATCH\n[OTHER]\nName=OTHER\n\
+             [Triggers]\nMOVE=Country0,<none>,Move,0,1,1,1,0\n[Tags]\nMOVETAG=0,Move,MOVE\n[Events]\nMOVE=1,{event}\n[Actions]\nMOVE=1,28,0,7,0,0,0,0,A\n"
         ),
     );
     tag(sim, "MOVETAG")
@@ -372,7 +379,7 @@ fn team(
         sim.team_script_vm.mark_member_team_leaving_map(actor);
     }
     if !head {
-        sim.team_remove_member(id, actor, true, rules, FrameEffects::default());
+        sim.team_remove_member(id, actor, true, rules, &mut FrameEffects::default());
     }
     id
 }
@@ -608,6 +615,224 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
     }
 }
 
+fn retail_infantry_map_event(
+    required_members: u32,
+    clear_repeat: u8,
+) -> Option<(
+    Simulation,
+    RuleSet,
+    crate::rules::overlay_types::OverlayTypeRegistry,
+)> {
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules()?;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x51BE3E);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    let owner = sim.interner.get("Americans").unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_country_for_test(Some(owner));
+    let map = install_event_ingress_map(
+        &mut sim,
+        &rules,
+        &format!(
+            "[TeamTypes]\n0=MATCH\n[MATCH]\nName=MATCH\nScript=WAIT\nTaskForce=INFANTRY\n\
+             [ScriptTypes]\n0=WAIT\n[WAIT]\n0=5,999\n\
+             [TaskForces]\n0=INFANTRY\n[INFANTRY]\n0={required_members},E1\n\
+             [Triggers]\nMOVE=Americans,<none>,Move,0,1,1,1,0\nCLEAR=Americans,LATE,Clear,0,1,1,1,0\nLATE=Americans,<none>,Late,0,1,1,1,0\n\
+             [Tags]\nMOVETAG=0,Move,MOVE\nCLEARTAG={clear_repeat},Clear,CLEAR\n\
+             [Events]\nMOVE=1,23,1,MATCH\nCLEAR=1,23,1,MATCH\nLATE=1,28,0,7\n\
+             [Actions]\nMOVE=3,28,0,7,0,0,0,0,A,28,0,8,0,0,0,0,A,70,3,MOVETAG,0,0,0,0,A\n\
+             CLEAR=1,29,0,7,0,0,0,0,A\nLATE=1,28,0,9,0,0,0,0,A\n"
+        ),
+    );
+    sim.install_team_ai_registry(
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
+            &crate::rules::ini_parser::IniFile::empty(),
+            &map.ini,
+            RulePolicy::stock_multiplayer(),
+        ),
+        &rules,
+    );
+    Some((sim, rules, registry))
+}
+
+fn add_infantry_map_event_team(sim: &mut Simulation, rules: &RuleSet, actor: u64) -> u64 {
+    let owner = sim.interner.get("Americans").unwrap();
+    let typ = sim.interner.get("MATCH").unwrap();
+    let id = sim
+        .team_script_vm
+        .construct_team(typ, owner, TeamLimitScope::PerHouse, 0, false, None)
+        .unwrap();
+    assert!(sim.team_add_member(id, actor, false, rules, &mut FrameEffects::default()));
+    id
+}
+
+/// InfantryAI51BE3E..51BE52 -> Recalc6EA497..6EA4D2 -> map actions.
+/// Recalc walks backwards: CLEAR runs before MOVE, leaving global7 set.
+#[test]
+fn infantry_ai_enables_empty_team_map_action() {
+    let Some((mut sim, rules, registry)) = retail_infantry_map_event(1, 0) else {
+        return;
+    };
+    let (move_tag, _) = tag(&mut sim, "MOVETAG");
+    let (clear_tag, _) = tag(&mut sim, "CLEARTAG");
+    // A team emptied before its member's first Infantry AI visit must not
+    // enable the event merely through construction or Team membership.
+    let unvisited = sim
+        .spawn_object("E1", "Americans", 16, 15, 0, &rules)
+        .unwrap();
+    assert!(
+        sim.substrate
+            .entities
+            .get(unvisited)
+            .unwrap()
+            .in_playfield()
+    );
+    let unvisited_team = add_infantry_map_event_team(&mut sim, &rules, unvisited);
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    sim.team_remove_member(
+        unvisited_team,
+        unvisited,
+        true,
+        &rules,
+        &mut FrameEffects::default(),
+    );
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    assert!(sim.team_script_vm.team(unvisited_team).is_none());
+    assert!(!sim.trigger_runtime.globals_set.contains(&7));
+    assert!(sim.trigger_runtime.tag(move_tag).is_some());
+    let actor = sim
+        .spawn_object("E1", "Americans", 16, 16, 0, &rules)
+        .unwrap();
+    assert!(sim.substrate.entities.get(actor).unwrap().in_playfield());
+    let id = add_infantry_map_event_team(&mut sim, &rules, actor);
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    assert!(sim.team_script_vm.member_team_type(actor).is_some());
+    assert!(!sim.trigger_runtime.globals_set.contains(&7));
+    sim.infantry_action_turn(actor, &rules, Some(&registry), &mut FrameEffects::default())
+        .unwrap();
+    sim.team_remove_member(id, actor, true, &rules, &mut FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    assert!(
+        sim.trigger_runtime.globals_set.contains(&7),
+        "the actual registered map action follows the Infantry producer"
+    );
+    assert!(sim.team_script_vm.team(id).is_none());
+    assert!(sim.trigger_runtime.globals_set.contains(&8));
+    sim.flush_pending_delete();
+    assert!(sim.trigger_runtime.tag(move_tag).is_none());
+    assert!(sim.trigger_runtime.tag(clear_tag).is_none());
+}
+
+/// TeamAI6E92D0..6E9320 walks forwards and revisits a slot after a raise
+/// returns true. MOVE deletes itself; CLEAR must still run after it. CLEAR's
+/// linked LATE is checked first and waits on CLEAR's action.
+fn dissolve_unfilled_infantry_team(clear_repeat: u8) -> Option<(Simulation, usize, usize)> {
+    use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+
+    let (mut sim, rules, registry) = retail_infantry_map_event(2, clear_repeat)?;
+    let (move_tag, _) = tag(&mut sim, "MOVETAG");
+    let (clear_tag, _) = tag(&mut sim, "CLEARTAG");
+    let actor = sim
+        .spawn_object("E1", "Americans", 16, 16, 0, &rules)
+        .unwrap();
+    let id = add_infantry_map_event_team(&mut sim, &rules, actor);
+    sim.infantry_action_turn(actor, &rules, Some(&registry), &mut FrameEffects::default())
+        .unwrap();
+    // Kill the sole member before the team can form; a merely removed live
+    // member would be eligible for the recruit pass preceding dissolution.
+    let damage = sim.substrate.entities.get(actor).unwrap().health.current();
+    let warhead = sim.interner.intern("SA");
+    sim.commit_direct_damage_receiver(
+        &rules,
+        Some(&registry),
+        EntityDamageEvent::direct_receiver(
+            actor,
+            damage,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            warhead,
+            ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: true,
+            },
+        ),
+        &mut FrameEffects::default(),
+    );
+    let team = sim.team_script_vm.team(id).unwrap();
+    assert!(!team.formed());
+    assert_eq!(team.members().count(), 0);
+    let delay = u32::try_from(rules.general.dissolve_unfilled_team_delay).unwrap();
+    sim.session.set_binary_frame_for_test(delay);
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    assert!(sim.team_script_vm.team(id).is_some());
+    assert!(!sim.trigger_runtime.globals_set.contains(&8));
+    sim.session.set_binary_frame_for_test(delay + 1);
+    let mut retained = sim.clone();
+    retained.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        sim.session
+            .rule_policy()
+            .with_dissolve_unfilled_teams(false),
+    );
+    retained.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    assert!(retained.team_script_vm.team(id).is_some());
+    assert!(!retained.trigger_runtime.globals_set.contains(&8));
+
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
+    assert!(
+        sim.trigger_runtime.globals_set.contains(&8),
+        "timeout raises the map event before destruction"
+    );
+    assert!(
+        !sim.trigger_runtime.globals_set.contains(&7),
+        "CLEAR follows MOVE despite MOVE deleting its own Tag"
+    );
+    assert!(sim.team_script_vm.team(id).is_none());
+    Some((sim, move_tag, clear_tag))
+}
+
+#[test]
+fn infantry_map_event_survives_unfilled_team_timeout_and_tag_compaction() {
+    let Some((mut sim, move_tag, clear_tag)) = dissolve_unfilled_infantry_team(0) else {
+        return;
+    };
+    assert!(
+        sim.trigger_runtime.globals_set.contains(&9),
+        "the revisit of the fired one-shot Tag springs LATE"
+    );
+    sim.flush_pending_delete();
+    assert!(sim.trigger_runtime.tag(move_tag).is_none());
+    assert!(sim.trigger_runtime.tag(clear_tag).is_none());
+}
+
+/// Native 6E9312 re-raises a repeating Tag left in the revisited slot
+/// forever; the walk raises it once and ends.
+#[test]
+fn forward_team_walk_raises_a_repeating_tag_once() {
+    let Some((mut sim, _, clear_tag)) = dissolve_unfilled_infantry_team(2) else {
+        return;
+    };
+    let raises = sim
+        .tag_dispatch_trace_for_test()
+        .iter()
+        .filter(|&&raise| raise == (clear_tag, 23))
+        .count();
+    assert_eq!(raises, 1);
+    sim.flush_pending_delete();
+    assert!(sim.trigger_runtime.tag(clear_tag).is_some());
+}
+
 #[test]
 fn empty_leaving_team_recalc_raises_before_destruction_and_cleans_one_shot_tags() {
     let (mut sim, rules, registry, houses) = event_ingress_fixture();
@@ -615,7 +840,7 @@ fn empty_leaving_team_recalc_raises_before_destruction_and_cleans_one_shot_tags(
     let id = team(&mut sim, &rules, houses[0], Some("MATCH"), false, true);
     assert!(sim.team_script_vm.team(id).is_some());
     let before = rng(&sim);
-    sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.team_script_vm.team(id).is_none());
     sim.flush_pending_delete();
     assert!(sim.trigger_runtime.tag(tag).is_none());
@@ -657,7 +882,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -666,7 +891,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -708,14 +933,14 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         infantry,
         Some(crate::sim::components::NavTargetRef::object(reactor)),
         &rules,
-        Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
             .entities
             .get(infantry)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(reactor)
@@ -730,14 +955,14 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         },
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.per_cell_process(
         infantry,
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -746,7 +971,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             .entities
             .get(infantry)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -788,14 +1013,14 @@ fn arrive_at_building(
         },
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.per_cell_process(
         infantry,
         crate::sim::movement::PerCellReason::Arrival,
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -837,7 +1062,7 @@ fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -896,6 +1121,7 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .pending()
                 .is_some(),
@@ -909,7 +1135,12 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
 /// admission must not raise it, and the building's House is not the actor.
 #[test]
 fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
-    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, false)] {
+    // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
+    // is civilian (TechLevel -1); this one is not. `None` is that red entry:
+    // admitted when Ares plays.
+    for (actor_house, health, entered) in
+        [(0, 500, Some(true)), (1, 500, Some(false)), (0, 50, None)]
+    {
         let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
             "[Country7]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\n\
@@ -918,6 +1149,8 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
              [BuildingTypes]\n0=TAGGARRISON\n[TAGGARRISON]\nStrength=500\n\
              CanBeOccupied=yes\nMaxNumberOccupants=3\n",
         );
+        let red_entered = rules.ares_form();
+        let entered = entered.unwrap_or(red_entered);
         sim.houses
             .get_mut(&houses[1])
             .unwrap()
@@ -955,9 +1188,9 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id(),
-            (health == 500).then_some(building),
+            (health == 500 || red_entered).then_some(building),
         );
     }
 }
@@ -987,7 +1220,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
         )
         .unwrap()
         .into_parts();
-    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&map.ini, None);
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let needle = map
@@ -1043,7 +1275,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
     for (difficulty, whole_map) in [(0, true), (1, true), (2, false)] {
         let mut sim = Simulation::with_seed(3);
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         // A Size 16x16 diamond fits the arena's 32x32 cell storage.
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),
@@ -1066,6 +1298,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         sim.session.game_options_mut_for_test().short_game = false;
@@ -1113,10 +1346,9 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
             if sim
@@ -1124,7 +1356,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id()
                 == Some(building)
             {
@@ -1164,10 +1396,9 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         }

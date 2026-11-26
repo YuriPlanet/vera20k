@@ -4,6 +4,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -88,7 +89,7 @@ fn script42_and_class_turns_match_original_controls() {
                 id
             })
             .collect();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.interner.intern("OWNER");
         let script = sim.interner.intern("SCRIPT");
         let argument = row["argument"].as_i64().unwrap() as i32;
@@ -130,7 +131,7 @@ fn script42_and_class_turns_match_original_controls() {
             row["first"].as_bool().unwrap(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.team_script_vm.team(team).unwrap().advance_pending(),
@@ -236,16 +237,21 @@ fn retail_all01_facing_scripts_reach_the_shared_turn_owner() {
     };
     let map =
         crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL01UMD.MAP").unwrap()).unwrap();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     let scripts: Vec<_> = registry
         .scripts
         .iter()
         .filter(|script| script.actions.iter().any(|action| action.action_id == 42))
         .collect();
     assert!(!scripts.is_empty(), "ALL01 registers facing scripts");
-    assert!(action_is_ported(42));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(42, ares_way));
+    }
     // The actual authored octants go through the production script decoder,
     // and the caller compares a raw direction word rather than type ROT.
     assert!(

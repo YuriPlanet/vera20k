@@ -15,7 +15,6 @@ use crate::map::waypoints::Waypoint;
 use crate::skirmish_launch::{LaunchCountry, SkirmishLaunchMode, SkirmishLaunchSession};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 
-const NATIVE_START_LIMIT: u32 = 8;
 const PREVIEW_SCALE: i64 = 1_000;
 const MARKER_FRACTION_SCALE: i64 = 1_000_000;
 const MMPB_OFFSET_X: i64 = -3;
@@ -31,10 +30,6 @@ const WIDE_ART_SIZE: [i32; 2] = [800, 600];
 
 /// Skirmish mode whose briefing block sits lower on the loading screen.
 
-/// Bitmap the random-map setup dialog writes and the preview source the
-/// random-map loading branch consumes.
-pub(crate) const RANDOM_MAP_PREVIEW_FILE: &str = "RandMap.img";
-
 /// Loading-art viewport size for the current screen width.
 pub(crate) const fn loading_art_viewport_size(render_width: u32) -> [i32; 2] {
     if render_width == NARROW_LOADING_SCREEN_WIDTH {
@@ -47,12 +42,12 @@ pub(crate) const fn loading_art_viewport_size(render_width: u32) -> [i32; 2] {
 /// The mapping the loading screen paints in. gamemd centers the art viewport in
 /// the window and draws it 1:1; a window the shell family fits instead scales the
 /// authored dialog to fit it, centred, so every authored rect maps through this
-/// scale. [`ShellScale::RETAIL`] leaves every path exactly as gamemd has it.
+/// scale. `RETAIL_SCALE` leaves every path exactly as gamemd has it.
 pub(crate) fn loading_screen_scale(fill_window: bool, render_size: [u32; 2]) -> ShellScale {
     if fill_window {
-        ShellScale::from_screen(render_size[0] as i32, render_size[1] as i32)
+        crate::ui::shell::geom::shell_scale(render_size[0] as i32, render_size[1] as i32)
     } else {
-        ShellScale::RETAIL
+        crate::ui::shell::geom::RETAIL_SCALE
     }
 }
 
@@ -61,7 +56,7 @@ pub(crate) fn loading_screen_scale(fill_window: bool, render_size: [u32; 2]) -> 
 /// narrow/wide art branch, the centered origin and each rect — is computed from
 /// this size first, then mapped through the scale, so the two paths cannot drift.
 pub(crate) fn loading_authored_size(render_size: [u32; 2], scale: ShellScale) -> [u32; 2] {
-    if scale.is_retail() {
+    if scale.is_unscaled() {
         render_size
     } else {
         [SHELL_BASE_W as u32, SHELL_BASE_H as u32]
@@ -341,7 +336,6 @@ pub(crate) struct LoadingCompositionSnapshot {
 impl LoadingCompositionSnapshot {
     /// Ares553820/553B3B/553E54 use the actual retained Country label records,
     /// keeping the shared localization, special uppercase and layout owners.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_country_loading(
         &mut self,
         loading: &crate::rules::country_loading::AresCountryLoading,
@@ -379,7 +373,10 @@ pub(crate) fn build_loading_composition(
     assignments: &[LoadingStartAssignment],
 ) -> LoadingCompositionSnapshot {
     let region = mmpb_region_rect(loading_authored_size(render_size, scale)[0]).scaled(scale);
-    let prefix = native_loading_waypoint_prefix(&map.waypoints);
+    let slot_limit = crate::map::waypoints::multiplayer_start_slot_limit(
+        crate::map::waypoints::skirmish_player_capacity(&map.ini),
+    );
+    let prefix = native_loading_waypoint_prefix(&map.waypoints, slot_limit);
     let bounds = projected_playfield_bounds(map);
 
     let mut markers = Vec::new();
@@ -392,7 +389,7 @@ pub(crate) fn build_loading_composition(
             let fit = aspect_fit_preview(region, preview.width, preview.height)?;
             let mut image = preview.clone();
             if let Some(bounds) = bounds {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                burn_black_start_indicators(&mut image, &prefix, bounds, 0);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -433,9 +430,15 @@ pub(crate) fn build_random_map_loading_composition(
         .filter(valid_preview_buffer)
         .and_then(|mut image| {
             let fit = aspect_fit_preview(region, image.width, image.height)?;
-            let prefix = native_loading_waypoint_prefix(active_scenario_waypoints);
+            // The active array holds only the staged starts, so every staging
+            // slot is a start slot.
+            let prefix = native_loading_waypoint_prefix(
+                active_scenario_waypoints,
+                crate::map::preview::START_STAGING_SLOTS as u32,
+            );
             if let Some(bounds) = projected_playfield_bounds(launch_map) {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                let halvings = random_map_preview_halvings(image.width, bounds);
+                burn_black_start_indicators(&mut image, &prefix, bounds, halvings);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -460,6 +463,16 @@ fn finish_loading_composition(
         |csf| localize_loading_text(csf, country),
     );
     let text_rects = loading_text_rects(render_size, &session.mode, scale);
+    // Original RA2 bakes the selected country's flag into the skirmish loading
+    // background SHP itself; the engine draws no minimap in the `mmpb` region —
+    // that is a Yuri's Revenge addition. Drop the map preview and its
+    // assigned-start markers under `-ra2` so only the authored flag shows.
+    // Campaign loads use a separate presentation and never reach this path.
+    let (preview, markers) = if crate::util::ra2_launch::enabled() {
+        (None, Vec::new())
+    } else {
+        (preview, markers)
+    };
     let layers = composition_layers(preview.is_some(), !markers.is_empty(), &text);
     LoadingCompositionSnapshot {
         scale,
@@ -518,7 +531,7 @@ pub(crate) fn projected_playfield_bounds(map: &MapFile) -> Option<ProjectedPlayf
     })
 }
 
-/// `ComputeScenarioHeaderFromMap 0x0058B830` over a generated map: the
+/// `ComputeScenarioHeaderFromMap 0x0058B820` over a generated map: the
 /// leading defined start waypoints 0..7 (the loop stops at the first
 /// undefined one, `0x0058B858`) give the staged pairs through the same
 /// `0x006D62E0` projection divided by 60 and 30, and the playfield cells give
@@ -566,9 +579,18 @@ pub(crate) fn scenario_start_staging(
     staging
 }
 
-/// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices 0..7.
-pub(crate) fn native_loading_waypoint_prefix(waypoints: &HashMap<u32, Waypoint>) -> Vec<Waypoint> {
-    let valid_count = (0..NATIVE_START_LIMIT)
+/// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices
+/// `0..slot_limit`.
+///
+/// gamemd's compositor `FUN_00640A40` visits waypoints 0..7. VERA extension: a
+/// map that declares 9–30 starts, or a random map staged for more than eight
+/// players, passes its larger start-slot count (the limit Gather uses), so
+/// every start gets its marker. Ordinary maps pass 8 and play as gamemd.
+pub(crate) fn native_loading_waypoint_prefix(
+    waypoints: &HashMap<u32, Waypoint>,
+    slot_limit: u32,
+) -> Vec<Waypoint> {
+    let valid_count = (0..slot_limit)
         .filter(|index| waypoints.contains_key(index))
         .count() as u32;
     (0..valid_count)
@@ -661,25 +683,42 @@ pub(crate) fn build_mmpb_marker_records(
 
 /// Burn clipped opaque-black `4x4` source rectangles before preview aspect fitting.
 ///
+/// VERA extension: on a `RandMap.img` written at half size `halvings` times
+/// ([`random_map_preview_halvings`]) each rectangle and its place shrink the
+/// same way; at zero this is the native burn.
+///
 /// Returns the number of indicators that wrote at least one in-bounds pixel.
 pub(crate) fn burn_black_start_indicators(
     preview: &mut DecodedPreview,
     prefix: &[Waypoint],
     bounds: ProjectedPlayfieldBounds,
+    halvings: u32,
 ) -> usize {
     if !valid_preview_buffer(preview) {
         return 0;
     }
+    let size = (START_INDICATOR_SIZE >> halvings).max(1);
     let mut written = 0;
     for waypoint in prefix {
         let point = project_waypoint(*waypoint);
-        let x = (i64::from(point.x) - i64::from(bounds.min_x)) * 2 - 1;
-        let y = i64::from(point.y) - i64::from(bounds.min_y) - 1;
-        if fill_black_rect_clipped(preview, x, y) {
+        let x = ((i64::from(point.x) - i64::from(bounds.min_x)) * 2 - 1) >> halvings;
+        let y = (i64::from(point.y) - i64::from(bounds.min_y) - 1) >> halvings;
+        if fill_black_rect_clipped(preview, x, y, size) {
             written += 1;
         }
     }
     written
+}
+
+/// VERA: how many times a random map's preview was halved to fit a room's
+/// preview transfer (`shell_random_map::write_random_map_preview_to_dir`):
+/// the full preview is twice the projected width across. Zero for every size
+/// the original game makes.
+fn random_map_preview_halvings(width: u32, bounds: ProjectedPlayfieldBounds) -> u32 {
+    let full = i64::from(bounds.extent_x) * 2;
+    (0..8)
+        .take_while(|halvings| full >> (halvings + 1) >= i64::from(width))
+        .count() as u32
 }
 
 fn valid_preview_buffer(preview: &DecodedPreview) -> bool {
@@ -697,16 +736,16 @@ fn valid_preview_buffer(preview: &DecodedPreview) -> bool {
         && preview.height != 0
 }
 
-fn fill_black_rect_clipped(preview: &mut DecodedPreview, x: i64, y: i64) -> bool {
+fn fill_black_rect_clipped(preview: &mut DecodedPreview, x: i64, y: i64, size: i64) -> bool {
     let width = i64::from(preview.width);
     let height = i64::from(preview.height);
     let mut wrote = false;
-    for offset_y in 0..START_INDICATOR_SIZE {
+    for offset_y in 0..size {
         let pixel_y = y + offset_y;
         if !(0..height).contains(&pixel_y) {
             continue;
         }
-        for offset_x in 0..START_INDICATOR_SIZE {
+        for offset_x in 0..size {
             let pixel_x = x + offset_x;
             if !(0..width).contains(&pixel_x) {
                 continue;
@@ -770,7 +809,7 @@ fn composition_layers(
     layers
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -881,7 +920,7 @@ mod tests {
             (4, waypoint(4, 4, 4)),
             (5, waypoint(5, 5, 5)),
         ]);
-        let prefix = native_loading_waypoint_prefix(&waypoints);
+        let prefix = native_loading_waypoint_prefix(&waypoints, 8);
         assert_eq!(
             prefix
                 .iter()
@@ -909,9 +948,43 @@ mod tests {
                 extent_x: 1,
                 extent_y: 1,
             },
+            0,
         );
         assert_eq!(written, 1);
         assert_eq!(preview.rgba, [0, 0, 0, 255].repeat(9));
+    }
+
+    /// VERA: a random map's preview written at half size takes its black
+    /// squares at half size and half the distance, so a start in its right
+    /// half still gets one.
+    #[test]
+    fn a_halved_random_map_preview_takes_halved_start_squares() {
+        let start = waypoint(0, 0, 0);
+        let point = project_waypoint(start);
+        let bounds = ProjectedPlayfieldBounds {
+            min_x: point.x - 10,
+            min_y: point.y - 2,
+            extent_x: 12,
+            extent_y: 8,
+        };
+        assert_eq!(random_map_preview_halvings(24, bounds), 0);
+        assert_eq!(random_map_preview_halvings(12, bounds), 1);
+        let mut preview = DecodedPreview {
+            width: 12,
+            height: 4,
+            rgba: vec![255; 12 * 4 * 4],
+        };
+        let halvings = random_map_preview_halvings(preview.width, bounds);
+        assert_eq!(
+            burn_black_start_indicators(&mut preview, &[start], bounds, halvings),
+            1
+        );
+        // Full size puts the square at (19, 1); half size at (9, 0), 2x2.
+        let black: Vec<(u32, u32)> = (0..preview.height)
+            .flat_map(|y| (0..preview.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| preview.rgba[((y * preview.width + x) * 4) as usize] == 0)
+            .collect();
+        assert_eq!(black, [(9, 0), (10, 0), (9, 1), (10, 1)]);
     }
 
     #[test]
@@ -986,10 +1059,10 @@ mod tests {
         use crate::skirmish_launch::{
             LaunchStartPosition, LaunchTeam, SkirmishLaunchOptions, SkirmishLocalSlot,
         };
-        SkirmishLaunchSession {
-            mode: mode("MPBattleMD.ini"),
-            selected_map_file: Some(RANDMAP_SED_FIXTURE.to_owned()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            mode("MPBattleMD.ini"),
+            Some(RANDMAP_SED_FIXTURE.to_owned()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_owned(),
                 slot: SkirmishLocalSlot {
@@ -1002,13 +1075,10 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 0,
-            opponents: Vec::new(),
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-            options: SkirmishLaunchOptions::default(),
-        }
+            0,
+            Vec::new(),
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     const RANDMAP_SED_FIXTURE: &str = "RandMap.Sed";
@@ -1036,7 +1106,7 @@ mod tests {
             &test_launch_session(),
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             Some(image),
             &map,
             &map.waypoints,
@@ -1069,6 +1139,7 @@ mod tests {
             (10_000, 10_000, -10_000, -10_000)
         );
         let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index: 0,
@@ -1105,6 +1176,7 @@ mod tests {
             100,
         );
         let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index: 0,
@@ -1132,7 +1204,7 @@ mod tests {
             &session,
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             &assignments,
         );
 
@@ -1145,7 +1217,7 @@ mod tests {
             &session,
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             &assignments,
         );
         assert_eq!(with_filler.markers, baseline.markers);
@@ -1160,7 +1232,7 @@ mod tests {
             &session,
             None,
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             &assignments,
         );
         assert_ne!(with_inside.markers[0].anchor, baseline.markers[0].anchor);
@@ -1177,6 +1249,7 @@ mod tests {
         );
         map.cells = vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 60,
                 ry: 60,
                 tile_index: 0,
@@ -1184,6 +1257,7 @@ mod tests {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 60,
                 ry: 140,
                 tile_index: 0,
@@ -1191,6 +1265,7 @@ mod tests {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 140,
                 ry: 60,
                 tile_index: 0,
@@ -1231,7 +1306,7 @@ mod tests {
             &session,
             Some(&csf),
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             Some(image),
             &map,
             &map.waypoints,
@@ -1290,7 +1365,8 @@ mod tests {
         );
         assert_eq!(
             crate::app::loading::progress_row::LoadingProgressRowSnapshot::from_launch_session(
-                &session
+                &session,
+                crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
             )
             .local_label(),
             "Player"
@@ -1302,11 +1378,16 @@ mod tests {
         let battle = mode("MPBattleMD.ini");
         let cooperative = mode("MPCoopMD.ini");
         assert_eq!(
-            loading_text_rects([640, 480], &cooperative, ShellScale::RETAIL).load_brief,
+            loading_text_rects(
+                [640, 480],
+                &cooperative,
+                crate::ui::shell::geom::RETAIL_SCALE
+            )
+            .load_brief,
             RectPx::new(16, 126, 318, 104)
         );
         assert_eq!(
-            loading_text_rects([800, 600], &battle, ShellScale::RETAIL),
+            loading_text_rects([800, 600], &battle, crate::ui::shell::geom::RETAIL_SCALE),
             LoadingTextRects {
                 country_name: RectPx::new(540, 310, 200, 20),
                 special_unit: RectPx::new(20, 90, 200, 20),
@@ -1315,11 +1396,17 @@ mod tests {
             }
         );
         assert_eq!(
-            loading_text_rects([1024, 768], &cooperative, ShellScale::RETAIL).load_brief,
+            loading_text_rects(
+                [1024, 768],
+                &cooperative,
+                crate::ui::shell::geom::RETAIL_SCALE
+            )
+            .load_brief,
             RectPx::new(132, 464, 398, 130)
         );
         assert_eq!(
-            loading_text_rects([799, 600], &battle, ShellScale::RETAIL).country_name,
+            loading_text_rects([799, 600], &battle, crate::ui::shell::geom::RETAIL_SCALE)
+                .country_name,
             RectPx::new(540, 310, 200, 20)
         );
     }
@@ -1332,8 +1419,9 @@ mod tests {
         };
 
         let battle = mode("MPBattleMD.ini");
-        let scale = ShellScale::from_screen(1600, 1200);
-        let authored = loading_text_rects([800, 600], &battle, ShellScale::RETAIL);
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
+        let authored =
+            loading_text_rects([800, 600], &battle, crate::ui::shell::geom::RETAIL_SCALE);
 
         // Every layer places itself in the 800x600 dialog, then maps through the
         // page scale, so the copy stays on the art it labels at any window size.
@@ -1373,7 +1461,8 @@ mod tests {
 
         // gamemd's own mapping is untouched by the fit: the same dialog is
         // centered at 1:1 and the identity scale leaves each layer where it is.
-        let centered = loading_text_rects([1600, 1200], &battle, ShellScale::RETAIL);
+        let centered =
+            loading_text_rects([1600, 1200], &battle, crate::ui::shell::geom::RETAIL_SCALE);
         assert_eq!(
             centered.country_name,
             authored.country_name.translate(400, 300)
@@ -1415,9 +1504,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_country_loading_uses_retained_labels_instead_of_the_stock_slot() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let csf = test_csf(&[
             ("Name:Arabs", "Iraq"),
             ("Name:DESO", "Desolator"),
@@ -1433,7 +1522,7 @@ mod tests {
             &session,
             Some(&csf),
             [800, 600],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             None,
             Vec::new(),
         );
@@ -1501,5 +1590,79 @@ mod tests {
             );
         }
         CsfFile::from_bytes(&data).expect("valid test CSF")
+    }
+
+    #[test]
+    fn more_than_eight_starts_get_a_marker_each() {
+        use crate::map::map_file::MapCell;
+        use crate::rules::ini_parser::IniFile;
+
+        let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
+            rx,
+            ry,
+            tile_index: 0,
+            sub_tile: 0,
+            z: 0,
+        };
+        let starts: HashMap<u32, Waypoint> = (0..30)
+            .map(|index| (index, waypoint(index, 70 + index as i16, 70)))
+            .collect();
+        let assignments: Vec<_> = (0..30)
+            .map(|index| LoadingStartAssignment {
+                start_index: index,
+                participant: LoadingParticipantId::Opponent(index as usize),
+                color_priority: index as u8,
+            })
+            .collect();
+        let image = DecodedPreview {
+            width: 300,
+            height: 100,
+            rgba: vec![255; 300 * 100 * 4],
+        };
+        let map = |declaration: &str| {
+            let mut map = crate::map::rmg::emit::empty_map_file(
+                &crate::map::rmg::RmgOptions::default(),
+                100,
+                100,
+            );
+            map.cells = vec![cell(60, 60), cell(60, 140), cell(140, 60)];
+            let keys: String = (0..30)
+                .map(|index| format!("{index}={}\n", 70_070 + index))
+                .collect();
+            map.ini = IniFile::from_str(&format!("[Basic]\n{declaration}[Waypoints]\n{keys}"));
+            map.waypoints = starts.clone();
+            map.preview.decoded = Some(image.clone());
+            map
+        };
+        let selected = |declaration| {
+            build_loading_composition(
+                &map(declaration),
+                &test_launch_session(),
+                None,
+                [800, 600],
+                crate::ui::shell::geom::RETAIL_SCALE,
+                &assignments,
+            )
+            .markers
+            .len()
+        };
+        // A map declaring thirty starts marks all thirty; an ordinary map keeps
+        // gamemd's eight.
+        assert_eq!(selected("MaxPlayers=30\n"), 30);
+        assert_eq!(selected(""), 8);
+        // A random map staged for thirty players marks every staged start.
+        let random = build_random_map_loading_composition(
+            &test_launch_session(),
+            None,
+            [800, 600],
+            crate::ui::shell::geom::RETAIL_SCALE,
+            Some(image.clone()),
+            &map(""),
+            &starts,
+            &assignments,
+        );
+        assert_eq!(random.markers.len(), 30);
+        assert_eq!(random.markers[29].color_priority, 29);
     }
 }

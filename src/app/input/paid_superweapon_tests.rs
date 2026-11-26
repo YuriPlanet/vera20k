@@ -53,9 +53,9 @@ fn drain(sim: &mut Simulation, rules: &RuleSet) {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn paid_superweapon_input_cancels_before_source_exec_and_does_not_duplicate_cancel() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, source, _) = fixture(true);
     let command = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();
     let Command::BeginPaidSuperWeapon {
@@ -83,9 +83,9 @@ fn paid_superweapon_input_cancels_before_source_exec_and_does_not_duplicate_canc
     assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn paid_superweapon_input_final_and_mode_switch_use_the_saved_ticket() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, source, destination) = fixture(true);
     let source_click = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();
     schedule_command_in_sim(&mut sim, "Americans", source_click);
@@ -126,7 +126,6 @@ fn paid_superweapon_input_free_pair_keeps_native_command_shape() {
     assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn disabled_ares_money_keeps_two_stage_clicks_on_stock_commands() {
     let (rules, mut sim, owner, source, destination) = fixture(true);
@@ -218,8 +217,7 @@ fn superweapon_input_uses_rule_indices_and_live_packet_dispatch() {
     assert_eq!(SpecialPlaceRecord::decode(&wire[0]).unwrap().type_index, 3);
     assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
 
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         use crate::sim::command::{PaidSuperAction, PaidSuperRecord};
         let (rules, mut sim, owner, source, destination) = fixture(true);
         let first = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();

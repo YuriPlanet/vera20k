@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock occupied CAHSE01 lethal C4 receiver: native Techno debris before SellBuilding/Infantry Scatter",
+  "assumptions": [
+    "Existing joined_inputs/joined_fixture own the original selected readers, actual requested SHP bytes, admitted flat clear32-coordinate map, House priors, startup, navigation and locomotors. RULESMD, optional LANGRULE, Battle mode and Hills map read in their existing order; ARTMD is fixed. Whole physical INI/archive startup and map loading are excluded.",
+    "Whole original CAHSE01 constructor and Unlimbo at origin18,16 run alongside the shared background GAPOWR/MTNK. Original E1 constructors execute. Already-garrisoned vector membership, Guard mission, stored position and Transporter are explicit priors; entrance/ownership transfer is not claimed. Original resize owns storage. This selected control supplies runtime gameMode5 (Skirmish) before target/occupant construction, replacing the shared legacy mode1 prior. Actual frame0/mode5, HouseType Americans, House+1EC/+1ED both1 and CurrentHouse equality are asserted from the VM; original House IsHuman50B6F0 returns1 without changing RNG. All allocations succeed.",
+    "Actual native MetallicDebris vector is read back at Rules+140/+14C. ReadString capacity80h at66DA9A truncates retail twenty-token CSV to fifteen entries ending D. Actual fixed ART/SHP readers bind these entries; D has no ART/image and retains real constructor defaults. CAHSE01 singular DebrisAnim is ignored by the plural DebrisAnims reader; both actual per-type debris vectors are empty.",
+    "All three RNG streams reseed31 after setup. Whole Building442230 receives own health/Super C4Warhead/distance0/null source/null sourceHouse/ignoreDefenses1/arg6false. Original701900 completes debris before original457DE0 and51D0D0. Original RngTrace raw words are split at the actual44242A return boundary, including any Unlimbo draws in the garrison phase. Main/MapGen stay unchanged. Every executable PE section remains unchanged.",
+    "Observation ends at4415F0 entry before Building DestructionEffects. Later explosions, survivors, UnInit, deferred destruction, rendering and whole-match parity are excluded. Only Rust-consumed input, Scenario words and released Foot state are retained."
+  ],
+  "substitutions": [
+    "Existing Engineer/Construction reader-cache, physical requested-file byte IO, bump allocator/delete, COM/CRT TLS, original audioIDX/qsort/BAG/backend device transport boundaries are reused. Native Drive/Bullet/Walk COM factories execute rather than fabricated locomotor/projectile responses.",
+    "Only listed existing Mission OS/COM/presentation transport arms are delegated. Supplied640x480surface prior executes original vtable rectangle getter; original sound registry/readers/event allocation execute, hardware sample output is not audible parity. Existing UpdateAnimation presentation callbacks are retained; no selected gameplay body or numeric decision is replaced."
+  ],
+  "entry_points": {
+    "building_type": "0x0045FE50",
+    "anim_type": "0x00427D00",
+    "metallic_debris_reader": "0x0066DA90",
+    "c4_warhead_reader": "0x0066C304",
+    "building_ctor": "0x0043B740",
+    "building_unlimbo": "0x00440580",
+    "infantry_ctor": "0x00517A50",
+    "occupant_vector_resize": "0x0045A560",
+    "building_damage": "0x00442230",
+    "techno_damage": "0x00701900",
+    "debris": "0x00702281",
+    "techno_return": "0x0044242A",
+    "sell_building": "0x00457DE0",
+    "infantry_scatter": "0x0051D0D0",
+    "stop_before_destruction_effects": "0x004415F0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_death_anims --garrison-fatal",
+  "payload_sha256": "0a7eb75f14e612c86ae2b553731dfaefce9d3955e9124757ada7b40196bc3719"
+}

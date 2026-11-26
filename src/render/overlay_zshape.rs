@@ -64,6 +64,16 @@ impl OverlayZShapes {
         let max_bytes = files.iter().flatten().map(|(_, bytes)| bytes.len()).max()?;
         let width = 256;
         let height = (max_bytes as u32).div_ceil(width);
+        // The files are uploaded whole as 256 px rows. A mod's slope file
+        // past the device's textures: overlays take row depth, as `apply`
+        // reads a missing shape, rather than failing validation.
+        if !crate::render::gpu::texture_fits(device, [width, height]) {
+            log::warn!(
+                "SLOP0?Z.{theater_extension}: {max_bytes} bytes make a {width}x{height} px texture past this GPU's {} px; overlays take row depth",
+                device.limits().max_texture_dimension_2d
+            );
+            return None;
+        }
         let mut texels = vec![128; (width * height * 4) as usize];
         let mut frames = [None; 4];
         for (channel, file) in files.into_iter().enumerate() {
@@ -168,5 +178,41 @@ impl OverlayZShapes {
             );
         }
         true
+    }
+}
+
+#[cfg(all(test, tests_render_a_r))]
+mod tests {
+    use super::OverlayZShapes;
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::render::batch::BatchRenderer;
+    use crate::render::terrain_draw_gpu_tests::Gpu;
+
+    /// A slope file is uploaded whole as 256 px rows, so one past the
+    /// device's limit refuses the shapes instead of failing validation.
+    #[test]
+    #[ignore = "requires GPU; a slope file one row past the device's texture limit"]
+    fn a_slope_file_past_the_device_limit_leaves_the_shapes_out() {
+        let gpu = Gpu::new();
+        let limit = gpu.device.limits().max_texture_dimension_2d as usize;
+        // A valid one-frame SHP (a 1x1 canvas, a 1x1 raw frame at offset
+        // 32), padded to one row more than the limit.
+        let mut bytes = vec![0u8; 256 * (limit + 1)];
+        bytes[2] = 1;
+        bytes[4] = 1;
+        bytes[6] = 1;
+        bytes[8 + 4..8 + 8].copy_from_slice(&[1, 0, 1, 0]);
+        bytes[8 + 20..8 + 24].copy_from_slice(&32u32.to_le_bytes());
+        bytes[32] = 1;
+        let root = TestDirectory::new("overlay-zshape-past-limit");
+        std::fs::write(root.path().join("SLOP01Z.TEM"), &bytes).expect("write slope SHP");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let batch = BatchRenderer::new_with_device(
+            &gpu.device,
+            &gpu.queue,
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+        );
+
+        assert!(OverlayZShapes::load(&gpu.device, &gpu.queue, &batch, &assets, "TEM").is_none());
     }
 }
