@@ -104,6 +104,12 @@ def client_run(binary: Path, folder: Path, frames: tuple[int, int], timeout: flo
         raise scale_bench.BenchError(
             f'the game left no frame cost (exit {done.returncode}, {error!r}); '
             f'see {folder / "stdout.log"} and {folder / "logs"}') from None
+    # A win, loss or draw has its own exit code. A crash after writing a
+    # complete receipt must still fail the run.
+    if done.returncode != report.get('exit_code'):
+        raise scale_bench.BenchError(
+            f'the game exited with {done.returncode}, but reported {report.get("result")} '
+            f'with exit code {report.get("exit_code")}')
     if report.get('result') == 'failed' or cost.get('last_frame', 0) < last:
         raise scale_bench.BenchError(
             f'the match ended early ({report.get("result")}, frame {cost.get("last_frame")} of {last}): '
