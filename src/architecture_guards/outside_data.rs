@@ -667,8 +667,8 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
     (
         "sim/command.rs",
         "index",
-        45,
-        "fixed field offsets inside the fixed-size record and its payload; a TargetHouse body is one of the fixed inner lengths, all inside the payload",
+        49,
+        "fixed field offsets inside the record; TargetHouse bodies fit the payload, and ModuleMessage bounds its data length to 96 before slicing its 98-byte body in the 104-byte payload",
     ),
     (
         "sim/snapshot.rs",
