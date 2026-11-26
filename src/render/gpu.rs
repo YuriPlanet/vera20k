@@ -907,6 +907,16 @@ impl GpuContext {
         log::info!("Surface present mode: {mode:?}");
     }
 
+    /// An offscreen target has no swapchain to limit queued frames. Retire
+    /// the submitted GPU work before allocating resources for a new frame.
+    pub(crate) fn capture_queue_busy(&self) -> Result<bool> {
+        if self.capture_target.is_none() {
+            return Ok(false);
+        }
+        self.handoff.waiter().wait();
+        Ok(!self.device.poll(wgpu::PollType::Poll)?.is_queue_empty())
+    }
+
     /// Take the window's next frame to draw into, or `None` when there is none
     /// this time and the next redraw should try again.
     ///
@@ -915,6 +925,9 @@ impl GpuContext {
     /// occlusion skip this redraw. Validation failures remain errors.
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        if self.capture_queue_busy()? {
+            return Ok(None);
+        }
         // A surface gives out one frame at a time, and drawing keeps plain
         // queue clones that do not wait for themselves (`HandoffQueue`).
         self.handoff.waiter().wait();
