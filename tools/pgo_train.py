@@ -1,4 +1,4 @@
-"""Play the release PGO workloads with the two instrumented executables.
+"""Run the headless simulation workloads for release PGO.
 
 RA2_DIR is the retail install. LLVM_PROFILE_FILE names the fresh raw-profile
 directory and filename pattern the release build will merge. Each program runs
@@ -12,16 +12,15 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 import tempfile
 
-from tools import scale_bench, scale_bench_client
+from tools import scale_bench
 
 MAP = 'Death.mmx'
 SEED = 73
 COMPUTERS = 2
 MATCH_TICKS = 1800
-CLIENT_TICKS = 240
+REPLAY_TICKS = 240
 
 
 def require_profile(folder: Path, before: set[Path], workload: str) -> None:
@@ -46,51 +45,21 @@ def train(game: Path, bench: Path, retail: Path, work: Path, raw: Path) -> list[
     require_profile(raw, start, 'sim-bench battle')
     reports.append(f'AI battle: {MATCH_TICKS} frames, final hash {final[1]}.')
 
-    # The shipping executable replays a fresh recording even on a machine
-    # without a GPU. A replay from an older build may have a different layout.
+    # A fresh recording exercises the shipping executable's simulation path
+    # and matches this build's replay layout.
     replay = work / 'skirmish.json'
     start = set(raw.glob('*.profraw'))
-    subprocess.run([bench, *common, '--scenario', 'skirmish', '--ticks', str(CLIENT_TICKS),
+    subprocess.run([bench, *common, '--scenario', 'skirmish', '--ticks', str(REPLAY_TICKS),
                     '--record-skirmish-replay', replay], check=True, timeout=300)
     require_profile(raw, start, 'sim-bench recording')
     start = set(raw.glob('*.profraw'))
     verified = subprocess.run([game, '--replay-verify', replay, '--ra2-dir', retail],
                               cwd=work, check=True, stdout=subprocess.PIPE, text=True, timeout=300)
     receipt = json.loads(verified.stdout)
-    if not all(receipt[field] == CLIENT_TICKS for field in ('ticks', 'checked_hashes', 'final_tick')):
-        raise RuntimeError(f'shipping replay stopped before verifying {CLIENT_TICKS} frames')
+    if not all(receipt[field] == REPLAY_TICKS for field in ('ticks', 'checked_hashes', 'final_tick')):
+        raise RuntimeError(f'shipping replay stopped before verifying {REPLAY_TICKS} frames')
     require_profile(raw, start, 'shipping game replay')
-    reports.append(f'Shipping game replay: {CLIENT_TICKS} verified frame hashes.')
-
-    # The actual game window, renderer, HUD, worker and loading path. Hosted
-    # Macs without a Metal adapter still provide the complete replay above.
-    map_path = next((p for p in retail.iterdir() if p.name.lower() == MAP.lower()), None)
-    if map_path is None:
-        raise FileNotFoundError(f'the retail training map {MAP} is missing')
-    folder = scale_bench_client.launch_folder(work / 'client', map_path, computers=COMPUTERS, seed=SEED)
-    start = set(raw.glob('*.profraw'))
-    try:
-        cost = scale_bench_client.client_run(game, folder, (1, CLIENT_TICKS), timeout=600)
-    except scale_bench.BenchError as error:
-        result = folder / 'spawn_result.json'
-        reason = json.loads(result.read_bytes()).get('reason') if result.is_file() else None
-        if not (sys.platform == 'darwin' and reason and 'No suitable GPU adapter found' in reason):
-            # The temporary launch folder goes away even on a failed CI job.
-            details = []
-            for log in (folder / 'stdout.log', folder / 'logs' / 'ra2.log'):
-                if log.is_file():
-                    # The panic headline precedes the backtrace.
-                    lines = log.read_text(errors='replace').splitlines()
-                    details.append(f'{log.name}\n' + '\n'.join(lines[-100:]))
-            raise RuntimeError('\n'.join([str(error), *details])) from error
-        for path in set(raw.glob('*.profraw')) - start:
-            path.unlink()
-        reports.append('Rendered match unavailable: macOS reported no suitable GPU adapter.')
-    else:
-        if cost['pictures'] < 1 or cost['ticks'] < 1:
-            raise RuntimeError('the shipping client drew no pictures or advanced no simulation ticks')
-        require_profile(raw, start, 'shipping game rendering')
-        reports.append(f'Shipping game rendered {cost["pictures"]} pictures through frame {cost["last_frame"]}.')
+    reports.append(f'Shipping game replay: {REPLAY_TICKS} verified frame hashes.')
     return reports
 
 
