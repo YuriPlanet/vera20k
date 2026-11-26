@@ -8,7 +8,7 @@
 - 参考资料：模块放在哪、有哪些限制见[模块指南](wasm-modules.zh-CN.md)；SDK 的每个函数见 [Rust SDK 参考](wasm-modules-sdk.zh-CN.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)。
 - 想做界面（按钮、面板）？先读完这份，再看[客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)。
 - 预览版提醒：接口还在 `0.x` 预览阶段，名字和编号在正式版前可能会变。游戏会在模块需要更新的接口时直接告诉你。
-- 想用 TypeScript？TypeScript SDK 正在编写中，见 [TypeScript 版教程](wasm-modules-tutorial-ts.zh-CN.md)。
+- 想用 TypeScript？见 [TypeScript 版教程](wasm-modules-tutorial-ts.zh-CN.md)。
 
 ## 目录
 

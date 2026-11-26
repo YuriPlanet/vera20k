@@ -474,7 +474,7 @@ bytes: u32,               // 投递区的字节数
 
 ## 3. SDK 对应
 
-TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）。名称暂定。TypeScript SDK 正在实现中。0.1.0 的 Rust SDK 以 Rust 的名字发起同样的调用：排队回调使用 `named_actions!` 给出的分派键（`.enqueue(KEY)`），导出由宏生成（`init!`、`on_rules!`、`on_scenario_start!`、`on_frame!`、`on_events!`、`on_decide!`、`on_message!`），变量由 `vars!` 声明，它的 `where_var` 只能测全局变量。
+下表用 TypeScript 示意 SDK 操作与宿主调用的对应关系。实际名称与签名见 [TypeScript SDK 参考](../wasm-modules-sdk-ts.zh-CN.md)。Rust 使用 newtype 和蛇形命名（`where_prop`）。0.1.0 的 Rust SDK 以 Rust 的名字发起同样的调用：排队回调使用 `named_actions!` 给出的分派键（`.enqueue(KEY)`），导出由宏生成（`init!`、`on_rules!`、`on_scenario_start!`、`on_frame!`、`on_events!`、`on_decide!`、`on_message!`），变量由 `vars!` 声明，它的 `where_var` 只能测全局变量。
 
 | 用途 | TypeScript | 宿主调用 |
 | --- | --- | --- |

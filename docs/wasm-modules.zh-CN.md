@@ -13,7 +13,7 @@ mod 或地图可以带上小程序，也就是 WebAssembly 模块，用来实现
 | [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md) 及其[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md) | 设计说明，以及每个导入、事件、动作、属性和枚举及其编号 |
 | [开发状态](wasm-modules-status.md) | 当前版本实现了什么，写给贡献者 |
 
-这是预览版。在接口 1.0 版之前，名字和编号还可能变；模块需要更新的接口时，游戏会告诉你。现在请用 Rust SDK；TypeScript SDK 正在编写中。
+这是预览版。在接口 1.0 版之前，名字和编号还可能变；模块需要更新的接口时，游戏会告诉你。可以使用 [Rust SDK](wasm-modules-sdk.zh-CN.md) 或 [TypeScript SDK](wasm-modules-sdk-ts.zh-CN.md) 编写模块。
 
 ## 两种模块
 

@@ -8,8 +8,8 @@ content as work lands; do not append a diary.
 
 - Repository: `YuriPlanet/vera20k`. Phase 1 (#5183), the control points (phase 2a,
   #5245) and the client modules (phase 2, `ui.wasm`, #5251) are all on `main`.
-- Scope: RFC phase 1 (`rules.wasm`), then phase 2 (`ui.wasm`), then phase 3. The Rust
-  SDK is the one to validate with; a TypeScript SDK is being written.
+- Scope: RFC phase 1 (`rules.wasm`), then phase 2 (`ui.wasm`), then phase 3. Module authors can use the
+  [Rust SDK](wasm-modules-sdk.md) or the [TypeScript SDK](wasm-modules-sdk-ts.md).
 - Feedback: the RFC draft PR
   [YuriPlanet/vera20k#4653](https://github.com/YuriPlanet/vera20k/pull/4653) carries
   two comments asking for review: the modding tutorial and the four playtest mods.
@@ -563,8 +563,7 @@ left is listed under residuals. Small follow-ups found by the playtest mods:
 - Build-dependent effects: `Unkillable` and the crit modifiers exist only in Phobos
   builds; a module cannot tell up front (raised on the RFC PR).
 
-Before version 1 (RFC "Process"): the TypeScript SDK
-(in progress), phase 3 (a real mission with
+Before version 1 (RFC "Process"): phase 3 (a real mission with
 modules, external modders, freeze), and the later items (peer calls,
 `TargetChanged`'s decision form, `MissionChanged`).
 

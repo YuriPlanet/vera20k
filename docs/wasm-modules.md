@@ -18,8 +18,8 @@ limits are.
 | [Development status](wasm-modules-status.md) | What this build implements, for contributors |
 
 This is a preview. Names and numbers may still change before version 1 of the API; the
-game tells you when a module needs a newer API. The Rust SDK is the one to use now; a
-TypeScript SDK is being written.
+game tells you when a module needs a newer API. Module authors can use the [Rust SDK](wasm-modules-sdk.md)
+or the [TypeScript SDK](wasm-modules-sdk-ts.md).
 
 ## Two kinds of module
 

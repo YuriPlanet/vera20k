@@ -9,7 +9,7 @@
 | 创建日期 | 2026-11-16 |
 | 涉及的 API | `vera:sim@1.0`、`vera:client@1.0`（预览） |
 
-**实现状态。** 0.1.0 版描述引擎已实现的样子：第 1 阶段（`rules.wasm`，含控制点）和第 2 阶段（`ui.wasm` 客户端模块）都已进入引擎，Rust SDK 一并提供；TypeScript SDK 正在实现中。引擎与早先草案不一致之处，本文以引擎为准。尚未实现的设计保留在文中，标为“0.1.0 未实现”，或在附录中标为 `later`。API 处于 `0.x` 预览期（流程第 4 步）：版本 1 冻结之前，编号、上限和布局仍可能变化。
+**实现状态。** 0.1.0 版描述引擎已实现的样子：第 1 阶段（`rules.wasm`，含控制点）和第 2 阶段（`ui.wasm` 客户端模块）都已进入引擎，随附 Rust SDK 和 [TypeScript SDK](../wasm-modules-sdk-ts.zh-CN.md)。引擎与早先草案不一致之处，本文以引擎为准。尚未实现的设计保留在文中，标为“0.1.0 未实现”，或在附录中标为 `later`。API 处于 `0.x` 预览期（流程第 4 步）：版本 1 冻结之前，编号、上限和布局仍可能变化。
 
 ## 概要
 
@@ -83,10 +83,10 @@ Repeat=Repeating         ; TagRepeat 的取值
 
 ### 模块代码
 
-引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。下面分别用两套官方 SDK 表达同一行为：Rust 示例用的是 0.1.0 的 SDK，TypeScript 示例展示的是正在实现中的计划 SDK。类型绑定在 INI 和代码中任选一处；若用上一节的 INI，只注册具名回调，省略代码中的触发器创建。
+引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。下面分别用两套官方 SDK 表达同一行为：Rust 示例用的是 0.1.0 的 SDK，TypeScript 示例用于说明设计。可构建的例子见 [TypeScript 模拟模块教程](../wasm-modules-tutorial-ts.zh-CN.md)和[客户端模块教程](../wasm-modules-ui-tutorial-ts.zh-CN.md)。类型绑定在 INI 和代码中任选一处；若用上一节的 INI，只注册具名回调，省略代码中的触发器创建。
 
 ```ts
-// TypeScript（兼容 AssemblyScript）
+// TypeScript 设计示例
 import { Trigger, Event, Prop, Op, Techno, Mission, Var, VarTarget, ActionDef, Target, Rules,
          TakeDamageEvent, namedAction, onScenarioStart, onFrame, Every } from "@vera20k/sdk";
 
@@ -151,14 +151,14 @@ vera20k_sdk::on_frame!(every = 15, check_waves);   // 每个模块只有一个 o
 vera20k_sdk::on_events!(GI_PANIC => gi_panic);     // 按分派键分发 on_events 的记录
 ```
 
-每套 SDK 都用一条命令构建出 `rules.wasm` 或 `ui.wasm`（Rust SDK：以白名单特性为 wasm32 目标执行 `cargo build --release`）。SDK 的函数（`Techno.setMission`、`Trigger.on`）设计上由附录的表生成；0.1.0 的 Rust SDK 是手写的，由引擎测试把它的属性常量与引擎的属性表核对（第 12 节）。每个包装函数只发起[附录第 3 节](0001-wasm-extension-modules-api.zh-CN.md#3-sdk-对应)列出的宿主调用，大多数恰好一次（第 5a 节）。Rust SDK 的 crate 名为 `vera20k-sdk`；TypeScript 的包名只是占位。
+每套 SDK 都用一条命令构建出 `rules.wasm` 或 `ui.wasm`（Rust SDK：以白名单特性为 wasm32 目标执行 `cargo build --release`）。SDK 的函数（`Techno.setMission`、`Trigger.on`）设计上由附录的表生成；0.1.0 的 Rust SDK 是手写的，由引擎测试把它的属性常量与引擎的属性表核对（第 12 节）。每个包装函数只发起[附录第 3 节](0001-wasm-extension-modules-api.zh-CN.md#3-sdk-对应)列出的宿主调用，大多数恰好一次（第 5a 节）。Rust SDK 的 crate 名为 `vera20k-sdk`；TypeScript 包名为 `@vera20k/sdk`，位于源码树的 `sdk/typescript`。
 
 ### 示例：第一个单位开火时扔核弹
 
 把一个 `Fire` 触发器绑定到全场第一个单位（按创建序号），它开火时，在模块动作中向它的目标格子扔一颗核弹：
 
 ```ts
-// TypeScript（兼容 AssemblyScript）
+// TypeScript 设计示例
 import { Trigger, Event, Find, Prop, Op, Category, Action, FireEvent,
          NO_HANDLE, onScenarioStart } from "@vera20k/sdk";
 
@@ -371,10 +371,10 @@ MapUI=overlay        ; overlay、full 或 no
 
 引擎和模块之间的约定只有 Wasm 接口：附录列出的函数，加上附录的表。任何语言，只要它的编译器产出的模块能通过加载检查，就能使用，引擎对所有模块一视同仁。
 
-- **官方 SDK：TypeScript 和 Rust。** 两者都由同一份接口定义和同一组机器可读的表（第 12 节）生成，提供相同的功能（名称按各自语言的命名习惯），并随 API 一起发布版本。每套都附带模板、构建命令、监视模式和示例。0.1.0 的 Rust SDK 是手写的（由测试与引擎的表核对），附带示例模块和 mod；模板和监视模式未实现。TypeScript SDK 正在实现中。
+- **官方 SDK：TypeScript 和 Rust。** 两者都由同一份接口定义和同一组机器可读的表（第 12 节）生成，提供相同的功能（名称按各自语言的命名习惯），并随 API 一起发布版本。每套都附带模板、构建命令、监视模式和示例。0.1.0 的 Rust SDK 是手写的（由测试与引擎的表核对），附带示例模块和 mod；Rust 的模板和监视模式尚未实现。TypeScript SDK 从 Rust SDK 生成编号表与事件视图，其 `vera20k` 命令提供 `init`、`build`、`watch` 和 `generate`。
 - SDK 按事件种类生成具名字段，原地读取投递记录。触发器用 `.immediate()` 指定立即动作、`.enqueue()` 排队、`.decideSync()` 同步决定（Rust 为 `decide_sync`）。包装函数与宿主调用逐项对应，见[附录 SDK 表](0001-wasm-extension-modules-api.zh-CN.md#3-sdk-对应)。
 
-- **TypeScript SDK。** 预先把 TypeScript 编译成 Wasm，模块足够小，可以嵌入地图。编译器暂定为 AssemblyScript，随 SDK 锁定精确版本，待最小编译实验确认（待定问题 2）。它不是完整的 TypeScript：`tsc` 只用于编辑器和类型检查，数值语义以 AssemblyScript 为准；同步决定处理函数不得分配内存。它的 API 限定在 TypeScript 与 AssemblyScript 的共同子集内：
+- **TypeScript SDK。** 预先把 TypeScript 编译成 Wasm，模块足够小，可以嵌入地图。当前 SDK 使用 AssemblyScript 0.28.20；版本 1 的编译器选择仍须满足待定问题 2 的验收条件。它不是完整的 TypeScript：`tsc` 只用于编辑器和类型检查，数值语义以 AssemblyScript 为准；同步决定处理函数不得分配内存。它的 API 限定在 TypeScript 与 AssemblyScript 的共同子集内：
   - 不用 `any`，除 `T | null` 外不用联合类型，回调不捕获外部变量，不用 `try`/`catch`；
   - 把多个值组合在一起的参数是用构造函数创建的类或构建器，而不是对象形状或字面量；
   - 引用是普通的 `i64` 值，没有方法，也不为每个引用创建对象：在 AssemblyScript 中，`t.health` 这样的取值器需要给每个引用分配一个对象。对引用的调用是以引用为第一个参数的命名空间函数（`Techno.health(t)`、`Techno.setMission(t, Mission.Hunt)`）；
@@ -382,7 +382,7 @@ MapUI=overlay        ; overlay、full 或 no
   - `i64`、`i32`、`f32` 和各种引用类型（`Techno`、`House`、`Node`……）是 SDK 提供的类型别名；SDK 的 `tsconfig` 不包含 `lib.dom`，所以 `Node` 不会与 DOM 的同名类型冲突；
   - 顶层代码成为初始化函数（第 3 节）。
 
-  这样同一份源码既能用 `tsc` 做类型检查，也能用 AssemblyScript 编译，本 RFC 中的示例在两者中都有效。
+  这样同一份源码既能用 `tsc` 做类型检查，也能用 AssemblyScript 编译。可直接编译的示例在 `sdk/typescript/examples`。
 - **Rust SDK。** 面向想要完全控制和更高性能的作者；引擎自己的兼容性测试用例也用它编写。引用是 newtype，可以带方法（`techno.health()`）。
 - **构建产物。** 两套 SDK 的构建命令保证产出的模块能通过加载检查：TypeScript SDK 用 AssemblyScript 编译时，把顶层代码导出为初始化函数而不生成 `start` 段，也不产生默认的 `env.abort`、`env.trace`、`env.seed` 导入，并在编译后写入 `vera.*` 自定义段；Rust SDK 在使用标准库时，构建后用 wasm-opt 把预编译标准库带入的引用类型编码改写回白名单内的编码，`no_std` 模块不需要这一步。0.1.0 的 Rust SDK 及其示例都是 `no_std`，wasm-opt 这一步未实现。即使在 `no_std` 模块里，`core::fmt` 也会带入加载检查拒绝的编码。
 - **其他模组开发语言。** C、C++、Python、.NET（如 C#）、Go、Ruby、Elixir、Perl 和 Zig 均可按同一 ABI 接入。每种工具链都需要产出符合第 3 节约束的 Wasm 核心模块，按附录签名导入和导出函数。社区可用第 12 节的表生成对应语言的包装函数。需要解释器或运行时的工具链还须把它编入模块，并满足下述导入和体积限制。
@@ -762,7 +762,7 @@ vera20k_sdk::init!(init);           // 导出 vera_init
 模块按地图的同一模型创建触发器：
 
 ```ts
-// TypeScript（兼容 AssemblyScript），convoy 是要监视的运输车句柄：
+// TypeScript 设计示例，convoy 是要监视的运输车句柄：
 const americans = Rules.country("Americans");
 if (americans != NO_HANDLE) {
   const house = Find.houses().country(americans).first();
@@ -903,7 +903,7 @@ INI 的节点种类、布局键和可写属性见[客户端节点表](0001-wasm-
 一个完整的来回：玩家点击按钮，界面发出消息，模拟校验后写入一个所属方变量，界面读这个变量来更新按钮：
 
 ```ts
-// ui.wasm — TypeScript（兼容 AssemblyScript）
+// ui.wasm — TypeScript 设计示例
 import { ReinforcementsBought } from "./generated/vars";
 const BUY_MESSAGE = new Uint8Array(1);           // 消息类型 1：购买
 BUY_MESSAGE[0] = 1;
@@ -924,7 +924,7 @@ onRender((dt: f32, alpha: f32): void => {
 ```
 
 ```ts
-// rules.wasm — TypeScript（兼容 AssemblyScript）
+// rules.wasm — TypeScript 设计示例
 import { ReinforcementsBought } from "./generated/vars";
 const HTNK = Rules.technoType("HTNK");
 
@@ -954,7 +954,7 @@ onMessage((sender: House, data: Uint8Array): void => {
 
 ### 12. 版本与 ABI
 
-- 一份用 WIT 语法编写的接口定义是 API 的唯一来源，附带机器可读的表（事件种类、动作种类、属性、名字种类、节点种类和其他枚举）。项目自己的生成器由它们生成 Rust 和 TypeScript SDK 的包装函数、参考文档和兼容性检查；其他语言的绑定也从同样的表生成。WIT 只是接口描述语言：模块不使用 Component Model 的 canonical ABI。0.1.0 未实现：还没有 WIT 文件和生成器；这些表在引擎的沙箱 crate 中（导入列表，属性、事件和动作的名字表），由附录记录，手写的 Rust SDK 由测试与它们核对。
+- 一份用 WIT 语法编写的接口定义是 API 的唯一来源，附带机器可读的表（事件种类、动作种类、属性、名字种类、节点种类和其他枚举）。项目自己的生成器由它们生成 Rust 和 TypeScript SDK 的包装函数、参考文档和兼容性检查；其他语言的绑定也从同样的表生成。WIT 只是接口描述语言：模块不使用 Component Model 的 canonical ABI。0.1.0 未实现：还没有 WIT 文件和基于 WIT 的生成器；这些表在引擎的沙箱 crate 中（导入列表，属性、事件和动作的名字表），由附录记录，手写的 Rust SDK 由测试与它们核对。
 - 二进制接口是 core module ABI：core Wasm 模块的导入和导出、`i64` 引用和值、`i32` ID、字符串、字节和缓冲区用的指针加长度，以及由宿主写入模块缓冲区的批量结果。宿主导入最多返回一个值：有返回值的调用返回状态，值由宿主经输出指针写入模块内存，因为稳定版 Rust 和 AssemblyScript 都无法导入多返回值的函数；模块内部仍可使用多返回值（第 3 节）。返回值、状态和续页位置见附录签名。
 - 冻结两个接口的导入和导出签名（[附录第 1 节](0001-wasm-extension-modules-api.zh-CN.md#1-模拟-abi)和[第 2 节](0001-wasm-extension-modules-api.zh-CN.md#2-客户端-abi)）。事件种类、动作种类、属性、名字种类、搜索范围、节点种类、客户端事件和动作种类，以及其他枚举，都是只追加的表，在次版本中追加；`has_kind` 让模块在不认识某个表项的旧引擎上降级运行。
 - 以后的某个主版本可以在 core ABI 之上增加一个 Component Model 适配层。已有模块继续使用 core ABI，不受影响。
@@ -1082,7 +1082,7 @@ SDK 与模板按对象或所属方错开周期任务。读多个对象或属性�
 | 3 | 用模块重做一个真实任务，外部 modder 试用，冻结版本 1 |
 | 以后 | 逐个增加更多可决定事件、模块弹道（`Launch`、`ProjectileFrame`）、对等调用、玩家界面模块 |
 
-0.1.0 时的状态：第 1 阶段已进入引擎，包括控制点、第 6f 节和第 9 节的预览决定以及 Rust SDK；其 TypeScript SDK 正在实现中，大厅还不提供“mod AI”席位和“允许自动操作”开关。第 2 阶段已进入引擎，只缺 `MapUI=no` 时的大厅提示。第 3 阶段尚未开始。本文标为“0.1.0 未实现”的各项仍留在所属阶段。
+0.1.0 时的状态：第 1 阶段已进入引擎，包括控制点、第 6f 节和第 9 节的预览决定以及 Rust 和 TypeScript SDK；大厅还不提供“mod AI”席位和“允许自动操作”开关。第 2 阶段已进入引擎，只缺 `MapUI=no` 时的大厅提示。第 3 阶段尚未开始。本文标为“0.1.0 未实现”的各项仍留在所属阶段。
 
 ## 设计范围
 
@@ -1107,7 +1107,7 @@ SDK 与模板按对象或所属方错开周期任务。读多个对象或属性�
 问题编号保持不变，便于对照以前的讨论。**已定**：答案已写入正文。**待实测**：有暂定答案，须完成所列实验才能随版本 1 冻结。
 
 1. **浏览器版（0.1.0 已定）。** 浏览器版用浏览器自己的 WebAssembly 引擎运行模块，字节与原生版一样是改写后的（第 3、4 节）；wasmi 只用于独立的 WASI 工具。2026-11-24 在无界面 Chrome 中用改写后 200,000 次运算的调用实测：每次调用纯计算 0.025 ms、函数调用 0.045 ms、宿主调用（`get`）0.22 ms，wasmi 2 分别为 0.9、2.4、0.4 ms，在函数调用上达不到 2 ms 的标准。实例是主线程的对象，所以带模块的浏览器对局不把帧移到模拟 Worker。一个桌面客户端和一个浏览器页面用两个试玩 mod 在中继对局中各跑了 5,091 帧，没有不同步。仍待实测：Firefox、Safari 和最慢的受支持设备。
-2. **TypeScript 编译器（待实测）。** 暂定 AssemblyScript（第 5a 节）。TypeScript SDK 正在实现中。实验：编译与 `tutorial-bounty`、`decide-damage` 等价的两个模块（后者每帧分配一次），通过加载检查，跑 9,000 帧并在中途存读档：完整哈希相同、内存有界、不超额即定案。只有垃圾回收超额时换 `minimal` 运行时；仍不行时测 WARPO，再不行时版本 1 只发 Rust SDK。
+2. **TypeScript 编译器（待实测）。** 当前 SDK 锁定 AssemblyScript 0.28.20（第 5a 节）。实验：编译与 `tutorial-bounty`、`decide-damage` 等价的两个模块（后者每帧分配一次），通过加载检查，跑 9,000 帧并在中途存读档：完整哈希相同、内存有界、不超额即定案。已有示例通过了模块构建、加载与宿主调用检查。存读档实验中，每 500 帧比对的模块摘要一致，但最终的整局存档仍有差异。用 Rust 编译的对照模块也出现了这一差异，整局验收条件仍未满足。只有垃圾回收超额时换 `minimal` 运行时；仍不行时测 WARPO，再不行时版本 1 只发 Rust SDK。
 3. **计量（待实测）。** 规则已定（第 3、4、15 节）：共用插桩、逐运算 NaN 规范化、按字计算的页摘要。实验：分别量出基本块计量、栈计量和 NaN 规范化在原生与浏览器版上的开销，以及候选摘要（如 XXH32）在 wasm32 上处理 53 页和一次完整哈希的耗时。结果只调整额度和上限。0.1.0 的摘要用每个 64 KiB 页的 XXH32（第 15.1 节）。
 4. **INI 格式（已定）。** mod 用具名节和 `Wasm.Tags`（引擎对草案中 `Vera.Tags` 这个键的命名），地图用原版触发器编码和动作 1036（第 6a 节；0.1.0 未实现）。
 5. **事件和动作编号（已定，0.1.0 修改）。** 两表的 VERA 新种类都从 1000 起编号（第 7 节和附录），与引擎一致；草案的 100000 + n 即 1000 + n。属性 ID 是它在属性表中的位置（附录 7）。
