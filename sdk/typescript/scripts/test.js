@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { build } from "../bin/vera20k.js";
+import { build, generate } from "../bin/vera20k.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const examples = join(root, "examples");
@@ -72,6 +72,18 @@ try {
   }));
   await assert.rejects(build(project), /visibility must be/);
   assert.deepEqual(readFileSync(output), previous);
+
+  // Removing a declaration cleans up SDK output. A file supplied by the
+  // module's author is left alone, including on re-generation.
+  const vars = join(project, "src/generated/vars.ts");
+  const handWritten = "export const gold = 200;\n";
+  writeFileSync(vars, handWritten);
+  writeFileSync(join(project, "vera.json"), "{}");
+  generate(project);
+  assert.equal(readFileSync(vars, "utf8"), handWritten);
+  writeFileSync(join(project, "vera.json"), JSON.stringify({ vars: [{ name: "Gold", scope: "house" }] }));
+  assert.throws(() => generate(project), /hand-written source/);
+  assert.equal(readFileSync(vars, "utf8"), handWritten);
 } finally {
   rmSync(project, { recursive: true, force: true });
 }
