@@ -476,7 +476,14 @@ impl MoviesCapture {
             // The ordinary Options producer queues this before the admitted
             // frame. The automatic file must contain its consumed value.
             crate::app::input::commands::schedule_command(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
                 &owner,
                 crate::sim::command::Command::SetGameSpeed { speed: 2 },
             );
@@ -2309,7 +2316,16 @@ fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
             crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
         }
         *dialog = state.match_state.match_presentation.in_game_menu;
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+        App::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            InGameMenuState::Closed,
+        );
     }
     ensure!(
         opened == [InGameMenuState::Diplomacy, InGameMenuState::Menu],

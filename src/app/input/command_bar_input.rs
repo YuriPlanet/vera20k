@@ -2,7 +2,12 @@
 //! actions.
 
 use super::*;
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
 
 /// Where the command bar's twelve buttons take the pointer, in frame pixels
 /// (none: no button), and the thumb's id.
@@ -23,20 +28,35 @@ pub(crate) struct CommandBarPlaces {
     pub(crate) thumb_id: u16,
 }
 
-pub(crate) fn places(state: &AppState) -> CommandBarPlaces {
+pub(crate) fn places(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> CommandBarPlaces {
     let layout = crate::app::presentation::sidebar_build::command_bar::layout_and_slots(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     );
-    let closed = state
-        .match_state
+    let closed = match_state
         .match_presentation
         .sidebar_gadget_state
         .command_bar_closed;
-    places_for(layout.as_ref(), closed, state.sidebar_frame())
+    places_for(
+        layout.as_ref(),
+        closed,
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
+    )
 }
 
 fn places_for(

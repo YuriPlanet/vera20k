@@ -19,9 +19,9 @@
 //! (C2/C9, BC/BD), the LAN lobby (BB), Choose Map's search line, and VERA's
 //! converted-save name edit. On Android they are the in-game line and the
 //! focused `Edit` of a GUI page (the LAN lobby's chat and name box, the setup
-//! room's chat, the WOL pages and lobby, the skirmish player name, and Choose
-//! Map's search line). Finished text goes through each screen's own text
-//! path, as WM_IME_CHAR does.
+//! room's chat, the WOL pages and lobby, the skirmish player name, Choose
+//! Map's search line, and the Mods page's name dialog). Finished text goes
+//! through each screen's own text path, as WM_IME_CHAR does.
 //!
 //! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
 //! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
@@ -168,7 +168,13 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         if !browser.edit().focused {
             return None;
         }
-        let (target, layout) = match crate::app::input::precedence::input_layer(state) {
+        let (target, layout) = match crate::app::input::precedence::input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ) {
             InputLayer::Screen(ScreenPage::LoadSavedGame) => (
                 ImeTarget::MainMenuConversionName,
                 crate::app::frontend::shell_layout::load_saved_game_layout(
@@ -179,7 +185,14 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             ),
             InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
                 ImeTarget::InGameConversionName,
-                App::saved_game_layout(state, browser.mode)?,
+                App::saved_game_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                    browser.mode,
+                )?,
             ),
             _ => return None,
         };
@@ -213,19 +226,30 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         ),
         (
             ImeTarget::LanLobbyChat,
-            crate::app::shell_lan::ime_chat_rect(state),
+            crate::app::shell_lan::ime_chat_rect(&state.renderer.gpu, &state.frontend),
         ),
         (
             ImeTarget::SetupChat,
-            crate::app::input::multiplayer_setup::ime_chat_rect(state),
+            crate::app::input::multiplayer_setup::ime_chat_rect(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            ),
         ),
         (
             ImeTarget::WolLobbyEdit,
-            crate::app::shell_wol::lobby::ime_edit_rect(state),
+            crate::app::shell_wol::lobby::ime_edit_rect(&state.frontend, &state.renderer.gpu),
         ),
         (
             ImeTarget::ChooseMapSearch,
-            crate::app::App::choose_map_search_ime_rect(state),
+            crate::app::App::choose_map_search_ime_rect(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ),
         ),
     ]
     .into_iter()
@@ -342,6 +366,9 @@ enum GuiScreen {
     LoadSavedGame,
     /// The in-game saved-game browser, likewise.
     InGameSavedGame,
+    /// The Mods page's name dialog (New Mod, Rename Mod), which focuses its
+    /// edit when it opens.
+    ModName,
 }
 
 #[cfg(target_os = "android")]
@@ -377,7 +404,13 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
         .choose_map_modal
         .as_ref()
         .is_some_and(|modal| modal.message_box.is_none() && !modal.is_hidden());
-    match input_layer(state) {
+    match input_layer(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         InputLayer::Screen(ScreenPage::LanLobby) => Some((GuiScreen::LanLobby, shell.gui())),
         InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish) if chooser => {
             Some((GuiScreen::ChooseMap, shell.gui()))
@@ -415,6 +448,9 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
             crate::app::shell_wol::lobby::ime_gui(state)?,
         )),
         InputLayer::Screen(ScreenPage::Wol) => Some((GuiScreen::WolPages, shell.gui())),
+        InputLayer::Screen(ScreenPage::Mods) if state.frontend.mods.name_dialog.is_some() => {
+            Some((GuiScreen::ModName, shell.gui()))
+        }
         InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::Page)) => {
             Some((GuiScreen::InGamePage, shell.gui()))
         }
@@ -580,13 +616,31 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
             }
             _ => {
                 if let Some(text) = text {
-                    crate::app::App::choose_map_search_text(state, text);
+                    crate::app::App::choose_map_search_text(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                        text,
+                    );
                 }
             }
         },
-        GuiScreen::InGamePage => crate::app::shell_wol::page::key_press(state, code, text),
+        GuiScreen::InGamePage => crate::app::shell_wol::page::key_press(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+            code,
+            text,
+        ),
         GuiScreen::LoadSavedGame => crate::app::App::handle_load_saved_game_key(state, code, text),
         GuiScreen::InGameSavedGame => crate::app::App::saved_game_key(state, code, text),
+        GuiScreen::ModName => crate::app::App::name_dialog_input(state, code, text),
     }
 }
 
@@ -758,7 +812,14 @@ fn commit(state: &mut AppState, text: &str) {
         }
         #[cfg(not(target_os = "android"))]
         Some(ImeTarget::ChooseMapSearch) => {
-            crate::app::App::choose_map_search_text(state, text);
+            crate::app::App::choose_map_search_text(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.persistence,
+                text,
+            );
         }
         #[cfg(not(target_os = "android"))]
         Some(ImeTarget::MainMenuConversionName) => {

@@ -22,6 +22,7 @@ pub mod config;
 pub mod direction;
 pub mod direction_tables;
 pub mod display_insets;
+pub mod mod_actions;
 pub mod device_identity;
 pub mod fixed_math;
 pub mod flh_transform;

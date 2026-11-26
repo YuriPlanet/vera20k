@@ -50,7 +50,15 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
         return 1.0;
     }
     let fitted = shell_scale_for_screen(shell_screen_size(&state.renderer.gpu)).factor();
-    if crate::app::input::precedence::modal_page(state).is_some() {
+    if crate::app::input::precedence::modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )
+    .is_some()
+    {
         return fitted;
     }
 

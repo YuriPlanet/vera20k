@@ -289,6 +289,21 @@ fn list_rect(layout: &BoxParts) -> RectPx {
             LIST_ROWS * ROW_HEIGHT + 1,
         )
     });
+    // Android: More/Up/Down stand above the footer buttons; the list stops
+    // short of them so its backing cannot cover their captions.
+    #[cfg(target_os = "android")]
+    let list = {
+        let bottom = layout
+            .rect_of(ADD_MORE)
+            .map(|raised| raised.y - 6)
+            .unwrap_or(list.y + list.h);
+        RectPx::new(
+            list.x,
+            list.y,
+            list.w,
+            (bottom - list.y - 1).max(ROW_HEIGHT),
+        )
+    };
     RectPx::new(list.x, list.y, list.w + 1, list.h + 1)
 }
 
@@ -561,6 +576,52 @@ impl App {
         );
     }
 
+    /// Android: a ZIP or folder the system file manager copied in joins the
+    /// selection, and its box is rebuilt with the preview's buttons. A part
+    /// that arrives after Add Mod closed is deleted.
+    #[cfg(target_os = "android")]
+    fn drain_picked_part(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        let Some(path) = crate::util::mod_actions::take_picked() else {
+            return;
+        };
+        let Some(shell) = frontend.shell_message_box.take() else {
+            crate::util::mod_actions::clear_picked();
+            return;
+        };
+        let ShellMessageBoxPurpose::ModImport(dialog) = shell.purpose else {
+            frontend.shell_message_box = Some(shell);
+            crate::util::mod_actions::clear_picked();
+            return;
+        };
+        let Dialog::Select(mut selection) = *dialog else {
+            // An import is running from an earlier part: it keeps its box,
+            // and its end clears the copies.
+            frontend.shell_message_box = Some(ShellMessageBox {
+                purpose: ShellMessageBoxPurpose::ModImport(dialog),
+                ..shell
+            });
+            return;
+        };
+        selection.add(vec![path]);
+        // The old box's tree has no More/Up/Down button nodes: drop its dialog
+        // so the box built below makes a fresh one with them.
+        Self::close_shell_message_box_from_controller(frontend);
+        Self::show_import_selection(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            selection,
+        );
+    }
+
     fn show_import_selection(
         window: &Window,
         renderer: &RendererState,
@@ -715,6 +776,27 @@ impl App {
         answer: usize,
     ) {
         platform.window.request_redraw();
+        // Android: an answer that closes Add Mod without starting an import or
+        // a new pick deletes what the pickers copied in.
+        #[cfg(target_os = "android")]
+        {
+            let goes_on = match &dialog {
+                Dialog::Select(selection) if selection.previewing() => {
+                    matches!(answer, 0 | 2) && selection.plan.is_some()
+                }
+                // The arms below: browse, back to the preview, browse folders.
+                Dialog::Select(selection) => match answer {
+                    0 => selection.can_browse,
+                    1 => selection.choosing_kind,
+                    2 => selection.choosing_kind(),
+                    _ => false,
+                },
+                Dialog::Preparing(_) | Dialog::Notice => false,
+            };
+            if !goes_on {
+                crate::util::mod_actions::clear_picked();
+            }
+        }
         let Dialog::Select(mut selection) = dialog else {
             return;
         };
@@ -786,23 +868,40 @@ impl App {
     ) {
         crate::app::input::hardware_cursor::give_back_arrow(platform);
         crate::app::input::cursor::release_cursor_confinement(platform);
-        let window = &platform.window;
-        #[cfg(not(target_os = "macos"))]
-        let picked = if folders {
-            mod_import_picker::pick_folders(window, &tr("VERA:ModImportFolders"))
-        } else {
-            mod_import_picker::pick(window, &tr("VERA:ModAdd"))
-        };
-        #[cfg(target_os = "macos")]
-        let picked = {
-            let _ = folders;
-            mod_import_picker::pick(window, &tr("VERA:ModAdd"))
-        };
-        selection.choosing_kind = false;
-        match picked {
-            Ok(paths) => selection.add(paths),
-            Err(error) => selection.selection_error(error),
+        // Android picks through the system file manager, which answers later:
+        // the part joins the selection in `drain_picked_part`.
+        #[cfg(target_os = "android")]
+        {
+            let failed = tr("VERA:ModActionFailed");
+            let opened = if folders {
+                crate::util::mod_actions::pick_folder(&failed)
+            } else {
+                crate::util::mod_actions::pick_zip(&failed)
+            };
+            if !opened {
+                selection.selection_error(std::io::Error::other("no file manager"));
+            }
         }
+        #[cfg(not(target_os = "android"))]
+        {
+            let window = &platform.window;
+            #[cfg(not(target_os = "macos"))]
+            let picked = if folders {
+                mod_import_picker::pick_folders(window, &tr("VERA:ModImportFolders"))
+            } else {
+                mod_import_picker::pick(window, &tr("VERA:ModAdd"))
+            };
+            #[cfg(target_os = "macos")]
+            let picked = {
+                let _ = folders;
+                mod_import_picker::pick(window, &tr("VERA:ModAdd"))
+            };
+            match picked {
+                Ok(paths) => selection.add(paths),
+                Err(error) => selection.selection_error(error),
+            }
+        }
+        selection.choosing_kind = false;
         Self::show_import_selection(
             &platform.window,
             renderer,
@@ -862,13 +961,26 @@ impl App {
     }
 
     pub(super) fn poll_mod_import(state: &mut AppState) -> Option<Instant> {
+        #[cfg(target_os = "android")]
+        Self::drain_picked_part(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        );
         let ShellMessageBoxPurpose::ModImport(dialog) =
             &state.frontend.shell_message_box.as_ref()?.purpose
         else {
             return None;
         };
         let Dialog::Preparing(preparation) = dialog.as_ref() else {
-            return poll_scroll(&state.platform.window, &state.renderer, &mut state.frontend);
+            let next = poll_scroll(&state.platform.window, &state.renderer, &mut state.frontend);
+            // Android: the system file manager's copy lands with no event of
+            // its own, so the box looks for it a few times a second.
+            #[cfg(target_os = "android")]
+            let next = next.or_else(|| Some(Instant::now() + Duration::from_millis(250)));
+            return next;
         };
         let result = match preparation.result.try_recv() {
             Err(TryRecvError::Empty) => return Some(Instant::now() + Duration::from_millis(100)),
@@ -877,6 +989,10 @@ impl App {
         };
         let play = preparation.play;
         Self::close_shell_message_box_from_controller(&mut state.frontend);
+        // Android: the picked copies are installed or failed; either way they
+        // are done with.
+        #[cfg(target_os = "android")]
+        crate::util::mod_actions::clear_picked();
         match result.and_then(|prepared| Ok(prepared.install()?)) {
             Ok(folder) => Self::mod_imported(state, folder, play),
             Err(error) => Self::mod_import_failed(
@@ -892,6 +1008,11 @@ impl App {
     }
 
     fn mod_imported(state: &mut AppState, folder: String, play: bool) {
+        // Android: the folder gets the id a pinned shortcut finds it by.
+        #[cfg(target_os = "android")]
+        if let Some(config) = state.platform.game_config.as_ref() {
+            let _ = crate::app::mods::ensure_mod_id(&config.paths.mods_dir().join(&folder));
+        }
         Self::select_installed_mod(
             state.platform.game_config.as_ref(),
             &mut state.frontend,

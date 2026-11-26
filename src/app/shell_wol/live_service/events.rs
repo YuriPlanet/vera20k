@@ -91,7 +91,14 @@ pub(super) fn apply_event(
             relay_uuid(&id)?;
             let awaited = super::lobby::awaits_watch(state.frontend.wol.as_ref(), &id);
             if let Err(error) = service.receive_watch_start(&id, awaited, || {
-                let start = prepare_watch(state, decode(payload)?)?;
+                let start = prepare_watch(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    decode(payload)?,
+                )?;
                 if let Some(lobby) = state
                     .frontend
                     .wol
@@ -374,7 +381,14 @@ pub(super) fn apply_event(
                 // host's room says it lacks the map. The host's own upload
                 // still waits for the poll, after the lobby's `map_available`.
                 if !state.match_state.session.host() {
-                    poll_maps(state, service);
+                    poll_maps(
+                        &mut state.frontend,
+                        &state.platform,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        service,
+                    );
                 }
             }
             // The owner is ready without a guest Accept button, but still proves its
@@ -471,7 +485,16 @@ pub(super) fn apply_event(
             let total = payload["byte_length"]
                 .as_u64()
                 .ok_or_else(|| anyhow!("missing map length"))?;
-            maps::available(state, service, digest, usize::try_from(total)?);
+            maps::available(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                service,
+                digest,
+                usize::try_from(total)?,
+            );
         }
         "chat" => {
             let p: Chat = decode(payload)?;
@@ -584,7 +607,13 @@ pub(super) fn apply_event(
         "game_started" => {
             let admitted = service.receive_lobby_start(payload, |service, start| {
                 // The lobby ended a visit to the public lobby for the match.
-                super::lobby::visit_ends(state);
+                super::lobby::visit_ends(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                );
                 begin_start(state, service, start)
             });
             if let Err(error) = admitted {
@@ -604,7 +633,14 @@ pub(super) fn apply_event(
                 } else {
                     // A delayed callback after leaving its setup may finish
                     // only its match. Never leave the player's current room.
-                    notice(state, &tr(line));
+                    notice(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &tr(line),
+                    );
                 }
             }
         }
@@ -688,7 +724,14 @@ pub(super) fn apply_event(
             cancel_pending(&mut state.frontend, &mut state.match_state, service);
             fail_start(state, &text);
         }
-        "error" => notice(state, &tr("VERA:OnlineServiceRefused")),
+        "error" => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:OnlineServiceRefused"),
+        ),
         _ => {}
     }
     Ok(())

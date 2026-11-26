@@ -53,9 +53,11 @@ use super::{
 use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
 use crate::ui::wol_login::WolAccountGlobals;
 #[cfg(test)]
@@ -102,6 +104,7 @@ use visit::{
 };
 pub(super) use visit::{page_target, visit_ends};
 pub(crate) use visit::{visit_lobby, visiting};
+use winit::window::Window;
 
 /// The list wait `0x0077F120` gives up after 30 s.
 const LIST_WAIT: Duration = Duration::from_millis(30_000);
@@ -332,7 +335,12 @@ pub(super) fn online_request_failed(state: &mut AppState, id: u64, code: u32) ->
         Step::Creating { .. } => WolServiceEvent::Created(Err(code)),
         Step::Watching { .. } => WolServiceEvent::WatchRefused(code),
         Step::Visiting { .. } => {
-            visit_failed(state);
+            visit_failed(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+            );
             return true;
         }
         _ => WolServiceEvent::Joined(Err(code)),
@@ -636,12 +644,21 @@ fn lobby_mut(wol: Option<&mut WolVisit>) -> Option<&mut WolLobby> {
 
 /// The request can finish after the player entered a room. The retained public
 /// transcript owns its notice even while the room covers it.
-pub(super) fn watch_list_refresh(state: &mut AppState, refresh: WatchListRefresh) {
+pub(super) fn watch_list_refresh(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    refresh: WatchListRefresh,
+) {
     if let Some(key) =
-        lobby_mut(state.frontend.wol.as_mut()).and_then(|lobby| lobby.watch_refresh_notice(refresh))
+        lobby_mut(frontend.wol.as_mut()).and_then(|lobby| lobby.watch_refresh_notice(refresh))
     {
         crate::app::shell_lan::append_wol_lobby_chat(
-            state,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
             LanChatLine {
                 text: crate::i18n::tr(key).encode_utf16().collect(),
                 color: u32::MAX,
@@ -660,9 +677,18 @@ fn units(process_assets: &ProcessAssets, key: &str) -> Vec<u16> {
 }
 
 /// `0x005E2700` with color -1 into the lobby's transcript.
-fn message_line(state: &mut AppState, text: String) {
+fn message_line(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: String,
+) {
     crate::app::shell_lan::append_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -670,15 +696,37 @@ fn message_line(state: &mut AppState, text: String) {
     );
 }
 
-fn echo(state: &mut AppState, text: Vec<u16>, color: u32) {
-    crate::app::shell_lan::append_chat(state, LanChatLine { text, color });
+fn echo(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: Vec<u16>,
+    color: u32,
+) {
+    crate::app::shell_lan::append_chat(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        LanChatLine { text, color },
+    );
 }
 
 /// A line of the game room's, which goes to it also while its player visits
 /// the lobby ([`crate::app::shell_lan::append_room_chat`]).
-fn room_line(state: &mut AppState, text: String) {
+fn room_line(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: String,
+) {
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -1211,7 +1259,13 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
             .as_ref()
             .is_some_and(|visit| visit.modern_ui());
         for row in motd_rows(&motd, modern) {
-            message_line(state, row);
+            message_line(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                row,
+            );
         }
     }
     show_wait(
@@ -1277,9 +1331,14 @@ fn await_room(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
 
 /// VERA: the lobby refused to keep the room (one from before rooms came
 /// back), so a runner waiting for it goes on to the chat lobby.
-pub(super) fn room_refused(state: &mut AppState) {
-    if awaiting_room(&state.match_state.session) {
-        room_not_returned(state, false);
+pub(super) fn room_refused(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    if awaiting_room(&match_state.session) {
+        room_not_returned(frontend, match_state, process_assets, renderer, false);
     }
 }
 
@@ -1290,9 +1349,15 @@ pub(super) fn awaiting_room(session: &MatchSession) -> bool {
 /// VERA: the kept room is gone (it closed, or the player gave up waiting).
 /// The runner goes on as after any match: the chat-lobby list, then a join.
 /// The join itself leaves the room on the lobby if it is still there.
-fn room_not_returned(state: &mut AppState, closed: bool) {
-    state.match_state.session.take_network_room_return();
-    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
+fn room_not_returned(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    closed: bool,
+) {
+    match_state.session.take_network_room_return();
+    let Some(lobby) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     lobby.current = None;
@@ -1303,9 +1368,15 @@ fn room_not_returned(state: &mut AppState, closed: bool) {
         deadline: Instant::now() + LIST_WAIT,
     };
     if closed {
-        message_line(state, crate::i18n::tr("VERA:GameRoomClosed"));
+        message_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            crate::i18n::tr("VERA:GameRoomClosed"),
+        );
     }
-    list_lobbies(&mut state.frontend, &state.process_assets);
+    list_lobbies(frontend, process_assets);
 }
 
 /// VERA: the lobby gave back the room this player stayed in, owner first.
@@ -1342,13 +1413,23 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
     if open_game_room(state, &listed, observe, resume)
         && let Some(campaign) = campaign
         && let Err(error) = setup::campaign_room::resume_after_wol_result(
-            state,
+            state.platform.game_config.as_ref(),
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
             *campaign,
             listed.iter().map(|member| member.name.as_str()),
         )
     {
         log::warn!("WOL campaign continuation refused: {error:#}");
-        message_line(state, crate::i18n::tr("VERA:CampaignRoomUnavailable"));
+        message_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            crate::i18n::tr("VERA:CampaignRoomUnavailable"),
+        );
     }
 }
 
@@ -1498,9 +1579,14 @@ fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>)
         ui.chat = chat;
     }
     if let Some((controller, shown)) = page {
-        crate::app::shell_network_setup::hide_room(state);
+        crate::app::shell_network_setup::hide_room(&mut state.frontend, &state.match_state);
         state.frontend.shell_controller = controller;
-        let join = selected_admits(state);
+        let join = selected_admits(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+        );
         if let (Some(lobby), Some((shown, covered))) =
             (lobby_mut(state.frontend.wol.as_mut()), shown)
         {
@@ -1511,12 +1597,18 @@ fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>)
     }
     if let Some(old) = old {
         room_line(
-            state,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
             crate::i18n::tr_fill("VERA:PlayerLeftRoom", &[("name", &old)]),
         );
     }
     room_line(
-        state,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.renderer,
         if host {
             crate::i18n::tr("VERA:NowHost")
         } else {
@@ -1718,8 +1810,16 @@ pub(super) fn refill_players(frontend: &mut FrontendState) {
 
 /// `0x0079BA60` for the selected game row (`show` prints its refusal).
 /// VERA: a match to watch passes; its `watch` is the lobby's to refuse.
-fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bool {
-    let Some(lobby) = lobby(state.frontend.wol.as_ref()) else {
+fn admit_row(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    row: usize,
+    observer: bool,
+    show: bool,
+) -> bool {
+    let Some(lobby) = lobby(frontend.wol.as_ref()) else {
         return false;
     };
     let Some(row) = lobby.ui.game_rows.get(row) else {
@@ -1744,20 +1844,20 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
     match admit(
         channel,
         observer,
-        admission_context(state.frontend.wol.as_ref(), &state.process_assets),
+        admission_context(frontend.wol.as_ref(), process_assets),
     ) {
         Ok(()) => true,
         Err(key) => {
             if let (true, Some(key)) = (show, key) {
                 let text = if key == crate::ui::wol_lobby::RULES_DIFFER {
                     crate::app::shell_network_setup::agreement::rules_differ_text(
-                        &state.frontend.mods,
-                        &state.process_assets,
+                        &frontend.mods,
+                        process_assets,
                     )
                 } else {
-                    state.csf_text(key)
+                    process_assets.csf_text(key)
                 };
-                message_line(state, text);
+                message_line(frontend, match_state, process_assets, renderer, text);
             }
             false
         }
@@ -1828,7 +1928,15 @@ fn join_channel(state: &mut AppState, channel: WolChannel, key: &str, game: bool
             channel.name
         );
         if game {
-            join_failed_locally(state, true);
+            join_failed_locally(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+                true,
+            );
         }
         return;
     }
@@ -1891,8 +1999,14 @@ fn send_join(state: &mut AppState, channel: WolChannel, key: String, game: bool,
 /// Quick Match), then the channel record and its users cleared. The line
 /// reaches the lobby's transcript under any wait box (`0x005E2700` walks
 /// the dialog stack). The modern lobby never names its one chat lobby.
-fn left_channel(state: &mut AppState) {
-    let Some(current) = lobby_mut(state.frontend.wol.as_mut()).and_then(|lobby| {
+fn left_channel(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let Some(current) = lobby_mut(frontend.wol.as_mut()).and_then(|lobby| {
         lobby.members.clear();
         lobby.current.take()
     }) else {
@@ -1900,29 +2014,23 @@ fn left_channel(state: &mut AppState) {
     };
     // 0x785764..0x785788: PlayerLeft in a channel of a nonzero type.
     if current.kind != 0 {
-        setup::play_player_left(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-        );
+        setup::play_player_left(frontend, match_state, process_assets, sfx_player);
     }
-    if super::quick_match::mode_active(state.frontend.wol.as_ref()) {
+    if super::quick_match::mode_active(frontend.wol.as_ref()) {
         return;
     }
     let room = match current.lobby_number() {
-        Some(_) if modern_lobby(state.frontend.wol.as_ref()) => return,
-        Some(number) => WolLobbyRow::joined_name(
-            number,
-            &base_names(state.frontend.wol.as_ref(), &state.process_assets),
-        ),
+        Some(_) if modern_lobby(frontend.wol.as_ref()) => return,
+        Some(number) => {
+            WolLobbyRow::joined_name(number, &base_names(frontend.wol.as_ref(), process_assets))
+        }
         None => current.name,
     };
     let text = crate::assets::csf_file::format_csf(
-        &state.csf_text("TXT_YOULEFT"),
+        &process_assets.csf_text("TXT_YOULEFT"),
         &[crate::assets::csf_file::CsfArg::Str(&room)],
     );
-    message_line(state, text);
+    message_line(frontend, match_state, process_assets, renderer, text);
 }
 
 /// The Room name VERA's online Create Game starts with; OK with it unchanged
@@ -1971,7 +2079,13 @@ fn setup_channel_left(state: &mut AppState) {
 /// The leave finished (the sink cleared `[0xB77DD0]`) or its 15 s ran out.
 fn leave_finished(state: &mut AppState, left: bool) {
     if left {
-        left_channel(state);
+        left_channel(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio.sfx_player,
+        );
     }
     let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;
@@ -1997,7 +2111,15 @@ fn leave_finished(state: &mut AppState, left: bool) {
             } else {
                 // Still in the channel: 0x00788800 returns 1. The box keeps
                 // flag 1 ([0xB77DC8] only loses 0x40), so it stays open.
-                join_failed_locally(state, game);
+                join_failed_locally(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.persistence.options_profile,
+                    game,
+                );
             }
         }
         // 0x00789B60 closes the box (0x00792EC0) and creates whether or
@@ -2028,30 +2150,38 @@ fn leave_finished(state: &mut AppState, left: bool) {
 
 /// `0x00789960` returned false: every command back, Join as admitted.
 /// The Buddy List runner goes back to its dialog loop.
-fn join_failed_locally(state: &mut AppState, game: bool) {
-    if buddy_runner(state.frontend.wol.as_ref()) {
+fn join_failed_locally(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    game: bool,
+) {
+    if buddy_runner(frontend.wol.as_ref()) {
         super::buddy::stopped(
-            &mut state.frontend,
-            &state.platform.window,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            &state.persistence.options_profile,
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
         );
         return;
     }
-    if quick_match_runner(state.frontend.wol.as_ref()) {
-        if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
+    if quick_match_runner(frontend.wol.as_ref()) {
+        if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
             lobby.step = Step::Ready;
         }
         if game {
-            super::quick_match::game_joined(state, false);
+            super::quick_match::game_joined(frontend, match_state, process_assets, renderer, false);
         } else {
-            super::quick_match::lobby_join_failed(&mut state.frontend, &state.process_assets);
+            super::quick_match::lobby_join_failed(frontend, process_assets);
         }
         return;
     }
-    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
+    let Some(lobby) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     lobby.covered = false;
@@ -2147,7 +2277,15 @@ pub(crate) fn commit_hide(state: &mut AppState) {
 /// double-click both reach `0x00789960` after admission.
 fn begin_join(state: &mut AppState, row: usize, show: bool) {
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let admitted = admit_row(state, row, observer, show);
+    let admitted = admit_row(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.renderer,
+        row,
+        observer,
+        show,
+    );
     let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
         return;
     };
@@ -2310,7 +2448,15 @@ fn answer_resolution(state: &mut AppState, channel: WolChannel, yes: bool) {
         );
     }
     if limit < options_screen(&state.renderer.gpu, &state.persistence.options_profile).0 {
-        join_failed_locally(state, true);
+        join_failed_locally(
+            &mut state.frontend,
+            &state.platform.window,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+            true,
+        );
         return;
     }
     if channel.keyed() {
@@ -2393,7 +2539,15 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
                 Some(channel) => {
                     join_channel(state, channel, &password.replace(' ', "_"), true, false)
                 }
-                None => join_failed_locally(state, true),
+                None => join_failed_locally(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.persistence.options_profile,
+                    true,
+                ),
             }
         }
         WolPopupAction::PasswordCancelled => {
@@ -2405,30 +2559,44 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
                 .frontend
                 .shell_controller
                 .reset_to(super::WOL_LOBBY_DIALOG);
-            join_failed_locally(state, true);
+            join_failed_locally(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+                true,
+            );
         }
     }
 }
 
 /// `0x0078AC10`'s 0x540 Enter after `0x005EDD00`.
-fn send_chat(state: &mut AppState, text: Vec<u16>) {
+fn send_chat(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: Vec<u16>,
+) {
     let commands = wol_chat::WolChatCommands {
-        page: units(&state.process_assets, "TXT_PAGE_COMMAND"),
-        reply: units(&state.process_assets, "TXT_REPLY_COMMAND"),
-        reply_short: units(&state.process_assets, "TXT_REPLY_COMMAND_SHORT"),
-        online: units(&state.process_assets, "TXT_ONLINE_COMMAND"),
+        page: units(process_assets, "TXT_PAGE_COMMAND"),
+        reply: units(process_assets, "TXT_REPLY_COMMAND"),
+        reply_short: units(process_assets, "TXT_REPLY_COMMAND_SHORT"),
+        online: units(process_assets, "TXT_ONLINE_COMMAND"),
     };
     let filters = wol_chat::WolChatFilterCommands {
-        buddy: units(&state.process_assets, "TXT_BUDDY_FILTER"),
-        clan: units(&state.process_assets, "TXT_CLAN_FILTER"),
+        buddy: units(process_assets, "TXT_BUDDY_FILTER"),
+        clan: units(process_assets, "TXT_CLAN_FILTER"),
     };
-    let last_pager = super::last_pager(state.frontend.wol.as_ref()).map(str::to_owned);
-    let nickname = nickname(&state.frontend.wol_account);
+    let last_pager = super::last_pager(frontend.wol.as_ref()).map(str::to_owned);
+    let nickname = nickname(&frontend.wol_account);
     let line = match wol_chat::parse_lobby(&text, &commands, &filters, last_pager.is_some()) {
         WolLobbyChatLine::Filter(filter) => {
             // 0x78B3F4/0x78B4DF flip the live DisplayBuddies/DisplayClan
             // bytes without saving; the next WOL entry re-reads VERA.INI.
-            let live = &mut state.frontend.wol_preferences;
+            let live = &mut frontend.wol_preferences;
             let on = match filter {
                 WolChatFilter::Buddy => {
                     live.display_buddies = !live.display_buddies;
@@ -2439,21 +2607,27 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
                     live.display_clan
                 }
             };
-            let notice = units(&state.process_assets, filter.notice(on));
-            echo(state, notice, wol_chat::EMOTE_COLOR);
+            let notice = units(process_assets, filter.notice(on));
+            echo(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                notice,
+                wol_chat::EMOTE_COLOR,
+            );
             return;
         }
         WolLobbyChatLine::Line(line) => line,
     };
-    let to = lobby(state.frontend.wol.as_ref())
+    let to = lobby(frontend.wol.as_ref())
         .map(|lobby| lobby.ui.private_targets())
         .unwrap_or_default();
-    let in_channel =
-        lobby(state.frontend.wol.as_ref()).is_some_and(|lobby| lobby.current.is_some());
+    let in_channel = lobby(frontend.wol.as_ref()).is_some_and(|lobby| lobby.current.is_some());
     let echo_line = match &line {
         WolChatLine::Notice(key) => {
-            let text = state.csf_text(key);
-            message_line(state, text);
+            let text = process_assets.csf_text(key);
+            message_line(frontend, match_state, process_assets, renderer, text);
             return;
         }
         WolChatLine::Locate { .. } => None,
@@ -2470,8 +2644,8 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
         }
         WolChatLine::Say(text) => {
             if !in_channel {
-                let text = state.csf_text("TXT_NOT_IN_CHAN");
-                message_line(state, text);
+                let text = process_assets.csf_text("TXT_NOT_IN_CHAN");
+                message_line(frontend, match_state, process_assets, renderer, text);
                 return;
             }
             // 0x0077E1D0 sends privately to the selected users.
@@ -2490,49 +2664,62 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
     } else {
         Vec::new()
     };
-    super::chat_sent(state.frontend.wol.as_mut(), &line);
+    super::chat_sent(frontend.wol.as_mut(), &line);
     // A visitor's lobby page talks in the lobby they visit.
-    let chat = if visiting(state.frontend.wol.as_ref()) {
+    let chat = if visiting(frontend.wol.as_ref()) {
         WolServiceRequest::VisitChat { line, to }
     } else {
         WolServiceRequest::Chat { line, to }
     };
-    request(state.frontend.wol.as_mut(), chat);
+    request(frontend.wol.as_mut(), chat);
     if let Some((text, color)) = echo_line {
-        echo(state, text, color);
+        echo(frontend, match_state, process_assets, renderer, text, color);
     }
 }
 
 /// `0x3ED`: outside a channel `TXT_NOT_IN_CHAN`, an empty edit
 /// `TXT_ENTER_MESSAGE`, else `0x0077E300` (private to the selected users).
-fn send_emote(state: &mut AppState, text: Vec<u16>) {
-    let Some(lobby) = lobby(state.frontend.wol.as_ref()) else {
+fn send_emote(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: Vec<u16>,
+) {
+    let Some(lobby) = lobby(frontend.wol.as_ref()) else {
         return;
     };
     let to = lobby.ui.private_targets();
     if lobby.current.is_none() {
-        let text = state.csf_text("TXT_NOT_IN_CHAN");
-        message_line(state, text);
+        let text = process_assets.csf_text("TXT_NOT_IN_CHAN");
+        message_line(frontend, match_state, process_assets, renderer, text);
         return;
     }
     if text.is_empty() {
-        let text = state.csf_text("TXT_ENTER_MESSAGE");
-        message_line(state, text);
+        let text = process_assets.csf_text("TXT_ENTER_MESSAGE");
+        message_line(frontend, match_state, process_assets, renderer, text);
         return;
     }
-    let nickname = nickname(&state.frontend.wol_account);
+    let nickname = nickname(&frontend.wol_account);
     let color = if to.is_empty() {
         wol_chat::EMOTE_COLOR
     } else {
         wol_chat::PRIVATE_EMOTE_COLOR
     };
-    echo(state, wol_chat::emote_echo(&nickname, &text), color);
-    let emote = if visiting(state.frontend.wol.as_ref()) {
+    echo(
+        frontend,
+        match_state,
+        process_assets,
+        renderer,
+        wol_chat::emote_echo(&nickname, &text),
+        color,
+    );
+    let emote = if visiting(frontend.wol.as_ref()) {
         WolServiceRequest::VisitEmote { text, to }
     } else {
         WolServiceRequest::Emote { text, to }
     };
-    request(state.frontend.wol.as_mut(), emote);
+    request(frontend.wol.as_mut(), emote);
 }
 
 /// `0x00789B60` up to its popup: Limit Screen Resolution is cleared on a
@@ -2596,7 +2783,13 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             begin_join(state, row, show);
         }
         // A visitor's Back goes back to their room.
-        WolLobbyAction::Back if visiting(state.frontend.wol.as_ref()) => back_to_room(state),
+        WolLobbyAction::Back if visiting(state.frontend.wol.as_ref()) => back_to_room(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+        ),
         WolLobbyAction::Back => {
             App::leave_shell_dialog(
                 state,
@@ -2645,7 +2838,15 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             };
             let name = lobby.ui.game_rows.get(row).map(|row| row.name.clone());
             let show = double || name != lobby.ui.admitted_name;
-            let admitted = admit_row(state, row, observer, show);
+            let admitted = admit_row(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                row,
+                observer,
+                show,
+            );
             let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
                 return;
             };
@@ -2674,8 +2875,20 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             state.frontend.wol_lobby_globals.lobby_number = record.number;
             switch_lobby(state);
         }
-        WolLobbyAction::Chat(text) => send_chat(state, text),
-        WolLobbyAction::Emote(text) => send_emote(state, text),
+        WolLobbyAction::Chat(text) => send_chat(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            text,
+        ),
+        WolLobbyAction::Emote(text) => send_emote(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            text,
+        ),
         WolLobbyAction::ObserverChanged(observer) => state
             .frontend
             .multiplayer_shell_runtime
@@ -2692,7 +2905,15 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
                 )
             });
         }
-        WolLobbyAction::Page => super::page::open_page_dialog(state),
+        WolLobbyAction::Page => super::page::open_page_dialog(
+            &mut state.frontend,
+            &mut state.platform,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &mut state.audio,
+            &mut state.persistence,
+        ),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
         WolLobbyAction::Unported(BUDDY) => App::leave_shell_dialog(
@@ -2705,7 +2926,13 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
                 )
             },
         ),
-        WolLobbyAction::BackToRoom => back_to_room(state),
+        WolLobbyAction::BackToRoom => back_to_room(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+        ),
         // VERA: the other view's lists and edit take the pointer's place.
         WolLobbyAction::View => {
             sync(&mut state.frontend, &state.process_assets, &state.renderer);
@@ -2775,7 +3002,13 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
             BoxThen::Kicked => {
                 // The next lobby pick moves on, then 0x00785740.
                 state.frontend.wol_lobby_globals.lobby_number += 1;
-                left_channel(state);
+                left_channel(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &mut state.audio.sfx_player,
+                );
                 if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
                     lobby.step = Step::Ready;
                 }
@@ -2808,7 +3041,13 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
                 &state.persistence.options_profile,
             );
         }
-        _ if returning_to_room => room_not_returned(state, false),
+        _ if returning_to_room => room_not_returned(
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            false,
+        ),
         // Event 0: the Quick Match runner's exit.
         _ if lobby.runner == Runner::QuickMatch => {
             request(state.frontend.wol.as_mut(), WolServiceRequest::CancelWait);

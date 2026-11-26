@@ -50,7 +50,13 @@ pub(crate) fn open(state: &mut AppState) {
         })
         .unwrap_or(true);
     App::enter_in_game_menu_state(
-        state,
+        &mut state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
         if finished {
             InGameMenuState::Closed
         } else {

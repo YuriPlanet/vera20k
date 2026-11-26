@@ -21,6 +21,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::sim_host::SimHost;
@@ -29,7 +30,6 @@ use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::renderer_state::RendererState;
 use crate::app::types::ScrollDir;
-use crate::app::{AppState, PlatformState};
 use crate::map::terrain;
 use crate::ui::game_screen::GameScreen;
 
@@ -986,25 +986,32 @@ pub(crate) fn set_view_bookmark(
 /// With a building armed, its foundation follows the cursor's new Cell
 /// (the View1..View4 commands, `0x005373C3`, `0x005374B3`, `0x005375A3`,
 /// `0x00537693`).
-pub(crate) fn recall_view_bookmark(state: &mut AppState, slot: usize) {
-    let Some((rx, ry)) = state.match_state.input.view_bookmarks.get(slot) else {
+pub(crate) fn recall_view_bookmark(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    slot: usize,
+) {
+    let Some((rx, ry)) = match_state.input.view_bookmarks.get(slot) else {
         return;
     };
     center_camera_on_cell(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
         rx,
         ry,
     );
     crate::app::match_runtime::sim_tick::update_building_placement_preview(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
 }
@@ -2539,30 +2546,37 @@ pub(crate) fn center_camera_on_lepton_point(
 /// Home7315A0: use the shared SetView6D6070 owner, then clear the Follow
 /// pair through the input owner (4AEB30 at731826), even without a target.
 /// Refresh an armed building's foundation (4A91B0 at73181A) after SetView.
-pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
+pub(crate) fn apply_home_camera(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    coord: Option<[i32; 3]>,
+) {
     if let Some([x, y, z]) = coord {
         center_camera_on_lepton_point(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             x,
             y,
             z,
         );
     }
     crate::app::match_runtime::sim_tick::update_building_placement_preview(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
-    state.match_state.input.follow_target = None;
+    match_state.input.follow_target = None;
     // A complete redraw (`0x00731832`): the move keeps the Z seed.
-    state.renderer.native_z_seed.complete_redraw();
+    renderer.native_z_seed.complete_redraw();
 }
 
 /// `CenterView` (Numpad 5 in the stock archive): snap the tactical view onto the

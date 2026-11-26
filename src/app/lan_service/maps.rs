@@ -530,7 +530,14 @@ impl Transfers {
         // A downloaded seed can change selected-mode/RMG rules. Recompute
         // through ProcessAssets before K1/Ready acknowledges the host identity.
         super::verify_setup_agreement(state)?;
-        setup::accept_network_map_source(state, source, key.effective.clone())?;
+        setup::accept_network_map_source(
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            source,
+            key.effective.clone(),
+        )?;
         self.deadline = None;
         self.flow = if key.host {
             Flow::Serving
@@ -577,7 +584,11 @@ impl Transfers {
                 if *expected == resource =>
             {
                 shared::accept_transfer_asset(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    &state.process_assets,
                     loaded,
                     resource,
                     self.key.as_ref().and_then(|key| key.generated.as_ref()),
@@ -596,7 +607,11 @@ impl Transfers {
             }
             (Flow::AwaitInstall(expected), IoValue::Installed(loaded)) if *expected == resource => {
                 shared::accept_transfer_asset(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state.session,
+                    &state.process_assets,
                     loaded,
                     resource,
                     self.key.as_ref().and_then(|key| key.generated.as_ref()),

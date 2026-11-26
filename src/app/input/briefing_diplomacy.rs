@@ -1,6 +1,13 @@
 //! Read-only mission briefing and source authority for authored campaigns.
 
-use crate::app::{App, AppState};
+use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::sim::control_authority::ControlScope;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
@@ -76,32 +83,39 @@ fn role_rows(sim: &Simulation) -> Vec<RoleRow> {
 
 /// Two players can share a House and still see different authority over other
 /// Houses. Use the same command projection as ordinary in-game controls.
-pub(crate) fn open(state: &mut AppState) -> bool {
-    let Some(start) = state.match_state.session.network_authored_start() else {
+pub(crate) fn open(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) -> bool {
+    let Some(start) = match_state.session.network_authored_start() else {
         return false;
     };
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return false;
     };
     let sim = &runtime.simulation;
-    let text = |key| state.csf_text(key);
-    let briefing = match state.match_state.loaded_map_source.as_ref() {
+    let text = |key| process_assets.csf_text(key);
+    let briefing = match match_state.loaded_map_source.as_ref() {
         Some(crate::map::source::LoadedMapSource::Loose { path, .. }) => {
             crate::util::file_system::read(path).ok().and_then(|bytes| {
-                crate::map::basic::briefing_text_with_csf(&bytes, state.process_assets.csf.as_ref())
+                crate::map::basic::briefing_text_with_csf(&bytes, process_assets.csf.as_ref())
             })
         }
         _ => None,
     }
     .or_else(|| {
-        let assets = state.process_assets.manager()?;
+        let assets = process_assets.manager()?;
         let mission =
             crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission()).ok()?;
         let name = sim.session().map_name();
         let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
         let key = crate::rules::campaign_loading::restate_briefing_key(&mission.ini, name);
-        (key != "Brief:Error")
-            .then(|| state.csf_text(&key))
+        (key != "Brief:Error").then(|| process_assets.csf_text(&key))
     })
     .unwrap_or_default();
     let mut lines = Vec::new();
@@ -127,8 +141,17 @@ pub(crate) fn open(state: &mut AppState) -> bool {
             None => format!("{house} · {access}"),
         });
     }
-    state.match_state.match_presentation.restate_text = lines.join("\n");
-    App::enter_in_game_menu_state(state, InGameMenuState::MissionBriefing);
+    match_state.match_presentation.restate_text = lines.join("\n");
+    App::enter_in_game_menu_state(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        InGameMenuState::MissionBriefing,
+    );
     true
 }
 

@@ -5,11 +5,18 @@ use super::{
     KeyModifiers, ORDINARY_SELECTION_ACTION_LINE_POLICY, TEAM_SELECTION_VOICE_POLICY,
     apply_selection_action_line_policy, apply_selection_mutation, selected_stable_ids_in_order,
 };
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_command_owner;
 use crate::app::input::entity_pick::SelectionMutation;
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
 
@@ -256,29 +263,31 @@ pub(super) fn live_group_members(
 }
 
 pub(super) fn handle_control_group_command(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
     group_idx: usize,
     press: GroupPress,
 ) {
     if group_idx >= 10 {
         return;
     }
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
+    let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
     let group = sim
         .map(|sim| sim.projected_control_groups()[group_idx].clone())
         .unwrap_or_default();
     let selected = selected_stable_ids_in_order(
         sim,
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
-    let last_press = state
-        .match_state
+    let last_press = match_state
         .input
         .last_control_group_press
         .map(|(slot, at)| (slot, at.elapsed()));
@@ -312,67 +321,113 @@ pub(super) fn handle_control_group_command(
         // planning mode is a separate owner these Display setters do not
         // cancel. TeamAssign 731060 is not evidenced to clear any mode, so
         // Assign keeps every armed mode as it is.
-        crate::app::input::power_mode::disable(&mut state.match_state);
-        state
-            .match_state
+        crate::app::input::power_mode::disable(match_state);
+        match_state
             .match_presentation
             .sidebar_gadget_state
-            .disable_selection_modes(state.armed_building_type().is_some());
+            .disable_selection_modes(match_state.input.armed_building_type().is_some());
         crate::app::input::beacon::set_place_beacon_mode(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
             crate::app::input::beacon::BeaconModeRequest::Off,
         );
     }
-    let sim = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
+    let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
     match action {
         GroupPressAction::Assign => {
-            queue_control_group_assignment(&mut state.match_state.sim_runtime, group_idx, selected);
+            queue_control_group_assignment(&mut match_state.sim_runtime, group_idx, selected);
         }
         GroupPressAction::Center => {
             // Alt+digit and Recall's double tap both run CenterCamera, which
             // centres on the resulting selection (`MapClass::CenterMap
             // 0x004AE290` at `0x0073149E`), extra kept units included.
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
-                queue_team_selection(state, selection);
+                queue_team_selection(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    selection,
+                );
             }
             crate::app::input::camera::center_view_on_selection(
-                &state.platform,
-                &mut state.renderer,
-                &state.frontend,
-                &mut state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             );
         }
         GroupPressAction::AddToSelection => {
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
-                queue_team_selection(state, selection);
+                queue_team_selection(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    selection,
+                );
             }
         }
         GroupPressAction::Recall => {
             // A recall on an empty group still clears the selection: the
             // deselect-all runs before the select loop, unconditionally.
-            state.match_state.input.last_control_group_press =
+            match_state.input.last_control_group_press =
                 Some((group_idx, crate::util::time::Instant::now()));
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
-                queue_team_selection(state, selection);
+                queue_team_selection(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
+                    persistence,
+                    selection,
+                );
             }
-            apply_selection_action_line_policy(
-                &mut state.match_state,
-                ORDINARY_SELECTION_ACTION_LINE_POLICY,
-            );
+            apply_selection_action_line_policy(match_state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }
     }
 }
 
 /// One team walk's Selects (Recall, AddTeam, CenterCamera), with their
 /// latch rule.
-fn queue_team_selection(state: &mut AppState, selection: TeamSelection) {
+fn queue_team_selection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    selection: TeamSelection,
+) {
     apply_selection_mutation(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         SelectionMutation {
             clear: selection.clear,
             select: selection.select,

@@ -90,7 +90,15 @@ pub(crate) fn render_keyboard_shell(
             .then(|| state.frontend.shell_page_title.paint(now))
             .flatten()
     };
-    let layout = crate::app::input::keyboard::sync(state).expect("active A3 geometry");
+    let layout = crate::app::input::keyboard::sync(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    )
+    .expect("active A3 geometry");
     let status_label = if active || sliding {
         None
     } else {

@@ -1144,8 +1144,16 @@ impl TacticalCaptureSession {
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
             && aperture.y + aperture.h <= state.render_height() as f32;
         let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(
-            state,
-            &crate::app::input::cursor::CursorTargets::read(state),
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+            &crate::app::input::cursor::CursorTargets::read(
+                &state.platform,
+                &state.frontend,
+                &state.match_state,
+            ),
         )
         .and_then(crate::app::input::cursor::cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
@@ -1399,8 +1407,16 @@ impl TacticalCaptureSession {
                 "id": format!(
                     "{:?}",
                     crate::app::input::cursor::current_cursor_feedback_kind(
-                        state,
-                        &crate::app::input::cursor::CursorTargets::read(state),
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                        &crate::app::input::cursor::CursorTargets::read(
+                            &state.platform,
+                            &state.frontend,
+                            &state.match_state,
+                        ),
                     )
                     .and_then(crate::app::input::cursor::cursor_id_for_feedback)
                     .unwrap_or(CursorId::Default)

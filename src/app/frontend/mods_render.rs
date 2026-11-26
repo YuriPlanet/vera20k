@@ -145,6 +145,10 @@ pub(crate) fn render_mods_page(
         rect_of,
         &enabled,
     );
+    // Android: the name dialog's widgets; the dialog itself is drawn after
+    // the page, in `App::draw_name_dialog_over`.
+    #[cfg(target_os = "android")]
+    crate::app::App::sync_name_dialog(&state.renderer.gpu, &mut state.frontend);
     sync_texts(&mut state.frontend, selected);
     let status =
         |state: &AppState| mods_status_key(&state.frontend.shell_controller).map(str::to_owned);
@@ -253,5 +257,9 @@ pub(crate) fn render_mods_page(
         }
     }
     encode_family_page(state, encoder, destination, frame);
+    // Android: New Mod's dialog goes over the finished page, as a message box
+    // would, so the page's own text cannot cover it.
+    #[cfg(target_os = "android")]
+    crate::app::App::draw_name_dialog_over(state, encoder, destination);
     Ok(true)
 }

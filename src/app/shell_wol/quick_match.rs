@@ -313,9 +313,19 @@ pub(crate) fn sync(frontend: &mut FrontendState, renderer: &RendererState) -> Op
 }
 
 /// `0x005E2700` into the current dialog's transcript.
-fn line(state: &mut AppState, text: String, color: u32) {
+fn line(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    text: String,
+    color: u32,
+) {
     crate::app::shell_lan::append_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         LanChatLine {
             text: text.encode_utf16().collect(),
             color,
@@ -323,17 +333,32 @@ fn line(state: &mut AppState, text: String, color: u32) {
     );
 }
 
-fn csf_line(state: &mut AppState, key: &str, color: u32) {
-    let text = state.csf_text(key);
-    line(state, text, color);
+fn csf_line(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    key: &str,
+    color: u32,
+) {
+    let text = process_assets.csf_text(key);
+    line(frontend, match_state, process_assets, renderer, text, color);
 }
 
-fn csf_name_line(state: &mut AppState, key: &str, name: &str, color: u32) {
+fn csf_name_line(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    key: &str,
+    name: &str,
+    color: u32,
+) {
     let text = crate::assets::csf_file::format_csf(
-        &state.csf_text(key),
+        &process_assets.csf_text(key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
-    line(state, text, color);
+    line(frontend, match_state, process_assets, renderer, text, color);
 }
 
 fn nickname(account: &WolAccountGlobals) -> String {
@@ -526,7 +551,14 @@ pub(super) fn advance(state: &mut AppState) {
     };
     lobby::quick_match_join(state, target, QUICK_MATCH_KEY);
     set_stage(state.frontend.wol.as_mut(), stage::IN_LOBBY, Some(20));
-    runner_request(state);
+    runner_request(
+        &mut state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.match_state,
+        &state.process_assets,
+        &state.renderer,
+        &state.persistence.options_profile,
+    );
 }
 
 /// The runner's own stage-3 test (`0x0079FFCA..0x007A0009`): with the
@@ -536,23 +568,51 @@ pub(super) fn advance(state: &mut AppState) {
 /// a guest whose search found no game, as when its host crashed after the
 /// pairing, or a bad `Start`. Native never runs it during a leave
 /// ([`lobby::leaving`]): a timeout there finds the lobby already left.
-fn runner_request(state: &mut AppState) {
-    let lobby_name = globals(state.frontend.wol.as_ref())
+fn runner_request(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    let lobby_name = globals(frontend.wol.as_ref())
         .and_then(|globals| Some(globals.lobby.as_ref()?.name.clone()));
-    if stage(state.frontend.wol.as_ref()) == stage::IN_LOBBY
-        && !lobby::leaving(state.frontend.wol.as_ref())
-        && lobby::current_channel(state.frontend.wol.as_ref())
+    if stage(frontend.wol.as_ref()) == stage::IN_LOBBY
+        && !lobby::leaving(frontend.wol.as_ref())
+        && lobby::current_channel(frontend.wol.as_ref())
             .is_some_and(|current| Some(current.name) == lobby_name)
     {
-        request(state);
+        request(
+            frontend,
+            game_config,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+        );
     }
 }
 
 /// The user-list sink in a chat lobby in modes 1-3 (`0x007A7B0D..0x007A7B3B`,
 /// no stage test): the request; a refused one sets event 5.
-pub(super) fn lobby_users_listed(state: &mut AppState) {
-    if !request(state) {
-        event_5(&mut state.frontend, &state.process_assets);
+pub(super) fn lobby_users_listed(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    if !request(
+        frontend,
+        game_config,
+        match_state,
+        process_assets,
+        renderer,
+        options_profile,
+    ) {
+        event_5(frontend, process_assets);
     }
 }
 
@@ -625,11 +685,18 @@ impl MatchRequest {
 /// list, then stage 4 (180 s).
 /// RESIDUAL: the ping lists (`0x007A0430`, `0x007A1060`) and their
 /// `Pings` report to the matchbot belong to the transport.
-fn request(state: &mut AppState) -> bool {
-    if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
+fn request(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) -> bool {
+    if let Some(globals) = globals_mut(frontend.wol.as_mut()) {
         globals.opponent = None;
     }
-    let members = lobby::members(state.frontend.wol.as_ref());
+    let members = lobby::members(frontend.wol.as_ref());
     let matchbot = members
         .iter()
         .rev()
@@ -637,7 +704,7 @@ fn request(state: &mut AppState) -> bool {
         .filter(|_| members.len() >= 2)
         .map(|member| member.name.clone());
     let Some(matchbot) = matchbot else {
-        if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
+        if let Some(globals) = globals_mut(frontend.wol.as_mut()) {
             globals.failure = FAILURE_NO_AGENT;
             globals.set(stage::FAILED, None);
         }
@@ -645,35 +712,27 @@ fn request(state: &mut AppState) -> bool {
     };
     // LoadRecord with registry Options bit 1 clear (VERA reads no
     // registry).
-    let nickname = nickname(&state.frontend.wol_account);
+    let nickname = nickname(&frontend.wol_account);
     let persona = super::persona::load(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-        &state.process_assets,
+        frontend.wol.as_ref(),
+        game_config,
+        process_assets,
         &nickname,
     );
-    let locale = state
-        .frontend
+    let locale = frontend
         .wol
         .as_ref()
         .and_then(|visit| visit.locales.get(&nickname.to_ascii_lowercase()))
         .copied();
-    let width = lobby::options_screen(&state.renderer.gpu, &state.persistence.options_profile).0;
+    let width = lobby::options_screen(&renderer.gpu, options_profile).0;
     // An online visit has no persona file: the MultiPlayer side and colour
     // the player saved in VERA.INI stay (`persona::take_side_and_color`),
     // and they go instead, as the game's first `R` sends them
     // (`send_first_choices`).
-    let (country, color) = match super::persona::info_file(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-    ) {
+    let (country, color) = match super::persona::info_file(frontend.wol.as_ref(), game_config) {
         Some(_) => (persona.country, persona.color),
         None => crate::app::frontend::skirmish_session::seat_items(
-            &state
-                .frontend
-                .multiplayer_shell_runtime
-                .local_participant()
-                .slot,
+            &frontend.multiplayer_shell_runtime.local_participant().slot,
         ),
     };
     // Quick Match plays in YR's eight colours: one of VERA's extra lobby
@@ -683,9 +742,16 @@ fn request(state: &mut AppState) -> bool {
     } else {
         crate::app::frontend::skirmish_session::RANDOM_ITEM_DATA
     };
-    csf_line(state, "WOL:RequestingMatch", REQUEST_COLOR);
+    csf_line(
+        frontend,
+        match_state,
+        process_assets,
+        renderer,
+        "WOL:RequestingMatch",
+        REQUEST_COLOR,
+    );
     service::request(
-        state.frontend.wol.as_mut(),
+        frontend.wol.as_mut(),
         WolServiceRequest::RequestMatch {
             matchbot,
             request: MatchRequest {
@@ -697,7 +763,7 @@ fn request(state: &mut AppState) -> bool {
             },
         },
     );
-    set_stage(state.frontend.wol.as_mut(), stage::REQUESTED, Some(180));
+    set_stage(frontend.wol.as_mut(), stage::REQUESTED, Some(180));
     true
 }
 
@@ -705,7 +771,12 @@ fn request(state: &mut AppState) -> bool {
 /// match runs, an operator's text goes to `0x007A16B0`; another user's
 /// public text is dropped and its private text only logged.
 pub(super) fn ansi_message(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
     from: &crate::ui::wol_lobby::WolMember,
     text: &str,
     private: bool,
@@ -717,7 +788,17 @@ pub(super) fn ansi_message(
         }
         return;
     }
-    matchbot_text(state, text, private, options);
+    matchbot_text(
+        frontend,
+        game_config,
+        match_state,
+        process_assets,
+        renderer,
+        options_profile,
+        text,
+        private,
+        options,
+    );
 }
 
 /// `_strnicmp` of `text` against `prefix`.
@@ -728,7 +809,12 @@ fn starts_with(text: &str, prefix: &str) -> bool {
 
 /// `0x007A16B0`: the matchbot's commands.
 fn matchbot_text(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
     text: &str,
     private: bool,
     options: Option<Box<crate::app::shell_network_setup::HostOptions>>,
@@ -747,42 +833,86 @@ fn matchbot_text(
     for (prefix, key) in fail {
         if private && starts_with(text, prefix) {
             // Event 0x11 re-pings (transport); the stage stays.
-            csf_line(state, key, FAIL_COLOR);
+            csf_line(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                key,
+                FAIL_COLOR,
+            );
             return;
         }
     }
     if starts_with(text, "Exit") {
-        csf_line(state, "WOL:MatchFailExit", FAIL_COLOR);
-        service::request(state.frontend.wol.as_mut(), WolServiceRequest::LeaveChannel);
+        csf_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            "WOL:MatchFailExit",
+            FAIL_COLOR,
+        );
+        service::request(frontend.wol.as_mut(), WolServiceRequest::LeaveChannel);
         lobby::quick_match_box(
-            &mut state.frontend,
-            &state.process_assets,
+            frontend,
+            process_assets,
             "WOL:MatchFailExit",
             lobby::QuickMatchBoxThen::Exit,
         );
         return;
     }
     if starts_with(text, "Working") {
-        if stage(state.frontend.wol.as_ref()) == stage::REQUESTED {
-            set_stage(state.frontend.wol.as_mut(), stage::WORKING, Some(180));
+        if stage(frontend.wol.as_ref()) == stage::REQUESTED {
+            set_stage(frontend.wol.as_mut(), stage::WORKING, Some(180));
         }
-        csf_line(state, "GUI:MatchingProgress2", u32::MAX);
+        csf_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            "GUI:MatchingProgress2",
+            u32::MAX,
+        );
         return;
     }
     if starts_with(text, "Info ") {
-        line(state, text[5..].to_owned(), PROGRESS_COLOR);
+        line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            text[5..].to_owned(),
+            PROGRESS_COLOR,
+        );
         return;
     }
     if starts_with(text, "Pool ") {
-        csf_name_line(state, "WOL:MatchingPlayerPool", &text[5..], PROGRESS_COLOR);
+        csf_name_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            "WOL:MatchingPlayerPool",
+            &text[5..],
+            PROGRESS_COLOR,
+        );
         return;
     }
     if private && starts_with(text, "Start ") {
         // strncpy(0xB73714, payload, 0xFF), then event 0x10.
-        if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
+        if let Some(globals) = globals_mut(frontend.wol.as_mut()) {
             globals.start = options;
         }
-        start(state, &text[6..]);
+        start(
+            frontend,
+            game_config,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+            &text[6..],
+        );
         return;
     }
     // Five bytes, the space included (`0x007A1987`): a bare "need" or
@@ -792,7 +922,14 @@ fn matchbot_text(
         return;
     }
     if private {
-        csf_line(state, "WOL:MatchUnknownServerCommand", FAIL_COLOR);
+        csf_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            "WOL:MatchUnknownServerCommand",
+            FAIL_COLOR,
+        );
     }
 }
 
@@ -836,42 +973,79 @@ fn start_role<'a>(payload: &'a str, local: &str) -> Option<StartRole<'a>> {
 /// `WOL:MatchBadParameters` and go back to stage 3 (20 s), which asks
 /// again.
 /// RESIDUAL: each path's `0x0052F3F0` UDP re-init is the transport's.
-fn start(state: &mut AppState, payload: &str) {
-    let local = nickname(&state.frontend.wol_account);
+fn start(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    payload: &str,
+) {
+    let local = nickname(&frontend.wol_account);
     match start_role(payload, &local) {
         Some(StartRole::Host { guest }) => {
             let guest = guest.to_owned();
-            found_with(state, &guest);
-            csf_line(state, "WOL:MatchCreatingGame", u32::MAX);
-            set_stage(state.frontend.wol.as_mut(), stage::CREATING, Some(30));
+            found_with(frontend, match_state, process_assets, renderer, &guest);
+            csf_line(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                "WOL:MatchCreatingGame",
+                u32::MAX,
+            );
+            set_stage(frontend.wol.as_mut(), stage::CREATING, Some(30));
             lobby::quick_match_create(
-                &mut state.frontend,
-                state.platform.game_config.as_ref(),
-                &state.match_state.session,
-                &state.process_assets,
-                &state.renderer.gpu,
-                &state.persistence.options_profile,
+                frontend,
+                game_config,
+                &match_state.session,
+                process_assets,
+                &renderer.gpu,
+                options_profile,
             );
         }
         Some(StartRole::Guest { host }) => {
             let host = host.to_owned();
-            found_with(state, &host);
+            found_with(frontend, match_state, process_assets, renderer, &host);
             let name = format!("{host}'s_game");
-            csf_name_line(state, "WOL:MatchAttemptingToFindGame", &host, u32::MAX);
-            set_stage(state.frontend.wol.as_mut(), stage::SEARCHING, Some(30));
-            if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
+            csf_name_line(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                "WOL:MatchAttemptingToFindGame",
+                &host,
+                u32::MAX,
+            );
+            set_stage(frontend.wol.as_mut(), stage::SEARCHING, Some(30));
+            if let Some(globals) = globals_mut(frontend.wol.as_mut()) {
                 globals.search = Some(GameSearch {
                     name,
                     tries: 0,
                     next_at: Some(Instant::now()),
                 });
             }
-            poll_search(state.frontend.wol.as_mut());
+            poll_search(frontend.wol.as_mut());
         }
         None => {
-            csf_line(state, "WOL:MatchBadParameters", ERROR_COLOR);
-            set_stage(state.frontend.wol.as_mut(), stage::IN_LOBBY, Some(20));
-            runner_request(state);
+            csf_line(
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
+                "WOL:MatchBadParameters",
+                ERROR_COLOR,
+            );
+            set_stage(frontend.wol.as_mut(), stage::IN_LOBBY, Some(20));
+            runner_request(
+                frontend,
+                game_config,
+                match_state,
+                process_assets,
+                renderer,
+                options_profile,
+            );
         }
     }
 }
@@ -1173,12 +1347,33 @@ fn official_duel<'a>(
 /// `0x007A19E0`: the opponent, `WOL:MatchFoundWith`, then its ping.
 /// RESIDUAL: the ping status (API2+0x20 on the user's address `+0x18`) is
 /// the transport's; it is always unknown here.
-fn found_with(state: &mut AppState, opponent: &str) {
-    if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
+fn found_with(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    opponent: &str,
+) {
+    if let Some(globals) = globals_mut(frontend.wol.as_mut()) {
         globals.opponent = Some(opponent.to_owned());
     }
-    csf_name_line(state, "WOL:MatchFoundWith", opponent, FOUND_COLOR);
-    csf_line(state, "WOL:MatchOpponentPingUnknown", FOUND_COLOR);
+    csf_name_line(
+        frontend,
+        match_state,
+        process_assets,
+        renderer,
+        "WOL:MatchFoundWith",
+        opponent,
+        FOUND_COLOR,
+    );
+    csf_line(
+        frontend,
+        match_state,
+        process_assets,
+        renderer,
+        "WOL:MatchOpponentPingUnknown",
+        FOUND_COLOR,
+    );
 }
 
 /// The host's create returned (`0x00789B60`): `WOL:MatchWaitingForJoin`,
@@ -1188,9 +1383,24 @@ pub(super) fn created(state: &mut AppState, ok: bool) {
         let opponent = globals(state.frontend.wol.as_ref())
             .and_then(|globals| globals.opponent.clone())
             .unwrap_or_default();
-        csf_name_line(state, "WOL:MatchWaitingForJoin", &opponent, u32::MAX);
+        csf_name_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            "WOL:MatchWaitingForJoin",
+            &opponent,
+            u32::MAX,
+        );
     } else {
-        csf_line(state, "WOL:MatchErrorCreatingGame", ERROR_COLOR);
+        csf_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            "WOL:MatchErrorCreatingGame",
+            ERROR_COLOR,
+        );
         set_stage(state.frontend.wol.as_mut(), stage::JOIN_LOBBY, Some(30));
         advance(state);
     }
@@ -1255,7 +1465,15 @@ pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) {
         globals.search = None;
     }
     let host = search.name.trim_end_matches("'s_game").to_owned();
-    csf_name_line(state, "WOL:MatchGameChannelNotFound", &host, ERROR_COLOR);
+    csf_name_line(
+        &mut state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.renderer,
+        "WOL:MatchGameChannelNotFound",
+        &host,
+        ERROR_COLOR,
+    );
     set_stage(state.frontend.wol.as_mut(), stage::JOIN_LOBBY, Some(30));
     advance(state);
 }
@@ -1263,12 +1481,32 @@ pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) {
 /// The guest's game join answered: `WOL:MatchJoinedGame` and stage 9
 /// (90 s), or `WOL:MatchErrorJoiningGame` with the stage left at 7, whose
 /// timeout later goes back to stage 2.
-pub(super) fn game_joined(state: &mut AppState, ok: bool) {
+pub(super) fn game_joined(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    ok: bool,
+) {
     if ok {
-        csf_line(state, "WOL:MatchJoinedGame", u32::MAX);
-        set_stage(state.frontend.wol.as_mut(), stage::WAITING, Some(90));
+        csf_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            "WOL:MatchJoinedGame",
+            u32::MAX,
+        );
+        set_stage(frontend.wol.as_mut(), stage::WAITING, Some(90));
     } else {
-        csf_line(state, "WOL:MatchErrorJoiningGame", ERROR_COLOR);
+        csf_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            "WOL:MatchErrorJoiningGame",
+            ERROR_COLOR,
+        );
     }
 }
 
@@ -1277,10 +1515,23 @@ pub(super) fn game_joined(state: &mut AppState, ok: bool) {
 /// VERA: gamemd's Quick Match says no more; the refusal's line follows.
 /// A rules difference is worded as the pre-match check words it:
 /// `TXT_MISMATCH` sends players to Westwood's site for a newer version.
-pub(super) fn game_refused(state: &mut AppState, reason: Option<&'static str>) {
-    game_joined(state, false);
+pub(super) fn game_refused(
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    reason: Option<&'static str>,
+) {
+    game_joined(frontend, match_state, process_assets, renderer, false);
     if let Some(key) = refusal_line(reason) {
-        csf_line(state, key, ERROR_COLOR);
+        csf_line(
+            frontend,
+            match_state,
+            process_assets,
+            renderer,
+            key,
+            ERROR_COLOR,
+        );
     }
 }
 
@@ -1445,9 +1696,24 @@ fn cancel(state: &mut AppState) {
     }
     match globals_mut(state.frontend.wol.as_mut()).and_then(QuickMatchGlobals::cancel_search) {
         Some(Some(host)) => {
-            csf_name_line(state, "WOL:MatchGameChannelNotFound", &host, ERROR_COLOR);
+            csf_name_line(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                "WOL:MatchGameChannelNotFound",
+                &host,
+                ERROR_COLOR,
+            );
             // 0x007A1BB0 returned: the runner's stage-3 test asks again.
-            runner_request(state);
+            runner_request(
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
+            );
         }
         Some(None) => {}
         None => exit(state),
@@ -1473,7 +1739,14 @@ fn pump(state: &mut AppState) {
             event_5(&mut state.frontend, &state.process_assets);
         }
         _ => {
-            csf_line(state, "WOL:MatchTimeout", ERROR_COLOR);
+            csf_line(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                "WOL:MatchTimeout",
+                ERROR_COLOR,
+            );
             if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
                 globals.failure = 0;
                 globals.search = None;

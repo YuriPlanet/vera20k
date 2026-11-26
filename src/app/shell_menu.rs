@@ -20,6 +20,7 @@ use crate::app::frontend::shell_transition;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -32,17 +33,22 @@ impl App {
     /// widgets took it (an open drop-down closes, without a cue), or it
     /// opened the menu.
     pub(super) fn shell_menu_key(
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        launcher_audio_available: bool,
+        options_profile: &RetailOptionsProfile,
         event: &KeyEvent,
         screen: ScreenPage,
     ) -> bool {
         if event.physical_key != PhysicalKey::Code(KeyCode::Escape)
             || !event.state.is_pressed()
             || event.repeat
-            || state.frontend.shell_message_box.is_some()
-            || shell_transition::current_shell_slide_target(&state.frontend, &state.match_state)
-                .is_none()
-            || !Self::page_leaves_escape(state, screen)
+            || frontend.shell_message_box.is_some()
+            || shell_transition::current_shell_slide_target(frontend, match_state).is_none()
+            || !Self::page_leaves_escape(renderer, frontend, match_state, process_assets, screen)
         {
             return false;
         }
@@ -50,36 +56,38 @@ impl App {
         // reached them.
         let my_info = screen == ScreenPage::Wol
             && matches!(
-                state.frontend.wol.as_ref().map(|visit| &visit.page),
+                frontend.wol.as_ref().map(|visit| &visit.page),
                 Some(super::shell_wol::WolPage::MyInformation(_))
             );
         let escape =
             gui_input(Some(KeyCode::Escape), false, event.text.as_deref()).filter(|_| !my_info);
-        let controller = &mut state.frontend.shell_controller;
+        let controller = &mut frontend.shell_controller;
         if escape.is_some_and(|escape| controller.on_input(escape)) {
             return true;
         }
         // A focused edit reported the Escape as its cancel; the menu takes it.
         controller.discard_cancelled();
         Self::open_shell_menu(
-            &state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            state.audio.launcher_audio_available,
-            &state.persistence.options_profile,
+            platform,
+            renderer,
+            frontend,
+            process_assets,
+            launcher_audio_available,
+            options_profile,
         );
         true
     }
 
     /// Movies, credits, Options, the Keyboard page, score screens and a match
     /// keep their own Esc.
-    fn page_leaves_escape(state: &AppState, screen: ScreenPage) -> bool {
-        let chooser_open = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_some();
+    fn page_leaves_escape(
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        screen: ScreenPage,
+    ) -> bool {
+        let chooser_open = frontend.skirmish_shell_state.choose_map_modal.is_some();
         match screen {
             ScreenPage::MainMenu
             | ScreenPage::SinglePlayer
@@ -88,18 +96,21 @@ impl App {
             | ScreenPage::Mods
             | ScreenPage::Campaign => true,
             ScreenPage::LoadSavedGame => {
-                Self::load_saved_game_leaves_escape(state.frontend.load_saved_game.as_ref())
+                Self::load_saved_game_leaves_escape(frontend.load_saved_game.as_ref())
             }
-            ScreenPage::LanLobby => {
-                crate::app::shell_lan::leaves_escape(state.frontend.lan.as_ref())
-            }
+            ScreenPage::LanLobby => crate::app::shell_lan::leaves_escape(frontend.lan.as_ref()),
             ScreenPage::NetworkSetup if !chooser_open => {
-                crate::app::input::multiplayer_setup::leaves_escape(state)
+                crate::app::input::multiplayer_setup::leaves_escape(
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                )
             }
             ScreenPage::Skirmish | ScreenPage::NetworkSetup => {
-                Self::skirmish_leaves_escape(&state.frontend.skirmish_shell_state)
+                Self::skirmish_leaves_escape(&frontend.skirmish_shell_state)
             }
-            ScreenPage::Wol => Self::wol_leaves_escape(&state.frontend),
+            ScreenPage::Wol => Self::wol_leaves_escape(frontend),
             _ => false,
         }
     }
@@ -287,7 +298,15 @@ impl App {
         {
             crate::app::input::keyboard::prepare_terminal_exit(state);
         }
-        Self::close_launcher_options_terminal(state);
+        Self::close_launcher_options_terminal(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         if state
             .frontend
             .shell_message_box

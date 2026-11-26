@@ -106,7 +106,17 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
             .multiplayer_shell_runtime
             .record_cooperative_win(rows, elapsed_ticks, house)
         {
-            crate::app::input::messages::post_cooperative_save_result(state, saved);
+            crate::app::input::messages::post_cooperative_save_result(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                saved,
+            );
         }
     }
     let next = state
@@ -673,7 +683,10 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
             finish(state);
             let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             crate::app::shell_lan::append_chat(
-                state,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
                 crate::ui::lan_shell::LanChatLine {
                     text: text.encode_utf16().collect(),
                     color: u32::MAX,

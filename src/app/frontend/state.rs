@@ -320,12 +320,34 @@ impl ShellMessageBox {
                 | ShellMessageBoxPurpose::ModFiles(_)
                 | ShellMessageBoxPurpose::ModMade(_)
         ) || self.is_mod_import()
+            || self.is_android_mods_box()
+    }
+
+    /// Android: the Mods page's own notice and delete question.
+    fn is_android_mods_box(&self) -> bool {
+        #[cfg(target_os = "android")]
+        return matches!(
+            self.purpose,
+            ShellMessageBoxPurpose::ModNotice | ShellMessageBoxPurpose::ModDelete(_)
+        );
+        #[cfg(not(target_os = "android"))]
+        false
     }
 
     pub(crate) fn is_mod_import(&self) -> bool {
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        #[cfg(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        ))]
         return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
-        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(
+            windows,
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android"
+        )))]
         false
     }
 
@@ -381,13 +403,25 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// original game, for the next start and starts the game again.
     ModRestart(Option<String>),
     /// ZIPs or extracted parts selected for Add Mod, or their import in progress.
-    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     ModImport(Box<crate::app::shell_mod_import::Dialog>),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),
     /// The Mods page's New Mod made this folder: Open Folder shows it, Close
-    /// closes.
+    /// closes. Android says so in a notice: no file manager opens its folders.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     ModMade(std::path::PathBuf),
+    /// Android: what a Mods page action came to, with OK.
+    #[cfg(target_os = "android")]
+    ModNotice,
+    /// Android: Delete Mod's question; Delete removes this folder.
+    #[cfg(target_os = "android")]
+    ModDelete(String),
 }
 
 /// The boxes of the Mods page's Check Files, in the order they come.

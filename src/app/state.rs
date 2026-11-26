@@ -181,7 +181,13 @@ impl AppState {
     /// over it), past the splash, with no dialog.
     pub(crate) fn main_menu_at_rest(&self) -> bool {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        input_layer(self) == InputLayer::Screen(ScreenPage::MainMenu)
+        input_layer(
+            &self.platform,
+            &self.renderer,
+            &self.frontend,
+            &self.match_state,
+            &self.persistence,
+        ) == InputLayer::Screen(ScreenPage::MainMenu)
             && self.frontend.shell_route == ShellRoute::MainMenu
             && self.frontend.startup_splash.is_none()
             && !self.frontend.main_menu_dialog_open()
@@ -199,18 +205,10 @@ impl AppState {
         self.match_state.input.armed_super_weapon_type()
     }
 
-    pub(crate) fn sim_view(&self) -> Option<crate::sim::runtime::SimView<'_>> {
-        self.match_state.sim_view()
-    }
-
     pub(crate) fn resolved_terrain(
         &self,
     ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
         self.match_state.resolved_terrain()
-    }
-
-    pub(crate) fn overlay_registry(&self) -> Option<&OverlayTypeRegistry> {
-        active_overlay_registry(&self.frontend, &self.match_state)
     }
 
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {

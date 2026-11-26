@@ -83,8 +83,26 @@ impl Action {
             // A startup failure must not write defaults over the retail profile.
             Self::Quit => event_loop.exit(),
             Self::BackToMenu => App::leave_mission_result_screen(state),
-            Self::Resume => App::enter_in_game_menu_state(state, InGameMenuState::Closed),
-            Self::Abort => App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm),
+            Self::Resume => App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::Closed,
+            ),
+            Self::Abort => App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::AbortConfirm,
+            ),
             Self::Leave => App::apply_in_game_modal_outcome(
                 state,
                 ModalOutcome::LeaveMatch { destruct: false },
@@ -134,7 +152,13 @@ impl Buttons {
     /// The card that takes input now: render draws the same card from the
     /// same decision (`input::precedence`).
     fn for_state(state: &AppState) -> Option<Self> {
-        match crate::app::input::precedence::input_layer(state) {
+        match crate::app::input::precedence::input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ) {
             InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(
                 &state.frontend.asset_import,
                 &state.process_assets,
