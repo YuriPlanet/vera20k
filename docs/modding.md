@@ -50,13 +50,13 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
   See [More detail](#more-detail).
 - Large conversions. Selecting their data does not establish support for all their
   extension features.
-- New behaviour in code. A mod or map can carry a [Wasm module](wasm-modules.md), a
+- New behaviour in code. A mod or map can carry a [Wasm module](wasm-modules/guide.md), a
   sandboxed program that changes the game through its own rules. It is a preview.
 
 **You can't:**
 
 - Load DLLs, Syringe or a patched `gamemd.exe`.
-- Add new behaviour with a DLL, script or plugin outside the [Wasm modules](wasm-modules.md),
+- Add new behaviour with a DLL, script or plugin outside the [Wasm modules](wasm-modules/guide.md),
   which have no files, network or clock.
 - Play without the original game.
 
@@ -508,10 +508,10 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
-- [Wasm modules](wasm-modules.md): build a `rules.wasm` or a `ui.wasm`, put it in a mod
+- [Wasm modules](wasm-modules/guide.md): build a `rules.wasm` or a `ui.wasm`, put it in a mod
   or a map, and declare its triggers in `rulesmd.ini`; tutorials for
-  [simulation](wasm-modules-tutorial.md) and [client](wasm-modules-ui-tutorial.md) modules
-  and the [Rust SDK reference](wasm-modules-sdk.md).
+  [simulation](wasm-modules/rust-tutorial.md) and [client](wasm-modules/rust-ui-tutorial.md) modules
+  and the [Rust SDK reference](wasm-modules/rust-sdk.md).
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
   [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
   it. The official downloads hold all of Ares, which a game's data turns on, and none of the

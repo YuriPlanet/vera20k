@@ -474,7 +474,7 @@ All are v1 (phase 2).
 
 ## 3. SDK mappings
 
-The table uses TypeScript. Rust uses newtypes and snake case (`where_prop`). Names are provisional. The TypeScript SDK is in progress. The 0.1.0 Rust SDK makes the same calls under Rust names: queued callbacks take a dispatch key from `named_actions!` (`.enqueue(KEY)`), exports come from macros (`init!`, `on_rules!`, `on_scenario_start!`, `on_frame!`, `on_events!`, `on_decide!`, `on_message!`), variables from `vars!`, and its `where_var` tests global variables only.
+The table illustrates how SDK operations map to host calls. Use the [TypeScript SDK reference](../wasm-modules/ts-sdk.md) for the implemented names and signatures. Rust uses newtypes and snake case (`where_prop`). The 0.1.0 Rust SDK makes the same calls under Rust names: queued callbacks take a dispatch key from `named_actions!` (`.enqueue(KEY)`), exports come from macros (`init!`, `on_rules!`, `on_scenario_start!`, `on_frame!`, `on_events!`, `on_decide!`, `on_message!`), variables from `vars!`, and its `where_var` tests global variables only.
 
 | Purpose | TypeScript | Host call |
 | --- | --- | --- |

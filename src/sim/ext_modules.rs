@@ -603,6 +603,12 @@ impl ExtModules {
         self.slots.iter().map(|s| s.last_frame_ops).collect()
     }
 
+    /// Each loaded module's memory size in bytes (`memory.size`).
+    #[cfg(test)]
+    pub(crate) fn memory_bytes(&self) -> Vec<usize> {
+        self.slots.iter().map(|s| s.module.memory_len()).collect()
+    }
+
     /// Keeps `line`, dropping the oldest past [`LOG_KEPT`].
     fn keep_log(&mut self, line: String) {
         if self.log.len() >= LOG_KEPT {

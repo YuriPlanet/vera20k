@@ -251,6 +251,107 @@ fn a_rust_built_module_runs() {
     );
 }
 
+/// Actual AssemblyScript modules from the SDK's example build, played on both
+/// sides of a player-world restore. The short regression compares all saved
+/// module data, including memory, globals, RNG, triggers and pending orders.
+#[test]
+fn typescript_modules_restore_their_complete_state() {
+    check_typescript_module_restore(30, false);
+}
+
+/// RFC 0001 open question 2 additionally requires whole-game equality across
+/// 9,000 frames, no traps and bounded module memory. Keep that stronger
+/// criterion independently runnable while compiler selection remains open.
+#[test]
+#[ignore = "slow; RFC 0001 whole-game compiler acceptance experiment"]
+fn typescript_modules_resume_from_a_save_exactly() {
+    check_typescript_module_restore(4500, true);
+}
+
+fn check_typescript_module_restore(half: u32, whole_game: bool) {
+    let Some(paths) = std::env::var_os("VERA20K_TEST_TS_WASM") else {
+        return;
+    };
+    let save = |scene: &HeadlessScenario| {
+        crate::sim::snapshot::GameSnapshot::save_validated(
+            scene.sim(),
+            0,
+            scene.runtime.resources.rules.simulation_config_hash(),
+            "ext modules",
+            0,
+        )
+    };
+    let module_state = |scene: &HeadlessScenario| {
+        crate::util::save_codec::serialize(scene.sim().ext_modules()).expect("module state saves")
+    };
+    for path in std::env::split_paths(&paths) {
+        let Some(mut live) = scenario_with_computer() else {
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("module file reads");
+        live.runtime
+            .simulation
+            .install_ext_module(&live.runtime.resources.rules, ModuleSource::Mod, &bytes)
+            .expect("module installs");
+        for _ in 0..half {
+            live.tick();
+        }
+        let halfway = live.sim().ext_modules().memory_bytes()[0];
+        let mut resumed = scenario_with_computer().expect("second load");
+        let snapshot = crate::sim::snapshot::GameSnapshot::load(&save(&live)).expect("save loads");
+        let (restored, _) = snapshot
+            .restore_player_world(
+                crate::sim::world::SnapshotProcessState::Live(live.sim()),
+                &resumed.runtime.resources.rules,
+                resumed.sim().resolved_terrain().expect("terrain").clone(),
+                *resumed.sim().terrain_speed_config(),
+                crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
+            )
+            .expect("player world restores");
+        resumed.runtime.simulation = restored;
+        assert!(
+            module_state(&resumed) == module_state(&live),
+            "{} at restore",
+            path.display()
+        );
+        for frame in 1..=half {
+            live.tick();
+            resumed.tick();
+            if frame % 500 == 0 || frame == half {
+                assert!(
+                    module_state(&resumed) == module_state(&live),
+                    "{} after {frame} frames",
+                    path.display()
+                );
+            }
+        }
+        let status = live.sim().ext_modules().status();
+        assert_eq!(status[0].1, None, "{} stopped", path.display());
+        assert_eq!(resumed.sim().ext_modules().status(), status);
+        if whole_game {
+            let end = live.sim().ext_modules().memory_bytes()[0];
+            assert_eq!(
+                end,
+                halfway,
+                "{}: memory grew after frame {half}",
+                path.display()
+            );
+            assert_eq!(
+                resumed.sim().state_hash(),
+                live.sim().state_hash(),
+                "{}: final game hash",
+                path.display()
+            );
+            assert!(
+                save(&resumed) == save(&live),
+                "{}: the saves differ at frame {}",
+                path.display(),
+                2 * half
+            );
+        }
+    }
+}
+
 /// Smoke-runs the playtest mods (`sdk/examples/veteran-fury`,
 /// `siege-doctrine`, `meteor-storm`, `trigger-lab`) when
 /// `VERA20K_TEST_PLAYTEST_WASM` lists their modules, `:`-separated: each

@@ -1,0 +1,4 @@
+{
+  "kind": "rules",
+  "notify": ["Pong"]
+}

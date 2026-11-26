@@ -9,7 +9,7 @@
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1.0`, `vera:client@1.0` (preview) |
 
-**Implementation status.** Version 0.1.0 describes the engine as implemented: phase 1 (`rules.wasm`, the control points included) and phase 2 (`ui.wasm` client modules) are in the engine, together with the Rust SDK. The TypeScript SDK is in progress. Where the engine differs from earlier drafts, this text follows the engine. Design that is not implemented yet stays in the text and is marked "not implemented in 0.1.0" or carries tier `later` in the appendix. The API is a `0.x` preview (Process step 4): numbers, limits and layouts may still change before version 1 freezes.
+**Implementation status.** Version 0.1.0 describes the engine as implemented: phase 1 (`rules.wasm`, the control points included) and phase 2 (`ui.wasm` client modules) are in the engine, together with the Rust SDK and [TypeScript SDK](../wasm-modules/ts-sdk.md). Where the engine differs from earlier drafts, this text follows the engine. Design that is not implemented yet stays in the text and is marked "not implemented in 0.1.0" or carries tier `later` in the appendix. The API is a `0.x` preview (Process step 4): numbers, limits and layouts may still change before version 1 freezes.
 
 ## Summary
 
@@ -83,10 +83,10 @@ Each E1 runs its own instance of `GIPanic` (section 7). Only an E1 below 30% hea
 
 ### Module code
 
-Only the compiled module reaches the engine. Authors keep the source and compiler in their toolchain. Both official SDKs express the same behavior below: the Rust example uses the 0.1.0 SDK, the TypeScript example shows the planned SDK, which is in progress. Bind the type in either INI or code. With the INI above, register the named callback and omit trigger creation in code.
+Only the compiled module reaches the engine. Authors keep the source and compiler in their toolchain. Both official SDKs express the same behavior below: the Rust example uses the 0.1.0 SDK, the TypeScript sketches illustrate the design. For buildable examples, see the [TypeScript simulation tutorial](../wasm-modules/ts-tutorial.md) and [client tutorial](../wasm-modules/ts-ui-tutorial.md). Bind the type in either INI or code. With the INI above, register the named callback and omit trigger creation in code.
 
 ```ts
-// TypeScript (AssemblyScript-compatible)
+// TypeScript design sketch
 import { Trigger, Event, Prop, Op, Techno, Mission, Var, VarTarget, ActionDef, Target, Rules,
          TakeDamageEvent, namedAction, onScenarioStart, onFrame, Every } from "@vera20k/sdk";
 
@@ -151,14 +151,14 @@ vera20k_sdk::on_frame!(every = 15, check_waves);   // One on_frame! per module
 vera20k_sdk::on_events!(GI_PANIC => gi_panic);     // Dispatches on_events records by key
 ```
 
-Each SDK builds `rules.wasm` or `ui.wasm` with one command (the Rust SDK: `cargo build --release` for the wasm32 target with the allowlisted features). Functions such as `Techno.setMission` and `Trigger.on` are meant to be generated from the appendix tables. In 0.1.0 the Rust SDK is written by hand, and an engine test checks its property constants against the engine's property table (section 12). Each wrapper makes only the host calls listed in [appendix section 3](0001-wasm-extension-modules-api.md#3-sdk-mappings), usually exactly one (section 5a). The Rust SDK's crate is `vera20k-sdk`. The TypeScript package name is a placeholder.
+Each SDK builds `rules.wasm` or `ui.wasm` with one command (the Rust SDK: `cargo build --release` for the wasm32 target with the allowlisted features). Functions such as `Techno.setMission` and `Trigger.on` are meant to be generated from the appendix tables. In 0.1.0 the Rust SDK is written by hand, and an engine test checks its property constants against the engine's property table (section 12). Each wrapper makes only the host calls listed in [appendix section 3](0001-wasm-extension-modules-api.md#3-sdk-mappings), usually exactly one (section 5a). The Rust SDK's crate is `vera20k-sdk`. The TypeScript package is `@vera20k/sdk`, available in the source tree under `sdk/typescript`.
 
 ### Example: launch a nuke when the first unit fires
 
 Bind a `Fire` trigger to the first unit on the map by creation serial. When it fires, the module action drops a nuke on its target cell.
 
 ```ts
-// TypeScript (AssemblyScript-compatible)
+// TypeScript design sketch
 import { Trigger, Event, Find, Prop, Op, Category, Action, FireEvent,
          NO_HANDLE, onScenarioStart } from "@vera20k/sdk";
 
@@ -371,10 +371,10 @@ Delivery events report what has already happened. A module action cannot cancel 
 
 The module contract is the Wasm interface of functions and tables in the appendix. Any compiler producing a module that passes load validation can target it. The engine treats every module alike.
 
-- **Official SDKs: TypeScript and Rust.** Generate both from the same interface definition and machine-readable tables (section 12), with identical capabilities and language-appropriate names. Version them alongside the API. Each includes templates, a build command, watch mode and examples. In 0.1.0 the Rust SDK is written by hand (tests check its constants against the engine's tables) and comes with example modules and mods. Templates and watch mode are not implemented. The TypeScript SDK is in progress.
+- **Official SDKs: TypeScript and Rust.** Generate both from the same interface definition and machine-readable tables (section 12), with identical capabilities and language-appropriate names. Version them alongside the API. Each includes templates, a build command, watch mode and examples. In 0.1.0 the Rust SDK is written by hand (tests check its constants against the engine's tables) and comes with example modules and mods. Rust templates and watch mode remain unimplemented. The TypeScript SDK generates its numbered tables and event views from the Rust SDK. Its `vera20k` command provides `init`, `build`, `watch` and `generate`.
 - The SDK generates named fields per event kind and reads delivery records in place. Triggers use `.immediate()` for immediate actions, `.enqueue()` for queued callbacks and `.decideSync()` for synchronous decisions (`decide_sync` in Rust). See the [SDK mapping](0001-wasm-extension-modules-api.md#3-sdk-mappings) for the host calls made by each wrapper.
 
-- **TypeScript SDK.** Compile TypeScript to Wasm ahead of time and keep the module small enough to embed in a map. The provisional compiler is AssemblyScript, pinned to an exact version with the SDK, pending a minimal compilation experiment (open question 2). It is not full TypeScript: `tsc` serves editors and type checking, AssemblyScript defines numeric semantics, and synchronous decision handlers must not allocate. The API uses the intersection of TypeScript and AssemblyScript.
+- **TypeScript SDK.** Compile TypeScript to Wasm ahead of time and keep the module small enough to embed in a map. The SDK pins AssemblyScript 0.28.20. Its use for version 1 remains subject to the acceptance criteria in open question 2. It is not full TypeScript: `tsc` serves editors and type checking, AssemblyScript defines numeric semantics, and synchronous decision handlers must not allocate. The API uses the intersection of TypeScript and AssemblyScript.
   - No `any`, unions other than `T | null`, callbacks that capture outside variables, or `try`/`catch`.
   - Pass grouped arguments as constructed classes or builders, without structural object types or object literals.
   - References are plain `i64` values with no methods or per-reference object allocation. In AssemblyScript an accessor such as `t.health` would require an object per reference. Namespace functions take the reference first, e.g. `Techno.health(t)` or `Techno.setMission(t, Mission.Hunt)`.
@@ -382,7 +382,7 @@ The module contract is the Wasm interface of functions and tables in the appendi
   - The SDK supplies type aliases for `i64`, `i32`, `f32` and references (`Techno`, `House`, `Node`, etc.). Its `tsconfig` excludes `lib.dom`, avoiding a collision with DOM `Node`.
   - Top-level code becomes the initialization function (section 3).
 
-  The same source can be type-checked with `tsc` and compiled with AssemblyScript. The examples in this RFC are valid in both.
+  The same source can be type-checked with `tsc` and compiled with AssemblyScript. Buildable examples live under `sdk/typescript/examples`.
 - **Rust SDK.** Intended for authors seeking full control and higher performance. The engine's own compatibility tests also use it. References are newtypes and can have methods such as `techno.health()`.
 - **Build output.** Both SDKs' build commands produce modules that pass the load checks. When the TypeScript SDK compiles with AssemblyScript, it exports top-level code as the initialization function instead of emitting a `start` section, emits no default `env.abort`, `env.trace` or `env.seed` import, and writes the `vera.*` custom sections after compiling. When a Rust module uses the standard library, the Rust SDK runs wasm-opt after the build to rewrite the reference-types encoding brought in by the precompiled standard library into an allowlisted encoding. `no_std` modules skip this step. The 0.1.0 Rust SDK and its examples are `no_std` and the wasm-opt step is not implemented. Even in a `no_std` module, `core::fmt` brings in an encoding the load checks refuse.
 - **Other mod languages.** C, C++, Python, .NET (including C#), Go, Ruby, Elixir, Perl and Zig can all target the same ABI. Each toolchain must emit a Wasm core module meeting section 3's restrictions, with imports and exports matching the appendix signatures. Community SDKs can generate wrappers from the tables in section 12. Toolchains requiring an interpreter or runtime must include it in the module and meet the import and size limits below.
@@ -762,7 +762,7 @@ A module can operate a house as a player would: a simulation module takes over a
 Modules create triggers using the same model as maps:
 
 ```ts
-// TypeScript (AssemblyScript-compatible). convoy is the transport handle to watch.
+// TypeScript design sketch. convoy is the transport handle to watch.
 const americans = Rules.country("Americans");
 if (americans != NO_HANDLE) {
   const house = Find.houses().country(americans).first();
@@ -903,7 +903,7 @@ See [client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) for INI 
 A complete round trip: the player clicks a button, the UI sends a message, the simulation validates it and writes a house variable, and the UI reads the variable to update the button.
 
 ```ts
-// ui.wasm — TypeScript (AssemblyScript-compatible)
+// ui.wasm — TypeScript design sketch
 import { ReinforcementsBought } from "./generated/vars";
 const BUY_MESSAGE = new Uint8Array(1);           // Message type 1: purchase.
 BUY_MESSAGE[0] = 1;
@@ -924,7 +924,7 @@ onRender((dt: f32, alpha: f32): void => {
 ```
 
 ```ts
-// rules.wasm — TypeScript (AssemblyScript-compatible)
+// rules.wasm — TypeScript design sketch
 import { ReinforcementsBought } from "./generated/vars";
 const HTNK = Rules.technoType("HTNK");
 
@@ -954,7 +954,7 @@ onMessage((sender: House, data: Uint8Array): void => {
 
 ### 12. Versions and ABI
 
-- A WIT-syntax interface definition and machine-readable tables (event kinds, action kinds, properties, name kinds, node kinds and other enums) are the sole API source. Project generators produce Rust and TypeScript SDK wrappers, reference docs and compatibility checks. Other bindings use the same tables. WIT describes the interface. Modules do not use the Component Model canonical ABI. Not implemented in 0.1.0: there is no WIT file or generator yet. The tables live in the engine's sandbox crate (import list, property, event and action name tables), the appendix documents them, and the hand-written Rust SDK is checked against them by tests.
+- A WIT-syntax interface definition and machine-readable tables (event kinds, action kinds, properties, name kinds, node kinds and other enums) are the sole API source. Project generators produce Rust and TypeScript SDK wrappers, reference docs and compatibility checks. Other bindings use the same tables. WIT describes the interface. Modules do not use the Component Model canonical ABI. Not implemented in 0.1.0: there is no WIT file or WIT-based generator yet. The tables live in the engine's sandbox crate (import list, property, event and action name tables), the appendix documents them, and the hand-written Rust SDK is checked against them by tests.
 - The binary interface is a core module ABI: core Wasm imports and exports, `i64` references and values, `i32` IDs, pointer plus length for strings, bytes and buffers, and batch results written by the host into module buffers. Host imports return at most one value: a call that yields a value returns its status and the host writes the value through out pointers into module memory, because stable Rust and AssemblyScript cannot import multi-value functions. Modules may still use multiple return values internally (section 3). Appendix signatures specify values, statuses and pagination positions.
 - Freeze imports and exports for both interfaces ([appendix 1](0001-wasm-extension-modules-api.md#1-simulation-abi) and [appendix 2](0001-wasm-extension-modules-api.md#2-client-abi)). Event kinds, action kinds, properties, name kinds, search scopes, node kinds, client event and action kinds, and all other enums are append-only tables extended in minor versions. `has_kind` permits fallback on older engines missing an entry.
 - A future major version may layer a Component Model adapter over the core ABI. Existing modules continue using the core ABI unchanged.
@@ -1082,7 +1082,7 @@ Planned order after acceptance:
 | 3 | Reimplement a real mission with modules, test with external modders and freeze version 1 |
 | Later | Additional decidable events individually, module trajectories (`Launch`, `ProjectileFrame`), peer calls, player UI modules |
 
-Status at 0.1.0: phase 1 is in the engine, with the control points, the preview decisions of sections 6f and 9 and the Rust SDK. Its TypeScript SDK is in progress, and the lobby does not yet offer "mod AI" seats or the "Allow automation" switch. Phase 2 is in the engine, except the lobby notice for `MapUI=no`. Phase 3 has not started. Items this text marks "not implemented in 0.1.0" remain open in their phase.
+Status at 0.1.0: phase 1 is in the engine, with the control points, the preview decisions of sections 6f and 9 and the Rust and TypeScript SDKs. The lobby does not yet offer "mod AI" seats or the "Allow automation" switch. Phase 2 is in the engine, except the lobby notice for `MapUI=no`. Phase 3 has not started. Items this text marks "not implemented in 0.1.0" remain open in their phase.
 
 ## Design scope
 
@@ -1107,7 +1107,7 @@ Outside version 1. Each item gets a follow-up RFC or a new minor version.
 Question numbers are unchanged so earlier discussion still resolves. **Decided**: the answer is in the main text. **To measure**: there is a provisional answer, which freezes with version 1 only after the listed experiment.
 
 1. **Browser (decided in 0.1.0).** The browser build runs modules with the browser's own WebAssembly engine, on the same rewritten bytes as native builds (sections 3 and 4), and wasmi serves only standalone WASI tools. Measured in headless Chrome on 2026-11-24 with 200,000-operation calls after the rewrite: 0.025 ms of computation, 0.045 ms of calls and 0.22 ms of host calls (`get`) per call, against 0.9, 2.4 and 0.4 ms for wasmi 2, which missed the 2 ms bar on calls. The instance is a main-thread object, so a browser match with modules does not move frames to the simulation worker. A desktop client and a browser page played relay matches with two playtest mods for 5,091 frames without a desync. Still to measure: Firefox, Safari and the slowest supported device.
-2. **TypeScript compiler (to measure).** Provisionally AssemblyScript (section 5a). The TypeScript SDK is in progress. Experiment: compile equivalents of `tutorial-bounty` and `decide-damage`, the latter allocating each frame, pass load checks and run 9,000 frames with a save and load midway. Equal full hashes, bounded memory and no budget overrun settle it. If only garbage collection overruns, switch to the `minimal` runtime. Failing that, measure WARPO, and failing that ship only the Rust SDK in version 1.
+2. **TypeScript compiler (to measure).** The SDK pins AssemblyScript 0.28.20 (section 5a). Experiment: compile equivalents of `tutorial-bounty` and `decide-damage`, the latter allocating each frame, pass load checks and run 9,000 frames with a save and load midway. Equal full hashes, bounded memory and no budget overrun settle it. The example modules passed build, load and host-call checks. In the save/load experiment the module digests matched at each 500-frame checkpoint, but the final whole-match saves differed. A Rust-built control module showed the same discrepancy. Whole-match acceptance remains open. If only garbage collection overruns, switch to the `minimal` runtime. Failing that, measure WARPO, and failing that ship only the Rust SDK in version 1.
 3. **Metering (to measure).** The rules are decided (sections 3, 4 and 15): shared instrumentation, per-operation NaN canonicalization and word-based page digests. Experiment: measure basic-block metering, stack metering and NaN canonicalization separately on native and browser builds, and a candidate digest (e.g. XXH32) on wasm32 over 53 pages and for one full hash. Results adjust only budgets and limits. 0.1.0 uses XXH32 per 64 KiB page for the digests (section 15.1).
 4. **INI format (decided).** Mods use named sections and `Wasm.Tags` (the engine's name for the key drafts called `Vera.Tags`). Maps use stock trigger encoding and action 1036 (section 6a; not implemented in 0.1.0).
 5. **Event and action numbers (decided, changed in 0.1.0).** Each table numbers new VERA kinds from 1000 upward (section 7 and appendix), as the engine does. The drafts' 100000 + n is 1000 + n. Property IDs are positions in the property table (appendix 7).
