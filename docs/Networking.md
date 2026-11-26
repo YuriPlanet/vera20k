@@ -1041,6 +1041,17 @@ names Kratos when it is active. Older lobbies can ignore the optional `kratos` s
 detail. Older clients and a rolled-back client keep the existing version and rules
 checks; a mismatch refuses the start.
 
+NPatch follows the same rule, with its launch setting as well as its data answer.
+The rules parts are `settings.npatch` (any NPatch feature or fix plays),
+`settings.npatch_fixes` (the NPExt fix chains play), and `settings.npatch_setting`
+(`on` or `off` when the player does not leave it Auto). The startup agreement bytes
+carry the same three answers. A game with no NPatch and Auto adds none and keeps the
+previous form. On and Off are compared before a map loads, so two peers whose maps
+would disagree through the launch setting are refused at the room or start; Auto
+leaves the map's own keys in the match's rules. A mixed room with a build that has no
+NPatch setting is refused by the build check, and a rollback reads its old data-only
+answer.
+
 [RA2 Mode](ra2-mode.md) (`[VERA] RA2Mode=` or `-ra2`) is not a room rule either: each
 game reads it at start, and it adds its own words to the rules digest
 (`ProcessAssets::multiplayer_rules_digest`) and `ra2: true` to the rules parts, so a

@@ -68,7 +68,9 @@ layout `0x8C73B1B3`, the swap, the `2e39b88dd` writer's layout `0xB65C0664`
 both, and the `2e67ebaa8` writer's layout `0xE5279FB2` only the NPatch reads.
 Each converts with its missing parts empty; without the reads, the switch
 stays off, as those matches played. No frozen save holds `0x8C73B1B3`. The
-`fb29ff473` writer covers direct loading of the current layout `0xBA51A42C`.
+`fb29ff473` writer covers direct loading of the previous current layout
+`0xBA51A42C`, which predates the NPatch launch setting and converts with Auto.
+The current writer's `0xA4F12FAC` adds that setting.
 
 Run the menu and compatibility tests with this command.
 
