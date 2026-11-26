@@ -43,15 +43,23 @@ NSP 命名格式为 `dist/ver20k-Yuris-Revenge-v<VERSION>.nsp`，
 
 ## 手动放置游戏资源
 
-从 `0.0.5` 起，NSP 只交付客户端程序和安装元数据。请从自己的《红色警戒 2》和
-《尤里的复仇》安装目录手动复制游戏资源到 SD 卡根目录下的 `game` 文件夹。
-两套主 MIX 文件直接放在这个目录里，使用小写文件名。
+从 `0.0.5` 起，NSP 只交付客户端程序和安装元数据，不包含游戏资源。
+
+1. 从自己的《红色警戒 2：尤里的复仇》安装目录准备游戏文件。
+2. 在 Switch SD 卡的根目录创建 `game` 文件夹。
+3. 将安装目录中的游戏资源直接复制到 `game`，不要再套一层安装目录。
+4. 从 [Release 页面](https://github.com/Fisheatingcats/vera20k-switch/releases/latest)下载并安装 NSP，然后启动游戏。
+
+两套主 MIX 文件必须直接放在 `game` 下，使用小写文件名：
 
 ```text
 SD:/
 └── game/
     ├── ra2.mix
-    └── ra2md.mix
+    ├── ra2md.mix
+    ├── language.mix
+    ├── langmd.mix
+    └── ...
 ```
 
 主 MIX 以外，请一并复制安装目录中的语言、补丁和媒体归档，例如 `language.mix`、
@@ -59,8 +67,9 @@ SD:/
 `movies01.mix` 和 `movies02.mix`。如有 UTF-16LE 的 `subtitlemd.txt` 或
 `subtitle.txt`，放在同一目录。使用实际资源文件，避免复制零字节占位文件。
 
-客户端默认从 `sdmc:/game` 读取。旧 `config.toml` 的 `[paths] ra2_dir` 继续具有优先权；
-如果它仍指向 `romfs:/`，请先备份再移开旧配置，以使用 SD 卡默认目录。
+客户端默认从 `sdmc:/game` 读取。旧 `sdmc:/switch/vera20k/config.toml` 的
+`[paths] ra2_dir` 继续具有优先权；如果它指向旧路径，请先备份配置，再改为
+`ra2_dir = "sdmc:/game"` 或移开旧配置，以使用 SD 卡默认目录。
 配置、日志和录像保存在 `sdmc:/switch/vera20k`。
 首次发现旧 SD `saves` 目录时，
 导入其中 `.bin` / `.sav` 文件，保留原件及账号下已有文件；导入完成标记按账号保存。

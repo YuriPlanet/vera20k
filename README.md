@@ -15,6 +15,32 @@
 
 # VERA20K
 
+## Nintendo Switch 版
+
+本分支提供实验性的《红色警戒 2：尤里的复仇》Switch 移植。
+从 [Switch Release](https://github.com/Fisheatingcats/vera20k-switch/releases/latest) 下载并安装 NSP。
+安装包不含游戏资源：请从自己的游戏安装目录复制资源到 Switch SD 卡根目录的 `game/`。
+
+Switch 真机运行截图（早期版本，左上角为调试信息）：
+
+![Switch 实机上的对局开始画面](docs/images/switch/base-start.jpg)
+![Switch 实机上的基地建设画面](docs/images/switch/base-buildings.jpg)
+
+```text
+SD 卡根目录/
+└── game/
+    ├── ra2.mix
+    ├── ra2md.mix
+    ├── language.mix
+    ├── langmd.mix
+    └── ...
+```
+
+`ra2.mix` 和 `ra2md.mix` 直接放在 `game/` 下，不要再套一层文件夹；其余资源也需一并复制，
+否则可能缺少语言、声音或动画。游戏默认读取 `sdmc:/game`。旧配置可能覆盖该路径，
+资源清单、配置和故障排查见 [Switch 使用说明](platform/switch/README.md#手动放置游戏资源)。
+当前版本仍在测试，部分建筑可能显示不全。
+
 VERA20K is a new engine for Red Alert 2: Yuri's Revenge. It plays like the original, with the same
 units, maps and look, and runs on Windows, macOS and Linux. It supports battles with up to
 20,000 units on one map. Offline Skirmish has up to 120 player slots. LAN and online matches have up to 30.
