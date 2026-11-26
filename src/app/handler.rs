@@ -1584,11 +1584,78 @@ impl App {
     }
 }
 
+/// Android: turns the activity's queued pointing-device events into window events.
+#[cfg(target_os = "android")]
+fn pump_android_pointer(app: &mut App, event_loop: &ActiveEventLoop) {
+    let Some(window_id) = app.state.as_ref().map(|state| state.platform.window.id()) else {
+        return;
+    };
+    let in_game = app
+        .state
+        .as_ref()
+        .is_some_and(|state| state.frontend.screen == GameScreen::InGame);
+    let pan = crate::app::input::android_mouse::take_pan();
+    if in_game
+        && let Some((dx, dy)) = pan
+        && let Some(state) = app.state.as_mut()
+    {
+        // A touchpad's two-finger drag pans like the touchscreen's: the map
+        // follows the fingers, so the camera moves against them.
+        let zoom = state.match_state.input.zoom_level.max(0.01);
+        let (x, y) = (
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        );
+        crate::app::input::camera::set_camera_position(
+            &mut state.match_state.input,
+            (x + dx / zoom, y + dy / zoom),
+        );
+    }
+    if !in_game {
+        let steps = crate::app::input::android_mouse::take_scroll_steps();
+        if !steps.is_empty()
+            && let Some(state) = app.state.as_mut()
+        {
+            for (x, y, lines) in steps {
+                let (x, y) = (x.round() as i32, y.round() as i32);
+                state
+                    .frontend
+                    .shell_controller
+                    .on_input(vera20k_gui::InputEvent::PointerMove { x, y });
+                state
+                    .frontend
+                    .shell_controller
+                    .on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
+            }
+            state.platform.window.request_redraw();
+        }
+    }
+    let events = crate::app::input::android_mouse::drain_events();
+    if events.is_empty() {
+        return;
+    }
+    for event in events {
+        if in_game && matches!(event, winit::event::WindowEvent::MouseWheel { .. }) {
+            continue;
+        }
+        app.window_event(event_loop, window_id, event);
+    }
+    if let Some(state) = app.state.as_ref() {
+        state.platform.window.request_redraw();
+    }
+}
+
 impl ApplicationHandler for App {
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
+    fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
         if let Some(job) = self.pending_initialization.as_mut() {
             job.admit_event_loop_turn();
         }
+        // Android: the activity consumes hardware mouse and touchpad events,
+        // which winit's Android backend would otherwise drop or read as touches.
+        // They arrive before this loop turn's redraw, so the engine's pointer is
+        // not a frame behind the system one.
+        #[cfg(target_os = "android")]
+        pump_android_pointer(self, event_loop);
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -1777,6 +1844,14 @@ impl ApplicationHandler for App {
                 && !hidden_run_active
                 && let WindowEvent::Touch(touch) = &event
             {
+                #[cfg(target_os = "android")]
+                log::info!(
+                    "Android TOUCH dev={:?} phase={:?} at {},{}",
+                    touch.device_id,
+                    touch.phase,
+                    touch.location.x,
+                    touch.location.y
+                );
                 let Some(state) = self.state.as_mut() else {
                     return;
                 };

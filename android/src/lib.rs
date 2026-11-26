@@ -321,6 +321,40 @@ fn ime_set_secret(secret: bool) {
     });
 }
 
+/// One hardware mouse or touchpad event the activity consumed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeMouseEvent(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+    device_id: jni::sys::jint,
+    action: jni::sys::jint,
+    action_button: jni::sys::jint,
+    buttons: jni::sys::jint,
+    x: jni::sys::jfloat,
+    y: jni::sys::jfloat,
+    vscroll: jni::sys::jfloat,
+    hscroll: jni::sys::jfloat,
+    scroll: jni::sys::jfloat,
+    pointer_count: jni::sys::jint,
+    action_index: jni::sys::jint,
+    tool: jni::sys::jint,
+) {
+    vera20k::app::android_mouse::push(vera20k::app::android_mouse::PointerEvent {
+        device_id,
+        action,
+        action_button,
+        buttons,
+        x,
+        y,
+        vscroll,
+        hscroll,
+        scroll,
+        pointer_count,
+        action_index,
+        tool,
+    });
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]

@@ -72,6 +72,11 @@ mod hidden_run;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
+
+/// Android's hardware pointing-device bridge (the JNI entry point in the
+/// `vera20k-android` cdylib).
+#[cfg(target_os = "android")]
+pub use input::android_mouse;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
 #[cfg(target_os = "macos")]
