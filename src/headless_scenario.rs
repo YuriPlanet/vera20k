@@ -350,7 +350,11 @@ pub fn check_campaign_stage(
         .physical_identity()
         .context("campaign stage does not have an authored map digest")?;
     let map_sha256 = map_sha256.to_owned();
-    let log = ReplayRunner::record_campaign_stage(&mut scene, &start, frames)?;
+    let log = ReplayRunner::record_authored_match(
+        &mut scene,
+        crate::sim::replay::ReplayLaunchInput::MapHouses(&start),
+        frames,
+    )?;
     let mut bytes = Vec::new();
     log.write_json(&mut bytes)?;
     let recorded = ReplayLog::decode_json(&bytes)?;

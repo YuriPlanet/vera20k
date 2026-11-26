@@ -1,8 +1,8 @@
 """The scale benchmark's client half: the game plays the battle, hidden.
 
-`tools.scale_bench` calls [`time_client`]. The game is the shipped one: built
-with the release workflow's command (`--profile shipping --no-default-features`)
-and started as a launcher starts it, `vera20k -SPAWN` in a folder holding
+`tools.scale_bench` calls [`time_client`]. The game uses the shipping profile
+and release features (`--profile shipping --no-default-features`). It starts as
+a launcher starts it, `vera20k -SPAWN` in a folder holding
 `spawn.ini` and the map (docs/spawn.md), one human against 29 computer houses.
 Three spawn-only test switches make it a benchmark (tools/spawn/README.md):
 `VERA20K_SPAWN_HIDDEN_WINDOW=1` keeps the window invisible,
@@ -62,12 +62,12 @@ def spawn_ini(computers: int = COMPUTERS, seed: int = SEED) -> str:
     )
 
 
-def launch_folder(folder: Path, map_path: Path) -> Path:
+def launch_folder(folder: Path, map_path: Path, *, computers: int = COMPUTERS, seed: int = SEED) -> Path:
     """Write the folder a launcher starts the game in. Machine paths stay in
     it and never enter the repository."""
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
-    (folder / 'spawn.ini').write_text(spawn_ini(), encoding='ascii', newline='\n')
+    (folder / 'spawn.ini').write_text(spawn_ini(computers, seed), encoding='ascii', newline='\n')
     shutil.copyfile(map_path, folder / 'spawnmap.ini')
     (folder / 'config.toml').write_text(
         f'[paths]\nra2_dir = {json.dumps(os.environ["RA2_DIR"])}\nsettings_dir = "."\n',

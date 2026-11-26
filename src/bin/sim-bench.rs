@@ -223,6 +223,7 @@ struct Args {
     presentation_frame: bool,
     threads: Option<usize>,
     battle_units: usize,
+    skirmish_replay: Option<PathBuf>,
     isolation_report: Option<PathBuf>,
     prior_maps: Vec<String>,
     isolation_mode: Option<ScenarioGameMode>,
@@ -275,6 +276,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         presentation_frame: false,
         threads: None,
         battle_units: BATTLE_UNITS,
+        skirmish_replay: None,
         isolation_report: None,
         prior_maps: Vec::new(),
         isolation_mode: None,
@@ -332,6 +334,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-profile" => args.frame_profile = true,
             "--lan" => args.lan = true,
             "--watchers" => args.watchers = number(value()?)? as usize,
+            "--record-skirmish-replay" => args.skirmish_replay = Some(PathBuf::from(value()?)),
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
@@ -393,6 +396,16 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             || args.isolation_humans != 1)
     {
         return Err("state-isolation options need --state-isolation-report".into());
+    }
+    if args.skirmish_replay.is_some()
+        && (args.scenario != ScenarioKind::Skirmish
+            || args.isolation_report.is_some()
+            || args.lan
+            || args.ticks.is_none())
+    {
+        return Err(
+            "--record-skirmish-replay needs --scenario skirmish and --ticks, offline".into(),
+        );
     }
     Ok(args)
 }
@@ -1094,6 +1107,7 @@ fn main() -> Result<(), String> {
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
                  [--shared-stream] [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
                  [--client-timing] [--threads N] [--battle-units 20000 (battle)] \
+                 [--record-skirmish-replay <new.json> (skirmish, --ticks)] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
             );
@@ -1116,6 +1130,29 @@ fn main() -> Result<(), String> {
             seated_computers(&args)?
         }
     };
+    if let Some(output) = &args.skirmish_replay {
+        // The verifier reconstructs the ordinary frame-zero world. Record before
+        // the benchmark changes the local House or any simulation settings.
+        let launch = battle_session(&args.map, &sim_bench_match::COMPUTER_ROSTER[..computers]);
+        let mut scene =
+            headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, launch.clone())?;
+        let frames = args
+            .ticks
+            .and_then(|n| u32::try_from(n.get()).ok())
+            .ok_or("replay frame count is out of range")?;
+        let replay = vera20k_core::sim::replay::ReplayRunner::record_authored_match(
+            &mut scene,
+            vera20k_core::sim::replay::ReplayLaunchInput::Slots(&launch),
+            frames,
+        )
+        .map_err(|error| error.to_string())?;
+        let mut bytes = Vec::new();
+        replay
+            .write_json(&mut bytes)
+            .map_err(|error| error.to_string())?;
+        return vera20k_core::util::file_system::write_new(output, &bytes)
+            .map_err(|error| format!("write replay {}: {error}", output.display()));
+    }
     let load_started = Instant::now();
     let mut scenario = match args.scenario {
         ScenarioKind::March => headless_scenario::load(&args.ra2_dir, &args.map, args.seed)?,
