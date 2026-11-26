@@ -1,0 +1,194 @@
+{
+  "cases": [
+    {
+      "local": "america",
+      "map": "all01umd.map",
+      "opponent": "russia",
+      "seed": 30000
+    },
+    {
+      "local": "america",
+      "map": "all02umd.map",
+      "opponent": "russia",
+      "seed": 30001
+    },
+    {
+      "local": "america",
+      "map": "all03umd.map",
+      "opponent": "russia",
+      "seed": 30002
+    },
+    {
+      "local": "america",
+      "map": "all04dmd.map",
+      "opponent": "russia",
+      "seed": 30003
+    },
+    {
+      "local": "america",
+      "map": "all05umd.map",
+      "opponent": "russia",
+      "seed": 30004
+    },
+    {
+      "local": "america",
+      "map": "all06umd.map",
+      "opponent": "russia",
+      "seed": 30005
+    },
+    {
+      "local": "america",
+      "map": "all07smd.map",
+      "opponent": "russia",
+      "seed": 30006
+    },
+    {
+      "local": "russia",
+      "map": "sov01umd.map",
+      "opponent": "america",
+      "seed": 30007
+    },
+    {
+      "local": "russia",
+      "map": "sov02smd.map",
+      "opponent": "america",
+      "seed": 30008
+    },
+    {
+      "local": "russia",
+      "map": "sov03umd.map",
+      "opponent": "america",
+      "seed": 30009
+    },
+    {
+      "local": "russia",
+      "map": "sov04dmd.map",
+      "opponent": "america",
+      "seed": 30010
+    },
+    {
+      "local": "russia",
+      "map": "sov05umd.map",
+      "opponent": "america",
+      "seed": 30011
+    },
+    {
+      "local": "russia",
+      "map": "sov06lmd.map",
+      "opponent": "america",
+      "seed": 30012
+    },
+    {
+      "local": "russia",
+      "map": "sov07tmd.map",
+      "opponent": "america",
+      "seed": 30013
+    }
+  ],
+  "config": {
+    "credits": 10000,
+    "difficulty": "hard",
+    "expected_opening": null,
+    "opponents": 1,
+    "per_frame": 512,
+    "progress": 1800,
+    "ticks": 200000,
+    "units": 0,
+    "wall_seconds": 900
+  },
+  "maps_dir": "I:\\SteamLibrary\\steamapps\\common\\Command & Conquer Red Alert II\\yr_campaigns",
+  "ra2_dir": "I:\\SteamLibrary\\steamapps\\common\\Command & Conquer Red Alert II",
+  "schema": 1,
+  "sources": {
+    "all01umd.map": {
+      "bytes": 301077,
+      "sha256": "dee38769f2247a85908705486c175ef14a4cf90437899defe7c8b4c0d1c51fb0"
+    },
+    "all02umd.map": {
+      "bytes": 465825,
+      "sha256": "168ed42024991b6c2af4de0e5a667e9c2bf15767741efe99dac975721460b303"
+    },
+    "all03umd.map": {
+      "bytes": 418628,
+      "sha256": "b84a2e689cc00f0be064ecbfcd385635ac037f28bf8f72c02b426a0e52ff1547"
+    },
+    "all04dmd.map": {
+      "bytes": 282057,
+      "sha256": "f1621a21e7221c1e475a52dccd4a04bb3125f8a095377c917e2122019f2157b2"
+    },
+    "all05umd.map": {
+      "bytes": 274279,
+      "sha256": "7ee8148ad4b0092b7970588d9b064ddd6b753fc7bfb352bcc043affeb72c6aed"
+    },
+    "all06umd.map": {
+      "bytes": 192301,
+      "sha256": "cfd2b50c5448fd84ab3647ff3a95f96b45e8dccd6a72b2601c0bb603cddeeb63"
+    },
+    "all07smd.map": {
+      "bytes": 434373,
+      "sha256": "0ec687c320382e4c02cf66eec0153b713e56c4449fab7d29b5a19b61bf10e4f3"
+    },
+    "sov01umd.map": {
+      "bytes": 329188,
+      "sha256": "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
+    },
+    "sov02smd.map": {
+      "bytes": 327808,
+      "sha256": "139a7f17a17cefc20d12c21e9221d94ff6e1e8894ac09ab716fc9f6975d5a665"
+    },
+    "sov03umd.map": {
+      "bytes": 189836,
+      "sha256": "df69d0f63f982823bb5818d3d49776028a719a2c20ced2526fab8f5cecb49fe6"
+    },
+    "sov04dmd.map": {
+      "bytes": 228003,
+      "sha256": "702bd788efbd08ae5b7591a1dfc240684e73faedace2ffaac68baefdfd0fb12a"
+    },
+    "sov05umd.map": {
+      "bytes": 467636,
+      "sha256": "22518e8b4a86331a9172048e10de13b45c2826ea4fdf4d2203b58994b897761b"
+    },
+    "sov06lmd.map": {
+      "bytes": 141376,
+      "sha256": "f55b65fd33a53dd03f61b48259d7732d260a4f97170e6dcf0767a61af82403a4"
+    },
+    "sov07tmd.map": {
+      "bytes": 367021,
+      "sha256": "eacf89952cb6e8eacd762f97895a062e0b6bfa16c8f916b901c1e667def266d4"
+    }
+  },
+  "suites": {
+    "all": [
+      30000,
+      30001,
+      30002,
+      30003,
+      30004,
+      30005,
+      30006,
+      30007,
+      30008,
+      30009,
+      30010,
+      30011,
+      30012,
+      30013
+    ],
+    "campaign": [
+      30000,
+      30001,
+      30002,
+      30003,
+      30004,
+      30005,
+      30006,
+      30007,
+      30008,
+      30009,
+      30010,
+      30011,
+      30012,
+      30013
+    ]
+  }
+}
