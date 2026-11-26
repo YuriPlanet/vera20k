@@ -569,6 +569,8 @@ mod tests {
             alt_cameo: None,
             cameo_pcx: None,
             alt_cameo_pcx: None,
+            cameo_picture: None,
+            alt_cameo_picture: None,
             cameo_palette: None,
             new_theater: false,
             theater: false,

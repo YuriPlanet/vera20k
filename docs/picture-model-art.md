@@ -13,8 +13,10 @@ follows; each section that is built says so in [Status](#status).
   exactly what it does without this feature. Retail data declares none, so the
   game with retail data is unchanged, frame for frame and pixel for pixel.
 
-Non-goals for now: terrain, tiles, overlays, smudges, particles, `AlphaImage=`,
-cameos, the sidebar and the shell UI, skinned or morphing models.
+Non-goals for now: the sidebar's own art, the shell UI, the hard-coded
+interface SHPs (cursors, pips, health bars, the placement grid, beacons,
+shroud), superweapon cameos, skinned or morphing models (see
+[Not covered](#not-covered)).
 
 ## The switch
 
@@ -87,6 +89,44 @@ The voxel art that is not a unit body takes `Model=` from these sections:
 Each still needs a `body` node: its length is the model's scale
 (`ModelSize=`).
 
+`Picture=` also takes effect, from the same art section the SHP is read
+through, for:
+
+- **Overlays** (`OverlayTypes`: walls, ore and gems, fences, rails, low and
+  high bridges, crates, rocks): the art section of the type's rules `Image=`,
+  else its own name. Frame numbers are the SHP's: a wall's frame is its
+  damage stage times 16 plus its connection bits, a resource's its density,
+  and the second half holds the shadows the Cell shadow sweep draws. A
+  `Wall=yes` building and its overlay share one art section, so one picture
+  serves both.
+- **TerrainTypes** (trees, lamps, the ore tree): the `ImageFile` section.
+  Frame F and F + count/2 are a stage's body and shadow, as in the SHP.
+- **SmudgeTypes** (craters, scorch marks): the section of `Image=`, else the
+  type's own; frame 0 on its canvas.
+- **Particles** (`ParticleTypes` `Image=`): the image's own section, as an
+  AnimType's.
+- **`AlphaImage=`** light maps: the section named by the `AlphaImage=` value.
+  Frame 0's grey level is the SHP byte (127 leaves light as it is, 255
+  doubles it, 0 is black); a transparent pixel inside the drawn rectangle
+  is 127. Cropped to its drawn pixels as a stored frame.
+
+With `Theater=yes` in the section, where the SHP takes the theater's
+extension (`TREE01.tem`), the picture is looked up first with that extension
+before its own (`TREE01.tem.png`), then as written; `NewTheater=yes` keeps
+the letter substitution above.
+
+Two more keys, VERA-only, declare art that has no `Picture=` section:
+
+| Key | Section | Value |
+|---|---|---|
+| `CameoPicture=`, `AltCameoPicture=` | the art section Ares reads `CameoPCX=` from (the rules `Image=`'s) | a PNG drawn as the normal and promoted cameo in place of `Cameo=`/`AltCameo=` SHPs and Ares PCX cameos |
+| `PictureFileName=` | a theater INI's `[TileSetNNNN]` | the stem of the set's tile pictures: template NN draws `{PictureFileName}{NN:02}.png`, its suffix siblings `...a.png`, `...b.png` |
+
+A cameo picture is 60x48 or a whole multiple of it (2x art is shrunk as a
+picture is); one that cannot be drawn takes the placeholder cameo, as a
+missing cameo SHP does. A tile picture that cannot be drawn leaves the
+TMP's own pixels, told in the game.
+
 For a building, `Buildup=`, `BibShape=` and a war factory's `DeployingAnim=`,
 `RoofDeployingAnim=`, `UnderDoorAnim=` and `UnderRoofDoorAnim=` (SHP names
 there, not AnimTypes) name pictures (`NAME.png`) when the building's section
@@ -107,6 +147,21 @@ declares `Picture=`; they take its `PictureSize=`.
 Beside the picture (same folder or archive), same size and frame count. Red at
 128 or more marks house colour, green at 128 or more marks pixels light does
 not change. Without a mask the picture has no house colour and no unlit pixels.
+
+### Tile picture: `{PictureFileName}{NN}.png`
+
+- One frame per cell slot of the TMP template it replaces, in file order,
+  empty slots included (an empty frame).
+- Each cell's canvas, the diamond and its extra data as the TMP lays them
+  out (`pixel_width` x `pixel_height`), at the frame's top-left corner; the
+  frames are as large as the template's largest cell canvas, times a whole
+  scale (1 to 8). `asset export-picture CLEAR01.TEM --palette isotem.pal`
+  writes one from a TMP.
+- A pixel at least half covered is drawn; the rest are holes. No mask: a
+  tile has no house colour, and its blitter lights every pixel.
+- Only the colour comes from it. The TMP is still read for everything else
+  (height, ramp, land, extra-data placement, Z data, radar colours), so the
+  simulation and the tile's Z and occlusion are the TMP's.
 
 ### Model: `NAME.glb`
 
@@ -164,6 +219,11 @@ simulation reads art.
 | Body art present in this theater (random maps) | `map/rmg/tech_catalog` | the declared picture |
 | Voxel model loaded (rocking, rockers) | `VoxelAssetCatalog::bind` (`6F9E10`) | `Model=` declared and the file loaded |
 | Tilt half sizes (slope tilt, fire coordinates) | `voxel_asset_catalog::voxel_tilt_half_sizes` (`6F3B6C`) | `body` bounds scaled by `ModelSize` |
+| Overlay image present (authored overlay admission) | `effect_asset_catalog::resolved_overlay_shp_ids` (`5FE620`) | the declared picture found and readable |
+| Ore-tree frame count (spawner timer) | `TerrainAssetCatalog::bind` (`71C87A`) | the picture's frame count |
+| TerrainType radar colour (frame 0 header RGB, `71DF9E`) | same | frame 0's mean colour |
+| Particle image frame count (config hash only) | `EffectAssetCatalog::bind` | the picture's frame count |
+| AlphaImage loaded and its canvas (Ares particle mode, glow centre) | `AlphaImageCatalog::bind` (`5F92D0`) | the picture loaded; `PictureSize`, else its size |
 
 The tilt half sizes take the VXL section sizes the model stands in for:
 `size_x = round(ModelSize * u)` voxels along the body's glTF +Z and
@@ -174,6 +234,12 @@ then `[size_y / 2 + 0.5, size_x / 2]` as for a VXL
 (`TurretCount=`) needs a `turretN` node for each of them, as it needs each
 `TURN.VXL` (`5F865F`, `5F8ACB`). The config hash takes the model's file name,
 `ModelSize=` and a digest of its bytes.
+
+Overlay presence and the AlphaImage were never in the config hash for SHPs.
+The AlphaImage facts enter it only for names whose art declares a picture
+(`AlphaImageCatalog::hash_declared_pictures`), so a hash without one is
+unchanged; overlay presence stays outside it, as for SHPs (residual: a
+missing overlay picture on one machine is refused only by the state hash).
 
 A declared file that is missing on one machine changes these values there, as a
 missing SHP does today; the config hash refuses that machine online and in
@@ -253,6 +319,25 @@ so it sorts, shades and shadows by the same rules:
   about the vertical through the origin moved forward by `TurretOffset=`, and
   a barrel pitches about the turret's pivot, as `TUR.VXL` and `BARL.VXL` do,
   so turret and barrel meshes are placed as those files place their voxels.
+- **Overlays, terrain objects, smudges, bridges.** The overlay atlas, whose
+  pages are already RGBA with an index plane (rubble uses it), takes a
+  declared picture's frame for each key an SHP frame would fill: the
+  stored-frame crop and placement, the overlay's Y draw offset, the lit and
+  unlit indices; a smudge's frame 0 on its whole canvas. The bridge atlas
+  takes the high-bridge body frames and every overlay's shadow stencils
+  (frame `count/2 + state`) the same way. Radar colours are each frame's
+  mean colour (`compute_overlay_radar_colors`; a resource's from its
+  `CellAnim=`'s picture when that is the source).
+- **Tiles.** `theater::load_tile_images` takes each cell's RGBA from its
+  template picture, shrunk by coverage, in place of the TMP's palette
+  pixels; the tile atlas, its Z page and the zdepth blitter are unchanged.
+- **Cameos.** The cameo atlas is straight RGBA: a cameo picture's frame 0 is
+  one more piece, cropped to its drawn pixels on the 60x48 canvas; the
+  darkening, clock and strip overlays draw over it as over any cameo.
+- **AlphaImage.** The catalog holds the picture's bytes where it holds the
+  SHP frame's; the glow pass (`shroud_buffer`) reads them unchanged.
+- **Particles.** A particle image's keys route to its picture
+  (`PictureRoutes::key`), as an AnimType's do.
 - **Hooks.** The atlas does not register SHP keys for a type that declares
   `Picture=`; it appends the picture pages and entries instead
   (`render::picture_atlas`). No shader, pipeline, bind group layout or draw
@@ -288,6 +373,11 @@ production validation before the next starts.
    body/turret/barrel, shadows, slope tilt; model-loaded and tilt facts.
 5. **Voxel building turrets, voxel projectiles, debris** (`Model=`).
 6. **Zoomed drawing** at window resolution.
+7. **Overlays, terrain objects, smudges** (`Picture=`): walls with their
+   connection and damage frames, resources, fences, rails, bridges, their
+   shadows and radar colours; trees and their spawner facts; smudges.
+8. **Tiles** (`PictureFileName=`), **particles**, **`AlphaImage=`** and
+   **cameos** (`CameoPicture=`, `AltCameoPicture=`).
 
 ## Where the new code meets the old
 
@@ -338,6 +428,22 @@ against this list.
   answers a `DebrisModel`; `ModelPart` is hashable; `model_units` passes
   `ModelLight::Unit` and `ModelNodes::Unit` to its pose and shadow.
 
+- Chains 7 and 8: `ArtRegistry::picture_candidates` adds the `Theater=yes`
+  name; `declares_any_picture` gates the overlay and bridge atlases' per-key
+  lookups; `OverlayTypeRegistry::declared_picture` and
+  `TerrainObjectType::declared_picture` resolve the sections;
+  `resolved_overlay_shp_ids`, `TerrainAssetCatalog::bind`,
+  `EffectAssetCatalog::bind` and `AlphaImageCatalog::bind` each have one
+  picture branch (the catalog's fact owners); `simulation_config_hash` takes
+  `AlphaImageCatalog::hash_declared_pictures`; `PictureFrames` gains
+  `shrunk_region` and `mean_color`; the overlay atlas (`render_picture_frame`,
+  `render_terrain_picture`, `render_smudge_picture`, radar colours), the
+  bridge atlas (`render_bridge_picture`, which takes the art registry), the
+  sprite atlas's particle route, `theater::load_tile_images`
+  (`TilePicture`, `tile_rgba`, `TilesetLookup::picture_filename`) and the
+  cameo atlas (`render_picture_cameo`) take the pictures;
+  `asset export-picture` takes theater SHPs and TMP templates.
+
 ## Verification
 
 ### Off: nothing declared (retail data), identical to `main`
@@ -361,13 +467,45 @@ an APNG with an SHP's frame count gives an AnimType the same End, LoopEnd and
 Middle as that SHP; a building with a Buildup picture can be sold. Then one
 production run on a real map with converted art.
 
+## Not covered
+
+Art that still only comes from SHP, PCX or TMP, and why:
+
+- The sidebar's own art (`side1.shp`, tabs, buttons, power bar, radar
+  frame, `GCLOCK2`, `DARKEN`), the shell UI (main menu, loading screens,
+  dialogs) and the interface SHPs (`mouse.sha`, `pips.shp`, `pips2.shp`,
+  `pipbrd.shp`, `place.shp`, beacons, `talkbubl.shp`, `GRFXTXT.SHP`) and
+  shroud/fog: no art or rules section names them; a mod replaces them only
+  by shipping a file of the same name. Declaring pictures for them needs a
+  naming scheme first (for the sidebar, `Art=` on the original parts that
+  [interface-layout.md](interface-layout.md) reserves).
+- Superweapon cameos (`SidebarImage=` is a rules key without an art
+  section) and Phobos `SuperWeaponSidebar` PCXs, Insignia, DigitalDisplay
+  and shield pips (rules keys naming files): a picture form of those keys
+  is a follow-up.
+- Lasers, electric bolts, rad beams, waves and the other effects drawn in
+  code have no image to replace. The other effect art
+  (building and unit anims, weather, chrono and iron curtain anims,
+  trailers) is an AnimType and already takes `Picture=`.
+
 ## Known residuals
+
+- Tile pictures draw at 1x only (no zoomed HD twin) and have no unlit
+  pixels: the tile blitter lights every pixel (`zdepth_shader.wgsl` passes
+  index 1), and taking a mask would change that shader.
+- Cameo pictures draw at 1x; the smooth sidebar scales them as it scales an
+  SHP cameo, and no language label is baked onto them.
+- Radar colours of declared overlays and trees are the frames' mean colours;
+  an SHP header holds a colour its author chose.
 
 - BibShape and factory door art are atlas files shared by name. When a
   building that declares `Picture=` and one that does not name the same file,
   both draw it from the picture. Retail data declares no picture, so this needs
   a mod that mixes both on one name.
-- A `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=`: Building
+- A `BarrelAnimIsVoxel=` building without `TurretAnimIsVoxel=` (still
+  open: porting its draw needs the scale of the `0x00458810` chain, which
+  reads `+0x1728`, a field no native code initialises; VERA's fire
+  coordinate takes it as 0, which would draw the barrel as a point): Building
   draw `43DA80` has an arm for it (`0x0043E5D9..0x0043E795`) that draws the
   C0 barrel VXL at the `0x00458810` matrix chain (the
   `VoxelBarrelOffsetTo*` pivots, the `+0x388` facing) with the building's

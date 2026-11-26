@@ -66,33 +66,47 @@ impl EffectAssetCatalog {
         }
 
         for name in authoritative_effect_roots(rules) {
-            let image_id = rules.art().resolve_effective_image_id(&name, &name);
-            let candidates = art_data::effect_shp_candidates(
-                crate::rules::art_data::EffectImageKind::Particle,
-                Some(rules.art()),
-                &name,
-                &image_id,
-                theater_ext,
-                theater_name,
-            );
-            let Some((file_name, data)) = candidates.iter().find_map(|candidate| {
-                asset_manager
-                    .get_ref(candidate)
-                    .map(|data| (candidate, data))
-            }) else {
-                log::warn!(
-                    "Authoritative effect asset [{name}] is missing; consumers will use their fallback"
+            // VERA-only, experimental (docs/picture-model-art.md): an image
+            // whose art section declares `Picture=` counts the picture's
+            // frames; its SHP is never opened.
+            let raw = if let Some((section, decl)) = rules.art().resolve_declared_picture(&name, "")
+            {
+                let Some(raw) = rules
+                    .art()
+                    .picture_header(section, decl, asset_manager, theater_name)
+                    .and_then(|facts| u16::try_from(facts.frames).ok())
+                else {
+                    continue;
+                };
+                raw
+            } else {
+                let image_id = rules.art().resolve_effective_image_id(&name, &name);
+                let candidates = art_data::effect_shp_candidates(
+                    crate::rules::art_data::EffectImageKind::Particle,
+                    Some(rules.art()),
+                    &name,
+                    &image_id,
+                    theater_ext,
+                    theater_name,
                 );
-                continue;
-            };
-
-            let raw = match ShpFile::frame_count_from_bytes(data) {
-                Ok(count) => count,
-                Err(error) => {
+                let Some((file_name, data)) = candidates.iter().find_map(|candidate| {
+                    asset_manager
+                        .get_ref(candidate)
+                        .map(|data| (candidate, data))
+                }) else {
                     log::warn!(
-                        "Authoritative effect asset [{name}] ({file_name}) has an invalid SHP header: {error}; consumers will use their fallback"
+                        "Authoritative effect asset [{name}] is missing; consumers will use their fallback"
                     );
                     continue;
+                };
+                match ShpFile::frame_count_from_bytes(data) {
+                    Ok(count) => count,
+                    Err(error) => {
+                        log::warn!(
+                            "Authoritative effect asset [{name}] ({file_name}) has an invalid SHP header: {error}; consumers will use their fallback"
+                        );
+                        continue;
+                    }
                 }
             };
             let scheduler_owned = rules.art().scheduler_anim_types().contains(&name);
@@ -576,8 +590,13 @@ pub fn log_unbound_combat_explosion_roots(unbound: usize) {
 /// Overlay type IDs whose native SHP candidates load as an SHP from the active
 /// theater's archives. Authored-overlay finalization (`map::authored_overlay`)
 /// reads it on graphical and headless loads alike.
+///
+/// VERA-only, experimental (`docs/picture-model-art.md`): a type whose art
+/// declares `Picture=` has an image when its picture is found and readable;
+/// its SHP is never opened.
 pub fn resolved_overlay_shp_ids(
     registry: &OverlayTypeRegistry,
+    art: &art_data::ArtRegistry,
     asset_manager: &AssetManager,
     theater_ext: &str,
     theater_name: &str,
@@ -588,6 +607,15 @@ pub fn resolved_overlay_shp_ids(
         let Some(name) = registry.name(overlay_id) else {
             continue;
         };
+        if let Some((section, decl)) = registry.declared_picture(name, art) {
+            if art
+                .picture_header(section, decl, asset_manager, theater_name)
+                .is_some()
+            {
+                available.insert(overlay_id);
+            }
+            continue;
+        }
         if load_overlay_shape(asset_manager, registry, name, theater_ext, theater_name).is_some() {
             available.insert(overlay_id);
         }
@@ -747,6 +775,37 @@ mod tests {
         assert_eq!(catalog.raw_frame_count("FX"), Some(6));
         assert_eq!(catalog.effect_frame_count("FX"), Some(3));
         assert_eq!(catalog.raw_frame_count("BROKEN"), None);
+    }
+
+    /// VERA-only (docs/picture-model-art.md): a particle image whose art
+    /// declares `Picture=` counts the picture's frames, not its SHP's, and an
+    /// overlay type whose art declares one has an image without any SHP.
+    #[test]
+    fn declared_pictures_give_particle_counts_and_overlay_presence() {
+        let root = TestRoot::new();
+        std::fs::write(root.path().join("FX.SHP"), shp_with_undecodable_pixels(6))
+            .expect("write effect SHP");
+        let picture = crate::assets::picture_file::test_picture(4, 4, Some(4));
+        std::fs::write(root.path().join("fx.png"), &picture).expect("write effect picture");
+        std::fs::write(root.path().join("wall.png"), &picture).expect("write wall picture");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let ini = IniFile::from_str(
+            "[Particles]\n0=Cloud\n[Cloud]\nImage=FX\n\
+             [OverlayTypes]\n0=PICWALL\n1=BAREWALL\n[PICWALL]\nWall=yes\n[BAREWALL]\nWall=yes\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).expect("effect catalog rules");
+        rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(
+            "[FX]\nShadow=yes\nPicture=fx.png\n[PICWALL]\nPicture=wall.png\n",
+        )));
+
+        let catalog = EffectAssetCatalog::bind(&rules, &assets, "TEM", "TEMPERATE");
+        assert_eq!(catalog.raw_frame_count("FX"), Some(4), "the SHP holds 6");
+        assert_eq!(catalog.effect_frame_count("FX"), Some(2));
+
+        let overlays = OverlayTypeRegistry::from_ini(&ini, None);
+        let available =
+            resolved_overlay_shp_ids(&overlays, rules.art(), &assets, "TEM", "TEMPERATE");
+        assert_eq!(available.into_iter().collect::<Vec<_>>(), vec![0]);
     }
 
     /// The NPSE `[General] VehicleParachute=` canopy is bound through the same

@@ -554,6 +554,23 @@ impl OverlayTypeRegistry {
             .and_then(|i| self.flags.get(i))
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the art section
+    /// overlay type `name` reads its image through (its rules `Image=`, else
+    /// its own name) and that section's `Picture=`, when it declares one. Such
+    /// an overlay's frames are the picture's and its SHP is never opened.
+    pub fn declared_picture<'a>(
+        &self,
+        name: &str,
+        art: &'a crate::rules::art_data::ArtRegistry,
+    ) -> Option<(&'a str, &'a crate::rules::art_data::PictureDecl)> {
+        let index = self
+            .names
+            .iter()
+            .position(|id| id.eq_ignore_ascii_case(name))?;
+        let image = self.images.get(index).map_or("", |image| image.image());
+        art.resolve_declared_picture(&self.names[index], image)
+    }
+
     /// Look up overlay_id by name (case-insensitive). Returns None if not found.
     pub fn id_for_name(&self, name: &str) -> Option<u8> {
         self.names

@@ -2647,7 +2647,8 @@ impl<'a> PictureRoutes<'a> {
         let type_id = key.type_id.as_str();
         match key.palette_context.image_kind() {
             ShpImageKind::Animation => self.anim(type_id),
-            ShpImageKind::Particle => None,
+            // A particle's image is an art section of its own, as an anim's.
+            ShpImageKind::Particle => self.anim(type_id),
             ShpImageKind::Projectile => self.projectile(self.rules?.projectile(type_id)?),
             ShpImageKind::Object => {
                 if let Some(building) = type_id.strip_suffix("_MAKE") {
@@ -3337,13 +3338,19 @@ pub(crate) fn prepare_sprite_atlas(
         // VERA-only, experimental (docs/picture-model-art.md): a type that
         // declares Picture= counts the frames rules binding read from its
         // picture, and its SHP is never opened.
-        let picture =
-            *kind == ShpImageKind::Animation && art.is_some_and(|art| art.declares_picture(name));
-        let found = if picture {
+        let picture = art.is_some_and(|art| art.declares_picture(name));
+        let found = if picture && *kind == ShpImageKind::Animation {
             art.and_then(|art| art.anim_runtime_config(name))
                 .and_then(|config| config.raw_shp_frame_count)
                 .and_then(|count| u16::try_from(count).ok())
                 .filter(|&count| count > 0)
+                .map(|count| (None, Ok(count)))
+        } else if picture {
+            // A particle image counts its picture's frames, as the effect
+            // catalog does (`EffectAssetCatalog::bind`).
+            picture_routes
+                .as_mut()
+                .and_then(|routes| routes.anim_frames(name).flatten())
                 .map(|count| (None, Ok(count)))
         } else {
             find_shp(asset_manager, &candidates)

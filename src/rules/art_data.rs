@@ -173,6 +173,11 @@ pub struct ArtEntry {
     /// in every Rules mode; only Ares' sidebar draws it.
     pub(crate) cameo_pcx: Option<String>,
     pub(crate) alt_cameo_pcx: Option<String>,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): `CameoPicture=`
+    /// and `AltCameoPicture=`, PNG cameos drawn in place of the SHP or PCX
+    /// ones.
+    pub(crate) cameo_picture: Option<String>,
+    pub(crate) alt_cameo_picture: Option<String>,
     /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
     /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
     /// nonempty read names, `~~~` standing for the theater extension.
@@ -1563,6 +1568,10 @@ impl ArtRegistry {
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
+            let cameo_picture = section.read_name("CameoPicture", 0x104).map(str::to_owned);
+            let alt_cameo_picture = section
+                .read_name("AltCameoPicture", 0x104)
+                .map(str::to_owned);
             let cameo_palette = crate::rules::ares_switch::ares_read(|| {
                 section.read_name("CameoPalette", 2048).map(str::to_owned)
             });
@@ -1746,6 +1755,8 @@ impl ArtRegistry {
                     alt_cameo,
                     cameo_pcx,
                     alt_cameo_pcx,
+                    cameo_picture,
+                    alt_cameo_picture,
                     cameo_palette,
                     new_theater,
                     theater,
@@ -2432,6 +2443,12 @@ impl ArtRegistry {
         bound.loop_end = loaded_loop_end;
     }
 
+    /// Whether any art section declares `Picture=`. Without one, no object
+    /// takes the picture path, so callers skip resolving per object.
+    pub fn declares_any_picture(&self) -> bool {
+        self.entries.values().any(|entry| entry.picture.is_some())
+    }
+
     /// Whether art section `section` declares `Picture=`, so its frames are
     /// the picture's and its SHP is never opened (docs/picture-model-art.md).
     pub fn declares_picture(&self, section: &str) -> bool {
@@ -2482,21 +2499,35 @@ impl ArtRegistry {
     /// The files `decl`, declared in art section `section`, may load in
     /// `theater_name`, the first found winning: with the section's
     /// `NewTheater=yes`, the name with the theater's and then the generic
-    /// letter, as an SHP name takes them ([`theater_shp_names`]); else the
-    /// name as written.
+    /// letter, as an SHP name takes them ([`theater_shp_names`]); with
+    /// `Theater=yes`, where the SHP takes the theater's extension (`.tem`),
+    /// the name with that extension before its own (`TREE01.tem.png`), then
+    /// the name as written; else the name as written.
     pub fn picture_candidates(
         &self,
         section: &str,
         decl: &PictureDecl,
         theater_name: &str,
     ) -> Vec<String> {
-        if !self.get(section).is_some_and(|entry| entry.new_theater) {
-            return vec![decl.file.clone()];
-        }
+        let entry = self.get(section);
         let (stem, extension) = decl
             .file
             .rsplit_once('.')
             .map_or((decl.file.as_str(), None), |(stem, ext)| (stem, Some(ext)));
+        if entry.is_some_and(|entry| entry.theater && !entry.new_theater) {
+            let theater = crate::map::theater::theater_extension(theater_name);
+            return theater
+                .map(|theater| match extension {
+                    Some(extension) => format!("{stem}.{theater}.{extension}"),
+                    None => format!("{stem}.{theater}"),
+                })
+                .into_iter()
+                .chain([decl.file.clone()])
+                .collect();
+        }
+        if !entry.is_some_and(|entry| entry.new_theater) {
+            return vec![decl.file.clone()];
+        }
         theater_shp_names(&stem.to_ascii_uppercase(), theater_name)
             .into_iter()
             .map(|name| match extension {
@@ -2864,6 +2895,23 @@ impl ArtRegistry {
         let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
         self.get(&resolved.base_art_id)
             .and_then(|entry| normalize_id(entry.alt_cameo.as_deref().unwrap_or_default()))
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the normal and
+    /// promoted cameo pictures (`CameoPicture=`, `AltCameoPicture=`), read
+    /// from the section the Ares PCX cameos are read from
+    /// ([`Self::resolve_declared_pcx_cameos`]).
+    pub fn resolve_declared_cameo_pictures(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> [Option<&str>; 2] {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        let entry = self.get(&resolved.base_art_id);
+        [
+            entry.and_then(|entry| entry.cameo_picture.as_deref()),
+            entry.and_then(|entry| entry.alt_cameo_picture.as_deref()),
+        ]
     }
 
     /// Normal and promoted Ares PCX filenames, including their extensions.

@@ -5910,6 +5910,7 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
+        self.alpha_images.hash_declared_pictures(&mut hasher);
         b"art-smudge-config-v2".hash(&mut hasher);
         let smudge_anim_inputs = self
             .art_registry
@@ -7795,6 +7796,7 @@ impl RuleSet {
     ) {
         self.terrain_assets = crate::rules::terrain_asset_catalog::TerrainAssetCatalog::bind(
             &mut self.terrain_object_types,
+            &self.art_registry,
             asset_manager,
             theater_ext,
             phase,

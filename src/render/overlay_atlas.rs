@@ -680,9 +680,39 @@ pub(crate) fn build_overlay_atlas_on_device(
     // Render each unique sprite.
     let mut rendered: Vec<RenderedOverlay> = Vec::with_capacity(needed.len());
     let mut load_fail_count: u32 = 0;
+    let art = rules.art();
+    let any_picture = art.declares_any_picture();
+    let mut pictures = crate::render::picture_atlas::PictureSources::default();
 
     for key in &needed {
         let resource_image = key.name.strip_prefix(TIBERIUM_IMAGE_PREFIX);
+        // VERA-only (docs/picture-model-art.md): a type whose art declares
+        // `Picture=` (walls, resources, fences, rails, low bridges, ...) draws
+        // the same frame of its picture; its SHP is never opened.
+        if let Some((section, decl)) = any_picture
+            .then(|| overlay_registry.declared_picture(resource_image.unwrap_or(&key.name), art))
+            .flatten()
+        {
+            let y_offset = overlay_registry
+                .flags_by_name(resource_image.unwrap_or(&key.name))
+                .map_or(0.0, |flags| {
+                    let mut flags = flags.clone();
+                    flags.tiberium |= resource_image.is_some();
+                    flags.y_draw_offset()
+                });
+            let source = crate::render::picture_atlas::PictureSource {
+                section: section.to_owned(),
+                decl: decl.clone(),
+            };
+            match usize::try_from(key.frame).ok().and_then(|frame| {
+                let frames = pictures.frames(&source, art, asset_manager, theater_name)?;
+                render_picture_frame(frames, key.clone(), frame, y_offset)
+            }) {
+                Some(sprite) => rendered.push(sprite),
+                None => load_fail_count += 1,
+            }
+            continue;
+        }
         let mut flags: OverlayTypeFlags = overlay_registry
             .flags_by_name(resource_image.unwrap_or(&key.name))
             .cloned()
@@ -744,6 +774,19 @@ pub(crate) fn build_overlay_atlas_on_device(
         let Some(terrain_type) = rules.terrain_object_type_case_insensitive(name) else {
             continue;
         };
+        if let Some((section, decl)) = any_picture
+            .then(|| terrain_type.declared_picture(art))
+            .flatten()
+        {
+            let source = crate::render::picture_atlas::PictureSource {
+                section: section.to_owned(),
+                decl: decl.clone(),
+            };
+            if let Some(frames) = pictures.frames(&source, art, asset_manager, theater_name) {
+                rendered.extend(render_terrain_picture(frames, terrain_type));
+            }
+            continue;
+        }
         let Some(shape_filename) = rules.terrain_shape_filename(name) else {
             continue;
         };
@@ -775,6 +818,28 @@ pub(crate) fn build_overlay_atlas_on_device(
     if let Some(smudge_reg) = smudge_types {
         for (_id, def) in smudge_reg.iter_with_id() {
             let file_basename: &str = def.image_name.as_deref().unwrap_or(&def.name);
+            if let Some((section, decl)) = any_picture
+                .then(|| {
+                    art.resolve_declared_picture(&def.name, def.image_name.as_deref().unwrap_or(""))
+                })
+                .flatten()
+            {
+                let source = crate::render::picture_atlas::PictureSource {
+                    section: section.to_owned(),
+                    decl: decl.clone(),
+                };
+                match pictures
+                    .frames(&source, art, asset_manager, theater_name)
+                    .and_then(|frames| render_smudge_picture(frames, &def.name))
+                {
+                    Some(sprite) => {
+                        rendered.push(sprite);
+                        smudge_rendered_count += 1;
+                    }
+                    None => smudge_failed_count += 1,
+                }
+                continue;
+            }
             match render_smudge_sprite(
                 asset_manager,
                 theater_palette,
@@ -1089,16 +1154,100 @@ fn render_rubble_picture(
     frames: &crate::render::picture_atlas::GamePictureFrames,
     art: &crate::rules::building_rubble::RubbleArt,
 ) -> Option<RenderedOverlay> {
-    let frame = frames.stored_frame(usize::from(art.body_frame))?;
+    render_picture_frame(
+        frames,
+        rubble_key(&art.shp, art.body_frame),
+        usize::from(art.body_frame),
+        0.0,
+    )
+}
+
+/// VERA-only (docs/picture-model-art.md): frame `frame` of a declared
+/// picture as `render_decoded_overlay_frame` gives an SHP frame: the stored
+/// frame's crop and placement, `y_offset` below it, no frame format bit. None
+/// for a frame past the end or with nothing drawn, as `resolve_body_frame`
+/// refuses an SHP's.
+fn render_picture_frame(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    key: OverlaySpriteKey,
+    frame: usize,
+    y_offset: f32,
+) -> Option<RenderedOverlay> {
+    let frame = frames.stored_frame(frame)?;
     Some(RenderedOverlay {
-        key: rubble_key(&art.shp, art.body_frame),
+        key,
         width: frame.sprite.size[0],
         height: frame.sprite.size[1],
         rgba: frame.sprite.rgba,
         source_indices: frame.sprite.indices,
         offset_x: frame.offset[0],
-        offset_y: frame.offset[1],
+        offset_y: frame.offset[1] + y_offset,
         draw_point_offset: frame.draw_point,
+        extended: false,
+    })
+}
+
+/// VERA-only (docs/picture-model-art.md): [`render_terrain_sprites`] over a
+/// declared picture: the same body frames and their second-half shadows.
+fn render_terrain_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    terrain_type: &TerrainObjectType,
+) -> Vec<RenderedOverlay> {
+    let half = frames.frame_count() / 2;
+    let stages = if terrain_type.is_animated {
+        0..half.max(1)
+    } else {
+        0..2
+    };
+    let name = &terrain_type.name;
+    let mut sprites = Vec::new();
+    for frame in stages {
+        let stage = frame as i32;
+        sprites.extend(render_picture_frame(
+            frames,
+            terrain_body_key(name, stage),
+            frame,
+            0.0,
+        ));
+        sprites.extend(render_picture_frame(
+            frames,
+            terrain_shadow_key(name, stage),
+            frame + half,
+            0.0,
+        ));
+    }
+    sprites
+}
+
+/// VERA-only (docs/picture-model-art.md): [`render_smudge_sprite`] over a
+/// declared picture: frame 0 on its whole canvas, centred on the footprint's
+/// origin cell.
+fn render_smudge_picture(
+    frames: &crate::render::picture_atlas::GamePictureFrames,
+    name: &str,
+) -> Option<RenderedOverlay> {
+    let sprite = frames.sprite(0, None)?;
+    let [full_w, full_h] = frames.canvas;
+    let mut rgba = vec![0u8; (full_w * full_h * 4) as usize];
+    let mut indices = vec![0u8; (full_w * full_h) as usize];
+    for y in 0..sprite.size[1] {
+        let source = (y * sprite.size[0]) as usize;
+        let destination = ((sprite.origin[1] + y) * full_w + sprite.origin[0]) as usize;
+        let width = sprite.size[0] as usize;
+        rgba[destination * 4..(destination + width) * 4]
+            .copy_from_slice(&sprite.rgba[source * 4..(source + width) * 4]);
+        indices[destination..destination + width]
+            .copy_from_slice(&sprite.indices[source..source + width]);
+    }
+    Some(RenderedOverlay {
+        key: smudge_key(name),
+        rgba,
+        source_indices: indices,
+        width: full_w,
+        height: full_h,
+        offset_x: -(full_w as f32) / 2.0,
+        offset_y: -(full_h as f32) / 2.0,
+        draw_point_offset: [0; 2],
         extended: false,
     })
 }
@@ -1180,7 +1329,44 @@ pub fn compute_overlay_radar_colors(
 ) -> HashMap<(u8, u8), [u8; 3]> {
     // Cache: overlay_id -> loaded ShpFile
     let mut shp_cache: HashMap<u8, ShpFile> = HashMap::new();
+    let mut result: HashMap<(u8, u8), [u8; 3]> = HashMap::new();
+    // VERA-only (docs/picture-model-art.md): a declared picture, the type's
+    // own or its CellAnim's where that is the source, gives each frame the
+    // mean colour of its drawn pixels in place of the SHP header's.
+    let picture_colors = |section: &str, decl: &art_data::PictureDecl| {
+        art_registry
+            .picture_candidates(section, decl, theater_name)
+            .iter()
+            .find_map(|file| asset_manager.get_ref(file))
+            .and_then(|bytes| crate::assets::picture_file::PictureFrames::decode(bytes).ok())
+            .map(|picture| {
+                (0..picture.frames.len().min(usize::from(u8::MAX) + 1))
+                    .filter_map(|frame| Some((frame as u8, picture.mean_color(frame)?)))
+                    .collect::<Vec<_>>()
+            })
+    };
     for (&overlay_id, name) in overlay_names {
+        let cell_anim_source = source == OverlayRadarColorSource::Cell
+            && overlay_registry
+                .flags(overlay_id)
+                .is_some_and(|flags| flags.tiberium);
+        let declared = if cell_anim_source {
+            overlay_registry
+                .flags(overlay_id)
+                .and_then(|flags| flags.cell_anim.as_deref())
+                .and_then(|anim| {
+                    art_registry
+                        .resolve_declared_picture(anim, &art_registry.resolve_anim_image_id(anim))
+                })
+        } else {
+            overlay_registry.declared_picture(name, art_registry)
+        };
+        if let Some((section, decl)) = declared {
+            for (frame, rgb) in picture_colors(section, decl).unwrap_or_default() {
+                result.insert((overlay_id, frame), rgb);
+            }
+            continue;
+        }
         let load = |candidates: Vec<String>| {
             candidates.iter().find_map(|candidate| {
                 asset_manager
@@ -1223,7 +1409,6 @@ pub fn compute_overlay_radar_colors(
         }
     }
 
-    let mut result: HashMap<(u8, u8), [u8; 3]> = HashMap::new();
     for (&overlay_id, shp) in &shp_cache {
         for (frame, header) in shp.frames.iter().take(usize::from(u8::MAX) + 1).enumerate() {
             if let Ok(frame) = u8::try_from(frame) {
@@ -2147,5 +2332,53 @@ mod tests {
         assert_eq!((sprite.offset_x, sprite.offset_y), (-1.0, 0.0));
         assert_eq!(sprite.draw_point_offset, [1, 0]);
         assert!(!sprite.extended);
+    }
+
+    /// A TerrainType whose art declares `Picture=` draws its body stages and
+    /// their second-half shadows from the picture as Terrain DrawIt
+    /// (0x71C1B0) picks SHP frames: stage F and F + count/2.
+    #[test]
+    fn terrain_picture_pairs_each_stage_with_its_second_half_shadow() {
+        use super::*;
+        use crate::render::picture_atlas::GamePictureFrames;
+        // Four 4x1 frames; frame i draws one pixel at column i.
+        let frames = (0..4u8)
+            .map(|i| {
+                let mut frame = vec![0u8; 4 * 4];
+                let at = usize::from(i) * 4;
+                frame[at..at + 4].copy_from_slice(&[10 * (i + 1), 0, 0, 255]);
+                frame
+            })
+            .collect();
+        let picture = GamePictureFrames::shrink(
+            &crate::assets::picture_file::PictureFrames {
+                width: 4,
+                height: 1,
+                frames,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+        let tree = TerrainObjectType::from_ini_section_with_tree_strength(
+            "TREE",
+            crate::rules::ini_parser::IniFile::from_str("[TREE]\nStrength=1\n")
+                .section("TREE")
+                .unwrap(),
+            1,
+        );
+
+        let sprites = render_terrain_picture(&picture, &tree);
+        let red = |key: OverlaySpriteKey| {
+            sprites
+                .iter()
+                .find(|sprite| sprite.key == key)
+                .map(|sprite| sprite.rgba[0])
+        };
+        assert_eq!(sprites.len(), 4);
+        assert_eq!(red(terrain_body_key("TREE", 0)), Some(10));
+        assert_eq!(red(terrain_shadow_key("TREE", 0)), Some(30));
+        assert_eq!(red(terrain_body_key("TREE", 1)), Some(20));
+        assert_eq!(red(terrain_shadow_key("TREE", 1)), Some(40));
     }
 }

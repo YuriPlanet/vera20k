@@ -227,6 +227,16 @@ impl TerrainObjectType {
         }
     }
 
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the art
+    /// section this type reads its image through (`ImageFile`, else its own
+    /// name) and that section's `Picture=`, when it declares one.
+    pub fn declared_picture<'a>(
+        &self,
+        art: &'a crate::rules::art_data::ArtRegistry,
+    ) -> Option<(&'a str, &'a crate::rules::art_data::PictureDecl)> {
+        art.resolve_declared_picture(&self.name, &self.image_file)
+    }
+
     pub(crate) fn uses_theater_shape(&self) -> bool {
         self.theater
     }

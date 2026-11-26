@@ -283,6 +283,16 @@ fn render_cameo(
         .object(type_id)
         .map(|obj| obj.image.clone())
         .unwrap_or_else(|| type_id.to_string());
+    // VERA-only (docs/picture-model-art.md): a declared cameo picture is
+    // the cameo; no SHP or PCX cameo is opened. One that cannot be drawn
+    // takes the placeholder, as a missing cameo SHP does.
+    if let [Some(file), _] = rules
+        .art()
+        .resolve_declared_cameo_pictures(type_id, &rules_image)
+    {
+        return render_picture_cameo(type_id, file, asset_manager)
+            .or_else(|| render_placeholder_cameo(type_id, rules, asset_manager, palette));
+    }
     let ares = rules.ares();
     if ares
         && let [Some(name), _] = rules
@@ -351,6 +361,16 @@ fn render_alt_cameo(
         .object(type_id)
         .map(|obj| obj.image.clone())
         .unwrap_or_else(|| type_id.to_string());
+    // VERA-only (docs/picture-model-art.md): a declared promoted cameo
+    // picture is the promoted cameo, with no fallback, as `AltCameo=`.
+    if let [_, Some(file)] = rules
+        .art()
+        .resolve_declared_cameo_pictures(type_id, &rules_image)
+    {
+        let mut cameo = render_picture_cameo(type_id, file, asset_manager)?;
+        cameo.kind = CameoKind::Promoted;
+        return Some(cameo);
+    }
     // Ares3.0 Cameos1005E430..1005E470: use promoted PCX only if loaded;
     // otherwise the ordinary PCX still takes precedence over an AltCameo SHP.
     let ares = rules.ares();
@@ -520,6 +540,80 @@ fn render_pcx_cameo(
         crop_x: 0,
         crop_y: 0,
         sharp: Vec::new(),
+    })
+}
+
+/// The cameo canvas, in game pixels: the strip's 60x48 cell (Ares supplies
+/// the same destination for its PCX cameos).
+const CAMEO_CANVAS: [u32; 2] = [60, 48];
+
+/// VERA-only, experimental (docs/picture-model-art.md): frame 0 of the
+/// cameo picture `file` on the 60x48 cameo canvas. A picture that is a whole
+/// multiple (2x, 4x) of it is shrunk as other pictures are; a pixel at least
+/// half covered is drawn. None, reported in the game, when the file is
+/// missing, unreadable or another size.
+fn render_picture_cameo(
+    key: &str,
+    file: &str,
+    asset_manager: &AssetManager,
+) -> Option<RenderedCameo> {
+    let shrunk = asset_manager
+        .get_ref(file)
+        .ok_or_else(|| "the file is not found".to_owned())
+        .and_then(|bytes| {
+            crate::assets::picture_file::PictureFrames::decode(bytes)
+                .map_err(|error| error.to_string())
+        })
+        .and_then(|picture| {
+            crate::render::picture_atlas::GamePictureFrames::shrink(
+                &picture,
+                None,
+                Some(CAMEO_CANVAS),
+            )
+            .map_err(|error| error.to_string())
+        });
+    let frames = match shrunk {
+        Ok(frames) => frames,
+        Err(error) => {
+            log::warn!("[{key}] cameo picture {file} cannot be drawn: {error}");
+            crate::rules::art_problems::report(
+                key,
+                &format!("CameoPicture={file}"),
+                &format!("{file} cannot be drawn ({error})"),
+                "the placeholder cameo is drawn",
+            );
+            return None;
+        }
+    };
+    let sprite = frames.sprite(0, None);
+    log::debug!("Sidebar picture cameo {key} loaded from {file}");
+    Some(match sprite {
+        Some(sprite) => RenderedCameo {
+            type_id: key.to_ascii_uppercase(),
+            kind: CameoKind::Ordinary,
+            rgba: sprite.rgba,
+            width: sprite.size[0],
+            height: sprite.size[1],
+            canvas_width: CAMEO_CANVAS[0],
+            canvas_height: CAMEO_CANVAS[1],
+            crop_x: sprite.origin[0],
+            crop_y: sprite.origin[1],
+            sharp: Vec::new(),
+        },
+        // A loaded picture with nothing drawn stays the cameo, as a PCX
+        // whose every word is keyed out does.
+        None => RenderedCameo {
+            type_id: key.to_ascii_uppercase(),
+            kind: CameoKind::Ordinary,
+            rgba: vec![0; 4],
+            width: 1,
+            height: 1,
+            canvas_width: CAMEO_CANVAS[0],
+            canvas_height: CAMEO_CANVAS[1],
+            crop_x: 0,
+            crop_y: 0,
+            sharp: Vec::new(),
+        },
     })
 }
 
@@ -1645,5 +1739,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// VERA-only (docs/picture-model-art.md): a 2x cameo picture draws on
+    /// the 60x48 cameo canvas, cropped to its drawn pixels; one of another
+    /// size cannot be drawn.
+    #[test]
+    fn a_cameo_picture_shrinks_onto_the_cameo_canvas() {
+        use crate::assets::picture_file::encode_frames;
+        let directory = crate::map::source::test_support::TestDirectory::new("cameo-picture");
+        let mut rgba = vec![0u8; 120 * 96 * 4];
+        for y in 10..20 {
+            for x in 4..24 {
+                let at = (y * 120 + x) * 4;
+                rgba[at..at + 4].copy_from_slice(&[90, 80, 70, 255]);
+            }
+        }
+        directory.write("icon.png", &encode_frames(120, 96, &[rgba]).unwrap());
+        directory.write("odd.png", &encode_frames(61, 48, &[vec![255; 61 * 48 * 4]]).unwrap());
+        let assets =
+            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(directory.path());
+
+        let cameo = super::render_picture_cameo("GI", "icon.png", &assets).unwrap();
+        assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
+        assert_eq!([cameo.crop_x, cameo.crop_y, cameo.width, cameo.height], [2, 5, 10, 5]);
+        assert!(cameo.rgba.chunks_exact(4).all(|pixel| pixel == [90, 80, 70, 255]));
+        assert!(super::render_picture_cameo("GI", "odd.png", &assets).is_none());
     }
 }

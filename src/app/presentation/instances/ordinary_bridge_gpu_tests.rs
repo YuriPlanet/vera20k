@@ -248,6 +248,7 @@ impl Probe {
                 theater.extension,
                 &scene.map.header.theater,
                 registry,
+                &crate::rules::art_data::ArtRegistry::empty(),
                 &[],
             )
             .unwrap();
@@ -1188,6 +1189,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             theater.extension,
             &scene.map.header.theater,
             registry,
+            &crate::rules::art_data::ArtRegistry::empty(),
             &rubble_arts,
         )
         .expect("physical rubble shadow atlas and overlay proxy");

@@ -182,6 +182,62 @@ fn blend_over(source: [u8; 4], target: [u8; 4]) -> [u8; 4] {
     ]
 }
 
+impl PictureFrames {
+    /// The top-left `size` game pixels of frame `frame`, `scale` picture
+    /// pixels per game pixel on each axis, as straight RGBA: a game pixel is
+    /// drawn (alpha 255) when at least half its picture pixels are (alpha at
+    /// least half), its colour their mean; else it is a hole (all 0). The
+    /// coverage rule `render::picture_atlas` shrinks a picture by, without
+    /// its mask. None for a frame past the end or a region outside the
+    /// canvas.
+    pub fn shrunk_region(&self, frame: usize, scale: u32, size: [u32; 2]) -> Option<Vec<u8>> {
+        let rgba = self.frames.get(frame)?;
+        if scale == 0 || size[0] * scale > self.width || size[1] * scale > self.height {
+            return None;
+        }
+        let mut out = Vec::with_capacity((size[0] * size[1] * 4) as usize);
+        for y in 0..size[1] {
+            for x in 0..size[0] {
+                let (mut covered, mut sum) = (0u32, [0u32; 3]);
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        let at = (((y * scale + dy) * self.width + x * scale + dx) * 4) as usize;
+                        if u32::from(rgba[at + 3]) * 2 >= 255 {
+                            covered += 1;
+                            for channel in 0..3 {
+                                sum[channel] += u32::from(rgba[at + channel]);
+                            }
+                        }
+                    }
+                }
+                if covered * 2 >= scale * scale {
+                    let mean = |channel: usize| ((sum[channel] + covered / 2) / covered) as u8;
+                    out.extend_from_slice(&[mean(0), mean(1), mean(2), 255]);
+                } else {
+                    out.extend_from_slice(&[0; 4]);
+                }
+            }
+        }
+        Some(out)
+    }
+
+    /// The mean colour of frame `frame`'s drawn pixels (alpha at least half),
+    /// where an SHP frame header holds the radar colour the art author chose
+    /// (`+0x0C..0x0E`). None for a frame past the end or with nothing drawn.
+    pub fn mean_color(&self, frame: usize) -> Option<[u8; 3]> {
+        let (mut count, mut sum) = (0u64, [0u64; 3]);
+        for pixel in self.frames.get(frame)?.chunks_exact(4) {
+            if u32::from(pixel[3]) * 2 >= 255 {
+                count += 1;
+                for channel in 0..3 {
+                    sum[channel] += u64::from(pixel[channel]);
+                }
+            }
+        }
+        (count > 0).then(|| sum.map(|total| ((total + count / 2) / count) as u8))
+    }
+}
+
 impl PictureHeader {
     /// The header of the PNG or APNG `bytes`.
     pub fn read(bytes: &[u8]) -> Result<Self, PictureError> {
