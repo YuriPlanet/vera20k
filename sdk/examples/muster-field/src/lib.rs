@@ -1,6 +1,8 @@
 //! "Muster Field", a playtest `rules.wasm` (RFC 0001 preview): a small
 //! auto-battler against one computer house, played with ordinary unit orders
-//! and no interface code.
+//! or with its `ui.wasm`'s panels. Its play follows the 红警酒馆 of MK,
+//! a Bilibili creator (README.md); it is a demonstration, not to be
+//! published as a mod of its own.
 //!
 //! - A campaign of waves: between battles the company stands in camp, the
 //!   dead return, and the player spends the pay.
@@ -20,25 +22,34 @@
 //!
 //! It is made for one human player against computer opponents, with Bases on.
 //! What it tells the player is in Simplified Chinese.
-//! Build it with `cargo build --release`, rename the `.wasm` to `rules.wasm`
-//! and put it in a mod folder (docs/wasm-modules.md).
+//! Build it with `cargo build --release`, rename `muster_field.wasm` to
+//! `rules.wasm` and `muster_field_ui.wasm` to `ui.wasm`, and put both in a
+//! mod folder (docs/wasm-modules.md).
+//!
+//! The interface (`ui/`) shows the camp and has a button for every key:
+//! the simulation publishes the camp as variables and turns each button's
+//! message into the order that key gives (`ui`). The orders keep working
+//! without it.
 //!
 //! `lib` owns input and the phases, `shop` the camp, `battle` one fight with
 //! `waves`, `campaign` the pay and the end, `content` and `perks` what can be
-//! hired and won, `state` what they share.
+//! hired and won, `state` what they share, `ui` the interface's side; the
+//! tables live in `data/`, which `ui.wasm` links too.
 #![no_std]
 
 mod battle;
 mod campaign;
-mod content;
 mod perks;
 mod shop;
 mod state;
 mod text;
-mod waves;
+mod ui;
 mod world;
 
+use muster_field_data::{content, waves};
+
 use state::{BATTLE, MUSTER, Num, OVER, PHASE, WAITING};
+use text::Say;
 use vera20k_sdk::prelude::*;
 use vera20k_sdk::{NO_HANDLE, get};
 
@@ -73,8 +84,16 @@ fn command(mut decision: CommandAllowedDecision) {
         return;
     }
     decision.set_result(0);
+    if matches!(verdict, shop::Verdict::Queue) {
+        queue(order);
+    }
+}
+
+/// Hands `order` to the next [`read_orders`]: a refused player order, or
+/// an interface button's (`ui`).
+fn queue(order: shop::Order) {
     let len = INBOX_LEN.get() as usize;
-    if matches!(verdict, shop::Verdict::Queue) && len < INBOX {
+    if len < INBOX {
         INBOX_UNIT[len].set(order.unit.0);
         INBOX_COMMAND[len].set(i64::from(order.command));
         INBOX_CELL[len].set(order.cell.0);
@@ -218,6 +237,7 @@ fn tick() {
         }
         _ => {}
     }
+    ui::publish();
 }
 
 vera20k_sdk::on_scenario_start!(start);

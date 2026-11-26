@@ -56,7 +56,7 @@ content as work lands; do not append a diary.
 | Map embedding (`[VeraWasm]`, `[VeraWasmRulesPack]`) | `src/map/ext_module_pack.rs` |
 | Loading | `headless_scenario.rs`, `app/loading/init.rs`: `PreparedExtModules::load` (mod folder `rules.wasm`, then map) before the rules load, `install_scenario_ext_modules` after the simulation exists |
 | `asset wasm-check / wasm-embed / wasm-extract` | `src/asset_tools/verb_wasm.rs` |
-| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` |
+| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` (with its `ui.wasm`) |
 
 Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `.cargo/config.toml` targets wasm32 with the allowlisted features). The engine tests
@@ -673,12 +673,11 @@ map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
   (`<settings>/wasm-storage/<key>/store.bin`, write-through at most once a second).
 - `veraui.ini`: types `Image`, `Bar`, `List`; a button without `Command`; a text
   with `Label` (`docs/interface-layout.md`).
-- SDK: the Rust bindings (`client.rs`, `notify.rs`) and the examples
-  (`ui-reinforcements`, `ui-ping`, muster-field's `ui.wasm`) are in their own pull
-  request; this one keeps only the `Backdrop` constant `wasm-ext`'s table test reads.
-- Saves: layout `CLIENT_MESSAGES` `0x9909B4E7` (`snapshot/migration.rs`); older
+- SDK: `sdk/rust/vera20k-sdk/src/client.rs`, `notify.rs`; example
+  `sdk/examples/ui-reinforcements` (RFC 10's round trip).
+- Saves: layout `CLIENT_MESSAGES` `0xF8E3612E` (`snapshot/migration.rs`); older
   worlds hold no waiting message and did not allow automation.
-- Verified, with the SDK pull request's examples: the round trip `ui_reinforcements_round_trip` (message to one Rhino and
+- Verified: the round trip `ui_reinforcements_round_trip` (message to one Rhino and
   one notification; a second purchase refused); no-module `sim-bench` release builds
   of 60d988324 and this branch give the same final hashes (skirmish 9000 ticks
   `9d2f3b9e068b45ec`, match 1800 ticks `89503a631feffc5c`) and the same frame times;
@@ -688,7 +687,7 @@ map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
   `rules.wasm` received both messages (each credits its sender), each player got
   only its own `Pong`, no desync.
 
-Not yet: the lobby hint for
+Not yet: a look at the drawn module nodes in a real client; the lobby hint for
 `MapUI=no` and the room switch "allow automation"; `Decoration`, `MapMarker`,
 `ItemProgress` (`later`). Choices to review: one `ItemTooltips` value per grid (the
 last writer wins); a module's `Art` on a `veraui.ini` part shows only pictures that
@@ -807,7 +806,11 @@ python3 -m tools.cargo_run -- test -p vera20k-wasm-ext --lib
 # plays 2000 frames with each (playtest_modules_keep_running, --nocapture prints
 # their logs). VERA20K_TEST_MUSTER_WASM takes muster_field.wasm and plays its first
 # wave from player command records (muster_field_plays_a_round_from_player_orders)
-# and a campaign lost with an empty company (muster_field_ends_when_the_last_banner_falls).
+# and a campaign lost with an empty company (muster_field_ends_when_the_last_banner_falls);
+# VERA20K_TEST_MUSTER_UI_WASM adds its muster_field_ui.wasm and plays a muster from
+# the interface's messages alone (muster_field_plays_from_its_interface).
+# VERA20K_TEST_UI_REINFORCEMENTS takes `rules.wasm|ui.wasm` of
+# sdk/examples/ui-reinforcements (ui_reinforcements_round_trip).
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 VERA20K_TEST_..._WASM=... \
   python3 -m tools.cargo_run -- test -p vera20k-core --lib -- sim::ext_modules:: sim::trigger_runtime::
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 python3 -m tools.cargo_run -- \

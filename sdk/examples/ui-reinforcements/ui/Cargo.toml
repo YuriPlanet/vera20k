@@ -1,0 +1,13 @@
+[package]
+name = "ui-reinforcements-ui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "RFC 0001 section 10 example, ui.wasm: a button that sends the purchase message and hides once bought"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+vera20k-sdk = { path = "../../../rust/vera20k-sdk" }

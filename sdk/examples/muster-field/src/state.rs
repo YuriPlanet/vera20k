@@ -66,9 +66,7 @@ pub static CAMP_RANK: Num = Num::new(0);
 /// `shop` for merges and takes them away.
 pub static PICKS: Num = Num::new(0);
 
-pub const MAX_OFFERS: usize = 5;
-pub const MAX_COMPANY: usize = 10;
-pub const MAX_RAIDERS: usize = 24;
+pub use muster_field_data::{MAX_COMPANY, MAX_OFFERS, MAX_RAIDERS};
 
 /// One hired mercenary. It outlives its unit: the dead return next muster.
 pub struct Member {
