@@ -19,18 +19,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK & NDK
+      - name: Set up Android SDK base
         uses: android-actions/setup-android@v3
         with:
-          api-level: 36
-          build-tools: 36.1.0
-          ndk: 28.2.13676358
-          cmdline-tools: 19.0
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.1.0
-            ndk;28.2.13676358
+          packages: ''
+
+      - name: Install Android SDK & NDK packages via sdkmanager
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager | head -n 1)
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.1.0" \
+            "ndk;28.2.13676358"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
