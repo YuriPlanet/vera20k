@@ -69,7 +69,13 @@ jobs:
                       markers = ('Graphics adapters offered:', 'Using GPU adapter:', 'software renderer',
                                  'DirectX 12 shaders', 'SHP loading upload', 'External launch result:')
                       print('\n'.join(line for line in lines if any(marker in line for marker in markers)))
-                      print('\n'.join(lines[-18:]))
+                      for index, line in enumerate(lines):
+                          if '========== PANIC' in line:
+                              print('\n'.join(lines[max(0, index - 10):index + 36]))
+                      print('\n'.join(lines[-30:]))
+                  stdout = folder / 'stdout.log'
+                  if stdout.exists():
+                      print('\n'.join(stdout.read_text(errors='replace').splitlines()[:60]))
               assert cost['pictures'] > 0 and cost['last_frame'] >= pgo_train.CLIENT_TICKS
               pgo_train.require_profile(raw, before, 'rendered skirmish')
               print(f'Rendered {cost["pictures"]} pictures through frame {cost["last_frame"]}')
