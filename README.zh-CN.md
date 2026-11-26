@@ -27,12 +27,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 遇到问题？请看[帮助页面](https://vera20k.org/zh/help)。
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube 频道</a>
-
-[观看 Command & Conquer Vietnam 在 VERA20K 的 Arctic Circle 16 地图上挑战 29 个冷酷 AI。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## 项目目标
 
 1. 保留原版《红色警戒2：尤里的复仇》的玩法、画面和氛围。
@@ -152,5 +146,11 @@ This product includes software developed by the [Kratos Authors](docs/zh-CN/krat
 - [地图测试](tools/map_observation.md)：脚本化场景、截图和对局观察。
 - [原版对比](tools/native_oracle.md)：将行为与原版游戏进行对比。
 - [Ghidra 工作流程](docs/ghidra-workflow.md)：分析原版引擎。
+
+## 媒体
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube 频道</a>
+
+[观看 Command & Conquer Vietnam 在 VERA20K 的 Arctic Circle 16 地图上挑战 29 个冷酷 AI。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 本文件译自 [README.md](README.md)，请与英文版保持同步。

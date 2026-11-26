@@ -31,12 +31,6 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 
 هل واجهتك مشكلة؟ راجع [صفحة المساعدة](https://vera20k.org/ar/help).
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> قناة YouTube</a>
-
-[شاهد قناة Command & Conquer Vietnam وهي تلعب VERA20K على خريطة Arctic Circle 16 ضد 29 خصمًا يتحكم بهم الحاسوب على مستوى Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## أهداف المشروع
 
 1. الحفاظ على أسلوب اللعب والمظهر والأجواء في لعبة Red Alert 2: Yuri's Revenge الأصلية.
@@ -157,6 +151,12 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [اختبار الخرائط](tools/map_observation.md): سيناريوهات مبرمجة ولقطات شاشة وملاحظات عن المباريات.
 - [المقارنة مع الأصل](tools/native_oracle.md): مقارنة السلوك مع اللعبة الأصلية.
 - [سير العمل في Ghidra](docs/ghidra-workflow.md): فحص المحرك الأصلي.
+
+## إعلام
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> قناة YouTube</a>
+
+[شاهد قناة Command & Conquer Vietnam وهي تلعب VERA20K على خريطة Arctic Circle 16 ضد 29 خصمًا يتحكم بهم الحاسوب على مستوى Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ترجمة لـ [README.md](README.md)؛ يُرجى تحديثها مع النسخة الإنجليزية.
 

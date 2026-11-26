@@ -31,12 +31,6 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 
 Stuck? See the [help page](https://vera20k.org/help).
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube channel</a>
-
-[Command & Conquer Vietnam plays VERA20K on Arctic Circle 16 against 29 Brutal AIs.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## Project goals
 
 1. Keep the gameplay, visuals and atmosphere of the original Red Alert 2: Yuri's Revenge.
@@ -161,3 +155,9 @@ This product includes software developed by the [Kratos Authors](docs/kratos.md#
 - [Map testing](tools/map_observation.md): scripted scenarios, screenshots and match observations.
 - [Native comparisons](tools/native_oracle.md): comparing behavior with the original game.
 - [Ghidra workflow](docs/ghidra-workflow.md): inspecting the original engine.
+
+## Media
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube channel</a>
+
+[Command & Conquer Vietnam plays VERA20K on Arctic Circle 16 against 29 Brutal AIs.](https://www.youtube.com/watch?v=njpQRCTZ_MY)

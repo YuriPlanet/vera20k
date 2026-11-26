@@ -27,12 +27,6 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 
 うまくいかないときは[ヘルプページ](https://vera20k.org/help)（英語）をご覧ください。
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube チャンネル</a>
-
-[Command & Conquer Vietnam が VERA20K のマップ「Arctic Circle 16」で難易度 Brutal の AI 29 勢力に挑戦。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## プロジェクトの目標
 
 1. オリジナルの Red Alert 2: Yuri's Revenge のゲームプレイ、ビジュアル、雰囲気を守る。
@@ -134,5 +128,11 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [マップのテスト](tools/map_observation.md)：スクリプトによるシナリオ、スクリーンショット、対戦の観察。
 - [ネイティブ比較](tools/native_oracle.md)：オリジナルのゲームとの挙動の比較。
 - [Ghidra ワークフロー](docs/ghidra-workflow.md)：オリジナルのエンジンの解析。
+
+## メディア
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube チャンネル</a>
+
+[Command & Conquer Vietnam が VERA20K のマップ「Arctic Circle 16」で難易度 Brutal の AI 29 勢力に挑戦。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 この文書は [README.md](README.md) を翻訳したものです。英語版に合わせて最新の状態に保ってください。

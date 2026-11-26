@@ -31,12 +31,6 @@ ska gå.
 
 Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube-kanal</a>
-
-[Command & Conquer Vietnam spelar VERA20K på Arctic Circle 16 mot 29 datormotståndare på svårighetsgraden Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## Projektets mål
 
 1. Bevara spelmekaniken, utseendet och stämningen i originalversionen av Red Alert 2: Yuri's Revenge.
@@ -159,5 +153,11 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [Karttester](tools/map_observation.md): skriptade scenarier, skärmbilder och observationer av matcher.
 - [Jämförelser med originalet](tools/native_oracle.md): jämföra beteendet med originalspelet.
 - [Arbetsflöde i Ghidra](docs/ghidra-workflow.md): undersöka originalmotorn.
+
+## Media
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube-kanal</a>
+
+[Command & Conquer Vietnam spelar VERA20K på Arctic Circle 16 mot 29 datormotståndare på svårighetsgraden Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Översättning av [README.md](README.md); håll den uppdaterad i takt med den engelska versionen.

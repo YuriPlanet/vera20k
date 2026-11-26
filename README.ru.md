@@ -30,12 +30,6 @@ VERA20K делают игроки для игроков, и последнее �
 
 Что-то не получается? Загляни на [страницу помощи](https://vera20k.org/ru/help).
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Канал на YouTube</a>
-
-[Command & Conquer Vietnam играет в VERA20K на карте Arctic Circle 16 против 29 компьютерных соперников на уровне Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## Цели проекта
 
 1. Сохранить игровой процесс, графику и атмосферу оригинальной Red Alert 2: Yuri's Revenge.
@@ -159,5 +153,11 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [Тестирование карт](tools/map_observation.md): сценарии на скриптах, скриншоты и наблюдения за матчами.
 - [Сравнение с оригиналом](tools/native_oracle.md): сравнение поведения с оригинальной игрой.
 - [Работа с Ghidra](docs/ghidra-workflow.md): исследование оригинального движка.
+
+## Медиа
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Канал на YouTube</a>
+
+[Command & Conquer Vietnam играет в VERA20K на карте Arctic Circle 16 против 29 компьютерных соперников на уровне Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Перевод [README.md](README.md); поддерживайте его в соответствии с английской версией.

@@ -31,12 +31,6 @@ dự án.
 
 Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh).
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Kênh YouTube</a>
-
-[Xem Command & Conquer Vietnam chơi VERA20K trên bản đồ Arctic Circle 16, đối đầu với 29 đối thủ máy ở độ khó Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## Mục tiêu dự án
 
 1. Giữ nguyên lối chơi, hình ảnh và không khí của Red Alert 2: Yuri's Revenge gốc.
@@ -160,3 +154,9 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [Kiểm thử bản đồ](tools/map_observation.md): kịch bản dựng sẵn, ảnh chụp màn hình và quan sát trận đấu.
 - [So sánh với bản gốc](tools/native_oracle.md): so sánh hành vi với trò chơi gốc.
 - [Quy trình Ghidra](docs/ghidra-workflow.md): xem xét engine gốc.
+
+## Truyền thông
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Kênh YouTube</a>
+
+[Xem Command & Conquer Vietnam chơi VERA20K trên bản đồ Arctic Circle 16, đối đầu với 29 đối thủ máy ở độ khó Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)

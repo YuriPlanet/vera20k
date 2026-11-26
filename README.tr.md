@@ -31,12 +31,6 @@ oyuncular söylüyor.
 
 Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
-## Command & Conquer Vietnam
-
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube kanalı</a>
-
-[Command & Conquer Vietnam, VERA20K’yi Arctic Circle 16 haritasında Brutal zorluk seviyesindeki 29 yapay zekâ rakibine karşı oynuyor.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-
 ## Projenin hedefleri
 
 1. Orijinal Red Alert 2: Yuri's Revenge'in oynanışını, görsellerini ve atmosferini korumak.
@@ -161,5 +155,11 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [Harita testleri](tools/map_observation.md): betikli test senaryoları, ekran görüntüleri ve maç gözlemleri.
 - [Orijinalle karşılaştırmalar](tools/native_oracle.md): davranışı orijinal oyunla karşılaştırma.
 - [Ghidra iş akışı](docs/ghidra-workflow.md): orijinal motoru inceleme.
+
+## Medya
+
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube kanalı</a>
+
+[Command & Conquer Vietnam, VERA20K’yi Arctic Circle 16 haritasında Brutal zorluk seviyesindeki 29 yapay zekâ rakibine karşı oynuyor.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 [README.md](README.md) dosyasının çevirisidir; lütfen İngilizce sürümle güncel tutun.
