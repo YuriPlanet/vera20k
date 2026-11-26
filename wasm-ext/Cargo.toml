@@ -20,6 +20,10 @@ wasm-encoder = { version = "0.245", default-features = false, features = ["std",
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 wasmtime = { version = "51", default-features = false, features = ["cranelift", "runtime", "std"] }
 
+# The hardened macOS game interprets Cranelift's Pulley bytecode.
+[target.'cfg(target_os = "macos")'.dependencies]
+wasmtime = { version = "51", default-features = false, features = ["pulley"] }
+
 # The browser build runs the same rewritten module with the browser's own
 # WebAssembly engine (RFC 0001 open question 1).
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
