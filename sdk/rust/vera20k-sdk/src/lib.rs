@@ -1,4 +1,5 @@
-//! Rust SDK for VERA20K simulation modules (`rules.wasm`), RFC 0001 preview.
+//! Rust SDK for VERA20K simulation modules (`rules.wasm`), RFC 0001 preview,
+//! and client modules (`ui.wasm`, [`client`]).
 //!
 //! Each wrapper makes the host calls appendix section 3 lists, usually one.
 //! A failed call returns `Err(Status)`; the host already wrote the empty
@@ -15,8 +16,10 @@
 //! ```
 #![no_std]
 
+pub mod client;
 pub mod decide;
 pub mod ini;
+pub mod notify;
 mod props;
 pub mod sys;
 pub mod triggers;
@@ -33,6 +36,7 @@ pub use decide::{
 pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,
 };
+pub use notify::Notify;
 pub use triggers::{
     AttackedByEvent, BirthEvent, CloakEvent, CrushedEvent, DeployedEvent, DetonatedEvent,
     ExperienceGainedEvent, FatalDamageEvent, HouseTransferredEvent, KilledByWarheadEvent,
@@ -64,6 +68,7 @@ pub mod prelude {
         BirthEvent, PassengerAddedEvent, TransportEnteredEvent, TransportExitedEvent,
         PassengerRemovedEvent,
     };
+    pub use crate::{NO_HANDLE, Notify};
 }
 
 /// A host call's failure (appendix "Status"). `Ok` is never an `Err`.
@@ -268,6 +273,8 @@ pub enum NameKind {
     Property = 19,
     EventKind = 20,
     ActionKind = 21,
+    /// A hotkey this client module registered (`client::Local::register_hotkey`).
+    Hotkey = 22,
     /// Module events any source registered ([`ini::event`]); the ID is the
     /// event ID.
     ModuleEvent = 24,
@@ -598,13 +605,11 @@ impl Find {
     /// half the callback's budget, so a page that is not full, even an empty
     /// one, is the last only when that position is 0.
     pub fn page(&mut self, out: &mut [i64], after: i64) -> Result<(usize, i64)> {
-        self.0.query.after = after;
-        let len =
-            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        let (query, len) = self.raw(after);
         let mut result = sys::FindResult::default();
         let status = unsafe {
             sys::find(
-                (&raw const self.0).cast(),
+                query,
                 len as i32,
                 out.as_mut_ptr(),
                 out.len() as i32,
@@ -613,6 +618,15 @@ impl Find {
         };
         check(status)?;
         Ok((result.count as usize, result.next))
+    }
+
+    /// The `Query` with its clauses, from position `after`, and its length:
+    /// what `find` and `client_find` take.
+    pub(crate) fn raw(&mut self, after: i64) -> (*const u8, usize) {
+        self.0.query.after = after;
+        let len =
+            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        ((&raw const self.0).cast(), len)
     }
 
     /// The first match, or `NO_HANDLE`. Follows pages until there is one,
@@ -1420,26 +1434,38 @@ impl<'a> Order<'a> {
     }
 }
 
+impl Order<'_> {
+    /// The `Order` layout as i64 words (kind and count, target, value, then
+    /// the unit handles) and its byte length. `Err(Refused)` past
+    /// [`ORDER_UNITS`] units.
+    pub(crate) fn words(&self) -> Result<([i64; 3 + ORDER_UNITS], usize)> {
+        let count = self.units.len();
+        if count > ORDER_UNITS {
+            return Err(Status::Refused);
+        }
+        let mut words = [0i64; 3 + ORDER_UNITS];
+        words[0] = (self.command as i32 as u32 as i64) | ((count as i64) << 32);
+        words[1] = self.target;
+        words[2] = self.value;
+        for (word, unit) in words[3..].iter_mut().zip(self.units) {
+            *word = unit.0;
+        }
+        Ok((words, (3 + count) * 8))
+    }
+}
+
 impl House {
     /// Queues `order` for this computer house; it runs next frame, checked
     /// like its player's command. `Err(Refused)` for a player's house or a
     /// command-table violation, or more than [`ORDER_UNITS`] units.
     pub fn order(self, order: &Order) -> Result<()> {
-        let count = order.units.len();
-        if count > ORDER_UNITS {
-            return Err(Status::Refused);
-        }
-        // The `Order` layout as i64 words: kind and count, target, value,
-        // then the unit handles.
-        let mut words = [0i64; 3 + ORDER_UNITS];
-        words[0] = (order.command as i32 as u32 as i64) | ((count as i64) << 32);
-        words[1] = order.target;
-        words[2] = order.value;
-        for (word, unit) in words[3..].iter_mut().zip(order.units) {
-            *word = unit.0;
-        }
-        let len = (3 + count) * 8;
+        let (words, len) = order.words()?;
         check(unsafe { sys::order(self.0, words.as_ptr().cast(), len as i32) })
+    }
+
+    /// The house's credits.
+    pub fn money(self) -> Result<i64> {
+        get(self, Prop::Money)
     }
 }
 

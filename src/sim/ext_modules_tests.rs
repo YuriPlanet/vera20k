@@ -807,6 +807,119 @@ fn muster_field_ends_when_the_last_banner_falls() {
     );
 }
 
+/// Muster Field's variable `name` of house `index`, as its `ui.wasm` reads
+/// it (the module publishes the camp, `muster_field_data::proto`).
+fn muster_var(scene: &HeadlessScenario, index: usize, name: &str) -> i64 {
+    let sim = scene.sim();
+    let var = sim
+        .ext_modules
+        .vars
+        .lookup(ModuleSource::Mod, name)
+        .unwrap_or_else(|| panic!("Muster Field declares {name}"));
+    let holder = sim
+        .module_var_holder(house_ref(index), var)
+        .expect("a house variable");
+    sim.ext_modules.vars.read(var, holder).0
+}
+
+/// Sends the interface's two-byte message as its button does: through the
+/// command stream to the mod's `on_message`.
+fn muster_button(
+    scene: &mut HeadlessScenario,
+    house: crate::sim::intern::InternedId,
+    what: u8,
+    index: u8,
+) {
+    use crate::sim::command::CommandEnvelope;
+    let sim = &mut scene.runtime.simulation;
+    let record = sim
+        .encode_module_message_record(house, 0, &[what, index])
+        .expect("the message encodes");
+    let tick = sim.session.tick();
+    sim.queue_command(CommandEnvelope::synchronized(record, tick));
+    for _ in 0..4 {
+        scene.tick();
+    }
+}
+
+/// Plays Muster Field from its interface alone, when
+/// `VERA20K_TEST_MUSTER_UI_WASM` names its `ui.wasm` (and
+/// `VERA20K_TEST_MUSTER_WASM` its `rules.wasm`): the published camp, and
+/// each button doing what its key does (hire, keep, redraw, improve, a
+/// dismissal, the battle).
+#[test]
+fn muster_field_plays_from_its_interface() {
+    let Some(ui_path) = std::env::var_os("VERA20K_TEST_MUSTER_UI_WASM") else {
+        return;
+    };
+    let ui = std::fs::read(ui_path).expect("ui.wasm reads");
+    let client = vera20k_wasm_ext::ClientModule::load(&ui, vera20k_wasm_ext::Limits::MOD)
+        .unwrap_or_else(|e| panic!("ui.wasm loads: {e}"));
+    for export in ["client_on_start", "client_on_render", "client_on_events"] {
+        assert!(client.has_export(export), "ui.wasm exports {export}");
+    }
+    let Some((mut scene, player, house)) = muster_field() else {
+        return;
+    };
+    // proto's message kinds and variable layout.
+    const HIRE: u8 = 1;
+    const KEEP: u8 = 2;
+    const REDRAW: u8 = 3;
+    const IMPROVE: u8 = 4;
+    const START: u8 = 5;
+    const DISMISS: u8 = 7;
+    let var = |scene: &HeadlessScenario, name| muster_var(scene, player, name);
+    let byte = |packed: i64, at: usize| (packed >> (8 * at)) as u8;
+    let member = |scene: &HeadlessScenario, at: usize| byte(var(scene, "MfCompanyLow"), at);
+
+    assert_eq!(var(&scene, "MfPhase"), 1, "the muster is published");
+    assert_eq!(var(&scene, "MfWave"), 1);
+    assert_eq!(var(&scene, "MfBanners"), 3);
+    assert_eq!(var(&scene, "MfFlags") & 1, 1, "the officer stands");
+    let offers = var(&scene, "MfOffers");
+    for at in 0..3 {
+        assert_eq!(byte(offers, at) & 0x40, 0x40, "offer {at} stands: {offers:x}");
+    }
+    assert_eq!(byte(offers, 3), 0, "three offers at camp rank 1");
+
+    // Hire offer 0: it joins the company where the line begins.
+    let kind = byte(offers, 0) & 0x1f;
+    muster_button(&mut scene, house, HIRE, 0);
+    assert!(credits(&scene, player) < 1600, "the button hired");
+    assert_eq!(member(&scene, 0) & 0x1f, kind, "member 0 is the offer hired");
+
+    // Keep offer 1, then let it go.
+    muster_button(&mut scene, house, KEEP, 1);
+    assert_eq!(byte(var(&scene, "MfOffers"), 1) & 0x20, 0x20, "kept");
+    muster_button(&mut scene, house, KEEP, 1);
+    assert_eq!(byte(var(&scene, "MfOffers"), 1) & 0x20, 0, "let go");
+
+    let money = credits(&scene, player);
+    muster_button(&mut scene, house, REDRAW, 0);
+    assert_eq!(credits(&scene, player), money - 50, "a redraw");
+    muster_button(&mut scene, house, IMPROVE, 0);
+    assert_eq!(credits(&scene, player), money - 650, "an improvement");
+    assert_eq!(var(&scene, "MfRank"), 1);
+    assert_eq!(byte(var(&scene, "MfOffers"), 3) & 0x40, 0x40, "four offers");
+
+    // A dismissal pays half back and empties the place.
+    let money = credits(&scene, player);
+    muster_button(&mut scene, house, DISMISS, 0);
+    assert!(credits(&scene, player) > money, "the dismissal refunds");
+    assert_eq!(member(&scene, 0), 0, "member 0 left");
+
+    // An empty company may fight: the battle starts and is published.
+    muster_button(&mut scene, house, START, 0);
+    assert_eq!(var(&scene, "MfPhase"), 2, "the battle began");
+    for _ in 0..60 {
+        scene.tick();
+    }
+    let battle = var(&scene, "MfBattle");
+    assert!((battle >> 32) & 0xffff > 0, "raiders arrived: {battle:x}");
+    let log = scene.runtime.simulation.ext_modules_mut().take_log();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None, "{log:?}");
+}
+
 /// Spawns a Grizzly for the first computer house beside its base.
 /// Returns (house index, tank, its cell).
 pub(super) fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {

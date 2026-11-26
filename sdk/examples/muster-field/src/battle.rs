@@ -11,8 +11,9 @@ use vera20k_sdk::prelude::*;
 use vera20k_sdk::{NO_HANDLE, get};
 
 use crate::state::{self, COMPANY, MAX_COMPANY, MAX_RAIDERS, Num, RAIDERS, WAVE};
-use crate::text::Line;
+use crate::text::{Line, Say};
 use crate::{content, perks, waves, world};
+use muster_field_data::FRONT_NAMES;
 
 pub struct Report {
     pub won: bool,
@@ -475,14 +476,14 @@ const fn side(dx: i32, dy: i32, steps: i32, name: &'static str) -> Side {
 }
 
 const SIDES: [Side; 8] = [
-    side(0, 1, 16, "西南"),
-    side(1, 0, 16, "东南"),
-    side(0, -1, 16, "东北"),
-    side(-1, 0, 16, "西北"),
-    side(1, 1, 12, "南面"),
-    side(1, -1, 12, "东面"),
-    side(-1, 1, 12, "西面"),
-    side(-1, -1, 12, "北面"),
+    side(0, 1, 16, FRONT_NAMES[0]),
+    side(1, 0, 16, FRONT_NAMES[1]),
+    side(0, -1, 16, FRONT_NAMES[2]),
+    side(-1, 0, 16, FRONT_NAMES[3]),
+    side(1, 1, 12, FRONT_NAMES[4]),
+    side(1, -1, 12, FRONT_NAMES[5]),
+    side(-1, 1, 12, FRONT_NAMES[6]),
+    side(-1, -1, 12, FRONT_NAMES[7]),
 ];
 /// Ranks behind the front, then ahead of it where the map ends.
 const DEPTHS: [i32; 11] = [0, 1, 2, 3, 4, -1, -2, -3, -4, 5, 6];
@@ -507,6 +508,32 @@ static FRONT: Num = Num::new(0);
 /// The side the raiders will come from, for the muster's line.
 pub fn front_name() -> &'static str {
     front().name
+}
+
+/// [`front`]'s index in `SIDES` and `FRONT_NAMES`, for the interface.
+pub fn front_index() -> i64 {
+    front();
+    FRONT.get()
+}
+
+/// The company standing, the raiders standing and the raiders that came,
+/// for the interface. Reads only: [`count_living`] forgets the dead.
+pub fn standing() -> (i64, i64, i64) {
+    if STAGE.get() == IDLE {
+        return (0, 0, 0);
+    }
+    let (mut ours, mut theirs) = (0, 0);
+    for slot in 0..FIGHTERS {
+        let Some(unit) = fighter(slot) else { continue };
+        if unit.health().unwrap_or(0) > 0 {
+            if slot < MAX_COMPANY {
+                ours += 1;
+            } else {
+                theirs += 1;
+            }
+        }
+    }
+    (ours, theirs, ARRIVED.get())
 }
 
 fn front() -> Side {

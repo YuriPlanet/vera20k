@@ -1,0 +1,13 @@
+[package]
+name = "ui-ping-ui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Client module network test, ui.wasm"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+vera20k-sdk = { path = "../../../rust/vera20k-sdk" }

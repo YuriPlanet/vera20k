@@ -115,7 +115,7 @@ const _: () = {
             size += squads[at].count;
             at += 1;
         }
-        assert!(size > 0 && size <= crate::state::MAX_RAIDERS);
+        assert!(size > 0 && size <= crate::MAX_RAIDERS);
         wave += 1;
     }
 };
