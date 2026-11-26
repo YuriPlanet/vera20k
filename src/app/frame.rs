@@ -12,6 +12,7 @@ use super::match_runtime::redraw_gate::ProbeVerdict;
 use super::match_runtime::state::MatchState;
 use super::persistence::PersistenceState;
 use super::presentation::state::MatchPresentationState;
+use super::process_assets::ProcessAssets;
 use super::renderer_state::RendererState;
 use super::{
     ActiveEventLoop, App, AppState, GameScreen, Instant, PlatformState, Result,
@@ -950,7 +951,12 @@ impl App {
 
     /// The active-game shell `page` into `destination`.
     fn render_in_game_shell(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
         page: ScreenPage,
@@ -959,23 +965,72 @@ impl App {
         use crate::ui::pause_menu::InGameMenuState;
         match page {
             ScreenPage::InGameShell(InGameMenuState::Menu) => {
-                let buttons = crate::app::input::pause_menu::button_states(&state.match_state);
-                shell::render_pause_menu_shell(state, encoder, destination, buttons)
+                let buttons = crate::app::input::pause_menu::button_states(match_state);
+                shell::render_pause_menu_shell(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    persistence,
+                    encoder,
+                    destination,
+                    buttons,
+                )
             }
-            ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
-                shell::render_abort_shell(state, encoder, destination)
-            }
-            ScreenPage::InGameShell(InGameMenuState::Sound) => {
-                shell::render_sound_shell(state, encoder, destination)
-            }
-            ScreenPage::InGameShell(InGameMenuState::Diplomacy) => {
-                shell::render_diplomacy_shell(state, encoder, destination)
-            }
+            ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => shell::render_abort_shell(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                encoder,
+                destination,
+            ),
+            ScreenPage::InGameShell(InGameMenuState::Sound) => shell::render_sound_shell(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                encoder,
+                destination,
+            ),
+            ScreenPage::InGameShell(InGameMenuState::Diplomacy) => shell::render_diplomacy_shell(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                encoder,
+                destination,
+            ),
             ScreenPage::InGameShell(InGameMenuState::MissionBriefing) => {
-                shell::render_restate_shell(state, encoder, destination)
+                shell::render_restate_shell(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    persistence,
+                    encoder,
+                    destination,
+                )
             }
             ScreenPage::InGameShell(InGameMenuState::SavedGame(_)) => {
-                shell::render_saved_game_shell(state, encoder, destination)
+                shell::render_saved_game_shell(
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    persistence,
+                    encoder,
+                    destination,
+                )
             }
             // No other state draws the active-game shell.
             _ => Ok(()),
@@ -996,13 +1051,17 @@ impl App {
     /// active (see `PlatformState::owns_pointer`); and elsewhere only
     /// without mouse.sha, which the shell pages draw whenever it loaded.
     fn show_os_cursor_only_without_game_cursor(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
         event_loop: &ActiveEventLoop,
         battlefield_drawn: bool,
     ) {
-        let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
-        let arrow = !state.platform.owns_pointer()
-            || if state.platform.cursor_confined {
+        let status_screen_drawn = std::mem::take(&mut frontend.status_screen_drawn);
+        let arrow = !platform.owns_pointer()
+            || if platform.cursor_confined {
                 // Confined: the game owns the pointer through its
                 // software cursor, so keep the OS cursor hidden everywhere the game
                 // draws one of its own — that leaves a single (software) cursor and
@@ -1015,31 +1074,35 @@ impl App {
                 // debug pause still needs a visible pointer.
                 status_screen_drawn
                     || !crate::app::state::use_software_cursor(
-                        &state.platform,
-                        &state.renderer,
-                        &state.frontend,
-                        &state.match_state,
-                        &state.persistence,
+                        platform,
+                        renderer,
+                        frontend,
+                        match_state,
+                        persistence,
                     )
             } else {
                 status_screen_drawn
                     || if battlefield_drawn {
                         !crate::app::state::use_software_cursor(
-                            &state.platform,
-                            &state.renderer,
-                            &state.frontend,
-                            &state.match_state,
-                            &state.persistence,
-                        ) && state.match_state.input.cursor_visibility.is_visible()
+                            platform,
+                            renderer,
+                            frontend,
+                            match_state,
+                            persistence,
+                        ) && match_state.input.cursor_visibility.is_visible()
                     } else {
-                        state
-                            .match_state
-                            .match_presentation
-                            .software_cursor
-                            .is_none()
+                        match_state.match_presentation.software_cursor.is_none()
                     }
             };
-        crate::app::input::hardware_cursor::show(state, event_loop, arrow);
+        crate::app::input::hardware_cursor::show(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            event_loop,
+            arrow,
+        );
     }
 
     /// Dispatch rendering based on current GameScreen state.
@@ -1295,7 +1358,12 @@ impl App {
         let verdict = (pass == FramePass::Probe).then(|| {
             state.platform.redraw_gate.probe_verdict(
                 crate::app::match_runtime::redraw_gate::still_frame(
-                    state,
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
                     false,
                     runtime_pass.screen_shake_offset,
                     picture_clock,
@@ -1414,7 +1482,14 @@ impl App {
         let mut presented_shell = PresentedShell::Other;
 
         let mut shell_capture_current_frame = match shell_capture.as_deref_mut() {
-            Some(session) => session.should_capture_current_frame(state)?,
+            Some(session) => session.should_capture_current_frame(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.persistence,
+            )?,
             None => false,
         };
         let mut game_render_output: Option<crate::app::presentation::render::GameRenderOutput> =
@@ -1474,7 +1549,12 @@ impl App {
             }
             _ if page == Some(ModalPage::NetworkFailure) => {
                 crate::app::frontend::skirmish_shell_render::render_network_failure(
-                    state,
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
                     &mut encoder,
                     &output.texture,
                 )?;
@@ -1490,14 +1570,24 @@ impl App {
             {
                 // 0xEA is pushed over whatever the game shows, in-game A3 included.
                 crate::app::frontend::skirmish_shell_render::render_connection_shell(
-                    state,
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
                     &mut encoder,
                     &output.texture,
                 )?;
             }
             _ if page == Some(ModalPage::Keyboard) => {
                 crate::app::frontend::skirmish_shell_render::render_keyboard_shell(
-                    state,
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
                     &mut encoder,
                     &output.texture,
                 )?;
@@ -1550,18 +1640,50 @@ impl App {
                 let (encoder, texture) = (&mut encoder, &output.texture);
                 // The page that painted, or `None` for the error card.
                 let shown = match screen_page {
-                    ScreenPage::MovieList => {
-                        movies_credits_render::render_movie_list(state, encoder, texture)?
-                            .then_some(PresentedShell::MovieList)
-                    }
-                    ScreenPage::Mods => mods_render::render_mods_page(state, encoder, texture)?
-                        .then_some(PresentedShell::Mods),
-                    ScreenPage::Campaign => {
-                        campaign_shell_render::render_campaign_page(state, encoder, texture)?
-                            .then_some(PresentedShell::Campaign)
-                    }
+                    ScreenPage::MovieList => movies_credits_render::render_movie_list(
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        encoder,
+                        texture,
+                    )?
+                    .then_some(PresentedShell::MovieList),
+                    ScreenPage::Mods => mods_render::render_mods_page(
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        encoder,
+                        texture,
+                    )?
+                    .then_some(PresentedShell::Mods),
+                    ScreenPage::Campaign => campaign_shell_render::render_campaign_page(
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        encoder,
+                        texture,
+                    )?
+                    .then_some(PresentedShell::Campaign),
                     ScreenPage::LanLobby => {
-                        skirmish::render_lan_lobby(state, encoder, texture)?;
+                        skirmish::render_lan_lobby(
+                            &mut state.platform,
+                            &mut state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
+                            encoder,
+                            texture,
+                        )?;
                         Some(PresentedShell::LanLobby)
                     }
                     ScreenPage::NetworkSetup => {
@@ -1573,22 +1695,55 @@ impl App {
                         {
                             skirmish::render_skirmish_shell(state, encoder, texture)?;
                         } else {
-                            skirmish::render_multiplayer_setup(state, encoder, texture)?;
+                            skirmish::render_multiplayer_setup(
+                                &mut state.platform,
+                                &mut state.renderer,
+                                &mut state.frontend,
+                                &mut state.match_state,
+                                &state.process_assets,
+                                &state.persistence,
+                                encoder,
+                                texture,
+                            )?;
                         }
                         Some(PresentedShell::NetworkSetup)
                     }
-                    ScreenPage::Wol => {
-                        wol_welcome_render::render_wol_page(state, encoder, texture)?
-                            .then(|| wol_welcome_render::presented_wol_page(&state.frontend.wol))
-                    }
+                    ScreenPage::Wol => wol_welcome_render::render_wol_page(
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        &state.audio,
+                        encoder,
+                        texture,
+                    )?
+                    .then(|| wol_welcome_render::presented_wol_page(&state.frontend.wol)),
                     ScreenPage::LoadSavedGame => {
                         load_saved_game_render::render_load_saved_game_page(
-                            state, encoder, texture,
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
+                            encoder,
+                            texture,
                         )?
                         .then_some(PresentedShell::LoadSavedGame)
                     }
                     ScreenPage::LauncherOptions => {
-                        skirmish::render_launcher_options(state, encoder, texture)?;
+                        skirmish::render_launcher_options(
+                            &mut state.platform,
+                            &mut state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
+                            encoder,
+                            texture,
+                        )?;
                         Some(PresentedShell::Options)
                     }
                     ScreenPage::Skirmish => {
@@ -1601,7 +1756,12 @@ impl App {
                     }
                     ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits => {
                         match menu_page_render::render_active_menu_page(
-                            state,
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
                             encoder,
                             &output.texture,
                         )? {
@@ -1616,7 +1776,14 @@ impl App {
                         }
                     }
                     _ => match main_menu_shell_render::render_main_menu_shell(
-                        state, encoder, texture,
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        encoder,
+                        texture,
                     )? {
                         main_menu_shell_render::MainMenuShellRenderResult::Rendered => {
                             Some(PresentedShell::MainMenu)
@@ -1640,7 +1807,14 @@ impl App {
                 }
                 if page == Some(ModalPage::ShellMessageBox) {
                     main_menu_shell_render::render_shell_message_box_over_page(
-                        state, encoder, texture,
+                        &mut state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.persistence,
+                        encoder,
+                        texture,
                     );
                 }
             }
@@ -1688,8 +1862,17 @@ impl App {
                 )
                 .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
                 let frame_raster = state.renderer.bit_font.set_raster(raster);
-                let painted =
-                    Self::render_in_game_shell(state, &mut encoder, &output.texture, screen_page);
+                let painted = Self::render_in_game_shell(
+                    &mut state.platform,
+                    &mut state.renderer,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
+                    &mut encoder,
+                    &output.texture,
+                    screen_page,
+                );
                 state.renderer.bit_font.set_raster(frame_raster);
                 painted?;
             }
@@ -1847,21 +2030,36 @@ impl App {
                 let score_rendered = match screen_page {
                     ScreenPage::CoopScore => {
                         crate::app::frontend::skirmish_shell_render::render_coop_score(
-                            state,
+                            &mut state.platform,
+                            &mut state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
                             &mut encoder,
                             &output.texture,
                         )?
                     }
                     ScreenPage::CampaignScore => {
                         crate::app::frontend::campaign_score_shell_render::render_campaign_score_page(
-                            state,
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
                             &mut encoder,
                             &output.texture,
                         )?
                     }
                     ScreenPage::Score => {
                         crate::app::frontend::score_shell_render::render_score_page(
-                            state,
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &state.persistence,
                             &mut encoder,
                             &output.texture,
                         )?
@@ -1917,7 +2115,11 @@ impl App {
             );
         }
         Self::show_os_cursor_only_without_game_cursor(
-            state,
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.persistence,
             event_loop,
             game_render_output.is_some(),
         );
@@ -2244,7 +2446,12 @@ impl App {
             status_step |= setup.statics.commit_presented();
         }
         let still = crate::app::match_runtime::redraw_gate::still_frame(
-            state,
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
             shell_capture.is_some() || hidden_run.is_some(),
             runtime_pass.screen_shake_offset,
             picture_clock,
@@ -2312,7 +2519,17 @@ impl App {
                 let session = shell_capture
                     .as_deref_mut()
                     .expect("shell capture session exists when readback completes");
-                session.complete(state, surface_format, &pixels)?;
+                session.complete(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.audio.sfx_player,
+                    &state.persistence,
+                    surface_format,
+                    &pixels,
+                )?;
                 session.is_terminal()
             } else {
                 hidden_run

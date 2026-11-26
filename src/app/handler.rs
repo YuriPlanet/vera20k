@@ -1479,7 +1479,11 @@ impl App {
                     }
                 }
                 if let Some(session) = self.shell_capture.as_mut() {
-                    session.prepare_state(&mut state);
+                    session.prepare_state(
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                    );
                 }
                 if let Some(session) = self.hidden_run.as_mut()
                     && let Err(err) = session.prepare_state(&mut state)
@@ -2311,7 +2315,17 @@ impl ApplicationHandler for App {
                     }
                     Self::release_campaign_slider(&mut state.frontend.shell_controller);
                 }
-                Self::set_window_active(state, active);
+                Self::set_window_active(
+                    &mut state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &state.persistence,
+                    &mut state.audio,
+                    active,
+                );
             }
             WindowEvent::Occluded(occluded) => {
                 // Fully covered on the backends that report it. Windows does

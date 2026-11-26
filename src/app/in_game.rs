@@ -310,39 +310,46 @@ impl App {
     /// modifier that performed an Alt+Tab never delivers its release to this
     /// window, so it would otherwise stay latched and suppress force-fire and
     /// the ordinary cursor for the rest of the match.
-    pub(super) fn set_window_active(state: &mut AppState, active: bool) {
-        if state.platform.window_active == active {
+    pub(super) fn set_window_active(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &PersistenceState,
+        audio: &mut AppAudioRuntime,
+        active: bool,
+    ) {
+        if platform.window_active == active {
             return;
         }
-        state.platform.window_active = active;
-        Self::sync_window_movies(&state.platform, &mut state.frontend);
+        platform.window_active = active;
+        Self::sync_window_movies(platform, frontend);
         if active {
-            state.platform.clear_attention();
+            platform.clear_attention();
         }
-        let movie_active = crate::app::radar_movie::playback_active(
-            &state.platform,
-            &state.match_state.match_presentation,
-        );
-        state
-            .match_state
+        let movie_active =
+            crate::app::radar_movie::playback_active(platform, &match_state.match_presentation);
+        match_state
             .match_presentation
             .radar_movies
             .set_active(movie_active);
-        state.match_state.input.keys_held.clear();
+        match_state.input.keys_held.clear();
         // VERA formation line: its held key's release may never arrive.
-        state.match_state.input.formation_line.clear_key();
-        state.match_state.input.hotkey_modifiers = ModifiersState::empty();
-        state.platform.live_modifiers = ModifiersState::empty();
-        state.platform.held_modifier_keys.clear();
-        state.match_state.input.type_select.clear_held();
+        match_state.input.formation_line.clear_key();
+        match_state.input.hotkey_modifiers = ModifiersState::empty();
+        platform.live_modifiers = ModifiersState::empty();
+        platform.held_modifier_keys.clear();
+        match_state.input.type_select.clear_held();
         crate::app::input::planning_mode::release_on_focus_change(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
         );
         // gamemd-derived: the `WM_ACTIVATEAPP` changed edge at 0x007778AC
         // stops/restores the primary DirectSound output through 0x00407020 /
@@ -351,25 +358,22 @@ impl App {
         // `g_ApplicationActive` (0x00A8ED80) edge — never with a setting — so
         // the audio gate rides on every activation edge, and a window the
         // player minimises goes silent.
-        if let Some(player) = state.audio.music_player.as_mut() {
+        if let Some(player) = audio.music_player.as_mut() {
             player.set_focus_output_active(active);
         }
-        if let Some(player) = state.audio.sfx_player.as_mut() {
+        if let Some(player) = audio.sfx_player.as_mut() {
             player.set_focus_output_active(active);
         }
-        if state.platform.pause_on_focus_loss
-            && active
-            && state.match_state.session_mode().is_single_player()
-        {
+        if platform.pause_on_focus_loss && active && match_state.session_mode().is_single_player() {
             // Only the configured freeze leaves a deactivated span to forget:
             // without it the match keeps pacing in the background. Forget the
             // pacing window so exactly one frame runs immediately on return,
             // then normal pacing resumes; the span must not buy a catch-up
             // frame.
-            state.platform.frame_pacer.reset_for_immediate_frame();
+            platform.frame_pacer.reset_for_immediate_frame();
         }
         if active {
-            state.platform.window.request_redraw();
+            platform.window.request_redraw();
         }
         log::info!(
             "Window {}",

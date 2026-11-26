@@ -911,11 +911,17 @@ fn render_skirmish_shell_with_atlas(
                 .create_instance_buffer(&state.renderer.gpu, &d.instances)
         })
         .collect();
-    let cursor_instances: Vec<SpriteInstance> =
-        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
+    let cursor_instances: Vec<SpriteInstance> = crate::app::frontend::shell_pass::software_cursor(
+        &mut state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        SHELL_CURSOR_DEPTH,
+    )
+    .map(|(_, instance)| instance)
+    .into_iter()
+    .collect();
     let cursor_buffer = state
         .renderer
         .batch_renderer

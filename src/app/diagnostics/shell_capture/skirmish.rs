@@ -654,17 +654,24 @@ impl SkirmishCapture {
     /// Deploy the MCV, then sell the Construction Yard it becomes: with Short
     /// Game on the house has no base left and loses. The score page follows
     /// through the production exit cascade.
-    fn lose_the_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        if matches!(state.frontend.screen, GameScreen::MissionResult { .. }) {
+    fn lose_the_game(
+        &mut self,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
+        frame: u32,
+    ) -> Result<()> {
+        if matches!(frontend.screen, GameScreen::MissionResult { .. }) {
             ensure!(
-                App::score_shell_active(&state.frontend),
+                App::score_shell_active(frontend),
                 "the defeat reached a result screen without the score page"
             );
-            let page = state
-                .frontend
-                .score_page
-                .as_ref()
-                .context("score page missing")?;
+            let page = frontend.score_page.as_ref().context("score page missing")?;
             let rows: Vec<Value> = page
                 .model
                 .rows
@@ -682,22 +689,22 @@ impl SkirmishCapture {
             self.phase = Phase::Scoring;
             return Ok(());
         }
-        let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
+        let owner = crate::app::input::commands::preferred_local_owner_name(match_state)
             .context("no local owner in the game")?;
         if !self.deploy_sent {
-            let mcv = Self::local_entity(&state.frontend, &state.match_state, |object| {
+            let mcv = Self::local_entity(frontend, match_state, |object| {
                 object.deploys_into.is_some()
             })
             .context("the local player has no MCV")?;
             crate::app::input::commands::schedule_command(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &owner,
                 crate::sim::command::Command::DeployMcv { entity_id: mcv },
             );
@@ -705,19 +712,18 @@ impl SkirmishCapture {
                 "action": "deploy MCV", "entity": mcv}));
             self.deploy_sent = true;
         } else if !self.sell_sent
-            && let Some(yard) = Self::local_entity(&state.frontend, &state.match_state, |object| {
-                object.construction_yard
-            })
+            && let Some(yard) =
+                Self::local_entity(frontend, match_state, |object| object.construction_yard)
         {
             crate::app::input::commands::schedule_command(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                persistence,
                 &owner,
                 crate::sim::command::Command::SellBuilding { entity_id: yard },
             );
@@ -1731,7 +1737,17 @@ impl SkirmishCapture {
                     self.phase = Phase::Defeating;
                 }
             }
-            (Phase::Defeating, _) => self.lose_the_game(state, frame)?,
+            (Phase::Defeating, _) => self.lose_the_game(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                frame,
+            )?,
             (Phase::Scoring, PresentedShell::Score) if Self::score_settled(&state.frontend) => {
                 if self.loading == Some(LoadingTarget::DefeatContinue) {
                     // Continue through the page's production handlers.

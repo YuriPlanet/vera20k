@@ -17,6 +17,8 @@
 
 use crate::app::match_runtime::state::MatchState;
 use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
+use crate::audio::sfx::SfxPlayer;
 use crate::util::time::{Duration, Instant};
 
 use crate::app::AppState;
@@ -313,15 +315,21 @@ impl ShellExit {
 /// has been shown. A dialog that stopped showing while it slid out (another
 /// route replaced it, such as a game loaded from an overlay panel) takes its
 /// result with it.
-pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<ShellExitThen> {
-    let kind = state.frontend.shell_exit.as_ref()?.kind;
-    if current_shell_slide_target(&state.frontend, &state.match_state) != Some(kind) {
-        state.frontend.shell_exit = None;
+pub(crate) fn advance_shell_exit(
+    platform: &PlatformState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    now: Instant,
+) -> Option<ShellExitThen> {
+    let kind = frontend.shell_exit.as_ref()?.kind;
+    if current_shell_slide_target(frontend, match_state) != Some(kind) {
+        frontend.shell_exit = None;
         return None;
     }
     let hidden_online_start =
-        crate::app::App::online_start_runs_while_hidden(&state.platform, &state.match_state);
-    let exit = state.frontend.shell_exit.as_mut()?;
+        crate::app::App::online_start_runs_while_hidden(platform, match_state);
+    let exit = frontend.shell_exit.as_mut()?;
     if !exit.advance(now, hidden_online_start) {
         return None;
     }
@@ -329,12 +337,12 @@ pub(crate) fn advance_shell_exit(state: &mut AppState, now: Instant) -> Option<S
         // The last slide-out frame stays on screen while the voice plays.
         let completed_at = *exit.completed_at.get_or_insert(now);
         if now < completed_at + CAMPAIGN_VOICE_WAIT
-            && crate::app::App::campaign_voice_playing(&mut state.audio.sfx_player)
+            && crate::app::App::campaign_voice_playing(sfx_player)
         {
             return None;
         }
     }
-    state.frontend.shell_exit.take().map(|exit| exit.then)
+    frontend.shell_exit.take().map(|exit| exit.then)
 }
 
 /// The teardown slide of `kind` while it runs.
