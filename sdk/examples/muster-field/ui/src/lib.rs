@@ -15,7 +15,7 @@
 //! The pictures are the mod folder's PCX files: `mfp_<type>.pcx` portraits,
 //! `mfk_<n>.pcx` supply emblems, `mfcard<tier>.pcx`, `mfcardk.pcx` (kept)
 //! and `mfsup.pcx` frames, `mfb<width><colour>.pcx` button plates and
-//! `mfpanh.pcx`, `mfpanq.pcx` panels (made in vera20k-art/muster). The
+//! `mfpanh.pcx`, `mfpanq.pcx` panels (made apart, not in the repository). The
 //! engine draws a button's label over its plate and dims or brightens the
 //! plate as the button is disabled or pointed at; texts on these pictures
 //! go without their black backdrop. A missing picture leaves its place

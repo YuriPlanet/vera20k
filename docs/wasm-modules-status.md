@@ -7,8 +7,8 @@ content as work lands; do not append a diary.
 ## Where the work is
 
 - Repository: `YuriPlanet/vera20k`. Phase 1 is on `main` (#5183); the control
-  points below (phase 2a) follow it. The client modules (phase 2, `ui.wasm`)
-  are on `feature/wasm-ui-modules` of `libi/vera20k`.
+  points below (phase 2a) follow it (#5245). The client modules (phase 2,
+  `ui.wasm`) are in #5251.
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
 - Feedback: the RFC draft PR
@@ -82,8 +82,8 @@ module (merge timers into one function).
 ## Playtest setup
 
 - Fast client: `python3 -m tools.cargo_run -- build --profile fast -p vera20k --bin
-  vera20k --bin asset` with `CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/wx-engine`;
-  the binaries land in `owned-worktrees/<sha256(worktree path)[:16]>/fast/`. Put a
+  vera20k --bin asset`, with `CARGO_TARGET_DIR` set to a build directory of your
+  choice; the binaries land in `owned-worktrees/<sha256(worktree path)[:16]>/fast/`. Put a
   `config.toml` beside them (`[paths] ra2_dir = "<retail install>"`), or the client
   finds no `ra2md.mix` and the mod fails to start. `cargo_run`'s cache retention
   deletes the namespaces of removed worktrees, binaries included.
@@ -639,7 +639,7 @@ modules, external modders, freeze), and the later items (peer calls,
 
 ## Done (phase 2: client modules, RFC 0.0.24)
 
-Branch `feature/wasm-ui-modules` (on `feature/wasm-control-points`). A mod's and a
+PR #5251 (on the control points, #5245). A mod's and a
 map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
 
 - Sandbox: `wasm-ext/src/client.rs` (`ClientHost`, `ClientEvent`, records, kinds),
@@ -797,7 +797,7 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
 ## Validation commands
 
 ```
-export CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/wx-engine
+export CARGO_TARGET_DIR=<your build directory>
 python3 -m tools.cargo_run -- test -p vera20k-wasm-ext --lib
 # Build each sdk/examples/* with `cargo build --release`, then point the
 # VERA20K_TEST_*_WASM variables (RULES, MODIFIER, TRIGGERS, ACTIONS, ORDERS, DECIDE)
