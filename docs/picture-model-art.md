@@ -493,6 +493,10 @@ Art that still only comes from SHP, PCX or TMP, and why:
 - Tile pictures draw at 1x only (no zoomed HD twin) and have no unlit
   pixels: the tile blitter lights every pixel (`zdepth_shader.wgsl` passes
   index 1), and taking a mask would change that shader.
+- Each suffix sibling of a declared template (`clear01a.tem`, ...) needs a
+  picture of its own; one without draws its TMP's pixels and is reported.
+- Overlay presence is not in the config hash, as for SHPs: a declared
+  overlay picture missing on one machine is caught only by the state hash.
 - Cameo pictures draw at 1x; the smooth sidebar scales them as it scales an
   SHP cameo, and no language label is baked onto them.
 - Radar colours of declared overlays and trees are the frames' mean colours;
@@ -562,6 +566,19 @@ current: say what was done, what was not, and what comes next.
   WebGL2.
 - In-game notices for art problems (`rules::art_problems`, shown once after
   the match loads).
+- Chains 7 and 8 (side branch `feature/pm-more-art`): overlays (walls,
+  resources, fences, rails, bridges and their shadows, radar colours),
+  TerrainTypes, SmudgeTypes, particle images, `AlphaImage=`, tiles
+  (`PictureFileName=`) and cameos (`CameoPicture=`, `AltCameoPicture=`),
+  with their simulation facts; `asset export-picture` takes theater SHPs,
+  TMP templates and `--plain`. Focused tests: core
+  `rules::effect_asset_catalog` (particle count, overlay presence),
+  `rules::terrain_asset_catalog` (ore-tree frames, radar colour),
+  `rules::alpha_image_assets` (grey bytes, hash), `map::theater` (tile
+  picture and a misfit); client `render::overlay_atlas` (terrain stage and
+  shadow pairs), `render::sidebar_cameo_atlas` (2x cameo crop), and the
+  existing `render::sprite_atlas`, `render::bridge_atlas`, `rules::art_data`
+  groups, with retail `ini/` and `RA2_DIR`; `check --features wasm` builds.
 - Tooling: `tools/same_as_base.py` (sim-bench hashes and frame times,
   map_observation pixels at Options and wheel zooms against a base ref);
   `presentation.wheel_zoom` in map_observation profiles.
@@ -627,6 +644,27 @@ current: say what was done, what was not, and what comes next.
   build and lib-test run followed (ba93ce979), its failures were fixed in
   bb588c2db, and every later commit was made after its focused tests
   passed.
+
+- Chains 7 and 8, production validation (`map_observation`, `tibtre` and
+  `concrete-wall` profiles, XMP03T4, scratch game folder with a loose
+  artmd.ini and temperatmd.ini declaring pictures exported from the retail
+  SHPs and TMPs with `--plain`): the log shows every ore and gem overlay,
+  both walls (`GTWALL.png` and `NTWALL.png`, 96 frames through
+  `NewTheater=`), the 32 terrain types including the ore trees, the Clear
+  tile, the power plant cameo and the `SGRYSMK1` particle drawn from their
+  pictures. The final state hash equals the retail run's in every capture.
+  Frames differ by 9–17 pixels, as two retail runs differ by 12 (the ore
+  field's shimmer). Captures with the tile and cameo pictures exported
+  through another palette differ by 1,868 and 4,860 pixels, so those
+  pictures are what is drawn. Not seen on screen: smudges (the `asset`
+  tool cannot reach the archive holding `CR1`), AlphaImage glows (retail
+  has no loaded AlphaImage), high bridges. They are covered by unit tests
+  only.
+- Chains 7 and 8, off-state check (`tools.same_as_base`, f8a9ed83d against
+  7ebd2af5a): same sim-bench final hash (`3e2256c96903b02d`) and rules hash
+  after 9,000 ticks at 1v29; mean tick 0.87 ms against 0.88 ms, main-thread
+  CPU 0.63 against 0.64 ms; Options zoom 100 and 150 and wheel 1.5 at steps
+  300, 1200 and 2200 within the noise rule.
 
 ### Next steps, in order
 
