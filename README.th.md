@@ -144,6 +144,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K
 
-[ชมผู้เล่นหนึ่งคนรับมือกับ AI ระดับ Brutal 29 ฝ่ายบนแผนที่ Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 แปลจาก [README.md](README.md) โปรดปรับปรุงให้ตรงกับฉบับภาษาอังกฤษเสมอ

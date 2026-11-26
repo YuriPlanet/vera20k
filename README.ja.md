@@ -133,6 +133,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> で VERA20K が紹介されています。
 
-[Arctic Circle 16 でプレイヤー1人が難易度 Brutal の AI 29勢力に挑む対戦を見る](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[Arctic Circle 30 で 1 対 29（難易度 Brutal の AI）](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 この文書は [README.md](README.md) を翻訳したものです。英語版に合わせて最新の状態に保ってください。

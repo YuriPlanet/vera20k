@@ -158,6 +158,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.
 
-[Se en spelare möta 29 datormotståndare på svårighetsgraden Brutal på Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Översättning av [README.md](README.md); håll den uppdaterad i takt med den engelska versionen.

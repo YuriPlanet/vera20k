@@ -158,6 +158,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;Канал <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> показал VERA20K.
 
-[Смотреть матч на Arctic Circle 16 — один игрок против 29 ИИ на уровне Brutal](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[1 против 29 ИИ уровня Brutal на Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Перевод [README.md](README.md); поддерживайте его в соответствии с английской версией.

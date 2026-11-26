@@ -159,4 +159,4 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
 
-[Xem một người chơi đối đầu với 29 đối thủ máy ở độ khó Brutal trên bản đồ Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[1 đấu 29 AI độ khó Brutal trên Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)

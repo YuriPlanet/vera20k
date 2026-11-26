@@ -160,6 +160,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> kanalında VERA20K tanıtılıyor.
 
-[Arctic Circle 16 haritasında bir oyuncunun Brutal seviyesindeki 29 yapay zekâ rakibine karşı maçını izleyin](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[Arctic Circle 30 haritasında 1 oyuncuya karşı 29 Brutal yapay zekâ](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 [README.md](README.md) dosyasının çevirisidir; lütfen İngilizce sürümle güncel tutun.

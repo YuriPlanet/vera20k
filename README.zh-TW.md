@@ -149,6 +149,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 頻道介紹了 VERA20K。
 
-[觀看一名玩家在 Arctic Circle 16 地圖上挑戰 29 個冷酷 AI](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[Arctic Circle 30：1 對 29 個冷酷 AI](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 本檔案譯自 [README.md](README.md)，請與英文版保持同步。

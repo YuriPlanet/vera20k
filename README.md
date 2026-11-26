@@ -160,4 +160,4 @@ This product includes software developed by the [Kratos Authors](docs/kratos.md#
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;VERA20K is featured on <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
 
-[Watch one player take on 29 Brutal AIs on Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[1 vs 29 Brutal AI on Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)

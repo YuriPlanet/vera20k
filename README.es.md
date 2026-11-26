@@ -162,6 +162,6 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;VERA20K aparece en <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
 
-[Mira cómo un jugador se enfrenta a 29 rivales de IA en dificultad brutal en Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[1 contra 29 IA en dificultad brutal en Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Traducción de [README.md](README.md); mantenla al día con la versión en inglés.
