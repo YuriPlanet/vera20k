@@ -125,9 +125,16 @@ Các hình thức chi trả cho người đóng góp:
 
 ## Truyền thông
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
-
-[1 đấu 29 AI độ khó Brutal trên Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<table>
+  <tr>
+    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
+    <td>
+      VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.<br>
+      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 đấu 29 AI độ khó Brutal trên Arctic Circle 30</a><br>
+      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
+    </td>
+  </tr>
+</table>
 
 ## Ghi công và pháp lý
 

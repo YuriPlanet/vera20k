@@ -111,9 +111,16 @@ VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉ�
 
 ## สื่อ
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K
-
-[1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<table>
+  <tr>
+    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
+    <td>
+      ช่อง <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> นำเสนอ VERA20K<br>
+      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 ปะทะ AI ระดับ Brutal 29 ฝ่ายบน Arctic Circle 30</a><br>
+      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
+    </td>
+  </tr>
+</table>
 
 ## เครดิตและข้อกฎหมาย
 

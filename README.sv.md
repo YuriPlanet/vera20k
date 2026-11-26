@@ -124,9 +124,16 @@ Utbetalningar till medverkande:
 
 ## Media
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.
-
-[1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<table>
+  <tr>
+    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
+    <td>
+      <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.<br>
+      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 mot 29 AI-motståndare på nivån Brutal på Arctic Circle 30</a><br>
+      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
+    </td>
+  </tr>
+</table>
 
 ## Tack och juridisk information
 

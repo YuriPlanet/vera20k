@@ -127,9 +127,16 @@ Auszahlungen an Mitwirkende:
 
 ## Medien
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> stellt VERA20K vor.
-
-[1 gegen 29 Brutal-KIs auf Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<table>
+  <tr>
+    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
+    <td>
+      <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> stellt VERA20K vor.<br>
+      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 gegen 29 Brutal-KIs auf Arctic Circle 30</a><br>
+      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
+    </td>
+  </tr>
+</table>
 
 ## Danksagung und Rechtliches
 

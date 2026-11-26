@@ -105,9 +105,16 @@ VERA20K は標準で Yuri's Revenge オリジナル版のルールを使いま�
 
 ## メディア
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> で VERA20K が紹介されています。
-
-[Arctic Circle 30 で 1 対 29（難易度 Brutal の AI）](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+<table>
+  <tr>
+    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
+    <td>
+      <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> で VERA20K が紹介されています。<br>
+      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30 で 1 対 29（難易度 Brutal の AI）</a><br>
+      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
+    </td>
+  </tr>
+</table>
 
 ## 謝辞と法的事項
 
