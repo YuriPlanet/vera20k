@@ -444,38 +444,6 @@ pub fn load_with_mod_module(
     .map_err(|error| error.to_string())
 }
 
-/// Test builds: [`load_session`] with the mod folder `mod_dir` selected, its
-/// files read as if copied on top of the installation (`docs/modding.md`):
-/// its `rulesmd.ini` is the rules root, its `rules.wasm` the mod's module
-/// (`on_rules` runs while the rules are processed) and a map file in it is
-/// found by name before the installation's.
-#[cfg(any(test, feature = "test-support"))]
-pub fn load_with_mod_folder(
-    retail_dir: &Path,
-    map_file_name: &str,
-    seed: u32,
-    session: SkirmishLaunchSession,
-    mod_dir: &Path,
-) -> Result<HeadlessScenario, String> {
-    let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
-        .map_err(|error| format!("resolve Battle launch: {error}"))?;
-    let mut assets =
-        AssetManager::with_mod(retail_dir, Some(mod_dir), MediaArchiveMode::STOCK_DIGITAL)
-            .and_then(|assets| assets.with_ini_roots(&Default::default()))
-            .map_err(|error| format!("open retail MIX archives with the mod: {error}"))?;
-    load_with_assets(
-        retail_dir,
-        map_file_name,
-        seed,
-        HeadlessLaunch::Slots(&launch),
-        &mut assets,
-        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
-        None,
-        None,
-    )
-    .map_err(|error| error.to_string())
-}
-
 #[allow(clippy::too_many_arguments)]
 fn load_with_assets(
     retail_dir: &Path,
