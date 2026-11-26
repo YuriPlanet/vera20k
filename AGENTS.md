@@ -167,6 +167,11 @@ its PR for side-by-side play, and next to its code as a sim-scale deviation. Kee
 moving one back toward native needs a `--release` sim-bench run at 20,000 units and 30
 houses showing frames are no slower, or the maintainer's agreement to the cost.
 
+The live object pass is being restructured into systems, one at a time: each kind of
+work decides for all units side by side from the world as its phase began, then applies
+in order what touches shared things. Per-frame unit state lives in arrays its system
+owns.
+
 Preserve state authority, lifecycle, tick phase order, timers, same-tick effects,
 persistence and numeric semantics under the policy below. Document and validate
 floating-point use where native behavior requires it. Storage order and active-object
@@ -194,6 +199,13 @@ state or decision logic, find existing writers and name the owner in the PR. Kee
 authoritative state private to its owning module and expose mutations through the
 owner. Extend or fix that owner instead of introducing competing state or duplicated
 decision logic, or widening visibility to reach its state or raw data.
+
+A function takes the owners it uses, not the whole `Simulation` or `AppState`, and takes
+one for writing only where it writes. Simulation state holds nothing only this player's
+game knows (selection, the local house, discovery). A unit's update that changes what it
+does not own says so as data, and that owner carries it out; no statics, thread-locals
+or interior mutability carry simulation state. Hot loops allocate nothing per unit per
+frame.
 
 Write Rust, not C++ or Java in Rust syntax. When the borrow checker refuses code, fix
 who borrows what (split the borrow, pass a reference or an index, end a borrow sooner,

@@ -275,7 +275,7 @@ impl PathSpec {
     pub fn from_bytes(bytes: &[u8], len: usize) -> Option<Self> {
         let bytes = bytes.get(..len).filter(|_| len >= Self::HEADER)?;
         let count = usize::try_from(crate::le_i32(bytes, 4)).ok()?;
-        if len != Self::HEADER + count * Self::POINT || count == 0 {
+        if !(1..=MAX_PATH_POINTS).contains(&count) || len != Self::HEADER + count * Self::POINT {
             return None;
         }
         let points = (0..count)

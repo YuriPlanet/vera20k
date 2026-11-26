@@ -7,14 +7,17 @@ use super::{
     WolProvider, decode_relay_grant, decode_watch_grant, end_room, http, local_agreement,
     local_map_status, put_service, wire,
 };
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
 use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_wol::WolVisit;
+use crate::app::{AppState, PlatformState};
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
 use crate::util::config::GameConfig;
@@ -581,11 +584,21 @@ pub(crate) fn end_spawned_match(wol: Option<&mut WolVisit>) -> bool {
 
 /// `finish` with the result after a match, else `leave` for a failed
 /// admission; the process quits on its acknowledgement or the deadline.
-pub(super) fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService) {
-    let result = crate::app::App::match_result(&state.frontend)
+pub(super) fn poll_spawned_exit(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    service: &mut LiveService,
+) {
+    let result = crate::app::App::match_result(frontend)
         .unwrap_or(crate::app::cncnet::ExternalMatchResult::Quit);
-    let opponents_left = state.frontend.external_progress.opponents_left;
-    let Some(spawned) = spawned_visit_mut(state.frontend.wol.as_mut()) else {
+    let opponents_left = frontend.external_progress.opponents_left;
+    let Some(spawned) = spawned_visit_mut(frontend.wol.as_mut()) else {
         return;
     };
     let Some(deadline) = spawned.exit_deadline.filter(|_| !spawned.quit) else {
@@ -606,7 +619,16 @@ pub(super) fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService)
     }
     if (service.finishing.is_none() && service.leaving.is_none()) || now >= deadline {
         spawned.quit = true;
-        crate::app::App::start_quit_cascade(state);
+        crate::app::App::start_quit_cascade(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
 }
 

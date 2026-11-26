@@ -23,11 +23,15 @@ use crate::util::time::{Duration, Instant};
 use vera20k_gui::shell::list::ROW_HEIGHT;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
-use super::{App, AppState};
+use super::App;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBox;
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -960,22 +964,31 @@ impl App {
         );
     }
 
-    pub(super) fn poll_mod_import(state: &mut AppState) -> Option<Instant> {
+    pub(super) fn poll_mod_import(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+    ) -> Option<Instant> {
         #[cfg(target_os = "android")]
         Self::drain_picked_part(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
         );
         let ShellMessageBoxPurpose::ModImport(dialog) =
-            &state.frontend.shell_message_box.as_ref()?.purpose
+            &frontend.shell_message_box.as_ref()?.purpose
         else {
             return None;
         };
         let Dialog::Preparing(preparation) = dialog.as_ref() else {
-            let next = poll_scroll(&state.platform.window, &state.renderer, &mut state.frontend);
+            let next = poll_scroll(&platform.window, renderer, frontend);
             // Android: the system file manager's copy lands with no event of
             // its own, so the box looks for it a few times a second.
             #[cfg(target_os = "android")]
@@ -988,43 +1001,71 @@ impl App {
             Ok(result) => result,
         };
         let play = preparation.play;
-        Self::close_shell_message_box_from_controller(&mut state.frontend);
+        Self::close_shell_message_box_from_controller(frontend);
         // Android: the picked copies are installed or failed; either way they
         // are done with.
         #[cfg(target_os = "android")]
         crate::util::mod_actions::clear_picked();
         match result.and_then(|prepared| Ok(prepared.install()?)) {
-            Ok(folder) => Self::mod_imported(state, folder, play),
+            Ok(folder) => Self::mod_imported(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                folder,
+                play,
+            ),
             Err(error) => Self::mod_import_failed(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+                &platform.window,
+                renderer,
+                frontend,
+                process_assets,
+                &persistence.options_profile,
                 error,
             ),
         }
         None
     }
 
-    fn mod_imported(state: &mut AppState, folder: String, play: bool) {
+    fn mod_imported(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        diag: &DiagnosticsState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &PersistenceState,
+        folder: String,
+        play: bool,
+    ) {
         // Android: the folder gets the id a pinned shortcut finds it by.
         #[cfg(target_os = "android")]
-        if let Some(config) = state.platform.game_config.as_ref() {
+        if let Some(config) = platform.game_config.as_ref() {
             let _ = crate::app::mods::ensure_mod_id(&config.paths.mods_dir().join(&folder));
         }
-        Self::select_installed_mod(
-            state.platform.game_config.as_ref(),
-            &mut state.frontend,
-            &folder,
-        );
-        let selected = Self::mods_selected(&state.frontend.shell_controller);
-        if play && state.frontend.mods.switch_to(selected).is_some() {
-            Self::answer_mod_restart(state, Some(folder), true);
+        Self::select_installed_mod(platform.game_config.as_ref(), frontend, &folder);
+        let selected = Self::mods_selected(&frontend.shell_controller);
+        if play && frontend.mods.switch_to(selected).is_some() {
+            Self::answer_mod_restart(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                Some(folder),
+                true,
+            );
             return;
         }
-        let row = state
-            .frontend
+        let row = frontend
             .mods
             .page
             .as_ref()
@@ -1040,11 +1081,11 @@ impl App {
             added
         };
         Self::mod_import_notice(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
             title,
         );
     }

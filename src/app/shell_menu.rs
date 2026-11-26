@@ -15,12 +15,14 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use super::{App, AppState};
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -152,36 +154,68 @@ impl App {
     /// The pointer over the menu, for its settings: `pressed` is the left
     /// button's new state, `None` a move. True when an open list took a press,
     /// as a click outside the list only closes it.
-    pub(super) fn shell_menu_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
-        let size = shell_layout::shell_screen_size(&state.renderer.gpu);
-        let Some(settings) = state
-            .frontend
+    pub(super) fn shell_menu_pointer(
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+        pressed: Option<bool>,
+    ) -> bool {
+        let size = shell_layout::shell_screen_size(&renderer.gpu);
+        let Some(settings) = frontend
             .shell_message_box
             .as_mut()
             .and_then(ShellMessageBox::menu_settings_mut)
         else {
             return false;
         };
-        let layout = shell_layout::shell_menu_settings_layout(size, &state.renderer.bit_font);
-        let (x, y) = state.match_state.input.cursor_px();
+        let layout = shell_layout::shell_menu_settings_layout(size, &renderer.bit_font);
+        let (x, y) = match_state.input.cursor_px();
         let list_open = settings.shell_list_open();
         match pressed {
             Some(true) => settings.shell_mouse_down(x, y, &layout),
             Some(false) => settings.shell_mouse_up(x, y, &layout),
             None => settings.shell_mouse_move(x, y, &layout),
         }
-        Self::run_shell_menu_settings(state);
+        Self::run_shell_menu_settings(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
         list_open && pressed == Some(true)
     }
 
     /// Esc closes the menu's open list before the menu.
-    pub(super) fn close_shell_menu_list(state: &mut AppState) -> bool {
-        if !Self::shell_menu_settings(&mut state.frontend.shell_message_box)
+    pub(super) fn close_shell_menu_list(
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+    ) -> bool {
+        if !Self::shell_menu_settings(&mut frontend.shell_message_box)
             .is_some_and(|settings| settings.shell_close_list())
         {
             return false;
         }
-        Self::run_shell_menu_settings(state);
+        Self::run_shell_menu_settings(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
         true
     }
 
@@ -196,26 +230,42 @@ impl App {
     /// What the settings did takes effect through the Options page's own
     /// path. Unlike that page, the menu keeps no accept to write them out at,
     /// so a language is written as it is picked.
-    fn run_shell_menu_settings(state: &mut AppState) {
-        let Some(settings) = Self::shell_menu_settings(&mut state.frontend.shell_message_box)
-        else {
+    fn run_shell_menu_settings(
+        platform: &mut PlatformState,
+        renderer: &mut RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &mut ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
+    ) {
+        let Some(settings) = Self::shell_menu_settings(&mut frontend.shell_message_box) else {
             return;
         };
         let output = settings.drain_output();
-        if Self::run_launcher_options_events(state, output.cues, output.events) {
-            let csf = |key: &str, fallback: &str| state.process_assets.csf_label(key, fallback);
+        if Self::run_launcher_options_events(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            output.cues,
+            output.events,
+        ) {
+            let csf = |key: &str, fallback: &str| process_assets.csf_label(key, fallback);
             let shell_box = shell_menu(&csf);
-            let option_labels =
-                Self::launcher_options_labels(state.frontend.shell_route, &state.process_assets);
-            if let Some(message_box) = state.frontend.shell_message_box.as_mut() {
+            let option_labels = Self::launcher_options_labels(frontend.shell_route, process_assets);
+            if let Some(message_box) = frontend.shell_message_box.as_mut() {
                 message_box.shell_box = shell_box;
                 if let Some(settings) = message_box.menu_settings_mut() {
                     settings.set_labels(option_labels);
                 }
             }
             crate::app::persistence::options::persist_options_profile(
-                &state.platform,
-                &state.persistence.options_profile,
+                platform,
+                &persistence.options_profile,
             );
         }
     }
@@ -280,7 +330,16 @@ impl App {
             },
             2 => {
                 Self::prepare_shell_terminal_exit(state);
-                Self::confirm_quit(state);
+                Self::confirm_quit(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &state.persistence,
+                );
             }
             _ => {}
         }

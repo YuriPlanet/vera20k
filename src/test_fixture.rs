@@ -200,7 +200,7 @@ where
 /// The stack of the threads the game loads and plays on: its main thread has
 /// 8 MiB on every platform (`build.rs` links `/STACK` on Windows), as the
 /// simulation thread has (`SimWorker::spawn`).
-pub const GAME_STACK_BYTES: usize = 8 << 20;
+pub use crate::util::GAME_STACK_BYTES;
 
 /// Run a test's body on a thread with the game's stack instead of libtest's
 /// 2 MiB one, under the test's name, and pass its panic on. Unoptimized, the

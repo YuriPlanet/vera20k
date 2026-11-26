@@ -68,11 +68,12 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
             if supplied["granted"] == false {
                 continue;
             }
-            // Ares hands MultiMissile and PsychicReveal to handlers whose custom
-            // action ignores Action= (`SuperWeaponType::action`); the Iron
-            // Curtain keeps its stock handler, and so the read.
+            // Ares hands MultiMissile, PsychicReveal and the Iron Curtain
+            // (SW_Protect::HandlesType 0x10074B40) to handlers whose custom
+            // action ignores Action= (`SuperWeaponType::action`); the Force
+            // Shield keeps its stock owner in this port, and so the read.
             let kind = if ares_way {
-                "IronCurtain"
+                "ForceShield"
             } else {
                 "MultiMissile"
             };

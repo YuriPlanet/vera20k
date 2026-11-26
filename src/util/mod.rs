@@ -7,6 +7,9 @@
 //! - util/ has NO dependencies on other game modules.
 //! - Any module may depend on util/.
 
+/// Stack size shared by the native game and simulation worker threads.
+pub const GAME_STACK_BYTES: usize = 8 << 20;
+
 pub mod ares_launch;
 pub mod archive_names;
 pub mod base64;

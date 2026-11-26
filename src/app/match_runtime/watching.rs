@@ -4,10 +4,10 @@
 //! player, and after the last to the observer's sidebar, which sees the whole
 //! map. Its mouse moves only the view.
 
+use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
-use crate::app::{AppState, PlatformState};
 use crate::audio::sfx::SfxPlayer;
 use crate::net::live_commands::NetworkRecoveryStatus;
 use crate::sim::intern::InternedId;
@@ -90,8 +90,16 @@ pub(crate) fn key(
 /// VERA's wheel zoom a middle press over the battlefield resets the view
 /// distance. Nothing selects or orders, so a right click that did not pan
 /// does nothing.
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    let tactical = &mut state.match_state.input.tactical_mouse;
+pub(crate) fn mouse(
+    platform: &PlatformState,
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &crate::app::persistence::PersistenceState,
+    button: MouseButton,
+    pressed: bool,
+) {
+    let tactical = &mut match_state.input.tactical_mouse;
     tactical.record_physical_button(button, pressed);
     if !pressed {
         if button == MouseButton::Right {
@@ -100,19 +108,19 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     }
     if crate::app::presentation::sidebar_render::is_cursor_over_minimap(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     ) {
         if matches!(button, MouseButton::Left | MouseButton::Right) {
             crate::app::input::radar::centre_view_at_cursor(
-                &state.platform,
-                &mut state.renderer,
-                &state.frontend,
-                &mut state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
             );
         }
         return;
@@ -120,30 +128,23 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     match button {
         MouseButton::Right
             if crate::app::input::camera::cursor_over_battlefield(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence,
-            ) && state.match_state.input.tactical_mouse.press_may_arm() =>
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
+            ) && match_state.input.tactical_mouse.press_may_arm() =>
         {
-            let cursor = (
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
-            );
-            state
-                .match_state
-                .input
-                .tactical_mouse
-                .begin_right_drag(cursor);
+            let cursor = (match_state.input.cursor_x, match_state.input.cursor_y);
+            match_state.input.tactical_mouse.begin_right_drag(cursor);
         }
         MouseButton::Middle => {
             crate::app::input::camera::middle_press_resets_view_distance(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &mut state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             );
         }
         _ => {}

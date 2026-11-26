@@ -41,7 +41,10 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             let lobby = lobby_mut(state.frontend.wol.as_mut()).expect("checked");
             if kind == GAME_CHANNEL && lobby.runner == Runner::QuickMatch {
                 lobby.games = channels.clone();
-                super::quick_match::games_listed(state, &channels);
+                let step = super::quick_match::games_listed(state, &channels);
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
                 return;
             }
             if kind == GAME_CHANNEL {
@@ -60,7 +63,19 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                     let name = name.clone();
                     lobby.step = Step::Ready;
                     close_wait(&mut state.frontend);
-                    super::buddy::game_listed(state, &name, true);
+                    let step = super::buddy::game_listed(
+                        &mut state.frontend,
+                        &state.platform.window,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                        &name,
+                        true,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
                 return;
             }

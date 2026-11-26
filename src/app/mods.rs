@@ -31,7 +31,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 
-use crate::app::state::AppState;
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::util::ares_launch::AresSetting;
 use crate::util::config::PathsConfig;
 use crate::util::file_system;
@@ -817,39 +822,41 @@ pub(crate) fn start_failed_text(title: &str) -> String {
 /// mod has passed, and a mod that is not in use, or a VERARULES.INI that is
 /// no longer read, is explained. Returns when to
 /// look again while that is still to come.
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let mods = &state.frontend.mods;
+pub(crate) fn poll(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Option<Instant> {
+    let mods = &frontend.mods;
     if mods.record.is_none() && mods.notice.is_none() && mods.rules_file_notice.is_none() {
         return None;
     }
-    if !crate::app::state::main_menu_at_rest(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) {
-        state.frontend.mods.menu_rest_since = None;
+    if !crate::app::state::main_menu_at_rest(platform, renderer, frontend, match_state, persistence)
+    {
+        frontend.mods.menu_rest_since = None;
         return None;
     }
     let now = Instant::now();
-    let due = *state.frontend.mods.menu_rest_since.get_or_insert(now) + MENU_SETTLE;
+    let due = *frontend.mods.menu_rest_since.get_or_insert(now) + MENU_SETTLE;
     if now < due {
         return Some(due);
     }
-    started(&mut state.frontend);
-    let mods = &mut state.frontend.mods;
+    started(frontend);
+    let mods = &mut frontend.mods;
     let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
         (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
         (first, second) => first.or(second),
     };
     if let Some(text) = text {
         crate::app::App::open_shell_notice(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
             text,
         );
     }

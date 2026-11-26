@@ -16,7 +16,17 @@ pub(crate) fn commit_prepared_load(
     // radar FIFO publishes a service input between frames.
     crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+        wall_ms,
+    );
     crate::app::chrono_screen::retire(
         &state.frontend.screen,
         &mut state.match_state,
@@ -327,7 +337,16 @@ pub(crate) fn commit_prepared_load(
         .match_state
         .network_quality
         .reset(state.platform.frame_pacer.total_render_deferrals());
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+    );
     // The incoming chrome owns the footer allowance; refresh its layout
     // before initializing derived geometry, including on a cold/different-side
     // load. No Power AI visit or retained-band clamp belongs in this phase.

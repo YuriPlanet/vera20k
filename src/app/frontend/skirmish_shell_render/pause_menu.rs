@@ -4,7 +4,12 @@
 use super::gui_paint::{ButtonArt, FrameArt, GuiStyle};
 use super::in_game_shell::{self, InGamePaint};
 use super::launcher_options;
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::hud_paint::Material;
 use crate::ui::shell::pause_menu::{
     FOOTER, INTERNET_CAPTIONS, INTERNET_GROUP, INTERNET_GROUP_LABEL, INTERNET_VALUES,
@@ -21,17 +26,22 @@ use crate::ui::shell::pause_menu::{
 /// current first every frame. The Options page's column buttons are its
 /// own dialog's nodes, painted as the menu's on the side's art.
 pub(crate) fn render_pause_menu_shell(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
     buttons: [PauseMenuButtonState; 8],
 ) -> anyhow::Result<()> {
     let (layout, page_layout) = crate::app::input::pause_menu::sync(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         &buttons,
     )
     .expect("active shell");
@@ -43,17 +53,17 @@ pub(crate) fn render_pause_menu_shell(
         PauseMenuTemplate::Internet => "Active Pause Menu FF",
     };
     let frame = {
-        let mut paint = InGamePaint::new(state);
-        let state = paint.state;
-        let ui = &state.match_state.match_presentation.dialog_ui;
-        let pause = &state.match_state.match_presentation.internet_pause;
-        let shared_pause = crate::app::input::pause_menu::multiplayer_control(&state.match_state)
+        let mut paint = InGamePaint::new(platform, renderer, frontend, match_state, persistence);
+        let (ime, bit_font) = (&platform.ime, &renderer.bit_font);
+        let ui = &match_state.match_presentation.dialog_ui;
+        let pause = &match_state.match_presentation.internet_pause;
+        let shared_pause = crate::app::input::pause_menu::multiplayer_control(match_state)
             .map(|control| control.caption);
         let slot = |ids: [u16; 2], id: u16| -> Option<InternetSlider> {
             let index = ids.iter().position(|of| *of == id)?;
             Some(InternetSlider::ALL[index])
         };
-        let caption = |(key, fallback): (&str, &str)| state.process_assets.csf_label(key, fallback);
+        let caption = |(key, fallback): (&str, &str)| process_assets.csf_label(key, fallback);
         let text_of = |id: i32| -> Option<String> {
             let id = u16::try_from(id).ok()?;
             if let Some(button) = template.button(id) {
@@ -80,7 +90,7 @@ pub(crate) fn render_pause_menu_shell(
                 // in 0x695.
                 FOOTER => Some(
                     match crate::app::input::pause_menu::hovered_help(
-                        &state.match_state.match_presentation,
+                        &match_state.match_presentation,
                     ) {
                         Some(key) => caption((key, "")),
                         None => caption(PAUSE_MENU_FOOTER.caption()),
@@ -102,12 +112,26 @@ pub(crate) fn render_pause_menu_shell(
         // The template's buttons in their sidebar order, VERA's after them;
         // one without a rect is hidden and paints nothing.
         paint.nodes(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
             ui,
             &PauseMenuButton::ALL.map(|button| template.id(button)),
             style,
         );
-        paint.nodes(ui, &[TITLE, FOOTER], style);
-        let page = state.match_state.match_presentation.options_page.as_ref();
+        paint.nodes(
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            ui,
+            &[TITLE, FOOTER],
+            style,
+        );
+        let page = match_state.match_presentation.options_page.as_ref();
         if let (Some(page_layout), Some(page)) = (&page_layout, page) {
             // The page's sidebar buttons, Options or the Options column, are the
             // menu's own buttons, on this side's art; the page that shows is
@@ -117,11 +141,11 @@ pub(crate) fn render_pause_menu_shell(
             // control and text.
             let column = launcher_options::ColumnArt::Side(paint.side_buttons());
             let mut widgets = launcher_options::paint_page(
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 &page.dialog,
                 page_layout.scale,
                 column,
@@ -136,7 +160,7 @@ pub(crate) fn render_pause_menu_shell(
         // FF's group box, then each plaque trackbar with its caption and
         // value static (60B7A0), where its page shows them and the control
         // art is there.
-        if state.frontend.skirmish_shell_chrome.is_some() {
+        if frontend.skirmish_shell_chrome.is_some() {
             let [connection, speed] = InternetSlider::ALL.map(InternetSlider::id);
             let internet = [
                 INTERNET_GROUP,
@@ -147,12 +171,25 @@ pub(crate) fn render_pause_menu_shell(
                 INTERNET_CAPTIONS[1],
                 INTERNET_VALUES[1],
             ];
-            paint.nodes(ui, &internet, style);
+            paint.nodes(
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                ui,
+                &internet,
+                style,
+            );
         }
         paint.finish(label)
     };
     in_game_shell::render_shell_frame(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         encoder,
         destination,
         frame,

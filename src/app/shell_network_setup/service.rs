@@ -1220,12 +1220,16 @@ pub(crate) fn fail_go_handoff(state: &mut AppState) {
     fail_go_handoff_with_notice(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
 }
 
-pub(crate) fn fail_go_delivery(state: &mut AppState) {
-    fail_go_handoff_with_notice(
-        state,
-        "TXT_SYSTEM_NOT_RESPONDING",
-        "The other system is not responding.",
-    );
+/// GO's delivery failed: the step that fails the handoff with the
+/// not-responding notice.
+pub(crate) fn fail_go_delivery() -> crate::app::shell_main_menu::ClientStep {
+    crate::app::shell_main_menu::ClientStep::Now(Box::new(|state: &mut AppState| {
+        fail_go_handoff_with_notice(
+            state,
+            "TXT_SYSTEM_NOT_RESPONDING",
+            "The other system is not responding.",
+        )
+    }))
 }
 
 fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str) {

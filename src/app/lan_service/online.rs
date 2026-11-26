@@ -12,7 +12,7 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
 
 use super::{
-    AppState, LOBBY_RETRY_TIMING, LanService, PeerAdmission, PeerAdmissionRecord,
+    AppState, ClientStep, LOBBY_RETRY_TIMING, LanService, PeerAdmission, PeerAdmissionRecord,
     online_retirement_pending,
 };
 
@@ -284,31 +284,34 @@ pub(crate) fn begin_direct_spawn(
 
 /// The direct spawn host starts the ordinary LAN GO once every guest is up.
 /// A failed launch never does: the participant that ended it is retired, so
-/// the rest may all have answered.
-pub(super) fn poll_direct_start(state: &mut AppState) {
-    if !state.match_state.session.host()
-        || state.frontend.external_launch_error.is_some()
-        || !super::shell_network_setup::external(state.frontend.network_setup_protocol.as_ref())
-        || !state
-            .frontend
+/// the rest may all have answered. A GO that cannot start returns the step
+/// that fails the launch.
+#[must_use]
+pub(super) fn poll_direct_start(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> Option<ClientStep> {
+    if !match_state.session.host()
+        || frontend.external_launch_error.is_some()
+        || !super::shell_network_setup::external(frontend.network_setup_protocol.as_ref())
+        || !frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| protocol.editable())
-        || !state
-            .match_state
+        || !match_state
             .lan_service
             .as_ref()
             .is_some_and(LanService::direct_peers_heard)
     {
-        return;
+        return None;
     }
-    if let Err(error) = super::shell_network_setup::begin_external_lan_go(
-        &mut state.frontend,
-        &mut state.match_state,
-    ) {
+    if let Err(error) = super::shell_network_setup::begin_external_lan_go(frontend, match_state) {
         log::warn!("Direct LAN start failed: {error:#}");
-        super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
+        return Some(ClientStep::Now(Box::new(|state: &mut AppState| {
+            super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"))
+        })));
     }
+    None
 }
 
 pub(crate) fn begin_online_latency_probe(
