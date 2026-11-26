@@ -586,7 +586,7 @@ fn render_picture_cameo(
         }
     };
     let sprite = frames.sprite(0, None);
-    log::debug!("Sidebar picture cameo {key} loaded from {file}");
+    log::info!("Sidebar picture cameo {key} loaded from {file}");
     Some(match sprite {
         Some(sprite) => RenderedCameo {
             type_id: key.to_ascii_uppercase(),

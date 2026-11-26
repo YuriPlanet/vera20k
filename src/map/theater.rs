@@ -1840,7 +1840,14 @@ impl TilePicture {
                 Ok(Self { frames, scale })
             });
         match loaded {
-            Ok(picture) => Some(picture),
+            Ok(picture) => {
+                log::info!(
+                    "Tile picture {file}: {} cells at {}x",
+                    picture.frames.frames.len(),
+                    picture.scale
+                );
+                Some(picture)
+            }
             Err(error) => {
                 log::warn!("Tile picture {file} cannot be drawn: {error}");
                 crate::rules::art_problems::report(
