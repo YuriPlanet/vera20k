@@ -20,7 +20,7 @@ cd sdk/typescript && npm install
 node bin/vera20k.js build examples/ai-takeover
 ```
 
-得到 `build/rules.wasm`（TypeScript 写的，和 Rust 版 `sdk/examples/ai-takeover` 行为相同），和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules.md](../../../../docs/wasm-modules.md)）。mod 的 `rulesmd.ini` 会整个替换原版，所以要把 `[VeraWasm]` 一节加进一份完整副本里。
+得到 `build/rules.wasm`（TypeScript 写的，和 Rust 版 `sdk/examples/ai-takeover` 行为相同），和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules/guide.md](../../../../docs/wasm-modules/guide.md)）。mod 的 `rulesmd.ini` 会整个替换原版，所以要把 `[VeraWasm]` 一节加进一份完整副本里。
 
 ## 怎么玩
 

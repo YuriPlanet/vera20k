@@ -1,10 +1,10 @@
 # TypeScript SDK 参考
 
-[English](wasm-modules-sdk-ts.md) | [简体中文](wasm-modules-sdk-ts.zh-CN.md)
+[English](ts-sdk.md) | [简体中文](ts-sdk.zh-CN.md)
 
-Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescript`）的每个命名空间、类和函数，以及它的 `vera20k` 命令。第一部分讲模拟模块（`rules.wasm`），第二部分讲客户端模块（`ui.wasm`）。模块放在哪、有哪些限制见[模块指南](wasm-modules.zh-CN.md)；一步步的做法见[模拟模块教程](wasm-modules-tutorial-ts.zh-CN.md)和[客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)。
+Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescript`）的每个命名空间、类和函数，以及它的 `vera20k` 命令。第一部分讲模拟模块（`rules.wasm`），第二部分讲客户端模块（`ui.wasm`）。模块放在哪、有哪些限制见[模块指南](guide.zh-CN.md)；一步步的做法见[模拟模块教程](ts-tutorial.zh-CN.md)和[客户端模块教程](ts-ui-tutorial.zh-CN.md)。
 
-这个 SDK 的功能和 [Rust SDK](wasm-modules-sdk.zh-CN.md) 相同，只是换成了 TypeScript 的名字；本页对某个条目的含义写得简略时，Rust 参考和 [RFC 附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)里有更多说明。属性、事件、动作表以及事件和决定的视图都是从 Rust SDK 生成的，所以编号完全相同。
+这个 SDK 的功能和 [Rust SDK](rust-sdk.zh-CN.md) 相同，只是换成了 TypeScript 的名字；本页对某个条目的含义写得简略时，Rust 参考和 [RFC 附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md)里有更多说明。属性、事件、动作表以及事件和决定的视图都是从 Rust SDK 生成的，所以编号完全相同。
 
 **层级。** 接口是预览版（包版本 0.1.0）。RFC 把每个条目分到一个层级：`v1`（第 1 版的候选）、`preview`（现在能用，可能不经通知就改）和 `later`（不在第 1 版里；引擎对它的 `hasKind` 返回 0，使用时返回 `Unsupported`）。下面不是 `v1` 的条目会注明。
 
@@ -102,7 +102,7 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
 - **引用是 `i64`。** `Techno`、`House`、`Cell` 等引用类型都是 `i64` 的别名，通过命名空间函数读写，引用放第一个参数（`Techno.health(t)`）。`NO_HANDLE`（0）表示没有对象。
 - **视图**（`KilledEvent`、`TakeDamageDecision`、`ClickEvent`……）直接读取引擎的记录，只在回调期间有效。每个视图都有 `record`（完整的 `EventRecord`）；决定视图还有 `request`（`DecideRecord`）。
 - **每次登记都会运行。** `onRules`、`onScenarioStart`、`onMessage`、`onStart`、`onRender`、`onFrame` 和 `onClientEvent` 每调用一次就多一个函数，全部按登记顺序运行。
-- **语言。** 代码是 AssemblyScript 兼容的 TypeScript；[教程](wasm-modules-tutorial-ts.zh-CN.md#6-这里的-typescript-和平常有什么不同)列出了因此不能用的写法（捕获局部变量的闭包、`for…of`、`try`、联合类型、没有类型的对象字面量）。
+- **语言。** 代码是 AssemblyScript 兼容的 TypeScript；[教程](ts-tutorial.zh-CN.md#6-这里的-typescript-和平常有什么不同)列出了因此不能用的写法（捕获局部变量的闭包、`for…of`、`try`、联合类型、没有类型的对象字面量）。
 - 源码里标了 `@internal` 的名字（`check`、`utf8`、`OUT`、`keyOf`、`run*`……）虽然导出了，但只供 SDK 自己用，不要依赖它们。
 
 ---
@@ -183,7 +183,7 @@ Wasm 模块的 TypeScript SDK `@vera20k/sdk`（VERA20K 源码里的 `sdk/typescr
 | `getMany(refs: StaticArray<i64>, props: StaticArray<i32>, out: StaticArray<i64>): i32` | 一次调用读出每个引用的 `props`，按行存进 `out`（`out[i * props.length + j]`），返回写入的值的个数。`out` 不够大时返回 `Refused` |
 | `propNamed(name: string): Prop` | 按引擎里的名字取属性，或 `NO_ID` |
 
-`Prop` 是一组常量的命名空间（`Prop.Health`、`Prop.Money`、`Prop.FirepowerMultiplier`……），类型 `Prop` 就是 `i32`。引擎名字里的 `.` 写成 `_`：`Prop.Passable_Foot` 就是 `Passable.Foot`。完整列表以及值的类型、能否写入和层级见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)。
+`Prop` 是一组常量的命名空间（`Prop.Health`、`Prop.Money`、`Prop.FirepowerMultiplier`……），类型 `Prop` 就是 `i32`。引擎名字里的 `.` 写成 `_`：`Prop.Passable_Foot` 就是 `Passable.Foot`。完整列表以及值的类型、能否写入和层级见[附录第 7 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)。
 
 能用 `set` 写的：`Health`（不记击杀；0 或以下返回 `Refused`）、`Owner`、`Rank`、`Mission`、`Ammo`、`Online`，触发器的 `Enabled`、`House` 和 `Repeat`，所属方的 `ControlDomains`，超级武器的 `ChargePercent`。可修饰的属性拒绝 `set`。
 
@@ -534,7 +534,7 @@ onScenarioStart((): void => {
 | `Ini.yesNo(text, otherwise = false): bool` | 首字母 `y`、`t` 或 `1` 为真；`n`、`f` 或 `0` 为假 |
 | `Ini.ints(text, out: StaticArray<i64>, otherwise = 0): i32` | 把前 `out.length` 个整数读进 `out`；返回一个掩码，第 `i` 部分是合法整数时第 `i` 位为 1 |
 
-INI 那一侧见[模块指南](wasm-modules.zh-CN.md#模块注册的-ini-名称)，完整的 mod 见 `sdk/typescript/examples/ini-counter`。
+INI 那一侧见[模块指南](guide.zh-CN.md#模块注册的-ini-名称)，完整的 mod 见 `sdk/typescript/examples/ini-counter`。
 
 ## 通知与消息
 

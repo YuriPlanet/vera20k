@@ -1,5 +1,5 @@
 // The module of the TypeScript modding tutorial
-// (docs/wasm-modules-tutorial-ts.zh-CN.md), the same as the Rust SDK's
+// (docs/wasm-modules/ts-tutorial.zh-CN.md), the same as the Rust SDK's
 // `sdk/examples/tutorial-bounty`: whoever kills a GI or a conscript gets
 // 200 credits.
 import {

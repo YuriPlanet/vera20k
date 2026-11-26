@@ -1,12 +1,12 @@
 # 教程：用 TypeScript 写客户端模块（`ui.wasm`）
 
-[English](wasm-modules-ui-tutorial-ts.md) | [简体中文](wasm-modules-ui-tutorial-ts.zh-CN.md)
+[English](ts-ui-tutorial.md) | [简体中文](ts-ui-tutorial.zh-CN.md)
 
 这份教程在对局画面上做一个按钮：“Reinforcements: Rhino tank, $2000”（增援：犀牛坦克，2000 块）。点一下就买一辆犀牛坦克，每个玩家只能买一次；买完按钮消失，EVA 播报增援已到达。它要两个模块配合完成：客户端模块（`ui.wasm`）负责按钮，模拟模块（`rules.wasm`）负责坦克。完整代码在 VERA20K 源码的 `sdk/typescript/examples/ui-reinforcements` 里。
 
-- 写给谁：做过[模拟模块教程](wasm-modules-tutorial-ts.zh-CN.md)，并且按它的第 2 节装好了 Node.js 和 SDK。
-- 参考资料：[TypeScript SDK 参考](wasm-modules-sdk-ts.zh-CN.md#客户端模块)、[模块指南](wasm-modules.zh-CN.md)；用界面布局摆放按钮见[界面布局](interface-layout.md)。
-- 更习惯 Rust？[Rust 版客户端教程](wasm-modules-ui-tutorial.zh-CN.md)做的是同一个按钮。
+- 写给谁：做过[模拟模块教程](ts-tutorial.zh-CN.md)，并且按它的第 2 节装好了 Node.js 和 SDK。
+- 参考资料：[TypeScript SDK 参考](ts-sdk.zh-CN.md#客户端模块)、[模块指南](guide.zh-CN.md)；用界面布局摆放按钮见[界面布局](../interface-layout.md)。
+- 更习惯 Rust？[Rust 版客户端教程](rust-ui-tutorial.zh-CN.md)做的是同一个按钮。
 - 预览版提醒：名字和数值在第 1 版之前可能还会变。
 
 ## 1. 为什么要两个模块
@@ -239,7 +239,7 @@ asset wasm-check rules/build/rules.wasm
 
 `asset wasm-check` 只检查模拟模块。`ui.wasm` 由游戏在对局加载它时检查，拒绝时会在聊天栏里告诉你，对局则在没有它的情况下继续。
 
-建一个放两个模块的 mod 文件夹（`Mods` 文件夹在 VERA20K 文件夹里，见[模拟模块教程第 4 节](wasm-modules-tutorial-ts.zh-CN.md#4-放进游戏试玩)）：
+建一个放两个模块的 mod 文件夹（`Mods` 文件夹在 VERA20K 文件夹里，见[模拟模块教程第 4 节](ts-tutorial.zh-CN.md#4-放进游戏试玩)）：
 
 ```text
 Mods/MyReinforcements/
@@ -267,7 +267,7 @@ About=A button that buys a Rhino tank.
 
 ## 6. 用界面布局摆放按钮
 
-mod 可以用自己的界面布局摆放这个按钮，不让模块去创建。在 mod 的 `veraui.ini`（见[界面布局](interface-layout.md)）里，给战场的部件加一个没有 `Command` 的按钮：
+mod 可以用自己的界面布局摆放这个按钮，不让模块去创建。在 mod 的 `veraui.ini`（见[界面布局](../interface-layout.md)）里，给战场的部件加一个没有 `Command` 的按钮：
 
 ```ini
 [Mine.Field]
@@ -281,7 +281,7 @@ X=10
 Y=60
 ```
 
-现在 `Ui.find("BuyReinforcements")` 会找到这个部件（名字是布局前缀后面的部分），模块只改它的文字和是否显示。没有 `Command` 的按钮自己什么也不做：点击只会通知模块。地图也可以用同样的方法，在 `[VeraUI]` 里给自己的客户端模块加部件（[地图自己的部件](interface-layout.md#a-maps-own-parts)）。
+现在 `Ui.find("BuyReinforcements")` 会找到这个部件（名字是布局前缀后面的部分），模块只改它的文字和是否显示。没有 `Command` 的按钮自己什么也不做：点击只会通知模块。地图也可以用同样的方法，在 `[VeraUI]` 里给自己的客户端模块加部件（[地图自己的部件](../interface-layout.md#a-maps-own-parts)）。
 
 ## 7. 客户端模块还能做什么
 
@@ -392,10 +392,10 @@ onStart((): void => {
 
 ## 8. 要记住的规则
 
-- 客户端模块可以用浮点数、`Client.random` 以及编译器允许的其他任何东西：它只能通过消息改游戏，而消息由模拟模块检查。[模拟模块教程](wasm-modules-tutorial-ts.zh-CN.md#6-这里的-typescript-和平常有什么不同)里的 TypeScript 规则这里同样适用。
+- 客户端模块可以用浮点数、`Client.random` 以及编译器允许的其他任何东西：它只能通过消息改游戏，而消息由模拟模块检查。[模拟模块教程](ts-tutorial.zh-CN.md#6-这里的-typescript-和平常有什么不同)里的 TypeScript 规则这里同样适用。
 - 模拟模块必须把每条消息都当成不可信的：检查长度、每个数值，以及发送者现在是否可以这样做。
 - 客户端模块不存档。读档后它们会重新开始（先顶层代码，再 `onStart`）；界面必须显示的内容，要放在模拟模块声明的变量里。
 - 地图的客户端模块在 mod 默认的 `[VeraWasm] MapUI=overlay` 下，只能改它自己的节点；`MapUI=no` 则不加载它。
 - 目前请把客户端模块放在 mod 里发布：`asset wasm-embed` 还不能写入地图的 `ui.wasm`。
 
-限制、调试和其他事件见[模块指南](wasm-modules.zh-CN.md#限制)和 [SDK 参考](wasm-modules-sdk-ts.zh-CN.md#客户端模块)。`sdk/typescript/examples/ui-ping` 是最小的一对模块；`sdk/typescript/examples/muster-field/ui` 是一个完整界面，带面板、卡片和图片。
+限制、调试和其他事件见[模块指南](guide.zh-CN.md#限制)和 [SDK 参考](ts-sdk.zh-CN.md#客户端模块)。`sdk/typescript/examples/ui-ping` 是最小的一对模块；`sdk/typescript/examples/muster-field/ui` 是一个完整界面，带面板、卡片和图片。

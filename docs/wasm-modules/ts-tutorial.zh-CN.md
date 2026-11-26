@@ -1,13 +1,13 @@
 # Wasm 模块 Mod 开发教程（TypeScript 版）
 
-[English](wasm-modules-tutorial-ts.md) | [简体中文](wasm-modules-tutorial-ts.zh-CN.md)
+[English](ts-tutorial.md) | [简体中文](ts-tutorial.zh-CN.md)
 
 这份教程带你从零开始，用 TypeScript 给 VERA20K 写一个 Wasm 模块，并放进游戏里试玩。读完后你会做出一个“击杀悬赏”mod：谁打死美国大兵或动员兵，谁就拿 200 块赏金。
 
 - 写给谁：会改 `rulesmd.ini`、想做 INI 做不到的玩法的 modder。写过一点 JavaScript 或 TypeScript 就够了。
-- 参考资料：模块放在哪、有哪些限制见[模块指南](wasm-modules.zh-CN.md)；SDK 的每个函数见 [TypeScript SDK 参考](wasm-modules-sdk-ts.zh-CN.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)。
-- 想做界面（按钮、面板）？先读完这份，再看[客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)。
-- 更习惯 Rust？[Rust 版教程](wasm-modules-tutorial.zh-CN.md)做的是同一个 mod。
+- 参考资料：模块放在哪、有哪些限制见[模块指南](guide.zh-CN.md)；SDK 的每个函数见 [TypeScript SDK 参考](ts-sdk.zh-CN.md)；完整设计见 [RFC 0001](../rfcs/0001-wasm-extension-modules.zh-CN.md)；每个函数、事件、动作、属性的编号与含义见[附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md)。
+- 想做界面（按钮、面板）？先读完这份，再看[客户端模块教程](ts-ui-tutorial.zh-CN.md)。
+- 更习惯 Rust？[Rust 版教程](rust-tutorial.zh-CN.md)做的是同一个 mod。
 - 预览版提醒：接口还在 `0.x` 预览阶段，名字和编号在正式版前可能会变。游戏会在模块需要更新的接口时直接告诉你。
 
 ## 目录
@@ -25,7 +25,7 @@
 
 ## 1. 模块是什么
 
-模块是一个编译好的 WebAssembly 文件。这份教程做的是**模拟模块**，游戏里叫 `rules.wasm`：它和对局一起运行，每个玩家的机器上都跑同一份，所以联机也不会不同步。（另一种是**客户端模块** `ui.wasm`，只在你自己的机器上运行，负责界面，见[客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)。）
+模块是一个编译好的 WebAssembly 文件。这份教程做的是**模拟模块**，游戏里叫 `rules.wasm`：它和对局一起运行，每个玩家的机器上都跑同一份，所以联机也不会不同步。（另一种是**客户端模块** `ui.wasm`，只在你自己的机器上运行，负责界面，见[客户端模块教程](ts-ui-tutorial.zh-CN.md)。）
 
 TypeScript 源码不会进游戏。SDK 先用 [AssemblyScript](https://www.assemblyscript.org) 把它编译成 WebAssembly，游戏只加载编译结果，和 Rust 写的模块没有区别。
 
@@ -310,7 +310,7 @@ AssemblyScript 编译的是 TypeScript 的一个严格子集。SDK 只用 TypeSc
 
 ## 7. 常用功能速查
 
-下面每段代码都是一个能编译的完整文件，按需取用。每个函数都在 [SDK 参考](wasm-modules-sdk-ts.zh-CN.md)里。
+下面每段代码都是一个能编译的完整文件，按需取用。每个函数都在 [SDK 参考](ts-sdk.zh-CN.md)里。
 
 ### 生命周期
 
@@ -387,7 +387,7 @@ function readAll(units: StaticArray<Techno>): void {
 }
 ```
 
-全部属性见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)；在 SDK 里它们是 `Prop` 的常量，名字里的 `.` 写成 `_`（`Prop.Passable_Foot` 就是 `Passable.Foot`）。
+全部属性见[附录第 7 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)；在 SDK 里它们是 `Prop` 的常量，名字里的 `.` 写成 `_`（`Prop.Passable_Foot` 就是 `Passable.Foot`）。
 
 ### 搜索
 
@@ -433,7 +433,7 @@ function examples(unit: Techno, house: House): void {
 }
 ```
 
-原子动作和原版触发器动作的完整列表见[附录第 5 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)。
+原子动作和原版触发器动作的完整列表见[附录第 5 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)。
 
 ### 修饰器（临时改属性倍率）
 
@@ -447,7 +447,7 @@ function boost(unit: Techno): void {
 }
 ```
 
-可用的有攻击力、护甲、速度、射速、射程倍率和额外射程，以及可隐形、强制显形和禁用武器；其余的见 [SDK 参考](wasm-modules-sdk-ts.zh-CN.md#修饰器)。修饰器和 Phobos 的 AttachEffect 叠加，没有修饰器时行为和原版完全一致。
+可用的有攻击力、护甲、速度、射速、射程倍率和额外射程，以及可隐形、强制显形和禁用武器；其余的见 [SDK 参考](ts-sdk.zh-CN.md#修饰器)。修饰器和 Phobos 的 AttachEffect 叠加，没有修饰器时行为和原版完全一致。
 
 ### 变量
 
@@ -480,7 +480,7 @@ function example(unit: Techno): void {
 }
 ```
 
-`scope` 是 `global`（整局一个值）、`house`（每个所属方一个）或 `object`（每个单位或建筑一个），必填。`visibility` 决定哪些客户端模块能读：`private`（这个所属方自己的玩家）、`allies`（盟友）、`insight`（看得见的，只用于 object）、`public`（所有人）。变量会存进存档。`notify` 声明给客户端模块用的通知名（生成到 `src/generated/notify.ts`），[客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)里会用到。
+`scope` 是 `global`（整局一个值）、`house`（每个所属方一个）或 `object`（每个单位或建筑一个），必填。`visibility` 决定哪些客户端模块能读：`private`（这个所属方自己的玩家）、`allies`（盟友）、`insight`（看得见的，只用于 object）、`public`（所有人）。变量会存进存档。`notify` 声明给客户端模块用的通知名（生成到 `src/generated/notify.ts`），[客户端模块教程](ts-ui-tutorial.zh-CN.md)里会用到。
 
 ### 触发器的筛选条件和即时动作
 
@@ -527,7 +527,7 @@ onScenarioStart((): void => {
 });
 ```
 
-`d.native` 是游戏自己的答案，`d.previous` 是到目前为止的答案（可能已经有别的模块先回答过），`d.setResult(value)` 给出你的答案；不调用它就保持之前的答案。可以决定的有：受到的伤害、能否建造或排进生产队列、所属方是否判负、是否接受玩家命令，还有开火、还击、目的地、碾压、采矿、部署、空闲任务、移动和寻路，完整列表见 [SDK 参考](wasm-modules-sdk-ts.zh-CN.md#可决定事件)。决定函数里**只能读**（`log` 可以用）：在里面执行动作、写属性或写变量会让模块被停用。也不要在里面分配内存（不要 `new`，不要拼字符串）。
+`d.native` 是游戏自己的答案，`d.previous` 是到目前为止的答案（可能已经有别的模块先回答过），`d.setResult(value)` 给出你的答案；不调用它就保持之前的答案。可以决定的有：受到的伤害、能否建造或排进生产队列、所属方是否判负、是否接受玩家命令，还有开火、还击、目的地、碾压、采矿、部署、空闲任务、移动和寻路，完整列表见 [SDK 参考](ts-sdk.zh-CN.md#可决定事件)。决定函数里**只能读**（`log` 可以用）：在里面执行动作、写属性或写变量会让模块被停用。也不要在里面分配内存（不要 `new`，不要拼字符串）。
 
 ### 给单位下任务、给电脑方下指令
 
@@ -579,7 +579,7 @@ function misc(): void {
 
 只需要原版动作和模块里已有的处理函数时，可以直接在 mod 的 `rulesmd.ini` 里声明触发器，不用改代码。
 
-**先准备好 mod 的 `rulesmd.ini`**：mod 里的 `rulesmd.ini` 会整个替换原版的，所以要从一份完整的副本开始。在游戏里用 **Options → Mods → New Mod** 新建的 mod 自带原版文件，见 [modding](modding.md)。
+**先准备好 mod 的 `rulesmd.ini`**：mod 里的 `rulesmd.ini` 会整个替换原版的，所以要从一份完整的副本开始。在游戏里用 **Options → Mods → New Mod** 新建的 mod 自带原版文件，见 [modding](../modding.md)。
 
 例子：美国大兵血量低于 30% 时回 50 血，每个大兵只触发一次。
 
@@ -611,7 +611,7 @@ Repeat=OneTimeOr
 | `Difficulty` | `Easy`、`Normal`、`Hard`，用逗号分隔 |
 | `Repeat` | `OneTimeOr`（默认）、`OneTimeAnd`、`Repeating` |
 
-写错了对局就开不了，提示里会写明是哪个段、哪个键。完整语法见[模块指南](wasm-modules.zh-CN.md#在-ini-里写触发器)。地图不能用 `Wasm.Tags` 绑定类型（在地图里会被忽略，开局时会提示）；地图的模块在代码里绑定。
+写错了对局就开不了，提示里会写明是哪个段、哪个键。完整语法见[模块指南](guide.zh-CN.md#在-ini-里写触发器)。地图不能用 `Wasm.Tags` 绑定类型（在地图里会被忽略，开局时会提示）；地图的模块在代码里绑定。
 
 `Wasm:name(target,text)` 会把目标和一段文字交给处理函数：在处理函数里用 `e.record.target` 和 `e.record.argsText` 读取。
 
@@ -655,7 +655,7 @@ Strength=300
 Demo.Shield=HeavyShield
 ```
 
-INI 触发器用 `Event=Wasm:Demo.ShieldBroken` 使用这个模块事件；代码用 `Action.raiseEvent` 触发它，用 `Trigger.onModuleEvent` 监听它。值是合并后的规则原文，游戏不做检查：用 `Ini.int`、`Ini.ints`、`Ini.yesNo`、`Ini.split` 解析，值不对时用 `fail(...)` 停下，并写明是哪个段、哪个键。见[模块指南](wasm-modules.zh-CN.md#模块注册的-ini-名称)，完整的 mod 见 `sdk/typescript/examples/ini-counter`。
+INI 触发器用 `Event=Wasm:Demo.ShieldBroken` 使用这个模块事件；代码用 `Action.raiseEvent` 触发它，用 `Trigger.onModuleEvent` 监听它。值是合并后的规则原文，游戏不做检查：用 `Ini.int`、`Ini.ints`、`Ini.yesNo`、`Ini.split` 解析，值不对时用 `fail(...)` 停下，并写明是哪个段、哪个键。见[模块指南](guide.zh-CN.md#模块注册的-ini-名称)，完整的 mod 见 `sdk/typescript/examples/ini-counter`。
 
 ### 把模块嵌进地图
 
@@ -683,7 +683,7 @@ asset wasm-check 新地图.map                               # 检查地图里�
 | --- | --- | --- |
 | `exceeded its operation budget` | 一次调用里运算太多，超出预算 | 把工作分摊到多帧（`new Every(N)`），用 `Techno.read` 或 `getMany` 批量读 |
 | `trapped: …` | 代码崩溃了：数组越界、把 `null` 当对象用、`throw`、`fail(...)`、内存用光 | 访问数组前检查长度，用之前先 `if (x != null)`。下标越界、解引用 `null` 或 `throw` 时，模块日志在这一行之前会记下 `abort: <message> at <file>:<line>:<column>`，即源码里出错的位置 |
-| `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对、在决定函数里写东西、在顶层以外注册；后面会写具体原因 | 对照 [SDK 参考](wasm-modules-sdk-ts.zh-CN.md)检查这次调用 |
+| `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对、在决定函数里写东西、在顶层以外注册；后面会写具体原因 | 对照 [SDK 参考](ts-sdk.zh-CN.md)检查这次调用 |
 | `cannot keep up: … event records are waiting` | 事件积压太多，处理不过来 | 减少绑定范围，或加筛选条件 `.where(...)` |
 
 **构建失败**
@@ -741,9 +741,9 @@ asset wasm-check 新地图.map                               # 检查地图里�
 
 ## 参考
 
-- [TypeScript SDK 参考](wasm-modules-sdk-ts.zh-CN.md)：每个函数、`vera.json` 和构建命令
-- [客户端模块教程](wasm-modules-ui-tutorial-ts.zh-CN.md)：在屏幕上做一个按钮（`ui.wasm`）
-- [模块指南](wasm-modules.zh-CN.md)：模块放在哪、INI 语法、限制和调试
-- [Rust 版教程](wasm-modules-tutorial.zh-CN.md)：用 Rust 做同一个 mod
-- [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)：设计说明，TypeScript SDK 的约定在第 5a 节；[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)：全部接口、事件、动作、属性
+- [TypeScript SDK 参考](ts-sdk.zh-CN.md)：每个函数、`vera.json` 和构建命令
+- [客户端模块教程](ts-ui-tutorial.zh-CN.md)：在屏幕上做一个按钮（`ui.wasm`）
+- [模块指南](guide.zh-CN.md)：模块放在哪、INI 语法、限制和调试
+- [Rust 版教程](rust-tutorial.zh-CN.md)：用 Rust 做同一个 mod
+- [RFC 0001](../rfcs/0001-wasm-extension-modules.zh-CN.md)：设计说明，TypeScript SDK 的约定在第 5a 节；[附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md)：全部接口、事件、动作、属性
 - `sdk/typescript/examples/` 里的示例：Rust 示例的移植版；`tutorial-bounty` 就是本教程的代码。
