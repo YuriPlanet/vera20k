@@ -91,13 +91,13 @@ thử. Các agent tuân theo [AGENTS.md](AGENTS.md).
 
 ## Tùy biến
 
-Mặc định, VERA20K dùng luật chơi của bản Yuri's Revenge gốc. Trong **Options**, bạn có thể chỉnh
-âm thanh, đồ họa và cách điều khiển hoặc bật các tính năng của VERA. Trò chơi lưu các tùy chọn
-trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
-
 Bạn có thể thêm mod, bản đồ, nhạc của riêng mình và nhiều thứ khác. Chúng được đặt trong thư mục
 VERA20K: thư mục cài đặt trên Windows, `~/Library/Application Support/VERA20k` trên macOS và
 `~/.local/share/VERA20k` trên Linux.
+
+Mặc định, VERA20K dùng luật chơi của bản Yuri's Revenge gốc. Trong **Options**, bạn có thể chỉnh
+âm thanh, đồ họa và cách điều khiển hoặc bật các tính năng của VERA. Trò chơi lưu các tùy chọn
+trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
 
 - **Mod:** trong **Options → Mods**, **Add Mod** cài một mod bạn đã tải về, còn **New Mod** bắt đầu một mod của riêng bạn. Mỗi mod có thư mục riêng trong `Mods`.
 - **Bản đồ:** đặt tệp `.map`, `.mpr` hoặc `.yrm` vào `Maps` để chơi trong Skirmish. Bản đồ bạn tải về khi chơi trực tuyến cũng được lưu ở đó.

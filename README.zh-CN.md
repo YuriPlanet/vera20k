@@ -91,9 +91,9 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 ## 自定义
 
-VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options** 菜单中调整声音、画面和操作设置，也可以开启 VERA 专属功能。游戏会将设置保存在 `VERA.INI` 中，其中 VERA 专属选项位于 `[VERA]` 节。
-
 你可以添加自己的模组、地图、音乐等内容。这些文件放在 VERA20K 文件夹中：Windows 上是安装文件夹，macOS 上是 `~/Library/Application Support/VERA20k`，Linux 上是 `~/.local/share/VERA20k`。
+
+VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options** 菜单中调整声音、画面和操作设置，也可以开启 VERA 专属功能。游戏会将设置保存在 `VERA.INI` 中，其中 VERA 专属选项位于 `[VERA]` 节。
 
 - **模组：** 在 **Options → Mods** 中，**Add Mod** 可以安装你下载的模组，**New Mod** 可以开始制作你自己的模组。每个模组在 `Mods` 中都有自己的文件夹。
 - **地图：** 把 `.map`、`.mpr` 或 `.yrm` 文件放进 `Maps`，即可在遭遇战中游玩。在线下载的地图也会保存在这里。

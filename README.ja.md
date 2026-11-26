@@ -79,9 +79,9 @@ cargo run --release --bin vera20k
 
 ## カスタマイズ
 
-VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
-
 自分の MOD、マップ、音楽なども追加できます。追加するファイルは VERA20K フォルダーに置きます。Windows ではインストール先のフォルダー、macOS では `~/Library/Application Support/VERA20k`、Linux では `~/.local/share/VERA20k` です。
+
+VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
 
 - **MOD：** **Options → Mods** の **Add Mod** でダウンロードした MOD をインストールでき、**New Mod** で自分の MOD を作り始められます。MOD ごとに `Mods` の中にフォルダーができます。
 - **マップ：** `.map`、`.mpr`、`.yrm` ファイルを `Maps` に置くと、スカーミッシュで遊べます。オンラインでダウンロードしたマップもここに保存されます。

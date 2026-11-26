@@ -90,13 +90,13 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-VERA20K uses the original Yuri's Revenge rules by default. In **Options**, you can change
-sound, graphics and controls or turn on VERA features. The game saves your preferences in
-`VERA.INI`, with VERA-specific options under `[VERA]`.
-
 You can add your own mods, maps, music and more. They go in the VERA20K folder: the install
 folder on Windows, `~/Library/Application Support/VERA20k` on macOS and `~/.local/share/VERA20k`
 on Linux.
+
+VERA20K uses the original Yuri's Revenge rules by default. In **Options**, you can change
+sound, graphics and controls or turn on VERA features. The game saves your preferences in
+`VERA.INI`, with VERA-specific options under `[VERA]`.
 
 - **Mods:** in **Options → Mods**, **Add Mod** installs a mod you downloaded and **New Mod** starts your own. Each mod gets its own folder in `Mods`.
 - **Maps:** put `.map`, `.mpr` or `.yrm` files in `Maps` to play them in Skirmish. Maps you download online are saved there too.

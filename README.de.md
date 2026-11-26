@@ -92,13 +92,13 @@ ursprüngliche Engine mit Ghidra, übertragen dann ihr Verhalten nach Rust und p
 
 ## Anpassung
 
-VERA20K verwendet standardmäßig die Spielregeln von Yuri's Revenge. Unter **Options** kannst du
-Ton, Grafik und Steuerung anpassen oder VERA-Funktionen einschalten. Das Spiel speichert deine
-Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt `[VERA]`.
-
 Du kannst eigene Mods, Karten, Musik und mehr hinzufügen. Sie gehören in den VERA20K-Ordner:
 unter Windows der Installationsordner, unter macOS `~/Library/Application Support/VERA20k` und
 unter Linux `~/.local/share/VERA20k`.
+
+VERA20K verwendet standardmäßig die Spielregeln von Yuri's Revenge. Unter **Options** kannst du
+Ton, Grafik und Steuerung anpassen oder VERA-Funktionen einschalten. Das Spiel speichert deine
+Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt `[VERA]`.
 
 - **Mods:** Unter **Options → Mods** installiert **Add Mod** eine heruntergeladene Mod, und **New Mod** beginnt eine eigene. Jede Mod bekommt einen eigenen Ordner in `Mods`.
 - **Karten:** Lege `.map`-, `.mpr`- oder `.yrm`-Dateien in `Maps`, um sie im Gefecht zu spielen. Online heruntergeladene Karten landen ebenfalls dort.

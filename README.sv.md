@@ -91,12 +91,12 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
+Du kan lägga till egna moddar, kartor, musik och mer. De läggs i VERA20K-mappen: installationsmappen
+på Windows, `~/Library/Application Support/VERA20k` på macOS och `~/.local/share/VERA20k` på Linux.
+
 VERA20K använder som standard samma spelregler som Yuri's Revenge. Under **Options** kan du
 ändra inställningarna för ljud, grafik och kontroller eller slå på VERA-funktioner. Spelet
 sparar dina inställningar i `VERA.INI`, med VERA:s egna alternativ i avsnittet `[VERA]`.
-
-Du kan lägga till egna moddar, kartor, musik och mer. De läggs i VERA20K-mappen: installationsmappen
-på Windows, `~/Library/Application Support/VERA20k` på macOS och `~/.local/share/VERA20k` på Linux.
 
 - **Moddar:** under **Options → Mods** installerar **Add Mod** en modd som du har laddat ner, och **New Mod** startar en egen. Varje modd får en egen mapp i `Mods`.
 - **Kartor:** lägg `.map`-, `.mpr`- eller `.yrm`-filer i `Maps` för att spela dem i Skirmish. Kartor som du laddar ner online sparas där också.

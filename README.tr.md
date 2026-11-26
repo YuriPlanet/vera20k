@@ -90,13 +90,13 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
-ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
-tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
-
 Kendi modlarınızı, haritalarınızı, müziklerinizi ve daha fazlasını ekleyebilirsiniz. Bunlar VERA20K
 klasörüne konur: Windows'ta kurulum klasörü, macOS'te `~/Library/Application Support/VERA20k`,
 Linux'ta `~/.local/share/VERA20k`.
+
+VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
+ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
+tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
 
 - **Modlar:** **Options → Mods** içinde **Add Mod** indirdiğiniz bir modu kurar, **New Mod** ise kendi modunuzu başlatır. Her mod `Mods` içinde kendi klasörünü alır.
 - **Haritalar:** `.map`, `.mpr` veya `.yrm` dosyalarını `Maps` klasörüne koyarak çatışma modunda oynayabilirsiniz. Çevrim içi indirdiğiniz haritalar da oraya kaydedilir.

@@ -94,13 +94,13 @@ motor original, después portan su comportamiento a Rust y lo comprueban con
 
 ## Personalización
 
-Por defecto, VERA20K usa las reglas originales de Yuri's Revenge. En **Options** puedes ajustar
-el sonido, los gráficos y los controles o activar funciones de VERA. El juego guarda tus preferencias
-en `VERA.INI`, con las opciones propias de VERA en la sección `[VERA]`.
-
 Puedes añadir tus propios mods, mapas, música y más. Van en la carpeta de VERA20K: la carpeta de
 instalación en Windows, `~/Library/Application Support/VERA20k` en macOS y `~/.local/share/VERA20k`
 en Linux.
+
+Por defecto, VERA20K usa las reglas originales de Yuri's Revenge. En **Options** puedes ajustar
+el sonido, los gráficos y los controles o activar funciones de VERA. El juego guarda tus preferencias
+en `VERA.INI`, con las opciones propias de VERA en la sección `[VERA]`.
 
 - **Mods:** en **Options → Mods**, **Add Mod** instala un mod que hayas descargado y **New Mod** empieza uno propio. Cada mod tiene su propia carpeta en `Mods`.
 - **Mapas:** pon archivos `.map`, `.mpr` o `.yrm` en `Maps` para jugarlos en escaramuza. Los mapas que descargues en línea también se guardan allí.
