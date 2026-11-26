@@ -128,8 +128,10 @@ Payouts to contributors:
   <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;VERA20K is featured on <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a>.
 </p>
 
-- [1 vs 29 Brutal AI on Arctic Circle 30](https://www.youtube.com/watch?v=njpQRCTZ_MY)
-- [Survival Fortress 5.0 (24:00)](https://www.youtube.com/watch?v=7r_z_7w0InA&t=1440s)
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">1 vs 29 Brutal AI on Arctic Circle 30</a></li>
+  <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a></li>
+</ul>
 
 ## Credits and legal
 
