@@ -118,16 +118,12 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
 
 ## 媒體
 
-<table>
-  <tr>
-    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
-    <td>
-      <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 頻道介紹了 VERA20K。<br>
-      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30：1 對 29 個冷酷 AI</a><br>
-      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
-    </td>
-  </tr>
-</table>
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 頻道介紹了 VERA20K。
+</p>
+
+- [Arctic Circle 30：1 對 29 個冷酷 AI](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+- [Survival Fortress 5.0 (24:00)](https://www.youtube.com/watch?v=7r_z_7w0InA&t=1440s)
 
 ## 致謝與法律宣告
 

@@ -125,16 +125,12 @@ Katkıda bulunanlara ödeme yöntemleri:
 
 ## Medya
 
-<table>
-  <tr>
-    <td valign="top"><a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a></td>
-    <td>
-      <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> kanalında VERA20K tanıtılıyor.<br>
-      <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY">Arctic Circle 30 haritasında 1 oyuncuya karşı 29 Brutal yapay zekâ</a><br>
-      <a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0 (24:00)</a>
-    </td>
-  </tr>
-</table>
+<p>
+  <a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="24" height="24" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a>&ensp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> kanalında VERA20K tanıtılıyor.
+</p>
+
+- [Arctic Circle 30 haritasında 1 oyuncuya karşı 29 Brutal yapay zekâ](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+- [Survival Fortress 5.0 (24:00)](https://www.youtube.com/watch?v=7r_z_7w0InA&t=1440s)
 
 ## Teşekkürler ve yasal bilgiler
 
