@@ -15,13 +15,21 @@ def build(target, cargo_dir, profile_flag, package, binary):
     # Encoded flags keep an absolute PGO path with spaces one rustc argument.
     # Cargo gives them precedence over target rustflags, including the static
     # Windows CRT that release.yml sets. Carry those flags into both passes.
-    key = 'CARGO_TARGET_' + target.upper().replace('-', '_') + '_RUSTFLAGS'
-    flags = os.environ.get(key, '').split() + [profile_flag]
+    rustflags_key = 'CARGO_TARGET_' + target.upper().replace('-', '_') + '_RUSTFLAGS'
+    flags = os.environ.get(rustflags_key, '').split() + [profile_flag]
     command = ['cargo', 'build', '--locked', '--profile', 'shipping', '--target', target,
                '--target-dir', str(cargo_dir), '--no-default-features', '-p', package,
                '--bin', binary]
+    env = {**os.environ, 'CARGO_ENCODED_RUSTFLAGS': '\x1f'.join(flags)}
+    if target.endswith('-apple-darwin'):
+        # cc 1.2 forwards Rust's PGO flags to Apple Clang. Its profile records
+        # are incompatible with Rust's LLVM runtime (rust-lang/cc-rs#1986).
+        # cc appends target C/C++ flags last, so these keep both passes Rust-only.
+        for language in ('CFLAGS', 'CXXFLAGS'):
+            flags_key = f'{language}_{target}'
+            env[flags_key] = f'{env.get(flags_key, "")} -fno-profile-generate -fno-profile-use'.strip()
     print(f'Building {target} with {flags}', flush=True)
-    subprocess.run(command, check=True, env={**os.environ, 'CARGO_ENCODED_RUSTFLAGS': '\x1f'.join(flags)})
+    subprocess.run(command, check=True, env=env)
 
 
 def main():
