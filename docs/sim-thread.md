@@ -156,9 +156,9 @@ storage with the world the simulation thread ticks:
   the other state only gameplay reads. Its fog is only the local player's
   (`FogState::presentation_copy`), whose shroud knowledge, like its terrain,
   overlays, smudges, terrain objects, interner and occupation grids, is the
-  previous copy brought up to date a cell at a time: each map keeps a bit
-  per dense cell a write reached, copies only those cells and reuses the
-  destination's occupant lists. The House array, the substrate stores, the
+  previous copy brought up to date. The occupation grids track changes one
+  dense cell at a time and reuse the destination's occupant lists.
+  The House array, the substrate stores, the
   clone of the rest and the fog copy run at once beside those syncs. Its
   Dummy cell, ally graph and Main RNG are its own. Release builds take it when
   a tick is lent; debug builds with every frame, so every test draw reads a

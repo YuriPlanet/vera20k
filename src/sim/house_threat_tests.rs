@@ -496,15 +496,15 @@ fn the_presentation_copy_carries_every_house_in_registration_order() {
     let mut sim = Simulation::new();
     let allied = sim.interner.intern("Americans");
     let soviet = sim.interner.intern("Russians");
-    sim.houses
-        .register(HouseState::new(allied, 0, None, true, 0, 10));
+    // Register in the opposite order to the interned keys.
     sim.houses
         .register(HouseState::new(soviet, 1, None, false, 0, 20));
-    let order = sim.houses.order().to_vec();
+    sim.houses
+        .register(HouseState::new(allied, 0, None, true, 0, 10));
 
     let copy = sim.presentation_copy(None, None);
 
-    assert_eq!(copy.houses.order(), &order[..]);
+    assert_eq!(copy.houses.order(), &[soviet, allied]);
     assert_eq!(copy.houses.get(&allied).unwrap().side_index(), 0);
     assert!(copy.houses.get(&allied).unwrap().is_human());
     assert_eq!(copy.houses.get(&soviet).unwrap().side_index(), 1);

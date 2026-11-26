@@ -200,12 +200,11 @@ impl<V: Clone> Clone for CellMap<V> {
 /// Mark `slot` written since the last sync, in a dense map of `side` slots per
 /// strip.
 #[inline]
-fn note_slot(changed_cells: &mut Vec<u64>, side: usize, strip: usize, offset: usize) {
+fn note_slot(changed_cells: &mut Vec<u64>, side: usize, slot: usize) {
     let words = side * side / 64;
     if changed_cells.len() < words {
         changed_cells.resize(words, 0);
     }
-    let slot = strip * side + offset;
     changed_cells[slot / 64] |= 1 << (slot % 64);
 }
 
@@ -628,14 +627,6 @@ impl<V: Clone> Cells<V> {
         Some(&strip[offset])
     }
 
-    fn slot_mut(&mut self, slot: usize) -> Option<&mut Option<V>> {
-        let (strip, offset) = self.strip_and_offset(slot);
-        let side = self.side;
-        note_slot(&mut self.changed_cells, side, strip, offset);
-        let slots = self.strips.get_mut(strip)?.as_mut()?;
-        Some(&mut slots[offset])
-    }
-
     /// Relay the dense storage out at the largest side. Runs once, on the
     /// first key of an extended map's array beyond the retail side; the
     /// pass's stamps follow their cells.
@@ -684,10 +675,9 @@ impl<V: Clone> Cells<V> {
         match self.slot_of(*key) {
             Some(slot) => {
                 let (strip, offset) = self.strip_and_offset(slot);
-                let side = self.side;
-                note_slot(&mut self.changed_cells, side, strip, offset);
                 let slots = self.strips.get_mut(strip)?.as_mut()?;
                 let value = slots[offset].as_mut()?;
+                note_slot(&mut self.changed_cells, self.side, slot);
                 self.stamps.set(slot);
                 Some(value)
             }
@@ -707,14 +697,13 @@ impl<V: Clone> Cells<V> {
         let slot = self.slot_of(key).expect("grown side holds every dense key");
         let strip_slots = self.strip_slots();
         let (strip, offset) = self.strip_and_offset(slot);
-        let side = self.side;
         if self.strips.is_empty() {
             self.strips.resize_with(self.side, || None);
             self.filled = vec![0; self.side * self.side / 64];
             self.changed_cells.clear();
             self.reshaped = true;
         }
-        note_slot(&mut self.changed_cells, side, strip, offset);
+        note_slot(&mut self.changed_cells, self.side, slot);
         self.stamps.set(slot);
         let strip =
             self.strips[strip].get_or_insert_with(|| (0..strip_slots).map(|_| None).collect());
@@ -737,7 +726,10 @@ impl<V: Clone> Cells<V> {
                 self.outside.remove(key)
             };
         };
-        let value = self.slot_mut(slot)?.take()?;
+        let (strip, offset) = self.strip_and_offset(slot);
+        let slots = self.strips.get_mut(strip)?.as_mut()?;
+        let value = slots[offset].take()?;
+        note_slot(&mut self.changed_cells, self.side, slot);
         self.filled[slot / 64] &= !(1 << (slot % 64));
         self.filled_count -= 1;
         self.stamps.set(slot);
@@ -1062,6 +1054,9 @@ mod tests {
     fn sync_brings_a_mirror_up_to_the_cells_written_since_its_last_copy() {
         let mut source: CellMap<u32> = CellMap::new();
         let mut mirror: CellMap<u32> = CellMap::new();
+        assert!(source.get_mut(&(3, 4)).is_none());
+        assert!(source.remove(&(3, 4)).is_none());
+        assert!(source.own.changed_cells.is_empty());
         source.insert((3, 4), 1);
         source.sync_into(&mut mirror);
         assert_eq!(mirror.get(&(3, 4)), Some(&1));
