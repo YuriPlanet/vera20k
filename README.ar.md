@@ -44,7 +44,7 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 
 سيساعد القائمون على المشروع في المراجعة والتكامل والدمج، وسيُنسب إليك الفضل كاملًا في مساهمتك.
 
-المشرفون: [hrusten](https://github.com/hrusten)، [风雨声](https://github.com/996666925)، [Kironix](https://github.com/EncoreAlpha)، [Randerion(HaoJun0823)](https://github.com/HaoJun0823)، [libi](https://github.com/libi)، [zzzzzzh123](https://github.com/zzzzzzh123)، [八音盒](https://github.com/1372704087)
+المشرفون: [Halvor Nikolai Rusten](https://github.com/hrusten)، [风雨声](https://github.com/996666925)، [Kironix](https://github.com/EncoreAlpha)، [Randerion(HaoJun0823)](https://github.com/HaoJun0823)، [libi](https://github.com/libi)، [zzzzzzh123](https://github.com/zzzzzzh123)، [八音盒](https://github.com/1372704087)
 
 النقاش يجري على [Discord](https://discord.gg/kmjRUn5m5F) وفي مجموعة QQ (1097193563).
 

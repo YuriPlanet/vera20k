@@ -40,7 +40,7 @@ VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 
 維護者會協助審查、整合和合併。你的貢獻會完整保留你的署名。
 
-管理員：[hrusten](https://github.com/hrusten)、[风雨声](https://github.com/996666925)、[Kironix](https://github.com/EncoreAlpha)、[Randerion(HaoJun0823)](https://github.com/HaoJun0823)、[libi](https://github.com/libi)、[zzzzzzh123](https://github.com/zzzzzzh123)、[八音盒](https://github.com/1372704087)
+管理員：[Halvor Nikolai Rusten](https://github.com/hrusten)、[风雨声](https://github.com/996666925)、[Kironix](https://github.com/EncoreAlpha)、[Randerion(HaoJun0823)](https://github.com/HaoJun0823)、[libi](https://github.com/libi)、[zzzzzzh123](https://github.com/zzzzzzh123)、[八音盒](https://github.com/1372704087)
 
 討論在 [Discord](https://discord.gg/kmjRUn5m5F) 和 QQ 群（1097193563）進行。
 
