@@ -110,8 +110,25 @@ impl LiveRoundFlow {
             Step::Joining => {
                 self.await_watched_match(&mut run, &state.frontend, &state.match_state, frame)
             }
-            Step::Playing => self.play_watched_match(&mut run, state, frame),
-            Step::Panning => self.pan_watched_view(&mut run, state, frame),
+            Step::Playing => self.play_watched_match(
+                &mut run,
+                &state.platform,
+                &mut state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                frame,
+            ),
+            Step::Panning => self.pan_watched_view(
+                &mut run,
+                &state.platform,
+                &mut state.renderer,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+                frame,
+            ),
             Step::Followed => self.leave_watched_match(
                 &mut run,
                 &state.platform,
@@ -239,15 +256,20 @@ impl LiveRoundFlow {
     fn play_watched_match(
         &mut self,
         run: &mut WatchRun,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &mut RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        sfx_player: &mut Option<SfxPlayer>,
+        persistence: &PersistenceState,
         frame: u32,
     ) -> Result<()> {
         ensure!(
-            state.frontend.screen == GameScreen::InGame && watching::active(&state.match_state),
+            frontend.screen == GameScreen::InGame && watching::active(match_state),
             "the watched match ended {} frames after its catch-up, before {FRAMES_AFTER_CATCH_UP}",
             run.frames_after
         );
-        let native = native_frame(&state.match_state.sim_runtime)?;
+        let native = native_frame(&match_state.sim_runtime)?;
         let (last, at) = run.last_frame.context("watched frame")?;
         if native != last {
             run.last_frame = Some((native, Instant::now()));
@@ -261,7 +283,7 @@ impl LiveRoundFlow {
             );
         }
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32;
-        if watching::catching_up(&state.match_state, now_ms) {
+        if watching::catching_up(match_state, now_ms) {
             if !run.catch_up_seen || run.caught_up_frame.is_some() {
                 self.record(frame, &format!("Catching up at native frame {native}"));
             }
@@ -293,7 +315,7 @@ impl LiveRoundFlow {
         }
         // Tab goes through the other players and the observer's sidebar back
         // to the player it started with.
-        let start = shown_view(&state.match_state.sim_runtime)?;
+        let start = shown_view(&match_state.sim_runtime)?;
         let mut views: Vec<String> = Vec::new();
         while views.last() != Some(&start) {
             ensure!(
@@ -301,21 +323,15 @@ impl LiveRoundFlow {
                 "Tab never came back to {start}: {}",
                 views.join(" -> ")
             );
-            press(
-                &state.platform,
-                &state.frontend,
-                &mut state.match_state,
-                &mut state.audio.sfx_player,
-                KeyCode::Tab,
-            )?;
-            let view = shown_view(&state.match_state.sim_runtime)?;
+            press(platform, frontend, match_state, sfx_player, KeyCode::Tab)?;
+            let view = shown_view(&match_state.sim_runtime)?;
             ensure!(
                 views.last().unwrap_or(&start) != &view,
                 "Tab kept showing {view}"
             );
             // Only the observer's sidebar sees the whole map; a player's view
             // sees what that player sees.
-            let whole = state.match_state.sandbox_full_visibility;
+            let whole = match_state.sandbox_full_visibility;
             ensure!(
                 whole == (view == OBSERVER_VIEW),
                 "{view} {} the whole map",
@@ -342,7 +358,13 @@ impl LiveRoundFlow {
             ),
         );
         run.tab = Some((start, views));
-        run.pan_from = Some(begin_pan(state)?);
+        run.pan_from = Some(begin_pan(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        )?);
         run.advance(Step::Panning);
         Ok(())
     }
@@ -353,14 +375,15 @@ impl LiveRoundFlow {
     fn pan_watched_view(
         &mut self,
         run: &mut WatchRun,
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &mut RendererState,
+        frontend: &FrontendState,
+        match_state: &mut MatchState,
+        persistence: &PersistenceState,
         frame: u32,
     ) -> Result<()> {
         let from = run.pan_from.context("right drag start")?;
-        let camera = (
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        );
+        let camera = (match_state.input.camera_x, match_state.input.camera_y);
         if camera == from {
             let waited = run.since.elapsed();
             ensure!(
@@ -369,13 +392,21 @@ impl LiveRoundFlow {
                 PAN_WAIT.as_secs()
             );
             if waited >= PAN_WAIT / 2 && !run.pan_turned {
-                state.match_state.input.cursor_x -= 2.0 * PAN_PIXELS;
+                match_state.input.cursor_x -= 2.0 * PAN_PIXELS;
                 run.pan_turned = true;
             }
             return Ok(());
         }
-        watching::mouse(state, MouseButton::Right, false);
-        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
+        watching::mouse(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            MouseButton::Right,
+            false,
+        );
+        MoviesCapture::restore_neutral_pointer(&renderer.gpu, &mut match_state.input);
         let moved = [camera.0 - from.0, camera.1 - from.1];
         self.record(
             frame,
@@ -512,24 +543,35 @@ fn shown_view(sim_runtime: &SimHost) -> Result<String> {
 /// A right press at the resting pointer through the watcher's mouse adapter,
 /// as the window's button events reach it in a watched match, and the pointer
 /// moved right past the drag threshold. Answers the view before the drag.
-fn begin_pan(state: &mut AppState) -> Result<(f32, f32)> {
-    MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
+fn begin_pan(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) -> Result<(f32, f32)> {
+    MoviesCapture::restore_neutral_pointer(&renderer.gpu, &mut match_state.input);
     ensure!(
         crate::app::input::camera::cursor_over_battlefield(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state,
-            &state.persistence
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence
         ),
         "the resting pointer is off the battlefield"
     );
-    let from = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
+    let from = (match_state.input.camera_x, match_state.input.camera_y);
+    watching::mouse(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        MouseButton::Right,
+        true,
     );
-    watching::mouse(state, MouseButton::Right, true);
-    state.match_state.input.cursor_x += PAN_PIXELS;
+    match_state.input.cursor_x += PAN_PIXELS;
     Ok(from)
 }
 

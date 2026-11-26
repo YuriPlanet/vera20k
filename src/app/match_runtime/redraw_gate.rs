@@ -239,27 +239,28 @@ pub(crate) struct DrawLimits {
 
 /// The limits the picture just presented sets. `status_step` says it showed a
 /// new step of a status-line reveal.
-pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
+pub(crate) fn draw_limits(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    persistence: &crate::app::persistence::PersistenceState,
+    status_step: bool,
+) -> DrawLimits {
     let (_, page) = crate::app::input::precedence::presented(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
     );
     let picture_interval =
-        if page == ScreenPage::Battlefield && state.platform.capture_client_size.is_none() {
+        if page == ScreenPage::Battlefield && platform.capture_client_size.is_none() {
             screen_picture_interval(
-                &state.persistence.options_profile,
-                crate::app::input::camera::scrolling(&state.match_state.input),
-                state.platform.frame_pacer.draw_work(),
-                || {
-                    state
-                        .platform
-                        .window
-                        .current_monitor()?
-                        .refresh_rate_millihertz()
-                },
+                &persistence.options_profile,
+                crate::app::input::camera::scrolling(&match_state.input),
+                platform.frame_pacer.draw_work(),
+                || platform.window.current_monitor()?.refresh_rate_millihertz(),
             )
         } else {
             PICTURE_INTERVAL
@@ -267,8 +268,8 @@ pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
     page_limits(
         page,
         status_step,
-        state.platform.hardware_cursor.on_cursor_plane(),
-        super::network_match::game_frame_ms(&state.platform, &state.match_state),
+        platform.hardware_cursor.on_cursor_plane(),
+        super::network_match::game_frame_ms(platform, match_state),
         picture_interval,
     )
 }

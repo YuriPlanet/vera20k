@@ -1921,7 +1921,11 @@ impl ApplicationHandler for App {
                     ..
                 } if watching => {
                     crate::app::match_runtime::watching::mouse(
-                        state,
+                        &state.platform,
+                        &mut state.renderer,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.persistence,
                         *button,
                         button_state.is_pressed(),
                     );

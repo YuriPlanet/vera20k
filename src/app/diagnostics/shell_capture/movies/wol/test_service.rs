@@ -20,7 +20,12 @@ impl WolCapture {
             Some((index, launch.humans[index].clone()))
         };
         let (index, human) = guest(state).context("the stand-in guest did not join")?;
-        let view = setup_view(state)?;
+        let view = setup_view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )?;
         let accepted = human
             .raw_slot_index
             .and_then(|row| {
@@ -116,8 +121,13 @@ impl WolCapture {
                 ensure!(
                     open_observer == Some(7),
                     "C2 did not open observer row 7: {:?}",
-                    setup_view(state)?
-                        .combo(crate::ui::multiplayer_setup::SetupColumn::Player.control(7))
+                    setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?
+                    .combo(crate::ui::multiplayer_setup::SetupColumn::Player.control(7))
                 );
                 setup_requests(&mut state.frontend.network_setup_protocol);
                 let requests = choices(state, human.slot.clone(), true);
@@ -175,19 +185,23 @@ impl WolCapture {
                 // The room lists the host, the seat the guest left, then the
                 // spectator, whom the host's menu seats again or kicks.
                 // Nobody adds an AI while anyone watches.
-                let listed: Vec<_> = setup_view(state)?
-                    .combos
-                    .iter()
-                    .filter(|combo| {
-                        SetupColumn::decode(combo.id)
-                            .is_some_and(|(column, _)| column == SetupColumn::Player)
-                    })
-                    .map(|combo| {
-                        let values: Vec<_> =
-                            combo.choices.iter().map(|choice| choice.value).collect();
-                        (combo.row, values)
-                    })
-                    .collect();
+                let listed: Vec<_> = setup_view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )?
+                .combos
+                .iter()
+                .filter(|combo| {
+                    SetupColumn::decode(combo.id)
+                        .is_some_and(|(column, _)| column == SetupColumn::Player)
+                })
+                .map(|combo| {
+                    let values: Vec<_> = combo.choices.iter().map(|choice| choice.value).collect();
+                    (combo.row, values)
+                })
+                .collect();
                 let seat = crate::ui::multiplayer_setup::GIVE_SEAT;
                 let spectator = first.context("spectator row")?;
                 ensure!(
@@ -200,9 +214,18 @@ impl WolCapture {
                 );
                 // The host's Seat puts the spectator back in the free seat,
                 // as the guest's own side pick would.
-                let control = row_combo(&setup_view(state)?, SetupColumn::Player, spectator)
-                    .map(|(_, combo)| combo.id)
-                    .context("the spectator's Player list")?;
+                let control = row_combo(
+                    &setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?,
+                    SetupColumn::Player,
+                    spectator,
+                )
+                .map(|(_, combo)| combo.id)
+                .context("the spectator's Player list")?;
                 crate::app::shell_network_setup::apply_action(
                     state,
                     crate::ui::multiplayer_setup::SetupAction::Select {
@@ -233,13 +256,22 @@ impl WolCapture {
                     "VERA:QueuedName",
                     &[("place", &1), ("name", &SERVICE_GUEST)],
                 );
-                let labelled = row_combo(&setup_view(state)?, SetupColumn::Player, row)
-                    .is_some_and(|(_, combo)| {
-                        combo
-                            .choices
-                            .iter()
-                            .any(|choice| choice.value == 0 && choice.text == name)
-                    });
+                let labelled = row_combo(
+                    &setup_view(
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                    )?,
+                    SetupColumn::Player,
+                    row,
+                )
+                .is_some_and(|(_, combo)| {
+                    combo
+                        .choices
+                        .iter()
+                        .any(|choice| choice.value == 0 && choice.text == name)
+                });
                 let session = &state.match_state.session;
                 ensure!(
                     waiting.is_observer()
@@ -296,7 +328,12 @@ impl WolCapture {
                         coop: 0,
                     }])),
                 );
-                let view = setup_view(state)?;
+                let view = setup_view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )?;
                 let (page_row, combo) =
                     row_combo(&view, SetupColumn::Player, 1).context("the guest's name")?;
                 let badge = view
@@ -412,7 +449,12 @@ impl WolCapture {
         )?;
         setup::service_event(state, options)?;
         let requests = setup_requests(&mut state.frontend.network_setup_protocol);
-        let view = setup_view(state)?;
+        let view = setup_view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )?;
         ensure!(
             !local(state)
                 && !view.enabled(crate::ui::multiplayer_setup::ACCEPT)
@@ -432,7 +474,12 @@ impl WolCapture {
         let options = launch.options.clone();
         let room = session.network_room();
         let capacity = session.network_setup_capacity();
-        let view = setup_view(state)?;
+        let view = setup_view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )?;
         let team_hidden = view
             .combos
             .iter()
@@ -542,7 +589,12 @@ impl WolCapture {
             .map(|human| (human.name.clone(), human.raw_slot_index))
             .collect();
         let map = launch.selected_map_file.clone();
-        let view = setup_view(state)?;
+        let view = setup_view(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        )?;
         let host_icon = view.row_icons[0].as_ref().is_some_and(|icon| icon.host)
             && !view.row_icons[1].as_ref().is_some_and(|icon| icon.host);
         ensure!(

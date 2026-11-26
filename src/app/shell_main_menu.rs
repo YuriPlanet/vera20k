@@ -2196,7 +2196,15 @@ impl App {
             Action::Network | Action::WwOnline => {
                 state.process_assets.read_mod_files_ahead();
                 match action {
-                    Action::Network => Self::open_lan_lobby(state),
+                    Action::Network => Self::open_lan_lobby(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &mut state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &mut state.persistence.options_profile,
+                    ),
                     _ => Self::open_wol_welcome_page(state),
                 }
             }

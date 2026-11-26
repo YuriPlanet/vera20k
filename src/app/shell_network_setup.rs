@@ -757,7 +757,15 @@ fn open_service_lobby(state: &mut AppState, dialog: SetupDialog) {
     if dialog.wol() {
         crate::app::shell_wol::open_lobby(state, false);
     } else {
-        App::open_lan_lobby(state);
+        App::open_lan_lobby(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio.sfx_player,
+            &mut state.persistence.options_profile,
+        );
     }
 }
 

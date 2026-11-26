@@ -1337,7 +1337,14 @@ fn direct(endpoint: SocketAddrV4) -> GlobalDestination {
 #[cfg(target_os = "android")]
 fn reopen_lobby_on_new_network(state: &mut AppState) {
     close(&state.frontend, &mut state.match_state);
-    open(state);
+    open(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+    );
     if state.match_state.lan_service.is_some() {
         project_games(state);
         project_players(state);
@@ -1345,34 +1352,41 @@ fn reopen_lobby_on_new_network(state: &mut AppState) {
     log::info!("LAN network changed; announcing on the new Wi-Fi network");
 }
 
-pub(crate) fn open(state: &mut AppState) {
+pub(crate) fn open(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+) {
     // Every capture owns its service: scripted ones run without sockets, and
     // live ones install theirs before clicking Network (movies/lan/live.rs).
-    if state.platform.capture_client_size.is_some() {
+    if platform.capture_client_size.is_some() {
         return;
     }
-    if online_retirement_pending(&state.match_state) {
+    if online_retirement_pending(match_state) {
         super::shell_lan::report_error(
-            &state.renderer,
-            &mut state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
             "VERA:WaitingForOnlineDeparture",
         );
         return;
     }
-    if state.match_state.lan_service.is_some() {
+    if match_state.lan_service.is_some() {
         return;
     }
     match LanService::open().and_then(|mut service| {
         service.start_io_pump()?;
         Ok(service)
     }) {
-        Ok(service) => state.match_state.lan_service = Some(service),
+        Ok(service) => match_state.lan_service = Some(service),
         Err(error) => {
             log::error!("LAN socket initialization failed: {error}");
-            report_ports_unavailable(state);
+            report_ports_unavailable(renderer, frontend, match_state, process_assets, sfx_player);
         }
     }
 }
@@ -1387,18 +1401,24 @@ pub(crate) fn unavailable(
 }
 
 /// Why the LAN lobby cannot host or join: its ports are taken.
-pub(crate) fn report_ports_unavailable(state: &mut AppState) {
-    let key = if state.frontend.native_shell_ui {
+pub(crate) fn report_ports_unavailable(
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+) {
+    let key = if frontend.native_shell_ui {
         "TXT_UNABLE_TO_CONNECT"
     } else {
         "VERA:LanPortsUnavailable"
     };
     super::shell_lan::report_error(
-        &state.renderer,
-        &mut state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         key,
     );
 }
@@ -1779,7 +1799,17 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         let message = crate::net::lan_messages::ingame::BeaconMessage::decode(&incoming.payload)?;
         if state.match_state.live_network.is_some() && state.match_state.sim_runtime.is_installed()
         {
-            super::match_runtime::beacons::receive(state, message.record());
+            super::match_runtime::beacons::receive(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                message.record(),
+            );
         }
         return Ok(());
     }

@@ -339,7 +339,17 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // 0x0055D0C5: the router runs the mode's +0xA0 before GameExit.
     let cooperative = crate::app::cooperative_round::applies(&state.match_state);
     if cooperative {
-        crate::app::cooperative_round::mission_ended(state, elapsed_score_ticks);
+        crate::app::cooperative_round::mission_ended(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            &state.persistence,
+            elapsed_score_ticks,
+        );
     }
     // The match's own verdict presentation (`[EndGameScreens]`): the country's
     // banner picture on the battlefield and its banner music start together,
@@ -3416,7 +3426,16 @@ fn finish_simulation_frame(
                     match_decided,
                 } => {
                     if Some(owner) == local_house {
-                        super::beacons::local_player_defeated(state);
+                        super::beacons::local_player_defeated(
+                            &state.platform,
+                            &state.renderer,
+                            &state.diag,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                            &state.persistence,
+                        );
                         let presentation = &mut state.match_state.match_presentation;
                         presentation
                             .sidebar_gadget_state

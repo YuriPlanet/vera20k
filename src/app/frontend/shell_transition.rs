@@ -387,81 +387,98 @@ pub(crate) fn invalidate_main_menu_dialog_instance(frontend: &mut FrontendState)
 /// advances one 30 ms tick when due; once every tick has been shown the
 /// dialog's SHOW completion runs, so this frame already paints the steady
 /// dialog. Returns the dialog whose slide-in completed.
-pub(crate) fn drive_shell_entry(state: &mut AppState, now: Instant) -> Option<ShellSlideKind> {
-    let target = current_shell_slide_target(&state.frontend, &state.match_state);
-    let previous = state.frontend.shell_slide_active_shell;
+pub(crate) fn drive_shell_entry(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    now: Instant,
+) -> Option<ShellSlideKind> {
+    let target = current_shell_slide_target(frontend, match_state);
+    let previous = frontend.shell_slide_active_shell;
     if target != previous {
-        state.frontend.shell_slide_active_shell = target;
-        state.frontend.shell_first_paint_slide = None;
+        frontend.shell_slide_active_shell = target;
+        frontend.shell_first_paint_slide = None;
         if let Some(kind) = target {
             // A new dialog instance creates new statics: 0x71C at frame 0
             // with its timer unarmed (0x0060A982), hidden 0x694 and 0x695.
-            let frontend = &mut state.frontend;
             frontend.shell_monitor = Default::default();
             frontend.shell_page_title.reset();
             frontend.shell_status_line.reset();
-            let wave = new_wave(
-                &state.renderer.gpu,
-                &state.frontend,
-                kind,
-                WaveDirection::SlideIn,
-            );
-            state.frontend.shell_first_paint_slide = Some(wave);
+            let wave = new_wave(&renderer.gpu, frontend, kind, WaveDirection::SlideIn);
+            frontend.shell_first_paint_slide = Some(wave);
             crate::app::App::play_shell_slide_in_sound(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
             );
         }
     }
     let kind = target?;
-    let wave = state.frontend.shell_first_paint_slide.as_mut()?;
+    let wave = frontend.shell_first_paint_slide.as_mut()?;
     wave.advance(now);
     if !wave.is_complete() {
         return None;
     }
-    state.frontend.shell_first_paint_slide = None;
+    frontend.shell_first_paint_slide = None;
     // The slide-in's end cue precedes its SHOW completion (`0x00607F59`).
     crate::app::App::play_shell_slide_completion_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
     );
-    show_completion(state, kind, now);
+    show_completion(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        kind,
+        now,
+    );
     Some(kind)
 }
 
 /// The dialog's SHOW completion (`0x4EC -> 0x0060AA60`): its kind-1 statics
 /// start (or repaint, for a dialog shown again).
-fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
+fn show_completion(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    kind: ShellSlideKind,
+    now: Instant,
+) {
     use crate::app::frontend::menu_page_render::active_page_title_text;
     let heading = match kind {
         // `0x102`'s own statics start, or repaint when the dialog shows again
         // after Choose Map.
         ShellSlideKind::NetworkSetup(_) => {
             return crate::app::shell_network_setup::show_statics(
-                &state.renderer,
-                &mut state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
             );
         }
         ShellSlideKind::Skirmish => {
             let (title, game_type, map_label) =
                 crate::app::frontend::skirmish_shell_render::skirmish_right_panel_label_strings(
-                    &state.frontend,
-                    &state.process_assets,
+                    frontend,
+                    process_assets,
                 );
-            let statics = &mut state.frontend.skirmish_shell_state.statics;
+            let statics = &mut frontend.skirmish_shell_state.statics;
             return statics.show(&title, &game_type, &map_label, now);
         }
         // Choose Map `0x6B`, whose statics outlive the random-map dialog, and
         // `0x105`, whose statics outlive the seed browser.
         ShellSlideKind::ChooseMap | ShellSlideKind::RandomMap => {
-            let title = active_page_title_text(&state.frontend, &state.process_assets, kind);
-            let shell = &mut state.frontend.skirmish_shell_state;
+            let title = active_page_title_text(frontend, process_assets, kind);
+            let shell = &mut frontend.skirmish_shell_state;
             let statics = if kind == ShellSlideKind::ChooseMap {
                 shell
                     .choose_map_modal
@@ -482,23 +499,22 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
         // static and, after playing ScoreAnimSound, the 0x72B kind-4 timer.
         // 0xBC7's (`0x00470D30`) plays no sound.
         ShellSlideKind::CampaignScore | ShellSlideKind::CampaignEnd => {
-            let frames = state
-                .frontend
+            let frames = frontend
                 .campaign_score_art
                 .as_ref()
                 .and_then(|art| art.scra.as_ref())
                 .map_or(0, |strip| strip.frames.len());
-            let sound = crate::app::state::active_rules(&state.frontend, &state.match_state)
+            let sound = crate::app::state::active_rules(frontend, match_state)
                 .filter(|_| kind == ShellSlideKind::CampaignScore)
                 .and_then(|rules| rules.general.score_anim_sound())
                 .map(str::to_owned);
-            if let Some(page) = state.frontend.campaign_score_page.as_mut() {
+            if let Some(page) = frontend.campaign_score_page.as_mut() {
                 page.start_presentation(frames, now);
             }
             if let Some(sound) = sound {
                 crate::app::App::play_campaign_score_anim_sound(
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
+                    process_assets,
+                    sfx_player,
                     Some(&sound),
                 );
             }
@@ -507,24 +523,21 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
         // 0x108's SHOW completion starts every kind-1 static at once: the
         // heading, the status line and the 47 table texts.
         ShellSlideKind::Score => {
-            if let Some(page) = state.frontend.score_page.as_mut() {
+            if let Some(page) = frontend.score_page.as_mut() {
                 page.statics.start(now);
             }
             crate::app::frontend::score_shell_render::score_title_text(
-                &state.frontend.score_page,
-                &state.process_assets,
+                &frontend.score_page,
+                process_assets,
             )
         }
         ShellSlideKind::MainMenu => {
-            crate::app::frontend::main_menu_shell_render::main_menu_title_text(
-                &state.process_assets,
-            )
-            .into_owned()
+            crate::app::frontend::main_menu_shell_render::main_menu_title_text(process_assets)
+                .into_owned()
         }
-        _ => active_page_title_text(&state.frontend, &state.process_assets, kind),
+        _ => active_page_title_text(frontend, process_assets, kind),
     };
     // The family pages' heading 0x694 and status line 0x695.
-    let frontend = &mut state.frontend;
     frontend.shell_page_title.set_text(&heading, now);
     frontend.shell_page_title.start(now);
     frontend.shell_status_line.start(now);

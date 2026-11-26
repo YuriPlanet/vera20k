@@ -7,7 +7,6 @@
 //! ## Dependency rules
 //! - Internal to `presentation::render` — only called from mod.rs.
 
-use crate::app::AppState;
 use crate::app::diagnostics::debug_overlays;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
@@ -1233,16 +1232,28 @@ pub(super) fn update_minimap(
 /// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340)
 /// and the airstrike wobble move with it once per composite.
 pub(super) fn build_ui_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     wall_ms: u32,
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> UiInstances {
-    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
-    let drag = match &state.match_state.match_presentation.selection_overlay {
+    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        cursor,
+    );
+    let drag = match &match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
-            &state.match_state.input.selection_state,
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
+            &match_state.input.selection_state,
+            match_state.input.camera_x,
+            match_state.input.camera_y,
         ),
         None => Vec::new(),
     };
@@ -1251,11 +1262,10 @@ pub(super) fn build_ui_instances(
     // ground, with the ferry's circles.
     let mut ground_marks = Vec::new();
     if let (Some(path), Some(palette)) = (
-        state.match_state.input.formation_line.path(),
-        state
-            .match_state
+        match_state.input.formation_line.path(),
+        match_state
             .match_presentation
-            .surface_palette(state.process_assets.manager()),
+            .surface_palette(process_assets.manager()),
     ) {
         ground_marks.extend(
             crate::render::selection_overlay::SelectionOverlay::build_formation_dots(
@@ -1265,21 +1275,21 @@ pub(super) fn build_ui_instances(
         );
     }
     let placement_preview = build_placement_preview(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
     );
 
-    let input = &state.match_state.input;
+    let input = &match_state.input;
     let view = tactical_world_view(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
     // The drained action stores go onto the whole logical surface, whose
     // pixels start at the frame's corner: the view's camera less the
@@ -1290,10 +1300,10 @@ pub(super) fn build_ui_instances(
     // individual spans here would quantize them again on that smaller/larger
     // attachment, distorting dash spacing and node borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
-    if !state.match_state.input.planning.active()
+    if !match_state.input.planning.active()
         && let (Some(runtime), Some(frame)) = (
-            state.match_state.sim_runtime.presentation(),
-            state.match_state.sim_runtime.frame(),
+            match_state.sim_runtime.presentation(),
+            match_state.sim_runtime.frame(),
         )
     {
         // Health 0 skips only the CaptureManager links (`0x006D47A4` jumps
@@ -1326,32 +1336,30 @@ pub(super) fn build_ui_instances(
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
-    let ground_strokes = ferry_lines::build_rings(&state.match_state, view);
+    let ground_strokes = ferry_lines::build_rings(match_state, view);
     let (mut target_line, planning_highlights) = planning_lines::build(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         view,
         wall_ms,
     );
-    target_line.extend(ferry_lines::build_paths(&state.match_state, view, wall_ms));
+    target_line.extend(ferry_lines::build_paths(match_state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_strokes(
-        &state.match_state.match_presentation.target_lines,
-        state.match_state.input.planning.active(),
-        state
-            .match_state
+        &match_state.match_presentation.target_lines,
+        match_state.input.planning.active(),
+        match_state
             .sim_runtime
             .presentation()
             .map(|rt| &rt.simulation),
-        state.match_state.sim_runtime.frame(),
-        crate::app::state::active_rules(&state.frontend, &state.match_state),
-        state
-            .match_state
+        match_state.sim_runtime.frame(),
+        crate::app::state::active_rules(frontend, match_state),
+        match_state
             .match_presentation
-            .surface_palette(state.process_assets.manager()),
-        &state.match_state.match_presentation.house_color_map,
+            .surface_palette(process_assets.manager()),
+        &match_state.match_presentation.house_color_map,
         wall_ms,
         view,
         if interleave_enabled {
@@ -1364,16 +1372,15 @@ pub(super) fn build_ui_instances(
     target_line.extend(planning_highlights);
     let [factory_rally_first, factory_rally_second] =
         crate::app::presentation::target_lines::build_factory_rally_line_strokes(
-            state
-                .match_state
+            match_state
                 .sim_runtime
                 .presentation()
                 .map(|rt| &rt.simulation),
-            state.match_state.sim_runtime.frame(),
-            crate::app::state::active_rules(&state.frontend, &state.match_state),
+            match_state.sim_runtime.frame(),
+            crate::app::state::active_rules(frontend, match_state),
             &cursor.selected,
-            &state.match_state.match_presentation.house_color_map,
-            preferred_local_owner(&state.match_state).as_deref(),
+            &match_state.match_presentation.house_color_map,
+            preferred_local_owner(match_state).as_deref(),
             view,
         );
 
@@ -1390,7 +1397,7 @@ pub(super) fn build_ui_instances(
         tactical_line_calls,
         factory_rally_first,
         factory_rally_second,
-        beacons: build_beacon_instances(&state.match_state),
+        beacons: build_beacon_instances(match_state),
     }
 }
 
