@@ -2,14 +2,24 @@
   "schema_version": "vera20k.map-observation-expectations.v1",
   "assertions": [
     {
-      "name": "g0 command_bar.thumb.release.dispatch.key_after",
+      "name": "g0 targeted thumb ID",
       "subject": {
         "gesture": 0
       },
       "at_step": 280,
-      "field": "command_bar.thumb.release.dispatch.key_after",
+      "field": "command_bar.gadget_id",
       "op": "eq",
-      "value": 33008
+      "value": 240
+    },
+    {
+      "name": "g0 release fired the thumb",
+      "subject": {
+        "gesture": 0
+      },
+      "at_step": 280,
+      "field": "command_bar.thumb.release.dispatch.fired",
+      "op": "eq",
+      "value": true
     },
     {
       "name": "g0 native required closed outcome",
@@ -52,24 +62,24 @@
       "value": []
     },
     {
-      "name": "g1 command_bar.thumb.release.dispatch.key_after",
+      "name": "g1 targeted thumb ID",
       "subject": {
         "gesture": 1
       },
       "at_step": 350,
-      "field": "command_bar.thumb.release.dispatch.key_after",
+      "field": "command_bar.gadget_id",
       "op": "eq",
-      "value": 33009
+      "value": 241
     },
     {
-      "name": "g1 command_bar.thumb.release.dispatch.action_result",
+      "name": "g1 release fired the thumb",
       "subject": {
         "gesture": 1
       },
       "at_step": 350,
-      "field": "command_bar.thumb.release.dispatch.action_result",
+      "field": "command_bar.thumb.release.dispatch.fired",
       "op": "eq",
-      "value": 1
+      "value": true
     },
     {
       "name": "g1 command_bar.thumb.after.pressed",

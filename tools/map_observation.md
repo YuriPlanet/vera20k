@@ -161,12 +161,12 @@ in the capture profile: an offline report cannot recover unrecorded state.
 
 `{"gesture":0}` selects the actual `observations.gesture_input.receipts` row whose
 `ordinal` is 0. Fields address that receipt, for example
-`command_bar.thumb.release.dispatch.key_after` or `command_bar.thumb.after.closed`.
+`command_bar.thumb.release.dispatch.fired` or `command_bar.thumb.after.closed`.
 It is observed only at its `issue_after_step`, with that completed-step frame
 retained. Missing or duplicate ordinals, an unsampled issue step, other steps and
 missing fields yield `UNOBSERVED`; a gesture's state is never carried into later
 samples or replaced by another gesture. An explicitly recorded `dispatch:null`
-can be compared to `null`, while its unrecorded `key_after` remains `UNOBSERVED`.
+can be compared to `null`, while its unrecorded `fired` remains `UNOBSERVED`.
 This is an assertion subject, independent of timeline actor/House filters.
 
 Exit status is 0 for `INSPECTED` or assertion `PASS`, 1 for assertion `FAIL` (including
@@ -828,7 +828,9 @@ exactly `state` and `dispatch`. Each state records boolean `closed`, `pressed`,
 `gadget_id`, four i32 `rect` components, nullable string `current_house`, nullable
 u8 `side_index`, and nullable boolean `has_lost`/`exit_ready`. These are passive
 observations of the existing owners, not flags inferred from remaining actors.
-Each nonnull dispatch records u16 `masked_flags`, u8 `modifier`, u16 `key_after`
+Each nonnull GUI dispatch records two booleans. `fired` identifies an activation
+of the targeted thumb, and `right` identifies a right-button activation.
+Older captures record u16 `masked_flags`, u8 `modifier`, u16 `key_after`
 and u32 `action_result`. `key_after` is the actual mutable gadget key after
 dispatch; `action_result` records consumption and is not a fired gadget ID.
 Validation preserves the observed bar result, including a pre-fix reopening.
