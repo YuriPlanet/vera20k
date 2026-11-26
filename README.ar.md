@@ -154,9 +154,9 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 ## إعلام
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> قناة YouTube</a>
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;تسلّط قناة <a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> الضوء على VERA20K.
 
-[شاهد قناة Command & Conquer Vietnam وهي تلعب VERA20K على خريطة Arctic Circle 16 ضد 29 خصمًا يتحكم بهم الحاسوب على مستوى Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[شاهد لاعبًا واحدًا يواجه 29 خصمًا من مستوى Brutal على خريطة Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 ترجمة لـ [README.md](README.md)؛ يُرجى تحديثها مع النسخة الإنجليزية.
 

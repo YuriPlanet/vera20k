@@ -149,8 +149,8 @@ This product includes software developed by the [Kratos Authors](docs/zh-CN/krat
 
 ## 媒体
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube 频道</a>
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> 频道介绍了 VERA20K。
 
-[观看 Command & Conquer Vietnam 在 VERA20K 的 Arctic Circle 16 地图上挑战 29 个冷酷 AI。](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[观看一名玩家在 Arctic Circle 16 地图上挑战 29 个冷酷 AI](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 本文件译自 [README.md](README.md)，请与英文版保持同步。

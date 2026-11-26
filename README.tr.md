@@ -158,8 +158,8 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 ## Medya
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube kanalı</a>
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> kanalında VERA20K tanıtılıyor.
 
-[Command & Conquer Vietnam, VERA20K’yi Arctic Circle 16 haritasında Brutal zorluk seviyesindeki 29 yapay zekâ rakibine karşı oynuyor.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[Arctic Circle 16 haritasında bir oyuncunun Brutal seviyesindeki 29 yapay zekâ rakibine karşı maçını izleyin](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 [README.md](README.md) dosyasının çevirisidir; lütfen İngilizce sürümle güncel tutun.

@@ -160,8 +160,8 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 ## Medien
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube-Kanal</a>
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> stellt VERA20K vor.
 
-[Command & Conquer Vietnam spielt VERA20K auf Arctic Circle 16 gegen 29 KI-Gegner auf der Stufe „Brutal“.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[Ein Spieler gegen 29 Brutal-KIs auf Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Übersetzung von [README.md](README.md); bitte mit der englischen Version synchron halten.

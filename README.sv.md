@@ -156,8 +156,8 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 
 ## Media
 
-<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> YouTube-kanal</a>
+<a href="https://www.youtube.com/@cncvietnam-huydeptrai"><img src="docs/images/cnc-vietnam.webp" width="64" height="64" align="middle" alt="Command &amp; Conquer Vietnam (YouTube)"></a> &nbsp;<a href="https://www.youtube.com/@cncvietnam-huydeptrai">Command &amp; Conquer Vietnam</a> visar upp VERA20K.
 
-[Command & Conquer Vietnam spelar VERA20K på Arctic Circle 16 mot 29 datormotståndare på svårighetsgraden Brutal.](https://www.youtube.com/watch?v=njpQRCTZ_MY)
+[Se en spelare möta 29 datormotståndare på svårighetsgraden Brutal på Arctic Circle 16](https://www.youtube.com/watch?v=njpQRCTZ_MY)
 
 Översättning av [README.md](README.md); håll den uppdaterad i takt med den engelska versionen.
