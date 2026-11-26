@@ -780,6 +780,22 @@ pub struct CellOccupancy {
     pub occupants: Vec<CellOccupant>,
 }
 
+impl crate::sim::cell_map::CellValue for CellOccupancy {
+    #[inline]
+    fn copy_cell_from(&mut self, source: &Self) {
+        // Keep the destination's list allocation: a cell's occupants change
+        // rarely, and a map's copy runs every tick.
+        self.occupants.clone_from(&source.occupants);
+    }
+}
+
+impl crate::sim::cell_map::CellValue for RawCellOccupation {
+    #[inline]
+    fn copy_cell_from(&mut self, source: &Self) {
+        *self = *source;
+    }
+}
+
 impl CellOccupancy {
     /// All occupants on a selected movement layer in gamemd list order.
     pub fn iter_layer(&self, layer: MovementLayer) -> impl Iterator<Item = &CellOccupant> + '_ {
