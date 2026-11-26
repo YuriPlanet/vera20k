@@ -147,7 +147,7 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
     assert!(wall.wall);
     assert_eq!(wall.to_overlay.as_deref(), Some("PLAIN"));
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
-    f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *f.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let mut held = None;
     for _ in 0..3_000 {
         f.sim
@@ -355,7 +355,6 @@ fn without_aibuild_limit_the_war_factories_clone_the_choice() {
 /// production start) a factoryless building skips and the choice slot
 /// clears (`0xC335C4..0xC33616`) — the clone production never exceeds the
 /// limit.
-#[cfg(feature = "npatch")]
 #[test]
 fn aibuild_limit_skips_and_clears_the_choice_at_the_limit() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture("", "AIBuildLimit=1");
@@ -378,7 +377,6 @@ fn aibuild_limit_skips_and_clears_the_choice_at_the_limit() {
 /// A non-positive `AIBuildLimit=` compares by magnitude against the
 /// produced and owned counts (the native negated signed compares), so
 /// `-1` blocks once one tank exists.
-#[cfg(feature = "npatch")]
 #[test]
 fn aibuild_limit_non_positive_compares_the_magnitude() {
     let (mut f, weap_1, _) = ai_limit_fixture("", "AIBuildLimit=-1");
@@ -398,28 +396,34 @@ fn aibuild_limit_non_positive_compares_the_magnitude() {
     );
 }
 
-/// Even an authored zero cap cannot affect a build without NPatch.
-#[cfg(not(feature = "npatch"))]
+/// The key is the switch: an authored `AIBuildLimit=` turns NPatch on
+/// (`rules::npatch_switch`), so an authored zero cap blocks the type.
 #[test]
-fn aibuild_limit_is_ignored_without_npatch() {
+fn aibuild_limit_turns_the_per_game_npatch_switch_on() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture("", "AIBuildLimit=0");
-    assert_eq!(f.rules.object("TANK").unwrap().aibuild_limit, i32::MAX);
+    assert!(f.rules.npatch(), "the authored key turns NPatch on");
+    assert_eq!(f.rules.object("TANK").unwrap().aibuild_limit, 0);
     ai_limit_visit(&mut f, weap_1);
     ai_limit_visit(&mut f, weap_2);
-    assert!(ai_limit_holds(&f, weap_1) && ai_limit_holds(&f, weap_2));
+    assert!(!ai_limit_holds(&f, weap_1), "the zero cap blocks the first");
+    assert!(
+        !ai_limit_holds(&f, weap_2),
+        "the zero cap blocks the second"
+    );
     assert_eq!(
         f.sim.houses[&f.owner]
             .ai_unit_choices()
             .get(UnitChoiceKind::Unit),
-        0,
-        "the ignored extension does not invalidate the standing choice",
+        -1,
+        "the capped arm cleared the standing choice",
     );
 }
 
-/// The legacy global reader is opt-in and requires the compiled capability.
+/// The legacy global reader is opt-in and needs a key to turn NPatch on.
 #[test]
 fn legacy_ai_limit_switch_keeps_default_cloning_and_requires_npatch() {
     let (mut plain, first, second) = ai_limit_fixture("", "BuildLimit=1");
+    assert!(!plain.rules.npatch(), "no NPatch key plays stock");
     assert!(!plain.rules.general.enable_ai_build_limitation);
     ai_limit_visit(&mut plain, first);
     ai_limit_visit(&mut plain, second);
@@ -427,17 +431,12 @@ fn legacy_ai_limit_switch_keeps_default_cloning_and_requires_npatch() {
 
     let (mut limited, first, second) =
         ai_limit_fixture("EnableAIBuildLimitation=yes", "BuildLimit=1");
-    assert_eq!(
-        limited.rules.general.enable_ai_build_limitation,
-        crate::rules::NPATCH_ENABLED
-    );
+    assert!(limited.rules.npatch(), "the key turns NPatch on");
+    assert!(limited.rules.general.enable_ai_build_limitation);
     ai_limit_visit(&mut limited, first);
     ai_limit_visit(&mut limited, second);
     assert!(ai_limit_holds(&limited, first));
-    assert_eq!(
-        ai_limit_holds(&limited, second),
-        !crate::rules::NPATCH_ENABLED
-    );
+    assert!(!ai_limit_holds(&limited, second));
 }
 
 /// NPExt ext173 spells the global parallel switch `DisableAIParallelProduction=`
@@ -450,17 +449,12 @@ fn parallel_ai_switch_accepts_the_extended_builds_name() {
 
     for key in ["DisableParallelAIQueues", "DisableAIParallelProduction"] {
         let (named, _, _) = ai_limit_fixture(&format!("{key}=yes"), "BuildLimit=1");
-        assert_eq!(
-            named.rules.general.disable_parallel_ai_queues,
-            crate::rules::NPATCH_ENABLED,
-            "{key}",
-        );
+        assert!(named.rules.general.disable_parallel_ai_queues, "{key}");
     }
 }
 
 /// With both names in `[General]`, the NPSE name is read first; a value it
 /// cannot parse falls through to the ext173 name, as `ReadBool` would there.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_ai_switch_prefers_the_npse_name_when_both_are_set() {
     let (npse_wins, _, _) = ai_limit_fixture(
@@ -478,7 +472,6 @@ fn parallel_ai_switch_prefers_the_npse_name_when_both_are_set() {
 
 /// NPExt173 C2D00D..C2D037 also checks owned counts for a negative cap,
 /// even when no factory has produced an object of this type yet.
-#[cfg(feature = "npatch")]
 #[test]
 fn legacy_negative_ai_limit_includes_owned_unproduced_objects() {
     let (mut f, first, _) = ai_limit_fixture("EnableAIBuildLimitation=yes", "BuildLimit=-1");
@@ -507,10 +500,9 @@ fn legacy_negative_ai_limit_includes_owned_unproduced_objects() {
 /// `CheckBuildLimit` swaps in the runway-pad count for an `AirportBound=`
 /// aircraft instead. A capped aircraft with no airfield would look blocked
 /// through `CanBuild`, but the AI gate has to compare the type's own count.
-#[cfg(feature = "npatch")]
 #[test]
 fn the_gate_compares_an_airport_bound_aircraft_by_its_own_count() {
-    let mut f = fixture_with(
+    let f = fixture_with(
         "[General]\nEnableAIBuildLimitation=yes\nPlacementDelay=.05\n\
          AIAlternateProductionCreditCutoff=10\n\
          [InfantryTypes]\n[AircraftTypes]\n0=HELI\n[VehicleTypes]\n0=TANK\n\
@@ -556,7 +548,6 @@ fn without_the_switch_both_war_factories_clone_the_choice() {
 /// produces, no other starts (`0x45033C` hook, cave `0xC2F07C`); the block
 /// releases through `Exit_Object` and `AbandonProduction`'s reservation
 /// hooks (`0xC33940`, `0xC2EFB4`).
-#[cfg(feature = "npatch")]
 #[test]
 fn disable_parallel_ai_queues_serializes_war_factory_production() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
@@ -847,15 +838,16 @@ const NAVAL_RULES_TAIL: &str = "[InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]
 /// from a naval producer and `House+0x5650` from a land one, so a shipyard and
 /// a war factory stop sharing one vehicle choice. Before this split the
 /// shipyard fetched the war factory's tank, failed the `Naval=` mismatch check
-/// at `0x450343` and idled.
-#[cfg(feature = "npatch")]
+/// at `0x450343` and idled. The fixture's `DisableParallelAIQueues=no` is the
+/// NPatch key that turns the per-game switch on (`rules::npatch_switch`).
 #[test]
 fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
     use crate::rules::object_type::ObjectCategory;
     use crate::sim::ai_unit_choice::UnitChoiceKind;
 
     let mut f = fixture_with(
-        "[General]\nPlacementDelay=.05\nAIAlternateProductionCreditCutoff=10\n\
+        "[General]\nDisableParallelAIQueues=no\nPlacementDelay=.05\n\
+         AIAlternateProductionCreditCutoff=10\n\
          [InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=TANK\n1=SHIP\n\
          [BuildingTypes]\n0=YARD\n1=PLAIN\n2=WEAP\n3=SYRD\n\
          [YARD]\nStrength=1000\nConstructionYard=yes\nFactory=BuildingType\n\
@@ -950,7 +942,6 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
 /// #333 fixed exactly the global switch stopping the AI's navy. Two naval
 /// yards still serialize, so the split is not a blanket disable. Each
 /// producer reads its own choice slot, as `0xC2F130` routes them.
-#[cfg(feature = "npatch")]
 #[test]
 fn disable_parallel_ai_queues_keeps_naval_and_ground_counters_apart() {
     use crate::rules::object_type::ObjectCategory;
@@ -1013,26 +1004,26 @@ fn disable_parallel_ai_queues_keeps_naval_and_ground_counters_apart() {
     );
 }
 
-/// Extension keys cannot change production in a build without NPatch.
-#[cfg(not(feature = "npatch"))]
+/// Extension keys cannot change production unless the data turns NPatch on;
+/// either global name does, and both serialize the war factories.
 #[test]
-fn npse_switches_are_ignored_without_the_build_capability() {
+fn npse_switch_keys_turn_the_per_game_npatch_switch_on() {
     for key in ["DisableParallelAIQueues", "DisableAIParallelProduction"] {
         let (mut f, weap_1, weap_2) = ai_limit_fixture(&format!("{key}=yes"), "");
-        assert!(!f.rules.general.disable_parallel_ai_queues, "{key}");
+        assert!(f.rules.npatch(), "{key} turns NPatch on");
+        assert!(f.rules.general.disable_parallel_ai_queues, "{key}");
         ai_limit_visit(&mut f, weap_1);
         ai_limit_visit(&mut f, weap_2);
         assert!(ai_limit_holds(&f, weap_1), "{key}");
         assert!(
-            ai_limit_holds(&f, weap_2),
-            "{key} leaves stock parallel production intact"
+            !ai_limit_holds(&f, weap_2),
+            "{key} serializes the second factory"
         );
     }
 }
 
 /// NPSE 2.0 C3395E releases before the caller drops the Factory's held
 /// pointer. A scan still sees that pointer and incorrectly blocks a start.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_reservation_releases_at_exit_before_factory_cleanup() {
     let (mut f, first, second) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
@@ -1075,7 +1066,6 @@ fn parallel_reservation_releases_at_exit_before_factory_cleanup() {
 
 /// PointerExpired4CA580 clears only the held pointer; it does not run the
 /// C2EFB4 Abandon release. The remaining reservation must save and hash.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_reservation_survives_product_expiry_and_state_roundtrip() {
     let (mut f, first, second) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
@@ -1131,7 +1121,6 @@ fn parallel_reservation_survives_product_expiry_and_state_roundtrip() {
 }
 
 /// NPSE 2.0 C2F0FB..C2F10F uses one Building counter, regardless of Naval.
-#[cfg(feature = "npatch")]
 #[test]
 fn parallel_building_reservation_does_not_split_on_naval() {
     let ini = RULES

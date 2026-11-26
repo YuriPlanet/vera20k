@@ -24,7 +24,7 @@
 //! vera20k_sdk::on_decide!(HALVE => halve);
 //! ```
 
-use crate::{Cell, EventRecord, House, NameKind, Projectile, Techno, TypeRef, sys};
+use crate::{Cell, EventRecord, House, Mission, NameKind, Projectile, Ref, Techno, TypeRef, sys};
 
 /// One decision request (`DecideRecord`), valid during its `on_decide`
 /// call.
@@ -365,6 +365,9 @@ impl FatalDamageDecision<'_> {
     pub const CREW: i64 = 1 << 4;
     /// The unit-lost announcement plays.
     pub const ANNOUNCE: i64 = 1 << 5;
+    /// Tiberium remains: Riparius on and around the cell (Ares'
+    /// `TiberiumRemains`; natively set only under Ares).
+    pub const TIBERIUM_REMAINS: i64 = 1 << 6;
 
     /// `previous` with `bit` set or cleared.
     pub fn with(&self, bit: i64, on: bool) -> i64 {
@@ -395,6 +398,63 @@ decision!(
         unit: Techno = |r| Techno(r.subject),
     }
 );
+
+decision!(
+    /// `MissionStep` (appendix 4.5, preview): after a unit's or
+    /// infantryman's Guard, Area Guard, Hunt or Attack mission body ran.
+    /// The result area holds its outcome (the previous link's answer for a
+    /// later link): change what you want with the setters, each of which
+    /// answers. Without an answer the outcome stands.
+    MissionStepDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The mission whose body ran ([`Mission`] number).
+        mission: i64 = |r| r.value,
+        /// The target the body left; `NO_HANDLE` for none or a cell.
+        target: Techno = |r| Techno(r.other),
+    }
+);
+
+impl MissionStepDecision<'_> {
+    /// The outcome so far: the body's, or the previous link's answer.
+    pub fn step(&mut self) -> Option<sys::MissionStepResult> {
+        take(self.0.area(), 0)
+    }
+
+    /// Answers `step` whole.
+    pub fn set_step(&mut self, step: &sys::MissionStepResult) -> bool {
+        self.answer_at(0, step)
+    }
+
+    /// Answers with the target `target`, an object or a cell
+    /// (`Techno(NO_HANDLE)` for none).
+    pub fn set_target(&mut self, target: impl Ref) -> bool {
+        self.answer_at(0, &target.raw())
+    }
+
+    /// Answers with the destination `destination`, an object or a cell
+    /// (`Cell(NO_HANDLE)` for none).
+    pub fn set_destination(&mut self, destination: impl Ref) -> bool {
+        self.answer_at(8, &destination.raw())
+    }
+
+    /// Answers with `mission` to queue, `None` to queue nothing.
+    pub fn set_mission(&mut self, mission: Option<Mission>) -> bool {
+        self.answer_at(16, &mission.map_or(-1, |mission| mission as i32))
+    }
+
+    /// Answers with the frames until the body runs again (at least 1).
+    pub fn set_delay(&mut self, frames: i32) -> bool {
+        self.answer_at(20, &frames)
+    }
+
+    fn answer_at<T: Copy>(&mut self, at: usize, value: &T) -> bool {
+        if !put(self.0.area(), at, value) {
+            return false;
+        }
+        self.0.set_result(0);
+        true
+    }
+}
 
 /// `PathKind` (appendix 8.3, enum 22).
 #[repr(i32)]
@@ -482,6 +542,127 @@ impl ProjectileFrameDecision<'_> {
         (self.0.previous_len > 0)
             .then(|| take(self.0.area(), 0))
             .flatten()
+    }
+}
+
+decision!(
+    /// `MoveFrame` (appendix 4.5, preview): each frame a bound vehicle or
+    /// infantryman's locomotor (Drive, Ship, Walk, Mech, Hover) could start
+    /// a step. Answer a [`sys::MoveStep`]: [`Self::MOVE`] takes the frame
+    /// and moves it by the displacement (the engine checks the cell it
+    /// enters), [`Self::FACING`] turns it, [`Self::STOP`] drops its
+    /// destination. Without an answer, or without [`Self::MOVE`], its
+    /// locomotor moves it natively.
+    MoveFrameDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// 1 while its locomotor is moving.
+        moving: bool = |r| r.value == 1,
+        /// Its NavCom object; `NO_HANDLE` for a cell or none.
+        destination: Techno = |r| Techno(r.other),
+        /// Its NavCom cell; `Cell(NO_HANDLE)` for an object or none.
+        destination_cell: Cell = |r| Cell(r.cell),
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl MoveFrameDecision<'_> {
+    pub const MOVE: i32 = 1;
+    pub const FACING: i32 = 2;
+    pub const STOP: i32 = 4;
+
+    /// Answers `step` (the previous link's is replaced).
+    pub fn set_step(&mut self, step: &sys::MoveStep) -> bool {
+        if !put(self.0.area(), 0, step) {
+            return false;
+        }
+        self.0.set_result(0);
+        true
+    }
+
+    /// Takes the frame and moves by `dx`, `dy` leptons.
+    pub fn step_by(&mut self, dx: i32, dy: i32) -> bool {
+        self.set_step(&sys::MoveStep {
+            flags: Self::MOVE,
+            facing: 0,
+            displacement: [dx, dy],
+        })
+    }
+
+    /// The previous link's step (all zero for the first link).
+    pub fn previous_step(&mut self) -> Option<sys::MoveStep> {
+        (self.0.previous_len > 0)
+            .then(|| take(self.0.area(), 0))
+            .flatten()
+    }
+}
+
+decision!(
+    /// `PathFound` (appendix 4.5, preview): when a path search's route is
+    /// adopted. The area holds the route's cells (up to 24), the first link
+    /// the native ones; `native` is their count, 0 for no route. Answer up
+    /// to 24 cells, each next to the one before (the first next to the
+    /// unit's cell), or no route.
+    PathFoundDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The search's goal cell.
+        goal: Cell = |r| Cell(r.cell),
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl PathFoundDecision<'_> {
+    /// Cell `index` of the previous link's route.
+    pub fn previous_cell(&mut self, index: usize) -> Option<sys::PathCell> {
+        let count = usize::try_from(self.0.previous).ok()?;
+        let len = usize::try_from(self.0.previous_len).ok()?;
+        let at = index * size_of::<sys::PathCell>();
+        if index >= count || at >= len {
+            return None;
+        }
+        take(self.0.area(), at)
+    }
+
+    /// Answers the route `cells`; false (answering nothing) when it does
+    /// not fit the result area.
+    pub fn set_cells(&mut self, cells: &[sys::PathCell]) -> bool {
+        let area = self.0.area();
+        for (i, cell) in cells.iter().enumerate() {
+            if !put(area, i * size_of::<sys::PathCell>(), cell) {
+                return false;
+            }
+        }
+        self.0.set_result(cells.len() as i64);
+        true
+    }
+
+    /// Answers no route: the search fails.
+    pub fn no_route(&mut self) {
+        self.0.set_result(0);
+    }
+}
+
+decision!(
+    /// `ApproachPoint` (appendix 4.5, preview): when a unit approaching its
+    /// target has chosen the cell to move to, before it is set as the
+    /// destination. The result is a cell reference on the map; anything
+    /// else (0 included) keeps the previous link's cell, the native one
+    /// ([`Self::native`]) for the first.
+    ApproachPointDecision {
+        unit: Techno = |r| Techno(r.subject),
+        /// The cell the engine chose.
+        chosen: Cell = |r| Cell(r.cell),
+        /// The target object; `NO_HANDLE` for a cell target.
+        target: Techno = |r| Techno(r.other),
+        /// The target's cell.
+        target_cell: Cell = |r| Cell(r.value2),
+        position: [i32; 3] = |r| [r.x, r.y, r.z],
+    }
+);
+
+impl ApproachPointDecision<'_> {
+    /// Heads for `cell` instead.
+    pub fn set_cell(&mut self, cell: Cell) {
+        self.0.set_result(cell.0)
     }
 }
 

@@ -7,6 +7,7 @@
 use super::world_fire::{object_get_coords, retaliation_reaches};
 use super::*;
 use crate::rules::ruleset::SoundName;
+use crate::sim::ext_modules::modifiers::Immunity::Radiation;
 use crate::sim::movement::{DamageRetaliation, ScatterFlags};
 use crate::sim::world::techno_ai_cloak::emit_configured_cloak_sound;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -59,8 +60,7 @@ pub(crate) fn apply_foot_radiation(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     ) || !entity.lifecycle.object_alive()
-        || rad_immune
-        || entity.mover_facts.immune_to_radiation()
+        || entity.module_immune(Radiation, rad_immune || entity.mover_facts.immune_to_radiation())
         || crate::sim::movement::air_movement::is_high_flying(
             entity,
             world.resolved_terrain.as_ref(),
@@ -366,7 +366,7 @@ pub(crate) fn apply_building_radiation(
         (
             (entity.position.rx(), entity.position.ry()),
             &object.foundation,
-            object.immune_to_radiation,
+            entity.module_immune(Radiation, object.immune_to_radiation),
         )
     };
     if exempt {
@@ -2658,8 +2658,8 @@ pub(crate) fn handle_death(
                         crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
                     );
                 }
-                // Ares 3.0 1004B050 (hook 0x702216): TiberiumRemains.
-                if rules.ares() && callbacks_enabled(world) {
+                // Ares 3.0 1004B050 (hook 0x702216): the plan's TiberiumRemains.
+                if plan.tiberium_remains && callbacks_enabled(world) {
                     world.ares_tiberium_remains(dead_id, rules, run.effects());
                 }
                 // 0x00702216..0x00702228: then the Fire system link is released.

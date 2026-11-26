@@ -532,16 +532,22 @@ impl<'a> FireSubject<'a> {
                         // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
                         // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
                         // type flag and `ImmuneToBerserk` overrides both.
-                        immune_to_psionics: if self.rules.ares() {
-                            target_obj.techno_combat().combat().immune_to_berserk(
+                        // A module's `ImmunityFlags` bit 6 (berserk) replaces it.
+                        immune_to_psionics: entity.module_immune(
+                            crate::sim::ext_modules::modifiers::Immunity::Berserk,
+                            if self.rules.ares() {
+                                target_obj.techno_combat().combat().immune_to_berserk(
+                                    target_obj.immune_to_psionics
+                                        || target_obj.promotion_abilities().is_some_and(
+                                            |abilities| {
+                                                abilities.psionics_immune(entity.veterancy.raw())
+                                            },
+                                        ),
+                                )
+                            } else {
                                 target_obj.immune_to_psionics
-                                    || target_obj.promotion_abilities().is_some_and(|abilities| {
-                                        abilities.psionics_immune(entity.veterancy.raw())
-                                    }),
-                            )
-                        } else {
-                            target_obj.immune_to_psionics
-                        },
+                            },
+                        ),
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,

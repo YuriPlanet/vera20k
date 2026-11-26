@@ -321,11 +321,13 @@ fn ini_demo_mods_reach_their_marks() {
             .unwrap_or_else(|e| panic!("{ini}: {e}"));
         sim.install_ini_triggers(rules, &triggers)
             .unwrap_or_else(|e| panic!("{ini}: {e}"));
+        // The engine keeps only the latest log lines; collect them as they come.
+        let mut log = Vec::new();
         for _ in 0..frames {
             scene.tick();
+            log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
         }
         let status = scene.sim().ext_modules().status();
-        let log = scene.runtime.simulation.ext_modules_mut().take_log();
         eprintln!("== {wasm}");
         for line in &log {
             eprintln!("   {line}");

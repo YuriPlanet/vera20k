@@ -1512,7 +1512,7 @@ pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleS
     entity.set_owner_for_test(sim.interner.intern("A"));
     entity.health.set_for_test(100);
     sim.substrate.entities.insert(entity);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     (sim, rules, id)
 }
 
@@ -1799,7 +1799,7 @@ mod slot_tests {
             Some(replaced)
         );
         assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()
@@ -1934,8 +1934,8 @@ mod slot_tests {
             .unwrap();
             assert!(!sim.anim(missing).unwrap().runtime().first_ai_guard);
             assert!(!sim.anim(missing).unwrap().runtime().inactive);
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
             sim.visit_anim(
                 missing,
                 &rules,

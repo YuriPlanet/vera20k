@@ -739,7 +739,7 @@ fn mono_fire_into_shroud_allows_explored_fog_but_not_never_explored_cell() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) =
         fixture("[Strike]\nSW.FireIntoShroud=no\n", "Russians");
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     assert!(!fire(&mut sim, &rules, owner, sw_type, (15, 15)));
     assert!(sim.super_weapons[&owner][&sw_type].is_ready);
     sim.fog.reveal_cells_for_owner(owner, [(15, 15)]);

@@ -154,7 +154,7 @@ fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
                     timer_before[1].as_i64().unwrap() as i32,
                 ),
             });
-        sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             control["rng_before"]["native_state_hex"].as_str().unwrap(),
         );
         let main_before = sim.main_rng.logical_state();

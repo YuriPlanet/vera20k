@@ -74,8 +74,8 @@ use vera20k_wasm_ext::{
     NAME_MODULE_EVENT, NAME_NOTIFY, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE, NAME_PROPERTY,
     NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE,
     NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS, SCOPE_HOUSES,
-    SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SimHost, SimModule, Status, TABLE_ACTION,
-    TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SCOPE_TYPES, SimHost, SimModule, Status,
+    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
@@ -93,7 +93,9 @@ mod ini_start;
 mod ini_triggers;
 mod messages;
 pub(crate) mod modifiers;
+mod motion;
 mod orders;
+mod paths;
 pub(crate) mod projectiles;
 mod props;
 mod rules;
@@ -455,6 +457,8 @@ pub struct ExtModules {
     claims: claims::DomainClaims,
     /// Per-projectile module data and `Launch` paths ([`projectiles`]).
     projectiles: projectiles::ModuleProjectiles,
+    /// The `Push`es in progress ([`motion`]).
+    motions: motion::ModuleMotions,
     /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
     /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
     /// when the match starts, and a save carries the claims.
@@ -496,6 +500,7 @@ struct SavedExtModules {
     #[serde(default)]
     projectiles: projectiles::ModuleProjectiles,
     #[serde(default)]
+    motions: motion::ModuleMotions,
     messages: messages::ClientMessages,
     #[serde(default)]
     automation_allowed: bool,
@@ -530,6 +535,7 @@ impl serde::Serialize for ExtModules {
             ini: self.ini.clone(),
             claims: self.claims.clone(),
             projectiles: self.projectiles.clone(),
+            motions: self.motions.clone(),
             messages: self.messages.clone(),
             automation_allowed: self.automation_allowed,
         }
@@ -548,6 +554,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             ini: saved.ini,
             claims: saved.claims,
             projectiles: saved.projectiles,
+            motions: saved.motions,
             messages: saved.messages,
             automation_allowed: saved.automation_allowed,
             ..Self::default()
@@ -565,6 +572,14 @@ impl Clone for ExtModules {
 }
 
 impl ExtModules {
+    /// What a fork of the world holds (`world::fork`): no module. A live
+    /// instance cannot be copied, so a turn on a fork must not call one; the
+    /// forked object pass runs only while no module is loaded.
+    pub(crate) fn fork_empty(&self) -> Self {
+        debug_assert!(self.slots.is_empty(), "a world with Wasm modules was forked");
+        Self::default()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
     }
@@ -667,12 +682,14 @@ impl ExtModules {
         let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
         let projectiles =
             (!self.projectiles.is_empty()).then(|| fnv1a(self.projectiles.state_bytes()));
+        let motions = (!self.motions.is_empty()).then(|| fnv1a(self.motions.state_bytes()));
         let messages = (!self.messages.is_empty()).then(|| fnv1a(self.messages.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
             .chain(claims)
             .chain(projectiles)
+            .chain(motions)
             .chain(messages)
     }
 
@@ -746,6 +763,9 @@ impl ExtModules {
         }
         if !self.projectiles.is_empty() {
             self.projectiles.hash(hasher);
+        }
+        if !self.motions.is_empty() {
+            self.motions.hash(hasher);
         }
         if !self.messages.is_empty() {
             self.messages.hash(hasher);
@@ -1002,7 +1022,12 @@ pub(crate) fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
         ),
         TABLE_SCOPE => matches!(
             id,
-            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS | SCOPE_SUPER_WEAPONS
+            SCOPE_OBJECTS
+                | SCOPE_HOUSES
+                | SCOPE_CELLS
+                | SCOPE_TYPES
+                | SCOPE_MODIFIERS
+                | SCOPE_SUPER_WEAPONS
         ),
         _ => false,
     }
@@ -1199,6 +1224,16 @@ impl SimHost for Host<'_, '_> {
         if let Some(answer) = self.trigger_property(reference, prop, None) {
             return Ok(answer);
         }
+        // A string property's text gets its string ID here, added when new.
+        let name = property_name(prop).unwrap_or_default();
+        if let Some(decoded) = decode_ref(reference)?
+            && let Some(text) = self.reader().property_text(decoded, name)?
+        {
+            return Ok(match text {
+                Ok(text) => (i64::from(self.sim.ext_modules.ini.intern(&text)), Status::Ok),
+                Err(status) => (0, status),
+            });
+        }
         self.reader().read(reference, prop)
     }
 
@@ -1281,11 +1316,16 @@ impl SimHost for Host<'_, '_> {
                 },
             ));
         };
+        let op = ModifierOp::from_abi(op);
+        // A mask (`ImmunityFlags`) takes only an override of its bits.
+        if !stat.admits(op, value) {
+            return Ok((0, Status::Refused));
+        }
         let frame = self.sim.session.binary_frame();
         let modifier = Modifier {
             target,
             stat,
-            op: ModifierOp::from_abi(op),
+            op,
             value,
             expires: u32::try_from(frames)
                 .ok()
@@ -1492,6 +1532,13 @@ const READABLE: &[&str] = &[
     "Deployed",
     "UnderConstruction",
     "Parasite",
+    // Objects past the first set (props.rs).
+    "Cloaked",
+    "NearbyEnemyCount",
+    "TargetInRange",
+    "CanFireAtTarget",
+    "DoorOpen",
+    "Animating",
     // Projectiles (projectiles.rs, appendix 7.4).
     "VX",
     "VY",
@@ -1505,6 +1552,10 @@ const READABLE: &[&str] = &[
     "Placeable",
     "Visible",
     "Engage",
+    "Buildable",
+    // Strings (props.rs): a type's name, the multiplayer mode.
+    "Name",
+    "GameMode",
     // Houses.
     "TechLevel",
     "Country",
@@ -1548,6 +1599,7 @@ const READABLE: &[&str] = &[
     "InitialAmmo",
     "Passengers",
     "SizeLimit",
+    "Points",
     "Damage",
     "ROF",
     "Burst",
@@ -1610,6 +1662,7 @@ impl Reader<'_> {
             SCOPE_OBJECTS => self.find_objects(query, cap),
             SCOPE_HOUSES => self.find_houses(query, cap),
             SCOPE_CELLS => self.find_cells(query, cap),
+            SCOPE_TYPES => self.find_types(query, cap),
             SCOPE_MODIFIERS => self.find_modifiers(query, cap),
             SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
             _ => Ok((FindPage::default(), Status::Unsupported)),
@@ -1645,6 +1698,20 @@ impl Reader<'_> {
         let Some(reference) = decode_ref(reference)? else {
             return Ok((0, Status::Gone));
         };
+        // A string property outside `get` adds no string: a text not yet
+        // held has no ID to match.
+        if let Some(text) = self.property_text(reference, name)? {
+            return Ok(match text {
+                Ok(text) if text.is_empty() => (0, Status::Ok),
+                Ok(text) => self
+                    .sim
+                    .ext_modules
+                    .ini
+                    .string_id(&text)
+                    .map_or((0, Status::NotFound), |id| (i64::from(id), Status::Ok)),
+                Err(status) => (0, status),
+            });
+        }
         Ok(match reference {
             Ref::Object(id) => match self.sim.entities().get(id) {
                 Some(entity) => match name {
@@ -1671,6 +1738,10 @@ impl Reader<'_> {
             }
             Ref::House(index) => self.house_property(index, name),
             Ref::SuperWeapon { house, index } => self.super_weapon_property(house, index, name),
+            Ref::Type {
+                kind: NAME_TECHNO_TYPE,
+                id,
+            } if name == "Buildable" => self.buildable(id, view)?,
             Ref::Type { kind, id } => type_property(self.rules, kind, id, name)?,
             Ref::Cell { x, y } => self.cell_property(x, y, name, view),
             Ref::Waypoint(number) => match self.waypoint_cell(number) {
@@ -1755,6 +1826,10 @@ impl Reader<'_> {
                 i64::from(entity.building_online())
             }
             "Online" => return (0, Status::Unsupported),
+            "ImmunityFlags" => match object() {
+                Some(object) => entity.immunity_flags(object, self.rules),
+                None => return (0, Status::Unsupported),
+            },
             _ => match Stat::wired_property(name) {
                 Some(stat) => entity.effective_stat(stat),
                 None => return self.more_object_property(entity, name),
@@ -2352,6 +2427,7 @@ impl Simulation {
         self.ext_modules.vars.forget_object(stable_id);
         self.ext_modules.held.forget_object(stable_id);
         self.ext_modules.projectiles.forget(stable_id);
+        self.ext_modules.motions.end_push(stable_id);
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
@@ -2624,6 +2700,10 @@ mod order_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_control_tests.rs"]
 mod control_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_movement_tests.rs"]
+mod movement_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_message_tests.rs"]

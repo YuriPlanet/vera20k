@@ -86,10 +86,16 @@ impl FacingClass {
         self.current
     }
 
-    /// Per-frame step value, for tests that check the rotation rate.
-    #[cfg(test)]
+    /// The raw rate word `Set_ROT` writes.
     pub fn rot_per_frame(&self) -> u16 {
         self.rot_per_frame
+    }
+
+    /// Writes the raw rate word as `set_rot` does after its shift: the timer
+    /// and the directions stay. The module `ROTMultiplier`
+    /// (`ext_modules::modifiers`) scales a body's native word through it.
+    pub(crate) fn set_rate_word(&mut self, rate: u16) {
+        self.rot_per_frame = rate;
     }
 
     #[cfg(any(test, feature = "test-support"))]

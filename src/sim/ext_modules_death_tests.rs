@@ -144,6 +144,7 @@ fn the_death_plan_decides_the_survivors() {
     let plan = i64_at(120);
     assert_eq!(plan & 1 << 3, 1 << 3, "a hit that does not ignore defenses: survivors");
     assert_eq!(plan & 1 << 5, 1 << 5, "the announcement");
+    assert_eq!(plan & 1 << 6, 0, "no Tiberium remains without Ares");
     assert_eq!(plan >> 32, 0, "the type's own death weapon");
     let (none, _) = plant_death(Some(NO_SURVIVORS)).expect("third scene");
     let (before, _) = {

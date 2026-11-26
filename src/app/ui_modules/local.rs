@@ -814,16 +814,33 @@ pub(crate) fn apply(effects: LocalEffects, state: &mut AppState) {
                 );
             }
             LocalEffect::Speech { event } => {
-                crate::app::input::dispatch::push_local_eva(state, &event);
+                crate::app::input::dispatch::push_local_eva(&mut state.match_state.match_audio, &event);
             }
             LocalEffect::Camera { cell, velocity } => {
                 if let Some(coord) = cell_coord(state, cell.0, cell.1) {
-                    crate::app::input::camera::apply_trigger_camera(state, coord, velocity);
+                    crate::app::input::camera::apply_trigger_camera(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state,
+                        &state.persistence,
+                        coord,
+                        velocity,
+                    );
                 }
             }
             LocalEffect::Select { objects, additive } => {
                 crate::app::input::dispatch::queue_selection_snapshot_command(
-                    state, objects, additive,
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    objects,
+                    additive,
                 );
             }
             LocalEffect::Flash { object, frames } => {
@@ -839,11 +856,11 @@ pub(crate) fn apply(effects: LocalEffects, state: &mut AppState) {
     if effects.commands.is_empty() {
         return;
     }
-    let Some(owner) = crate::app::input::commands::preferred_command_owner(state) else {
+    let Some(owner) = crate::app::input::commands::preferred_command_owner(&state.match_state.sim_runtime) else {
         return;
     };
     for command in effects.commands {
-        if crate::app::input::commands::try_schedule_command(state, &owner, command).is_none() {
+        if crate::app::input::commands::try_schedule_command(&mut state.match_state, &owner, command).is_none() {
             log::debug!("ui.wasm: a module's command did not enter the command stream");
         }
     }

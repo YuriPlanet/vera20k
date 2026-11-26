@@ -2037,7 +2037,7 @@ fn a_warp_in_progress_survives_a_snapshot() {
     // but reconstructs the hierarchy only at the map-authority restore seam.
     // Provide the empty overlay owner that the production seam requires.
     let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
         terrain.width(),
         terrain.height(),
     ));
@@ -2045,7 +2045,7 @@ fn a_warp_in_progress_survives_a_snapshot() {
     sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .expect("publish fixture map authority");
     // A load restarts the Scenario stream from Seed0; put the source there too.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved_hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "temporal", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -2186,8 +2186,8 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         "no idle draw while warped"
     );
     // A frame the repair period (14) divides.
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().next_multiple_of(14));
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame().next_multiple_of(14));
     let mut ctx = crate::sim::world::ObjectAiCtx::default();
     sim.object_ai_visit_one(plant, Some(&rules), &mut ctx);
     assert_eq!(entity(&sim, plant).health.current(), 300, "no repair");
@@ -3106,9 +3106,9 @@ fn native_first_head_building_warning_and_release_corpus() {
         // Match native's declared post-construction seed boundary once;
         // never reset the streams between start and either release.
         let seed = input["rng_seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         sim.sound_events.clear_for_test();

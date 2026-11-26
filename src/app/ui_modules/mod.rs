@@ -81,6 +81,7 @@ use vera20k_wasm_ext::{ClientEvent, ClientModule, Fault, Limits};
 pub(crate) use vera20k_wasm_ext::client::Source;
 
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::ext_modules::{ClientOutbox, MapUi};
 use crate::util::time::Instant;
@@ -402,7 +403,7 @@ pub(crate) fn catching_up(state: &AppState) -> bool {
         .as_ref()
         .is_some_and(|live| live.restoring_match())
         || crate::app::match_runtime::watching::catching_up(
-            state,
+            &state.match_state,
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
         )
 }
@@ -417,8 +418,10 @@ fn viewer(state: &AppState) -> Viewer {
         spectator: true,
         sees_whole_map,
     };
-    if crate::app::match_runtime::watching::active(state) {
-        return spectator(crate::app::match_runtime::watching::whole_map(state));
+    if crate::app::match_runtime::watching::active(&state.match_state) {
+        return spectator(crate::app::match_runtime::watching::whole_map(
+            &state.match_state,
+        ));
     }
     let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return spectator(false);
@@ -440,17 +443,28 @@ fn viewer(state: &AppState) -> Viewer {
 
 /// The cell under a screen point when the point is over the battlefield.
 fn battlefield_cell(state: &AppState, x: f32, y: f32) -> Option<(u16, u16)> {
-    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (left, top, width, height) = viewport(state);
     let inside = x >= left as f32
         && y >= top as f32
         && x < (left + width) as f32
         && y < (top + height) as f32;
-    inside.then(|| crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, x, y))
+    inside.then(|| crate::app::match_runtime::sim_tick::screen_point_to_world_cell(&state.match_state, x, y))
+}
+
+/// The battlefield's frame-pixel rect.
+fn viewport(state: &AppState) -> (u32, u32, u32, u32) {
+    crate::app::input::camera::tactical_viewport_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    )
 }
 
 /// What the camera and settings references read this frame.
 fn local_inputs(state: &AppState) -> LocalInputs {
-    let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let (left, top, width, height) = viewport(state);
     let centre = (
         left as f32 + width as f32 / 2.0,
         top as f32 + height as f32 / 2.0,
@@ -466,7 +480,7 @@ fn local_inputs(state: &AppState) -> LocalInputs {
 /// save): the mod's `ui.wasm`, then the map's under `[VeraWasm] MapUI=`, the
 /// map's `[VeraUI]` parts, then `client_init` for each module.
 pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
-    drop_modules(state);
+    drop_modules(&mut state.match_state);
     let mut lines: Vec<(String, bool)> = sources
         .problems
         .iter()
@@ -570,7 +584,7 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
     }
     if !ui.slots.is_empty() || map_layout.is_some() || !ui.pending_lines.is_empty() {
         state.match_state.ui_modules = Some(ui);
-        rebind_game_keys(state);
+        rebind_game_keys(&mut state.match_state);
     }
 }
 
@@ -578,11 +592,11 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
 /// `[VeraUI]` parts off the match's `Gui`: a new scenario or a restored save
 /// (`reset_scenario_exit_runtime`) and [`install`]. A load in the middle of
 /// a match keeps that `Gui`, so the nodes would outlive their modules.
-pub(crate) fn drop_modules(state: &mut AppState) {
-    if state.match_state.ui_modules.take().is_none() {
+pub(crate) fn drop_modules(match_state: &mut MatchState) {
+    if match_state.ui_modules.take().is_none() {
         return;
     }
-    let gui = state.match_state.match_presentation.dialog_ui.gui_mut();
+    let gui = match_state.match_presentation.dialog_ui.gui_mut();
     for origin in [tree::MOD_MODULE, tree::MAP_MODULE, tree::MAP_LAYOUT] {
         gui.remove_origin(origin);
     }
@@ -649,7 +663,7 @@ pub(crate) fn render_frame(state: &mut AppState) {
     }
     let viewer = viewer(state);
     let inputs = local_inputs(state);
-    let selected = crate::app::input::dispatch::selected_in_order(state);
+    let selected = crate::app::input::dispatch::selected_in_order(&state.frontend, &state.match_state);
     let playback = state.match_state.match_diagnostics.is_replay_playback();
     let now = Instant::now();
     let mut out = CallOutput::default();
@@ -719,9 +733,29 @@ fn post_lines(state: &mut AppState, lines: Vec<(String, bool)>) {
     for (line, fault) in lines {
         if fault {
             let text = crate::i18n::tr_fill("VERA:ModuleStopped", &[("reason", &line)]);
-            crate::app::input::messages::post_chat_line(state, &name, &text, [1.0, 0.4, 0.4]);
+            crate::app::input::messages::post_chat_line(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                &name,
+                &text, [1.0, 0.4, 0.4]);
         } else {
-            crate::app::input::messages::post_chat_line(state, &name, &line, [1.0, 0.8, 0.4]);
+            crate::app::input::messages::post_chat_line(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                &name,
+                &line, [1.0, 0.8, 0.4]);
         }
     }
 }
@@ -828,10 +862,10 @@ pub(crate) fn key_unused(
 
 /// Tells the modules' hotkeys which keys the game's bindings hold: at the
 /// match's start and whenever the player rebinds (game hotkeys win, RFC 10).
-pub(crate) fn rebind_game_keys(state: &mut AppState) {
-    let crate::app::match_runtime::state::MatchState {
+pub(crate) fn rebind_game_keys(match_state: &mut MatchState) {
+    let MatchState {
         ui_modules, input, ..
-    } = &mut state.match_state;
+    } = match_state;
     if let Some(ui) = ui_modules.as_mut() {
         ui.local.set_game_keys(input.hotkey_bindings.bound_keys());
     }

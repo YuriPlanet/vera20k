@@ -100,12 +100,42 @@ Kratos 在 `TechnoStatus::CanFire_CheckWeapon` 里做这件事，运行于 `Tech
 并在 `sim::combat::fire_error` 中与同一钩子的其它分支并列判定。提供数值的 AttachEffect 尚未
 移植：只认武器自己写的键。
 
+## 冻结类型
+
+在 `[TechnoType]` 写 `Wreck=yes`，该类型就是不可使用的残骸：不移动、不索敌，炮塔也不转。
+
+```ini
+[HTNK_HULK]
+Wreck=yes
+```
+
+在 Kratos 里这个键只是逐单位 `Freezing` 字节的三个来源之一
+（`src/Ext/TechnoType/Status/Freeze.cpp`），另外两个是活着的 `Freeze` 脚本和
+`VectorFreezeActive` 闩锁。`Freezing` 成立时，单位每次更新都会清空目标并强制停下
+（`TechnoStatus::OnUpdate_Freeze`），`TechnoClass::IsUnderEMP`（`0x70EFD0`）回答 true，
+引擎的运动与朝向钩子也拒绝推进它（`0x4CCBB3`、`0x54AED0`、`0x6622E0`，以及 `0x736A95`
+的炮塔自转分支）。
+
+VERA 在 `rules::kratos_freeze` 里从类型推导该状态，这对 `Wreck` 是精确的：残骸存活期间一直
+冻结，因此不需要逐单位标记，也不需要存档字段。将来那两个逐单位来源会跟自己的所有者一起进来，
+在同一个地方增加运行时输入而不是第二个状态。目前有三个所有者读取它：
+
+- `world::object_turn`：地面与空中 locomotor 的 Process 在做任何工作之前返回，单位保持坐标、
+  朝向和待执行的路线；
+- `world::techno_ai::target_scan`：既不索敌也不反击；
+- `movement::turret::facing_update`：`TurretSpins` 类型跳过自转分支，与 `0x736A95` 钩子跳到
+  `0x736AD5` 完全一致，因此普通的回位路径照常运行。
+
+残留：`TechnoClass::IsUnderEMP` 这个谓词本身没有接冻结，所以直接询问它的代码（EMP 火花、
+部署、navcom）仍会把残骸当作可操作对象。上面三个所有者覆盖了原版拒绝推进冻结单位的全部位置，
+也就是这个键真正的作用范围。
+
 ## 原作者与项目
 
 VERA20K 用 Rust 重新实现行为，不加载 `Kratos.dll`，也不重新分发 Kratos 二进制；每个已移植的
 功能都按代码旁注明的 Kratos 源码翻译。
 
-This product includes software developed by the Kratos PP author.
+This product includes software developed by the Kratos Authors.
 
 [Kratos PP](https://github.com/ChrisLv-CN/KratosPP) 是 **DPKratos** 的 C++ 移植版，作者
 **双杀步枪（ChrisLv_CN）**（开发者），策划 **艾木魁（M.Kenosis）**，测试 **冲冲冲14782**。
@@ -122,6 +152,8 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
   `src/Ext/TechnoType/Status/CanFireCheck.cpp`。
 - 武器要钱（`NoMoneyNoTalk`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/Status/CanFireCheck.cpp`。
+- 冻结类型（`Wreck`）— **双杀步枪（ChrisLv_CN）**，`src/Ext/TechnoType/Status/Freeze.cpp`
+  与 `src/Hooks/TechnoExtHook.cpp`。
 
 ## VERA20K 移植署名
 
@@ -129,7 +161,7 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 标注每个链条对应的合并 PR 作者：
 
 - **1372704087** — Kratos 的逐局开关、卧倒射击点（`CrawlingFLH`）、只打空中的抛射体
-  （`AAOnly`）与武器要钱（`NoMoneyNoTalk`）。
+  （`AAOnly`）、武器要钱（`NoMoneyNoTalk`）与冻结类型（`Wreck`）。
 
 ## 添加一个功能
 

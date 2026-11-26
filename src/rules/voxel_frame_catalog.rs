@@ -92,17 +92,27 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
 /// (`0x005F724F..0x005F7276`), `ObjectTypeClass::ReadINI` reads `Image=` over
 /// it (`0x005F9335`), and the voxel loader `0x005F8110` formats every model
 /// name from that field. Retain its entry name when a later SHP call mutates
-/// ImageFile (saved Infantry5249AD/B4). An art `Image=` does not redirect it: gamemd reads
-/// that art key for buildings (`0x0045F93A`), not for vehicles or aircraft. A
-/// name that is not a rules type is its own image.
+/// ImageFile (saved Infantry5249AD/B4). Native art `Image=` does not redirect
+/// it: gamemd reads that art key for buildings (`0x0045F93A`), not for
+/// vehicles or aircraft. Phobos `[General] ArtImageSwap=true` adds that
+/// TechnoType visual redirect; this function follows it only while on.
 pub fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
-    rules
-        .and_then(|rules| rules.object(type_id))
-        .map_or(type_id, |object| {
-            object.voxel_image_load().unwrap_or(&object.image)
-        })
-        .trim()
-        .to_uppercase()
+    let Some(rules) = rules else {
+        return type_id.trim().to_uppercase();
+    };
+    let object = rules.object(type_id);
+    let image = match object.and_then(ObjectType::voxel_image_load) {
+        Some(retained) => retained.to_owned(),
+        None => {
+            let rules_image = object.map_or(type_id, |object| object.image.as_str());
+            if rules.general.art_image_swap {
+                rules.art().resolve_effective_image_id(type_id, rules_image)
+            } else {
+                rules_image.to_owned()
+            }
+        }
+    };
+    image.trim().to_uppercase()
 }
 
 /// Unit draw's indexed count: `TurretCount > 0 && !IsGattling` (73B8D9).

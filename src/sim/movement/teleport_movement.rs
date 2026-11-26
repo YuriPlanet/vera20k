@@ -612,12 +612,9 @@ impl crate::sim::world::Simulation {
             || actor.is_warping_in()
         {
             // The refusal's NavCom store (`0x00718213`).
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .navigation
-                .store_nav_com(None);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.navigation.store_nav_com(None, note);
             return Ok(false);
         }
         let infantry = actor.category() == EntityCategory::Infantry;

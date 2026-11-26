@@ -247,7 +247,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_x: f32,
     pub(crate) cursor_y: f32,
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
-    /// `AppState::sync_cursor_space` keeps it matching the current screen.
+    /// [`MatchInputState::sync_cursor_space`] keeps it matching the current screen.
     pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
     /// Last physical window event, used only to measure confined cursor motion.
     /// The source cursor above remains authoritative; this anchor is neither
@@ -280,6 +280,10 @@ pub(crate) struct MatchInputState {
     pub(crate) primary_rotation: super::primary_rotation::PrimaryRotationState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
+    /// Android: when this match's one-shot touch-chat hint is due; `None`
+    /// until the first network frame arms it. Presentation only.
+    #[cfg(target_os = "android")]
+    pub(crate) chat_hint_due: Option<crate::util::time::Instant>,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
     pub(crate) cursor_coordinates: bool,
     /// One-shot Shift+S request, consumed at the next render submission.
@@ -662,6 +666,8 @@ impl MatchInputState {
     /// Construct the match input owner with the ordinary startup defaults.
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
+            #[cfg(target_os = "android")]
+            chat_hint_due: None,
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
             software_cursor_animation: std::cell::Cell::new(

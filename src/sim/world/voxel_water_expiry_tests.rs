@@ -138,7 +138,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
     // Fixed pre-death component cursor, admitted by a finite fixture search.
     // The real receiver and constructors consume every subsequent draw; no
     // duration, velocity, location or bounce outcome is overwritten.
-    sim.scenario_rng = SimRng::new(2);
+    *sim.scenario_rng = SimRng::new(2);
     sim.receive_own_health_c4(
         miner,
         rules,
@@ -320,7 +320,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
         resources.rules.overlay_registry(),
     )
     .expect("ordinary House survivor");
-    sim.scenario_rng = SimRng::new(2);
+    *sim.scenario_rng = SimRng::new(2);
     let origin = glam::IVec3::new(
         i32::from(source.0) * 256 + 128,
         i32::from(source.1) * 256 + 128,

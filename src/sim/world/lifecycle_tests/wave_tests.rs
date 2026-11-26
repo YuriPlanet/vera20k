@@ -473,7 +473,7 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
     wave.set_fade_out_for_test(NativeF64Bits::from_bits(0x3fa9_9999_a000_0000));
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(firer_id, wave_id);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0x45_4d_50_54_59);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0x45_4d_50_54_59);
     let expected_rng = sim.scenario_rng.logical_state();
 
     assert!(sim.object_ai_visit_one(wave_id, Some(&rules), &mut ObjectAiCtx::default()));
@@ -882,7 +882,7 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
     }
     let mut terrain = ResolvedTerrainGrid::from_cells(6, 4, cells);
     terrain.test_install_destroyable_cliff_catalog(100);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     let mut overlay = crate::sim::overlay_grid::OverlayGrid::new(6, 4);
     overlay.place_overlay(
         4,
@@ -890,7 +890,7 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
         registry.id_for_name("WALLX").expect("wall overlay"),
         0,
     );
-    sim.overlay_grid = Some(overlay);
+    *sim.overlay_grid = Some(overlay);
 
     let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
@@ -907,7 +907,7 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
     wave.replace_recorded_cells(vec![WaveRecordedCell::real(4, 1)]);
     sim.admit_wave(wave_id, wave);
 
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0x57_41_4c_4c);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0x57_41_4c_4c);
     let mut expected = sim.scenario_rng.clone();
     // Ares WaveClass_DamageCell_Wall (1005D7A0, hook 0x75F46E) leaves the
     // wall to a `Wall=yes` warhead; WH is not one, so no wall roll.
@@ -980,10 +980,10 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
             cells.push(cell);
         }
     }
-    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(10, 10, cells));
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(10, 10));
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
-    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
+    *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(10, 10, cells));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(10, 10));
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
+    *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
     let victim_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, victim_id, EntityCategory::Unit);
     let victim = sim.substrate.entities.get_mut(victim_id).unwrap();
@@ -1120,7 +1120,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     let mut terrain = ResolvedTerrainGrid::from_cells(16, 16, cells);
     terrain.test_install_destroyable_cliff_catalog(100);
     terrain.test_set_high_bridge_set_starts(Some(1000), None);
-    sim.bridge_state = Some(
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(&terrain, true, 1500),
     );
     let bridge_records = sim
@@ -1134,7 +1134,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert_eq!(bridge_records[0].endpoint_a, (9, 10));
     assert_eq!(bridge_records[0].endpoint_b, (12, 10));
     let pristine_terrain = terrain.clone();
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let remote_bridge_route = |zones: &crate::sim::pathfinding::zone_map::ZoneGrid| {
         let hierarchy = zones.hierarchy_for(MovementZone::Normal).unwrap();
@@ -1178,7 +1178,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     let decal = overlay_registry.id_for_name("DECAL").expect("test decal");
     overlay.place_overlay(0, 0, decal, 11);
     overlay.place_overlay(1, 0, decal, 12);
-    sim.overlay_grid = Some(overlay);
+    *sim.overlay_grid = Some(overlay);
     let mut smudge = crate::sim::smudge_grid::SmudgeGrid::new(16, 16);
     for (rx, frame_offset) in [(0, 0), (1, 1)] {
         smudge.test_force_set(
@@ -1190,7 +1190,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             },
         );
     }
-    sim.smudge_grid = Some(smudge);
+    *sim.smudge_grid = Some(smudge);
 
     let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
@@ -1207,7 +1207,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     wave.replace_recorded_cells(vec![WaveRecordedCell::real(4, 1)]);
     sim.admit_wave(wave_id, wave);
 
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0x43_4c_49_46_46);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0x43_4c_49_46_46);
     let mut expected_rng = sim.scenario_rng.clone();
     let chance = expected_rng.next_range_u32_inclusive(0, 99);
     assert!(chance < 100);
@@ -1349,8 +1349,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     // GameSnapshot's established full-deserialize seam canonicalizes Scenario
     // RNG to seed zero; the collapse draw-order assertion above already pins
     // the live cursor before normalizing this independent snapshot fixture.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let expected_dynamic_terrain = sim.dynamic_terrain_cells.clone();
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let expected_dynamic_terrain = (*sim.dynamic_terrain_cells).clone();
     // Simulation's saved stores here use stable vectors/BTreeMaps; runtime
     // waypoint HashMaps belong to SimResources and are not serialized. The
     // ZoneGrid encoding includes native retained base bytes, not hierarchy
@@ -1384,7 +1384,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     restored
         .restore_map_authority_after_snapshot_load(&rules, &overlay_registry, None)
         .expect("dynamic cliff terrain reprojects over the pristine map");
-    assert_eq!(restored.dynamic_terrain_cells, expected_dynamic_terrain);
+    assert_eq!(*restored.dynamic_terrain_cells, expected_dynamic_terrain);
     assert!(
         !restored
             .zone_grid

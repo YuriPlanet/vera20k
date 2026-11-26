@@ -288,7 +288,7 @@ fn each_cell_is_webbed_right_after_its_particle_is_made() {
     use crate::sim::rng::SimRng;
     let rules = rules_from(&RULES.replace("WebDurationVariation=0", "WebDurationVariation=7"));
     let (mut sim, _, [spider, man, _]) = scene(&rules);
-    sim.scenario_rng = SimRng::with_next_draws_for_test(&[0, 0, 0, 3, 0, 0, 0, 0]);
+    *sim.scenario_rng = SimRng::with_next_draws_for_test(&[0, 0, 0, 3, 0, 0, 0, 0]);
     web(&mut sim, &rules, spider, man);
     let variation = SimRng::with_next_draws_for_test(&[3]).next_range_i32_inclusive(-7, 7);
     assert_eq!(web_left(&sim, man), 60 + variation);

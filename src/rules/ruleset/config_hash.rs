@@ -1353,7 +1353,7 @@ impl RuleSet {
             }
         }
         let general = &self.general;
-        if crate::rules::NPATCH_ENABLED {
+        if self.npatch() {
             general.vehicle_parachute.hash(&mut hasher);
         }
         (
@@ -1457,6 +1457,7 @@ impl RuleSet {
             self.general.ai_fire_sale_delay.hash(&mut hasher);
             self.general.ai_all_to_hunt.hash(&mut hasher);
             self.general.gather_when_mcv_deploy.hash(&mut hasher);
+            self.general.art_image_swap.hash(&mut hasher);
             b"phobos-power-surplus-v1".hash(&mut hasher);
             self.general.enable_power_surplus.hash(&mut hasher);
             self.general.power_surplus.hash(&mut hasher);

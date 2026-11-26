@@ -16,12 +16,40 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
+use crate::app::frontend::shell_transition::ShellFrameWave;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_audio::MatchAudioState;
+use crate::app::match_diagnostics::MatchDiagnosticsState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::persistence::SaveRepository;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::scenario_catalog::ScenarioCatalog;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
+use crate::app::shell_wol::WolVisit;
+use crate::audio::sfx::SfxPlayer;
+use crate::net::live_commands::LiveCommandSession;
 use crate::render::frame_readback::PendingTextureReadback;
+use crate::render::gpu::GpuContext;
+use crate::skirmish_modes::SkirmishGameMode;
+use crate::ui::campaign_score_shell::CampaignScorePage;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
+use crate::ui::multiplayer_setup::MultiplayerSetupState;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::skirmish_shell::SkirmishShellState;
+use crate::util::config::GameConfig;
 
 mod movies;
 mod score;
@@ -188,10 +216,19 @@ const CHECKPOINT_SKIRMISH_DIPLOMACY: &str = "skirmish-diplomacy";
 /// (B6, without the campaign's Restart).
 const SKIRMISH_IN_GAME_MENU_CHECKPOINTS: [(&str, skirmish::InGameMenuTarget); 5] = [
     ("skirmish-pause-menu", skirmish::InGameMenuTarget::Menu),
-    ("skirmish-pause-options", skirmish::InGameMenuTarget::Options),
+    (
+        "skirmish-pause-options",
+        skirmish::InGameMenuTarget::Options,
+    ),
     ("skirmish-pause-sound", skirmish::InGameMenuTarget::Sound),
-    ("skirmish-pause-keyboard", skirmish::InGameMenuTarget::Keyboard),
-    ("skirmish-abort-confirm", skirmish::InGameMenuTarget::AbortConfirm),
+    (
+        "skirmish-pause-keyboard",
+        skirmish::InGameMenuTarget::Keyboard,
+    ),
+    (
+        "skirmish-abort-confirm",
+        skirmish::InGameMenuTarget::AbortConfirm,
+    ),
 ];
 const CHECKPOINT_SCORE_0X108_STEADY: &str = "score-0x108-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY: &str = "campaign-score-0x103-steady";
@@ -1171,12 +1208,10 @@ impl ShellCaptureCheckpoint {
                 target: movies::CampaignStartTarget::Opening(target),
             },
             Self::CampaignBackReturn => movies::MoviesTarget::CampaignBack,
-            Self::LoadSavedGame0xB7Steady => {
-                movies::MoviesTarget::LoadSavedGame0xB7 {
-                    entry_tick: None,
-                    check_sidebar: false,
-                }
-            }
+            Self::LoadSavedGame0xB7Steady => movies::MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: None,
+                check_sidebar: false,
+            },
             Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
                 check_sidebar: false,
@@ -2107,37 +2142,50 @@ impl MainMenuCaptureSnapshot {
         self
     }
 
-    fn from_state(state: &AppState) -> Self {
-        let movie_identity = state.frontend.main_menu_movie_identity;
+    fn from_state(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
+    ) -> Self {
+        let movie_identity = frontend.main_menu_movie_identity;
         Self {
-            width: state.renderer.gpu.config.width,
-            height: state.renderer.gpu.config.height,
-            main_menu_screen: state.frontend.screen == GameScreen::MainMenu,
-            shell_failed: state.frontend.main_menu_shell_error.is_some(),
-            single_player_active: state.frontend.shell_route == ShellRoute::SinglePlayer,
-            skirmish_active: state.frontend.shell_route == ShellRoute::Skirmish,
+            width: renderer.gpu.config.width,
+            height: renderer.gpu.config.height,
+            main_menu_screen: frontend.screen == GameScreen::MainMenu,
+            shell_failed: frontend.main_menu_shell_error.is_some(),
+            single_player_active: frontend.shell_route == ShellRoute::SinglePlayer,
+            skirmish_active: frontend.shell_route == ShellRoute::Skirmish,
             // The legacy skirmish-setup flag was write-dead (never set after
             // startup); the capture snapshot keeps the field as literal false.
             legacy_skirmish_setup_active: false,
-            modal_open: state.main_menu_dialog_open(),
-            quit_active: state.frontend.quit_cascade.is_some(),
-            first_paint_slide_active: state.frontend.shell_first_paint_slide.is_some(),
-            active_slide_is_main_menu: state.frontend.shell_slide_active_shell
+            modal_open: frontend.main_menu_dialog_open(),
+            quit_active: frontend.quit_cascade.is_some(),
+            first_paint_slide_active: frontend.shell_first_paint_slide.is_some(),
+            active_slide_is_main_menu: frontend.shell_slide_active_shell
                 == Some(ShellSlideKind::MainMenu),
-            title_terminal_persistent: state.frontend.shell_page_title.is_terminal(),
-            movie_loaded: state.frontend.main_menu_movie.is_some(),
+            title_terminal_persistent: frontend.shell_page_title.is_terminal(),
+            movie_loaded: frontend.main_menu_movie.is_some(),
             movie_owner_is_main_menu: movie_identity
                 .is_some_and(|identity| identity.owner() == Ra2tsDialogOwner::MainMenu0xE2),
             movie_base_is_large: movie_identity
                 .is_some_and(|identity| identity.base() == MainMenuMovieBase::Ra2tsL),
             movie_base_matches_layout: movie_identity.is_some_and(|identity| {
                 identity.base()
-                    == crate::app::frontend::shell_layout::main_menu_layout(state).movie_base
+                    == crate::app::frontend::shell_layout::main_menu_layout(&renderer.gpu)
+                        .movie_base
             }),
-            chrome_loaded: state.frontend.main_menu_shell_chrome.is_some(),
-            software_cursor_active: state.use_software_cursor(),
-            cursor_x: state.match_state.input.cursor_x,
-            cursor_y: state.match_state.input.cursor_y,
+            chrome_loaded: frontend.main_menu_shell_chrome.is_some(),
+            software_cursor_active: crate::app::state::use_software_cursor(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            ),
+            cursor_x: match_state.input.cursor_x,
+            cursor_y: match_state.input.cursor_y,
         }
     }
 }
@@ -2294,7 +2342,9 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::Skirmish0x102GameOptions => {
                 Some(skirmish::SkirmishCapture::game_options())
             }
-            ShellCaptureCheckpoint::Skirmish0x102Setups => Some(skirmish::SkirmishCapture::setups()),
+            ShellCaptureCheckpoint::Skirmish0x102Setups => {
+                Some(skirmish::SkirmishCapture::setups())
+            }
             ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
                 Some(skirmish::SkirmishCapture::slide_out(tick))
             }
@@ -2435,10 +2485,10 @@ impl ShellCaptureSession {
     /// First-live observes tick zero; opening captures drive exact steps through
     /// the same production runtime. Abort-return releases this ownership after
     /// its first draw so the ordinary modal/EXIT owners govern remaining frames.
-    pub(crate) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+    pub(crate) fn owns_simulation_steps(&self, screen: &GameScreen, sim_runtime: &SimHost) -> bool {
         self.movies
             .as_ref()
-            .is_some_and(|capture| capture.owns_simulation_steps(state))
+            .is_some_and(|capture| capture.owns_simulation_steps(screen, sim_runtime))
     }
 
     /// The live LAN and online battle observers check every committed frame,
@@ -2461,7 +2511,12 @@ impl ShellCaptureSession {
             .language
             .clone()
             .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
-        if !state.use_language(&language) {
+        if !crate::app::shell_main_menu::use_language(
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &language,
+        ) {
             self.fail(format!(
                 "--language {language}: no language file provides it"
             ));
@@ -2540,15 +2595,27 @@ impl ShellCaptureSession {
             return capture.ready(state);
         }
         if let Some(capture) = &self.score {
-            return capture.ready(state);
+            return capture.ready(&state.frontend);
         }
         if let Some(capture) = &self.campaign_score {
-            return capture.ready(state);
+            return capture.ready(&state.frontend);
         }
         match &self.skirmish {
-            Some(capture) => capture.ready(state),
+            Some(capture) => capture.ready(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            ),
             None => {
-                let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
+                let mut snapshot = MainMenuCaptureSnapshot::from_state(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                );
                 let window = (self.request.width, self.request.height);
                 if (snapshot.width, snapshot.height) == window {
                     snapshot = snapshot.scaled_as_reference();
@@ -2624,7 +2691,8 @@ impl ShellCaptureSession {
     /// swapchain bytes submitted for readback.
     pub(crate) fn should_capture_after_render(
         &mut self,
-        state: &AppState,
+        gpu: &GpuContext,
+        frontend: &FrontendState,
         rendered: PresentedShell,
     ) -> Result<bool> {
         let Some(capture) = self.campaign_score.as_mut() else {
@@ -2635,9 +2703,9 @@ impl ShellCaptureSession {
             "campaign score capture requested overlapping readbacks"
         );
         let should_capture = if capture.is_animation_sequence() {
-            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?
+            capture.should_capture_animation_frame(gpu, frontend, rendered, self.frames_seen)?
         } else {
-            capture.should_capture_steady_frame(state)?
+            capture.should_capture_steady_frame(frontend)?
         };
         self.readback_started = should_capture;
         Ok(should_capture)
@@ -2647,7 +2715,11 @@ impl ShellCaptureSession {
     /// frame drawn again within the same 30 ms tick is not retained twice.
     pub(crate) fn observe_entry_sequence_after_render(
         &mut self,
-        state: &AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        persistence: &PersistenceState,
     ) -> Result<Option<EntrySequenceFrameIdentity>> {
         let Some(sequence) = self.entry_sequence.as_ref() else {
             return Ok(None);
@@ -2665,7 +2737,13 @@ impl ShellCaptureSession {
             self.timeout().as_secs()
         );
 
-        let snapshot = MainMenuCaptureSnapshot::from_state(state);
+        let snapshot = MainMenuCaptureSnapshot::from_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        );
         ensure!(
             snapshot.width == EXPECTED_WIDTH && snapshot.height == EXPECTED_HEIGHT,
             "entry sequence surface changed from 800x600"
@@ -2702,8 +2780,7 @@ impl ShellCaptureSession {
                 && snapshot.software_cursor_active,
             "entry sequence production shell identity is incomplete"
         );
-        let tick = state
-            .frontend
+        let tick = frontend
             .shell_first_paint_slide
             .as_ref()
             .context("entry sequence rendered without its wave")?
@@ -2792,7 +2869,7 @@ impl ShellCaptureSession {
                     .as_mut()
                     .expect("animation sequence has a campaign capture");
                 capture.record_animation_sample(
-                    state,
+                    &state.frontend,
                     self.request.width,
                     self.request.height,
                     pixels,
@@ -2877,7 +2954,13 @@ impl ShellCaptureSession {
                 surface_format,
                 pixels,
                 self.frames_seen,
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.audio.sfx_player,
+                &state.persistence,
             )?),
             (None, None, Some(capture), _) => serde_json::to_vec_pretty(&capture.manifest(
                 &self.request,
@@ -2925,7 +3008,11 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    pub(crate) fn complete_entry_sequence_after_wave(&mut self, state: &AppState) -> Result<()> {
+    pub(crate) fn complete_entry_sequence_after_wave(
+        &mut self,
+        gpu: &GpuContext,
+        shell_first_paint_slide: &Option<ShellFrameWave>,
+    ) -> Result<()> {
         ensure!(
             self.request.checkpoint == ShellCaptureCheckpoint::MainMenu0xE2EntrySequence,
             "entry-sequence completion used for steady capture"
@@ -2935,7 +3022,7 @@ impl ShellCaptureSession {
             "capture outcome was already recorded"
         );
         ensure!(
-            state.frontend.shell_first_paint_slide.is_none(),
+            shell_first_paint_slide.is_none(),
             "entry sequence completion ran before the wave cleared"
         );
         let started_at = self
@@ -2978,9 +3065,9 @@ impl ShellCaptureSession {
                 !remaining.is_zero(),
                 "entry sequence timeout expired during deferred readback"
             );
-            let pixels =
-                item.readback
-                    .finish(&state.renderer.gpu.device, item.submission, remaining)?;
+            let pixels = item
+                .readback
+                .finish(&gpu.device, item.submission, remaining)?;
             ensure!(
                 pixels.len() as u64 == FRAME_BYTE_LENGTH,
                 "entry-sequence tick {expected_tick} length mismatch: expected \
@@ -3008,7 +3095,7 @@ impl ShellCaptureSession {
                 .join(ENTRY_SEQUENCE_FRAMES_FILE_NAME),
             &payload,
         )?;
-        let manifest = entry_sequence_manifest(&self.request, state.renderer.gpu.config.format);
+        let manifest = entry_sequence_manifest(&self.request, gpu.config.format);
         let mut manifest_bytes =
             serde_json::to_vec_pretty(&manifest).context("serialize entry-sequence manifest")?;
         manifest_bytes.push(b'\n');
@@ -3858,7 +3945,10 @@ mod tests {
     fn skirmish_in_game_menu_checkpoints_round_trip_with_the_game_budget() {
         for (name, target) in SKIRMISH_IN_GAME_MENU_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("in-game menu checkpoint");
-            assert_eq!(checkpoint, ShellCaptureCheckpoint::SkirmishInGameMenu(target));
+            assert_eq!(
+                checkpoint,
+                ShellCaptureCheckpoint::SkirmishInGameMenu(target)
+            );
             assert_eq!(checkpoint.as_str(), name);
         }
         let output = new_output_path("skirmish-pause-menu");

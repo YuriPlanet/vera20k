@@ -20,7 +20,7 @@ fn actor(id: u64, category: EntityCategory, kind: LocomotorKind) -> GameEntity {
 fn fixture(category: EntityCategory, kind: LocomotorKind) -> Simulation {
     let mut sim = Simulation::new();
     sim.substrate.entities.insert(actor(1, category, kind));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim
 }
 
@@ -350,7 +350,7 @@ fn an_airborne_fly_object_is_marked_without_joining_its_cell() {
 fn a_cruising_jumpjet_clears_the_deck_bit_on_remove_and_joins_nothing_on_put() {
     let mut sim = cruising_jumpjet();
     // Level-0 ground under the owner for the receiver's height test.
-    sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
+    *sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
         8, 8,
     )));
     sim.substrate
@@ -426,7 +426,7 @@ fn a_location_outside_the_map_is_marked_without_a_cell() {
             (0..4).map(move |x| crate::sim::world::common_raw_test_terrain_cell(x, y, 0, false))
         })
         .collect();
-    sim.resolved_terrain =
+    *sim.resolved_terrain =
         Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(4, 4, cells));
     assert!(sim.foot_mark_put(
         1,

@@ -171,6 +171,24 @@ fn counted_logic_tag_emits_pause_requests_in_authored_order() {
     assert!(sim.trigger_runtime.logic_tags.is_empty());
 }
 
+/// The last 684180 release unlocks the input its outermost 684060 locked,
+/// then resumes; the app applies both paths' effects in this order.
+#[test]
+fn timed_pause_release_unlocks_input_before_it_resumes() {
+    let mut sim = Simulation::with_seed(0);
+    action(&mut sim, 110, 2);
+    assert_eq!(
+        crate::sim::replay::ScenarioServiceInput::ExpireTimedPause.apply(&mut sim),
+        [
+            TriggerEffect::InputLockChanged {
+                locked: false,
+                was_locked: true
+            },
+            TriggerEffect::ScenarioResume
+        ]
+    );
+}
+
 #[test]
 fn pause_lock_is_synchronous_and_explicit_unlock_keeps_native_prior_gate() {
     let mut sim = Simulation::with_seed(0);
@@ -217,9 +235,7 @@ fn chrono_and_timed_trigger_share_one_counter_and_preserve_the_outer_lock() {
     assert!(sim.session.scenario_paused());
     assert!(sim.session.input_locked());
     assert!(
-        sim.session
-            .expire_scenario_pause()
-            .contains(&TriggerEffect::ScenarioResume)
+        Vec::from(sim.session.expire_scenario_pause()).contains(&TriggerEffect::ScenarioResume)
     );
     assert!(!sim.session.scenario_paused());
     assert!(!sim.session.input_locked());

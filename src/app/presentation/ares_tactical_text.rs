@@ -19,7 +19,12 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::rules::ruleset::RuleSet;
 use crate::ui::game_screen::GameScreen;
@@ -43,9 +48,9 @@ pub(crate) struct PlacedLine {
 
 /// `FPSCounterCommandClass::Execute` (Ares.dll `100022F0`) flips the
 /// counter. The command exists only in a game Ares plays.
-pub(crate) fn execute_fps_counter(state: &mut AppState) {
-    if state.rules().is_some_and(RuleSet::ares) {
-        let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn execute_fps_counter(frontend: &FrontendState, match_state: &mut MatchState) {
+    if crate::app::state::active_rules(frontend, match_state).is_some_and(RuleSet::ares) {
+        let presentation = &mut match_state.match_presentation;
         presentation.ares_fps_counter = !presentation.ares_fps_counter;
     }
 }
@@ -91,33 +96,50 @@ pub(crate) fn place_lines(
 
 /// The lines' fill boxes and text instances, or empty pairs outside a game
 /// Ares plays, outside the in-game screen and in a map picture.
-pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    if !state.rules().is_some_and(RuleSet::ares)
-        || state.frontend.screen != GameScreen::InGame
-        || (state.platform.capture_client_size.is_some()
-            && state.platform.capture_presentation.map_picture)
+pub(crate) fn build_instances(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    if !crate::app::state::active_rules(frontend, match_state).is_some_and(RuleSet::ares)
+        || frontend.screen != GameScreen::InGame
+        || (platform.capture_client_size.is_some() && platform.capture_presentation.map_picture)
     {
         return (Vec::new(), Vec::new());
     }
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     let fps = presentation.ares_fps_counter.then(|| {
         let detail = presentation.detail.borrow();
         fps_text(detail.frame_rate(), detail.average_frame_rate())
     });
-    let release_note = state
-        .process_assets
+    let release_note = process_assets
         .csf
         .as_ref()
         .and_then(|csf| csf.get(RELEASE_NOTE_LABEL));
-    let font = &state.renderer.bit_font;
-    let (_, view_height) = crate::app::input::camera::tactical_viewport_size(state);
+    let font = &renderer.bit_font;
+    let (_, view_height) = crate::app::input::camera::tactical_viewport_size(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+    );
     let lines = place_lines(release_note, fps, view_height as i32, |text| {
         let [_, _, width, height] = font.compute_text_rect(text, [0, 0], 0, [0, 0]);
         [width, height]
     });
     // Screen-space lanes add back the world camera the UI shader subtracts,
     // and the battlefield's corner: the lines are in the view's own pixels.
-    let camera = crate::app::input::camera::battlefield_lane_camera(state);
+    let camera = crate::app::input::camera::battlefield_lane_camera(
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
+    );
     let mut fills = Vec::with_capacity(lines.len());
     let mut texts = Vec::new();
     for line in &lines {

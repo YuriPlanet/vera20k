@@ -121,7 +121,7 @@ pub(super) fn push_group_or_plain_frame(
 /// an open IME composition spliced in at the caret in the composition colour
 /// (`app::input::ime`), the rest in `rgb`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn push_new_edit(
+pub(crate) fn push_new_edit(
     controls: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
     atlas: &SkirmishShellChromeAtlas,
@@ -696,7 +696,8 @@ pub(super) fn paint_control(
                     out,
                     down,
                     scrollbar.x,
-                    scrollbar.y + scrollbar.h - vera20k_gui::shell::list::ListMetrics::scaled(scale).arrow_h,
+                    scrollbar.y + scrollbar.h
+                        - vera20k_gui::shell::list::ListMetrics::scaled(scale).arrow_h,
                     scale,
                     SHELL_DROPDOWN_DEPTH - 0.00005,
                 );

@@ -196,6 +196,7 @@ impl Simulation {
     /// SystemAI62FDC7..62FDE7 calls ObjectLimbo5F4D30 while Alive is still
     /// set, then clears Alive and queues deletion. Limbo's literal control1
     /// dispatch clears Techno+308/+310 synchronously, before the late destructor.
+    /// A presentation system, which nothing lists, leaves its store at once.
     pub(crate) fn retire_particle_system(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let ready = self
             .substrate
@@ -205,6 +206,10 @@ impl Simulation {
                 system.alive() && system.done_spawning() && system.particles().is_empty()
             });
         if !ready {
+            return;
+        }
+        if crate::sim::particles::is_presented_particle_id(stable_id) {
+            self.substrate.particle_systems.retire_presented(stable_id);
             return;
         }
 

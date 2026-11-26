@@ -126,7 +126,7 @@ impl Simulation {
                 let candidate = (x as i16, y as i16);
                 if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(candidate.0), i32::from(candidate.1)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ) {
                     continue;

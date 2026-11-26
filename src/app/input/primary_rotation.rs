@@ -22,12 +22,19 @@
 //! it, it ends with the match, and it ends when the key is pressed on the
 //! same factories again or fewer than two of them are left.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
     command_executed_by, preferred_local_owner_name, try_schedule_command,
 };
 use crate::app::input::dispatch::selected_stable_ids_in_order;
 use crate::app::match_audio::QuietSound;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory};
 use crate::rules::ruleset::RuleSet;
@@ -301,31 +308,30 @@ impl PrimaryRotationState {
 /// Send the groups' orders; each one admitted leaves its "Primary building
 /// selected" line unheard on this game until frame `until`.
 fn send(
-    state: &mut AppState,
+    match_state: &mut MatchState,
     rotation: &mut PrimaryRotationState,
     owner_name: &str,
     owner: InternedId,
     turns: Vec<Turn>,
     now: u64,
 ) {
-    let until = command_executed_by(state, now);
+    let until = command_executed_by(match_state, now);
     rotation.admit_turns(turns, until, |order| {
         // A full local queue is backpressure: the order goes out later, and
         // the turn is still owed. Any other refusal is permanent, and the
         // group does not offer the turn again.
-        let no_room = state
-            .match_state
+        let no_room = match_state
             .sim_runtime
             .runtime()
             .is_some_and(|runtime| runtime.simulation.available_local_command_slots() == 0);
-        if try_schedule_command(state, owner_name, order).is_none() {
+        if try_schedule_command(match_state, owner_name, order).is_none() {
             return if no_room {
                 Admitted::NoRoom
             } else {
                 Admitted::Refused
             };
         }
-        state.match_state.match_audio.quiet.expect(
+        match_state.match_audio.quiet.expect(
             QuietSound::HouseEva {
                 owner,
                 event: PRIMARY_SELECTED_EVA,
@@ -338,12 +344,21 @@ fn send(
 }
 
 /// The Rotate Primary key.
-pub(crate) fn hotkey_pressed(state: &mut AppState) {
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+pub(crate) fn hotkey_pressed(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
-    let mut rotation = std::mem::take(&mut state.match_state.input.primary_rotation);
-    let result = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+    let mut rotation = std::mem::take(&mut match_state.input.primary_rotation);
+    let result = match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
         let owner = sim.interner().get(&owner_name)?;
@@ -351,33 +366,43 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
         let selected = selected_stable_ids_in_order(
             Some(sim),
             Some(rules),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
+            &match_state.input.selection_order,
+            match_state.input.selection_order_pending,
         );
         let (rotating, turns) = rotation.toggle(sim, rules, owner, &selected, now)?;
         Some((owner, now, rotating, turns))
     });
     let rotating = result.map(|(owner, now, rotating, turns)| {
-        send(state, &mut rotation, &owner_name, owner, turns, now);
+        send(match_state, &mut rotation, &owner_name, owner, turns, now);
         rotating
     });
-    state.match_state.input.primary_rotation = rotation;
+    match_state.input.primary_rotation = rotation;
     if let Some(rotating) = rotating {
-        crate::app::input::messages::post_primary_rotation(state, rotating);
+        crate::app::input::messages::post_primary_rotation(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            rotating,
+        );
     }
 }
 
 /// Once per logic frame: every [`CHECK_INTERVAL`] frames look at the groups
 /// and send their orders.
-pub(crate) fn frame_pass(state: &mut AppState) {
-    if state.match_state.input.primary_rotation.groups.is_empty() {
+pub(crate) fn frame_pass(match_state: &mut MatchState) {
+    if match_state.input.primary_rotation.groups.is_empty() {
         return;
     }
-    let Some(owner_name) = preferred_local_owner_name(state) else {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
-    let mut rotation = std::mem::take(&mut state.match_state.input.primary_rotation);
-    let result = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+    let mut rotation = std::mem::take(&mut match_state.input.primary_rotation);
+    let result = match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let now = sim.session().tick();
         if now % CHECK_INTERVAL != 0 {
@@ -388,9 +413,9 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         Some((owner, now, turns))
     });
     if let Some((owner, now, turns)) = result {
-        send(state, &mut rotation, &owner_name, owner, turns, now);
+        send(match_state, &mut rotation, &owner_name, owner, turns, now);
     }
-    state.match_state.input.primary_rotation = rotation;
+    match_state.input.primary_rotation = rotation;
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

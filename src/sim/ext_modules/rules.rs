@@ -472,14 +472,20 @@ impl SimHost for RulesHost<'_> {
     }
 
     fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
-        // Only type references are readable here (appendix 1.1).
+        // Only type references are readable here (appendix 1.1); a type's
+        // `Name` gets its string ID as in a match.
+        let name = property_name(prop).unwrap_or_default();
         match super::decode_ref(reference)? {
-            Some(super::Ref::Type { kind, id }) if self.in_rules => super::type_property(
-                self.rules,
-                kind,
-                id,
-                property_name(prop).unwrap_or_default(),
-            ),
+            Some(super::Ref::Type { kind, id }) if self.in_rules && name == "Name" => {
+                let rules = self.rules;
+                Ok(match super::props::type_name(rules, kind, id)? {
+                    Some(text) => (i64::from(self.ini.intern(text)), Status::Ok),
+                    None => (0, Status::Unsupported),
+                })
+            }
+            Some(super::Ref::Type { kind, id }) if self.in_rules => {
+                super::type_property(self.rules, kind, id, name)
+            }
             _ => Ok((0, Status::Unsupported)),
         }
     }

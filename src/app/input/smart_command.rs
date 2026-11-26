@@ -12,9 +12,16 @@
 //! search and "分散" assignment are convenience heuristics whose balance has
 //! not been considered for networked play.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{preferred_local_owner_name, schedule_command};
 use crate::app::input::dispatch::selected_stable_ids_in_order;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -612,15 +619,24 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
 
 /// The Ctrl+D press. Single-player only; resolves one mode from the whole
 /// selection and schedules its orders with the shared unified feedback line.
-pub(crate) fn hotkey_pressed(state: &mut AppState) {
-    if !state.match_state.session_mode().is_single_player() {
+pub(crate) fn hotkey_pressed(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if !match_state.session_mode().is_single_player() {
         return;
     }
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_local_owner_name(match_state) else {
         return;
     };
     let orders = {
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        let Some(runtime) = match_state.sim_runtime.runtime() else {
             return;
         };
         let sim = &runtime.simulation;
@@ -628,8 +644,8 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
         let selected = selected_stable_ids_in_order(
             Some(sim),
             Some(rules),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
+            &match_state.input.selection_order,
+            match_state.input.selection_order_pending,
         );
         let actors = surface_selection(sim, rules, &selected);
         match detect_mode(sim, rules, &actors) {
@@ -642,9 +658,30 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     }
     let count = orders.len();
     for order in orders {
-        schedule_command(state, &owner, order);
+        schedule_command(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &owner,
+            order,
+        );
     }
-    crate::app::input::messages::post_eva_auto_loaded(state, count);
+    crate::app::input::messages::post_eva_auto_loaded(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        count,
+    );
     log::info!("Smart command: issued {count} orders");
 }
 

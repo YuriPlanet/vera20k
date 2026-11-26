@@ -73,7 +73,9 @@ pub(crate) enum FrameStep {
     TerrainNavigation,
     /// The local anims' AI (`0x0055B61B..0x0055B649`, AnimClass vt+0x5C):
     /// gamemd walks its local list (`0x00A83E00`) after the LogicClass
-    /// vector in LAN and online games, the only ones that fill it.
+    /// vector in LAN and online games, the only ones that fill it. VERA's
+    /// presentation particle systems, which no Logic slot holds, run here
+    /// too (`Simulation::advance_presented_particle_systems`).
     LocalAnims,
     /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
     /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
@@ -128,7 +130,10 @@ impl FrameStep {
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
             Self::IceGrowth | Self::OreGrowth | Self::IceSolidify => phase::ORE_GROWTH,
-            Self::BombList | Self::LocalAnims => return None,
+            Self::BombList => return None,
+            // The presentation anims and particle systems, timed with the
+            // shared effects the object pass runs.
+            Self::LocalAnims => phase::EFFECTS,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
@@ -205,7 +210,7 @@ impl Simulation {
     /// The steps the frames since the last call entered, in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn take_frame_step_trace(&mut self) -> Vec<FrameStep> {
-        std::mem::take(&mut self.frame_step_trace)
+        std::mem::take(&mut *self.frame_step_trace)
     }
 
     /// Advance exactly one authoritative simulation frame.
@@ -243,7 +248,7 @@ impl Simulation {
         self.apply_debug_tools(rules);
         let mut inputs = FrameInputs::new(rules, overlay_registry, tick_ms, effects.reborrow());
         // A failed earlier frame never reached collection; drop its value.
-        self.frame_sync_checksum = None;
+        *self.frame_sync_checksum = None;
         self.combat_light_requests.discard();
         self.screen_shake_updates.discard();
         // The wrapping native frame counter is committed LATE (the tail's
@@ -426,7 +431,7 @@ impl Simulation {
                     self.advance_live_object_pass(rules, overlay_registry, effects)?;
                 frame.ownership_changed |= object_pass.ownership_changed();
                 inputs.tube_turns = object_pass.tube_turns;
-                frame.spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
+                frame.spawned_entities |= std::mem::take(&mut *self.mission_spawned_entities);
                 frame.destroyed_structure |= object_pass.destroyed_structure;
                 frame.bridge_state_changed |= object_pass.bridge_state_changed;
                 // Gate Open runs in Building Mission AI; factory clearance
@@ -510,6 +515,9 @@ impl Simulation {
                             })?;
                     }
                 }
+                // The presentation particle systems, which no Logic slot
+                // holds, run after it as the presentation anims do.
+                self.advance_presented_particle_systems(rules);
             }
             // Follows the object loop.
             FrameStep::IonBlasts => {
@@ -647,13 +655,13 @@ impl Simulation {
         // VERA appends money, health and trigger terms to the native fold.
         if self.session.execution_topology().command_queue_route() == CommandQueueRoute::Multiplayer
         {
-            self.frame_sync_checksum = Some(FrameSyncChecksum {
+            *self.frame_sync_checksum = Some(FrameSyncChecksum {
                 frame: self.session.binary_frame(),
                 checksum: self.compute_multiplayer_frame_checksum(),
             });
         }
 
-        let context = if let Some(sync) = &self.frame_sync_checksum {
+        let context = if let Some(sync) = &*self.frame_sync_checksum {
             let checksum = sync.checksum.as_ref().map_err(|error| {
                 FrameAdvanceError::new(
                     self.session.tick(),
@@ -693,7 +701,7 @@ impl Simulation {
                 Err(NetworkCommandError::Interrupted(reason)) => {
                     frame
                         .commands
-                        .extend(std::mem::take(&mut self.frame_command_admissions));
+                        .extend(std::mem::take(&mut *self.frame_command_admissions));
                     return Ok(FrameTailResult::Interrupted(reason));
                 }
                 Err(error) => {
@@ -711,7 +719,7 @@ impl Simulation {
         if pass == Some(NetworkQueuePass::Waiting) {
             frame
                 .commands
-                .extend(std::mem::take(&mut self.frame_command_admissions));
+                .extend(std::mem::take(&mut *self.frame_command_admissions));
             return Ok(FrameTailResult::Waiting(context.expect("network context")));
         }
 
@@ -763,8 +771,8 @@ impl Simulation {
         }
         frame
             .commands
-            .extend(std::mem::take(&mut self.frame_command_admissions));
-        self.replaying_recorded_commands = false;
+            .extend(std::mem::take(&mut *self.frame_command_admissions));
+        *self.replaying_recorded_commands = false;
         if failure.is_some() {
             //64CCEB's modal precedes Queue_AI clearing GameActive648266.
             //No retirement, staged MegaMission execution or frame commit yet.
@@ -933,14 +941,14 @@ impl Simulation {
 
     /// HouseClass::Update4F860F/4F8736 has not yet published its request.
     pub fn pending_outcome_wait(&self) -> Option<crate::sim::house_state::HouseOutcomeKind> {
-        match &self.frame_continuation {
+        match &*self.frame_continuation {
             Some(FrameContinuation::Outcome(pending)) => Some(pending.cursor.kind),
             _ => None,
         }
     }
 
     pub(crate) fn validate_frame_continuation_for_restore(&self) -> Result<(), &'static str> {
-        if let Some(FrameContinuation::Outcome(pending)) = &self.frame_continuation {
+        if let Some(FrameContinuation::Outcome(pending)) = &*self.frame_continuation {
             let owner = self
                 .houses
                 .order()
@@ -997,7 +1005,10 @@ impl Simulation {
     }
 
     pub fn pending_network_wait(&self) -> bool {
-        matches!(self.frame_continuation, Some(FrameContinuation::Waiting(_)))
+        matches!(
+            *self.frame_continuation,
+            Some(FrameContinuation::Waiting(_))
+        )
     }
 
     pub fn pending_network_interruption(&self) -> Option<NetworkInterruption> {
@@ -1016,7 +1027,7 @@ impl Simulation {
         let Some(FrameContinuation::Waiting(pending)) = self.frame_continuation.take() else {
             unreachable!("checked wait continuation")
         };
-        self.frame_continuation = Some(FrameContinuation::Interrupted(
+        *self.frame_continuation = Some(FrameContinuation::Interrupted(
             NetworkInterruptionContinuation {
                 interruption,
                 tick_ms: pending.tick_ms,
@@ -1055,7 +1066,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if !matches!(
-            self.frame_continuation,
+            *self.frame_continuation,
             Some(FrameContinuation::Checksum(_) | FrameContinuation::Interrupted(_))
         ) {
             return Err(FrameAdvanceError::new(
@@ -1138,7 +1149,7 @@ impl Simulation {
         let result = match result {
             Ok(result) => result,
             Err(error) => {
-                self.frame_continuation = Some(FrameContinuation::Waiting(pending));
+                *self.frame_continuation = Some(FrameContinuation::Waiting(pending));
                 return Err(error);
             }
         };
@@ -1166,7 +1177,7 @@ impl Simulation {
         let trigger_effects = if outcome_waiting {
             Vec::new()
         } else {
-            std::mem::take(&mut self.trigger_effects)
+            std::mem::take(&mut *self.trigger_effects)
         };
         // Preserve the established terminal-frame gate: these are committed
         // light-vector facts and the next admitted frame clears the producer
@@ -1193,12 +1204,12 @@ impl Simulation {
         let overlay_updates = if outcome_waiting {
             Vec::new()
         } else {
-            std::mem::take(&mut self.frame_overlay_updates)
+            std::mem::take(&mut *self.frame_overlay_updates)
         };
         let overlay_removals = if outcome_waiting {
             Vec::new()
         } else {
-            std::mem::take(&mut self.frame_overlay_removals)
+            std::mem::take(&mut *self.frame_overlay_removals)
         };
         let fire_events = if outcome_waiting {
             Vec::new()
@@ -1238,7 +1249,7 @@ impl Simulation {
         let tick_ms = inputs.tick_ms;
         // An owner change outside the object pass (a MindControl shot)
         // reaches the tick's report too.
-        frame.ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
+        frame.ownership_changed |= std::mem::take(&mut *self.ownership_changed_since_output);
         let frame_committed = if let FrameTailResult::Complete(committed) = result {
             committed
         } else {
@@ -1255,7 +1266,7 @@ impl Simulation {
             };
             let (network_failure, network_waiting, outcome_waiting) = match result {
                 FrameTailResult::Checksum(failure) => {
-                    self.frame_continuation =
+                    *self.frame_continuation =
                         Some(FrameContinuation::Checksum(NetworkFailureContinuation {
                             failure,
                             tick_ms,
@@ -1264,7 +1275,7 @@ impl Simulation {
                     (Some(failure), false, false)
                 }
                 FrameTailResult::Waiting(context) => {
-                    self.frame_continuation =
+                    *self.frame_continuation =
                         Some(FrameContinuation::Waiting(NetworkWaitContinuation {
                             context,
                             tick_ms,
@@ -1273,7 +1284,7 @@ impl Simulation {
                     (None, true, false)
                 }
                 FrameTailResult::Interrupted(interruption) => {
-                    self.frame_continuation = Some(FrameContinuation::Interrupted(
+                    *self.frame_continuation = Some(FrameContinuation::Interrupted(
                         NetworkInterruptionContinuation {
                             interruption,
                             tick_ms,
@@ -1283,7 +1294,7 @@ impl Simulation {
                     (None, false, false)
                 }
                 FrameTailResult::OutcomeWait(cursor) => {
-                    self.frame_continuation =
+                    *self.frame_continuation =
                         Some(FrameContinuation::Outcome(HouseOutcomeContinuation {
                             cursor,
                             tick_ms,
@@ -1333,13 +1344,13 @@ impl Simulation {
                 }
             };
         }
-        spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
+        spawned_entities |= std::mem::take(&mut *self.mission_spawned_entities);
         bridge_state_changed |= self
             .trigger_effects
             .iter()
             .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
-        let ice_zones_stale = std::mem::take(&mut self.ice_zones_stale);
-        self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
+        let ice_zones_stale = std::mem::take(&mut *self.ice_zones_stale);
+        *self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
             rules,
             overlay_registry,
             bridge_state_changed || ice_zones_stale,
@@ -1406,7 +1417,7 @@ impl Simulation {
             self.frame_profile.record(phases, total);
         }
         // Resuming a suspended frame can transfer ownership in its remaining tail.
-        ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
+        ownership_changed |= std::mem::take(&mut *self.ownership_changed_since_output);
         MasterFrameOutput {
             network_failure: None,
             network_waiting: false,

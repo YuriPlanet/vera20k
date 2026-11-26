@@ -247,12 +247,13 @@ fn victory_plan(
 impl App {
     /// Read everything the victory tail needs while the won Simulation is
     /// still resident. Only a won mission of an installed campaign qualifies.
-    pub(super) fn take_campaign_victory(state: &mut AppState) -> Option<CampaignVictory> {
-        let campaign = state.match_state.startup.installed_campaign()?;
-        let runtime = state
-            .match_state
-            .sim_runtime
-            .write_sim(SimWrite::Lifecycle)?;
+    pub(super) fn take_campaign_victory(
+        match_state: &mut crate::app::match_runtime::state::MatchState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
+        profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    ) -> Option<CampaignVictory> {
+        let campaign = match_state.startup.installed_campaign()?;
+        let runtime = match_state.sim_runtime.write_sim(SimWrite::Lifecycle)?;
         let sim = &mut runtime.simulation;
         let owner = sim.session().current_house()?;
         let won = sim.ready_outcome_for_owner(owner).is_some_and(|outcome| {
@@ -261,12 +262,9 @@ impl App {
         if !won {
             return None;
         }
-        let movies = state
-            .process_assets
-            .native_rules()
-            .map(|rules| rules.movies());
+        let movies = process_assets.native_rules().map(|rules| rules.movies());
         let (queue, branch) = victory_plan(
-            &state.match_state.map_basic,
+            &match_state.map_basic,
             |name| {
                 let movies = movies?;
                 movies.name(movies.find_index(name)).map(str::to_owned)
@@ -281,7 +279,7 @@ impl App {
             VictoryBranch::Shell => VictoryEnd::Shell,
             VictoryBranch::Credits => VictoryEnd::Credits,
             VictoryBranch::MapSelect => {
-                let mapsel = state.process_assets.manager().and_then(|assets| {
+                let mapsel = process_assets.manager().and_then(|assets| {
                     crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mapsel())
                         .map_err(|error| log::warn!("MapSelect: {error}"))
                         .ok()
@@ -296,11 +294,9 @@ impl App {
                             ))
                     });
                 let current = sim.session().map_name();
-                let skip = state.match_state.map_basic.skip_map_select.unwrap_or(false);
-                let next = skip_map_select_destination(
-                    &state.match_state.map_basic,
-                    &sim.global_variables(),
-                );
+                let skip = match_state.map_basic.skip_map_select.unwrap_or(false);
+                let next =
+                    skip_map_select_destination(&match_state.map_basic, &sim.global_variables());
                 let pick = map_select(
                     mapsel.as_ref().map(|selected| &selected.ini),
                     side,
@@ -331,7 +327,7 @@ impl App {
                     (Some(scenario), Some(counter)) => campaign.next_mission(
                         scenario,
                         counter + 1,
-                        state.persistence.options_profile.difficulty,
+                        profile.difficulty,
                         sim.session().game_options().game_speed,
                         sim.save_campaign_carry_over(),
                         &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
@@ -368,7 +364,7 @@ impl App {
         }
         match victory.then {
             VictoryEnd::Shell => {
-                Self::destroy_current_shell_dialog(state);
+                Self::destroy_current_shell_dialog(&mut state.frontend);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::resume_shell_after_match(state);
             }
@@ -383,12 +379,16 @@ impl App {
                 // dismissal. Failed Init never reaches5AE126's ABCE08 write.
                 let shell_box =
                     crate::ui::main_menu_dialogs::map_select_failure(&|key, fallback| {
-                        state.csf_label(key, fallback)
+                        state.process_assets.csf_label(key, fallback)
                     });
-                Self::destroy_current_shell_dialog(state);
+                Self::destroy_current_shell_dialog(&mut state.frontend);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::open_shell_message_box(
-                    state,
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
                     shell_box,
                     crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(Box::new(
                         CampaignVictory {

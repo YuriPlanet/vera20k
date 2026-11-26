@@ -819,6 +819,11 @@ pub struct RuleSet {
     country_ids: Vec<String>,
     /// Uppercase country identity -> source-order index; only looked up.
     country_indices: LookupMap<String, CountryIdx>,
+    /// Uppercase `Name=` alias or identity -> the first Country in source
+    /// order that carries it, as `HouseTypeClass__FindIndexOfName @
+    /// 0x005117D0`'s scan finds it ([`Self::country_index_of_name`]). Built
+    /// with `countries` and `country_ids`, its sources; only looked up.
+    country_name_indices: LookupMap<String, CountryIdx>,
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
@@ -987,6 +992,10 @@ pub struct RuleSet {
     /// processed rules and projection made by `rules::kratos_switch`. Read
     /// through [`Self::kratos`].
     kratos: bool,
+    /// Whether NPatch plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::npatch_switch`. Read
+    /// through [`Self::npatch`].
+    npatch: bool,
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].

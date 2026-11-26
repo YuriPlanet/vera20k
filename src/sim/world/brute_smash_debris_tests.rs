@@ -298,15 +298,15 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                     loaded.scenario_rng.logical_state(),
                     crate::sim::rng::SimRng::new(0).logical_state()
                 );
-                loaded.scenario_rng = sim.scenario_rng.clone();
-                let main = sim.main_rng.clone();
-                loaded.main_rng = main.clone();
-                sim.main_rng = main;
-                loaded.mapgen_rng = sim.mapgen_rng.clone();
+                *loaded.scenario_rng = (*sim.scenario_rng).clone();
+                let main = (*sim.main_rng).clone();
+                *loaded.main_rng = main.clone();
+                *sim.main_rng = main;
+                *loaded.mapgen_rng = (*sim.mapgen_rng).clone();
                 loaded.restore_after_snapshot_load().unwrap();
                 loaded.rebuild_caches_after_load(
-                    sim.resolved_terrain.clone().unwrap(),
-                    sim.terrain_speed_config.clone(),
+                    (*sim.resolved_terrain).clone().unwrap(),
+                    (*sim.terrain_speed_config).clone(),
                     &rules,
                 );
                 loaded.resolve_type_handles(&rules);
@@ -618,14 +618,14 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
         } else {
             None
         };
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
-        world.scenario_rng =
+        *world.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        world.main_rng =
+        *world.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        world.mapgen_rng =
+        *world.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let payload = ProjectilePayload::new(
             input["damage"].as_i64().unwrap() as i32,
@@ -1018,7 +1018,7 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
         assert_eq!(coord(1).rem_euclid(256), 128);
         // Supply this already-admitted source's constructor identity through
         // the allocator, then use ordinary spawn/Unlimbo for its live state.
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             (prior["native_id"].as_i64().unwrap() as u32).wrapping_sub(1),
         ));
         let source = world
@@ -1072,14 +1072,14 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
 
         // Import all streams AFTER ordinary fixture startup. No seeded-Rust
         // output or guessed constructor state supplies a native comparison.
-        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        *world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
-        world.scenario_rng =
+        *world.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        world.main_rng =
+        *world.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        world.mapgen_rng =
+        *world.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         assert_eq!(input["attacker_is_null"], true);
         assert_eq!(input["source_house_is_null"], true);

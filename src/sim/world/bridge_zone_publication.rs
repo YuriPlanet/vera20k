@@ -59,7 +59,7 @@ impl LivePublication<'_> {
             .path_grid
             .as_deref()
             .ok_or("repair has no live path owner")?;
-        let bounds = sim.playfield_bounds;
+        let bounds = *sim.playfield_bounds;
         let result = bridges.validate_repaired_zones(terrain, query, |record| {
             zones.activate_repaired_bridge(terrain, record, bounds)
         });
@@ -81,7 +81,7 @@ impl ZoneBatchHost for LivePublication<'_> {
             .ok_or("zone batch has no live terrain")?;
         Ok(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(coord.0), i32::from(coord.1)),
-            self.sim.playfield_bounds,
+            *self.sim.playfield_bounds,
             Some(terrain),
         ))
     }
@@ -133,7 +133,7 @@ impl ZoneBatchHost for LivePublication<'_> {
         repair_zone_hierarchy_around_cell(
             zones,
             coord,
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             terrain,
             bridges.endpoint_records(),
         );
@@ -205,14 +205,14 @@ mod tests {
         path.set_blocked(7, 7, true); // Retained structure blocking.
         let mut sim = Simulation::with_seed(31);
         sim.install_resolved_terrain_for_new_map(terrain);
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 8,
             off_fc: 0,
             off_100: 0,
             off_104: 8,
             off_108: 8,
         });
-        sim.zone_grid = Some(
+        *sim.zone_grid = Some(
             ZoneGrid::build_with_native_bridge_geometry(
                 &path,
                 sim.resolved_terrain.as_ref().unwrap(),
@@ -223,8 +223,8 @@ mod tests {
             )
             .into(),
         );
-        sim.bridge_state = Some(bridges);
-        sim.path_grid = Some(Arc::new(path.clone()));
+        *sim.bridge_state = Some(bridges);
+        *sim.path_grid = Some(Arc::new(path.clone()));
         let before = edge_state(&sim);
         let mut host = LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),

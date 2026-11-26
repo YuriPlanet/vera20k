@@ -40,9 +40,14 @@
 //!   off-map cell keeps the native answer.
 //! - `DeployAllowed` (veto): before UnitClass::Deploy's transaction
 //!   (`0x007393C0`, after its placement test), at a simple deployer's
-//!   deploy admission (`0x00739AC0`) and at an infantryman's pending deploy
-//!   (`0x00521B40`). A refusal leaves the object as a refused deploy does:
-//!   a DeploysInto unit queues Guard (without the EVA), the others stay.
+//!   deploy admission (`0x00739AC0`) and before every infantryman's
+//!   Do_Action(Deploy) (`deploy::infantry_request_deploy`: the pending
+//!   deploy `0x00521B40`, Mission_Unload `0x0051F6E0`, the computer's
+//!   automatic deploy `0x00521631`, the Approach arm `0x00522472`). A
+//!   refusal leaves the object as a refused deploy does: a DeploysInto unit
+//!   queues Guard (without the EVA), a simple deployer's or an
+//!   infantryman's Unload ends in Guard without deploying, the others stay
+//!   as they stand. Undeploys are not asked.
 //!
 //! Delivered events (tier `v1`):
 //! - `TargetChanged`: after the represented class setter `Assign_Target`
@@ -87,7 +92,7 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// A reference to `target`'s object or cell, for `other` and `cell`.
-fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(u16, u16)>) {
+pub(super) fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(u16, u16)>) {
     match target {
         None => (0, None),
         Some(TargetKind::Cell(x, y)) => (0, Some((x, y))),
@@ -101,7 +106,7 @@ fn target_fields(sim: &Simulation, target: Option<TargetKind>) -> (u64, Option<(
 }
 
 /// A NavCom destination as a module reference.
-fn destination_ref(destination: NavTargetRef) -> i64 {
+pub(super) fn destination_ref(destination: NavTargetRef) -> i64 {
     match destination {
         NavTargetRef::Cell { rx, ry } => cell_ref(rx, ry),
         NavTargetRef::Object { id } => id as i64,

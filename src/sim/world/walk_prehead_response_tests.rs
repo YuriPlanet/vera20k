@@ -61,9 +61,9 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     // Native supplies Map+F4 Size8,8 and final LocalSize0,0,8,8. The
     // shared bridge fixture's Size16 makes this sloped current cell a fringe
     // cell, which would short-circuit56D100 before its raw-label comparison.
-    sim.playfield_bounds =
+    *sim.playfield_bounds =
         Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
-    sim.playfield_size_height = Some(8);
+    *sim.playfield_size_height = Some(8);
     rules.general.path_delay = input["path_delay"].as_f64().unwrap_or(0.01);
     rules.general.blockage_path_delay_ticks = input["blockage_delay"].as_i64().unwrap_or(22) as i32;
     rules.general.close_enough = input["close_enough"].as_i64().unwrap_or(128) as i32;
@@ -213,7 +213,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     if input["radio"] == true {
         e.seldom.radio_contacts.insert(999);
     }
-    sim.substrate.occupancy = OccupancyGrid::new();
+    *sim.substrate.occupancy = OccupancyGrid::new();
     sim.substrate.occupancy.add(
         9,
         10,
@@ -222,7 +222,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         Some(2),
         CellListInsertion::PrependNonBuilding,
     );
-    sim.substrate.raw_cell_occupation = RawCellOccupationGrid::default();
+    *sim.substrate.raw_cell_occupation = RawCellOccupationGrid::default();
     sim.substrate.raw_cell_occupation.mark_ground(
         10,
         10,
@@ -257,7 +257,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     }
     sim.session
         .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(100) as u32);
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
     (sim, rules, registry, id, other)
 }
 

@@ -478,7 +478,7 @@ pub(crate) mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
 
         let ok = crate::sim::world::Simulation::move_air_coordinate(
             &mut sim.interner,
@@ -582,7 +582,7 @@ pub(crate) mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
 
         let ok = crate::sim::world::Simulation::move_air_coordinate(
             &mut sim.interner,

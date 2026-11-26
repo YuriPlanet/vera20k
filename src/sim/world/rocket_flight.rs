@@ -111,12 +111,7 @@ impl RocketHost for RocketProcessHost<'_> {
             });
         // VERA: a Wasm module `SpeedMultiplier` scales the type speed
         // (`ext_modules::modifiers`); none leaves the native value.
-        let factor = owner.module_speed_factor();
-        if factor == 1.0 {
-            speed
-        } else {
-            (f64::from(speed) * factor) as i32
-        }
+        owner.module_scaled_speed(speed)
     }
     fn in_bounds(&self, cell: (i16, i16)) -> bool {
         self.sim.map_cell_in_bounds(cell)
@@ -443,7 +438,7 @@ pub(super) mod retail_tests {
                 (i32::from(y) - 3..=i32::from(y) + 3).all(|y| {
                     crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (x, y),
-                        sim.playfield_bounds,
+                        *sim.playfield_bounds,
                         Some(terrain),
                     )
                 })
@@ -701,7 +696,7 @@ pub(super) mod retail_tests {
             assert!(
                 !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(*rx), i32::from(*ry)),
-                    sim.playfield_bounds,
+                    *sim.playfield_bounds,
                     sim.resolved_terrain.as_ref(),
                 ),
                 "the edge cell lies past the playfield: {moves:?}"
@@ -741,7 +736,7 @@ pub(super) mod retail_tests {
             sim.map_cell_in_bounds((x as i16, y as i16))
                 && crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (x, y),
-                    sim.playfield_bounds,
+                    *sim.playfield_bounds,
                     Some(terrain),
                 )
         };

@@ -199,9 +199,9 @@ fn prime(scene: &mut HeadlessScenario, input: &Value, initial: &Value, rng: &Val
             .game_options_mut_for_test()
             .apply_in_game_speed(4)
     );
-    sim.main_rng = serde_json::from_value(rng.clone()).unwrap();
-    sim.scenario_rng = serde_json::from_value(rng.clone()).unwrap();
-    sim.mapgen_rng = serde_json::from_value(rng.clone()).unwrap();
+    *sim.main_rng = serde_json::from_value(rng.clone()).unwrap();
+    *sim.scenario_rng = serde_json::from_value(rng.clone()).unwrap();
+    *sim.mapgen_rng = serde_json::from_value(rng.clone()).unwrap();
     actors
 }
 

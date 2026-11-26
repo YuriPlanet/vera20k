@@ -138,7 +138,7 @@ impl Simulation {
             || (!self.object_placement_scope_active()
                 && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(rx), i32::from(ry)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ))
         {

@@ -45,7 +45,7 @@ fn world(rules: &RuleSet) -> Simulation {
         construct_house_supers(&mut sim, rules, owner, false);
     }
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
     sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));
@@ -313,7 +313,7 @@ fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() 
         .sim;
     // Static map authority is supplied by resources, not this synthetic
     // header-only snapshot. Reattach it before rebuilding derived indexes.
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     // This header-only fixture does not restore a full map's navigation
     // resources. Compare the promised persistent owners, not a full-world

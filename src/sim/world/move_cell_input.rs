@@ -174,7 +174,7 @@ impl Simulation {
         let clicked = (cell.0 as i16, cell.1 as i16);
         let in_playfield = cell_is_in_playfield_height_aware_in_query(
             (i32::from(clicked.0), i32::from(clicked.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             Some(terrain),
             Some(&cells),
         );
@@ -332,7 +332,7 @@ impl Simulation {
         let clicked = (cell.0 as i16, cell.1 as i16);
         let in_playfield = cell_is_in_playfield_height_aware_in_query(
             (i32::from(clicked.0), i32::from(clicked.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             Some(terrain),
             Some(&cells),
         );
@@ -453,7 +453,7 @@ impl Simulation {
         )?;
         let (Some(zones), Some(bounds), Some(height)) = (
             self.zone_grid.as_ref(),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.playfield_size_height(),
         ) else {
             return Err("IsInSameZoneAsCoords needs native zone topology".into());
@@ -479,7 +479,8 @@ impl Simulation {
     /// What_Action on it. Without bounds or map cells it keeps the Cell:
     /// VERA-internal, as a live gamemd session always has both.
     pub fn clamped_click_cell(&self, cell: (u16, u16)) -> (u16, u16) {
-        let (Some(bounds), Some(terrain)) = (self.playfield_bounds, self.resolved_terrain.as_ref())
+        let (Some(bounds), Some(terrain)) =
+            (*self.playfield_bounds, self.resolved_terrain.as_ref())
         else {
             return cell;
         };
@@ -730,7 +731,7 @@ impl Simulation {
         let clicked = (cell.0 as i16, cell.1 as i16);
         let in_playfield = cell_is_in_playfield_height_aware_in_query(
             (i32::from(clicked.0), i32::from(clicked.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             Some(terrain),
             Some(&cells),
         );

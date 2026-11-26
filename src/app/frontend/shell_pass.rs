@@ -3,20 +3,11 @@
 //! one RGB565-presented composition pass.
 
 use crate::app::AppState;
+use crate::app::renderer_state::RendererState;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::RectPx;
-
-impl AppState {
-    pub(crate) fn csf_text(&self, key: &str) -> String {
-        self.process_assets.csf_text(key)
-    }
-
-    pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
-        self.process_assets.csf_label(key, fallback)
-    }
-}
 
 /// Native owner-draw button label clip: unpressed `(x, y+1, w-2, h-1)`,
 /// pressed `(x+2, y+5, w-4, h-5)`.
@@ -37,7 +28,14 @@ pub(crate) fn software_cursor(
     depth: f32,
 ) -> Option<(&BatchTexture, SpriteInstance)> {
     use crate::app::input::precedence::{ModalPage, modal_page};
-    if modal_page(state) == Some(ModalPage::ShellMessageBox) {
+    if modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) == Some(ModalPage::ShellMessageBox)
+    {
         return None;
     }
     top_software_cursor(state, depth)
@@ -71,7 +69,10 @@ pub(crate) fn top_software_cursor(
             .software_cursor_frame_index(crate::app::types::CursorId::Default, sequence)?,
     )?;
     if crate::app::input::hardware_cursor::takes_cursor(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
         crate::app::types::CursorId::Default,
         0,
     ) {
@@ -120,14 +121,14 @@ pub(crate) struct ShellComposition<'a> {
 /// Encode `composition` into the shell source surface and present it to
 /// `destination`.
 pub(crate) fn encode_shell_pass(
-    state: &AppState,
+    renderer: &RendererState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
     label: &str,
     composition: ShellComposition<'_>,
 ) {
     encode_composition(
-        state,
+        renderer,
         encoder,
         destination,
         label,
@@ -139,14 +140,14 @@ pub(crate) fn encode_shell_pass(
 /// Encode `composition` over what the shell source surface already holds and
 /// present the result to `destination`.
 pub(crate) fn encode_shell_pass_over_page(
-    state: &AppState,
+    renderer: &RendererState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
     label: &str,
     composition: ShellComposition<'_>,
 ) {
     encode_composition(
-        state,
+        renderer,
         encoder,
         destination,
         label,
@@ -156,7 +157,7 @@ pub(crate) fn encode_shell_pass_over_page(
 }
 
 fn encode_composition(
-    state: &AppState,
+    renderer: &RendererState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
     label: &str,
@@ -170,8 +171,8 @@ fn encode_composition(
         effects,
         smooth_art,
     } = composition;
-    let gpu = &state.renderer.gpu;
-    let batch = &state.renderer.batch_renderer;
+    let gpu = &renderer.gpu;
+    let batch = &renderer.batch_renderer;
     batch.update_camera(
         gpu,
         gpu.config.width as f32,
@@ -192,7 +193,7 @@ fn encode_composition(
     let cursor_buffer = cursor.as_ref().and_then(|(_, instance)| {
         batch.create_instance_buffer(gpu, std::slice::from_ref(instance))
     });
-    let color = state.renderer.shell_surface_presenter.source_render_view();
+    let color = renderer.shell_surface_presenter.source_render_view();
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(label),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -205,7 +206,7 @@ fn encode_composition(
             },
         })],
         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &state.renderer.depth_view,
+            view: &renderer.depth_view,
             depth_ops: Some(wgpu::Operations {
                 load: wgpu::LoadOp::Clear(1.0),
                 store: wgpu::StoreOp::Store,
@@ -231,17 +232,12 @@ fn encode_composition(
             draw.scissor.w,
             draw.scissor.h,
         );
-        batch.draw_with_buffer_passthrough(
-            &mut pass,
-            state.renderer.bit_font.atlas(),
-            buffer,
-            *count,
-        );
+        batch.draw_with_buffer_passthrough(&mut pass, renderer.bit_font.atlas(), buffer, *count);
     }
     drop(pass);
-    let presenter = &state.renderer.shell_surface_presenter;
+    let presenter = &renderer.shell_surface_presenter;
     presenter.stage_cursor_free_composition(
-        &state.renderer.retail_screenshot_frame_cache,
+        &renderer.retail_screenshot_frame_cache,
         &gpu.device,
         encoder,
         (gpu.config.width, gpu.config.height),
@@ -258,7 +254,7 @@ fn encode_composition(
             },
         })],
         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &state.renderer.depth_view,
+            view: &renderer.depth_view,
             depth_ops: Some(wgpu::Operations {
                 load: wgpu::LoadOp::Load,
                 store: wgpu::StoreOp::Store,

@@ -189,7 +189,7 @@ impl Simulation {
         for high in (43..=52).rev() {
             draw(0, high);
         }
-        self.ares_made_up_rules = Some(AresMadeUpRules {
+        *self.ares_made_up_rules = Some(AresMadeUpRules {
             veteran_ratio,
             build_speed,
             buildup_time,
@@ -347,7 +347,7 @@ mod tests {
         let hashed = sim.state_hash();
         let saved = sim.ares_made_up_rules.take();
         assert_ne!(sim.state_hash(), hashed, "the written values are hashed");
-        sim.ares_made_up_rules = saved;
+        *sim.ares_made_up_rules = saved;
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "STUFF", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()

@@ -270,14 +270,15 @@ impl Simulation {
         result: bool,
         persist: bool,
     ) {
-        let Some(trace) = self.trigger_runtime.trace.as_mut() else {
+        let runtime = &mut *self.trigger_runtime;
+        let Some(trace) = runtime.trace.as_mut() else {
             return;
         };
-        let type_index = self.trigger_runtime.triggers[trigger]
+        let type_index = runtime.triggers[trigger]
             .as_ref()
             .expect("callers trace a live Trigger")
             .type_index;
-        let kind = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal]
+        let kind = runtime.definitions.trigger_types[type_index].events[ordinal]
             .condition
             .kind;
         if REPLAYED_EVENT_KINDS.contains(&kind)

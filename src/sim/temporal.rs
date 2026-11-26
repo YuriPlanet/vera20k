@@ -235,6 +235,7 @@ impl GameEntity {
     /// independently with the building power owner's fixture hook.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_temporal_for_test(&mut self, state: TemporalState) {
+        let _ = self.note_names();
         self.temporal = state;
         self.set_building_online_for_test(!self.temporal.is_warped());
     }
@@ -630,10 +631,20 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(target) else {
             return false;
         };
-        if !self
-            .object_type(entity.type_ref(), rules)
-            .is_some_and(|object| object.warpable)
-        {
+        // `Warpable=` and Ares' rank `UNWARPABLE` (both refuse before
+        // anything else is written), or a module's `ImmunityFlags` bit 4.
+        let object = self.object_type(entity.type_ref(), rules);
+        let unwarpable = object.is_none_or(|object| {
+            !object.warpable
+                || (rules.ares_form()
+                    && object
+                        .promotion_abilities()
+                        .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw())))
+        });
+        if entity.module_immune(
+            crate::sim::ext_modules::modifiers::Immunity::Chrono,
+            unwarpable,
+        ) {
             return false;
         }
         if crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -643,11 +654,7 @@ impl Simulation {
             return false;
         }
         if rules.ares_form() {
-            let unwarpable = self
-                .object_type(entity.type_ref(), rules)
-                .and_then(|object| object.promotion_abilities())
-                .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw()));
-            if unwarpable || self.ares_chrono_warps.about_to_chronoshift(target) {
+            if self.ares_chrono_warps.about_to_chronoshift(target) {
                 return false;
             }
             let naval_factory = entity
@@ -1628,10 +1635,13 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
+    /// The link's target is a name the pointer-expiry index reads, so the
+    /// attacker is noted ([`GameEntity::note_names`]).
     fn temporal_link_mut(&mut self, attacker: u64) -> Option<&mut TemporalLink> {
-        self.entities
-            .get_mut(attacker)
-            .and_then(|entity| entity.temporal.link.as_deref_mut())
+        self.entities.get_mut(attacker).and_then(|entity| {
+            let _ = entity.note_names();
+            entity.temporal.link.as_deref_mut()
+        })
     }
     fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
         if let Some(entity) = self.entities.get_mut(target) {
@@ -1683,6 +1693,8 @@ impl crate::sim::world::ObjectSubstrate {
             next_link.prev = Some(to);
         }
         if let Some(entity) = self.entities.get_mut(to) {
+            // The moved link's target is a name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.temporal.link = Some(link);
         }
         true

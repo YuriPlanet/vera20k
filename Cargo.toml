@@ -75,10 +75,9 @@ wasm-threads = ["wasm", "vera20k-core/wasm-threads", "dep:wasm-bindgen-rayon", "
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
 # Optional Phobos extensions; neither default nor shipping builds enable this.
-# Ares needs no feature: it switches on from a game's data in every build.
+# Ares and NPatch need no feature: they switch on from a game's data in every
+# build.
 phobos = ["vera20k-core/phobos"]
-# Placeholder for the NPatch capability; no chain reads it yet.
-npatch = ["vera20k-core/npatch"]
 # VERA20K's own first-party extension capability; VeraX-gated chains read it.
 verax = ["vera20k-core/verax"]
 # Optional NPBUG bug-fix extension; neither default nor shipping builds enable
@@ -242,11 +241,10 @@ libc = "0.2"
 # The client crate also builds for Android, where winit refuses to compile
 # without a platform backend feature; the desktop features above stay in the
 # unconditional table, and winit gates their crates by target internally, so
-# this only adds the Android backend. `android-game-activity` (winit's other
-# Android backend, which carries text input) replaces this feature if P6 picks
-# GameActivity over NativeActivity.
+# this only adds the Android backend: `android-game-activity`, whose
+# GameActivity carries the platform's text input (docs/android.md).
 [target.'cfg(target_os = "android")'.dependencies]
-winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-game-activity"] }
 
 # --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which

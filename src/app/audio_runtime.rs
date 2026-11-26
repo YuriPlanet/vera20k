@@ -594,11 +594,11 @@ impl AppAudioRuntime {
 /// InitSideMixFiles534FAC / LoadContent67E761 bind saved Scenario.Side,
 /// not the separately restored current House. Only successful adoption calls
 /// here; reset retains the outgoing cache until this explicit replacement.
-pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
-    if let (Some(runtime), Some(sfx)) = (
-        state.match_state.sim_runtime.runtime(),
-        state.audio.sfx_player.as_mut(),
-    ) {
+pub(crate) fn bind_match_eva_context(
+    sim_runtime: &crate::app::match_runtime::sim_host::SimHost,
+    audio: &mut AppAudioRuntime,
+) {
+    if let (Some(runtime), Some(sfx)) = (sim_runtime.runtime(), audio.sfx_player.as_mut()) {
         sfx.set_eva_side(
             runtime.simulation.session().scenario_side(),
             &runtime.resources.rules,
@@ -609,15 +609,19 @@ pub(crate) fn bind_match_eva_context(state: &mut crate::app::AppState) {
 /// Bind Theme's Is_Allowed context from the incoming world on either fresh
 /// start or saved load. Native reads live House/Side state; the Rust projection
 /// must not keep the previous map's local side or registry indices.
-pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
-    if let Some(assets) = state.process_assets.manager() {
-        state.audio.initialize_theme(assets);
+pub(crate) fn bind_match_theme_context(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    audio: &mut AppAudioRuntime,
+) {
+    if let Some(assets) = process_assets.manager() {
+        audio.initialize_theme(assets);
     }
-    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return;
     };
     let simulation = &runtime.simulation;
-    let local_side = state.match_state.local_player_owner().and_then(|owner| {
+    let local_side = match_state.local_player_owner().and_then(|owner| {
         crate::sim::house_state::house_state_for_owner(
             simulation.houses(),
             owner,
@@ -625,7 +629,7 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
         )
         .map(|house| i32::from(house.side_index()))
     });
-    state.audio.theme.begin_scenario(
+    audio.theme.begin_scenario(
         ThemeAllowContext {
             local_side,
             campaign_scenario: simulation.session().campaign_mission_counter(),

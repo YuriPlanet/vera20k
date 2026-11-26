@@ -67,7 +67,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
         .spawn_object("DUMMY", "Russians", 10, 12, 0, &rules)
         .unwrap();
     sim.resolve_type_handles(&rules);
-    sim.scenario_rng = SimRng::new(31);
+    *sim.scenario_rng = SimRng::new(31);
     shoot(&mut sim, &rules, firer, dummy);
     let ordinary_timer = sim.entities().get(firer).unwrap().seldom.rearm_timer;
     assert!((45..=47).contains(&ordinary_timer.duration()));
@@ -83,7 +83,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
         settings.rof_multiplier()
     );
     sim.session.set_binary_frame_for_test(46);
-    sim.scenario_rng = SimRng::new(31);
+    *sim.scenario_rng = SimRng::new(31);
     shoot(&mut sim, &rules, firer, dummy);
     let affected_timer = sim.entities().get(firer).unwrap().seldom.rearm_timer;
     assert!(
@@ -136,7 +136,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
     );
     sim.session
         .set_binary_frame_for_test(46 + affected_timer.duration() as u32);
-    sim.scenario_rng = SimRng::new(31);
+    *sim.scenario_rng = SimRng::new(31);
     shoot(&mut sim, &rules, firer, dummy);
     assert!(
         (45..=47).contains(

@@ -80,7 +80,7 @@ impl FogState {
             .map(|&id| (id, self.sight_admissions.get(&(id, owner)).cloned()))
             .collect();
         let mut world = crate::sim::world::Simulation::default();
-        world.fog = std::mem::take(self);
+        *world.fog = std::mem::take(self);
         world.transition_whole_map_with_gap_reentry(
             owner,
             cells,
@@ -96,7 +96,7 @@ impl FogState {
             &super::VisionConfig::default(),
             crate::sim::world::UninitContext::default(),
         );
-        *self = world.fog;
+        *self = world.fog.into_inner();
     }
 
     /// Map577D90's entry240 guard, before the shared live callbacks. The

@@ -903,7 +903,7 @@ pub(crate) mod tests {
     pub(crate) fn sim_with_grid(seed: u64) -> Simulation {
         let mut sim = Simulation::new();
         sim.session.set_seed_for_test(seed);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
         sim.session.set_map_width_for_test(MAP);
         sim.session.set_map_height_for_test(MAP);
         // Production installs MapClass authority before Post_Map_Init reaches
@@ -918,8 +918,8 @@ pub(crate) mod tests {
         }));
         sim.set_playfield_size_height_for_test(Some(20));
         sim.session.game_options_mut_for_test().crates = true;
-        sim.overlay_grid = Some(OverlayGrid::new(MAP, MAP));
-        sim.resolved_terrain = Some(uniform_terrain(false));
+        *sim.overlay_grid = Some(OverlayGrid::new(MAP, MAP));
+        *sim.resolved_terrain = Some(uniform_terrain(false));
         sim
     }
 
@@ -947,7 +947,7 @@ pub(crate) mod tests {
 
     fn first_random_cell(sim: &Simulation) -> ((u16, u16), crate::sim::rng::SimRng) {
         let frame = crate_random_frame(sim).expect("valid crate random frame");
-        let mut replay = sim.scenario_rng.clone();
+        let mut replay = (*sim.scenario_rng).clone();
         let cell =
             (
                 frame.left.wrapping_add(
@@ -2830,7 +2830,7 @@ pub(crate) mod tests {
             } else {
                 decoy.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
             }
-            sim.resolved_terrain = Some(terrain);
+            *sim.resolved_terrain = Some(terrain);
 
             let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
@@ -2878,7 +2878,7 @@ pub(crate) mod tests {
         let selected = terrain.cell_mut_for_test(11, 20).expect("candidate B");
         selected.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         selected.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
 
         // An ordinary overlay would fail occupancy-rect checking, but this
         // caller passes occupancy_rect_check=false. Crate placement itself
@@ -2927,7 +2927,7 @@ pub(crate) mod tests {
             .expect("in-diamond candidate")
             .speed_costs
             .track = Some(crate::rules::terrain_rules::test_speed_percent(100));
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
             base: 10,
             off_fc: 2,

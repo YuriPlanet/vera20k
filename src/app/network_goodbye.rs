@@ -32,25 +32,28 @@ impl App {
             return false;
         }
         say_goodbye(state);
-        if !crate::app::shell_wol::online_cleanup_pending(state) {
+        if !crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state) {
             return false;
         }
-        Self::leave_screen(state);
+        Self::leave_screen(&mut state.platform, &mut state.audio);
         state.frontend.network_goodbye_deadline = Some(Instant::now() + GOODBYE_WAIT);
         true
     }
 
     /// Take the closing game off the screen: silence it, free the pointer
     /// and hide the window.
-    pub(super) fn leave_screen(state: &mut AppState) {
-        state.audio.stop_theme();
-        if let Some(sfx) = state.audio.sfx_player.as_mut() {
+    pub(super) fn leave_screen(
+        platform: &mut crate::app::PlatformState,
+        audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    ) {
+        audio.stop_theme();
+        if let Some(sfx) = audio.sfx_player.as_mut() {
             sfx.stop_all();
         }
         // Window events stop now, so the focus loss that frees the cursor
         // lock never arrives.
-        crate::app::input::cursor::release_cursor_confinement(state);
-        state.platform.window.set_visible(false);
+        crate::app::input::cursor::release_cursor_confinement(platform);
+        platform.window.set_visible(false);
     }
 
     /// While goodbyes are pending, service only them; exit when they finish
@@ -61,7 +64,9 @@ impl App {
         };
         let next = crate::app::shell_wol::poll(state);
         let now = Instant::now();
-        if crate::app::shell_wol::online_cleanup_pending(state) && now < deadline {
+        if crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state)
+            && now < deadline
+        {
             let wake = next
                 .unwrap_or_else(|| now + Duration::from_millis(16))
                 .min(deadline);
@@ -85,11 +90,15 @@ fn say_goodbye(state: &mut AppState) {
     let online =
         state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol;
     if online && state.match_state.live_network.is_some() {
-        crate::app::lan_service::return_transport(state);
+        crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
     }
-    crate::app::shell_wol::retire_visit_for_exit(state);
+    crate::app::shell_wol::retire_visit_for_exit(
+        &mut state.frontend,
+        &state.platform.window,
+        &mut state.match_state,
+    );
     if state.match_state.lan_service.is_some() {
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     }
     if let Some(live) = state.match_state.live_network.take() {
         live.into_transport()

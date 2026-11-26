@@ -657,8 +657,8 @@ fn a_second_planter_leaves_the_first_charge_alone() {
         .unwrap()
         .building
         .pending_c4_detonation;
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 5);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 5);
     sim.substrate
         .entities
         .get_mut(building)

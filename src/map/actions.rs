@@ -16,6 +16,8 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
 use crate::rules::ruleset::RuleSet;
 
+pub use super::waypoints::decode_waypoint_token;
+
 /// Definition selection performed by original TAction Read6DD5B0. A short
 /// token is a retained registry ordinal; a longer token is a name, including
 /// its spaces. Registry resolution belongs to the corresponding definition
@@ -160,26 +162,10 @@ impl MapAction {
 
 pub type ActionMap = HashMap<String, MapAction>;
 
-/// Decode the alphabetic waypoint token stored in action field 8.
-///
-/// gamemd-derived: `TActionClass::Read @ 0x006DD5B0` routes non-numeric
-/// parameter types through `FUN_00763690`. That helper examines at most two
-/// ASCII letters, case-insensitively: `A..Z` are `0..25`, and a second letter
-/// extends the index as `26 * first + second + 26`. A non-letter first byte is
-/// the native `-1` sentinel, represented safely as `None` here.
-pub fn decode_waypoint_token(token: &str) -> Option<u32> {
-    let bytes = token.as_bytes();
-    let first = ascii_waypoint_letter(*bytes.first()?)?;
-    let Some(&second_byte) = bytes.get(1) else {
-        return Some(first);
-    };
-    let Some(second) = ascii_waypoint_letter(second_byte) else {
-        return Some(first);
-    };
-    Some(26 * first + second + 26)
-}
-
 /// Apply the `TActionClass` constructor/read contract around the decoder.
+///
+/// `TActionClass::Read @ 0x006DD5B0` routes non-numeric parameter types through
+/// `FUN_00763690`.
 ///
 /// The constructor initializes the destination to waypoint 0. `Read` replaces
 /// it only when `strtok` returns token 8, so an absent or empty-at-end token
@@ -190,13 +176,6 @@ pub fn read_waypoint_token(token: Option<&str>) -> Option<u32> {
         None | Some("") => Some(0),
         Some(token) => decode_waypoint_token(token),
     }
-}
-
-fn ascii_waypoint_letter(byte: u8) -> Option<u32> {
-    byte.to_ascii_uppercase()
-        .checked_sub(b'A')
-        .filter(|value| *value < 26)
-        .map(u32::from)
 }
 
 /// Parse `[Actions]` into exact-key action records.
@@ -419,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn waypoint_tokens_follow_the_native_two_letter_decoder() {
+    fn waypoint_tokens_preserve_stock_prefixes_and_extend_exact_labels() {
         for (token, expected) in [
             ("A", Some(0)),
             ("Z", Some(25)),
@@ -429,6 +408,11 @@ mod tests {
             ("aa", Some(26)),
             ("NZ", Some(389)),
             ("ZZ", Some(701)),
+            ("AAA", Some(702)),
+            ("AAB", Some(703)),
+            ("ZZZ", Some(18277)),
+            ("zzZ", Some(18277)),
+            ("AAAA", Some(26)),
             ("", None),
             ("7", None),
             ("   ", None),
@@ -468,6 +452,21 @@ mod tests {
             vec![(48, Some(0)), (112, Some(0)), (137, Some(0))]
         );
     }
+
+    #[test]
+    fn action_read_keeps_padded_three_letter_waypoints_in_multi_action_rows() {
+        let ini = IniFile::from_str(
+            "[Actions]\nCASE=3,140,0,0,0,0,0,0,ZZZ ,140,0,0,0,0,0,0, aAa\t,140,0,0,0,0,0,0, ZZ\n",
+        );
+        let actions = parse_actions(&ini);
+        let waypoints: Vec<_> = actions["CASE"]
+            .entries()
+            .iter()
+            .map(|entry| entry.waypoint_index)
+            .collect();
+        assert_eq!(waypoints, [Some(18277), Some(702), None]);
+    }
+
     #[test]
     fn waypoint_cue_flare_asset_root_uses_rules_only_when_the_map_authors_action_eight() {
         let flare = parse_actions(&IniFile::from_str("[Actions]\nCUE=1,8,0,99,0,0,0,0,B\n"));

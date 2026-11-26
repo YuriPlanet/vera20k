@@ -71,10 +71,7 @@ pub fn log_banner(log_path: Option<&Path>) {
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED
     );
-    log::info!(
-        "NPatch support compiled in: {}",
-        crate::rules::NPATCH_ENABLED
-    );
+    log::info!("NPatch support: in every build, from the game's data");
     log::info!("VeraX support compiled in: {}", crate::rules::VERAX_ENABLED);
     log::info!("NPBUG support compiled in: {}", crate::rules::NPBUG_ENABLED);
     if let Some(path) = log_path {
@@ -162,6 +159,18 @@ pub fn run_with_loop(
     event_loop: EventLoop<()>,
 ) -> Result<i32> {
     run_with(launch_mode, app_bundle, event_loop, None)
+}
+
+/// [`run_with_loop`] for a launcher that hands over an entry, such as an
+/// Android shortcut's `mod:<folder>` (`app::mods::launch_entry_switch`).
+pub fn run_with_loop_and_entry(
+    launch_mode: AppLaunchMode,
+    app_bundle: bool,
+    event_loop: EventLoop<()>,
+    entry: Option<&str>,
+) -> Result<i32> {
+    let mod_switch = entry.and_then(crate::app::mods::launch_entry_switch);
+    run_with(launch_mode, app_bundle, event_loop, mod_switch)
 }
 
 fn run_with(

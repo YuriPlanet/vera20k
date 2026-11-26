@@ -333,7 +333,7 @@ impl Simulation {
         if !self.lower_terrain_corners(cell, mask, rules, effects) {
             return false;
         }
-        self.terrain_dent = Some(PendingTerrainDent {
+        *self.terrain_dent = Some(PendingTerrainDent {
             cell,
             mask: (mask ^ 0xF) as u8,
             frame: self.session.binary_frame().wrapping_add(SECOND_STEP_FRAMES),
@@ -352,14 +352,14 @@ impl Simulation {
             return;
         };
         self.lower_terrain_corners(dent.cell, u32::from(dent.mask), rules, effects);
-        self.terrain_dent = None;
+        *self.terrain_dent = None;
     }
 
     /// Fold the pending dent into the world hash; nothing while the slot is
     /// empty, so a game without terrain deformation hashes as before.
     pub(super) fn hash_terrain_dent(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        if let Some(dent) = &self.terrain_dent {
+        if let Some(dent) = &*self.terrain_dent {
             b"terrain-dent-v1".hash(hasher);
             dent.hash(hasher);
         }
@@ -607,10 +607,10 @@ mod tests {
         let mut sim = Simulation::new();
         let mut terrain = test_grid(size, size, cell);
         terrain.test_install_deformation_catalog(0, RAMP_BASE);
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         let mut overlays = OverlayGrid::new(size, size);
         overlays.place_overlay(overlay.0, overlay.1, 0, 0);
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         sim
     }
 
@@ -652,7 +652,7 @@ mod tests {
         // One corner a level down: slopes 9..=12 hold NW..SW low.
         assert_eq!(level_slope(&sim, 5, 5), (3, 9 + corner as u8));
         assert_eq!(
-            sim.terrain_dent,
+            *sim.terrain_dent,
             Some(PendingTerrainDent {
                 cell: (5, 5),
                 mask: 0xF ^ (1 << corner),
@@ -666,7 +666,7 @@ mod tests {
         sim.finish_terrain_dent(&rules, effects);
         assert_eq!(level_slope(&sim, 5, 5), (3, 0));
         assert_eq!(level_slope(&sim, 5, 4), (3, 4));
-        assert_eq!(sim.terrain_dent, None);
+        assert_eq!(*sim.terrain_dent, None);
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }
 
@@ -808,7 +808,7 @@ mod tests {
         // leaves the ground as it is.
         sim.session.set_binary_frame_for_test(SECOND_STEP_FRAMES);
         sim.finish_terrain_dent(&rules, effects);
-        assert_eq!(sim.terrain_dent, None);
+        assert_eq!(*sim.terrain_dent, None);
         assert_eq!(level_slope(&sim, 5, 5), (-1, 9 + corner as u8));
         assert_eq!(level_slope(&sim, overlay.0, overlay.1), (0, 0));
     }
@@ -874,7 +874,7 @@ mod tests {
         assert_eq!(level_slope(&sim, 5, 4), (1, 4));
         assert_eq!(level_slope(&sim, 5, 2), (3, 4));
         assert_eq!(level_slope(&sim, 5, 1), (4, 0));
-        assert_eq!(sim.terrain_dent, None);
+        assert_eq!(*sim.terrain_dent, None);
         // The third level would pull down the corners of the overlay cell
         // three cells east, so the crater stops two levels deep.
         let mut sim = flat_sim((8, 5));
@@ -923,10 +923,10 @@ mod tests {
         let mut sim = flat_sim((0, 0));
         // The map's own terrain, as a load rebuilds from it: switched off, as
         // every new grid starts.
-        let mut pristine = sim.resolved_terrain.clone().expect("terrain");
+        let mut pristine = (*sim.resolved_terrain).clone().expect("terrain");
         pristine.set_terrain_deformation(false);
         // Scenario start's capture, which a load checks against the grid.
-        sim.real_cell_bridge_flags_0x1180 = pristine.capture_real_cell_bridge_flags_0x1180();
+        *sim.real_cell_bridge_flags_0x1180 = pristine.capture_real_cell_bridge_flags_0x1180();
         assert!(sim.dent_terrain((5, 5), &rules, None, &mut FrameEffects::default()));
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "crater", 0);
@@ -938,9 +938,9 @@ mod tests {
             .expect("map authority");
 
         assert_eq!(level_slope(&restored, 5, 5), level_slope(&sim, 5, 5));
-        assert_eq!(restored.dynamic_terrain_cells, sim.dynamic_terrain_cells);
+        assert_eq!(*restored.dynamic_terrain_cells, *sim.dynamic_terrain_cells);
         assert!(restored.terrain_dent.is_some());
-        assert_eq!(restored.terrain_dent, sim.terrain_dent);
+        assert_eq!(*restored.terrain_dent, *sim.terrain_dent);
         assert!(
             restored
                 .resolved_terrain

@@ -6,8 +6,9 @@ content as work lands; do not append a diary.
 
 ## Where the work is
 
-- Branch `feature/wasm-extension-modules` on `libi/vera20k`; the upstream is
-  `YuriPlanet/vera20k`. Phase 2 is on `feature/wasm-ui-modules`.
+- Repository: `YuriPlanet/vera20k`. Phase 1 is on `main` (#5183); the control
+  points below (phase 2a) follow it. The client modules (phase 2, `ui.wasm`)
+  are on `feature/wasm-ui-modules` of `libi/vera20k`.
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
 - Feedback: the RFC draft PR
@@ -69,7 +70,8 @@ Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 house with each module that `VERA20K_TEST_PLAYTEST_WASM` lists (`:`-separated) and
 checks it keeps running with no trigger refused; `--nocapture` prints the module logs.
 These tests need `RA2_DIR` (the retail install) or they return early and pass
-without running. The examples' `.cargo/config.toml` is ignored by the root
+without running.
+The examples' `.cargo/config.toml` is ignored by the root
 `.gitignore`; add a new one with `git add -f`.
 
 Writing modules: `core::fmt` (`write!`, `format_args!`, `{:?}`) in a `no_std` module
@@ -299,7 +301,9 @@ module (merge timers into one function).
     `AttachAnim` (as team script 51), `AllowType` (checked in CanBuild),
     `AddPassenger`, timed `Convert`. Modifiers wired for ROF, weapon range
     (multiplier and extra), crit (Phobos builds), `Unkillable` (Phobos builds),
-    `Cloakable`, `ForceDecloak`, `DisableWeapons`.
+    `Cloakable`, `ForceDecloak`, `DisableWeapons`, `ImmunityFlags` (preview, see
+    `ext_modules/modifiers.rs`; the modifier `Stat::Immunity` changed the save
+    layout).
   - Properties: most of 7.1 (layer, target, experience, storage, transport,
     passengers, disguise, moving, facings, armor, relation with a viewpoint), 7.6
     `Passable.<SpeedType>`, `Revealed`, `Placeable` (cells `find` with a type), 7.7
@@ -414,8 +418,7 @@ seat budgets are separate work).
 
 ## Done (phase 1c: reads for driving a house)
 
-RFC 0001 section 6i's read surface (branch `impl-6i-reads`; claims and orders are
-separate work):
+RFC 0001 section 6i's read surface (claims and orders are separate work):
 
 - Objects: `Destination` (NavCom, cell or object), `WeaponReady` (rearm timer run
   out), `Deployed` (`is_fully_deployed`), `UnderConstruction` (BState 0),
@@ -428,8 +431,9 @@ separate work):
   without range, the selected Warhead's Verses against the target's armor, InRange).
   `Query.viewpoint` may be an object: `Engage` reads for it, house viewpoint
   properties for its owner; filter clauses keep the trigger house. A clause on a
-  "derived, high" property (`HIGH_COST_PROPERTIES`, now `Engage`) costs
-  `HIGH_CLAUSE_COST` (60) more per candidate.
+  "derived, high" property (`HIGH_COST_PROPERTIES`: `Engage`, `NearbyEnemyCount`,
+  `TargetInRange`, `CanFireAtTarget`) costs `HIGH_CLAUSE_COST` (60) more per
+  candidate.
 - Houses: `Factory.<Kind>.Type/Progress/Ready/Queued` for the six kinds, from the
   House slot factory or, for a computer house, the first building-held one.
 - Cells: `Zone.<MovementZone>` (MapClass::GetZoneID `0x0056D230`), `Obstructed`
@@ -441,7 +445,7 @@ separate work):
 
 ## Done (phase 2a: RFC 0.0.21 gaps and unit control points, RFC 0.0.22)
 
-Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
+Items 1 and 2 of the control-point plan:
 
 - Gaps the RFC already promised: stock `SpiedBy` (2) and `ThievedBy` (3) for module
   triggers (module-only raises; no native site raises them on a Tag); `Birth` for
@@ -457,9 +461,16 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   without 1048); delivered `TargetChanged`, `Deployed`, `Promoted`, `ExperienceGained`,
   `Cloaked`, `Decloaked`. No new saved state: every decision completes at its commit
   point and every event is raised there.
-- Not done: `ImmunityFlags` (a new modifier `Stat` variant changes the save layout,
-  which needs a migration step and a frozen save first); `MissionChanged` (1048, no
-  raise point: mission transitions are written without rules or frame effects).
+- `DeployAllowed` is asked before every deploy: an MCV's (after its placement test), a
+  simple deployer's start, and every infantryman's Do_Action(Deploy) through the one
+  gate `deploy::infantry_request_deploy` (pending deploy, Mission_Unload, the
+  computer's automatic deploy, the Approach arm). A refusal leaves a DeploysInto unit
+  queueing Guard, a simple deployer's or infantryman's Unload ending in Guard without
+  deploying, the others standing. Undeploys are not asked (RFC 4.5). Tests: a standing
+  GI's refusal (`ext_modules_control_tests.rs`).
+- Deferred by the maintainer: `MissionChanged` (1048, tier `later`; no raise
+  point: mission transitions are written from many callers without rules or frame
+  effects). `has_kind` answers 0 for it (`ext_modules_control_tests.rs`).
 
 ## Provisional numbering (open question 5)
 
@@ -472,7 +483,10 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
   1034, `Launch` 1035, `ProjectileFrame` 1036); unit-level decision-only events
-  from 1060 (`IdleMission` 1060, RFC 100060; no INI name yet); `HarvestCell` is
+  from 1060 (`IdleMission` 1060, RFC 100060; `MissionStep` 1062, RFC 100062;
+  `MoveFrame` 1063, `PathFound` 1064 and `ApproachPoint` 1065, RFC
+  100063..100065; no INI names yet);
+  `HarvestCell` is
   1049 (RFC 100049), asked in every ore scan. Stock events keep 0..88. One name table: `wasm-ext/src/event_kinds.rs`.
 - `Passable.<SpeedType>` properties are appended to `PROPERTIES` (IDs 173..180).
 - Houses stay on the bit-47 reference: putting them on the shared creation counter
@@ -537,8 +551,7 @@ left is listed under residuals. Small follow-ups found by the playtest mods:
 Before version 1 (RFC "Process"): the TypeScript SDK
 (deferred by the maintainer), phase 3 (a real mission with
 modules, external modders, freeze), and the later items (peer calls,
-`TargetChanged`'s decision form, the Guard/Area Guard/Hunt/Attack mission
-slots MIS-S3..S6).
+`TargetChanged`'s decision form, `MissionChanged`).
 
 ## Done (control points, preview, RFC 0.0.23)
 
@@ -554,11 +567,75 @@ slots MIS-S3..S6).
   and `Simulation::visit_logic_bullet`. Tests `ext_modules_flight_tests.rs`.
 - `FatalDamage` decision form, the death plan: `src/sim/combat/death_plan.rs`,
   read at the entry of `world_receiver::handle_death`; tests
-  `ext_modules_death_tests.rs`.
+  `ext_modules_death_tests.rs`. Bit 6 is Ares' TiberiumRemains (the engine has
+  no wreck object): the death arm places the remains only from the plan
+  (`Simulation::ares_leaves_tiberium_remains` is its native value); its
+  round trip is tested in `death_plan.rs` (no Ares scene in the harness).
 - `IdleMission`: `src/sim/ext_modules/unit_ai.rs` (`HarvestCell` is in
   `control.rs`, its test with the idle one); the computer
   mission arms the 6i claims had missed are gated (`claims.rs` module doc);
   tests `ext_modules_unit_ai_tests.rs`.
+- `MissionStep` (MIS-S3..S6, preview), the outcome of the Guard, Sticky, Area
+  Guard, Hunt and Attack bodies of infantry and vehicles: a `MissionStepResult`
+  (target, destination, mission to queue, delay) in the result area, asked in
+  `mission_handlers::dispatch_foot_mission` after the body and before
+  `MissionClass::AI`'s queue and timer write (`0x005B3060`), applied in
+  `src/sim/ext_modules/unit_ai.rs` through the class setters. The body runs in
+  full first, so its scenario draws are unchanged (list 4.4); what else it did
+  (shots, deploys, a mission queued on going idle) stands. No saved state.
+  SDK `MissionStepDecision`; tests `ext_modules_unit_ai_tests.rs`.
+- Movement (step 6): `MoveFrame` (result `MoveStep`), `Push` and `SetFacing`
+  (atomic 1035, 1045) in `src/sim/ext_modules/motion.rs`, raised from
+  `Simulation::process_active_locomotor` (`world/object_turn.rs`, FootClass::AI's
+  Process call `0x004DA877`) for Drive/Ship/Walk/Mech/Hover movers with no step in
+  flight; pushes are saved and hashed (`ExtModules::motions`, save field
+  `motions`); standing infantry stay awake while module movement is active
+  (`world/idle_sleep.rs`). `PathFound` (result `PathCell`s) in
+  `src/sim/ext_modules/paths.rs`, asked in `movement/foot_path.rs`
+  `search_foot_path` (Find_Path `0x004D3920`, before the copy at `0x004D3E82`);
+  the path batch stays on (the decision is at the adoption, in the Foot's turn).
+  SDK `MoveFrameDecision`, `PathFoundDecision`, `Action::push`,
+  `Action::set_facing`. Tests `ext_modules_movement_tests.rs`.
+- `ApproachPoint` (MOV-S18, preview, a cell reference): in
+  `src/sim/ext_modules/paths.rs` (`module_approach_point`), asked in
+  `movement/foot_approach.rs` `approach_foot_target` (FootClass::Approach_Target
+  `0x004D5690`) once the ring search, a CloseRange= spot or a Jumpjet's first
+  candidate chose the cell (`0x004D689A`), before the destination is set. The
+  search and its spot draws run in full first. Not asked when the approach ends
+  without a chosen cell. SDK `ApproachPointDecision`; test
+  `ext_modules_movement_tests.rs`.
+- `ROTMultiplier` (MOV-S14, preview), the body facing's turn rate:
+  `src/sim/ext_modules/modifiers.rs` (`ModifierStore::apply_rot`,
+  `Simulation::set_body_rot`). Event-driven: written to the body's
+  `FacingClass` when the object's modifiers change (start, replacement,
+  removal, expiry, load) and at the engine's later type-rate writes (Ares
+  conversion, Carryall drop); the turning code never reads modifiers. The
+  native word is kept in the modifier store while the property holds (save
+  field `native_rots`) and restored exactly. Test in
+  `ext_modules_movement_tests.rs`.
+
+## Done (properties past the first set)
+
+`src/sim/ext_modules/props.rs` (its module doc has the owner of each):
+
+- Objects: `Cloaked` (CloakState 2), `NearbyEnemyCount` (enemies of the owner
+  within `Sight=`), `TargetInRange` and `CanFireAtTarget` against TarCom
+  (`Simulation::target_check`: InRange and GetFireError with range of the slot
+  SelectWeapon picks), `DoorOpen` (DoorClass not closed; war factories, gates,
+  vehicles with `Passengers=`), `Animating` (BState Active). The three searches
+  are "derived, high" (`HIGH_COST_PROPERTIES`).
+- Types: TechnoType `Points` (`Points=`, parsed into `ObjectType::points`), any
+  rules type's `Name` and the global `GameMode` (the session's multiplayer mode
+  class, its `mpmodes` section) as string IDs; `get` adds the text to the string
+  table (saved and hashed), a filter clause only finds a held one. `Name` reads
+  in `on_rules` too.
+- TechnoType `Buildable` (viewpoint: `production::buildable_by_player`) and
+  `find` scope 3 `Types` (TechnoTypes, Weapons, Warheads; wildcard or one type;
+  no area or owner). SDK `Find::types`, `TypeRef::any`.
+- Tests: `ext_modules_drive_tests.rs` (the GI duel's reads, a war factory's door,
+  names, points, `GameMode`, `Types` with `Buildable`),
+  `ext_modules_control_tests.rs` (`Cloaked` under the cloak modifiers). Control
+  Bench marks `basics.type-name` .. `basics.door-open`.
 
 ## Done (phase 2: client modules, RFC 0.0.24)
 
@@ -622,6 +699,10 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
 
 ## Residuals
 
+- `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building
+  survivors have no engine test (the duel scene's MCV does not deploy; survivor rolls
+  are random draws), nor does a vehicle crew's `Birth`.
+
 - The stopped-module notice is translated (`VERA:ModuleStopped`), but the fault
   reason inside it is English only.
 - Events not raised: stock 0, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
@@ -639,8 +720,23 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
   cannot lift CanBuild's own refusal and also asks Neutral/Special; `CommandAllowed`
   asks nothing for commands without an 8.3 number or an actor, nor for the AI's own
-  missions; no kind uses a result area; nested decisions get no merged rules text.
-- Actions unsupported: `RemovePassenger`, `Push`, team and projectile actions,
+  missions; nested decisions get no merged rules text.
+- Movement: `MoveFrame` and `Push` cover Drive, Ship, Walk, Mech and Hover only
+  (not Fly, Jumpjet, Rocket, Tunnel, Teleport, transported, warping or train
+  objects) and wait for a native step in flight to end; a module step checks the
+  end cell only, treats Can_Enter's crush and traffic codes as blocked, never
+  leaves a bridge deck and keeps an infantryman's sub-cell spot; a taken frame
+  skips the native Process's own draws (Walk's sub-cell choice); a standing
+  infantryman asleep when the first `MoveFrame` decider appears is asked from its
+  next full turn; Scatter's immediate Walk Process may ask twice in a frame.
+  `ROTMultiplier` scales the body (PrimaryFacing) only: not the turret, whose
+  rate `Facing_Update` rewrites from `ROT=` on each aim, nor Fly's turns
+  (SecondaryFacing), Hover's steering facing, Jumpjet's flight facing or
+  Walk's snapped body; a Carryall's copied rate on its cargo is overwritten by
+  a modifier change while carried. `Push` does not launch into the air. `PathFound` answers the
+  route's first window only, is not asked for a train's queued extension or a
+  route with a tube step, and is asked while the Foot is lifted (Mark0).
+- Actions unsupported: `RemovePassenger`, team and projectile actions,
   `AttachAnim` with a frame count; house modifiers (`PowerOutage`); stock actions that
   need a live trigger (3, 6, 9, 13, 36..38, 52, 74, 75, 81, 91, 111, 113, 119..124,
   126, 130, Ares 146, 147), sound IDs (19, 98, 99), 40, 15, 39, 49, 50.
@@ -648,10 +744,15 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   `ROFMultiplier.ApplyOnCurrentTimer` is not applied; `Cloakable` Override 0 does
   not remove a type's own `Cloakable=`. Timed conversions are in the state hash, not
   the MP checksum.
-- Properties not read: `Team`/`Tag` values (no references), `GameMode`, `Name`,
-  `Buildable`, `Points`, the house's `IsCivilian` (answers `Unsupported`, so a clause
-  on it matches nothing; found by `sdk/examples/veteran-fury`), the `v1?` object
-  properties; `lookup(Armor)`,
+- Properties not read: `Team`/`Tag` values (teams and tags have no kind 0
+  handles: teams number from their own counter, tags are tag-storage indices,
+  and a handle would change the save layout), a house's `Name` (player names are
+  not simulation state), `ControlGroup` (client only: the local player's groups
+  would desync the simulation), `DisguiseType` of a Mirage disguised as terrain
+  (no name kind for terrain types), the house's `IsCivilian` (answers `Unsupported`,
+  so a clause on it matches nothing; found by `sdk/examples/veteran-fury`);
+  `DoorOpen` and `Animating` are not writable, and `Animating` reads 1 only for the
+  missile silo's launch (art `AnimActive=` is not bound); `lookup(Armor)`,
   `lookup(Sound)`; `Passable` ignores objects and overlays; `PropertyPoll` reads
   without a viewpoint.
 - `Health` writes of 0 or less answer `Refused`; an `Ammo` write restarts a running

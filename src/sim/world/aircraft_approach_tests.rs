@@ -148,7 +148,7 @@ fn aircraft_approach_matches_original_dispatch_and_restored_continuation() {
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         // Snapshot-envelope seed policy is separate from persisted mission inputs.
-        restored.scenario_rng = sim.scenario_rng.clone();
+        *restored.scenario_rng = (*sim.scenario_rng).clone();
         assert_eq!(sim.state_hash(), restored.state_hash());
         for world in [&mut sim, &mut restored] {
             // GetFLH reads the headings before this visit changes SecondaryFacing.
@@ -185,7 +185,7 @@ fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
     let saved = GameSnapshot::save(&sim, 0, 0, "initial attack before search", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     for world in [&mut sim, &mut restored] {
         let before = world.state_hash();
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);

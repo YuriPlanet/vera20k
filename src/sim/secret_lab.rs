@@ -291,12 +291,12 @@ mod tests {
                     ),
                 );
             }
-            sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+            *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
-            sim.main_rng =
+            *sim.main_rng =
                 SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-            sim.mapgen_rng = SimRng::from_native_state_hex_for_test(
+            *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             let (_, draws) = trace_draws(|| {

@@ -56,7 +56,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
                 input["mode"].as_u64().unwrap() != 0,
             ),
         );
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: if input["rim"].as_bool().unwrap() {
                 0
@@ -151,9 +151,9 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         } else {
             sim.substrate.raw_cell_occupation.mark_ground(11, 10, bits);
         }
-        sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(37);
-        sim.mapgen_rng = SimRng::new(41);
+        *sim.scenario_rng = SimRng::new(31);
+        *sim.main_rng = SimRng::new(37);
+        *sim.mapgen_rng = SimRng::new(41);
         let cell = sim
             .resolved_terrain
             .as_ref()

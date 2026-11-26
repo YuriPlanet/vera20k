@@ -46,9 +46,9 @@ fn assert_rng(sim: &Simulation, expected: &Value, context: &str) {
 fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     let seed = input["seed"].as_u64().unwrap_or(31);
     let mut sim = Simulation::with_seed(seed);
-    sim.main_rng = SimRng::new(seed);
-    sim.scenario_rng = SimRng::new(seed);
-    sim.mapgen_rng = SimRng::new(seed);
+    *sim.main_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
+    *sim.mapgen_rng = SimRng::new(seed);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Americans");
@@ -353,7 +353,7 @@ fn native_foot_load_reset_runs_through_snapshot_restore_then_the_next_visit() {
         // Native Scenario reload reseeds separately. This bounded raw-object
         // load fixture does not execute that operation; restore the explicitly
         // supplied Scenario boundary before comparing its next Foot visit.
-        loaded.scenario_rng = SimRng::from_native_state_hex_for_test(
+        *loaded.scenario_rng = SimRng::from_native_state_hex_for_test(
             row["next_visit"]["before"]["rng"]["scenario"]
                 .as_str()
                 .unwrap(),
@@ -589,7 +589,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
     // dispatch intact. This is not a whole-map startup RNG comparison.
     sim.session
         .set_binary_frame_for_test(steps[0]["frame"].as_u64().unwrap() as u32);
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap());
     for step in steps {
         let native_frame = step["frame"].as_u64().unwrap() as u32;

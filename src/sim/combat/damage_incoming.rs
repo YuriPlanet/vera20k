@@ -2,6 +2,7 @@
 //! (`world_receiver::commit_entity`).
 
 use super::*;
+use crate::sim::ext_modules::modifiers::Immunity;
 use crate::sim::world::Simulation;
 
 /// Wasm module `DamageIncoming` (RFC 0001 appendix 4.5, preview) at the
@@ -11,7 +12,7 @@ use crate::sim::world::Simulation;
 /// Not asked for zero incoming damage, IgnoreDefenses hits, Psychedelic or
 /// Temporal warheads, or hits the receiver's gates would reject: the
 /// subject's `ImmuneToRadiation=`/`ImmuneToPsionicWeapons=`/`ImmuneToPoison=`
-/// against such a warhead, an allied attacker for a warhead without
+/// against such a warhead (or a module's `ImmunityFlags` in their place), an allied attacker for a warhead without
 /// `AffectsAllies=`, an active Iron Curtain for positive damage. Residual:
 /// Ares' rank immunities and CanTargetHouse, TypeImmune and the bunker and
 /// warp gates are not consulted, so such a hit is asked and then rejected
@@ -53,11 +54,16 @@ pub(super) fn decide_damage_incoming(
             .house_alliances
             .is_allied(&world.interner, attacker.owner(), target.owner())
     });
-    let immune = target_type.is_some_and(|object| {
-        (warhead.radiation && object.immune_to_radiation)
-            || (warhead.psychic_damage && object.immune_to_psionic_weapons)
-            || (warhead.poison && object.immune_to_poison)
-    });
+    // The receiver's gates, with a module's `ImmunityFlags` over the type's.
+    let type_flag = |flag: fn(&crate::rules::object_type::ObjectType) -> bool| {
+        target_type.is_some_and(flag)
+    };
+    let immune = (warhead.radiation
+        && target.module_immune(Immunity::Radiation, type_flag(|o| o.immune_to_radiation)))
+        || (warhead.psychic_damage
+            && target.module_immune(Immunity::Psychic, type_flag(|o| o.immune_to_psionic_weapons)))
+        || (warhead.poison
+            && target.module_immune(Immunity::Poison, type_flag(|o| o.immune_to_poison)));
     let curtained = incoming > 0
         && crate::sim::superweapon::invulnerability::is_invulnerable(
             target.invulnerability.as_ref(),

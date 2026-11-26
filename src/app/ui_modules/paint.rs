@@ -45,6 +45,8 @@
 use vera20k_gui::{Gui, Layer, NodeId, NodeKind, Prop, Rect, Value};
 
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::renderer_state::RendererState;
 use crate::app::presentation::layout_parts::{PartsHud, Placed};
 use crate::assets::csf_file::CsfFile;
 use crate::render::batch::{InstanceBufferPool, RecordedUploads};
@@ -165,14 +167,14 @@ pub(crate) fn build(state: &mut AppState) {
         return;
     };
     let values = ui.tree.shows_values().then(|| {
-        TextValue::ALL.map(|value| crate::app::presentation::layout_parts::value_text(state, value))
+        TextValue::ALL.map(|value| crate::app::presentation::layout_parts::value_text(&state.match_state, value))
     });
-    let side = crate::app::presentation::sidebar_render::current_sidebar_side(state);
+    let side = crate::app::presentation::sidebar_render::current_sidebar_side(&state.frontend, &state.match_state);
     let screen = Rect::new(
         0,
         0,
-        state.render_width() as i32,
-        state.render_height() as i32,
+        state.renderer.render_width(&state.frontend.screen) as i32,
+        state.renderer.render_height(&state.frontend.screen) as i32,
     );
     let tint = crate::render::sidebar_text::native_outline_from(
         state
@@ -377,19 +379,19 @@ pub(crate) fn upload(ui: &UiModules, pool: &mut RecordedUploads<'_>) {
 /// the pictures from the named pictures' texture.
 pub(crate) fn draw<'a>(
     pass: &mut wgpu::RenderPass<'a>,
-    state: &'a AppState,
+    renderer: &'a RendererState,
+    match_state: &'a MatchState,
     pool: &'a InstanceBufferPool,
     layer: ModuleLayer,
 ) {
-    let Some(ui) = state.match_state.ui_modules.as_ref() else {
+    let Some(ui) = match_state.ui_modules.as_ref() else {
         return;
     };
     let Some((buffer, _)) = pool.get(layer.key()) else {
         return;
     };
-    let batch = &state.renderer.batch_renderer;
-    let solid = state
-        .match_state
+    let batch = &renderer.batch_renderer;
+    let solid = match_state
         .match_presentation
         .selection_overlay
         .as_ref()
@@ -398,7 +400,7 @@ pub(crate) fn draw<'a>(
     for (material, run) in ui.huds.painted(layer).runs() {
         let texture = match material {
             Material::Solid => solid,
-            Material::Glyphs => Some(state.renderer.bit_font.atlas()),
+            Material::Glyphs => Some(renderer.bit_font.atlas()),
             Material::Pictures => pictures,
             // A layout part's paint has no shell skin.
             Material::Controls

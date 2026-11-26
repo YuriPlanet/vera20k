@@ -299,7 +299,8 @@ fn transmit_hello(
         return RadioResponse::Negatory;
     }
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-        sender.seldom.radio_contacts.set_slot(slot, target_sid);
+        let note = sender.note_names();
+        sender.seldom.radio_contacts.fill(slot, target_sid, note);
     }
     RadioResponse::Roger
 }

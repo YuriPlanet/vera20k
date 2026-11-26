@@ -303,8 +303,12 @@ impl DialogController {
         if self.stack.is_empty() {
             return false;
         }
+        let down = matches!(event, InputEvent::PointerDown { .. });
         let consumed = self.gui.input(event, self.now()).consumed;
         self.collect();
+        if down {
+            self.note_edit_press();
+        }
         consumed
     }
 
@@ -316,6 +320,20 @@ impl DialogController {
         }
         let result = self.gui.input(event, self.now());
         Some((result, self.gui.drain_events()))
+    }
+
+    /// Android: a press that lands on an `Edit` arms the soft keyboard
+    /// (`app::input::ime`, `util::android_ime`), keyed by this dialog. The pages
+    /// focus their edits when they open, so only a tap should bring the
+    /// keyboard up over them.
+    fn note_edit_press(&self) {
+        #[cfg(target_os = "android")]
+        if self.gui.pressed_edit()
+            && let Some(dialog) = self.top_id()
+        {
+            crate::util::android_ime::arm(dialog.0);
+            crate::util::android_ime::request_show();
+        }
     }
 
     /// Widget timers (list scroll repeat); the next deadline.
@@ -423,8 +441,12 @@ impl DialogController {
     /// A pointer message for the widgets, while a screen dialog is up.
     fn pointer(&mut self, event: InputEvent) {
         if self.base().is_some() {
+            let down = matches!(event, InputEvent::PointerDown { .. });
             self.gui.input(event, self.now());
             self.collect();
+            if down {
+                self.note_edit_press();
+            }
         }
     }
 

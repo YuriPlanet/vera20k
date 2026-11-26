@@ -482,6 +482,8 @@ impl App {
             mods.add_rules_file_notice(text);
         }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
+        // HD art can be on only when the mod brings an HD art pack.
+        crate::render::hd_art::refresh_pack_available();
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -1476,6 +1478,11 @@ impl App {
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),
+                hd_art: None,
+                hd_terrain: None,
+                hd_voxel: None,
+                hd_art_seen: false,
+                hd_art_zoom_pending: true,
             },
             process_assets,
             audio: startup_audio_runtime,
@@ -1516,10 +1523,18 @@ impl App {
                         );
                     }
                 }
-                Self::sync_zoom_pass(&mut state);
-                Self::sync_present_mode(&mut state);
+                Self::sync_zoom_pass(
+                    &state.platform,
+                    &mut state.renderer,
+                    &state.persistence.options_profile,
+                );
+                Self::sync_present_mode(
+                    &state.platform,
+                    &mut state.renderer.gpu,
+                    &state.persistence.options_profile,
+                );
                 #[cfg(feature = "telemetry-dashboard")]
-                attach_dashboard(&mut state);
+                attach_dashboard(&mut state.diag);
 
                 // The developer shortcut carries an authored-map sandbox through
                 // the unverified legacy Battle loader. It has no artificial AI
@@ -1542,7 +1557,11 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
-                crate::app::mods::finish_start(&mut state, external_launch);
+                crate::app::mods::finish_start(
+                    &mut state.frontend,
+                    &state.process_assets,
+                    external_launch,
+                );
                 Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })
@@ -1990,8 +2009,8 @@ mod tests {
 
 /// The credential is printed only to the local terminal, outside captured logs.
 #[cfg(feature = "telemetry-dashboard")]
-fn attach_dashboard(state: &mut crate::app::AppState) {
-    state.diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
+fn attach_dashboard(diag: &mut crate::app::diagnostics::state::DiagnosticsState) {
+    diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
         Some(Ok(server)) => {
             crate::util::logging::enable_telemetry_capture();
             #[cfg(feature = "debug-tools")]

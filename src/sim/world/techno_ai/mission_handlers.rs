@@ -78,7 +78,9 @@ fn foot_mission_handler_due(sim: &Simulation, id: u64, now: u32) -> bool {
 /// returns its delay through this same epilogue. The committed selector alone
 /// chooses the handler for miners as for every other Foot. Unrepresented
 /// acquisition and approach branches remain
-/// explicit residuals rather than guessed AI.
+/// explicit residuals rather than guessed AI. A Wasm module's `MissionStep`
+/// may replace a Guard, Area Guard, Hunt or Attack body's outcome before the
+/// epilogue (`ext_modules::unit_ai`).
 pub(crate) fn dispatch_foot_mission(
     sim: &mut Simulation,
     id: u64,
@@ -889,6 +891,30 @@ pub(crate) fn dispatch_foot_mission(
         evaluation
     };
 
+    // Wasm module `MissionStep` (`ext_modules::unit_ai`): the Guard, Area
+    // Guard, Hunt or Attack body's outcome, at MissionClass::AI's commit,
+    // after the body and all its draws.
+    let evaluation = match input.mission {
+        Some(
+            mission @ (MissionType::Guard
+            | MissionType::Sticky
+            | MissionType::AreaGuard
+            | MissionType::Hunt
+            | MissionType::Attack),
+        ) => {
+            let (queue, delay) = sim.module_mission_step(
+                rules,
+                id,
+                mission,
+                evaluation.queue,
+                evaluation.delay,
+                &mut ctx.effects,
+            );
+            MissionHandlerEvaluation { delay, queue }
+        }
+        _ => evaluation,
+    };
+
     if let Some(queued_mission) = evaluation.queue {
         let _ = sim.mission_queue_exact(
             id,
@@ -1057,8 +1083,9 @@ fn infantry_automatic_guard_delay(
         return -1;
     };
     if !moving {
-        //521631..521659 returns raw signed Count27 even when DoAction refuses.
-        let _ = sim.infantry_do_action(id, 27, false, rules, effects);
+        //521631..521659 returns raw signed Count27 even when DoAction refuses
+        // (or the Wasm module `DeployAllowed` does).
+        let _ = sim.infantry_request_deploy(id, false, rules, effects);
         return rules
             .animation_sequence_in_category(
                 crate::rules::object_type::ObjectCategory::Infantry,
@@ -2835,7 +2862,7 @@ mod guard_rearm_tests {
                     .collect(),
             );
             sim.substrate.entities.insert(entity);
-            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+            *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
                 row["rng_before_hex"].as_str().unwrap(),
             );
             let main = sim.main_rng.state();

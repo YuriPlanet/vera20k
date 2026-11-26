@@ -58,9 +58,8 @@ TypeScript 源码不会进游戏。SDK 先用 AssemblyScript 把它编译成 Was
 `asset` 工具用来检查模块，以及把模块嵌进地图。它的 Wasm 相关命令不需要安装游戏。它随 VERA20K 源码提供，需要 Rust 编译一次：
 
 ```sh
-git clone https://github.com/libi/vera20k.git
+git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
-git checkout feature/wasm-extension-modules   # 模块功能在这个分支上
 cargo build --release --bin asset
 # 编译好的程序在 target/release/asset（Windows 上是 asset.exe）
 ```

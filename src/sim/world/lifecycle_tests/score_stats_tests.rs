@@ -103,8 +103,8 @@ fn score_stats_ignore_a_removal_that_was_not_a_destruction() {
 #[test]
 fn score_stats_count_a_self_inflicted_kill_but_award_no_points() {
     // Self-inflicted destruction (own death weapon, own splash) is both a loss
-    // and a kill for the house: native increments the kill table regardless of
-    // relation, and Record_The_Kill's award is zero for an allied victim.
+    // and a kill for the house: the kill is credited regardless of relation,
+    // and Record_The_Kill's award is zero for an allied victim.
     let rules = crate::rules::ruleset::RuleSet::from_ini(
         &crate::rules::ini_parser::IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nCost=800\n"),
     )
@@ -136,6 +136,55 @@ fn score_stats_count_a_self_inflicted_kill_but_award_no_points() {
         house.economy().score(),
         0,
         "an allied or self-inflicted victim is worth no score"
+    );
+}
+
+#[test]
+fn score_stats_count_a_house_twenty_victim_as_a_kill_not_a_loss() {
+    // Native's 20-entry kill tables end before House 20: a unit kill of that
+    // House lands in UnitsLost and a later one past the table. VERA seats more
+    // Houses, so Record_The_Kill must credit the category total instead.
+    let rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str("[VehicleTypes]\n0=TEST\n[TEST]\nCost=900\n"),
+    )
+    .unwrap();
+    let mut sim = Simulation::new();
+    let killer_owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(killer_owner, 0, None, true, 0, 10));
+    // Nineteen fillers put the registered victim at House index 20.
+    for index in 1..20 {
+        let filler = sim.interner.intern(&format!("Filler{index}"));
+        sim.houses
+            .register(HouseState::new(filler, 0, None, false, 0, 10));
+    }
+    let victim_owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(victim_owner, 0, None, false, 0, 10));
+    assert_eq!(sim.houses.index_of(victim_owner), Some(20));
+
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .health
+        .set_for_test(0);
+    sim.record_the_kill(
+        1,
+        crate::sim::combat::KillSource::House(Some(killer_owner)),
+        crate::sim::combat::KillCallback::Terminal,
+        crate::sim::world::UninitContext::new(&rules),
+    );
+
+    assert_eq!(sim.houses[&victim_owner].stats().losses(), 1);
+    let killer = &sim.houses[&killer_owner];
+    assert_eq!(killer.stats().kills(), 1);
+    assert_eq!(killer.stats().units_killed(), 1);
+    assert_eq!(
+        killer.stats().losses(),
+        0,
+        "a House-20 victim must not be booked as the attacker's loss"
     );
 }
 

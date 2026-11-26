@@ -247,7 +247,9 @@ pub struct GeneralRules {
     /// ReadAI672AE0). Constructor666E09/666E1A stores the literal double
     /// 0.016; each reached AI pass retains its prior value as the default.
     /// Team Script16 uses the signed global frame modulo ftol(value*900),
-    /// without a clamp or a per-team timer. Source: Steam gamemd,
+    /// without a clamp or a per-team timer; with batched target scans each
+    /// team scans at its own phase of that period, a sim-scale deviation
+    /// (`team_action_patrol_waypoint`). Source: Steam gamemd,
     /// tools/team_recruit_oracle.py --patrol.
     pub patrol_scan_minutes: NativeF64Bits,
     /// `[General] AITriggerSuccessWeightDelta=` (`Rules+0xC0`, ReadDouble at
@@ -1315,6 +1317,10 @@ pub struct GeneralRules {
     /// computer house's yard deploy runs
     /// `HouseClass::MoveGroundForcesToBase @ 0x0050C920` (`0x00739926`).
     pub gather_when_mcv_deploy: bool,
+    /// Phobos `[General] ArtImageSwap=` (default false): a TechnoType's own
+    /// ART section `Image=` names its visual SHP/VXL files without changing
+    /// the ART keys read from that section.
+    pub art_image_swap: bool,
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the runtime ColorScheme
     /// a finished superweapon timer blinks in, `[Colors]` entry `R / 2`, or -1
     /// for `none`. Constructor 5, the third `[Colors]` entry the game uses.
@@ -2176,6 +2182,7 @@ impl Default for GeneralRules {
             ai_fire_sale_delay: 0,
             ai_all_to_hunt: true,
             gather_when_mcv_deploy: true,
+            art_image_swap: false,
             #[cfg(feature = "phobos")]
             timer_blink_color_scheme: 5,
             harvester_too_far_distance: 5,
@@ -2760,23 +2767,25 @@ impl GeneralRules {
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             // ext173 reads it with the current byte as default into
             // `Rules+0x641` (`0xC2D132..0xC2D151`, `ReadBooleanByte 0x5295F0`).
-            enable_ai_build_limitation: crate::rules::NPATCH_ENABLED
-                && general.read_bool(
+            enable_ai_build_limitation: crate::rules::npatch_switch::npatch_read(|| {
+                general.read_bool(
                     "EnableAIBuildLimitation",
                     defaults.enable_ai_build_limitation,
-                ),
+                )
+            }),
             // NPSE reads it with the current field as default into Rules+0x2D
             // (C30303..C3031A); the constructor's 66569B store leaves 0. NPExt
             // ext173 reads its name of the same global switch into Rules+0x640
             // (reader C2BDDA..C2BDE7, gate C2D482), so an absent or unparsable
             // NPSE value falls through to that name.
-            disable_parallel_ai_queues: crate::rules::NPATCH_ENABLED
-                && general.read_bool(
+            disable_parallel_ai_queues: crate::rules::npatch_switch::npatch_read(|| {
+                general.read_bool(
                     "DisableParallelAIQueues",
                     general
                         .read_bool_value("DisableAIParallelProduction")
                         .unwrap_or(defaults.disable_parallel_ai_queues),
-                ),
+                )
+            }),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
             // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current
@@ -3186,6 +3195,7 @@ impl GeneralRules {
             ai_fire_sale_delay: phobos_read(|| general.read_int("AIFireSaleDelay", 0)),
             ai_all_to_hunt: phobos_read(|| general.read_bool("AIAllToHunt", true)),
             gather_when_mcv_deploy: phobos_read(|| general.read_bool("GatherWhenMCVDeploy", true)),
+            art_image_swap: phobos_read(|| general.read_bool("ArtImageSwap", false)),
             harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
             approach_target_reset_multiplier: general.read_int("ApproachTargetResetMultiplier", 1),
             chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),

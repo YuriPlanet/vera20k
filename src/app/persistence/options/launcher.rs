@@ -5,8 +5,15 @@
 //! accepted parent transaction; UI drawing, concrete audio, persistence I/O
 //! and child routing remain with their established owners.
 
-use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
+use super::audio::{AudioVolume, apply_volume, set_volume};
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::{
     LauncherCheckboxId as C, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
@@ -70,6 +77,11 @@ pub(crate) fn launcher_values_from_profile(
         kratos: profile.kratos,
         graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
+        // Without an HD art pack the list shows Off whatever was saved.
+        hd_look: crate::ui::main_menu_dialogs::options::HdLook::from_on(
+            profile.hd_art_on && crate::render::hd_art::pack_available(),
+        ),
+        hd_look_available: crate::render::hd_art::pack_available(),
         ..Default::default()
     };
     let mut stored = profile.clone();
@@ -133,7 +145,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
     match event {
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
-            App::sync_zoom_pass(state);
+            App::sync_zoom_pass(&state.platform, &mut state.renderer, profile);
         }
         E::SidebarSelected(size) => profile.sidebar = size,
         E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
@@ -148,6 +160,8 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // The final-frame pass reads the profile every frame; no atlas or
         // ramp has to be rebuilt.
         E::ColorVisionModeSelected(mode) => profile.color_vision = mode,
+        // The frame reads the switch every frame.
+        E::HdLookSelected(look) => profile.hd_art_on = look.is_on(),
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.
         E::DisplaySelected(display) => {
@@ -158,11 +172,16 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // The open Options page reads its captions again once the events
         // have run.
         E::LanguageSelected(tag) => {
-            if state.use_language(&tag) {
+            if crate::app::shell_main_menu::use_language(
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &tag,
+            ) {
                 state.persistence.options_profile.language = Some(tag);
             }
         }
-        E::SetWindowSizeRequested => App::restore_launch_window(state),
+        E::SetWindowSizeRequested => App::restore_launch_window(&mut state.platform),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
         E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
@@ -179,31 +198,79 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // Baked into a battle's colour tables when it loads, like the sprite
         // atlas that reads them.
         E::HouseColorStrengthChanged(strength) => profile.house_color_strength = strength,
-        E::ScorePreview(volume) => apply_volume(state, AudioVolume::Score, volume, true),
-        E::SoundPreview(volume) => apply_volume(state, AudioVolume::Sound, volume, true),
-        E::VoicePreview(volume) => apply_volume(state, AudioVolume::Voice, volume, true),
+        E::ScorePreview(volume) => apply_volume(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
+            AudioVolume::Score,
+            volume,
+            true,
+        ),
+        E::SoundPreview(volume) => apply_volume(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
+            AudioVolume::Sound,
+            volume,
+            true,
+        ),
+        E::VoicePreview(volume) => apply_volume(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
+            AudioVolume::Voice,
+            volume,
+            true,
+        ),
     }
 }
 
 /// A VERA box's change beyond the profile value it stores.
 fn apply_box(state: &mut AppState, id: C, on: bool) {
     match id {
-        C::FullScreen => App::set_full_screen(state, on),
-        C::OriginalShape => App::sync_zoom_pass(state),
+        C::FullScreen => {
+            App::set_full_screen(&mut state.platform, &state.persistence.options_profile, on)
+        }
+        C::OriginalShape => App::sync_zoom_pass(
+            &state.platform,
+            &mut state.renderer,
+            &state.persistence.options_profile,
+        ),
         // The menu movie's session identity carries the choice, so its next
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
         // built) now, before another shell screen can paint.
         C::YrOriginalStyle => {
-            let _ = App::ensure_skirmish_shell_chrome(state);
+            let _ = App::ensure_skirmish_shell_chrome(
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            );
         }
-        C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(state),
+        C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &mut state.match_state,
+            &state.persistence,
+        ),
         C::LockCursor => {
             state.platform.cursor_confined = on;
-            crate::app::input::cursor::apply_cursor_confinement(state);
+            crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
         }
-        C::VeraIcon => show_vera_icon(state, on),
-        C::VSync => App::sync_present_mode(state),
+        C::VeraIcon => show_vera_icon(&state.platform, &state.persistence.options_profile, on),
+        C::VSync => App::sync_present_mode(
+            &state.platform,
+            &mut state.renderer.gpu,
+            &state.persistence.options_profile,
+        ),
         // Live state only; no profile stores it, so each launch starts hidden.
         C::PerformanceStats => state.renderer.performance_overlay.set_visible(on),
         // The box arms the hotkey but leaves the texts showing, so ticking it
@@ -212,7 +279,11 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
         // titles follow, as on a language change.
         C::ShowStringKeys => {
             crate::i18n::set_show_string_keys(on);
-            state.refresh_string_key_labels();
+            crate::app::shell_main_menu::refresh_string_key_labels(
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+            );
         }
         // A rule switch, as Terrain Deformation is: the next offline
         // scenario's rules read it, so a running match keeps what it started
@@ -225,26 +296,31 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
 /// Shown at once, once the profile holds it. Unticked in an install without
 /// the red star, the window keeps VERA's icon until the next launch, which
 /// starts with the program's own.
-fn show_vera_icon(state: &mut AppState, vera_icon: bool) {
+fn show_vera_icon(
+    platform: &crate::app::PlatformState,
+    profile: &RetailOptionsProfile,
+    vera_icon: bool,
+) {
     // Android's launcher icon is a compiled resource carried by the two
     // activity aliases, and changing it closes the app, so the choice has to
     // be on disk first. Every other platform applies the icon to the live
     // window below and keeps its own write timing.
     #[cfg(target_os = "android")]
     {
-        crate::app::persistence::options::persist_options_profile(state);
+        crate::app::persistence::options::persist_options_profile(platform, profile);
         crate::util::app_icon::apply(vera_icon);
     }
-    if state.platform.window.is_visible() == Some(false) {
+    #[cfg(not(target_os = "android"))]
+    let _ = profile;
+    if platform.window.is_visible() == Some(false) {
         return;
     }
-    let ra2_dir = state
-        .platform
+    let ra2_dir = platform
         .game_config
         .as_ref()
         .map(|config| config.paths.ra2_dir.as_path());
     if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
-        icon.show_on(&state.platform.window);
+        icon.show_on(&platform.window);
     }
 }
 
@@ -264,21 +340,23 @@ fn moved<T: PartialEq>(opened: Option<T>, now: T) -> Option<T> {
 /// which applies once per visit, that page closes every time the menu does,
 /// and Game Controls' three-step Detail would keep turning its Medium to High.
 fn apply_launcher_parent(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    profile: &mut RetailOptionsProfile,
     packed: LauncherOptionsPacked,
     opened: Option<LauncherOptionsPacked>,
 ) {
     if let Some(detail) = moved(opened.map(|o| o.detail_level), packed.detail_level) {
-        let profile = &mut state.persistence.options_profile;
         let changed = profile.detail_level != detail;
         profile.detail_level = detail;
-        let presentation = &mut state.match_state.match_presentation;
+        let presentation = &mut match_state.match_presentation;
         presentation.in_game_options.detail_level = detail.max(0) as u32;
         // Display4AE450 resamples synchronously, before the next Logic visit
         // can copy a Cell's light into a grapple anim. This local operation
         // never enters Simulation's replay/sync hash.
         if changed {
-            if let Some(runtime) = state.match_state.sim_runtime.runtime()
+            if let Some(runtime) = match_state.sim_runtime.runtime()
                 && let Some(terrain) = runtime.simulation.resolved_terrain()
             {
                 let detail = presentation.in_game_options.detail_level;
@@ -286,11 +364,10 @@ fn apply_launcher_parent(
                     .lighting
                     .set_detail_level(terrain, &runtime.simulation, detail);
             }
-            state.platform.window.request_redraw();
+            platform.window.request_redraw();
         }
     }
-    let profile = &mut state.persistence.options_profile;
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     if let Some(difficulty) = moved(opened.map(|o| o.difficulty), packed.difficulty) {
         profile.difficulty = difficulty;
     }
@@ -318,20 +395,17 @@ fn apply_launcher_parent(
         presentation.in_game_options.scroll_rate = rate.max(0) as u32;
     }
     if let Some(volume) = moved(opened.map(|o| o.score_volume), packed.score_volume) {
-        state.store_score_volume(volume);
-        state.apply_score_output(volume);
+        set_volume(audio, profile, AudioVolume::Score, volume);
         if volume == 0.0 {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-            state.audio.queue_then_stop_score_zero(now_ms);
+            audio.queue_then_stop_score_zero(now_ms);
         }
     }
     if let Some(volume) = moved(opened.map(|o| o.sound_volume), packed.sound_volume) {
-        state.store_sound_volume(volume);
-        state.apply_sound_output(volume);
+        set_volume(audio, profile, AudioVolume::Sound, volume);
     }
     if let Some(volume) = moved(opened.map(|o| o.voice_volume), packed.voice_volume) {
-        state.store_voice_volume(volume);
-        state.apply_voice_output(volume);
+        set_volume(audio, profile, AudioVolume::Voice, volume);
     }
 }
 
@@ -342,31 +416,60 @@ fn apply_launcher_parent(
 /// applies and destroys the primary before child preparation/route or the one
 /// final write. Keyboard then rebuilds a fresh primary without writing.
 pub(crate) fn dispatch_launcher_parent_result(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     dialog: OptionsDialogState,
     result: LauncherParentResult,
     opened: Option<LauncherOptionsPacked>,
 ) {
-    apply_launcher_parent(state, dialog.pack(), opened);
+    apply_launcher_parent(
+        platform,
+        match_state,
+        audio,
+        &mut persistence.options_profile,
+        dialog.pack(),
+        opened,
+    );
     drop(dialog);
     match result {
         LauncherParentResult::Back | LauncherParentResult::Terminal => {
-            super::persist_options_profile(state);
+            super::persist_options_profile(platform, &persistence.options_profile);
         }
         LauncherParentResult::Keyboard => {
             use crate::ui::shell::keyboard::KeyboardParent;
-            crate::app::input::keyboard::open(state, KeyboardParent::Launcher);
+            crate::app::input::keyboard::open(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                KeyboardParent::Launcher,
+            );
             // Native caller blocks in A3. Our asynchronous child resumes this
             // continuation when it closes (after its teardown slide).
-            if state.frontend.keyboard_dialog.is_none() {
-                App::open_launcher_options_dialog(state);
+            if frontend.keyboard_dialog.is_none() {
+                App::open_launcher_options_dialog(
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    audio,
+                    &persistence.options_profile,
+                );
             }
         }
         // VERA's own. Written first: Use This Mod leaves the game from the
         // Mods page, whose Back builds the parent again.
         LauncherParentResult::Mods => {
-            super::persist_options_profile(state);
-            App::open_mods_page(state);
+            super::persist_options_profile(platform, &persistence.options_profile);
+            App::open_mods_page(platform.game_config.as_ref(), &renderer.gpu, frontend);
         }
     }
 }

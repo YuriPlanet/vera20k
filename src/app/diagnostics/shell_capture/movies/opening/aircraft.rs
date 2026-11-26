@@ -11,16 +11,28 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 
 const CLEAR_PIXEL: [u8; 4] = [255, 0, 255, 255];
 
-pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
-    let sim = &state
-        .match_state
+pub(super) fn observe(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    output_prefix: &Path,
+) -> Result<Value> {
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("aircraft runtime absent")?
         .simulation;
     let mut objects = PlannedObjects::default();
     build_unit_instances(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
         &mut objects,
         &NativeDisplayOrder::from_world(sim, None),
     );
@@ -29,7 +41,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         .filter(|entity| entity.category() == crate::map::entities::EntityCategory::Aircraft)
         .map(|entity| {
             let name = sim.interner().resolve(entity.type_ref());
-            let frames = state.match_state.match_presentation.unit_atlas.as_ref()
+            let frames = match_state.match_presentation.unit_atlas.as_ref()
                 .map(|atlas| atlas.frame_counts.iter().filter(|((model,_,_),_)| model == name)
                     .map(|((_,layer,turret),count)| json!({"layer": format!("{layer:?}"), "turret": turret, "frames": count}))
                     .collect::<Vec<_>>()).unwrap_or_default();
@@ -48,8 +60,8 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         let mut pool = InstanceBufferPool::new();
         let instances: Vec<SpriteInstance> = pieces.iter().map(|piece| piece.instance).collect();
         pool.upload_on_device(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
             "aircraft_probe",
             &instances,
         );
@@ -58,7 +70,16 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             ("z-read", RenderZPolicy::ReadOnly),
             ("z-bypass", RenderZPolicy::None),
         ] {
-            let pixels = raster(state, &pool, pieces, policy)?;
+            let pixels = raster(
+                platform,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
+                persistence,
+                &pool,
+                pieces,
+                policy,
+            )?;
             let count = pixels
                 .chunks_exact(4)
                 .filter(|pixel| *pixel != CLEAR_PIXEL)
@@ -81,8 +102,8 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             image::save_buffer(
                 &path,
                 &rgba,
-                state.render_width(),
-                state.render_height(),
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
                 image::ColorType::Rgba8,
             )?;
             outputs.push(
@@ -90,9 +111,9 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
                 "image": path, "bgra_sha256": crate::util::sha256::sha256_hex(&pixels)}),
             );
         }
-        let shroud = state.match_state.match_presentation.shroud_buffer.as_ref();
-        let input = &state.match_state.input;
-        let gpu = &state.renderer.gpu;
+        let shroud = match_state.match_presentation.shroud_buffer.as_ref();
+        let input = &match_state.input;
+        let gpu = &renderer.gpu;
         observations.push(json!({
             "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
             "display_layer": object.parent.layer.0,
@@ -114,14 +135,20 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
 }
 
 fn raster(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
     pool: &InstanceBufferPool,
     pieces: &[crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance],
     policy: RenderZPolicy,
 ) -> Result<Vec<u8>> {
-    let renderer = &state.renderer;
     let gpu = &renderer.gpu;
-    let [width, height] = [state.render_width(), state.render_height()];
+    let [width, height] = [
+        renderer.render_width(screen),
+        renderer.render_height(screen),
+    ];
     let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Aircraft production-depth diagnostic"),
         size: wgpu::Extent3d {
@@ -139,9 +166,7 @@ fn raster(
     let view = texture.create_view(&Default::default());
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     let pose = renderer.vxl_pose_frame_cache.borrow();
-    let palette = state
-        .match_state
-        .match_presentation
+    let palette = match_presentation
         .palette_set
         .as_ref()
         .context("aircraft palette absent")?;
@@ -174,13 +199,17 @@ fn raster(
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+        let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
+            platform,
+            renderer,
+            screen,
+            match_presentation,
+            persistence,
+        );
         pass.set_scissor_rect(x, y, w, h);
         for (index, piece) in pieces.iter().enumerate() {
             let texture = match piece.target {
-                ObjectTexture::UnitAtlasPage(page) => state
-                    .match_state
-                    .match_presentation
+                ObjectTexture::UnitAtlasPage(page) => match_presentation
                     .unit_atlas
                     .as_ref()
                     .and_then(|atlas| atlas.page_texture(page)),

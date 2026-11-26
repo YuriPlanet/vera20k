@@ -64,13 +64,13 @@ fn campaign_large_move_batch_reaches_every_actor_after_snapshot() {
             .map(QueuedCommand::from_envelope)
             .collect();
         assert!(sim.issue_local_commands(commands));
-        let terrain = sim.resolved_terrain.clone();
-        let path = sim.path_grid.clone();
+        let terrain = (*sim.resolved_terrain).clone();
+        let path = (*sim.path_grid).clone();
         let saved = crate::util::save_codec::serialize(&sim).unwrap();
         sim = crate::util::save_codec::deserialize(&saved).unwrap();
         // Map-derived caches are rebuilt by the production save loader.
-        sim.resolved_terrain = terrain;
-        sim.path_grid = path;
+        *sim.resolved_terrain = terrain;
+        *sim.path_grid = path;
         sim.resolve_type_handles(&rules);
         // This test covers delivery, not the formation algorithm: ask its
         // production owner for the destinations the entire batch should get.
@@ -730,7 +730,7 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
             live.session.game_options().game_speed,
             replay.session.game_options().game_speed
         );
-        assert_eq!(live.pending_commands, replay.pending_commands);
+        assert_eq!(*live.pending_commands, *replay.pending_commands);
     }
 }
 

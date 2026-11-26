@@ -1,17 +1,27 @@
 //! Local PlanningMode edges; world::planning owns synchronized path state.
 //! Native PlanMgr6379C0/637A10, command536750 and connect63AD50.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
+use crate::app::input::state::MatchInputState;
+use crate::app::match_audio::MatchAudioState;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
+use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::selection::SelectionState;
 use crate::sim::world::{
     PlanningAppendMessage, PlanningPressRefusal, PlanningSelectionCheck, Simulation,
 };
+use crate::ui::game_screen::GameScreen;
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
@@ -247,7 +257,13 @@ impl PlanningInputState {
 }
 
 pub(crate) fn key_edge(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     resolution: HotkeyResolution,
     key: KeyCode,
     edge: ElementState,
@@ -255,8 +271,7 @@ pub(crate) fn key_edge(
 ) -> bool {
     let planning = resolution == HotkeyResolution::Command(HotkeyCommand::PlanningMode);
     let Some(active) =
-        state
-            .match_state
+        match_state
             .input
             .planning
             .key_transition(planning, key, edge.is_pressed(), repeat)
@@ -264,15 +279,44 @@ pub(crate) fn key_edge(
         return false;
     };
     // PlanningModeCommandClass::Execute 0x00536750 passes CL=0 (keyboard).
-    set_active(state, active, (!repeat).then_some(false));
+    set_active(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        active,
+        (!repeat).then_some(false),
+    );
     true
 }
 
 /// TabClass::Action 0x006D07B4/0x006D07BE passes CL=1 (the command-bar
 /// button); the retail hotkey route is the keyboard's.
-pub(crate) fn toggle(state: &mut AppState, button: bool) {
-    let active = !state.match_state.input.planning.active();
-    set_active(state, active, Some(button));
+pub(crate) fn toggle(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    button: bool,
+) {
+    let active = !match_state.input.planning.active();
+    set_active(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        active,
+        Some(button),
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -319,18 +363,35 @@ impl PlanningRefusal {
 /// AC4C08, silent730A90 duration1E0, and Rules+700 ScoldSound.
 /// ClickedEvent6FFE00 ->639FD0 shares them too and scolds once more:
 /// [`refuse_clicked_event`].
-pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
+pub(crate) fn refuse(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    action: PlanningRefusal,
+) {
     let Some(csf_key) = action.csf_key() else {
         return;
     };
-    if !state.match_state.input.planning.admit_refusal() {
+    if !match_state.input.planning.admit_refusal() {
         return;
     }
-    crate::app::input::messages::post_planning_message(state, csf_key);
-    let sound = state
-        .rules()
+    crate::app::input::messages::post_planning_message(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        csf_key,
+    );
+    let sound = crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| Some(rules.sound_name(rules.general.scold_sound.as_deref()?)));
-    ui_sound(state, sound);
+    ui_sound(&mut match_state.match_audio, sound);
 }
 
 /// ClickedEvent6FFE00 ->639FD0 for the Stop, Scatter and Deploy keys: the
@@ -338,30 +399,50 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
 /// call. The Stop and Scatter walks end at their first refusal
 /// (`0x00730EF5`, ScatterSelectedObjects `0x00730FE0`), one call; the Deploy
 /// walk goes on (`0x00730D1D`), one call per object it admits.
-pub(crate) fn refuse_clicked_event(state: &mut AppState, action: PlanningRefusal, calls: usize) {
+pub(crate) fn refuse_clicked_event(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    action: PlanningRefusal,
+    calls: usize,
+) {
     let Some(csf_key) = action.csf_key() else {
         return;
     };
-    let (posts, scolds) = state
-        .match_state
-        .input
-        .planning
-        .clicked_event_refusal(calls);
+    let (posts, scolds) = match_state.input.planning.clicked_event_refusal(calls);
     if posts {
-        crate::app::input::messages::post_planning_message(state, csf_key);
+        crate::app::input::messages::post_planning_message(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            csf_key,
+        );
     }
-    let sound = state
-        .rules()
+    let sound = crate::app::state::active_rules(frontend, match_state)
         .and_then(|rules| Some(rules.sound_name(rules.general.scold_sound.as_deref()?)));
     for _ in 0..scolds {
-        ui_sound(state, sound.clone());
+        ui_sound(&mut match_state.match_audio, sound.clone());
     }
 }
 
 /// A sim lifecycle output of the append 0x00638120 for `owner`; only the
 /// local house's are shown (event house == PlayerPtr, 0x0063814C).
 pub(crate) fn append_output(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     local: bool,
     message: PlanningAppendMessage,
     frame_pass: bool,
@@ -370,9 +451,18 @@ pub(crate) fn append_output(
         return;
     }
     if frame_pass {
-        state.match_state.input.planning.frame_pass_message = Some(message);
+        match_state.input.planning.frame_pass_message = Some(message);
     } else {
-        refuse(state, PlanningRefusal::Append(message));
+        refuse(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            PlanningRefusal::Append(message),
+        );
     }
 }
 
@@ -385,36 +475,97 @@ pub(crate) fn append_output(
 /// VERA's shared unselect owner (0x0048DC90) also runs. Trigger: a selected
 /// beacon when a planned terminal order or fifteenth node executes. Effect:
 /// the beacon is deselected too. Frequency: rare.
-pub(crate) fn frame_pass(state: &mut AppState) {
-    let empty = selected_planning_actors(state).is_empty();
-    if let Some(message) = state.match_state.input.planning.begin_frame_pass(empty) {
-        crate::app::input::dispatch::unselect_all(state);
-        refuse(state, PlanningRefusal::Append(message));
+pub(crate) fn frame_pass(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let empty = selected_planning_actors(frontend, match_state).is_empty();
+    if let Some(message) = match_state.input.planning.begin_frame_pass(empty) {
+        crate::app::input::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
+        refuse(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            PlanningRefusal::Append(message),
+        );
     }
-    state.match_state.input.planning.end_frame_pass();
+    match_state.input.planning.end_frame_pass();
 }
 
 /// 0x0063A120/0x0063A1B0's help: a silent 730A90 post with duration 1E0,
 /// no latch and no sound.
-fn post_help(state: &mut AppState, csf_key: Option<&str>) {
+fn post_help(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    csf_key: Option<&str>,
+) {
     if let Some(csf_key) = csf_key {
-        crate::app::input::messages::post_planning_message(state, csf_key);
+        crate::app::input::messages::post_planning_message(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            csf_key,
+        );
     }
 }
 
 /// Host adaptation: a lost release must not leave the local mode latched.
 /// Commit the streamed plan once before dropping the physical-key owner;
 /// native WM_ACTIVATEAPP planning equivalence is not established here.
-pub(crate) fn release_on_focus_change(state: &mut AppState) {
-    state.match_state.input.planning.key = None;
-    set_active(state, false, None);
+pub(crate) fn release_on_focus_change(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    match_state.input.planning.key = None;
+    set_active(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        false,
+        None,
+    );
 }
 
-fn ui_sound(state: &mut AppState, sound: Option<crate::rules::ruleset::SoundName>) {
+fn ui_sound(match_audio: &mut MatchAudioState, sound: Option<crate::rules::ruleset::SoundName>) {
     if let Some(sound_id) = sound {
-        state
-            .match_state
-            .match_audio
+        match_audio
             .sound_events
             .push(GameSoundEvent::UiSound { sound_id });
     }
@@ -422,22 +573,31 @@ fn ui_sound(state: &mut AppState, sound: Option<crate::rules::ruleset::SoundName
 
 /// `intro_source` is the OnPress/OnRelease CL source (true for the button);
 /// None for the host focus release, which has no native command.
-fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
+fn set_active(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    active: bool,
+    intro_source: Option<bool>,
+) {
     // 0x00731A50/0x00731A78 test Session+300 before 63A120.
-    let defeated = state
-        .match_state
+    let defeated = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|rt| rt.simulation.local_player_defeated());
-    let rt = state.match_state.sim_runtime.write_sim(SimWrite::Command);
-    let command = state.match_state.input.planning.set_active(
+    let rt = match_state.sim_runtime.write_sim(SimWrite::Command);
+    let command = match_state.input.planning.set_active(
         active,
         rt.as_ref().map(|rt| &rt.simulation),
         rt.as_ref()
             .map(|rt| &rt.resources.rules)
-            .or(state.frontend.frontend_rules.as_ref()),
-        &mut state.match_state.input.selection_state,
-        &mut state.match_state.match_audio.sound_events,
+            .or(frontend.frontend_rules.as_ref()),
+        &mut match_state.input.selection_state,
+        &mut match_state.match_audio.sound_events,
     );
     if let (Some(rt), Some(command)) = (rt, command) {
         rt.simulation.issue_local_command(command);
@@ -445,8 +605,17 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
     if let Some(button) = intro_source
         && !defeated
     {
-        let message = state.match_state.input.planning.intro(button, active);
-        post_help(state, message);
+        let message = match_state.input.planning.intro(button, active);
+        post_help(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            message,
+        );
     }
 }
 
@@ -454,12 +623,18 @@ fn set_active(state: &mut AppState, active: bool, intro_source: Option<bool>) {
 /// selection keeps its ordinary Event17 route; unsupported actions are
 /// consumed, never downgraded to immediate orders.
 pub(crate) fn queue_orders(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     selected: &[u64],
     orders: Vec<CommandEnvelope>,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     let Some(owner) = rt.simulation.control_projection().local_command_house() else {
@@ -468,7 +643,16 @@ pub(crate) fn queue_orders(
     match queue_orders_in_sim(&mut rt.simulation, owner, selected, orders, clicked_cell) {
         Ok(_) => true,
         Err(refusal) => {
-            refuse(state, refusal);
+            refuse(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                refusal,
+            );
             false
         }
     }
@@ -531,9 +715,9 @@ fn queue_orders_in_sim(
     Ok(added)
 }
 
-fn selected_planning_actors(state: &AppState) -> Vec<u64> {
-    let mut selected = selected_in_order(state);
-    if let Some(rt) = state.match_state.sim_runtime.runtime()
+fn selected_planning_actors(frontend: &FrontendState, match_state: &MatchState) -> Vec<u64> {
+    let mut selected = selected_in_order(frontend, match_state);
+    if let Some(rt) = match_state.sim_runtime.runtime()
         && rt.simulation.session().has_custom_control_grants()
     {
         let sim = &rt.simulation;
@@ -546,76 +730,144 @@ fn selected_planning_actors(state: &AppState) -> Vec<u64> {
 /// The hover node AC4CCC (0x00638E60): an own node under the cursor the
 /// selection may connect to. While a right press holds AC4CB0 it keeps the
 /// node it had at the press (0x00638E60's early return).
-pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
-    if let Some(held) = state.match_state.input.planning.right_hover {
+pub(crate) fn hover_node(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<u64> {
+    if let Some(held) = match_state.input.planning.right_hover {
         // Planning nodes are not objects: the presentation copy keeps them.
-        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+        let sim = &match_state.sim_runtime.runtime()?.simulation;
         return held.filter(|&node| sim.planning_node_exists(node));
     }
-    live_hover_node(state)
+    live_hover_node(platform, renderer, frontend, match_state, persistence)
 }
 
-fn live_hover_node(state: &AppState) -> Option<u64> {
+fn live_hover_node(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<u64> {
     crate::app::match_runtime::sim_host::home_answer(
-        &state.match_state.sim_runtime,
-        &state.match_state.input.planning.hover_seen,
-        || find_hover_node(state),
+        &match_state.sim_runtime,
+        &match_state.input.planning.hover_seen,
+        || find_hover_node(platform, renderer, frontend, match_state, persistence),
     )
 }
 
-fn find_hover_node(state: &AppState) -> Option<u64> {
-    let point = hover_native_screen(state)?;
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+fn find_hover_node(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<u64> {
+    let point = hover_native_screen(
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
+    )?;
+    let sim = &match_state.sim_runtime.runtime()?.simulation;
     let owner = sim.control_projection().local_command_house()?;
     // Only a node under the cursor reads the selection, which walks every
     // object: the cursor asks this at every draw.
     sim.planning_input_node_at_screen(owner, None, point)?;
-    sim.planning_hover_node(owner, &selected_planning_actors(state), point)
+    sim.planning_hover_node(
+        owner,
+        &selected_planning_actors(frontend, match_state),
+        point,
+    )
 }
 
 /// Planning__UpdateNodeHoverCursor 0x0063AB60 answers the planning cursor
 /// over the hover node, and nothing while AC4CB0 is set (0x0063AB76).
-pub(crate) fn node_at_cursor(state: &AppState) -> Option<u64> {
-    if state.match_state.input.planning.right_hover.is_some() {
+pub(crate) fn node_at_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<u64> {
+    if match_state.input.planning.right_hover.is_some() {
         return None;
     }
-    live_hover_node(state)
+    live_hover_node(platform, renderer, frontend, match_state, persistence)
 }
 
 /// ScrollClass's left press runs PlanMgr 0x0063A5A0 (0x00693187) before it
 /// takes the capture. A refusal consumes the press, even while the AC4C08
 /// latch keeps its message and ScoldSound back, so the press arms nothing
 /// and its release finds no capture (0x00693232).
-pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
-    let Some(point) = hover_native_screen(state) else {
+pub(crate) fn refuse_press_at_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> bool {
+    let Some(point) = hover_native_screen(
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
+    ) else {
         return false;
     };
-    let selected = selected_planning_actors(state);
-    let Some(refusal) = state
-        .match_state
+    let selected = selected_planning_actors(frontend, match_state);
+    let Some(refusal) = match_state
         .sim_runtime
         .runtime()
         .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
     else {
         return false;
     };
-    refuse(state, PlanningRefusal::Press(refusal));
+    refuse(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        PlanningRefusal::Press(refusal),
+    );
     true
 }
 
 /// The drawing projection and input hit test share the native tactical point.
-pub(crate) fn hover_native_screen(state: &AppState) -> Option<[i32; 2]> {
-    if !state.match_state.input.planning.active() {
+pub(crate) fn hover_native_screen(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<[i32; 2]> {
+    if !match_state.input.planning.active() {
         return None;
     }
-    if !crate::app::input::camera::cursor_over_battlefield(state) {
+    if !crate::app::input::camera::cursor_over_battlefield(
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
+    ) {
         return None;
     }
-    Some(cursor_native_screen(state))
+    Some(cursor_native_screen(&match_state.input))
 }
 
-fn cursor_native_screen(state: &AppState) -> [i32; 2] {
-    input_native_screen(&state.match_state.input)
+fn cursor_native_screen(input: &MatchInputState) -> [i32; 2] {
+    input_native_screen(input)
 }
 
 fn input_native_screen(input: &crate::app::input::state::MatchInputState) -> [i32; 2] {
@@ -643,25 +895,48 @@ fn input_native_screen(input: &crate::app::input::state::MatchInputState) -> [i3
 /// release over different nodes, or a left click while the right button is
 /// held. Effect: the connect or highlight lands on the release's node.
 /// Frequency: rare.
-pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
-    let selected = selected_planning_actors(state);
-    let Some(node) = live_hover_node(state) else {
-        return hover_native_screen(state).is_some_and(|point| {
-            state
-                .match_state
+pub(crate) fn connect_at_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> bool {
+    let selected = selected_planning_actors(frontend, match_state);
+    let Some(node) = live_hover_node(platform, renderer, frontend, match_state, persistence) else {
+        return hover_native_screen(
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
+        )
+        .is_some_and(|point| {
+            match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|rt| rt.simulation.planning_release_refused(&selected, point))
         });
     };
     if selected.is_empty() {
-        let message = state.match_state.input.planning.retain_clicked_node(node);
-        post_help(state, message);
+        let message = match_state.input.planning.retain_clicked_node(node);
+        post_help(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            message,
+        );
         return true;
     }
-    let point = cursor_native_screen(state);
+    let point = cursor_native_screen(&match_state.input);
     let mut collected = false;
-    if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
+    if let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command)
         && let Some(owner) = rt.simulation.control_projection().local_command_house()
     {
         for actor in rt.simulation.planning_connect_actors(&selected) {
@@ -675,8 +950,17 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
             collected |= !rt.simulation.session().has_custom_control_grants();
         }
     }
-    if collected && state.match_state.input.planning.admit_help(3, 1) {
-        post_help(state, Some("MSG:PlanningModeLoopHelp"));
+    if collected && match_state.input.planning.admit_help(3, 1) {
+        post_help(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            Some("MSG:PlanningModeLoopHelp"),
+        );
     }
     true
 }
@@ -685,11 +969,11 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
 /// highlight (FUN_0063AC60) queue its node delete event
 /// (Planning__QueueNodeDeleteEvent 0x00637D00); false without one, where
 /// Delete turns to the selected beacon (0x00731A24).
-pub(crate) fn delete_highlighted(state: &mut AppState) -> bool {
-    let Some(node) = state.match_state.input.planning.highlighted_node else {
+pub(crate) fn delete_highlighted(match_state: &mut MatchState) -> bool {
+    let Some(node) = match_state.input.planning.highlighted_node else {
         return false;
     };
-    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+    let Some(rt) = match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
     if !rt.simulation.planning_node_exists(node) {
@@ -708,8 +992,7 @@ pub(crate) fn delete_highlighted(state: &mut AppState) -> bool {
 
 /// The tactical client point (logical pixels) ScrollClass hands PlanMgr's
 /// right-button handlers (0x006932BD..0x006932C4).
-fn tactical_point(state: &AppState) -> [i32; 2] {
-    let input = &state.match_state.input;
+fn tactical_point(input: &MatchInputState) -> [i32; 2] {
     [
         (input.cursor_x / input.zoom_level).floor() as i32,
         (input.cursor_y / input.zoom_level).floor() as i32,
@@ -718,23 +1001,25 @@ fn tactical_point(state: &AppState) -> [i32; 2] {
 
 /// FUN_0063AAC0, called on every tactical right press (0x006932D0) before
 /// the capture test.
-pub(crate) fn right_press(state: &mut AppState) {
-    let hover = hover_node(state);
-    let empty = selected_planning_actors(state).is_empty();
-    let point = tactical_point(state);
-    state
-        .match_state
-        .input
-        .planning
-        .right_press(hover, empty, point);
+pub(crate) fn right_press(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    let hover = hover_node(platform, renderer, frontend, match_state, persistence);
+    let empty = selected_planning_actors(frontend, match_state).is_empty();
+    let point = tactical_point(&match_state.input);
+    match_state.input.planning.right_press(hover, empty, point);
 }
 
 /// 0x0063AB00, called on every tactical right release (0x0069338A) before
 /// the capture test.
-pub(crate) fn right_release(state: &mut AppState) {
-    let empty = selected_planning_actors(state).is_empty();
-    let point = tactical_point(state);
-    state.match_state.input.planning.right_release(empty, point);
+pub(crate) fn right_release(frontend: &FrontendState, match_state: &mut MatchState) {
+    let empty = selected_planning_actors(frontend, match_state).is_empty();
+    let point = tactical_point(&match_state.input);
+    match_state.input.planning.right_release(empty, point);
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

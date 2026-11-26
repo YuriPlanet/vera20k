@@ -4,6 +4,7 @@
 //! delay and Iron Curtain isolation facts the world receiver reads from it.
 
 use super::*;
+use crate::sim::ext_modules::modifiers::Immunity;
 
 /// InfantryClass::ReceiveDamage's prone head (`0x00517FC1..0x00517FEF`): a
 /// prone infantryman's positive raw damage, unless defenses are ignored,
@@ -624,25 +625,39 @@ pub(super) fn resolve_receive_damage_with_input(
         // warp-out or a Temporal warp.
         warping_out: !receiver_flags.ignore_defenses && target.is_warped_out(),
         bunker_blocked,
+        // A module's `ImmunityFlags` replaces each gate's native immunity.
         radiation_immune: warhead.radiation
-            && (rank_rad || target_type.is_some_and(|object| object.immune_to_radiation)),
+            && target.module_immune(
+                Immunity::Radiation,
+                rank_rad || target_type.is_some_and(|object| object.immune_to_radiation),
+            ),
         psychic_immune: warhead.psychic_damage
-            && (rank_psychic || target_type.is_some_and(|object| object.immune_to_psionic_weapons)),
+            && target.module_immune(
+                Immunity::Psychic,
+                rank_psychic || target_type.is_some_and(|object| object.immune_to_psionic_weapons),
+            ),
         poison_immune: warhead.poison
-            && (rank_poison || target_type.is_some_and(|object| object.immune_to_poison)),
+            && target.module_immune(
+                Immunity::Poison,
+                rank_poison || target_type.is_some_and(|object| object.immune_to_poison),
+            ),
         affects_allies: warhead.affects_allies,
         attacker_is_allied,
         ares_house_damage_allowed,
         source_house_is_allied,
         psychedelic: warhead.psychedelic,
-        psionics_immune: target_type.is_some_and(|object| {
-            let immune = rank_psionics || object.immune_to_psionics;
-            if rules.ares() {
-                object.techno_combat().combat().immune_to_berserk(immune)
-            } else {
-                immune
-            }
-        }),
+        // The Psychedelic gate is berserk (`ImmunityFlags` bit 6).
+        psionics_immune: target.module_immune(
+            Immunity::Berserk,
+            target_type.is_some_and(|object| {
+                let immune = rank_psionics || object.immune_to_psionics;
+                if rules.ares() {
+                    object.techno_combat().combat().immune_to_berserk(immune)
+                } else {
+                    immune
+                }
+            }),
+        ),
         target_is_building,
         skip_low_damage_check,
     };

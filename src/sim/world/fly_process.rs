@@ -374,12 +374,7 @@ impl Simulation {
         );
         // VERA: a Wasm module `SpeedMultiplier` scales the paid speed
         // (`ext_modules::modifiers`); none leaves the native value.
-        let factor = entity.module_speed_factor();
-        let speed = if factor == 1.0 {
-            speed
-        } else {
-            (f64::from(speed) * factor) as i32
-        };
+        let speed = entity.module_scaled_speed(speed);
         let mut candidate = location;
         if speed > 0 {
             let [x, y] = crate::util::native_trig::facing_step_world_xy(
@@ -422,7 +417,7 @@ impl Simulation {
             );
         }
         let terrain = self.resolved_terrain.as_ref();
-        let rules_context = Some((rules, &self.interner));
+        let rules_context = Some((rules, &*self.interner));
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let facts = air_movement::fly_speed_facts(entity, distance, terrain, rules_context);
         if let Some(state) = entity
@@ -483,7 +478,7 @@ impl Simulation {
     ) -> Option<DriveCoord> {
         let (Some((width, height)), Some(bounds), Some([_, _, span, _])) = (
             self.map_size_diamond(),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             self.map_rect(),
         ) else {
             return Some(candidate);
@@ -857,7 +852,7 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let Some(bounds) = self.playfield_bounds else {
+        let Some(bounds) = *self.playfield_bounds else {
             return;
         };
         let Some(entity) = self.substrate.entities.get(id) else {

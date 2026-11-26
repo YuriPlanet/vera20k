@@ -894,6 +894,14 @@ impl RuleSet {
         self.kratos
     }
 
+    /// Whether NPatch plays in this game: its Rules layers or map hold a key
+    /// of an NPatch piece that runs in every build
+    /// (`rules::npatch_switch`). Sim and presentation read this one answer.
+    #[inline]
+    pub fn npatch(&self) -> bool {
+        self.npatch
+    }
+
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
     /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
     /// rules read this one answer; app, asset and INI-root code read the
@@ -1100,6 +1108,53 @@ impl RuleSet {
     /// Look up a particle system type by ID. Panics if `id` is out of range.
     pub fn particle_system_type(&self, id: ParticleSystemTypeId) -> &ParticleSystemType {
         &self.particle_system_types[id.0 as usize]
+    }
+
+    /// Whether a particle system of type `id` changes nothing but its own
+    /// picture, so a producer that keeps no hold on it may run it as a
+    /// presentation object (`Simulation::spawn_effect_particle_system`).
+    /// VERA-only.
+    ///
+    /// Such a type has `BehavesLike=Smoke` or `Spark`, whose system and
+    /// particle AI read the world but write nothing in it beyond the system
+    /// itself and a light the picture shows. `Gas`, `Fire` and the Firestorm
+    /// `Web` damage or web what they reach, and `Railgun` and an unknown
+    /// behaviour are refused. It has no `AlphaImage=`, whose glow the
+    /// simulation keeps and saves. Every particle type its `HoldsWhat=`
+    /// names, and each `NextParticle=` after that, has `BehavesLike=Smoke` or
+    /// `Spark` too, `Damage=0`, no `Warhead=`, no `AlphaImage=`, and no Ares
+    /// `DamageRange=`. A chain that comes back to a type it passed ends there.
+    pub fn particle_system_presentation_only(&self, id: ParticleSystemTypeId) -> bool {
+        use crate::rules::particle_system_type::ParticleSystemBehavesLike as System;
+        use crate::rules::particle_type::ParticleBehavesLike as Particle;
+        let Some(system) = self.particle_system_types.get(id.0 as usize) else {
+            return false;
+        };
+        if !matches!(system.behaves_like, System::Smoke | System::Spark)
+            || !system.alpha_image.is_empty()
+        {
+            return false;
+        }
+        let mut next = system.holds_what;
+        // A chain that has not ended after visiting every type repeats one.
+        for _ in 0..self.particle_types.len() {
+            let Some(id) = next else {
+                return true;
+            };
+            let Some(particle) = self.particle_types.get(id.0 as usize) else {
+                return false;
+            };
+            if !matches!(particle.behaves_like, Particle::Smoke | Particle::Spark)
+                || particle.damage != 0
+                || particle.warhead.is_some()
+                || !particle.alpha_image.is_empty()
+                || particle.ares_damage_range.bits() & !(1 << 63) != 0
+            {
+                return false;
+            }
+            next = particle.next_particle;
+        }
+        true
     }
 
     /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.

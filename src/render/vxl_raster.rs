@@ -699,6 +699,50 @@ pub struct VxlSprite {
     pub offset_x: f32,
     /// Y offset from model center to sprite top-left.
     pub offset_y: f32,
+    /// VERA's HD art voxels ([`set_hd_voxels`]): the same draw at twice
+    /// the resolution, `2 * width` by `2 * height`, aligned with this one.
+    pub hd: Option<std::sync::Arc<VxlHd>>,
+}
+
+/// VERA's HD art voxels, VERA-only: no gamemd counterpart. A draw's stores
+/// placed at twice the resolution, each covering two by two pixels at the
+/// half pixel its cursor reached ([`native::PaintWrite::half`]), so a model
+/// with more voxels than its native picture has pixels shows them when the
+/// wheel zoom magnifies it (`render::hd_art`). The native picture is
+/// unchanged.
+#[derive(Debug, Clone)]
+pub struct VxlHd {
+    /// Post-VPL palette indices, row-major, 0 transparent.
+    pub palette_indices: Vec<u8>,
+    /// The auxiliary depth of each pixel, as [`VxlSprite::depth`].
+    pub depth: Vec<f32>,
+}
+
+static HD_VOXELS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether voxel draws also make their [`VxlHd`] picture. Set from the
+/// HD art switch; pictures made before it was on stay native.
+pub fn set_hd_voxels(on: bool) {
+    HD_VOXELS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn hd_voxels() -> bool {
+    HD_VOXELS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static HD_POSES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether this frame's posed voxels (tilted, crashing, rocking, tumbling:
+/// `render::unit_pose_cache`) are rasterized on the CPU, which makes their
+/// [`VxlHd`] picture, instead of by the GPU raster, which makes none. Set
+/// each frame while the HD pass draws: HD art on and the wheel zoom at 1.5x
+/// or more.
+pub fn set_hd_poses(on: bool) {
+    HD_POSES.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn hd_poses() -> bool {
+    HD_POSES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 // ---------------------------------------------------------------------------
@@ -1088,6 +1132,7 @@ pub(crate) fn render_legacy_vxl_shadow(
             height: 2,
             offset_x: 0.0,
             offset_y: 0.0,
+            hd: None,
         };
     }
     let scale: f32 = params.scale;
@@ -1157,6 +1202,7 @@ pub(crate) fn render_legacy_vxl_shadow(
         height,
         offset_x: bounds.offset_x,
         offset_y: bounds.offset_y,
+        hd: None,
     }
 }
 
@@ -1357,6 +1403,7 @@ fn render_vxl_legacy(
             height: 1,
             offset_x: 0.0,
             offset_y: 0.0,
+            hd: None,
         };
     }
 
@@ -1467,6 +1514,7 @@ fn render_vxl_legacy(
         height,
         offset_x: bounds.offset_x,
         offset_y: bounds.offset_y,
+        hd: None,
     }
 }
 

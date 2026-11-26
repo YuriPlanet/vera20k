@@ -27,7 +27,7 @@ use rayon::prelude::*;
 /// `work` over every item, results in item order. Threads take the items a
 /// few at a time, so slower cores (efficiency cores, a busy host) take fewer.
 /// A worker's panic resumes on the caller.
-pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+pub fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     if caller_takes() {
         return pulled(Takes::chunked(items.len()), (), |(), index| {
             Some(work(&items[index]))

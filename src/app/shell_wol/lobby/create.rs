@@ -14,14 +14,25 @@ use super::{
 };
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::render::gpu::GpuContext;
 use crate::util::config::GameConfig;
+use winit::window::Window;
 
 /// Create's slide has run: `UI__BeginDialog(0xC2)` over a hidden `0x113`.
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
     if App::open_host_setup(state, observe) && modern_lobby(state.frontend.wol.as_ref()) {
-        message_line(state, crate::i18n::tr(HOST_ROOM_LINE));
+        message_line(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            crate::i18n::tr(HOST_ROOM_LINE),
+        );
     }
 }
 
@@ -212,7 +223,12 @@ pub(crate) fn republish_channel(
 
 /// `0x00789B60` after `0xC3` OK.
 pub(super) fn create_confirmed(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
     password: String,
     name: Option<String>,
     clan: bool,
@@ -220,16 +236,12 @@ pub(super) fn create_confirmed(
     observe: bool,
     ranked: bool,
 ) {
-    let nickname = nickname(&state.frontend.wol_account);
-    let (width, _) = options_screen(state);
-    let globals = &mut state.frontend.wol_lobby_globals;
+    let nickname = nickname(&frontend.wol_account);
+    let (width, _) = options_screen(gpu, options_profile);
+    let globals = &mut frontend.wol_lobby_globals;
     globals.limit_resolution = limit;
     let lobby_number = globals.lobby_number;
-    let ex_info = ex_info(
-        &state.frontend,
-        &state.match_state.session,
-        &state.process_assets,
-    );
+    let ex_info = ex_info(frontend, session, process_assets);
     let mut channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
     // VERA's online lobby names the room as its host typed.
     if let Some(name) = name {
@@ -238,19 +250,16 @@ pub(super) fn create_confirmed(
     // The key goes to +0xD7 with spaces made '_'; the popup's observe byte
     // becomes the observer preference [0xAC10C8].
     let key = password.replace(' ', "_");
-    state
-        .frontend
-        .multiplayer_shell_runtime
-        .set_lan_observer(observe);
-    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
+    frontend.multiplayer_shell_runtime.set_lan_observer(observe);
+    let Some(lobby) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     lobby.ui.close_popup();
     lobby.ui.set_observer(observe);
     leave_then_create(
-        &mut state.frontend,
-        state.platform.game_config.as_ref(),
-        &state.process_assets,
+        frontend,
+        game_config,
+        process_assets,
         channel,
         key,
         observe,
@@ -306,18 +315,29 @@ pub(super) fn leave_then_create(
 /// Create ended without C2: the commands back with Join disabled
 /// (`0x0078AC10`'s 0x62B tail), focus on the chat edit. The Buddy List
 /// runner takes its stop path back to `0x116`.
-pub(super) fn create_ended(state: &mut AppState) {
-    if buddy_runner(state.frontend.wol.as_ref()) {
-        super::buddy::stopped(state);
+pub(super) fn create_ended(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    if buddy_runner(frontend.wol.as_ref()) {
+        super::buddy::stopped(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+        );
         return;
     }
-    if let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) {
+    if let Some(lobby) = lobby_mut(frontend.wol.as_mut()) {
         lobby.covered = false;
         lobby.step = Step::Ready;
         lobby.ui.set_commands(true, false, false);
     }
-    state
-        .frontend
-        .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG);
+    frontend.shell_controller.reset_to(super::WOL_LOBBY_DIALOG);
 }

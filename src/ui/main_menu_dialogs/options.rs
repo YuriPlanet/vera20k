@@ -615,6 +615,47 @@ impl HealthBarMode {
     }
 }
 
+/// The HD art list (`render::hd_switch`, `[VERA] HdArt=`): Off, the original
+/// picture, or On, the HD art over the world and the HD sidebar. The HD art
+/// key (Page Up) flips the same setting in a match. Presentation only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HdLook {
+    #[default]
+    Off,
+    On,
+}
+
+impl HdLook {
+    const ALL: [Self; 2] = [Self::Off, Self::On];
+
+    /// The list's rows, top to bottom; the first is the default.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// Whether the row turns HD art on.
+    pub(crate) const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    /// The row for the switch's state.
+    pub(crate) const fn from_on(on: bool) -> Self {
+        if on { Self::On } else { Self::Off }
+    }
+
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Off => "VERA:HdLookOff",
+            Self::On => "VERA:HdLookOn",
+        })
+    }
+
+    /// The rows while no HD art pack runs: Off alone.
+    pub(crate) fn choices_without_pack() -> Vec<Self> {
+        vec![Self::Off]
+    }
+}
+
 /// VERA's `[VERA] ColorVisionMode=` whole-viewport colour-vision filter.
 ///
 /// gamemd has no equivalent: this is a presentation-only final-frame pass
@@ -764,6 +805,8 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The whole-viewport colour filter.
     ColorVision,
+    /// HD art, Off or On (`[VERA] HdArt=`).
+    HdLook,
     /// VERA's interface language. Its rows are each language's own name for
     /// itself, so they need no translation.
     Language,
@@ -1177,6 +1220,8 @@ pub(crate) const ROWS: &[Row] = {
         row!(Controls, Checkbox(MouseWheelZoom), "MouseWheelZoom"),
         row!(Controls, Checkbox(LockCursor), "LockCursor"),
         row!(General, List(Language), "Language"),
+        // VERA's HD art switch; Display is full at 640x480.
+        row!(General, List(HdLook), "HdLook"),
         row!(General, Checkbox(YrOriginalStyle), "YrOriginalStyle"),
         row!(General, Checkbox(SmoothOnlineMenus), "SmoothOnlineMenus"),
         row!(General, Checkbox(HdMapPreviews), "HdMapPreviews"),
@@ -1307,6 +1352,8 @@ pub(crate) enum LauncherOptionsEvent {
     /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
     GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
+    /// The HD art list's pick, applied to the next frame.
+    HdLookSelected(HdLook),
     DisplaySelected(DisplayTarget),
     /// A language tag.
     LanguageSelected(String),
@@ -1370,6 +1417,11 @@ pub(crate) struct LauncherOptionsValues {
     /// The Graphics API list's choice; it applies from the next start.
     pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
+    /// Whether HD art is on.
+    pub(crate) hd_look: HdLook,
+    /// Whether the running mod brings an HD art pack: without one the list
+    /// offers only Off and its help names what it needs.
+    pub(crate) hd_look_available: bool,
 }
 
 impl Default for LauncherOptionsValues {
@@ -1395,6 +1447,8 @@ impl Default for LauncherOptionsValues {
             kratos: Default::default(),
             graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
+            hd_look: HdLook::default(),
+            hd_look_available: false,
         }
     }
 }
@@ -1742,6 +1796,7 @@ impl OptionsDialogState {
             E::KratosSelected(setting) => v.kratos = *setting,
             E::GraphicsApiSelected(api) => v.graphics_api = *api,
             E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
+            E::HdLookSelected(look) => v.hd_look = *look,
             E::DisplaySelected(display) if *display == self.display => return,
             E::DisplaySelected(display) => self.display = display.clone(),
             E::LanguageSelected(tag) if *tag == self.language => return,
@@ -2502,6 +2557,18 @@ mod tests {
     /// Every control is on exactly one page of the column: one the table
     /// leaves out could not be reached, and one listed twice would show
     /// twice. The in-game Game Controls page repeats rows of the column,
+
+    /// HD art is Off or On, and Off alone while no HD art pack runs, so it
+    /// cannot be turned on without one; the list starts Off.
+    #[test]
+    fn hd_look_offers_on_only_with_a_pack() {
+        assert_eq!(HdLook::choices(), [HdLook::Off, HdLook::On]);
+        assert_eq!(HdLook::choices_without_pack(), [HdLook::Off]);
+        assert_eq!(HdLook::from_on(true), HdLook::On);
+        let values = LauncherOptionsValues::default();
+        assert_eq!(values.hd_look, HdLook::Off);
+        assert!(!values.hd_look_available);
+    }
     /// Game Speed aside.
     #[test]
     fn every_control_is_on_exactly_one_page() {
@@ -2524,7 +2591,8 @@ mod tests {
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
-            8 + usize::from(HAS_GRAPHICS_API)
+            // HD art's list included.
+            10 + usize::from(HAS_GRAPHICS_API)
         );
         for (index, setting) in placed.iter().enumerate() {
             assert!(!placed[index + 1..].contains(setting), "{setting:?}");

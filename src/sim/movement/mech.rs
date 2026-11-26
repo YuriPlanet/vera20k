@@ -109,7 +109,7 @@ impl Simulation {
             actor.position.rx().wrapping_add_signed(delta.0 as i16),
             actor.position.ry().wrapping_add_signed(delta.1 as i16),
         );
-        let Some(terrain) = &self.resolved_terrain else {
+        let Some(terrain) = &*self.resolved_terrain else {
             return;
         };
         let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)

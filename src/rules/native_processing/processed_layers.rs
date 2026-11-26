@@ -39,6 +39,10 @@ impl ProcessedRulesLayers {
         &self.kratos_inputs
     }
 
+    pub(crate) fn npatch_inputs(&self) -> &crate::rules::npatch_switch::NPatchInputs {
+        &self.npatch_inputs
+    }
+
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {
         &self
             .native_type_construction_trace
@@ -206,7 +210,7 @@ impl ProcessedRulesLayers {
                         || family == RulesTypeFamily::VoxelAnimation
                     {
                         let input = super::voxel_model_plan::GenericLoadInput {
-                            image: image.image().to_owned(),
+                            image: image.visual_image().to_owned(),
                             unit: family == RulesTypeFamily::Vehicle,
                             apc: member.native_stored_id == "APC",
                             turret: member.body.read_bool("Turret", false),

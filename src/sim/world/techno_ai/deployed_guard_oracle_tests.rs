@@ -200,11 +200,11 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     });
     let current = terrain.native_cell_identity((10, 10));
     terrain.write_native_cell_flags(current, input["cell_flags"].as_u64().unwrap() as u32);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     if input["site"].is_object() {
         // Supplied retained site words; no detonation/activation producer is
         // certified by this component fixture. Its owner maintains membership.
-        sim.radiation = RadiationState::from_retained_site_for_test(
+        *sim.radiation = RadiationState::from_retained_site_for_test(
             (10, 10),
             signed(&input["site"]["level"]),
             signed(&input["site"]["duration"]),
@@ -297,9 +297,9 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     }
     // All three original Random2Class objects execute Seed(input.seed) after
     // the supplied actor is prepared. Constructor draws are outside this seam.
-    sim.main_rng = SimRng::new(input["seed"].as_u64().unwrap());
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
-    sim.mapgen_rng = SimRng::new(input["seed"].as_u64().unwrap());
+    *sim.main_rng = SimRng::new(input["seed"].as_u64().unwrap());
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+    *sim.mapgen_rng = SimRng::new(input["seed"].as_u64().unwrap());
     sim.resolve_type_handles(&rules);
     assert_actor(sim.substrate.entities.get(id).unwrap(), before, row, true);
     assert_rng(

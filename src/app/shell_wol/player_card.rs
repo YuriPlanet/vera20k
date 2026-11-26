@@ -9,13 +9,18 @@
 use winit::keyboard::KeyCode;
 
 use super::service::WolServiceRequest;
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
 use crate::app::shell_wol::buddies::WolBuddies;
 use crate::app::web_link;
+use crate::render::gpu::GpuContext;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
@@ -68,11 +73,11 @@ fn close(frontend: &mut FrontendState, window: &Window) {
     window.request_redraw();
 }
 
-pub(crate) fn layout(state: &AppState) -> WolPlayerCardLayout {
+pub(crate) fn layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolPlayerCardLayout {
     wol_player_card_layout_on(
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-        super::lobby::popup_scale(state),
+        gpu.config.width as i32,
+        gpu.config.height as i32,
+        super::lobby::popup_scale(wol, gpu),
     )
 }
 
@@ -96,17 +101,20 @@ fn buttons(layout: &WolPlayerCardLayout, own: bool) -> [(u16, RectPx); 4] {
 
 /// Puts the open card's buttons on its box, the first one by whose card it
 /// is, each taking a press while it can act.
-pub(super) fn sync(state: &mut AppState) {
-    let Some(name) = card(state.frontend.wol.as_ref()).map(|card| card.name.clone()) else {
+pub(super) fn sync(frontend: &mut FrontendState, process_assets: &ProcessAssets, gpu: &GpuContext) {
+    let Some(name) = card(frontend.wol.as_ref()).map(|card| card.name.clone()) else {
         return;
     };
-    let placed: Vec<_> = buttons(&layout(state), own(&state.frontend.wol_account, &name))
-        .into_iter()
-        .map(|(id, rect)| (id, rect, enabled(&state.frontend, &name, id)))
-        .collect();
-    let value = country_value(state);
-    let layout = layout(state);
-    let shown = rows(&state.frontend, &state.process_assets, &name);
+    let placed: Vec<_> = buttons(
+        &layout(frontend.wol.as_ref(), gpu),
+        own(&frontend.wol_account, &name),
+    )
+    .into_iter()
+    .map(|(id, rect)| (id, rect, enabled(frontend, &name, id)))
+    .collect();
+    let value = country_value(frontend.wol.as_ref(), gpu);
+    let layout = layout(frontend.wol.as_ref(), gpu);
+    let shown = rows(frontend, process_assets, &name);
     // Each shown row hovers from its caption to its value's end.
     let rows: Vec<RectPx> = (layout.rows.iter().take(shown.len()))
         .map(|(caption, value)| {
@@ -115,14 +123,14 @@ pub(super) fn sync(state: &mut AppState) {
         .collect();
     // The name sits after its badge as in the modern player list, where the
     // lobby's art shows the badge.
-    let badged = super::lobby::player_badge(&state.frontend.wol_lobby_globals, &name).is_some()
-        && super::leaf::art(&state.frontend.wol_art, crate::ui::wol_lobby::DIALOG).is_some();
-    let scale = super::lobby::popup_scale(state);
+    let badged = super::lobby::player_badge(&frontend.wol_lobby_globals, &name).is_some()
+        && super::leaf::art(&frontend.wol_art, crate::ui::wol_lobby::DIALOG).is_some();
+    let scale = super::lobby::popup_scale(frontend.wol.as_ref(), gpu);
     // The badge at its own size, 2 pixels into the name's value and centred
     // on it, as the player list draws it.
-    let badge = super::lobby::player_badge(&state.frontend.wol_lobby_globals, &name)
+    let badge = super::lobby::player_badge(&frontend.wol_lobby_globals, &name)
         .filter(|_| badged)
-        .and_then(|file| state.frontend.skirmish_shell_chrome.as_ref()?.wol_badge(file))
+        .and_then(|file| frontend.skirmish_shell_chrome.as_ref()?.wol_badge(file))
         .zip(layout.rows.first())
         .map(|(entry, &(_, value))| {
             let base = scale.base_rect(value);
@@ -131,7 +139,7 @@ pub(super) fn sync(state: &mut AppState) {
             let [w, h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
             RectPx::new(x, y, w.round() as i32, h.round() as i32)
         });
-    let status = status_help(&state.frontend, &state.process_assets).unwrap_or_default();
+    let status = status_help(frontend, process_assets).unwrap_or_default();
     // Each row's caption and value, then the status line.
     let statics = |id: u16| {
         if id == CARD_STATUS {
@@ -152,7 +160,7 @@ pub(super) fn sync(state: &mut AppState) {
             _ => (row.value.as_str(), value),
         })
     };
-    if let Some(ui) = card_ui_mut(state.frontend.wol.as_mut()) {
+    if let Some(ui) = card_ui_mut(frontend.wol.as_mut()) {
         ui.sync_card(layout.dialog, &rows, badge, statics, |id| {
             placed
                 .iter()
@@ -201,10 +209,10 @@ fn clan(wol: Option<&WolVisit>, name: &str) -> Option<String> {
 }
 
 /// Your Country row's value, which the country list hangs below.
-fn country_value(state: &AppState) -> Option<RectPx> {
-    let card = card(state.frontend.wol.as_ref())?;
-    let row = 1 + usize::from(clan(state.frontend.wol.as_ref(), &card.name).is_some());
-    let (_, value) = layout(state).rows.get(row).copied()?;
+fn country_value(wol: Option<&WolVisit>, gpu: &GpuContext) -> Option<RectPx> {
+    let card = card(wol)?;
+    let row = 1 + usize::from(clan(wol, &card.name).is_some());
+    let (_, value) = layout(wol, gpu).rows.get(row).copied()?;
     Some(value)
 }
 
@@ -220,17 +228,20 @@ fn own_locale(frontend: &FrontendState) -> i32 {
 }
 
 /// Change Country: `0xFE`'s rows, every `WOL:Locale%02d`, with yours lit.
-fn open_countries(state: &mut AppState) {
-    let rows = locale_rows(
-        (0..LOCALE_COUNT).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
-    );
-    let locale = own_locale(&state.frontend);
-    if let Some(value) = country_value(state)
-        && let Some(ui) = card_ui_mut(state.frontend.wol.as_mut())
+fn open_countries(frontend: &mut FrontendState, process_assets: &ProcessAssets, gpu: &GpuContext) {
+    let rows = locale_rows((0..LOCALE_COUNT).map(|locale| {
+        (
+            locale,
+            process_assets.csf_text(&format!("WOL:Locale{locale:02}")),
+        )
+    }));
+    let locale = own_locale(frontend);
+    if let Some(value) = country_value(frontend.wol.as_ref(), gpu)
+        && let Some(ui) = card_ui_mut(frontend.wol.as_mut())
     {
         ui.open_countries(rows, locale, value);
     }
-    state.frontend.shell_status_line.repaint();
+    frontend.shell_status_line.repaint();
 }
 
 /// Your pick: VERA.INI keeps it for later sign-ins, and the lobby has it at
@@ -288,32 +299,70 @@ pub(super) fn dismissed(frontend: &mut FrontendState, window: &Window) {
 }
 
 /// Card button `id` released.
-pub(super) fn button(state: &mut AppState, id: u16) {
+pub(super) fn button(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    id: u16,
+) {
     if let (Some(name), Some(action)) = (
-        card(state.frontend.wol.as_ref()).map(|card| card.name.clone()),
+        card(frontend.wol.as_ref()).map(|card| card.name.clone()),
         WolCardAction::of(id),
     ) {
-        act(state, name, action);
+        act(
+            frontend,
+            platform,
+            match_state,
+            process_assets,
+            renderer,
+            audio,
+            persistence,
+            name,
+            action,
+        );
     }
 }
 
-fn act(state: &mut AppState, name: String, action: WolCardAction) {
+fn act(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    name: String,
+    action: WolCardAction,
+) {
     match action {
         WolCardAction::Message => {
-            close(&mut state.frontend, &state.platform.window);
-            super::page::open_page_dialog_to(state, &name);
+            close(frontend, &platform.window);
+            super::page::open_page_dialog_to(
+                frontend,
+                platform,
+                match_state,
+                process_assets,
+                renderer,
+                audio,
+                persistence,
+                &name,
+            );
         }
-        WolCardAction::Country => open_countries(state),
-        WolCardAction::Buddy => match buddy(&state.frontend.wol_buddies, &name) {
-            Some(known) => super::buddies::remove(&mut state.frontend, &known),
-            None => super::buddies::add(&mut state.frontend, name),
+        WolCardAction::Country => open_countries(frontend, process_assets, &renderer.gpu),
+        WolCardAction::Buddy => match buddy(&frontend.wol_buddies, &name) {
+            Some(known) => super::buddies::remove(frontend, &known),
+            None => super::buddies::add(frontend, name),
         },
         WolCardAction::Profile => {
             if let Some(url) = web_link::profile_url(&name) {
                 web_link::open_in_browser(&url);
             }
         }
-        WolCardAction::Close => close(&mut state.frontend, &state.platform.window),
+        WolCardAction::Close => close(frontend, &platform.window),
     }
 }
 
@@ -418,18 +467,22 @@ fn rows(frontend: &FrontendState, process_assets: &ProcessAssets, name: &str) ->
 }
 
 /// The open card's rows and buttons.
-pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
-    let card = card(state.frontend.wol.as_ref())?;
+pub(crate) fn view(
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+) -> Option<PlayerCardView> {
+    let card = card(frontend.wol.as_ref())?;
     let name = card.name.as_str();
-    let own = own(&state.frontend.wol_account, name);
-    let label = |key: &str| state.csf_text(key);
-    let badge = super::lobby::player_badge(&state.frontend.wol_lobby_globals, name);
-    let rows = rows(&state.frontend, &state.process_assets, name)
+    let own = own(&frontend.wol_account, name);
+    let label = |key: &str| process_assets.csf_text(key);
+    let badge = super::lobby::player_badge(&frontend.wol_lobby_globals, name);
+    let rows = rows(frontend, process_assets, name)
         .into_iter()
         .map(|row| (row.caption, row.value))
         .collect();
-    let layout = layout(state);
-    let buddy = buddy(&state.frontend.wol_buddies, name).is_some();
+    let layout = layout(frontend.wol.as_ref(), gpu);
+    let buddy = buddy(&frontend.wol_buddies, name).is_some();
     let buttons = buttons(&layout, own)
         .into_iter()
         .map(|(id, _)| {
@@ -444,7 +497,7 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
             (id, label(key))
         })
         .collect();
-    let countries = card_ui(state.frontend.wol.as_ref())?.countries_drop_down();
+    let countries = card_ui(frontend.wol.as_ref())?.countries_drop_down();
     Some(PlayerCardView {
         layout,
         badge,

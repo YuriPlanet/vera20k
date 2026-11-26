@@ -21,13 +21,21 @@
 use vera20k_gui::{Gui, Layer, NodeId, Origin, Prop, Rect, Rgba, Value};
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::hotkeys::HotkeyCommand;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
 use crate::render::retained_hud::{Rest, RetainedHud, rounded};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextShows, TextValue};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::match_layout::{MatchLayout, MoneyText};
 use crate::ui::sidebar::{SidebarPart, SidebarTheme};
 
@@ -115,10 +123,10 @@ impl StockParts {
 /// The money counter's text when the layout has it show another value
 /// than the credits; `None` for the credits, which the counter formats
 /// itself (an observer's shows the match's time).
-pub(crate) fn money_value_text(state: &AppState) -> Option<String> {
-    match state.match_state.match_presentation.stock_parts.money.value {
+pub(crate) fn money_value_text(match_state: &MatchState) -> Option<String> {
+    match match_state.match_presentation.stock_parts.money.value {
         TextValue::Credits => None,
-        value => Some(value_text(state, value)),
+        value => Some(value_text(match_state, value)),
     }
 }
 
@@ -191,8 +199,8 @@ struct Written<'a> {
 }
 
 impl Written<'_> {
-    fn of(state: &AppState, index: usize) -> Option<Written<'_>> {
-        let (gui, node) = crate::app::input::chrome_input::layout_part_node(state, index)?;
+    fn of(presentation: &MatchPresentationState, index: usize) -> Option<Written<'_>> {
+        let (gui, node) = crate::app::input::chrome_input::layout_part_node(presentation, index)?;
         Some(Written {
             gui,
             node: Some(node),
@@ -216,10 +224,11 @@ impl Written<'_> {
 }
 
 /// What a text part shows now.
-pub(crate) fn value_text(state: &AppState, value: TextValue) -> String {
-    let view = crate::app::presentation::sidebar_render::current_sidebar_view(state);
-    let sim = state
-        .match_state
+pub(crate) fn value_text(match_state: &MatchState, value: TextValue) -> String {
+    let view = crate::app::presentation::sidebar_render::current_sidebar_view(
+        &match_state.match_presentation,
+    );
+    let sim = match_state
         .sim_runtime
         .presentation()
         .map(|runtime| &runtime.simulation);
@@ -233,8 +242,7 @@ pub(crate) fn value_text(state: &AppState, value: TextValue) -> String {
         }
         TextValue::Power => view.map_or(0, |view| view.power_produced).to_string(),
         TextValue::Drain => view.map_or(0, |view| view.power_drained).to_string(),
-        TextValue::Name => state
-            .match_state
+        TextValue::Name => match_state
             .session
             .local_player_name()
             .unwrap_or_default()
@@ -251,36 +259,60 @@ pub(crate) fn value_text(state: &AppState, value: TextValue) -> String {
 }
 
 /// A button's label: its word looked up as every label of the game is
-/// ([`AppState::csf_label`]), so a word the string table lacks shows as
+/// ([`ProcessAssets::csf_label`]), so a word the string table lacks shows as
 /// `MISSING:'word'`, and the word itself stands in while no table is loaded.
-fn label_text(state: &AppState, label: &str) -> String {
-    state.csf_label(label, label)
+fn label_text(process_assets: &ProcessAssets, label: &str) -> String {
+    process_assets.csf_label(label, label)
 }
 
 /// Every added part of the local side's layout, where this frame shows it,
 /// one for each part in the layout's order.
-pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
-    let parts = &state.match_state.match_presentation.added_parts;
+pub(crate) fn placed(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<Placed> {
+    let parts = &match_state.match_presentation.added_parts;
     if parts.is_empty() {
         return Vec::new();
     }
-    let font = &state.renderer.bit_font;
-    let side = state.sidebar_frame().side_area();
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let font = &renderer.bit_font;
+    let side = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    )
+    .side_area();
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+    );
     let field = [x as i32, y as i32, width as i32, height as i32];
-    let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-        .map(|atlas| &atlas.layout_art);
+    let art =
+        crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)
+            .map(|atlas| &atlas.layout_art);
     // Each part's own content and size first, at no place yet.
     let mut placed: Vec<Placed> = parts
         .iter()
         .enumerate()
         .map(|(index, part)| {
-            let pressed = crate::app::input::chrome_input::layout_button_pressed(state, index);
-            let written = Written::of(state, index);
+            let pressed = crate::app::input::chrome_input::layout_button_pressed(
+                &match_state.match_presentation,
+                index,
+            );
+            let written = Written::of(&match_state.match_presentation, index);
             let written = written.as_ref();
             let label_of = |own: &str| {
                 let label = written.and_then(|w| w.text(Prop::Label)).unwrap_or(own);
-                label_text(state, label)
+                label_text(process_assets, label)
             };
             // A picture by its name (the module's, else the layout's):
             // frame 0, or frame 1 while held down.
@@ -302,9 +334,9 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 ),
                 AddedKind::Text { shows } => {
                     let text = match (written.and_then(|w| w.text(Prop::Label)), shows) {
-                        (Some(label), _) => label_text(state, label),
-                        (None, TextShows::Value(value)) => value_text(state, *value),
-                        (None, TextShows::Label(label)) => label_text(state, label),
+                        (Some(label), _) => label_text(process_assets, label),
+                        (None, TextShows::Value(value)) => value_text(match_state, *value),
+                        (None, TextShows::Label(label)) => label_text(process_assets, label),
                     };
                     (text, false, None)
                 }
@@ -320,7 +352,10 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                 }
                 AddedKind::List => {
                     if let Some(Value::Items(items)) = written.and_then(|w| w.get(Prop::Items)) {
-                        lines = items.iter().map(|item| label_text(state, item)).collect();
+                        lines = items
+                            .iter()
+                            .map(|item| label_text(process_assets, item))
+                            .collect();
                     }
                     (String::new(), false, None)
                 }
@@ -431,18 +466,30 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
 }
 
 /// The frame-pixel rectangle a placed part takes clicks in.
-pub(crate) fn click_rect(state: &AppState, placed: &Placed) -> [i32; 4] {
+pub(crate) fn click_rect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+    placed: &Placed,
+) -> [i32; 4] {
     let [x, y, width, height] = placed.rect;
     match placed.holder {
         Holder::Field | Holder::Group(_) => placed.rect,
-        Holder::Side => state
-            .sidebar_frame()
-            .rect_to_frame_px(crate::ui::sidebar::Rect {
-                x: x as f32,
-                y: y as f32,
-                w: width as f32,
-                h: height as f32,
-            }),
+        Holder::Side => crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            screen,
+            &presentation.sidebar_layout_spec,
+        )
+        .rect_to_frame_px(crate::ui::sidebar::Rect {
+            x: x as f32,
+            y: y as f32,
+            w: width as f32,
+            h: height as f32,
+        }),
     }
 }
 

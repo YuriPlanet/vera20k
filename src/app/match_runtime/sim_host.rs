@@ -404,20 +404,21 @@ impl SimHost {
         }
     }
 
-    /// Capture the frame of the home runtime, and with `world` the copy of
-    /// the world drawing reads beside it.
+    /// Capture the frame of the home runtime, and with `world` its Display
+    /// members and the copy of the world drawing reads beside it.
     fn capture_frame(&mut self, world: bool) {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
             && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
+            // The cursor's pick and every draw read the Display members. Filed
+            // now, while the pool is idle, no draw beside the lent tick files
+            // them on the pool the tick works on.
+            frame.display_members(&runtime.simulation);
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
-            // Box selection (AddSelectable 0x006D9EF0) can ask for the order
-            // before drawing. Sort while the Ground objects are still attached.
-            frame.display_order(&runtime.simulation);
             self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
@@ -890,6 +891,54 @@ mod tests {
         assert!(host.lend(Box::new(|_| Box::new(()))));
         assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
+    }
+
+    /// Drawing reads no trigger, so a lent tick's world copy holds none:
+    /// debug builds refuse the read, and the live world keeps its own.
+    #[test]
+    fn the_world_copy_leaves_the_triggers_with_the_live_world() {
+        let mut runtime = SimRuntime::from_simulation(Simulation::new());
+        runtime
+            .simulation
+            .set_trigger_variable_for_test(true, 3, true);
+        let copy = runtime.presentation_copy(None, None);
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            copy.simulation.global_variables()
+        }));
+        assert_eq!(refused.is_err(), cfg!(debug_assertions));
+        assert!(runtime.simulation.global_variables()[3]);
+    }
+
+    /// The world copy clones the anims beside the rest of the world: the
+    /// copy draws the live world's anims, and the live world keeps them.
+    #[test]
+    fn the_world_copy_holds_the_anims_the_live_world_keeps() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::{anim_class::AnimWorldCoord, components::AnimClassSpawnDescriptor};
+        let rules_ini = IniFile::from_str("[Animations]\n0=FIRE\n");
+        let art_ini = IniFile::from_str("[FIRE]\nEnd=20\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+        rules.bind_anim_frame_count_for_test("FIRE", 20);
+        let mut sim = Simulation::with_seed(31);
+        let fire = sim.intern("FIRE");
+        let coord = AnimWorldCoord {
+            x: 16512,
+            y: 16512,
+            z: 0,
+        };
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(fire, rx, ry, sub_x, sub_y, z),
+                coord,
+            )
+            .unwrap();
+        let mut runtime = SimRuntime::from_simulation(sim);
+        let copy = runtime.presentation_copy(None, None);
+        assert!(copy.simulation.anim(anim).is_some());
+        assert!(runtime.simulation.anim(anim).is_some());
     }
 
     /// A frame answers every type the sidebar has asked of the scenario. A

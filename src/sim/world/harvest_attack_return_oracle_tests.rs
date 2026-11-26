@@ -173,12 +173,12 @@ impl Replay {
         }
         // Unit construction consumes shared stream work in Rust. All fixture
         // allocations precede the declared original Scenario seed/prestate.
-        scene.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *scene.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
         if input["area_guard_comparison"] == true {
             // Independent native seed controls declared by the additive
             // AreaGuard corpus, installed after the scene's construction.
-            scene.sim.main_rng = crate::sim::rng::SimRng::new(31);
-            scene.sim.mapgen_rng = crate::sim::rng::SimRng::new(42);
+            *scene.sim.main_rng = crate::sim::rng::SimRng::new(31);
+            *scene.sim.mapgen_rng = crate::sim::rng::SimRng::new(42);
         }
         Self {
             scene,

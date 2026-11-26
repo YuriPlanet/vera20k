@@ -108,6 +108,12 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         "never looks a cell up: the filter reads each building's type in the rules",
     ),
     (
+        "sim/snapshot.rs",
+        1,
+        "never looks a cell up: the layout trace decodes made-up values on a \
+         thread of its own, for its stack",
+    ),
+    (
         "sim/state_hasher.rs",
         3,
         "never looks a cell up: digests of the items its callers hash",
@@ -141,6 +147,12 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
         3,
         "never looks a cell up: the presentation copy's syncs, fog copy, clone and \
          the old copy's drop; the copy's Dummy is then forked",
+    ),
+    (
+        "sim/world/techno_ai/scan_batch.rs",
+        1,
+        "detached: the team step's patrol scans. Each runs inside `detached_stamps`, \
+         and one that stamped is dropped for its team's update",
     ),
     (
         "sim/world/world_hash.rs",
@@ -416,6 +428,11 @@ const DEREF_TYPES: &[(&str, &str, &str)] = &[
         "HumanPlayerClients",
         "sim/world/shroud_refresh.rs",
         "no client, one or a shared list, read as one slice of clients",
+    ),
+    (
+        "Forked",
+        "util/forked.rs",
+        "a copy-on-write world field: `deref_mut` notes the write and gives a fork its own copy",
     ),
     (
         "ModFolder",

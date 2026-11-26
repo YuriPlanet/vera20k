@@ -125,9 +125,35 @@ the source tree). Its Wasm verbs need no game install:
   `DESTINATION_SET`, `CRUSH_ALLOWED`, `HARVEST_CELL`, `DEPLOY_ALLOWED` and
   `DAMAGE_INCOMING` are decisions only: bind them with `Trigger::decide_sync` and
   answer in `on_decide!` (`FireAllowedDecision::set_result(0)` vetoes a shot). They are
-  `preview` and may change. `MISSION_CHANGED` is numbered but not raised yet; check
-  with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up aircraft,
-  jumpjets and rockets.
+  `preview` and may change. `MISSION_CHANGED` is numbered but deferred (not raised);
+  check with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up
+  aircraft, jumpjets and rockets. A `ROTMultiplier` modifier (preview) scales how
+  fast a vehicle's or building's body turns (not turrets or aircraft). An `ImmunityFlags` override (preview; `Override`
+  only, bits 0..6) grants or removes immunity to mind control, radiation, poison,
+  psychic damage, chrono, EMP and berserk. `FatalDamageDecision::TIBERIUM_REMAINS`
+  leaves Riparius where the object died.
+- Unit AI decisions (preview): `Event::IDLE_MISSION` picks the mission a unit idles
+  into; `Event::MISSION_STEP` is asked after each Guard, Area Guard, Hunt or Attack
+  mission body of a bound infantryman or vehicle. Its `MissionStepDecision` arrives
+  holding what the body decided; `set_target`, `set_destination`, `set_mission` and
+  `set_delay` replace parts of it (for example a guard that walks to a post, or an
+  attacker that picks its own target). The body has already run, so its shots and
+  deploys stand; a cleared Guard target may be picked up again by the unit's own
+  acquisition.
+- Movement (`preview`, may change): `Event::MOVE_FRAME` asks, every frame a bound
+  vehicle or infantryman on the ground (Drive, Ship, Walk, Mech or Hover) could
+  start a step, whether the module moves it instead: `MoveFrameDecision::step_by(dx,
+  dy)` moves it that many leptons this frame (the engine checks the cell it enters
+  and keeps it on the ground), `set_step` can also turn it or drop its destination,
+  no answer leaves it to its locomotor. `Event::PATH_FOUND` asks when a path search's
+  route is adopted: `PathFoundDecision::set_cells` replaces the route with your
+  cells (each next to the one before, up to 24), `no_route` makes the search fail.
+  `Event::APPROACH_POINT` asks, when a unit chasing a target out of range has picked
+  the cell to drive to, whether it should go elsewhere:
+  `ApproachPointDecision::set_cell` sends it to your cell instead.
+  `Action::push` shoves a ground unit some leptons toward or away from a cell over a
+  few frames, on top of its own movement; `Action::set_facing` turns it. Aircraft,
+  jumpjets, rockets, tunnelling and teleporting units are not covered.
 - INI names: `ini::key`, `ini::registry` and `ini::event` let modders configure the
   module in INI ([below](#ini-names-a-module-registers)).
 
@@ -186,7 +212,8 @@ the action's row in appendix section 5, in order, empty ones 0:
   voxel animation or particle system takes its name or its number.
 - `Mission` takes a mission name (`Hunt`, `Guard`, `Wait`, …), `EndFor` takes `Win`
   or `Lose`, `Teleport` takes `Nearby` or `Fail`, `Modify` takes `Add`, `Multiply`
-  or `Override`; numbers work too.
+  or `Override`; numbers work too. `Push(target,cell,distance,frames)` and
+  `SetFacing(target,facing)` take numbers.
 - A house is a country name; a cell is a waypoint number.
 - Sounds take their `[SoundList]` number.
 

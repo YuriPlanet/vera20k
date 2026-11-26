@@ -124,7 +124,7 @@ fn network_move_flash_ingress_and_replay_do_not_touch_animation_state() {
             )
             .unwrap();
         assert_eq!(tail, (0, false), "ingress must not execute twice");
-        assert_eq!(sim.frame_command_admissions, [flash]);
+        assert_eq!(*sim.frame_command_admissions, [flash]);
         assert!(sim.pending_commands.is_empty());
         assert_eq!(sim.substrate.anims.len(), 0);
         assert_eq!(sim.next_stable_object_id(), next_id);
