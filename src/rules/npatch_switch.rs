@@ -3,13 +3,16 @@
 //!
 //! An engine extension is in every build and switches on from the game's data
 //! (AGENTS.md, "Stability, extensions and online play"), as a modder expects
-//! from the NPSE patch: adding NPatch keys to an INI is all it takes. NPatch
-//! plays in a game when a key only an NPatch reader found is present in the
-//! Rules layers or map the projection reads, or in the passes: `[General]
-//! VehicleParachute=`, `DisableParallelAIQueues=` (or its ext173 name
-//! `DisableAIParallelProduction=`, or `EnableAIBuildLimitation=`), a
-//! TechnoType's `AIBuildLimit=` and a BuildingType's `AIPlanningCount=`. Retail
-//! data holds none of these keys, so a retail game plays as gamemd.
+//! from the NPSE patch: adding NPatch keys to an INI is all it takes. The
+//! explicit `[General] NPatch=yes` master switch turns every NPatch path on
+//! without requiring one of those keys; `NPatch=no` keeps them off. When the
+//! key is absent, NPatch plays in a game when a key only an NPatch reader
+//! found is present in the Rules layers or map the projection reads, or in
+//! the passes: `[General] VehicleParachute=`, `DisableParallelAIQueues=` (or
+//! its ext173 name `DisableAIParallelProduction=`, or
+//! `EnableAIBuildLimitation=`), a TechnoType's `AIBuildLimit=` and a
+//! BuildingType's `AIPlanningCount=`. Retail data holds none of these keys,
+//! so a retail game plays as gamemd.
 //!
 //! The pass reads travel with the processed rules ([`NPatchInputs`]), so a
 //! save, a replay and every peer reach the same answer from the same files.
@@ -29,6 +32,26 @@ use crate::rules::ares_switch::KeyReads;
 pub(crate) fn npatch_read<T>(read: impl FnOnce() -> T) -> T {
     let _npatch = crate::rules::ares_switch::npatch_reads();
     read()
+}
+
+/// The per-game answer when `[General] NPatch=` is present: it overrides the
+/// automatic key detection. `None` keeps [`NPatchInputs::decide`].
+pub(crate) fn decide_with_global(
+    global: Option<bool>,
+    inputs: &NPatchInputs,
+    projection: &KeyReads,
+) -> bool {
+    match global {
+        Some(true) => {
+            log::info!("NPatch plays in this game: [General] NPatch=yes");
+            true
+        }
+        Some(false) => {
+            log::info!("NPatch stays off for this game: [General] NPatch=no");
+            false
+        }
+        None => inputs.decide(projection),
+    }
 }
 
 /// The NPatch-only keys the processing passes found. Infantry ART is read

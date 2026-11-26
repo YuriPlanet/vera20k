@@ -7,16 +7,28 @@ the selected mode or the map is all it takes.
 
 ```ini
 [General]
+NPatch=yes
+```
+
+`[General] NPatch=` is the explicit master switch. `yes` turns every NPatch path on even
+when no NPatch-only key is present; `no` keeps them off even when one is; absent leaves the
+answer to the keys below. The key is a plain read, so its own presence never turns NPatch on.
+The log names either this answer or the deciding NPatch-only key.
+
+Without the global key, `rules::npatch_switch` decides per game from any key only an NPatch
+reader found (`VehicleParachute`, `DisableParallelAIQueues` or its ext173 name
+`DisableAIParallelProduction`, `EnableAIBuildLimitation`, a TechnoType's `AIBuildLimit=`,
+a BuildingType's `AIPlanningCount=`). Retail data holds none of them, so a retail game plays
+as gamemd. There is no build feature: a plain `cargo run` carries the code, and a mod that
+ships `NPatch=yes` or NPatch keys plays NPatch.
+
+The older automatic example remains valid:
+
+```ini
+[General]
 VehicleParachute=VEHCHUTE
 DisableParallelAIQueues=no
 ```
-
-`rules::npatch_switch` decides the per-game switch: any key only an NPatch reader found
-(`VehicleParachute`, `DisableParallelAIQueues` or its ext173 name
-`DisableAIParallelProduction`, `EnableAIBuildLimitation`, a TechnoType's `AIBuildLimit=`,
-a BuildingType's `AIPlanningCount=`) turns NPatch on and logs the deciding key. Retail data
-holds none of them, so a retail game plays as gamemd. There is no build feature: a plain
-`cargo run` carries the code, and a mod that ships NPatch keys plays NPatch.
 
 The keys the processing passes read travel with the processed rules
 (`ProcessedRulesLayers::npatch_inputs`), so a save, a replay and every peer decide the same

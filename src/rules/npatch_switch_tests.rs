@@ -47,6 +47,25 @@ fn a_pass_key_turns_npatch_on() {
     assert!(npatch_switch::NPatchInputs::from_passes(&reads).decide(&projection));
 }
 
+/// `[General] NPatch=yes` is the explicit master switch: with no NPatch-only
+/// key anywhere, every NPatch path still turns on.
+#[test]
+fn npatch_global_yes_turns_npatch_on() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nNPatch=yes\n")).unwrap();
+    assert!(rules.npatch());
+}
+
+/// An explicit `no` keeps NPatch off even when an NPatch-only key would
+/// otherwise turn it on.
+#[test]
+fn npatch_global_no_overrides_an_npatch_key() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nNPatch=no\nDisableParallelAIQueues=yes\n",
+    ))
+    .unwrap();
+    assert!(!rules.npatch());
+}
+
 /// Stock rules hold none of the extension keys, so a retail game plays as
 /// gamemd.
 #[test]

@@ -55,7 +55,11 @@ impl RuleSet {
         rules.ares_kept_off = processed.ares_inputs().kept_off(&reads);
         rules.phobos = crate::rules::phobos_switch::decide(&reads);
         rules.kratos = processed.kratos_inputs().decide(&reads);
-        rules.npatch = processed.npatch_inputs().decide(&reads);
+        rules.npatch = crate::rules::npatch_switch::decide_with_global(
+            rules.general.npatch_enabled,
+            processed.npatch_inputs(),
+            &reads,
+        );
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         rules.apply_ra2(crate::util::ra2_launch::enabled());
         Ok(rules)

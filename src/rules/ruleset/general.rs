@@ -15,6 +15,13 @@ use super::{
 /// Global gameplay constants from `[General]` that affect vision, gap generators, etc.
 #[derive(Debug, Clone)]
 pub struct GeneralRules {
+    /// VERA's explicit NPatch master switch, `[General] NPatch=`: `Some(true)`
+    /// turns every NPatch path on even when no NPatch-only key is present;
+    /// `Some(false)` keeps them off even when one is. `None` leaves the
+    /// per-game decision to [`NPatchInputs`](crate::rules::npatch_switch::NPatchInputs).
+    /// A plain read, not an `npatch_read`: the key selects the extension, so
+    /// its mere presence must not turn it on.
+    pub npatch_enabled: Option<bool>,
     /// `[General] MaxWaypointPathLength`, Rules+90. Constructor665725
     /// writes15; ReadGeneral671DB2..671DCC passes the prior signed value to
     /// ReadInteger5276D0 and stores it unchanged, without a clamp.
@@ -1860,6 +1867,7 @@ impl Default for GeneralRules {
                 f64::from_bits(DEFAULT_AMBIENT_CHANGE_STEP.bits()),
             );
         Self {
+            npatch_enabled: None,
             max_waypoint_path_length: 15,
             talk_bubble_time: 300,
             flash_frame_time: 7,
@@ -2559,6 +2567,10 @@ impl GeneralRules {
         let ai_nearest_enemy = ini
             .section("General")
             .is_some_and(|s| s.read_bool("AINearestEnemy", false));
+        // VERA key; absent keeps the per-key NPatch detection.
+        let npatch_enabled = ini
+            .section("General")
+            .and_then(|section| section.read_bool_value("NPatch"));
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section_or_empty("IQ");
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
@@ -2885,6 +2897,7 @@ impl GeneralRules {
             jumpjet_smooth_facing,
             jumpjet_land_nearby,
             ai_nearest_enemy,
+            npatch_enabled,
             // ReadGeneral 0x0066EDC5..0x0066EE83 reads these into their
             // fields with the current value as default (%-aware ReadDouble).
             hover_height: general.read_int("HoverHeight", defaults.hover_height),
