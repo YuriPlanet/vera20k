@@ -7,11 +7,13 @@ It has the same capabilities as the Rust SDK (`sdk/rust/vera20k-sdk`), under Typ
 ## Start a module
 
 ```sh
-npx vera20k init my-module        # or: vera20k init my-ui --ui
+# from a checkout of the repository (the package is not published yet):
+cd sdk/typescript && npm install && cd -
+node sdk/typescript/bin/vera20k.js init my-module   # or: init my-ui --ui
 cd my-module
 npm install
 npm run build                     # build/rules.wasm
-npm run check                     # tsc type check
+npm run check                     # vera20k generate, then tsc
 npm run watch                     # rebuild on save
 ```
 

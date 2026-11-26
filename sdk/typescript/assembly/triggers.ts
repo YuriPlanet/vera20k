@@ -83,9 +83,10 @@ export function namedAction<T>(name: string, fn: (e: T) => void): i32 {
 
 // ----------------------------------------------------------- Lifecycle
 
-let scenarioStart: usize = 0;
-let rulesHook: usize = 0;
-let messageHook: usize = 0;
+// Each registration runs, in registration order.
+const scenarioStart = new Array<usize>();
+const rulesHooks = new Array<usize>();
+const messageHooks = new Array<usize>();
 const frameFns = new Array<usize>();
 const frameEvery = new Array<i32>();
 
@@ -96,12 +97,12 @@ export class Every {
 
 /** Runs `fn` once at scenario start. */
 export function onScenarioStart(fn: () => void): void {
-  scenarioStart = changetype<usize>(fn);
+  scenarioStart.push(changetype<usize>(fn));
 }
 
 /** Runs `fn` once at this module's layer of rules processing, where `Rules.set` writes. */
 export function onRules(fn: () => void): void {
-  rulesHook = changetype<usize>(fn);
+  rulesHooks.push(changetype<usize>(fn));
 }
 
 /** Runs `fn` on every frame divisible by `every.frames`, at the end of the module phase. */
@@ -112,21 +113,20 @@ export function onFrame(every: Every, fn: () => void): void {
 
 /**
  * Runs `fn` for each message a same-origin client module sent
- * (`Client.sendMessage`), with the sender's house and the bytes, valid
- * only during the call.
+ * (`Client.sendMessage`), with the sender's house and a copy of the bytes.
  */
 export function onMessage(fn: (sender: House, data: Uint8Array) => void): void {
-  messageHook = changetype<usize>(fn);
+  messageHooks.push(changetype<usize>(fn));
 }
 
 /** @internal */
 export function runScenarioStart(): void {
-  if (scenarioStart) changetype<() => void>(scenarioStart)();
+  for (let i = 0; i < scenarioStart.length; i++) changetype<() => void>(unchecked(scenarioStart[i]))();
 }
 
 /** @internal */
 export function runRules(): void {
-  if (rulesHook) changetype<() => void>(rulesHook)();
+  for (let i = 0; i < rulesHooks.length; i++) changetype<() => void>(unchecked(rulesHooks[i]))();
 }
 
 /** @internal */
@@ -157,11 +157,13 @@ export function runDecide(ptr: usize, count: i32): void {
 
 /** @internal `on_message(sender, ptr, len)`. */
 export function runMessage(sender: i64, ptr: usize, len: i32): void {
-  if (!messageHook) return;
+  if (!messageHooks.length) return;
   // A copy: the delivery area is reused by the next call.
   const data = new Uint8Array(len);
   memory.copy(data.dataStart, ptr, <usize>len);
-  changetype<(sender: House, data: Uint8Array) => void>(messageHook)(sender, data);
+  for (let i = 0; i < messageHooks.length; i++) {
+    changetype<(sender: House, data: Uint8Array) => void>(unchecked(messageHooks[i]))(sender, data);
+  }
 }
 
 // --------------------------------------------------------- Trigger actions

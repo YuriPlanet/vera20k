@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vera20k build",
     "watch": "vera20k watch",
-    "check": "tsc --noEmit -p ."
+    "check": "vera20k generate && tsc --noEmit -p ."
   },
   "devDependencies": {
     "@vera20k/sdk": "0.1.0",

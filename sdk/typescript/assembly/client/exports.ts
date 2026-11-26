@@ -7,6 +7,8 @@
 // Imported through the package name, as the module's own code imports the
 // SDK, so the compiler loads one copy of it.
 import { runStart, runRender, runClientEvents } from "@vera20k/sdk/assembly/client/events";
+// Loads the compiler's `abort` handler (`--use abort=`, bin/vera20k.js).
+import "@vera20k/sdk/assembly/abort";
 
 export function client_on_start(): void {
   runStart();

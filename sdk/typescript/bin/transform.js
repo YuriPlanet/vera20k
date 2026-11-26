@@ -37,7 +37,9 @@ export default class VeraTransform extends Transform {
         const literal = arg.match(/^"([^"\\]*)"$/) ?? arg.match(/^'([^'\\]*)'$/);
         if (!literal) {
           const line = body.slice(0, m.index).split("\n").length;
-          throw new VeraError(`${source.normalizedPath}:${line}: namedAction's name must be a string literal, not ${arg}`);
+          // Reported by `vera20k build` as its own error, without a stack.
+          state.found.error ??= `${source.normalizedPath}:${line}: namedAction's name must be a string literal, not ${arg}`;
+          continue;
         }
         if (!state.found.actions.includes(literal[1])) state.found.actions.push(literal[1]);
       }

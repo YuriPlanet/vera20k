@@ -510,7 +510,7 @@ export class Find {
     return new Find(3).ofType(t);
   }
 
-  /** Only within `radius` cells of `center`. */
+  /** Only within `radius` leptons (256 to a cell) of `center`. */
   near(center: Cell, radius: i32): Find {
     store<i32>(this.ptr, 1, Q_AREA);
     store<i64>(this.ptr, center, Q_CELL);

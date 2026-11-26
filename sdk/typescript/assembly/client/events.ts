@@ -21,19 +21,20 @@ import { Node } from "./api";
 
 // ------------------------------------------------------------ Callbacks
 
-let startHook: usize = 0;
-let renderHook: usize = 0;
+// Each registration runs, in registration order.
+const startHooks = new Array<usize>();
+const renderHooks = new Array<usize>();
 const eventKinds = new Array<i32>();
 const eventFns = new Array<usize>();
 
 /** Runs `fn` once the match interface is built (and again after a rejoining player's catch-up). */
 export function onStart(fn: () => void): void {
-  startHook = changetype<usize>(fn);
+  startHooks.push(changetype<usize>(fn));
 }
 
 /** Runs `fn(dt, alpha)` once per render frame, after the frame's events. Both serve presentation only. */
 export function onRender(fn: (dt: f32, alpha: f32) => void): void {
-  renderHook = changetype<usize>(fn);
+  renderHooks.push(changetype<usize>(fn));
 }
 
 /**
@@ -48,12 +49,14 @@ export function onClientEvent<T>(kind: ClientEvent, fn: (e: T) => void): void {
 
 /** @internal `client_on_start`. */
 export function runStart(): void {
-  if (startHook) changetype<() => void>(startHook)();
+  for (let i = 0; i < startHooks.length; i++) changetype<() => void>(unchecked(startHooks[i]))();
 }
 
 /** @internal `client_on_render(dt, alpha)`. */
 export function runRender(dt: f32, alpha: f32): void {
-  if (renderHook) changetype<(dt: f32, alpha: f32) => void>(renderHook)(dt, alpha);
+  for (let i = 0; i < renderHooks.length; i++) {
+    changetype<(dt: f32, alpha: f32) => void>(unchecked(renderHooks[i]))(dt, alpha);
+  }
 }
 
 /** @internal `client_on_events(ptr, count)`. */
