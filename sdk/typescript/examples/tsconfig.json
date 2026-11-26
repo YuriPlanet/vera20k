@@ -7,5 +7,5 @@
       "@vera20k/sdk/*": ["../*"]
     }
   },
-  "include": ["*/src/**/*.ts"]
+  "include": ["*/src/**/*.ts", "*/*/src/**/*.ts"]
 }

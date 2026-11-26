@@ -150,10 +150,55 @@ function viewClass(v, decision) {
   for (const v of views("triggers.rs", "view")) text += viewClass(v, false);
   writeFileSync(join(out, "views.ts"), text.trimEnd() + "\n");
 }
+// Decision views with a result area or helpers of their own: written by
+// hand in assembly/decide.ts, so they are skipped here.
+const HAND_WRITTEN_DECISIONS = new Set([
+  "FireDecision", "FatalDamageDecision", "MissionStepDecision", "LaunchDecision",
+  "ProjectileFrameDecision", "MoveFrameDecision", "PathFoundDecision", "ApproachPointDecision",
+]);
 {
   let text = header("decide.rs `decision!`") +
     'import { Techno, House, Cell, Modifier, TypeRef, Projectile, NameKind } from "../core";\n' +
     'import { Prop } from "./props";\nimport { EventRecord, DecideRecord } from "../records";\n\n';
-  for (const v of views("decide.rs", "decision")) text += viewClass(v, true);
+  for (const v of views("decide.rs", "decision")) {
+    if (!HAND_WRITTEN_DECISIONS.has(v.name)) text += viewClass(v, true);
+  }
   writeFileSync(join(out, "decisions.ts"), text.trimEnd() + "\n");
+}
+
+// Client tables (appendix 7.10, 4.6, 5.4): the Rust SDK's `client.rs`
+// `NodeKind` and `ClientEvent` enums and `Local` action constants.
+{
+  const source = readFileSync(join(rust, "client.rs"), "utf8");
+  /** The `Name = N,` variants of `pub enum <type> {`, with their `///` docs. */
+  const enumVariants = (type) => {
+    const start = source.indexOf(`pub enum ${type} {`);
+    if (start < 0) throw new Error(`no enum ${type} in client.rs`);
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    const entries = [];
+    for (const m of body.matchAll(/^\s*((?:\/\/\/.*\n\s*)*)([A-Z]\w*) = (-?\d+),/gm)) {
+      const doc = m[1].trim().split("\n").map((l) => l.trim().replace(/^\/\/\/ ?/, "")).filter(Boolean);
+      entries.push({ name: m[2], value: Number(m[3]), doc });
+    }
+    return entries;
+  };
+  const enumText = (name, entries, comment) => {
+    let text = `/** ${comment} */\nexport enum ${name} {\n`;
+    for (const e of entries) {
+      // Rust intra-doc links read as plain code here.
+      const doc = e.doc.join(" ").replace(/\[`([^`]+)`\](\([^)]*\))?/g, "`$1`")
+        .replace(/(?:sys::)?(\w+)::(\w+)/g, (_, type, member) => `${type}.${camel(member)}`);
+      if (doc) text += `  /** ${doc} */\n`;
+      text += `  ${e.name} = ${e.value},\n`;
+    }
+    return text + "}\n";
+  };
+  const text = header("client.rs `NodeKind`, `ClientEvent`, `Local`") +
+    enumText("NodeKind", enumVariants("NodeKind"),
+      "Node kinds (appendix 7.10). Modules create all but `CameoGrid`, which only layouts make.") + "\n" +
+    enumText("ClientEvent", enumVariants("ClientEvent"),
+      "Client event kinds (appendix 4.6), delivered to `client_on_events`.") + "\n" +
+    enumText("ClientActionKind", implConsts("client.rs", "Local"),
+      "Local action kinds (appendix 5.4) for `client_action`.");
+  writeFileSync(join(out, "client_tables.ts"), text);
 }

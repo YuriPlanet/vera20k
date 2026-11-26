@@ -8,3 +8,6 @@ export * from "./triggers";
 export { Scope, Visibility } from "./vars";
 export * from "./generated/views";
 export * from "./generated/decisions";
+export * from "./decide";
+export * from "./ini";
+export * from "./notify";

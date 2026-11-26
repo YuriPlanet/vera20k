@@ -13,7 +13,7 @@
 import * as sys from "./sys";
 import {
   Status, check, OUT, utf8, utf8Len, NO_HANDLE, Ref, House, Cell, Prop, Op, Var, ActionKind,
-  frame, set, lastStatus,
+  frame, set, lastStatus, Find, TypeRef, NameKind,
 } from "./core";
 import { Event } from "./generated/events";
 import { Target, EventRecord, DecideRecord } from "./records";
@@ -308,7 +308,33 @@ export namespace TriggerRef {
   export function setEnabled(t: TriggerRef, enabled: bool): Status {
     return set(t, Prop.Enabled, enabled ? 1 : 0);
   }
+  /**
+   * Binds `t` to every type of name kind `kind` (`find` with scope `Types`
+   * and the kind's wildcard, then `trigger_bind` once per type). Returns
+   * the number bound; `lastStatus()` is the first failure, if any.
+   */
+  export function bindAllTypes(t: TriggerRef, kind: NameKind): i32 {
+    const find = Find.types(TypeRef.any(kind));
+    let bound = 0;
+    let failed = Status.Ok;
+    let after: i64 = 0;
+    do {
+      const page = find.page(TYPE_PAGE, after);
+      if (lastStatus() != Status.Ok) return bound;
+      const count = page.count;
+      after = page.next;
+      for (let i = 0; i < count; i++) {
+        const status = check(sys.trigger_bind(t, unchecked(TYPE_PAGE[i])));
+        if (status == Status.Ok) bound++;
+        else if (failed == Status.Ok) failed = status;
+      }
+    } while (after != 0);
+    check(failed);
+    return bound;
+  }
 }
+
+const TYPE_PAGE = new StaticArray<i64>(64);
 
 /**
  * A trigger under construction (appendix section 3, "Triggers"). Nothing
@@ -337,6 +363,29 @@ export class Trigger {
     const count = this.eventCount;
     if (count == 0) return 0;
     return changetype<usize>(this.events) + <usize>((count - 1) * EVENT_BYTES);
+  }
+
+  // Handle functions (appendix section 3, "Bindings"), the same as `TriggerRef`'s.
+
+  /** Binds trigger `t` to `reference`. */
+  static bind(t: TriggerRef, reference: Ref): Status {
+    return TriggerRef.bind(t, reference);
+  }
+  /** Unbinds trigger `t` from `reference`. */
+  static unbind(t: TriggerRef, reference: Ref): Status {
+    return TriggerRef.unbind(t, reference);
+  }
+  /** Removes trigger `t` and every instance of it. */
+  static remove(t: TriggerRef): Status {
+    return TriggerRef.remove(t);
+  }
+  /** Writes trigger `t`'s `Enabled` property. */
+  static setEnabled(t: TriggerRef, enabled: bool): Status {
+    return TriggerRef.setEnabled(t, enabled);
+  }
+  /** Binds trigger `t` to every type of `kind`; see `TriggerRef.bindAllTypes`. */
+  static bindAllTypes(t: TriggerRef, kind: NameKind): i32 {
+    return TriggerRef.bindAllTypes(t, kind);
   }
 
   /** A repeating trigger on event `kind` for every difficulty. */

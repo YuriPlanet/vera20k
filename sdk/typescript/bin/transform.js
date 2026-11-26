@@ -16,7 +16,7 @@ const NEEDS = {
   on_message: [/\bonMessage\s*\(/],
   client_on_start: [/\bonStart\s*\(/],
   client_on_render: [/\bonRender\s*\(/],
-  client_on_events: [/\bonClientEvent\s*[<(]/, /\bonNotify\s*[<(]/, /\bonSimEvent\s*[<(]/, /\bonHotkey\s*[<(]/],
+  client_on_events: [/\bonClientEvent\s*[<(]/],
 };
 
 const NAMED = /\bnamedAction\s*(?:<[^>()]*>)?\s*\(\s*([^,)]*)/g;
