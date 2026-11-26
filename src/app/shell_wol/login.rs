@@ -14,6 +14,7 @@ use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::{App, AppState};
 use crate::audio::sfx::SfxPlayer;
 use crate::render::gpu::GpuContext;
@@ -22,7 +23,7 @@ use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::wol_account::{AccountSuccess, POPUP, WolAccountForm};
 use crate::ui::wol_login::*;
 use crate::util::config::GameConfig;
-use winit::keyboard::KeyCode;
+use winit::keyboard::{KeyCode, ModifiersState};
 use winit::window::Window;
 
 pub(crate) fn login_layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolLoginLayout {
@@ -150,28 +151,35 @@ fn sync(frontend: &mut FrontendState, renderer: &RendererState) {
 }
 
 /// The widgets back on the layout (edits scrolled to their carets), then
-/// what the input asked for.
-fn finish(state: &mut AppState, action: Option<WolLoginAction>) {
-    sync(&mut state.frontend, &state.renderer);
-    if let Some(action) = action {
-        dispatch(state, action);
-    }
+/// what the input asked for; the page's close is the returned step.
+#[must_use]
+fn finish(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    game_config: Option<&GameConfig>,
+    action: Option<WolLoginAction>,
+) -> Option<ClientStep> {
+    sync(frontend, renderer);
+    dispatch(frontend, game_config, action?)
 }
 
-fn dispatch(state: &mut AppState, action: WolLoginAction) {
+#[must_use]
+fn dispatch(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    action: WolLoginAction,
+) -> Option<ClientStep> {
     match action {
-        WolLoginAction::Close(result) => App::leave_shell_dialog(
-            state,
-            shell_transition::ShellSlideKind::WolLogin,
-            move |state| App::commit_wol_login_close(state, result),
-        ),
+        WolLoginAction::Close(result) => {
+            return Some(ClientStep::Leave(
+                shell_transition::ShellSlideKind::WolLogin,
+                Box::new(move |state: &mut AppState| App::commit_wol_login_close(state, result)),
+            ));
+        }
         WolLoginAction::Forget { slot, nickname } => {
             // 0x0079A6F0..0x0079A7B6: a lowered match clears AutoLogin, then
             // LastValid.
-            if let Some(file) = super::persona::info_file(
-                state.frontend.wol.as_ref(),
-                state.platform.game_config.as_ref(),
-            ) {
+            if let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) {
                 let name = nickname.to_ascii_lowercase();
                 if file.auto_login().to_ascii_lowercase() == name {
                     file.set_auto_login("");
@@ -180,11 +188,11 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
                     file.set_last_valid("");
                 }
             }
-            if let Some(visit) = state.frontend.wol.as_mut() {
+            if let Some(visit) = frontend.wol.as_mut() {
                 visit.credentials.retain(|stored| stored.slot != slot);
             }
             service::request(
-                state.frontend.wol.as_mut(),
+                frontend.wol.as_mut(),
                 WolServiceRequest::ForgetCredential { slot },
             );
         }
@@ -192,10 +200,10 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
         // retail install has neither and it returns.
         WolLoginAction::Manage => {}
         WolLoginAction::ForgetSignIn => {
-            service::request(state.frontend.wol.as_mut(), WolServiceRequest::ForgetSignIn)
+            service::request(frontend.wol.as_mut(), WolServiceRequest::ForgetSignIn)
         }
         WolLoginAction::Send(request) => {
-            if let Some(visit) = &mut state.frontend.wol {
+            if let Some(visit) = &mut frontend.wol {
                 visit.account_attempt = visit.account_attempt.wrapping_add(1);
                 visit.requests.push(WolServiceRequest::Account {
                     attempt: visit.account_attempt,
@@ -204,18 +212,25 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
             }
         }
     }
+    None
 }
 
 /// The lobby answered the account popup: a refusal shows in it, a sent code
 /// moves it on, a confirmed account or new password signs in, and a deleted
-/// account's popup says so.
-pub(super) fn account_answered(state: &mut AppState, answer: Result<AccountSuccess, String>) {
-    let action = with_login(&mut state.frontend, |login, cx| {
+/// account's popup says so. The page's close is the returned step.
+#[must_use]
+pub(super) fn account_answered(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    game_config: Option<&GameConfig>,
+    answer: Result<AccountSuccess, String>,
+) -> Option<ClientStep> {
+    let action = with_login(frontend, |login, cx| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
         let sign_in = form.answered(cx.ui, answer)?;
         Some(login.signed_up(cx, sign_in))
     });
-    finish(state, action.flatten());
+    finish(frontend, renderer, game_config, action.flatten())
 }
 
 /// `0x10F`'s teardown has run: Back returns 0 to `WOL_Main` (the welcome
@@ -242,13 +257,22 @@ pub(super) fn commit_close(state: &mut AppState, result: u16) {
     service::begin_connect(state);
 }
 
-pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    let shift = state.platform.live_modifiers.shift_key();
+/// A key on `0x10F` or its popup; the page's close is the returned step.
+#[must_use]
+pub(super) fn key_press(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    game_config: Option<&GameConfig>,
+    live_modifiers: ModifiersState,
+    code: Option<KeyCode>,
+    text: Option<&str>,
+) -> Option<ClientStep> {
+    let shift = live_modifiers.shift_key();
     let key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, shift));
     if matches!(key, Some(Key::Enter | Key::Escape)) {
-        sync(&mut state.frontend, &state.renderer);
+        sync(frontend, renderer);
     }
-    let action = with_login(&mut state.frontend, |login, cx| match key {
+    let action = with_login(frontend, |login, cx| match key {
         Some(key @ (Key::Enter | Key::Escape)) => login.dialog_key(cx, key),
         Some(key) => {
             login.edit_key(cx, key);
@@ -259,7 +283,7 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             None
         }
     });
-    finish(state, action.flatten());
+    finish(frontend, renderer, game_config, action.flatten())
 }
 
 pub(super) fn cursor_moved(
@@ -283,18 +307,29 @@ pub(super) fn cursor_moved(
     with_login(frontend, |login, cx| login.pointer_moved(cx.ui));
 }
 
-pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    sync(&mut state.frontend, &state.renderer);
+/// A button on `0x10F` or its popup; the page's close is the returned step.
+#[must_use]
+pub(super) fn mouse(
+    frontend: &mut FrontendState,
+    window: &Window,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+    pressed: bool,
+) -> Option<ClientStep> {
+    sync(frontend, renderer);
     let events = leaf::pointer(
-        &mut state.frontend,
-        &state.platform.window,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
         if pressed { Pointer::Down } else { Pointer::Up },
     );
-    let action = with_login(&mut state.frontend, |login, cx| login.handle(cx, events));
-    finish(state, action.flatten());
+    let action = with_login(frontend, |login, cx| login.handle(cx, events));
+    finish(frontend, renderer, game_config, action.flatten())
 }
 
 /// The status help under the pointer (`0x006040B0`). Over the nickname
