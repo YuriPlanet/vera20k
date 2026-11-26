@@ -6,6 +6,7 @@
 
 pub mod choose_map_page;
 mod layout;
+pub(crate) mod online_map_folders;
 pub mod page;
 pub mod random_map_page;
 mod state;
