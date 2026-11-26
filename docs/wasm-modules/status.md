@@ -1,7 +1,7 @@
 # Wasm extension modules: development status
 
-The current checkpoint for implementing [RFC 0001](rfcs/0001-wasm-extension-modules.md)
-(API in the [appendix](rfcs/0001-wasm-extension-modules-api.md)). Replace this file's
+The current checkpoint for implementing [RFC 0001](../rfcs/0001-wasm-extension-modules.md)
+(API in the [appendix](../rfcs/0001-wasm-extension-modules-api.md)). Replace this file's
 content as work lands; do not append a diary.
 
 ## Where the work is
@@ -39,9 +39,9 @@ content as work lands; do not append a diary.
 | Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
 | Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
 | INI registration (RFC 0001 section 6h): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
-| Modder guide | `docs/wasm-modules.md` (`.zh-CN.md` beside each English page) |
-| Tutorials | `docs/wasm-modules-tutorial.md` (Rust simulation module), `docs/wasm-modules-ui-tutorial.md` (Rust client module); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript) |
-| Rust SDK reference | `docs/wasm-modules-sdk.md` |
+| Modder guide | `docs/wasm-modules/guide.md` (`.zh-CN.md` beside each English page) |
+| Tutorials | `docs/wasm-modules/rust-tutorial.md` (Rust simulation module), `docs/wasm-modules/rust-ui-tutorial.md` (Rust client module); `docs/wasm-modules/ts-tutorial.zh-CN.md` (TypeScript) |
+| Rust SDK reference | `docs/wasm-modules/rust-sdk.md` |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
@@ -56,7 +56,7 @@ content as work lands; do not append a diary.
 | Map embedding (`[VeraWasm]`, `[VeraWasmRulesPack]`) | `src/map/ext_module_pack.rs` |
 | Loading | `headless_scenario.rs`, `app/loading/init.rs`: `PreparedExtModules::load` (mod folder `rules.wasm`, then map) before the rules load, `install_scenario_ext_modules` after the simulation exists |
 | `asset wasm-check / wasm-embed / wasm-extract` | `src/asset_tools/verb_wasm.rs` |
-| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules.md`); the small game `muster-field` (with its `ui.wasm`); the benchmark `control-bench` |
+| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (these four split the API by area without overlap, see `docs/wasm-modules/guide.md`); the small game `muster-field` (with its `ui.wasm`); the benchmark `control-bench` |
 
 Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `.cargo/config.toml` targets wasm32 with the allowlisted features). The engine tests

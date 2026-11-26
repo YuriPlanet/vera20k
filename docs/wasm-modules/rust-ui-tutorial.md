@@ -1,6 +1,6 @@
 # Tutorial: a client module (`ui.wasm`)
 
-[English](wasm-modules-ui-tutorial.md) | [简体中文](wasm-modules-ui-tutorial.zh-CN.md)
+[English](rust-ui-tutorial.md) | [简体中文](rust-ui-tutorial.zh-CN.md)
 
 This tutorial builds a button on the match screen: "Reinforcements: Rhino tank, $2000".
 A click buys one Rhino tank, once per player; the button then disappears and EVA says
@@ -8,10 +8,10 @@ the reinforcements have arrived. It takes two modules that work together, a clie
 module (`ui.wasm`) for the button and a simulation module (`rules.wasm`) for the tank.
 The complete code is `sdk/examples/ui-reinforcements` in the VERA20K source.
 
-- Who it is for: you have done the [simulation module tutorial](wasm-modules-tutorial.md),
+- Who it is for: you have done the [simulation module tutorial](rust-tutorial.md),
   or you know enough Rust to read it.
-- Reference: [Rust SDK reference](wasm-modules-sdk.md#client-modules),
-  [guide](wasm-modules.md), [interface layout](interface-layout.md) for buttons placed
+- Reference: [Rust SDK reference](rust-sdk.md#client-modules),
+  [guide](guide.md), [interface layout](../interface-layout.md) for buttons placed
   by a layout.
 - Preview: names and numbers may still change before version 1.
 
@@ -43,7 +43,7 @@ Three ways connect the two:
 ## 2. Set up the project
 
 You need Rust with `wasm32-unknown-unknown` and the VERA20K source, as in sections 2.1
-and 2.2 of the [simulation tutorial](wasm-modules-tutorial.md#2-set-up). Copy the
+and 2.2 of the [simulation tutorial](rust-tutorial.md#2-set-up). Copy the
 example:
 
 ```sh
@@ -259,7 +259,7 @@ match loads it and tells you in the chat list if it refuses it; the match then p
 without it.
 
 Make a mod folder with both modules (the `Mods` folder is in the VERA20K folder, see the
-[guide](wasm-modules.md#put-it-in-a-mod)):
+[guide](guide.md#put-it-in-a-mod)):
 
 ```text
 Mods/MyReinforcements/
@@ -292,7 +292,7 @@ If nothing happens:
 ## 6. Place the button with a layout
 
 A mod can place the button with its interface layout instead of letting the module create
-it. In the mod's `veraui.ini` ([interface layout](interface-layout.md)), add a button
+it. In the mod's `veraui.ini` ([interface layout](../interface-layout.md)), add a button
 without `Command` to the battlefield's parts:
 
 ```ini
@@ -310,7 +310,7 @@ Y=60
 `Ui::find("BuyReinforcements")` now finds this part (its name after the layout's prefix),
 and the module only changes its label and visibility. A button without `Command` does
 nothing by itself: a click only tells the modules. A map can add parts for its own client
-module the same way, in `[VeraUI]` ([a map's own parts](interface-layout.md#a-maps-own-parts)).
+module the same way, in `[VeraUI]` ([a map's own parts](../interface-layout.md#a-maps-own-parts)).
 
 ## 7. More things a client module can do
 
@@ -395,7 +395,7 @@ simulation does.
 - For now ship a client module in a mod: `asset wasm-embed` does not yet write a map's
   `ui.wasm`.
 
-Limits, debugging and the other events are in the [guide](wasm-modules.md#limits) and
-the [SDK reference](wasm-modules-sdk.md#client-modules). `sdk/examples/ui-ping` is the
+Limits, debugging and the other events are in the [guide](guide.md#limits) and
+the [SDK reference](rust-sdk.md#client-modules). `sdk/examples/ui-ping` is the
 smallest pair of modules; `sdk/examples/muster-field/ui` a full interface with panels,
 cards and pictures.

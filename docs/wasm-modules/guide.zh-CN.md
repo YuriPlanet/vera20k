@@ -1,17 +1,17 @@
 # 给 mod 和地图用的 Wasm 模块
 
-[English](wasm-modules.md) | [简体中文](wasm-modules.zh-CN.md)
+[English](guide.md) | [简体中文](guide.zh-CN.md)
 
 mod 或地图可以带上小程序，也就是 WebAssembly 模块，用来实现 INI 键写不出来的东西：受伤就慌乱逃跑的单位、首杀奖励、每两分钟一波进攻、有自己打法的电脑对手、屏幕上的商店按钮。这份指南讲模块能做什么、放在哪、怎么编译和发布，以及有哪些限制。
 
 | 文档 | 用途 |
 | --- | --- |
 | 本指南 | 模块是什么、放在哪、INI 触发器、限制、调试 |
-| [教程：模拟模块](wasm-modules-tutorial.zh-CN.md)（[English](wasm-modules-tutorial.md)） | 一步步做出第一个 `rules.wasm`，从安装 Rust 到在遭遇战里玩上悬赏 mod |
-| [教程：客户端模块](wasm-modules-ui-tutorial.zh-CN.md)（[English](wasm-modules-ui-tutorial.md)） | 第一个 `ui.wasm`：一个购买援军的按钮 |
-| [Rust SDK 参考](wasm-modules-sdk.zh-CN.md)（[English](wasm-modules-sdk.md)） | Rust SDK 的每个函数、事件、动作和限制 |
-| [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md) 及其[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md) | 设计说明，以及每个导入、事件、动作、属性和枚举及其编号 |
-| [开发状态](wasm-modules-status.md) | 当前版本实现了什么，写给贡献者 |
+| [教程：模拟模块](rust-tutorial.zh-CN.md)（[English](rust-tutorial.md)） | 一步步做出第一个 `rules.wasm`，从安装 Rust 到在遭遇战里玩上悬赏 mod |
+| [教程：客户端模块](rust-ui-tutorial.zh-CN.md)（[English](rust-ui-tutorial.md)） | 第一个 `ui.wasm`：一个购买援军的按钮 |
+| [Rust SDK 参考](rust-sdk.zh-CN.md)（[English](rust-sdk.md)） | Rust SDK 的每个函数、事件、动作和限制 |
+| [RFC 0001](../rfcs/0001-wasm-extension-modules.zh-CN.md) 及其[附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md) | 设计说明，以及每个导入、事件、动作、属性和枚举及其编号 |
+| [开发状态](status.md) | 当前版本实现了什么，写给贡献者 |
 
 这是预览版。在接口 1.0 版之前，名字和编号还可能变；模块需要更新的接口时，游戏会告诉你。现在请用 Rust SDK；TypeScript SDK 正在编写中。
 
@@ -57,14 +57,14 @@ SeatBudget=500000  ; 每个 "mod AI" 座位给 mod 预算增加的运算量
 - 玩家可以在 `VERA.INI` 里用 `[VERA] WasmBudget=` 调低 mod 的预算；联机时以房主的值为准。
 - 大厅会比对每个玩家的 `rulesmd.ini`，所以这些键对所有人都一样。
 
-mod 的 `rulesmd.ini` 会替换游戏的整个文件。只加模块的 mod 不需要它；需要 `[VeraWasm]` 或 INI 触发器的 mod 要从一份完整的副本开始改（见 [modding](modding.md)）。
+mod 的 `rulesmd.ini` 会替换游戏的整个文件。只加模块的 mod 不需要它；需要 `[VeraWasm]` 或 INI 触发器的 mod 要从一份完整的副本开始改（见 [modding](../modding.md)）。
 
 ### 地图
 
 - `asset wasm-embed <map> rules.wasm <out map>` 把模块写进地图的一份副本，同时写入 `[VeraWasm] Api=` 和 `RulesSize=`。
 - 把 `[Basic] VeraMinVersion=` 设成你做地图时用的 VERA20K 版本。比它旧的版本会拒绝这张地图并给出提示，而不是去掉模块照常游玩。
 - `[VeraWasm] StorageId=` 指定地图客户端模块的存储名（默认：地图的文件名）。
-- 地图可以在 `[VeraUI]` 里为自己的客户端模块添加界面部件（[界面布局](interface-layout.md#a-maps-own-parts)）。
+- 地图可以在 `[VeraUI]` 里为自己的客户端模块添加界面部件（[界面布局](../interface-layout.md#a-maps-own-parts)）。
 - 地图不能把 INI 触发器绑到类型上：地图里的 `Wasm.Tags` 会被忽略，开局时会提示这一点。地图的模块要在代码里绑定触发器。
 - 地图的 `ui.wasm` 放在 `[VeraWasmUIPack]`，并配上 `[VeraWasm] UISize=`，格式和规则包一样（分块 LZO 再 base64，每行 70 个字符，行号依次编号）。游戏能读它，但 `asset wasm-embed` 只写规则模块，所以目前请把客户端模块放在 mod 里发布。
 
@@ -156,7 +156,7 @@ Repeat=Repeating
 | `Difficulty` | `Easy`、`Normal`、`Hard`，用逗号分隔 |
 | `Repeat` | `OneTimeOr`（默认）、`OneTimeAnd`、`Repeating` |
 
-动作的目标是 `Subject`（或留空）、`Other`、`TagHolder`、`Projectile`、`House` 或 `Cell`；用 `Cell` 时先写路径点编号。参数按[附录第 5 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)里该动作那一行的顺序写，空着的算 0：
+动作的目标是 `Subject`（或留空）、`Other`、`TagHolder`、`Projectile`、`House` 或 `Cell`；用 `Cell` 时先写路径点编号。参数按[附录第 5 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)里该动作那一行的顺序写，空着的算 0：
 
 - 类型、武器、弹头、超级武器、TeamType、变量、属性、动画、voxel 动画或粒子系统，写名字或编号都行。
 - `Mission` 写任务名（`Hunt`、`Guard`、`Wait`……），`EndFor` 写 `Win` 或 `Lose`，`Teleport` 写 `Nearby` 或 `Fail`，`Modify` 写 `Add`、`Multiply` 或 `Override`；写数字也行。`Push(target,cell,distance,frames)` 和 `SetFacing(target,facing)` 写数字。
@@ -167,7 +167,7 @@ Repeat=Repeating
 
 ## 模块注册的 INI 名称
 
-模块可以给 modder 提供它自己的 INI 键：modder 写 INI，模块负责实现（[RFC 0001 第 6h 节](rfcs/0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）。
+模块可以给 modder 提供它自己的 INI 键：modder 写 INI，模块负责实现（[RFC 0001 第 6h 节](../rfcs/0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）。
 
 ```ini
 [HTNK]
@@ -239,7 +239,7 @@ vera20k_sdk::on_events!(SHIELD_TYPES => load_shield_type, SHIELD => attach_shiel
 | --- | --- | --- |
 | `exceeded its operation budget` | 一次调用用掉的运算超过了预算 | 把工作分摊到多帧（`on_frame!(every = N, …)`，每帧只处理一部分对象）；读很多值时用 `get_many` |
 | `trapped: …` | 代码崩溃了：下标越界、`panic!`、`unwrap` 失败 | 用 `if let` 或 `match` 处理每个 `Err` |
-| `made an invalid call: …` | 参数超出范围、变量的作用范围不对、在决定处理函数里写入、在 `init` 之外注册 | 对照 [SDK 参考](wasm-modules-sdk.zh-CN.md) 检查这次调用 |
+| `made an invalid call: …` | 参数超出范围、变量的作用范围不对、在决定处理函数里写入、在 `init` 之外注册 | 对照 [SDK 参考](rust-sdk.zh-CN.md) 检查这次调用 |
 | `cannot keep up: … event records are waiting` | 触发器记录多到模块处理不过来 | 少绑一些对象，加筛选子句（`where_prop`） |
 
 **`wasm-check` 拒绝了模块。**
@@ -303,7 +303,7 @@ vera20k_sdk::on_events!(SHIELD_TYPES => load_shield_type, SHIELD => attach_shiel
 | 示例 | 展示 |
 | --- | --- |
 | `minimal-rules` | 最小的模块：钱和一个变量 |
-| `tutorial-bounty` | [教程](wasm-modules-tutorial.zh-CN.md)里的悬赏 mod |
+| `tutorial-bounty` | [教程](rust-tutorial.zh-CN.md)里的悬赏 mod |
 | `playtest` | 每 30 秒发钱，通过决定把伤害减半 |
 | `panic-triggers` | 在代码里创建的触发器，不用 `core::fmt` 输出数字 |
 | `modifier-vars` | 修饰器和声明的变量 |
@@ -318,7 +318,7 @@ vera20k_sdk::on_events!(SHIELD_TYPES => load_shield_type, SHIELD => attach_shiel
 | `ai-takeover` | 接管一个电脑所属方、用指令替它打的模块（RFC 6i） |
 | `control-bench` | 几乎覆盖所有模拟控制点的基准测试 mod（中文 README） |
 | `ui-ping` | 最小的一对模块：`ui.wasm` 发一条消息，`rules.wasm` 用一条通知回复 |
-| `ui-reinforcements` | 一个买坦克的按钮：消息、检查、变量、通知（[客户端教程](wasm-modules-ui-tutorial.zh-CN.md)） |
+| `ui-reinforcements` | 一个买坦克的按钮：消息、检查、变量、通知（[客户端教程](rust-ui-tutorial.zh-CN.md)） |
 | `muster-field` | 一个小型自走棋战役，界面完整地做在面板上；文字为简体中文 |
 
 `muster-field` 展示了两个值得照搬的做法。一是通过 `CommandAllowed` 把玩家的命令变成输入：处理函数里不能写入，所以它拒绝这条命令，把它排进模块内存，留给下一次 `on_frame` 处理。二是模拟模块把营地状态发布成私有的所属方变量，只在有变化时写入，这样它的 `ui.wasm` 在读档重启后也能马上显示营地；每个按钮对应营地的一个命令（雇佣、保留、刷新……），点击时发一条两字节的消息，模拟模块把它变成那个命令。它需要一名人类玩家、一个电脑对手，并开启基地（Bases）。

@@ -1,6 +1,6 @@
 # Wasm modules for mods and maps
 
-[English](wasm-modules.md) | [简体中文](wasm-modules.zh-CN.md)
+[English](guide.md) | [简体中文](guide.zh-CN.md)
 
 A mod or a map can carry small programs, WebAssembly modules, that add what INI keys
 cannot express: a unit that panics when hurt, a reward for the first kill, a wave every
@@ -11,11 +11,11 @@ limits are.
 | Document | For |
 | --- | --- |
 | This guide | What modules are, where they go, INI triggers, limits, debugging |
-| [Tutorial: a simulation module](wasm-modules-tutorial.md) ([中文](wasm-modules-tutorial.zh-CN.md)) | A first `rules.wasm` step by step, from installing Rust to a bounty mod in a skirmish |
-| [Tutorial: a client module](wasm-modules-ui-tutorial.md) ([中文](wasm-modules-ui-tutorial.zh-CN.md)) | A first `ui.wasm`: a button that buys reinforcements |
-| [Rust SDK reference](wasm-modules-sdk.md) ([中文](wasm-modules-sdk.zh-CN.md)) | Every function, event, action and limit of the Rust SDK |
-| [RFC 0001](rfcs/0001-wasm-extension-modules.md) and its [appendix](rfcs/0001-wasm-extension-modules-api.md) | The design, and every import, event, action, property and enum with its number |
-| [Development status](wasm-modules-status.md) | What this build implements, for contributors |
+| [Tutorial: a simulation module](rust-tutorial.md) ([中文](rust-tutorial.zh-CN.md)) | A first `rules.wasm` step by step, from installing Rust to a bounty mod in a skirmish |
+| [Tutorial: a client module](rust-ui-tutorial.md) ([中文](rust-ui-tutorial.zh-CN.md)) | A first `ui.wasm`: a button that buys reinforcements |
+| [Rust SDK reference](rust-sdk.md) ([中文](rust-sdk.zh-CN.md)) | Every function, event, action and limit of the Rust SDK |
+| [RFC 0001](../rfcs/0001-wasm-extension-modules.md) and its [appendix](../rfcs/0001-wasm-extension-modules-api.md) | The design, and every import, event, action, property and enum with its number |
+| [Development status](status.md) | What this build implements, for contributors |
 
 This is a preview. Names and numbers may still change before version 1 of the API; the
 game tells you when a module needs a newer API. The Rust SDK is the one to use now; a
@@ -88,7 +88,7 @@ SeatBudget=500000  ; operations each "mod AI" seat adds to the mod's budget
 
 A mod's `rulesmd.ini` replaces the game's whole file. A mod that only adds a module
 doesn't need one; a mod that needs `[VeraWasm]` or INI triggers starts from a full copy
-(see [modding](modding.md)).
+(see [modding](../modding.md)).
 
 ### A map
 
@@ -100,7 +100,7 @@ doesn't need one; a mod that needs `[VeraWasm]` or INI triggers starts from a fu
 - `[VeraWasm] StorageId=` names the map's client module storage (default: the map's file
   name).
 - A map can add interface parts for its own client module in `[VeraUI]`
-  ([interface layout](interface-layout.md#a-maps-own-parts)).
+  ([interface layout](../interface-layout.md#a-maps-own-parts)).
 - A map cannot bind INI triggers to types: a `Wasm.Tags` in a map is ignored, and the
   match says so when it starts. A map's module binds its triggers in code.
 - A map's `ui.wasm` goes in `[VeraWasmUIPack]` with `[VeraWasm] UISize=`, in the same
@@ -213,7 +213,7 @@ Trigger section keys:
 
 An action's target is `Subject` (or empty), `Other`, `TagHolder`, `Projectile`, `House`
 or `Cell`; with `Cell` a waypoint number comes first. The parameters follow the action's
-row in [appendix section 5](rfcs/0001-wasm-extension-modules-api.md#5-action-kinds), in
+row in [appendix section 5](../rfcs/0001-wasm-extension-modules-api.md#5-action-kinds), in
 order, empty ones 0:
 
 - A type, weapon, warhead, superweapon, TeamType, variable, property, animation, voxel
@@ -230,7 +230,7 @@ A mistake stops the match from starting, with a message that names the section a
 ## INI names a module registers
 
 A module can give modders INI keys of its own: the modder writes INI, the module
-implements it ([RFC 0001 section 6h](rfcs/0001-wasm-extension-modules.md#6h-ini-registration)).
+implements it ([RFC 0001 section 6h](../rfcs/0001-wasm-extension-modules.md#6h-ini-registration)).
 
 ```ini
 [HTNK]
@@ -315,7 +315,7 @@ below).
 | --- | --- | --- |
 | `exceeded its operation budget` | One call used more than its budget | Spread the work over frames (`on_frame!(every = N, …)`, a part of the objects each frame); read many values with `get_many` |
 | `trapped: …` | The code crashed: out-of-bounds index, `panic!`, a failed `unwrap` | Handle every `Err` with `if let` or `match` |
-| `made an invalid call: …` | An argument out of range, a variable of the wrong scope, a write in a decision handler, a registration outside `init` | Check the call against the [SDK reference](wasm-modules-sdk.md) |
+| `made an invalid call: …` | An argument out of range, a variable of the wrong scope, a write in a decision handler, a registration outside `init` | Check the call against the [SDK reference](rust-sdk.md) |
 | `cannot keep up: … event records are waiting` | More trigger records than the module handles | Bind fewer objects, add filter clauses (`where_prop`) |
 
 **`wasm-check` refuses the module.**
@@ -390,7 +390,7 @@ All in `sdk/examples/` of the VERA20K source; each builds with `cargo build --re
 | Example | Shows |
 | --- | --- |
 | `minimal-rules` | The smallest module: money and a variable |
-| `tutorial-bounty` | The [tutorial](wasm-modules-tutorial.md)'s bounty mod |
+| `tutorial-bounty` | The [tutorial](rust-tutorial.md)'s bounty mod |
 | `playtest` | Pay every 30 seconds, half damage through a decision |
 | `panic-triggers` | A trigger made in code, numbers without `core::fmt` |
 | `modifier-vars` | Modifiers and declared variables |
@@ -405,7 +405,7 @@ All in `sdk/examples/` of the VERA20K source; each builds with `cargo build --re
 | `ai-takeover` | A module that takes over a computer house and plays it with orders (RFC 6i) |
 | `control-bench` | A benchmark mod that reaches nearly every simulation control point (README in Chinese) |
 | `ui-ping` | The smallest pair: a `ui.wasm` sends a message, the `rules.wasm` answers with a notification |
-| `ui-reinforcements` | A button that buys a tank: message, check, variable, notification ([client tutorial](wasm-modules-ui-tutorial.md)) |
+| `ui-reinforcements` | A button that buys a tank: message, check, variable, notification ([client tutorial](rust-ui-tutorial.md)) |
 | `muster-field` | A small auto-battler campaign with a full interface on panels; text in Simplified Chinese |
 
 `muster-field` shows two patterns worth copying. Player orders become input through

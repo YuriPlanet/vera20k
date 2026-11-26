@@ -107,15 +107,7 @@ Thumbs.db
 !/docs/ini-roots.md
 !/docs/personal-rules.md
 !/docs/modding.md
-!/docs/wasm-modules.md
-!/docs/wasm-modules-tutorial.zh-CN.md
-!/docs/wasm-modules-tutorial-ts.zh-CN.md
-!/docs/wasm-modules.zh-CN.md
-!/docs/wasm-modules-tutorial.md
-!/docs/wasm-modules-ui-tutorial.md
-!/docs/wasm-modules-ui-tutorial.zh-CN.md
-!/docs/wasm-modules-sdk.md
-!/docs/wasm-modules-sdk.zh-CN.md
+!/docs/wasm-modules/
 !/docs/map-format.md
 !/docs/terrain-deformation.md
 !/docs/ts-ice.md

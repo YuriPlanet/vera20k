@@ -1,14 +1,14 @@
 # Wasm 模块 Mod 开发教程
 
-[English](wasm-modules-tutorial.md) | [简体中文](wasm-modules-tutorial.zh-CN.md)
+[English](rust-tutorial.md) | [简体中文](rust-tutorial.zh-CN.md)
 
 这份教程带你从零开始，用 Rust 给 VERA20K 写一个 Wasm 模块，并放进游戏里试玩。读完后你会做出一个“击杀悬赏”mod：谁打死美国大兵或动员兵，谁就拿 200 块赏金。
 
 - 写给谁：会改 `rulesmd.ini`、想做 INI 做不到的玩法的 modder。用过一点编程语言就够了，Rust 只用到最基础的部分。
-- 参考资料：模块放在哪、有哪些限制见[模块指南](wasm-modules.zh-CN.md)；SDK 的每个函数见 [Rust SDK 参考](wasm-modules-sdk.zh-CN.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)。
-- 想做界面（按钮、面板）？先读完这份，再看[客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)。
+- 参考资料：模块放在哪、有哪些限制见[模块指南](guide.zh-CN.md)；SDK 的每个函数见 [Rust SDK 参考](rust-sdk.zh-CN.md)；完整设计见 [RFC 0001](../rfcs/0001-wasm-extension-modules.zh-CN.md)；每个函数、事件、动作、属性的编号与含义见[附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md)。
+- 想做界面（按钮、面板）？先读完这份，再看[客户端模块教程](rust-ui-tutorial.zh-CN.md)。
 - 预览版提醒：接口还在 `0.x` 预览阶段，名字和编号在正式版前可能会变。游戏会在模块需要更新的接口时直接告诉你。
-- 想用 TypeScript？TypeScript SDK 正在编写中，见 [TypeScript 版教程](wasm-modules-tutorial-ts.zh-CN.md)。
+- 想用 TypeScript？TypeScript SDK 正在编写中，见 [TypeScript 版教程](ts-tutorial.zh-CN.md)。
 
 ## 目录
 
@@ -25,7 +25,7 @@
 
 ## 1. 模块是什么
 
-模块是一个编译好的 WebAssembly 文件。这份教程做的是**模拟模块**，游戏里叫 `rules.wasm`：它和对局一起运行，每个玩家的机器上都跑同一份，所以联机也不会不同步。（另一种是**客户端模块** `ui.wasm`，只在本机运行、负责界面，见[客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)。）
+模块是一个编译好的 WebAssembly 文件。这份教程做的是**模拟模块**，游戏里叫 `rules.wasm`：它和对局一起运行，每个玩家的机器上都跑同一份，所以联机也不会不同步。（另一种是**客户端模块** `ui.wasm`，只在本机运行、负责界面，见[客户端模块教程](rust-ui-tutorial.zh-CN.md)。）
 
 模块能做的事：
 
@@ -285,7 +285,7 @@ let hp = unit.health()?;                          // 常用属性有快捷函数
 let owner = unit.owner()?;
 ```
 
-全部属性见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)。一次要读很多对象的属性时用 `get_many`，比逐个读快。
+全部属性见[附录第 7 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)。一次要读很多对象的属性时用 `get_many`，比逐个读快。
 
 ### 搜索
 
@@ -311,7 +311,7 @@ let tank = Action::create_object(cell, rhino, house)?;  // 在地格上造一个
 unit.set_mission(Mission::Hunt)?;                   // 改任务
 ```
 
-原子动作和原版触发器动作的完整列表见[附录第 5 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)。
+原子动作和原版触发器动作的完整列表见[附录第 5 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)。
 
 ### 修饰器（临时改属性倍率）
 
@@ -362,7 +362,7 @@ vera20k_sdk::on_scenario_start!(start);
 vera20k_sdk::on_decide!(HALVE => halve);
 ```
 
-可以决定的有：受到的伤害、能否建造某类型、能否排进生产队列、所属方是否判负、是否接受玩家命令，以及开火、反击、目的地、碾压、采哪一格矿、能否展开、闲置时的任务、移动和寻路等（后面这些多数是 `preview`），完整列表见 [SDK 参考](wasm-modules-sdk.zh-CN.md)。决定函数里**只能读、不能写**（`log` 可以用），在里面执行动作、写属性或变量会让模块被停用。
+可以决定的有：受到的伤害、能否建造某类型、能否排进生产队列、所属方是否判负、是否接受玩家命令，以及开火、反击、目的地、碾压、采哪一格矿、能否展开、闲置时的任务、移动和寻路等（后面这些多数是 `preview`），完整列表见 [SDK 参考](rust-sdk.zh-CN.md)。决定函数里**只能读、不能写**（`log` 可以用），在里面执行动作、写属性或变量会让模块被停用。
 
 一个模块同时用 `on_events!` 和 `on_decide!` 时，后写的那个要加 `shared_delivery:`，例如 `vera20k_sdk::on_decide!(shared_delivery: HALVE => halve);`，因为两个宏都会声明投递区，而一个模块只能有一个。
 
@@ -397,7 +397,7 @@ vera20k_sdk::on_rules!(rules);
 
 只用原版动作和模块里已有的函数时，可以直接在 mod 的 `rulesmd.ini` 里声明触发器，不用改代码。
 
-**先准备好 mod 的 `rulesmd.ini`**：mod 里的 `rulesmd.ini` 会整个替换原版的，所以要从完整副本开始改。在游戏里点 **Options → Mods → New Mod** 可以新建一个带原版文件的 mod，详见 [docs/modding.md](modding.md)。
+**先准备好 mod 的 `rulesmd.ini`**：mod 里的 `rulesmd.ini` 会整个替换原版的，所以要从完整副本开始改。在游戏里点 **Options → Mods → New Mod** 可以新建一个带原版文件的 mod，详见 [docs/modding.md](../modding.md)。
 
 例子：美国大兵血量掉到 30% 以下时，自动回 50 血，每个大兵只触发一次。
 
@@ -429,7 +429,7 @@ Repeat=OneTimeOr
 | `Difficulty` | `Easy`、`Normal`、`Hard`，逗号分隔 |
 | `Repeat` | `OneTimeOr`（默认）、`OneTimeAnd`、`Repeating` |
 
-写错时，对局不会开始，提示会指出是哪个段的哪个键出了问题。完整语法见[模块指南](wasm-modules.zh-CN.md)。
+写错时，对局不会开始，提示会指出是哪个段的哪个键出了问题。完整语法见[模块指南](guide.zh-CN.md)。
 
 地图不能用 `Wasm.Tags` 绑定类型，地图里写了会被忽略，开局时会有提示。地图的模块要在代码里绑定。
 
@@ -472,7 +472,7 @@ MapBudget=100000  ; 地图模块每帧可用的运算量（默认 100000，最�
 | --- | --- | --- |
 | `exceeded its operation budget` | 一帧内运算太多，超出预算 | 把工作分摊到多帧（`every = N`），用 `get_many` 批量读 |
 | `trapped: …` | 代码崩溃了（数组越界、`panic!`、`unwrap` 失败） | 用 `if let` / `match` 处理 `Err` |
-| `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对、在决定函数里写东西，后面会写具体原因 | 对照 [SDK 参考](wasm-modules-sdk.zh-CN.md)检查参数 |
+| `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对、在决定函数里写东西，后面会写具体原因 | 对照 [SDK 参考](rust-sdk.zh-CN.md)检查参数 |
 | `cannot keep up: … event records are waiting` | 事件积压太多，处理不过来 | 减少绑定范围，或加筛选条件 `where_prop` |
 
 **`wasm-check` 不通过**
@@ -522,11 +522,11 @@ MapBudget=100000  ; 地图模块每帧可用的运算量（默认 100000，最�
 
 ## 参考
 
-- [模块指南](wasm-modules.zh-CN.md)：模块放在哪、INI 语法、限制和排错
-- [Rust SDK 参考](wasm-modules-sdk.zh-CN.md)：SDK 的每个函数、事件、动作
-- [客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)：做一个界面按钮（`ui.wasm`）
-- [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)：设计说明，[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)：全部接口、事件、动作、属性
-- [开发进度](wasm-modules-status.md)：当前版本实现了哪些、还缺什么
+- [模块指南](guide.zh-CN.md)：模块放在哪、INI 语法、限制和排错
+- [Rust SDK 参考](rust-sdk.zh-CN.md)：SDK 的每个函数、事件、动作
+- [客户端模块教程](rust-ui-tutorial.zh-CN.md)：做一个界面按钮（`ui.wasm`）
+- [RFC 0001](../rfcs/0001-wasm-extension-modules.zh-CN.md)：设计说明，[附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md)：全部接口、事件、动作、属性
+- [开发进度](status.md)：当前版本实现了哪些、还缺什么
 - 示例模块（`sdk/examples/`）：
 
   | 示例 | 演示 |

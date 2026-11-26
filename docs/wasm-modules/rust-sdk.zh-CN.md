@@ -1,10 +1,10 @@
 # Rust SDK 参考
 
-[English](wasm-modules-sdk.md) | [简体中文](wasm-modules-sdk.zh-CN.md)
+[English](rust-sdk.md) | [简体中文](rust-sdk.zh-CN.md)
 
-这里列出 Wasm 模块 Rust SDK `vera20k-sdk`（在 VERA20K 源码的 `sdk/rust/vera20k-sdk`）的全部类型、函数和宏。第一部分讲模拟模块（`rules.wasm`），第二部分讲客户端模块（`ui.wasm`）。模块放在哪、有哪些限制，见[模块指南](wasm-modules.zh-CN.md)；两份教程分别手把手带你写一个[模拟模块](wasm-modules-tutorial.zh-CN.md)和一个[客户端模块](wasm-modules-ui-tutorial.zh-CN.md)。
+这里列出 Wasm 模块 Rust SDK `vera20k-sdk`（在 VERA20K 源码的 `sdk/rust/vera20k-sdk`）的全部类型、函数和宏。第一部分讲模拟模块（`rules.wasm`），第二部分讲客户端模块（`ui.wasm`）。模块放在哪、有哪些限制，见[模块指南](guide.zh-CN.md)；两份教程分别手把手带你写一个[模拟模块](rust-tutorial.zh-CN.md)和一个[客户端模块](rust-ui-tutorial.zh-CN.md)。
 
-本参考以 SDK 源码为准。文中的编号（属性、事件、动作的 ID）就是 SDK 和本引擎使用的编号；[RFC 附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)列出了同样的条目和完整语义。
+本参考以 SDK 源码为准。文中的编号（属性、事件、动作的 ID）就是 SDK 和本引擎使用的编号；[RFC 附录](../rfcs/0001-wasm-extension-modules-api.zh-CN.md)列出了同样的条目和完整语义。
 
 **级别。** 接口目前是预览版（crate 版本 0.1.0）。RFC 把每个条目分到一个级别：`v1`（版本 1 的候选）、`preview`（现在能用，可能不经通知就改）和 `later`（不在版本 1 里；引擎对 `has_kind` 回答 0，使用时返回 `Unsupported`）。下面凡不是 `v1` 的条目都会注明，其余都是 `v1`，不过在版本 1 定稿前它们也仍可能改动。
 
@@ -137,7 +137,7 @@ strip = true
 | `get_many(refs: &[i64], props: &[i32], out: &mut [i64]) -> Result<usize>` | 一次调用读出每个引用的 `props`，按行排列（`out[i * props.len() + j]`）。返回第一个失败的状态，读不到的位置写空值 |
 | `Prop::named(name) -> Result<Prop>` | 按名字取属性 |
 
-每个属性都是一个常量：`Prop::Health`、`Prop::Money`、`Prop::FirepowerMultiplier`……名字里的 `.` 写成 `_`（`Prop::Passable_Foot` 就是 `Passable.Foot`，`Prop::Factory_Vehicle_Ready` 就是 `Factory.Vehicle.Ready`）。完整列表以及值类型、能否写入和级别见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)；编号在 `sdk/rust/vera20k-sdk/src/props.rs` 里。
+每个属性都是一个常量：`Prop::Health`、`Prop::Money`、`Prop::FirepowerMultiplier`……名字里的 `.` 写成 `_`（`Prop::Passable_Foot` 就是 `Passable.Foot`，`Prop::Factory_Vehicle_Ready` 就是 `Factory.Vehicle.Ready`）。完整列表以及值类型、能否写入和级别见[附录第 7 节](../rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)；编号在 `sdk/rust/vera20k-sdk/src/props.rs` 里。
 
 能用 `set` 写的：`Health`（不记击杀；0 或更小是 `Refused`）、`Owner`、`Rank`、`Mission`、`Ammo`、`Online`，触发器的 `Enabled`、`House` 和 `Repeat`，所属方的 `ControlDomains`，超级武器的 `ChargePercent`。可修饰属性（[修饰器](#修饰器)）拒绝 `set`。
 
@@ -476,7 +476,7 @@ vera20k_sdk::on_decide!(HALVE => halve);
 - `ini::EventSlot` 把事件 ID 存在一个 `static` 里（`set`、`get`）；`ModuleEvent::named(name)` 可以查到任何来源注册的事件。
 - 模块动作的记录带着它的目标和文本：`record.target()`、`record.args_text(buf)`（INI 里的 `Wasm:name(target,text)`，或 `ActionDef::module_with`）。
 
-INI 那边的写法见[模块指南](wasm-modules.zh-CN.md)；完整的 mod 见 `sdk/examples/ini-shield`、`ini-aura`、`ini-counter` 和 `ini-academy`。
+INI 那边的写法见[模块指南](guide.zh-CN.md)；完整的 mod 见 `sdk/examples/ini-shield`、`ini-aura`、`ini-counter` 和 `ini-academy`。
 
 ## 通知与消息
 
@@ -597,7 +597,7 @@ vera20k_sdk::on_client_event!(ClientEvent::Click => on_click);
 - **能建多少。** 每个模块最多占用界面允许其他来源创建的节点数的一半；超出时创建为 `Refused`。
 - 后创建的节点画在先创建的节点上面。
 
-[界面布局](interface-layout.md#parts-for-interface-modules)指南介绍了给模块准备的布局部件（没有 `Command` 的按钮、`Image`、`Bar`、`List`）。
+[界面布局](../interface-layout.md#parts-for-interface-modules)指南介绍了给模块准备的布局部件（没有 `Command` 的按钮、`Image`、`Bar`、`List`）。
 
 ## 玩家、镜头与光标
 

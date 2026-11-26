@@ -2,10 +2,10 @@
 
 这份教程带你从零开始，用 TypeScript 给 VERA20K 写一个 Wasm 模块，并放进游戏里试玩。读完后你会做出一个“击杀悬赏”mod：谁打死美国大兵或动员兵，谁就拿 200 块赏金。
 
-> **注意：TypeScript SDK 还没有实现。** 本教程假设它已经存在，按 [RFC 0001](rfcs/0001-wasm-extension-modules.md) 第 5a 节和[附录第 3 节](rfcs/0001-wasm-extension-modules-api.md#3-sdk-mappings)的约定写成，用来提前评审 API 用起来顺不顺手。包名 `@vera20k/sdk`、`npm create` 模板和构建命令都是占位，代码没有编译过。现在能用的是 Rust SDK，见 [Rust 版教程](wasm-modules-tutorial.zh-CN.md)。
+> **注意：TypeScript SDK 还没有实现。** 本教程假设它已经存在，按 [RFC 0001](../rfcs/0001-wasm-extension-modules.md) 第 5a 节和[附录第 3 节](../rfcs/0001-wasm-extension-modules-api.md#3-sdk-mappings)的约定写成，用来提前评审 API 用起来顺不顺手。包名 `@vera20k/sdk`、`npm create` 模板和构建命令都是占位，代码没有编译过。现在能用的是 Rust SDK，见 [Rust 版教程](rust-tutorial.zh-CN.md)。
 
 - 写给谁：会改 `rulesmd.ini`、想做 INI 做不到的玩法的 modder。写过一点 JavaScript 或 TypeScript 就够了。
-- 参考资料：功能清单见[模块指南](wasm-modules.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.md)。
+- 参考资料：功能清单见[模块指南](guide.md)；完整设计见 [RFC 0001](../rfcs/0001-wasm-extension-modules.md)；每个函数、事件、动作、属性的编号与含义见[附录](../rfcs/0001-wasm-extension-modules-api.md)。
 - 预览版提醒：接口还在 `0.x` 预览阶段，名字和编号在正式版前可能会变。游戏会在模块需要更新的接口时直接告诉你。
 
 ## 目录
@@ -154,7 +154,7 @@ Version=1
 About=Credits for every infantry kill.
 ```
 
-只加模块的话，不要往 mod 里放 `rulesmd.ini`：mod 里同名的文件会整个替换原版的文件。需要改规则时，请看 [Rust 版教程第 7 节](wasm-modules-tutorial.zh-CN.md#7-不写代码用-ini-声明触发器)。
+只加模块的话，不要往 mod 里放 `rulesmd.ini`：mod 里同名的文件会整个替换原版的文件。需要改规则时，请看 [Rust 版教程第 7 节](rust-tutorial.zh-CN.md#7-不写代码用-ini-声明触发器)。
 
 想省掉每次复制，可以在 `package.json` 里给 build 加一个输出目录，直接写进 mod 文件夹：
 
@@ -296,7 +296,7 @@ const land = Cell.landType(cell);
 const name = House.name(house);               // 字符串属性返回 string
 ```
 
-全部属性见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.md#7-properties)。一次要读很多对象的属性时用批量读，比逐个读快：
+全部属性见[附录第 7 节](../rfcs/0001-wasm-extension-modules-api.md#7-properties)。一次要读很多对象的属性时用批量读，比逐个读快：
 
 ```ts
 const values = Techno.read(units, [Prop.Health, Prop.Owner]);
@@ -332,7 +332,7 @@ Techno.setMission(unit, Mission.Hunt);              // 改任务
 Action.nukeStrike(cell, house);                     // 核弹
 ```
 
-原子动作和原版触发器动作的完整列表见[附录第 5 节](rfcs/0001-wasm-extension-modules-api.md#5-action-kinds)。
+原子动作和原版触发器动作的完整列表见[附录第 5 节](../rfcs/0001-wasm-extension-modules-api.md#5-action-kinds)。
 
 ### 修饰器（临时改属性倍率）
 
@@ -441,8 +441,8 @@ const roll = random(1, 100);  // 确定性随机数，每台机器序列相同
 
 这两部分和用什么语言写模块无关，请直接看 Rust 版教程：
 
-- [不写代码：用 INI 声明触发器](wasm-modules-tutorial.zh-CN.md#7-不写代码用-ini-声明触发器)。INI 里的 `Action1=Wasm:OnKill` 调用的就是你用 `namedAction("OnKill", …)` 登记的函数。
-- [把模块嵌进地图](wasm-modules-tutorial.zh-CN.md#8-把模块嵌进地图)：`asset wasm-embed 原地图.map build/rules.wasm 新地图.map`。
+- [不写代码：用 INI 声明触发器](rust-tutorial.zh-CN.md#7-不写代码用-ini-声明触发器)。INI 里的 `Action1=Wasm:OnKill` 调用的就是你用 `namedAction("OnKill", …)` 登记的函数。
+- [把模块嵌进地图](rust-tutorial.zh-CN.md#8-把模块嵌进地图)：`asset wasm-embed 原地图.map build/rules.wasm 新地图.map`。
 
 TypeScript 模块要嵌进地图时，体积更要紧：地图模块最好控制在几十 KB 以内。`npm run build` 默认就是优化体积的发布构建。
 
@@ -515,8 +515,8 @@ AssemblyScript 的报错一般能直接指出问题。最常见的是用了第 6
 
 ## 参考
 
-- [Rust 版教程](wasm-modules-tutorial.zh-CN.md)：现在就能编译运行的版本
-- [模块指南（英文）](wasm-modules.md)：功能总览和 INI 语法
-- [RFC 0001](rfcs/0001-wasm-extension-modules.md)：设计说明，TypeScript SDK 的约定在第 5a 节；[附录](rfcs/0001-wasm-extension-modules-api.md)：全部接口、事件、动作、属性，TypeScript 写法在第 3 节
-- [开发进度](wasm-modules-status.md)：当前版本实现了哪些、还缺什么
+- [Rust 版教程](rust-tutorial.zh-CN.md)：现在就能编译运行的版本
+- [模块指南（英文）](guide.md)：功能总览和 INI 语法
+- [RFC 0001](../rfcs/0001-wasm-extension-modules.md)：设计说明，TypeScript SDK 的约定在第 5a 节；[附录](../rfcs/0001-wasm-extension-modules-api.md)：全部接口、事件、动作、属性，TypeScript 写法在第 3 节
+- [开发进度](status.md)：当前版本实现了哪些、还缺什么
 - RFC 待定问题 2：TypeScript 用 AssemblyScript 编译，还是在模块里嵌一个 JavaScript 引擎。本教程按 AssemblyScript 写；如果最后选了后者，第 6 节的限制大多会取消，但模块会大很多。
