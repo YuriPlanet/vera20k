@@ -1,8 +1,6 @@
-# Optional Ares UnitDelivery
+# Ares UnitDelivery
 
-A game whose Rules were read the Ares way (it ships `ares.mix`) reads and plays these
-keys in every build (`RuleSet::ares_form`, [Ares](ares.md)); other games keep the
-original superweapons.
+`Base-for-modders` recognizes `Type=UnitDelivery` with Ares Off.
 
 ```ini
 [SuperWeaponTypes]
@@ -44,11 +42,9 @@ provide compatibility references. No Ares DLL or C# simulation is loaded.
   `none` clears the list. Unknown or ambiguous names are skipped.
 - `SW.Deferment` is the common superweapon read every Ares type shares. The
   3.0p1 integer parser reads `$30` as hexadecimal 48. An unreadable value
-  keeps the previous layer's result. Unset and negative values wait 20 frames
-  (`SW_UnitDelivery::Activate`, `10075920`); zero delivers immediately.
-  Pending requests freeze the payload,
-  resolved owner, target, settings and deadline. They use the wrapping simulation
-  frame clock and run newest-first in the global superweapon-effect phase.
+  keeps the previous layer's result. Unset and negative values wait 20 frames.
+  3.0p1 `SW_UnitDelivery::Activate` (`0x100769D0`) queues the request even at
+  zero delay. Each request retains its payload, Houses, target and deadline.
 - `Deliver.Owner` accepts invoker, Neutral, Special and Civilian. These resolve
   existing Houses through the shared House owner; Civilian selects the first
   matching House in House order. A missing required House refuses admission.
@@ -59,24 +55,24 @@ provide compatibility references. No Ares DLL or C# simulation is loaded.
 - Ground aircraft candidates also pass the shared ground terrain/occupation
   check. Foot placement retains the chosen bridge plane, deck coordinate and
   occupancy. Existing class-specific placement rules still apply.
-- Human-owned mobiles receive AreaGuard; AI-owned mobiles receive Hunt. This
-  follows the published Ares 3.0/donor behavior; current Ares source uses Guard
-  for humans. Buildings finish on Guard. BalloonHover/JumpJet types receive the
+- After placement, AI-owned mobiles in AreaGuard switch to Hunt. Other missions
+  retain the placement result. BalloonHover/JumpJet types receive the
   shared post-placement Scatter, allowing their normal flight owner to lift off.
 - `Deliver.BaseNormal=no` is an instance flag read by the common build-area
   query, including ally build-off. It survives capture and save/load and does
   not change the shared BuildingType.
 - `SW.ActivationSound` resolves against the fixed SOUNDMD catalog. Unknown names
   retain a prior valid cue; an explicit `none` clears it. The positional cue is
-  emitted once before payload placement when the request becomes due. The normal
-  launch event occurs at acceptance, so charge and selection cleanup do not wait.
+  emitted once at the target cell centre at Z=0 before placement. Activation text
+  with `Message.FirerColor=yes` uses the firing House, including delivery to neutral
+  or another House. The launch event occurs at acceptance.
 
 ## Persistence and compatibility limits
 
-The private pending queue and per-building flag are saved and hashed. Empty
-queues/default flags add no stock hash input. Resolved extension settings enter
-the rules hash. The changed positional rules, simulation and entity records change
-the save layout id, so older saves are rejected.
+Accepted requests, including zero delay, complete at the next due Logic pass in
+registration order (`0x0055AFB3` → `0x1006F150`). The pending queue stores the
+firer separately from the recipient. The updated save layout rejects earlier
+binary saves, and current saves resume pending requests with both Houses intact.
 
 Empty payloads, invalid targets, missing owners and unsupported charge drain
 refuse before charge or effects. The type remains one-click even if PreClick or
@@ -112,8 +108,8 @@ house rechecks its tech tree.
 
 The common [money](ares-superweapon-money.md) and
 [targeting/presentation](ares-generic-warhead.md) owners also serve UnitDelivery.
-Its default automatic mode remains ParaDrop. The mission a Foot payload takes is
-queued after its Put (AreaGuard for a human, Hunt for the computer), where Ares
-queues Guard or Hunt before it. The implementation and
-synthetic regression scenes do not establish full Mental Omega compatibility or
-executable Ares parity.
+Its default automatic mode is ParaDrop. The recipient determines missions:
+an AI unit already in `AreaGuard` changes to `Hunt`, and other existing
+missions are preserved (`0x10076E01..0x10076E19`). ChronoWarp and UnitDelivery
+use separate queues in VERA, so simultaneous effects of the two types can
+follow a different registration order from the DLL's shared queue.

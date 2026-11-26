@@ -440,6 +440,7 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 z_leptons: 624,
             }),
             6,
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(

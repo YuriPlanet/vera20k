@@ -2210,6 +2210,7 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
         "ChronoSphere" => Some(CursorId::Chronosphere),
         "ChronoWarp" => Some(CursorId::Chronosphere),
         "IronCurtain" => Some(CursorId::IronCurtain),
+        "SellUnit" => Some(CursorId::SellUnit),
         "LightningStorm" => Some(CursorId::LightningStorm),
         "ParaDrop" => Some(CursorId::Paradrop),
         "AmerParaDrop" => Some(CursorId::Paradrop),

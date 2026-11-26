@@ -1,16 +1,16 @@
 //! Ares 3.0 `Type=DropPod` (`src/Misc/SWTypes/DropPod.cpp`) and the gamemd
 //! DropPod locomotor that lands its units.
 //!
-//! - SW_DropPod::Activate (`0x10070E40`, [`launch`]) draws how many units to
+//! - SW_DropPod::Activate (P1 `0x10071E50`, [`launch`]) draws how many units to
 //!   drop and, per try, which type, and lands each through
-//!   TechnoExt::CreateWithDroppod (`0x10044030`, [`create_with_drop_pod`]).
+//!   TechnoExt::CreateWithDroppod (P1 `0x10044B10`, [`create_with_drop_pod`]).
 //! - gamemd's DropPodLocomotionClass has no stock installer (its CLSID's one
 //!   installer `0x004DB8A0` has no references), so only this launch reaches
 //!   it. Its Move_To (`0x004B6040`, [`Simulation::drop_pod_move_to`]) puts the
 //!   Foot in the air; its Process (`0x004B5B70`,
 //!   [`Simulation::process_drop_pod_locomotor`]) flies it down and lands it,
-//!   with the Ares hooks 0x4B5EB0 (trailer, `1005C8B0`), 0x4B5F9E (report,
-//!   `1005C890`) and 0x4B619F (AtmosphereEntry, `1005C870`) installed.
+//!   with the P1 hooks 0x4B5EB0 (trailer, `0x1005D5D0`), 0x4B5F9E
+//!   (report, `0x1005D5B0`) and 0x4B619F (AtmosphereEntry, `0x1005D590`).
 //!
 //! The pod piggybacks the Foot's own locomotor (ChangeLocomotorTo's
 //! Begin_Piggyback, End_Piggyback when it lands). VERA leaves the Foot's
@@ -28,19 +28,12 @@
 //!
 //! RESIDUALS (all rare or dormant in retail data, which sets no DropPod
 //! superweapon):
-//! - A negative `DropPod.Minimum`/`.Maximum` count makes native loop about
-//!   2^32 tries; VERA makes none.
-//! - CreateWithDroppod's SetDestination runs the class setter's prologue
-//!   (Unit `0x00741970`, Infantry, Aircraft) before the Foot tail; VERA
-//!   publishes NavCom alone (the tail's write) and calls the pod's Move_To
-//!   the tail would reach. A `Teleporter=` Unit's setter takes its own arm
-//!   natively. Its See(0, 0) repeats the Unlimbo's sight reveal and is not
-//!   called again.
-//! - While the pod flies, the other ILocomotion answers (Is_Moving, the
-//!   layer, Move_To from a mission) are the Foot's own locomotor's in VERA;
-//!   natively the pod answers and ignores a later Move_To. A Foot whose
-//!   Guard finds a target mid-air can thus keep a Drive destination VERA
-//!   would not have. Its draw layer is the presentation's.
+//! - Negative or overflowing counts are refused after the count draw. Large
+//!   positive counts are limited to [`DROP_POD_LIMIT`] pods in one launch.
+//! - CreateWithDroppod's See(0, 0) repeats the Unlimbo's sight reveal.
+//! - DropPod's height-derived draw layer stays with VERA's presentation layer
+//!   owner. The pod overlay does not represent a COM locomotor handoff for a
+//!   modded type whose class setter replaces the active locomotor.
 //! - A landing that misses `DropPod=` item 0 (or item 1 for an OutOfMap pod)
 //!   reads past the list natively; VERA shows no pod.
 
@@ -81,7 +74,9 @@ impl DropPodFlight {
     }
 }
 
-/// SW_DropPod::Activate (`0x10070E40`) for `owner`'s `sw` at `cell`.
+const DROP_POD_LIMIT: i32 = 1024;
+
+/// SW_DropPod::Activate (P1 `0x10071E50`) for `owner`'s `sw` at `cell`.
 ///
 /// The types are `DropPod.Types` unless empty, else `[General]
 /// DropPodTypes=`; the counts `DropPod.Minimum`/`.Maximum` unless unset,
@@ -119,7 +114,7 @@ pub(super) fn launch(
     };
     let minimum = config.minimum.unwrap_or(globals.minimum);
     let maximum = config.maximum.unwrap_or(globals.maximum);
-    // 10070EB8..10070ED4: the Rules cap unless the type's value is not
+    // P1 0x10071EC8..0x10071EE7: the Rules cap unless the type's value is not
     // above it.
     let wanted = f64::from_bits(config.veterancy.bits());
     let capped = if wanted <= rules.general.veteran_cap {
@@ -137,8 +132,15 @@ pub(super) fn launch(
     }
     let last = i32::try_from(types.len()).map_or(i32::MAX, |count| count - 1);
     let mut target = (cell.0 as i16, cell.1 as i16);
-    let mut count = sim.scenario_rng.next_range_i32_inclusive(minimum, maximum);
-    for _ in 0..count.wrapping_mul(3).max(0) {
+    let count = sim.scenario_rng.next_range_i32_inclusive(minimum, maximum);
+    // P1 0x10071F35..0x10071F42 uses a wrapping trip count. A negative
+    // authored count or an overflowing trip count can wrap into a large
+    // positive loop. Keep the count draw and skip such invalid drops.
+    let Some(attempts) = count.checked_mul(3).filter(|attempts| *attempts > 0) else {
+        return true;
+    };
+    let mut count = count.min(DROP_POD_LIMIT);
+    for _ in 0..attempts.min(DROP_POD_LIMIT * 3) {
         let index = sim.scenario_rng.next_range_i32_inclusive(0, last);
         let Some(ty) = usize::try_from(index)
             .ok()
@@ -163,7 +165,7 @@ pub(super) fn launch(
         else {
             continue;
         };
-        // 10070F1C..10070F2E: a float compare and store.
+        // P1 0x10071F88..0x10071F98: a float compare and store.
         if let Some(entity) = sim.substrate.entities.get_mut(id)
             && f32::from_bits(entity.veterancy.raw().bits()) < veterancy
         {
@@ -217,7 +219,7 @@ pub(super) fn launch(
                 break;
             }
         }
-        // 10071098: a Foot still in limbo failed to land (UnInit, vt+0xF8).
+        // P1 0x100720A3..0x100720B0: a Foot still in limbo is UnInit'd.
         if sim
             .substrate
             .entities
@@ -243,7 +245,7 @@ fn can_enter(
         .is_ok_and(|code| code == 0)
 }
 
-/// TechnoExt::CreateWithDroppod (`0x10044030`): the Foot lands at `coord`
+/// TechnoExt::CreateWithDroppod (P1 `0x10044B10`): the Foot lands at `coord`
 /// from a drop pod. Its cell must be open to it (IsCellOccupied with
 /// `(-1, -1, NULL, 0)`). Then the pod piggybacks its locomotor, the Foot
 /// moves to the coordinate at Z 0, takes the cell as its destination (the
@@ -279,16 +281,17 @@ pub(crate) fn create_with_drop_pod(
         registry,
         effects,
     );
-    // SetDestination(cell, true) (vt+0x480), through the Foot tail
-    // (`0x004D94B0`) to the active locomotor's Move_To: the pod's.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        crate::sim::movement::navcom::publish_nav_com(
-            entity,
-            NavTargetRef::cell(cell.0 as u16, cell.1 as u16),
-        );
+    // P1 0x10044C13 invokes the class's SetDestination(cell, true). The
+    // Foot tail at 0x004D965D dispatches the active pod's Move_To.
+    if let Err(error) = sim.assign_destination_represented(
+        id,
+        Some(NavTargetRef::cell(cell.0 as u16, cell.1 as u16)),
+        rules,
+        effects,
+    ) {
+        log::debug!("DropPod {id} SetDestination: {error}");
     }
-    sim.drop_pod_move_to(id, coord, rules, registry, effects);
-    // Locomotor->Move_To(XYZ) (`0x100440C9`).
+    // P1 0x10044C44 calls Move_To(XYZ) directly, ignored if already armed.
     sim.drop_pod_move_to(id, coord, rules, registry, effects);
     // Facing.set(DirStruct()) (`0x100440D9..0x100440F3`).
     let frame = sim.session.binary_frame();

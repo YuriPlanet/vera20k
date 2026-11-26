@@ -417,14 +417,13 @@ impl Simulation {
             self.update_alpha_shape(id, ObjectKind::Projectile, rules);
         }
         // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
-        if rules.ares()
-            && let Some(bullet) = self.projectiles.get(id)
+        if let Some(bullet) = self.projectiles.get(id)
+            && (rules.ares() || bullet.ares_nuke_sw().is_some())
             && let Some(anim) = bullet.awaited_anim().filter(|_| bullet.awaiting_anim())
             && self
                 .interner
                 .warhead_type(bullet.payload().warhead, rules)
-                .and_then(|warhead| warhead.ares_rules())
-                .is_some_and(|ares| ares.combat().pre_impact_anim_moves())
+                .is_some_and(|warhead| warhead.nuke_impact_settings().2)
             && let Some(at) = self.anim_absolute_coord(anim)
         {
             let target = crate::sim::projectile::ProjectileTarget::looked_up_cell(
@@ -523,7 +522,7 @@ impl Simulation {
             interner,
             &nuke_ball_type,
         ));
-        let nuke = if rules.ares() {
+        let nuke = if rules.ares() || projectile.ares_nuke_sw().is_some() {
             nuke.map(|nuke| nuke.with_ares(&ares_ball))
         } else {
             nuke

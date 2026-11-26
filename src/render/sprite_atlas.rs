@@ -22,7 +22,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use crate::util::time::Instant;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::mix_archive::SharedBytes;
@@ -35,6 +35,7 @@ use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::effect_asset_catalog::available_effect_anim_frame_count;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
+use crate::rules::particle_type::{ParticleType, ParticleTypeId};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
 use smol_str::StrExt;
@@ -80,7 +81,7 @@ fn register_effect_anim_frames(
             house_color: HouseColorIndex(0),
         });
     }
-    if palette_context != ShpPaletteContext::Particle {
+    if palette_context.image_kind() != ShpImageKind::Particle {
         frame_counts.insert(anim_type.to_ascii_uppercase(), count);
     }
     count
@@ -324,6 +325,9 @@ pub enum ShpPaletteContext {
     /// ParticleRead644F6D owns a different ObjectType shape from a same-named
     /// AnimType. DrawIt62D015 selects the global ANIM Convert87F6C0.
     Particle,
+    /// The same particle SHP with a ParticleType-specific Convert. Separate
+    /// particle types can draw one resident frame with different palettes.
+    ParticleCustom(ParticleTypeId),
     /// FoggedObject4D2176 selects the literal ANIM.PAL Convert without
     /// AnimClass's AltPalette override or a producer-specific palette, and
     /// so does AnimClass's Tiled column ([`tiled_anim_key`]).
@@ -350,6 +354,16 @@ pub enum ShpPaletteContext {
 pub type AnimRemapKey = (String, ShpPaletteContext, HouseColorIndex);
 
 impl ShpPaletteContext {
+    fn particle(particle_type: ParticleTypeId, particle: &ParticleType) -> Self {
+        // Ares 3.0p1 0x100271A3..0x1002723E can draw a smoke record's
+        // NextParticle SHP with its palette regardless of BehavesLike.
+        if particle.custom_palette().is_some() {
+            Self::ParticleCustom(particle_type)
+        } else {
+            Self::Particle
+        }
+    }
+
     fn is_projectile(self) -> bool {
         self.image_kind() == ShpImageKind::Projectile
     }
@@ -362,7 +376,7 @@ impl ShpPaletteContext {
             | Self::AnimScheme
             | Self::AnimCell
             | Self::ExtraScheme(_) => ShpImageKind::Animation,
-            Self::Particle => ShpImageKind::Particle,
+            Self::Particle | Self::ParticleCustom(_) => ShpImageKind::Particle,
             Self::BulletDefault | Self::BulletAnim | Self::BulletFirer => ShpImageKind::Projectile,
             Self::Legacy | Self::SelectedScheme | Self::Cell => ShpImageKind::Object,
         }
@@ -477,6 +491,22 @@ pub struct ShpSpriteKey {
     pub frame: u16,
     /// House color index for palette remapping (different per player).
     pub house_color: HouseColorIndex,
+}
+
+impl ShpSpriteKey {
+    pub(crate) fn particle(
+        particle_type: ParticleTypeId,
+        particle: &ParticleType,
+        frame: u16,
+    ) -> Self {
+        Self {
+            palette_context: ShpPaletteContext::particle(particle_type, particle),
+            type_id: particle.image.as_str().into(),
+            facing: 0,
+            frame,
+            house_color: HouseColorIndex(0),
+        }
+    }
 }
 
 /// UV and offset data for one sprite within the SHP atlas.
@@ -1576,9 +1606,9 @@ pub(crate) enum SpritePaletteChoice {
     /// The selected successfully loaded extra building palette for the
     /// active theater (`RuleSet::load_extra_building_palette`).
     ExtraBuilding,
-    /// An Ares AnimType `CustomPalette=` file ([`AresCustomPalettes`]). Both
-    /// hooks hand over its plain convert with no ColorScheme, so 16..31 keep
-    /// the file's own colours.
+    /// An Ares custom palette ([`AresCustomPalettes`]). The hooks hand over
+    /// its Convert without a ColorScheme, so indices 16..31 keep the file's
+    /// own colours.
     AresCustom,
 }
 
@@ -1618,8 +1648,7 @@ pub(crate) fn sprite_palette_choice(
     }
 }
 
-/// The Ares AnimType `CustomPalette=` files that loaded, by atlas type id
-/// (uppercase), as resolved names.
+/// Resolved palette names for Ares animation, bullet and particle draws.
 ///
 /// AnimClass_Draw_SetPalette (Ares.dll `1000ACE0`, hook `0x4232CE`, resumes
 /// at `0x4232D4`) swaps an anim's ANIM.PAL convert for its own palette.
@@ -1627,15 +1656,22 @@ pub(crate) fn sprite_palette_choice(
 /// `0x4683D7`) gives a bullet the palette of the AnimType its ImageFile
 /// names (GetConvert `10019360`, AnimType Find `1000D3E0`), skipping
 /// PALETTE.PAL, ANIM.PAL and the firer's scheme.
+/// ParticleClass_Draw_Palette (3.0p1 `0x1002A2A0`, hook `0x62D015`, resumes
+/// at `0x62D01B`) and the extension smoke draw at `0x1002721A..0x1002723E`
+/// both select the ParticleType's Convert, with ANIM.PAL when it is null.
 #[derive(Default)]
 struct AresCustomPalettes {
     anims: HashMap<String, String>,
     bullets: HashMap<String, String>,
+    particles: HashMap<ParticleTypeId, Option<String>>,
 }
 
 impl AresCustomPalettes {
     /// The palette file the hook for `key`'s context would use, if any.
     fn file(&self, key: &ShpSpriteKey) -> Option<&str> {
+        if let ShpPaletteContext::ParticleCustom(id) = key.palette_context {
+            return self.particles.get(&id)?.as_deref();
+        }
         let by_type = match key.palette_context {
             ShpPaletteContext::GlobalAnim => &self.anims,
             ShpPaletteContext::BulletDefault
@@ -1648,10 +1684,10 @@ impl AresCustomPalettes {
             .map(String::as_str)
     }
 
-    /// Load and register the palette `key`'s AnimType names, once per type.
-    /// CustomPalette::LoadFromINI (`10076160`) turns the first `~~~` into the
-    /// theater extension and opens the name as written, adding no `.pal`. A
-    /// file that does not load keeps the stock palette.
+    /// Load and register the palette that `key`'s type names.
+    /// CustomPalette::LoadFromINI (3.0p1 `0x10077210`) turns the first `~~~`
+    /// into the theater extension and opens the name as written, adding no
+    /// `.pal`. A file that does not load leaves the Convert unset.
     ///
     /// A bullet's Image must name an existing AnimType: Find `1000D3E0`
     /// searches only AnimTypeClass's array, and a miss keeps the stock arms.
@@ -1665,6 +1701,20 @@ impl AresCustomPalettes {
         theater_ext: &str,
         load: &mut impl FnMut(&str) -> bool,
     ) {
+        let mut resolve_file = |name: &str| {
+            let file = name.replacen("~~~", theater_ext, 1);
+            load(&file).then_some(file)
+        };
+        if let ShpPaletteContext::ParticleCustom(id) = key.palette_context {
+            self.particles.entry(id).or_insert_with(|| {
+                let name = rules?
+                    .particle_types_iter()
+                    .nth(id.0 as usize)?
+                    .custom_palette()?;
+                resolve_file(name)
+            });
+            return;
+        }
         let (by_type, anim) = match key.palette_context {
             ShpPaletteContext::GlobalAnim => (&mut self.anims, Some(key.type_id.as_str())),
             ShpPaletteContext::BulletDefault
@@ -1692,8 +1742,7 @@ impl AresCustomPalettes {
         else {
             return;
         };
-        let file = name.replacen("~~~", theater_ext, 1);
-        if load(&file) {
+        if let Some(file) = resolve_file(name) {
             by_type.insert(upper, file);
         }
     }
@@ -1705,7 +1754,7 @@ impl AresCustomPalettes {
 /// (`0x00705F81`), whose `+0xDF0` arm (`0x00705D82..0x00705D9A`) picks the
 /// house's scheme from the type's generated palette.
 ///
-/// `ares_palettes` holds the Ares `CustomPalette=` files that loaded. A bullet
+/// `ares_palettes` holds the custom palettes that loaded. A bullet
 /// takes its file in every context (hook `0x468379`). An anim takes it only
 /// in GlobalAnim: a cell-drawn anim (+0x196, AnimCell, `0x4231FB`) and one
 /// with its own scheme (+0xD4, AnimScheme, `0x4232AB`) skip hook `0x4232CE`,
@@ -1723,6 +1772,7 @@ fn sprite_palette_for_key(
         ShpPaletteContext::BulletDefault
         | ShpPaletteContext::BulletAnim
         | ShpPaletteContext::BulletFirer
+        | ShpPaletteContext::ParticleCustom(_)
             if ares_palettes.file(key).is_some() =>
         {
             SpritePaletteChoice::AresCustom
@@ -1735,7 +1785,9 @@ fn sprite_palette_for_key(
             SpritePaletteChoice::Unit
         }
         ShpPaletteContext::Cell | ShpPaletteContext::AnimCell => SpritePaletteChoice::CellIso,
-        ShpPaletteContext::Particle => SpritePaletteChoice::Anim,
+        ShpPaletteContext::Particle | ShpPaletteContext::ParticleCustom(_) => {
+            SpritePaletteChoice::Anim
+        }
         ShpPaletteContext::GlobalAnim => {
             if art
                 .and_then(|a| a.anim_runtime_config(&key.type_id))
@@ -2682,6 +2734,7 @@ pub(crate) fn prepare_sprite_atlas(
     // palette), not unit.pal — tracked in the effect registry so step 2 can
     // pick the correct palette. Only the SHP header is read here.
     let mut registered_effects = EffectRegistry::default();
+    let mut particle_contexts = BTreeMap::<String, BTreeSet<ShpPaletteContext>>::new();
     let effect_names: Vec<(String, ShpImageKind)> = match previous_atlas {
         None => rules
             .map(|rules| {
@@ -2689,13 +2742,19 @@ pub(crate) fn prepare_sprite_atlas(
                     .into_iter()
                     .map(|name| (name, ShpImageKind::Animation))
                     .collect();
-                let particles: std::collections::BTreeSet<_> = rules
-                    .particle_types_iter()
-                    .map(|particle| particle.image.clone())
-                    .collect();
+                for (id, particle) in rules.particle_types_iter().enumerate() {
+                    particle_contexts
+                        .entry(particle.image.clone())
+                        .or_default()
+                        .insert(ShpPaletteContext::particle(
+                            ParticleTypeId(id as u32),
+                            particle,
+                        ));
+                }
                 names.extend(
-                    particles
-                        .into_iter()
+                    particle_contexts
+                        .keys()
+                        .cloned()
                         .map(|name| (name, ShpImageKind::Particle)),
                 );
                 names
@@ -2729,34 +2788,41 @@ pub(crate) fn prepare_sprite_atlas(
             Some((file, data)) => match ShpFile::frame_count_from_bytes(&data) {
                 Ok(raw_count) => {
                     let name_upper = name.to_ascii_uppercase();
-                    let scheduler_owned = *kind == ShpImageKind::Animation
-                        && art.is_some_and(|registry| {
+                    let count = if *kind == ShpImageKind::Animation {
+                        let scheduler_owned = art.is_some_and(|registry| {
                             registry.scheduler_anim_types().contains(&name_upper)
                         });
-                    let config = art
-                        .filter(|_| *kind == ShpImageKind::Animation)
-                        .and_then(|registry| registry.anim_runtime_config(name));
-                    let shadow = config.is_some_and(|config| config.shadow);
-                    // Keep body timing separate from shadow-frame residency.
-                    let count = register_effect_anim_frames(
-                        &mut needed,
-                        &mut active_anim_frame_counts,
-                        name,
-                        raw_count,
-                        scheduler_owned,
-                        shadow,
-                        if *kind == ShpImageKind::Animation {
-                            anim_frame_context(config, ShpPaletteContext::GlobalAnim)
-                        } else {
-                            ShpPaletteContext::Particle
-                        },
-                    );
-                    if *kind == ShpImageKind::Animation {
+                        let config = art.and_then(|registry| registry.anim_runtime_config(name));
+                        let shadow = config.is_some_and(|config| config.shadow);
+                        // Keep body timing separate from shadow-frame residency.
+                        let count = register_effect_anim_frames(
+                            &mut needed,
+                            &mut active_anim_frame_counts,
+                            name,
+                            raw_count,
+                            scheduler_owned,
+                            shadow,
+                            anim_frame_context(config, ShpPaletteContext::GlobalAnim),
+                        );
                         registered_effects
                             .frames
                             .insert(name_upper.clone(), (name.clone(), raw_count));
                         registered_effects.type_ids.insert(name.clone());
-                    }
+                        count
+                    } else {
+                        for &context in particle_contexts.get(name).into_iter().flatten() {
+                            register_effect_anim_frames(
+                                &mut needed,
+                                &mut active_anim_frame_counts,
+                                name,
+                                raw_count,
+                                false,
+                                false,
+                                context,
+                            );
+                        }
+                        raw_count
+                    };
                     shp_files.insert((*kind, name_upper), file.to_string());
                     log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
                 }

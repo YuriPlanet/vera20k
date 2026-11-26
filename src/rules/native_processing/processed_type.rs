@@ -467,8 +467,7 @@ pub(super) struct ProcessedType {
     /// BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
     #[serde(default)]
     pub(super) building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
-    /// Extension<WarheadTypeClass>::LoadFromINI 10051D10 has left its first
-    /// state, which ran the `NUKE` warhead's Initialize.
+    /// Ares 3.0p1 0x100529C0 first-visit state, which initializes `NUKE`.
     #[serde(default)]
     pub(super) ares_warhead_loaded: bool,
     /// TechnoTypeExt Experience.* and Promote.* (`rules::ares_veterancy`).
@@ -579,6 +578,9 @@ pub(super) struct ProcessedType {
     /// existing pointer on empty input, else stores the Weapon factory result.
     #[serde(default)]
     pub(super) airburst_weapon: Option<String>,
+    /// Ares 3.0p1 BulletTypeExt+0x48, an existing ParticleSystemType.
+    #[serde(default)]
+    pub(super) projectile_attached_system: Option<String>,
 }
 
 /// The ObjectType `Image` and TechnoType pointer fields each reached ReadINI
@@ -1174,6 +1176,7 @@ impl ProcessedType {
             anim_references: AnimTypeReferences::default(),
             shrapnel_weapon: None,
             airburst_weapon: None,
+            projectile_attached_system: None,
         }
     }
 }

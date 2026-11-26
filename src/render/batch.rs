@@ -1817,6 +1817,36 @@ impl BatchRenderer {
         let source_indices = source_indices
             .as_ref()
             .unwrap_or(&self.default_source_indices);
+        self.rgba_page_on_device(device, queue, rgba_data, [width, height], source_indices)
+    }
+
+    /// Two views of one source page, one with precomposed RGBA and one
+    /// resolving the same index texels through instance-selected palette rows.
+    pub(crate) fn create_texture_with_palette_rows(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        rgba_data: &[u8],
+        [width, height]: [u32; 2],
+        indices: &[u8],
+        palette: &wgpu::TextureView,
+    ) -> (BatchTexture, BatchTexture) {
+        let source_indices = source_index_texture_on_device(device, queue, indices, width, height);
+        let rgba =
+            self.rgba_page_on_device(device, queue, rgba_data, [width, height], &source_indices);
+        let indexed =
+            self.indexed_page_on_device(device, &source_indices, [width, height], palette);
+        (rgba, indexed)
+    }
+
+    fn rgba_page_on_device(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        rgba_data: &[u8],
+        [width, height]: [u32; 2],
+        source_indices: &wgpu::TextureView,
+    ) -> BatchTexture {
         let texture = page_texture_on_device(
             device,
             queue,
@@ -1882,16 +1912,25 @@ impl BatchRenderer {
             view_formats: &[],
         });
         let view = indices.create_view(&Default::default());
-        let bind_group = self.source_bind_group(device, palette, &view);
         (
-            BatchTexture {
-                bind_group,
-                view,
-                width,
-                height,
-            },
+            self.indexed_page_on_device(device, &view, [width, height], palette),
             indices,
         )
+    }
+
+    fn indexed_page_on_device(
+        &self,
+        device: &wgpu::Device,
+        indices: &wgpu::TextureView,
+        [width, height]: [u32; 2],
+        palette: &wgpu::TextureView,
+    ) -> BatchTexture {
+        BatchTexture {
+            bind_group: self.source_bind_group(device, palette, indices),
+            view: indices.clone(),
+            width,
+            height,
+        }
     }
 
     /// Keep an indexed page's existing index plane when its shared palette

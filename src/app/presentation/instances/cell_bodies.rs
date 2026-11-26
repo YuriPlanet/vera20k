@@ -27,6 +27,8 @@ pub(crate) fn cell_sweep_key(rx: u16, ry: u16) -> (Reverse<u32>, u16) {
 pub(crate) enum CellBodyAtlas {
     /// Ordinary overlays (`OverlayAtlas`).
     Overlay,
+    /// The overlay atlas's indexed view with wall ColorScheme rows.
+    Wall,
     /// High-bridge bodies (`BridgeAtlas`).
     Bridge,
 }

@@ -11,7 +11,7 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// Retail rules with `patch` merged over RULESMD, the Chronosphere anims
 /// bound (the lib suite loads no SHP).
-fn retail_ares_rules(patch: &str) -> Option<RuleSet> {
+pub(super) fn retail_ares_rules(patch: &str) -> Option<RuleSet> {
     let (mut ini, art) = crate::rules::retail_ini_fixture::retail_rules_and_art()?;
     ini.merge(&IniFile::from_str(patch));
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("retail rules");
@@ -20,6 +20,59 @@ fn retail_ares_rules(patch: &str) -> Option<RuleSet> {
         rules.bind_anim_frame_count_for_test(name, 20);
     }
     Some(rules)
+}
+
+#[test]
+fn builtin_force_shield_uses_protect_range_duration_and_force_byte() {
+    use crate::sim::superweapon::invulnerability::InvulnKind;
+
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let Some(rules) = retail_ares_rules(
+        "[ForceShieldSpecial]\nIsPowered=no\nSW.Range=1,1\nProtect.Duration=60\n\
+         Protect.PowerOutage=10\n[GAPOWR]\nForceShield.Modifier=50%\n",
+    ) else {
+        return;
+    };
+    let (rules, mut sim, owner) = world_with(rules, 64, &[]);
+    let hit = sim
+        .spawn_object("GAPOWR", "Americans", 30, 30, 0, &rules)
+        .unwrap();
+    let far = sim
+        .spawn_object("GAPOWR", "Americans", 33, 30, 0, &rules)
+        .unwrap();
+    let typ = crate::sim::superweapon::chronosphere_tests::charge_super(
+        &mut sim,
+        owner,
+        "ForceShieldSpecial",
+    );
+    assert!(!rules.ares_form());
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        typ,
+        (30, 30),
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    let protected = |id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .invulnerability
+            .as_ref()
+    };
+    let state = protected(hit).unwrap();
+    assert_eq!(
+        (state.kind(), state.timer().duration()),
+        (InvulnKind::ForceShield, 30)
+    );
+    assert!(protected(far).is_none());
+    assert_eq!(
+        sim.power_states[&owner].blackout_remaining(sim.session.binary_frame()),
+        10
+    );
 }
 
 /// SW_ChronoSphere::Initialize (1006EF10) and LoadFromINI (1006EF90) over
@@ -115,7 +168,7 @@ fn ares_chronosphere_reads_its_handler_keys_over_layers() {
 /// the warp's come from the source's type.
 #[test]
 fn ares_chrono_warp_uses_the_last_super_and_its_keys() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let Some(rules) = retail_ares_rules(
         "[ChronoSphereSpecial]\nChronosphere.KillTeleporters=yes\nSW.Range=5,5\n\
          [HTNK]\nChronoshift.Allow=no\n",
@@ -269,7 +322,7 @@ fn ares_nuke_reads_its_handler_and_warhead_keys() {
 /// (0, 0, -100), the ally-only radar event and DigSound.
 #[test]
 fn ares_nuke_without_a_silo_drops_its_payload() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let rules = nuke_rules("[NukeSpecial]\nNuke.SiloLaunch=no\nSW.Damage=77\n");
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let typ = crate::sim::superweapon::chronosphere_tests::charge_super(
@@ -448,11 +501,11 @@ fn ares_dominator_and_mutator_read_their_handler_keys() {
 /// is refused by AbortFire (10070780). `Light.*` tints the scenario.
 #[test]
 fn ares_dominator_captures_through_its_state_machine() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let Some(rules) = retail_ares_rules(
         "[PsychicDominatorSpecial]\nDominator.FirstAnim=none\nDominator.SecondAnim=none\n\
          Dominator.Ripple=no\nDominator.PermanentCapture=no\nSW.Damage=0\n\
-         Light.Ambient=12\nLight.Red=7\n\
+         Light.Ambient=12\nLight.Red=7\nSW.Range=20\n\
          [HTNK]\nImmuneToPsionics=yes\n",
     ) else {
         return;
@@ -465,6 +518,8 @@ fn ares_dominator_captures_through_its_state_machine() {
             .unwrap()
     };
     let tank = spawn(&mut sim, "MTNK", cell);
+    let distant = spawn(&mut sim, "MTNK", (cell.0 + 15, cell.1));
+    let outside = spawn(&mut sim, "MTNK", (cell.0 + 21, cell.1));
     let immune = spawn(&mut sim, "HTNK", (cell.0 + 1, cell.1));
     let typ = crate::sim::superweapon::chronosphere_tests::charge_super(
         &mut sim,
@@ -505,6 +560,14 @@ fn ares_dominator_captures_through_its_state_machine() {
     assert_eq!(sim.psychic_dominator.status_number(), 3);
     let captured = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(captured.owner(), americans);
+    assert_eq!(
+        sim.substrate.entities.get(distant).unwrap().owner(),
+        americans
+    );
+    assert_eq!(
+        sim.substrate.entities.get(outside).unwrap().owner(),
+        russians
+    );
     assert!(!captured.seldom.mind_control.permanent());
     assert_eq!(
         sim.substrate.entities.get(immune).unwrap().owner(),
@@ -596,12 +659,12 @@ fn chronoshift(
     click(sim, rules, owner, "ChronoWarpSpecial", target);
 }
 
-/// TeleportLocomotionClass_MakeRoom (1004B980, hook 0x718275): a Unit
+/// TeleportLocomotionClass_MakeRoom (P1 0x1004C5E0, hook 0x718275): a Unit
 /// arriving on a `Chronoshift.Crushable=no` tank dies instead of it, and
 /// with `ChronoInfantryCrush=no` arriving infantry dies on a tank.
 #[test]
-fn ares_make_room_spares_uncrushable_units_and_kills_crush_shy_infantry() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+fn builtin_chronosphere_make_room_spares_uncrushable_units_and_kills_crush_shy_infantry() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
     let Some(rules) = retail_ares_rules(
         "[General]\nChronoInfantryCrush=no\n[HTNK]\nChronoshift.Crushable=no\n\
          [ChronoSphereSpecial]\nChronosphere.KillOrganic=no\n",
@@ -609,6 +672,7 @@ fn ares_make_room_spares_uncrushable_units_and_kills_crush_shy_infantry() {
         return;
     };
     assert!(!rules.ares_chrono_infantry_crush());
+    assert!(!rules.ares());
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let spawn = |sim: &mut Simulation, kind: &str, owner: &str, (x, y): (u16, u16)| {
         sim.spawn_object_at_height(kind, owner, x, y, 0, 0, &rules)
@@ -752,7 +816,7 @@ fn ares_warped_tank_stays_at_its_landing() {
 /// (in `SpyPlane.Mission`); Initialize clears `SW.CreateRadarEvent`.
 #[test]
 fn ares_spy_plane_sends_its_count_of_its_type() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let Some(rules) = retail_ares_rules(
         "[SpyPlaneSpecial]\nSpyPlane.Count=2\nSpyPlane.Type=PDPLANE\nSpyPlane.Mission=Move\n",
     ) else {
@@ -787,7 +851,7 @@ fn ares_spy_plane_sends_its_count_of_its_type() {
 /// Initialize clears `SW.CreateRadarEvent`.
 #[test]
 fn ares_american_paradrop_sends_its_vehicles_in_one_plane() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     const SUPER: &str = "AmericanParaDropSpecial";
     let Some(rules) =
         retail_ares_rules(&format!("[{SUPER}]\nParaDrop.Types=SREF\nParaDrop.Num=3\n"))

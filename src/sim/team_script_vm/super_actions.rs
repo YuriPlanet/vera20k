@@ -43,11 +43,13 @@
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::superweapon_type::SuperWeaponKind;
+use crate::rules::superweapon_targeting::AiTargetingMode;
+use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
 use crate::sim::intern::InternedId;
-use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
+use crate::sim::superweapon::{SuperWeaponInstance, super_nearly_ready, super_types_with_type};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
+use crate::util::native_x87::NativeF32Bits;
 
 use super::TeamTarget;
 
@@ -62,6 +64,14 @@ enum SuperStep {
     Finish,
 }
 
+/// Stock team actions pass Type= as a House Supers index; Ares action 55
+/// passes the selected type's registry index (0x006EFDB4, 0x1003AB56).
+#[derive(Clone, Copy)]
+enum TeamSuper {
+    Stock(SuperWeaponKind),
+    Grouped(InternedId),
+}
+
 /// Only destination selection differs between the two native Chronosphere
 /// actions. The common path owns readiness, paired firing and completion.
 pub(super) enum ChronoshiftTarget {
@@ -74,7 +84,8 @@ impl Simulation {
     /// Iron Curtain (`Type=` 1) at the cell of the team's centre once
     /// [`Self::team_super_step`] allows, then the action finishes. It also
     /// finishes without members or such a Super, and waits while the Super
-    /// nearly has its charge.
+    /// nearly has its charge. With Ares off, the group's extension handling
+    /// applies only to a matching Super granted or ready in this house.
     pub(super) fn team_action_iron_curtain(
         &mut self,
         team_id: u64,
@@ -83,36 +94,25 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        if rules.ares_form() {
-            self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
-        } else {
-            let checked = self.team_leader(team_id, rules).and_then(|leader| {
-                // The leader's house (`+0x21C`).
-                let owner = self.substrate.entities.get(leader)?.owner();
-                let curtain =
-                    super_types_with_type(rules, SuperWeaponKind::IronCurtain.native_index())
-                        .next()?;
-                Some((owner, self.team_super_step(owner, curtain, rules)))
-            });
-            match checked {
-                Some((_, SuperStep::Wait)) => return,
-                Some((owner, SuperStep::Fire)) => {
+        let owner = self
+            .team_leader(team_id, rules)
+            .and_then(|leader| self.substrate.entities.get(leader))
+            .map(|leader| leader.owner());
+        if let Some(owner) = owner
+            && let Some((step, weapon)) = self.team_iron_curtain_step(owner, argument, rules)
+        {
+            match step {
+                SuperStep::Wait => return,
+                SuperStep::Fire => {
                     if let Some(centre) = self.team_centre_cell(team_id) {
-                        self.team_fire_super(
-                            owner,
-                            SuperWeaponKind::IronCurtain,
-                            centre,
-                            rules,
-                            registry,
-                            frame_effects,
-                        );
+                        self.team_fire_super(owner, weapon, centre, rules, registry, frame_effects);
                     }
                 }
-                Some((_, SuperStep::Finish)) | None => {}
+                SuperStep::Finish => {}
             }
-            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
-                team.advance_pending = true;
-            }
+        }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.advance_pending = true;
         }
     }
 
@@ -164,7 +164,7 @@ impl Simulation {
                 {
                     self.team_fire_super(
                         owner,
-                        SuperWeaponKind::ChronoSphere,
+                        TeamSuper::Stock(SuperWeaponKind::ChronoSphere),
                         centre,
                         rules,
                         registry,
@@ -172,7 +172,7 @@ impl Simulation {
                     );
                     self.team_fire_super(
                         owner,
-                        SuperWeaponKind::ChronoWarp,
+                        TeamSuper::Stock(SuperWeaponKind::ChronoWarp),
                         (x, y),
                         rules,
                         registry,
@@ -213,97 +213,131 @@ impl Simulation {
         }
     }
 
-    /// Ares's action 55 (hook 6EFC70, Ares.dll 1003A2F0 -> 10039EF0): the
-    /// leader's House walks every SuperWeaponType whose `SW.AITargeting` is
-    /// IronCurtain and whose `SW.Group` equals the argument. The first one
-    /// charged, with House power (drain 0 or not above output) unless the type
-    /// is not `IsPowered`, fires (Fire_SW by its own index) at the team's
-    /// centre cell and the step completes. Before that, the first granted one
-    /// whose elapsed charge reaches `AIMinorSuperReadyPercent` (x87: both
-    /// counts stored as binary32, `jb` skips an unordered compare) makes the
-    /// step wait; with neither, it completes, as it does without a leader.
-    fn team_action_ares_iron_curtain(
-        &mut self,
-        team_id: u64,
+    /// Ares 3.0p1 hooks 0x006EFC70 at 0x1003AD70, calls 0x1003A970 and resumes
+    /// at 0x006EFE4F. It scans types in registry order for IronCurtain targeting
+    /// and the action's group (0x1003AA18..0x1003AA45) on the leader's house.
+    /// A ready match beats a nearly charged one. With Ares off, the first plain
+    /// stock curtain competes in group 0 using its native readiness. An action
+    /// naming a nonzero group falls back to stock only if this house has no
+    /// matching active or fireable custom curtain (stock ignores the argument).
+    /// The mixed group-0 selection fires its winner by registry slot. A custom
+    /// curtain occupying stock's Type= index must not receive that launch.
+    fn team_iron_curtain_step(
+        &self,
+        owner: InternedId,
         argument: i32,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: &mut FrameEffects<'_>,
-    ) {
-        use crate::rules::superweapon_targeting::AiTargetingMode;
-        use crate::util::native_x87::{MaskedX87Chop53 as F, MaskedX87Ordering as O};
-        let mut found = None;
-        let mut fire = false;
-        let owner = self
-            .team_leader(team_id, rules)
-            .and_then(|leader| self.substrate.entities.get(leader))
-            .map(|leader| leader.owner());
-        if let Some(owner) = owner {
-            let power = self.power_states.get(&owner);
-            let (output, drain) =
-                power.map_or((0, 0), |power| (power.total_output(), power.total_drain()));
-            let has_power = drain == 0 || drain <= output;
-            let frame = self.session.binary_frame() as i32;
-            for name in &rules.super_weapon_order {
-                if fire {
-                    break;
-                }
-                let (Some(sw), Some(metadata)) =
-                    (rules.super_weapon(name), rules.super_weapon_metadata(name))
-                else {
-                    continue;
-                };
-                if metadata.targeting().mode() != AiTargetingMode::IronCurtain
-                    || metadata.launch().group() != argument
-                {
+    ) -> Option<(SuperStep, TeamSuper)> {
+        let supers = self.super_weapons.get(&owner)?;
+        let power = self.power_states.get(&owner);
+        let (output, drain) =
+            power.map_or((0, 0), |power| (power.total_output(), power.total_drain()));
+        let has_power = drain == 0 || drain <= output;
+        let frame = self.session.binary_frame() as i32;
+        let mut stock = None;
+        let mut matched = None;
+        let mut grouped = false;
+        for (index, name) in rules.super_weapon_order.iter().enumerate() {
+            let Some(sw) = rules.super_weapon(name) else {
+                continue;
+            };
+            let (step, weapon) = if !sw.uses_extension_rules(rules) {
+                if sw.kind != SuperWeaponKind::IronCurtain || stock.is_some() {
                     continue;
                 }
-                let Some(instance) = self
-                    .interner
-                    .get(name)
-                    .and_then(|id| self.super_weapons.get(&owner)?.get(&id))
-                else {
-                    continue;
-                };
-                if instance.is_ready() && (has_power || !sw.is_powered) {
-                    found = Some(name.as_str());
-                    fire = true;
-                } else if found.is_none() && instance.is_active() {
-                    let recharge = instance.recharge_time(sw);
-                    let elapsed = recharge.wrapping_sub(instance.charge_remaining(frame));
-                    let as_float =
-                        |value: i32| F::load_f32(F::store_f32_masked_chop(F::load_i32(value)));
-                    let threshold = F::mul(
-                        F::load_f32(rules.general.ai_minor_super_ready_percent),
-                        as_float(recharge),
-                    );
-                    if matches!(
-                        F::compare(as_float(elapsed), threshold),
-                        O::Greater | O::Equal
-                    ) {
-                        found = Some(name.as_str());
-                    }
-                }
-            }
-            if fire && let Some((name, centre)) = found.zip(self.team_centre_cell(team_id)) {
-                let sw_type_id = self.interner.intern(name);
-                self.fire_super_weapon_selected(
-                    rules,
-                    owner,
-                    sw_type_id,
-                    (centre.0 as u16, centre.1 as u16),
-                    registry,
-                    frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
-                    None,
+                // Stock 0x006EFD02 stops at its first Type=IronCurtain.
+                let candidate = (
+                    self.team_super_step(owner, name, rules),
+                    TeamSuper::Stock(sw.kind),
                 );
+                stock = Some(candidate);
+                if !rules.has_super_weapon_extension_rules() {
+                    return stock;
+                }
+                if argument != 0 {
+                    continue;
+                }
+                let Some(id) = self.interner.get(name) else {
+                    continue;
+                };
+                (candidate.0, TeamSuper::Grouped(id))
+            } else {
+                let Some(metadata) = rules.super_weapon_metadata(name) else {
+                    continue;
+                };
+                if metadata.targeting().mode() != AiTargetingMode::IronCurtain {
+                    continue;
+                }
+                // Even a different group's curtain at Type=1 would intercept
+                // the native call if we used that slot for group 0's winner.
+                if argument == 0 && index == SuperWeaponKind::IronCurtain.native_index() as usize {
+                    grouped = true;
+                }
+                if metadata.launch().group() != argument {
+                    continue;
+                }
+                let Some(id) = self.interner.get(name) else {
+                    continue;
+                };
+                let Some(instance) = supers.get(&id) else {
+                    continue;
+                };
+                let Some(step) = Self::grouped_curtain_step(
+                    instance,
+                    sw,
+                    has_power,
+                    frame,
+                    rules.general.ai_minor_super_ready_percent,
+                ) else {
+                    continue;
+                };
+                grouped = true;
+                (step, TeamSuper::Grouped(id))
+            };
+            // First ready wins in registry order; otherwise any nearly-ready
+            // candidate keeps the action waiting.
+            if !matches!(matched, Some((SuperStep::Fire, _)))
+                && (matched.is_none() || step != SuperStep::Finish)
+            {
+                matched = Some((step, weapon));
+            }
+            if grouped && matches!(matched, Some((SuperStep::Fire, _))) {
+                return matched;
             }
         }
-        if (fire || found.is_none())
-            && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
-        {
-            team.advance_pending = true;
+        if grouped { matched } else { stock }
+    }
+
+    /// 0x1003AA48..0x1003AAC6: readiness may ignore power for an unpowered
+    /// type. A granted Super waits at AIMinorSuperReadyPercent. Both integer
+    /// counts are stored as binary32; an unordered comparison does not wait.
+    fn grouped_curtain_step(
+        instance: &SuperWeaponInstance,
+        sw: &SuperWeaponType,
+        has_power: bool,
+        frame: i32,
+        ready_percent: NativeF32Bits,
+    ) -> Option<SuperStep> {
+        use crate::util::native_x87::{MaskedX87Chop53 as F, MaskedX87Ordering as O};
+        if instance.is_ready() && (has_power || !sw.is_powered) {
+            return Some(SuperStep::Fire);
         }
+        if !instance.is_active() {
+            return None;
+        }
+        let recharge = instance.recharge_time(sw);
+        let elapsed = recharge.wrapping_sub(instance.charge_remaining(frame));
+        let as_float = |value: i32| F::load_f32(F::store_f32_masked_chop(F::load_i32(value)));
+        let threshold = F::mul(F::load_f32(ready_percent), as_float(recharge));
+        let nearly_ready = matches!(
+            F::compare(as_float(elapsed), threshold),
+            O::Greater | O::Equal
+        );
+        Some(if nearly_ready {
+            SuperStep::Wait
+        } else {
+            SuperStep::Finish
+        })
     }
 
     /// The cell of the team's centre (`+0x34`, its GetCoords over 256 toward
@@ -320,28 +354,35 @@ impl Simulation {
     /// the actions pass the Super's `Type=` value where Fire_SW takes an
     /// index into the house's Supers, the `[SuperWeaponTypes]` entry at that
     /// position. That is the Super itself when the list puts each type at
-    /// the index of its `Type=`, as retail does.
+    /// the index of its `Type=`, as retail does. The grouped action supplies
+    /// the selected type itself (Ares 3.0p1 0x1003AB50).
     fn team_fire_super(
         &mut self,
         owner: InternedId,
-        kind: SuperWeaponKind,
+        weapon: TeamSuper,
         (x, y): (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let Some(name) = usize::try_from(kind.native_index())
-            .ok()
-            .and_then(|index| rules.super_weapon_order.get(index))
-        else {
-            return;
+        let (sw_type_id, selection) = match weapon {
+            TeamSuper::Stock(kind) => {
+                let Some(name) = usize::try_from(kind.native_index())
+                    .ok()
+                    .and_then(|index| rules.super_weapon_order.get(index))
+                else {
+                    return;
+                };
+                let sw_type_id = self.interner.intern(name);
+                // Script actions are synchronous authoritative producers. Capture
+                // the current ticket now; the shared finalizer consumes it once.
+                let selection = self
+                    .paid_super_weapon_selection(owner)
+                    .filter(|selection| selection.destination == sw_type_id);
+                (sw_type_id, selection)
+            }
+            TeamSuper::Grouped(id) => (id, None),
         };
-        let sw_type_id = self.interner.intern(name);
-        // Script actions are synchronous authoritative producers. Capture the
-        // current ticket now; the shared finalizer still consumes it once.
-        let selection = self
-            .paid_super_weapon_selection(owner)
-            .filter(|selection| selection.destination == sw_type_id);
         self.fire_super_weapon_selected(
             rules,
             owner,

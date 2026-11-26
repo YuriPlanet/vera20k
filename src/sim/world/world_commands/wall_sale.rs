@@ -160,6 +160,7 @@ impl Simulation {
         let _discarded_actual_cost = rules.building_actual_cost(wall_type);
 
         let mut tail_grid = self.path_grid.as_deref().cloned();
+        let building_impassable = self.firestorm_zone_cell_impassable((rx, ry), rules);
         let sold_navigation_changed = if let Some(grid) = self.overlay_grid.as_mut() {
             // gamemd-derived: `HouseClass::Sell_Building_At_Cell @ 0x004FCE80`
             // clears the wall identity itself (`+0x44 = -1` at `0x004FCFBC`,
@@ -171,8 +172,13 @@ impl Simulation {
             // eight neighbour contributions permanently.
             grid.clear_overlay(rx, ry);
             if let Some(terrain) = self.resolved_terrain.as_mut() {
-                grid.recalculate_runtime_cell(terrain, overlays, (rx, ry))
-                    .navigation_changed
+                grid.recalculate_runtime_cell_with_building(
+                    terrain,
+                    overlays,
+                    (rx, ry),
+                    building_impassable,
+                )
+                .navigation_changed
             } else {
                 false
             }
@@ -195,6 +201,12 @@ impl Simulation {
         for (dx, dy) in CROSS {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
+                    firestorm_zone: crate::sim::ares_firestorm::FirestormZoneView::new(
+                        &self.ares_firestorm,
+                        &self.substrate,
+                        &self.interner,
+                        rules,
+                    ),
                     wall_gates: crate::sim::cell_kernel::WallGateConnections::new(
                         &self.substrate,
                         &self.interner,
@@ -231,10 +243,14 @@ impl Simulation {
                 continue;
             };
             let result = visit.recomputed;
+            let building_impassable = self.firestorm_zone_cell_impassable((nx, ny), rules);
             let recalc = match (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut()) {
-                (Some(grid), Some(terrain)) => {
-                    grid.recalculate_runtime_cell(terrain, overlays, (nx, ny))
-                }
+                (Some(grid), Some(terrain)) => grid.recalculate_runtime_cell_with_building(
+                    terrain,
+                    overlays,
+                    (nx, ny),
+                    building_impassable,
+                ),
                 _ => OverlayRecalcOutcome::default(),
             };
             Self::refresh_wall_sale_recalc_prefix(

@@ -130,6 +130,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
     let entity = sim.entities().get(actor).unwrap();
     let p = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     sim.apply_ares_attach_effect_detonation(
+        false,
         ProjectileCoord::new(p.x, p.y, p.z),
         Some(entity.owner()),
         rules.warhead("CLOAK_WH").unwrap(),

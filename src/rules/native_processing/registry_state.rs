@@ -474,7 +474,7 @@ impl NativeRulesRegistryState {
             .into_iter()
             .flatten()
             .map(|member| {
-                // Only Rules read the Ares way allocate the extension.
+                // Stock-way rules retain only authored superweapon fallbacks.
                 let extension = member.ares_side.as_ref().map(|state| &state.fields);
                 (member.native_stored_id.as_str(), extension)
             })

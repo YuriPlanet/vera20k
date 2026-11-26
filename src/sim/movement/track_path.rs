@@ -782,8 +782,8 @@ impl Simulation {
 
     /// Whether the Unit setter (`0x741970`) is represented for `id` as the
     /// team, harvest and undeploy callers use it: a Drive, Ship, Hover, Walk,
-    /// Jumpjet, Teleport or Tunnel receiver, or a `Teleporter=` Unit whatever
-    /// its locomotor.
+    /// Jumpjet, Teleport, Tunnel or HunterSeeker Fly receiver, or a
+    /// `Teleporter=` Unit whatever its locomotor.
     pub(crate) fn unit_setter_receiver(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
             track_unit(actor)
@@ -792,6 +792,12 @@ impl Simulation {
                 || jumpjet_unit(actor)
                 || teleport_unit(actor)
                 || tunnel_unit(actor)
+                || (actor.category() == EntityCategory::Unit
+                    && actor
+                        .locomotor
+                        .as_ref()
+                        .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Fly)
+                    && self.hunter_seeker_type(id, rules).is_some())
                 || teleporter_unit(self, actor, rules)
         })
     }
@@ -818,7 +824,8 @@ impl Simulation {
     ///   Teleport ([`teleport_move_to`]), Jumpjet
     ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]), Walk
     ///   ([`set_walk_destination_coord`]) or Tunnel
-    ///   ([`Self::tunnel_move_to`]) — unless Foot+0x6AC skips it once.
+    ///   ([`Self::tunnel_move_to`]) or HunterSeeker Fly
+    ///   ([`Self::move_air_coordinate`]) — unless Foot+0x6AC skips it once.
     /// - The `MovementZone=Subterannean` arm (`0x00742097..0x007422D7`,
     ///   Type+D2C read71608A) uses the shared burrowing planner7447B0 and
     ///   existing NavQueue before the ordinary Foot setter.
@@ -846,20 +853,11 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        let teleporter = teleporter_unit(self, actor, rules);
-        let hover = hover_unit(actor);
-        let jumpjet = jumpjet_unit(actor);
-        if !(track_unit(actor)
-            || teleporter
-            || hover
-            || jumpjet
-            || walk_unit(actor)
-            || teleport_unit(actor)
-            || tunnel_unit(actor))
-            || !super::can_accept_destination(actor)
-        {
+        if !self.unit_setter_receiver(id, rules) || !super::can_accept_destination(actor) {
             return false;
         }
+        let teleporter = teleporter_unit(self, actor, rules);
+        let jumpjet = jumpjet_unit(actor);
         if actor
             .navigation
             .nav_com()
@@ -1341,8 +1339,19 @@ impl Simulation {
             )
             .unwrap_or_else(|cause| panic!("Unit destination for {id}: {cause}"))
         });
-        let jumpjet_accepted = if skip_move_to {
+        let pod_active = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| actor.ares_drop_pod().is_some());
+        let immediate_move = if skip_move_to {
             None
+        } else if pod_active {
+            let coord = coord.expect("accepted DropPod Move_To captures target +4C");
+            Some(
+                self.ground_foot_move_to(id, requested, coord, rules, frame_effects)
+                    .is_ok(),
+            )
         } else if jumpjet {
             let actor = self.substrate.entities.get_mut(id).expect("same Jumpjet");
             if super::air_movement::fly_coordinate_admitted(actor)
@@ -1356,6 +1365,31 @@ impl Simulation {
             } else {
                 Some(false)
             }
+        } else if self.hunter_seeker_type(id, rules).is_some()
+            && self.substrate.entities.get(id).is_some_and(|actor| {
+                actor
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Fly)
+            })
+        {
+            // Foot 0x004D9628 reads the target coordinate and 0x004D965D
+            // calls the active ILocomotion::Move_To (Fly 0x004CCC80). This
+            // begins takeoff from the HunterSeeker launch's ground Put.
+            if let Some(actor) = self.substrate.entities.get_mut(id) {
+                super::navcom::publish_nav_com(actor, requested);
+            }
+            Some(Self::move_air_coordinate(
+                &mut self.interner,
+                &self.session,
+                &mut self.substrate,
+                &mut self.sound_events,
+                &self.resolved_terrain,
+                id,
+                coord.expect("accepted Fly Move_To captures target +4C"),
+                None,
+                rules,
+            ))
         } else {
             None
         };
@@ -1364,7 +1398,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same setter actor");
-        let accepted = if let Some(accepted) = jumpjet_accepted {
+        let accepted = if let Some(accepted) = immediate_move {
             accepted
         } else if skip_move_to {
             super::navcom::publish_nav_com(actor, requested);

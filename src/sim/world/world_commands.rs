@@ -918,8 +918,6 @@ impl Simulation {
             // and current Owner+30 must match the signed event House
             // (4C6F2D..4C6F48). A building takes SellBack(-1) at4C6FA2;
             // CanSell belongs to input admission, not this receiver.
-            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 run only when Ares
-            // plays (below); otherwise buildings alone are sold.
             Command::SellBuilding { entity_id } => {
                 let Some(entity) = self.substrate.entities.get(*entity_id) else {
                     return false;
@@ -935,15 +933,18 @@ impl Simulation {
                     return false;
                 }
                 // 4C6F5A..4C6F96: a Unit or Aircraft with a Building in the
-                // cell of its coordinate takes On_Sold(-1). Ares makes the
-                // player's SellUnit click send it (hook 0x6929FC); a game
-                // without Ares keeps the building-only receiver.
-                if rules.ares()
-                    && matches!(
-                        entity.category(),
-                        crate::map::entities::EntityCategory::Unit
-                            | crate::map::entities::EntityCategory::Aircraft
-                    )
+                // cell of its coordinate takes On_Sold(-1). The Ares sell
+                // tool (hook 0x6929FC) and a stock SW answering SellUnit
+                // (0x004AC101..0x004AC207) can each send this event.
+                if matches!(
+                    entity.category(),
+                    crate::map::entities::EntityCategory::Unit
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) && (rules.ares()
+                    || rules
+                        .super_weapons
+                        .values()
+                        .any(|sw| sw.uses_stock_sell_unit_action(rules)))
                 {
                     let at = crate::sim::movement::ground_pose::object_get_coords(
                         entity,

@@ -19,12 +19,13 @@ use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::map::overlay::{OverlayEntry, TerrainObject};
 use crate::render::atlas_growth;
-use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::batch::{BatchRenderer, BatchTexture, create_unorm_texture_view_on_device};
 use crate::render::gpu::GpuContext;
 use crate::render::overlay_assets::resolve_overlay_name_for_render;
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::effect_asset_catalog::load_overlay_shape;
+use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps, NO_REMAP};
 use crate::rules::overlay_types::{
     OverlayTypeFlags, OverlayTypeRegistry, is_bridge_overlay_index, is_high_bridge_index,
     native_mark_overlay_data,
@@ -415,6 +416,8 @@ pub struct OverlaySpriteEntry {
 pub struct OverlayAtlas {
     /// The packed GPU texture.
     pub texture: BatchTexture,
+    /// Wall palette rows bound to the same packed SHP index plane.
+    wall_texture: Option<BatchTexture>,
     /// Lookup: (name, frame) → UV rectangle + offset data. Every drawn
     /// overlay, terrain object and smudge looks its sprite up here.
     entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
@@ -447,6 +450,15 @@ impl OverlayAtlas {
     pub(crate) fn zshape_bind_group(&self) -> Option<&wgpu::BindGroup> {
         self.zshapes.as_ref().map(|shapes| &shapes.bind_group)
     }
+
+    pub(crate) fn wall_texture(&self) -> Option<&BatchTexture> {
+        self.wall_texture.as_ref()
+    }
+
+    pub(crate) fn wall_palette_row(&self, color: HouseColorIndex) -> Option<u32> {
+        (self.wall_texture.is_some() && color != NO_REMAP).then(|| u32::from(color.0) + 1)
+    }
+
     /// Look up the atlas entry for a given (name, frame) pair.
     pub fn get(&self, key: &OverlaySpriteKey) -> Option<&OverlaySpriteEntry> {
         self.entries.get(key)
@@ -833,7 +845,18 @@ pub(crate) fn build_overlay_atlas_on_device(
         return None;
     }
 
-    let mut atlas = pack_overlay_sprites(device, queue, batch, &rendered);
+    let wall_palette = (!wall_names_loaded.is_empty()).then(|| {
+        create_unorm_texture_view_on_device(
+            device,
+            queue,
+            "Wall ColorScheme palette rows",
+            &wall_palette_rows(unit_palette, &rules.house_color_ramps),
+            256,
+            u32::from(NO_REMAP.0),
+            wgpu::TextureFormat::Rgba8Unorm,
+        )
+    });
+    let mut atlas = pack_overlay_sprites(device, queue, batch, &rendered, wall_palette.as_ref());
     atlas.zshapes = OverlayZShapes::load(device, queue, batch, asset_manager, theater_ext);
     Some(atlas)
 }
@@ -877,7 +900,8 @@ fn render_overlay_sprite(
 
     // Tiberium overlays now use the dedicated tiberium palette (e.g., temperat.pal)
     // which already has correct ore colors at all indices — no remap needed.
-    // Walls use the unit palette with default remap range colors.
+    // Walls retain the default unit palette and the same SHP indices
+    // for a possible owner scheme at draw time.
 
     // ReadINI5FE770, InitTheater5FE620 and saved Load5FEAF0 share the
     // processed type's reached load requests with authored admission/radar.
@@ -1258,6 +1282,7 @@ fn pack_overlay_sprites(
     queue: &wgpu::Queue,
     batch: &BatchRenderer,
     sprites: &[RenderedOverlay],
+    wall_palette: Option<&wgpu::TextureView>,
 ) -> OverlayAtlas {
     let PackedOverlaySprites {
         rgba,
@@ -1274,20 +1299,50 @@ fn pack_overlay_sprites(
         entries.len()
     );
 
-    let texture: BatchTexture = batch.create_texture_on_device(
-        device,
-        queue,
-        &rgba,
-        atlas_width,
-        atlas_height,
-        Some(&source_indices),
-    );
+    let (texture, wall_texture) = if let Some(rows) = wall_palette {
+        let (texture, indexed) = batch.create_texture_with_palette_rows(
+            device,
+            queue,
+            &rgba,
+            [atlas_width, atlas_height],
+            &source_indices,
+            rows,
+        );
+        (texture, Some(indexed))
+    } else {
+        (
+            batch.create_texture_on_device(
+                device,
+                queue,
+                &rgba,
+                atlas_width,
+                atlas_height,
+                Some(&source_indices),
+            ),
+            None,
+        )
+    };
     OverlayAtlas {
         texture,
+        wall_texture,
         art_extent: crate::render::cell_window::ArtExtent::of(entries.values()),
         entries,
         zshapes: None,
     }
+}
+
+fn wall_palette_rows(unit_palette: &Palette, ramps: &HouseColorRamps) -> Vec<u8> {
+    // Ares 3.0p1 CellClass_DrawOverlay_WallRemap (0x47F9A4 -> 0x1005D410)
+    // substitutes the Cell+0x50 owner's ColorScheme at 0x47F9AA. Give each
+    // scheme the same remap range as a unit draw while keeping the rest of
+    // the unit palette. Indexed sprite rows address the scheme index + 1.
+    (0..NO_REMAP.0)
+        .flat_map(|color| {
+            unit_palette
+                .with_house_colors(ramps.ramp(HouseColorIndex(color)))
+                .to_rgba_bytes()
+        })
+        .collect()
 }
 
 struct PackedOverlaySprites {
@@ -1390,6 +1445,7 @@ impl OverlayAtlas {
     pub(crate) fn from_test_texture(texture: BatchTexture) -> Self {
         Self {
             texture,
+            wall_texture: None,
             entries: LookupMap::default(),
             art_extent: Default::default(),
             zshapes: None,

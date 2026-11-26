@@ -433,6 +433,37 @@ pub(crate) fn kill_building_occupants(
     sim.refresh_spatial_threat(building_id, context.rules(), context.terrain());
 }
 
+/// Ares 3.0p1 `TechnoExt::KillCargo`, `0x1004618B..0x100461CD`, records
+/// and removes the building's occupants in vector order before handling its
+/// ordinary passengers. This walk keeps the firing index and does not eject.
+pub(crate) fn kill_building_occupants_for_chronoshift(
+    sim: &mut Simulation,
+    building_id: u64,
+    mut context: UninitContext<'_>,
+) {
+    let Some(building) = sim.substrate.entities.get(building_id) else {
+        return;
+    };
+    let occupants = building.passenger_role().occupants().ids();
+    if occupants.is_empty() {
+        return;
+    }
+    // Retain the visit order across the terminal expiry callbacks.
+    for id in occupants.to_vec() {
+        sim.record_the_kill(
+            id,
+            crate::sim::combat::KillSource::Techno(None),
+            crate::sim::combat::KillCallback::Terminal,
+            context.reborrow(),
+        );
+        uninit_garrison_passenger_without_exit(sim, id, context.reborrow());
+    }
+    if let Some(building) = sim.substrate.entities.get_mut(building_id) {
+        building.passenger_role_mut().occupants.ids.clear();
+    }
+    sim.refresh_spatial_threat(building_id, context.rules(), context.terrain());
+}
+
 /// The one SellBuilding457DE0 owner: sale (0,1), red-health/Unload/Action111
 /// (0,0), AllToHunt (1,0), and a destroyed `CanBeOccupied` building's
 /// Building44263B (0,0), after Techno's death weapon and before

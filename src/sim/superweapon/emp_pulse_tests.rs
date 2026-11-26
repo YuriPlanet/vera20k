@@ -200,6 +200,39 @@ fn ares_emp_pulse_sends_the_cannons_in_range_up_to_its_count() {
 /// shell at the cell from its turret pivot with its report sound, and
 /// goes back to Guard.
 #[test]
+fn builtin_emp_cannon_keeps_its_pending_launch_in_a_player_save_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
+    let art = IniFile::from_str(ART);
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+        .with_ares_keys_off(true)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert!(!rules.ares());
+    let (mut sim, _) = scene(&rules);
+    let cannon = building(&mut sim, &rules, "CANNON", (20, 20));
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+
+    let bytes = crate::sim::snapshot::GameSnapshot::save(
+        &sim,
+        0,
+        rules.simulation_config_hash(),
+        "emp-pulse",
+        0,
+    );
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.validate_ares_state_for_load(&rules).unwrap();
+    assert_eq!(mission(&restored, cannon), Some(MissionType::Missile));
+    assert_eq!(
+        restored.entities().get(cannon).unwrap().ares_super_target(),
+        Some((26, 26))
+    );
+}
+
+#[test]
 fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Pulse]\nSW.MaxCount=1\n");

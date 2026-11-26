@@ -86,6 +86,56 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
     ));
 }
 
+#[test]
+fn armed_drop_pod_keeps_the_suspended_drive_unchanged_when_retargeted() {
+    use crate::sim::movement::{motion_query, track_process::TrackFamily};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules("");
+    assert!(!rules.ares());
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, (25, 25));
+    let id = pods(&sim, "Americans")[0];
+    let suspended_drive = |sim: &Simulation| {
+        sim.entities()
+            .get(id)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .track_destination(TrackFamily::Drive)
+    };
+    let entity = sim.entities().get(id).unwrap();
+    let pod_destination = entity.ares_drop_pod().unwrap().destination();
+    let original_drive = suspended_drive(&sim);
+    assert_eq!(motion_query::is_moving(entity), Some(true));
+    assert_eq!(motion_query::destination(entity), pod_destination);
+
+    sim.assign_destination_represented(
+        id,
+        Some(NavTargetRef::cell(28, 28)),
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
+    assert_eq!(suspended_drive(&sim), original_drive);
+    let entity = sim.entities().get(id).unwrap();
+    assert_eq!(
+        entity.navigation.nav_com(),
+        Some(NavTargetRef::cell(28, 28))
+    );
+    assert_eq!(motion_query::destination(entity), pod_destination);
+}
+
+#[test]
+fn negative_drop_pod_count_cannot_wrap_into_a_positive_attempt() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules("[Drop]\nDropPod.Minimum=-1431655765\nDropPod.Maximum=-1431655765\n");
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, (25, 25));
+    assert!(pods(&sim, "Americans").is_empty());
+}
+
 fn pods(sim: &Simulation, owner: &str) -> Vec<u64> {
     sim.substrate
         .entities

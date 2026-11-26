@@ -1,90 +1,79 @@
-# Ares INI syntax
+# INI auto-numbering and section inheritance
 
-An Ares launch hooks gamemd's INI text reader, `INIClass::LoadFromStraw` (`0x525A60`), so
-every INI it loads gets three extensions: `+=` keys, `[Child]:[Base]` sections and
-later-wins repeated keys. In a game read the Ares way ([Ares](ares.md)), as a selected
-mod that ships `ares.mix` makes it, every build adds them where the reader is
-ported: `IniFile::from_str` / `from_bytes` ([`ini_ares_syntax.rs`](../src/rules/ini_ares_syntax.rs)).
-Rules, art, AI, mode, map, sound, EVA, theme, UI and settings INIs all load through it.
-Other games keep the native reader.
+VERA supports `+=` and `[Child]:[Base]` in gameplay INIs. Both forms work with
+Ares Off. The Ares reading mode also applies its own repeated-key rule.
 
 ```ini
 [VehicleTypes]
-+=TANK2          ; becomes var_0, var_1, ...
++=TANK2
 
-[TANK2]:[MTNK]   ; starts with MTNK's entries
+[MTNK]
+Strength=400
+Sight=6
+
+[TANK2]:[MTNK]
 Sight=9
-Sight=10         ; the later Sight wins
 ```
+
+`TANK2` keeps `Strength=400` from `MTNK` and uses its own `Sight=9`.
 
 ## Behaviour
 
-`LoadFromStraw` has two arms, chosen by whether the INI already holds a section. A fresh
-load builds each section and links it once it ends. Loading into an INI that has sections
-(`0x525BFA`) writes every entry with `INIClass::PutString` (`0x528660`), which replaces a
-key and lists it last. `ReadCCFile` loads every Ares `[#include]` and Phobos `$Include`
-file this way into the INI that lists it, so a game read the Ares way loads included files
-into the root INI (`IniFile::merge_load`) instead of composing them with `IniFile::merge`.
-That holds in a `phobos` build too. With the stock reader, `[#include]` uses
-the file overlay described in [INI directives](ini-directives.md), and `[$Include]`
-uses `IniFile::merge`. A file's `[#include]` entries join the root's, so the include
-walk reads them next. The Ares merge arm also loads an unterminated last line.
+- **Auto-numbering.** A key exactly equal to `+` becomes `var_<n>`, using the
+  current signed 32-bit count and incrementing it. Startup source selection
+  shares one count across `rulesmd.ini`, its includes, the selected
+  `langrule.ini` when present, and `artmd.ini` with its includes. A standalone
+  file or map read starts at zero and continues through its include tree.
+  An explicitly authored `var_<n>` still participates in the normal key
+  collision rules. The resolved key is visible to INI readers and digests.
+- **Section inheritance.** The parent must already exist in the document
+  being loaded. The child incorporates the parent's keys, then applies its
+  authored keys. The first header in an included file can inherit from the
+  including document. Standalone INIs such as a scenario map and a rules
+  layer still have independent section lookups. The copy budget bounds
+  expansion and logs a skipped copy.
+- **Repeated keys.** Ares-mode text uses the later value and lists it last.
+  The stock text reader retains physical duplicates and uses its existing CRC
+  index. An inherited key takes the value that a read of its parent selects.
+  In either mode the child can override that default.
 
-- **`+` keys.** A key that is exactly `+` becomes `var_<n>`. One counter serves both arms.
-  VERA numbers per INI, continuing through its included files, so a registry such as
-  `[BuildingTypes]` allocates every entry, including entries from included files.
-  Layers (rules, mode, map) are separate INIs. Each is walked on its own pass, so equal
-  `var_` names in two layers do not collide.
-- **Inheritance.** The text after a header's `]` may name a base: blanks, `:`, blanks,
-  `[name]`, with no `;` before its `]`. The base's entries are written, in order, under the
-  child's name. They come from the INI being loaded, so the base must already be loaded:
-  earlier in the same file, or in the including file or an earlier included one. A
-  missing or later base logs a warning and copies nothing, and a map cannot inherit a
-  rules section. In an included file the child's own keys then replace the copied ones.
-  In a fresh load, as in a root `rulesmd.ini`, the copy happens before the child section
-  is linked. A child with keys of its own therefore becomes two sections of one name, and
-  readers see whichever the native CRC index answers. That is Ares's own behaviour (Ares
-  bug 895552: inheritance in the main rules file loses keys). The first header of an
-  included file never inherits: the reader handles it before the hooked loop.
-- **Repeated keys.** A key whose CRC an earlier entry of the section has deletes that
-  entry, so the later value wins and is listed last. Without Ares the first one wins.
-  This also applies to retail files that repeat keys.
+Independent and diagnostic reads start at a fixed counter, so browsing an
+INI or previewing a map cannot affect a subsequent gameplay load. Fresh
+text and stock overlays discard unterminated final lines. The Ares merge
+reader puts a final key before the EOF test.
 
-The parse is deterministic. Map and INI digests, multiplayer content hashes and
-`GetCRC` all hash the resulting entries. A saved game stores the processed INIs and does
-not parse them again. The `+` counter is not saved: nothing loads into a saved INI.
+## Ares 3.0p1 hooks
 
-## Hooks
+| gamemd | Ares.dll | Activity |
+|---|---|---|
+| `0x5260A2` | `0x10066200` | `INIClass_Parse_IteratorChar1`, fresh auto-numbering |
+| `0x525D23` | `0x10066270` | `INIClass_Parse_IteratorChar2`, merge auto-numbering |
+| `0x525DDB` | `0x10066560` | `INIClass_Parse_IniSectionIncludes_PreProcess2`, fresh parent lookup |
+| `0x525E44` | `0x10066500` | `INIClass_Parse_IniSectionIncludes_CopySection2`, fresh copy before linking the child |
+| `0x525CA5` | `0x10066530` | `INIClass_Parse_IniSectionIncludes_PreProcess1`, merge parent lookup |
+| `0x525C28` | `0x100664D0` | `INIClass_Parse_IniSectionIncludes_CopySection1`, merge copy |
+| `0x5260D9` | `0x10066590` | `INIClass_Parse_Override`, later-wins duplicate in a fresh load |
 
-| gamemd | Ares.dll | Name | VERA |
-|---|---|---|---|
-| `0x5260A2` | `10065280` | INIClass_Parse_IteratorChar1 | `ares_syntax::load_fresh` (`iterator_key`) |
-| `0x525D23` | `100652F0` | INIClass_Parse_IteratorChar2 | `ares_syntax::load_into` (`iterator_key`, value cut to the buffer) |
-| `0x525DDB` | `100655E0` | INIClass_Parse_IniSectionIncludes_PreProcess2 | `load_fresh` → `pre_process` (`10065470`) |
-| `0x525E44` | `10065580` | INIClass_Parse_IniSectionIncludes_CopySection2 | `load_fresh` → `copy_section` (`10065380`) |
-| `0x525CA5` | `100655B0` | INIClass_Parse_IniSectionIncludes_PreProcess1 | `load_into` → `pre_process` |
-| `0x525C28` | `10065550` | INIClass_Parse_IniSectionIncludes_CopySection1 | `load_into` → `copy_section` |
-| `0x5260D9` | `10065610` | INIClass_Parse_Override | `load_fresh` → `replace_entry` |
-
-`put_string` ports `INIClass::PutString`. Lookups by name follow `INIClass::GetSection`
-(`0x526810`), including the cached pair that answers before the index is sorted. Those
-lookups decide which same-named section a later base lookup finds.
+The indexed Rust reader is [`ini_ares_syntax.rs`](../src/rules/ini_ares_syntax.rs).
+The source selection order is in [`retail_sources.rs`](../src/rules/retail_sources.rs).
 
 ## Residuals
 
-- Native `+` numbering continues across every INI loaded since the last scenario clear,
-  because `Ares::Clear` (`10004D90`) resets it. VERA's names are unique within each INI
-  but can differ in number. A mod key literally named `var_<n>`, and `GetCRC` compared
-  with a native peer, can tell the difference. Two layers can share a name natively too,
-  since each layer is its own INI.
-- The cached section pair is followed within one load only. VERA's readers search the
-  sorted index, which differs only when a reader first asks for the last name a load
-  looked up, and that name has two sections.
-- A header on an included file's unterminated last line leaves its base set for the next
-  load's first header; VERA drops it.
-- Each included file's `[#include]` entries join the root's list, and one walk reads them
-  in turn (`CCINIClass_ReadCCFile2` `10064660`; see [INI directives](ini-directives.md)).
-  A file that replaces the entry being walked sends native through freed memory. VERA
-  reads the replacing entry and the root entries after it.
+- P1 shares one counter across all INI objects and clears it in
+  `Scenario_ClearClasses` (`0x685659` → `0x100057C0`, reset at `0x10004FF7`).
+  VERA's scoped sequences keep previews and multiplayer map agreement
+  deterministic. Interleaving separate reads, or starting the next scenario
+  in an existing P1 process, can produce other numbers.
+- P1 copies fresh defaults through `PutString` before linking the child's own
+  section. The duplicate section name can hide either set of keys. VERA
+  combines both sets in the child section. P1 ordinarily skips parsing the
+  first included header's own parent suffix. A parent pointer left by the
+  prior file's unterminated final header can be consumed by that first header.
+  VERA resolves each explicit suffix within its own document.
+- The copied-text budget and include traversal protections still apply to
+  deliberately oversized inputs. The [INI directives](ini-directives.md)
+  describe how VERA handles included files and their lookup roots.
 
-No RNG draw, timer or detach is involved.
+The resulting entries enter the existing map and rules agreements. The load
+counter is transient. Saves store the resulting entries. No RNG, timer, or
+detach call is involved.

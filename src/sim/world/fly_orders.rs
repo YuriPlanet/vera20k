@@ -100,6 +100,7 @@ impl Simulation {
             return;
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
+        let pod_active = entity.ares_drop_pod().is_some();
         crate::sim::mission::concrete_effects::represented_assign_destination(
             entity,
             Some(destination),
@@ -112,7 +113,17 @@ impl Simulation {
             Some((rules, &self.interner)),
         )
         .expect("live aircraft NavCom coordinate");
-        self.aircraft_locomotor_move_to(id, coord, rules);
+        if pod_active {
+            self.drop_pod_move_to(
+                id,
+                coord,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
+        } else {
+            self.aircraft_locomotor_move_to(id, coord, rules);
+        }
         // Accepted Foot setter resets both timers even when Fly MoveTo refuses
         // (e.g. powered off). Retry count is preserved.
         DestinationTiming::from_rules(self.session.binary_frame(), rules)

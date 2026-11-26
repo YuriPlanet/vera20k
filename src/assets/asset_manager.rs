@@ -1416,6 +1416,11 @@ impl AssetManager {
         Ok(())
     }
 
+    /// Theater whose asset archives are currently active.
+    pub fn active_theater(&self) -> Option<&str> {
+        self.active_theater.as_deref()
+    }
+
     /// Prepare a replacement world without leaving the outgoing world's
     /// current-resolution search list pointed at another theater on error.
     /// Native Load67E440 is not globally atomic; this is VERA's candidate

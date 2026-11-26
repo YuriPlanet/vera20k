@@ -10,7 +10,7 @@ use crate::rules::superweapon_targeting::TargetReject;
 use crate::rules::superweapon_targeting::{
     LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
 };
-use crate::rules::superweapon_type::SuperWeaponType;
+use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
@@ -251,14 +251,29 @@ pub(super) fn check_with_data(
         } else {
             MovementLayer::Ground
         };
-    let contents: Vec<_> = sim
-        .substrate
-        .occupancy
-        .get(cell.0, cell.1)
-        .into_iter()
-        .flat_map(|occupancy| occupancy.iter_layer(layer))
-        .filter_map(|occupant| sim.substrate.entities.get(occupant.entity_id))
-        .filter(|entity| entity.is_object_alive() && !entity.lifecycle.in_limbo())
+    let objects = || {
+        sim.substrate
+            .occupancy
+            .get(cell.0, cell.1)
+            .into_iter()
+            .flat_map(|occupancy| occupancy.iter_layer(layer))
+            .filter_map(|occupant| sim.substrate.entities.get(occupant.entity_id))
+            .filter(|entity| entity.is_object_alive() && !entity.lifecycle.in_limbo())
+    };
+    // SW_Protect::CanFireAt (3.0p1 0x10075AC0) applies the additional
+    // modifier check only to a manual Force Shield that requires buildings.
+    if !automatic
+        && sw.kind == SuperWeaponKind::ForceShield
+        && sw.uses_ares_handler(rules)
+        && requirements.target.intersects(TargetMask::BUILDING)
+        && objects()
+            .find(|entity| entity.category() == EntityCategory::Structure)
+            .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.force_shield_pointer_blocked())
+    {
+        return Err(TargetReject::TargetContentMismatch);
+    }
+    let contents: Vec<_> = objects()
         .map(|entity| TargetContent {
             kind: match entity.category() {
                 EntityCategory::Infantry => TargetMask::INFANTRY,

@@ -17,7 +17,7 @@ use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeI
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::radar_event_config::RadarEventConfig;
 use crate::rules::smudge_type::SmudgeTypeRegistry;
-use crate::rules::superweapon_type::SuperWeaponType;
+use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::terrain_rules::TerrainRules;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
@@ -266,15 +266,17 @@ impl RuleSet {
                 rules.object_list[handle.0 as usize].bind_driver_rules(driver);
             }
         }
+        if crate::rules::ares_switch::ares_way() || rules.has_super_weapon_extension_rules() {
+            for (category, name, retained) in processed.super_weapon_techno_states() {
+                if let Some(handle) = rules.object_category_index.get(category, name) {
+                    rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(retained);
+                }
+            }
+        }
         if crate::rules::ares_switch::ares_way() {
             for (category, name, enabled, options) in processed.ares_spotlight_states() {
                 if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_ares_spotlight(enabled, options);
-                }
-            }
-            for (category, name, retained) in processed.super_weapon_techno_states() {
-                if let Some(handle) = rules.object_category_index.get(category, name) {
-                    rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(retained);
                 }
             }
             for (category, name, group) in processed.selection_group_states() {
@@ -368,15 +370,38 @@ impl RuleSet {
                 }
             }
         }
-        for (name, ares) in processed.ares_warhead_states() {
-            let builtin = ares.is_some_and(|settings| settings.attach_effect().is_enabled(false));
-            let ares = ares.filter(|settings| {
-                crate::rules::ares_switch::ares_way() || builtin || settings.duration() != 0
+        let ares_warheads = crate::rules::ares_switch::ares_way();
+        let builtin_nuke = !ares_warheads
+            && rules.super_weapons.values().any(|sw| {
+                sw.kind == crate::rules::superweapon_type::SuperWeaponKind::MultiMissile
+                    && sw.uses_ares_handler(&rules)
             });
+        let builtin_generic_warheads: HashSet<_> = processed
+            .generic_super_weapon_warhead_states()
+            .filter_map(|(name, warhead)| {
+                let sw = rules.super_weapon(name)?;
+                (sw.kind == SuperWeaponKind::GenericWarhead && sw.uses_ares_handler(&rules))
+                    .then(|| warhead.map(str::to_ascii_uppercase))
+                    .flatten()
+            })
+            .collect();
+        for (name, retained) in processed.ares_warhead_states() {
+            let builtin =
+                retained.is_some_and(|settings| settings.attach_effect().is_enabled(false));
+            let generic = builtin_generic_warheads.contains(&name.to_ascii_uppercase());
+            let ares = retained
+                .filter(|settings| ares_warheads || builtin || settings.duration() != 0 || generic);
             if let Some(warhead) = rules.warhead_mut(name) {
-                warhead.bind_ares_rules(ares);
+                warhead.bind_ares_rules(ares, ares_warheads);
+                if builtin_nuke && let Some(retained) = retained {
+                    warhead.bind_builtin_nuke_impact(retained.combat());
+                }
                 rules.builtin_attach_effects |= builtin;
                 rules.builtin_tunnel_emp |= ares.is_some_and(|settings| settings.duration() != 0);
+                rules.builtin_generic_attach_effects |= generic
+                    && ares.is_some_and(|settings| settings.attach_effect().duration() != 0);
+                rules.builtin_generic_emp |=
+                    generic && ares.is_some_and(|settings| settings.duration() != 0);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
@@ -682,14 +707,13 @@ impl RuleSet {
             }
         }
         let ares_way = crate::rules::ares_switch::ares_way();
-        let builtin_firestorm = rules.has_builtin_firestorm();
         for (name, ext) in processed.building_type_ext_states() {
             if let Some(handle) = rules
                 .object_category_index
                 .get(ObjectCategory::Building, name)
             {
                 let building = &mut rules.object_list[handle.0 as usize];
-                building.bind_building_type_ext(ext, ares_way, builtin_firestorm);
+                building.bind_building_type_ext(ext, ares_way);
                 if ares_way {
                     // AIBaseNormal joins the base-reservation gate above.
                     building.base_reservation_spacing = building
@@ -783,6 +807,12 @@ impl RuleSet {
                 projectile.shrapnel_weapon = shrapnel.map(str::to_owned);
             }
         }
+        for (name, system) in processed.projectile_attached_system_states() {
+            let system = rules.ps_type_id_by_name(system);
+            if let Some(projectile) = rules.projectile_mut(name) {
+                projectile.attached_system = system;
+            }
+        }
         for (name, (weapon, aux_building)) in processed.super_weapon_reference_states() {
             if let Some(super_weapon) = rules
                 .super_weapons
@@ -859,7 +889,7 @@ impl RuleSet {
                 .values_mut()
                 .find(|sw| sw.id.eq_ignore_ascii_case(name))
             {
-                if ares_way {
+                if ares_way || sw.has_builtin_rules() {
                     sw.hunter_seeker = settings.cloned();
                 }
             }
@@ -1808,7 +1838,7 @@ impl RuleSet {
         }
 
         // Step 5: Parse superweapon type registry.
-        use crate::rules::superweapon_targeting::AiTargetingMode;
+        use crate::rules::superweapon_type::SuperWeaponKind;
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut ares_super_weapon_metadata: BTreeMap<_, _> = processed
             .super_weapon_availability_states()
@@ -1817,21 +1847,44 @@ impl RuleSet {
         let mut super_weapons: HashMap<String, SuperWeaponType> = HashMap::new();
         let sw_ids: Vec<String> = parse_registry(ini, "SuperWeaponTypes");
         let super_weapon_order: Vec<String> = sw_ids.clone();
+        // SW_ChronoSphere's second click uses its named ChronoWarp or the
+        // first ChronoWarp in registry order (Ares 1006ED30). Activate the
+        // paired handler when the definition authored the source handler.
+        let chrono_warps: Vec<_> = sw_ids
+            .iter()
+            .filter(|id| {
+                ini.section(id).and_then(SuperWeaponType::read_kind)
+                    == Some(SuperWeaponKind::ChronoWarp)
+            })
+            .collect();
+        let paired_chrono_warps: HashSet<_> = sw_ids
+            .iter()
+            .filter(|id| {
+                ini.section(id).is_some_and(|section| {
+                    SuperWeaponType::read_kind(section) == Some(SuperWeaponKind::ChronoSphere)
+                        && SuperWeaponKind::ChronoSphere.has_redirect_settings(section)
+                })
+            })
+            .filter_map(|id| {
+                let named = ares_super_weapon_metadata
+                    .get(&id.to_ascii_uppercase())
+                    .map(|ext| ext.launch().post_dependent());
+                chrono_warps
+                    .iter()
+                    .find(|warp| named.is_some_and(|name| warp.eq_ignore_ascii_case(name)))
+                    .or_else(|| chrono_warps.first())
+                    .map(|warp| warp.to_ascii_uppercase())
+            })
+            .collect();
         for sw_id in &sw_ids {
             if let Some(section) = ini.section(sw_id) {
                 let key = sw_id.to_ascii_uppercase();
                 let metadata = ares_super_weapon_metadata.get(&key);
-                let base_targeting = metadata.is_some_and(|ext| {
-                    matches!(
-                        ext.targeting().mode(),
-                        AiTargetingMode::Base | AiTargetingMode::EnemyBase
-                    )
-                });
                 let sw = SuperWeaponType::from_ini_section_with_range(
                     sw_id,
                     section,
                     metadata.map(|ext| ext.launch().range()),
-                    base_targeting,
+                    paired_chrono_warps.contains(&key),
                     general.psychic_reveal_radius,
                 );
                 if !ares_way && !sw.has_builtin_rules() {
@@ -2044,7 +2097,9 @@ impl RuleSet {
             // Decided by `from_processed_rules` once its readers ran.
             ares: false,
             builtin_attach_effects: false,
+            builtin_generic_attach_effects: false,
             builtin_tunnel_emp: false,
+            builtin_generic_emp: false,
             phobos: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),
@@ -2208,13 +2263,16 @@ fn project_country_side_registry<'a>(
 ) -> ProjectedCountrySideRegistry {
     let sides = sides.collect::<Vec<_>>();
     let side_ids: Vec<String> = sides.iter().map(|(id, _)| (*id).to_owned()).collect();
-    // Every allocated Side owns its Ares extension when the Rules were read
-    // the Ares way, and none does when they were read the stock way.
-    let side_extensions = sides
-        .iter()
-        .map(|(_, extension)| extension.cloned())
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_default();
+    // A stock-way Side can contribute an authored superweapon fallback. The
+    // projection keeps these fields at their Side array indices.
+    let side_extensions = if sides.iter().any(|(_, extension)| extension.is_some()) {
+        sides
+            .iter()
+            .map(|(_, extension)| extension.cloned().unwrap_or_default())
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut side_indices = HashMap::with_capacity(side_ids.len());
     for (index, id) in side_ids.iter().enumerate() {
         side_indices
@@ -2246,9 +2304,9 @@ fn project_country_side_registry<'a>(
             fields.color_scheme = color;
             fields.parent_country = parent.to_owned();
             fields.veteran_types = veteran.clone();
+            fields.paradrop = veteran.paradrop().clone();
             if crate::rules::ares_switch::ares_way() {
                 fields.presentation = veteran.presentation().clone();
-                fields.paradrop = veteran.paradrop().clone();
                 fields.power_plants = veteran.power_plants().to_vec();
             }
             fields

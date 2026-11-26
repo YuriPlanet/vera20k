@@ -47,6 +47,8 @@ Strength=250
   parser hooks ([Ares INI syntax](ares-ini-syntax.md)). With the stock reader,
   `[#include]` overlays each selected value while keeping the stock parser's
   duplicate-key choices. Phobos `[$Include]` uses its compatibility projection.
+  A `[Child]:[Base]` header in either kind of include can use a parent already
+  loaded into the including document.
 - An included file's `[#include]` list joins the root's. Ares walks that one
   list with an index every nesting level shares (`CCINIClass_ReadCCFile2`
   `0x10064660`, 3.0p1 `0x100655E0`), so a parent's remaining entries are read before the entries its

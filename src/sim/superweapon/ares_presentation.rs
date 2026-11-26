@@ -4,8 +4,8 @@
 //! UnitDelivery100A8E70, GenericWarhead100A8ECC and HunterSeeker100A9280 share GetAnim
 //! 1006D0C0 (null fallback), GetSound1006D1C0 (-1 fallback), and Flags
 //! 10003650 (zero); none suppresses the common animation/sound/Ready cleanup.
-//! Battery shares them too; Protect's GetAnim (10074A90) falls back to
-//! `IronCurtainInvokeAnim=`. The ChronoSphere's Flags (1006EE70) skip the
+//! Battery shares them too; Protect's GetAnim (3.0p1 0x10075B40) falls back
+//! to the corresponding stock invoke anim. The ChronoSphere's Flags (1006EE70) skip the
 //! anim, EVA, money, radar event, message and cleanup; the ChronoWarp's
 //! (10070040) the anim and radar event, its other steps reading the source
 //! Super's type.
@@ -35,17 +35,22 @@ pub(super) fn on_launch(
         return;
     };
     let presentation = &sw.presentation;
+    let launch_kind = sw.launch_kind(rules);
     let mut coord = super::deck_coords(sim, cell);
     // Launch10033068..100330F9: GetAnim (base Nullable fallback nullptr;
-    // SW_Protect::GetAnim10074A90 falls back to IronCurtainInvokeAnim), add
+    // SW_Protect::GetAnim (3.0p1 0x10075B40) falls back to the stock invoke anim), add
     // the signed height, construct regardless of visibility, then write
     // Hidden. No OwnerHouse store is made by this producer.
     let animation = match &presentation.animation {
         _ if flags.has(F::NO_ANIM) => None,
         Some(animation) => animation.clone(),
-        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
-            Some(rules.general.iron_curtain_invoke_anim.clone())
-        }
+        None if launch_kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => Some(
+            if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+                rules.general.force_shield_invoke_anim.clone()
+            } else {
+                rules.general.iron_curtain_invoke_anim.clone()
+            },
+        ),
         // SW_GeneticMutator::GetAnim10071F30: `[General] IonBlast=`.
         None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
             Some(rules.general.ion_blast_anim.clone())

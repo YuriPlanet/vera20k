@@ -12,6 +12,24 @@ pub(crate) struct AttachedSuper {
     pub sw_type: InternedId,
 }
 
+/// HunterSeeker flight hooks use the TechnoType flag. In stock rules, a
+/// retained origin from the built-in superweapon admits that flag's hooks.
+/// EMPulse also stores an AttachedSuper, so verify the handler identity.
+pub(crate) fn has_hunter_seeker_origin(
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &crate::rules::ruleset::RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) -> bool {
+    entity
+        .ares_super_weapon()
+        .and_then(|origin| interner.try_resolve(origin.sw_type))
+        .and_then(|name| rules.super_weapon(name))
+        .is_some_and(|sw| {
+            sw.kind == crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker
+                && sw.uses_ares_handler(rules)
+        })
+}
+
 impl crate::sim::world::Simulation {
     /// Fly Acquire_Hunter_Seeker_Target (Ares 0x1004D770), delegated to
     /// TechnoExt::AcquireHunterSeekerTarget 0x10042E40..0x10043171. Installed
@@ -182,12 +200,18 @@ const LOOK_AHEAD_STEPS: i32 = 10;
 const BRIDGE_DECK_Z: i32 = 0x1A0;
 
 impl crate::sim::world::Simulation {
-    fn is_hunter_seeker(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
-        self.substrate
-            .entities
-            .get(id)
-            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
-            .is_some_and(|object| object.hunter_seeker)
+    pub(crate) fn hunter_seeker_type<'r>(
+        &self,
+        id: u64,
+        rules: &'r crate::rules::ruleset::RuleSet,
+    ) -> Option<&'r crate::rules::object_type::ObjectType> {
+        let entity = self.substrate.entities.get(id)?;
+        if !rules.ares() && !has_hunter_seeker_origin(entity, rules, &self.interner) {
+            return None;
+        }
+        self.interner
+            .object_type(entity.type_ref(), rules)
+            .filter(|object| object.hunter_seeker)
     }
 
     /// The hunter's Target when it is a Techno (`generic_cast<TechnoClass*>`).
@@ -203,7 +227,7 @@ impl crate::sim::world::Simulation {
     }
 
     /// Ares 3.0 FlyLocomotionClass_ILocomotion_Process_HunterSeeker
-    /// (1004D7A0, hook 0x4CCB84), before Process's queued-mission check: a
+    /// (P1 0x1004E410, hook 0x4CCB84), before Process's queued-mission check: a
     /// `HunterSeeker=` Fly drops a Techno Target that left the playfield
     /// (`+0x3D5`), is iron-curtained (vt+0x160) or is being warped out
     /// (vt+0x1D4) through Assign_Target(NULL) (vt+0x3C8); without a Target
@@ -214,7 +238,7 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> bool {
-        if !self.is_hunter_seeker(id, rules) {
+        if self.hunter_seeker_type(id, rules).is_none() {
             return false;
         }
         let frame = self.session.binary_frame();
@@ -237,7 +261,7 @@ impl crate::sim::world::Simulation {
     }
 
     /// Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
-    /// (1004DA90, hook 0x4CD9C8, in UpdateFlightMotion before its Guard to
+    /// (P1 0x1004E700, hook 0x4CD9C8, in UpdateFlightMotion before its Guard to
     /// Move queue): a hunter with a Target flies at the Target's GetCoords
     /// (a Unit or Infantry in a tube at its tube coordinate, which VERA does
     /// not represent), raised to the cell floor (`0x00578080`), as the Fly's
@@ -248,7 +272,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
-        if !self.is_hunter_seeker(id, rules) {
+        if self.hunter_seeker_type(id, rules).is_none() {
             return;
         }
         let Some(target) = self
@@ -297,7 +321,7 @@ impl crate::sim::world::Simulation {
         }
     }
 
-    /// Ares 3.0 FlyLocomotionClass_sub_4CEFB0_HunterSeeker (1004DC30, hook
+    /// Ares FlyLocomotionClass_sub_4CEFB0_HunterSeeker (P1 0x1004E8A0, hook
     /// 0x4CF3D0), the height block of Horizontal_Step for a hunter with a
     /// Target. Its XY distance to the destination (CRT sqrt, truncated)
     /// below `HunterSeeker.DetonateProximity` detonates on a Techno Target;
@@ -317,11 +341,7 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return HunterSeekerHeight::Stock;
         };
-        let Some(object) = self
-            .interner
-            .object_type(entity.type_ref(), rules)
-            .filter(|object| object.hunter_seeker)
-        else {
+        let Some(object) = self.hunter_seeker_type(id, rules) else {
             return HunterSeekerHeight::Stock;
         };
         let Some(target) = entity.attack_target.target() else {
@@ -496,7 +516,7 @@ impl crate::sim::world::Simulation {
         }
     }
 
-    /// Ares 3.0 FootClass_UpdatePosition_HunterSeeker (1004E050, hook
+    /// Ares FootClass_UpdatePosition_HunterSeeker (P1 0x1004ECC0, hook
     /// 0x4D8D95, PerCellProcess's off-playfield exit before its UnInit): a
     /// hunter leaving the map hits its Techno Target with weapon 0 so it
     /// does not get away.
@@ -507,7 +527,7 @@ impl crate::sim::world::Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
-        if !self.is_hunter_seeker(id, rules) {
+        if self.hunter_seeker_type(id, rules).is_none() {
             return;
         }
         let Some(target) = self.hunter_seeker_techno_target(id) else {
@@ -518,9 +538,10 @@ impl crate::sim::world::Simulation {
         }
     }
 
-    /// GetWeapon(0) (vt+0x3F8) at the hunter's veterancy: Damage and Warhead.
+    /// P1 0x1004E986..0x1004E9B5 and 0x1004ECEC..0x1004ED18 take Damage
+    /// and the bound Warhead from GetWeapon(0), before any projectile fires.
     fn hunter_seeker_weapon(
-        &self,
+        &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<(i32, InternedId)> {
@@ -529,8 +550,8 @@ impl crate::sim::world::Simulation {
         let weapon =
             crate::sim::combat::combat_weapon::primary_for_tier(object, entity.veterancy.rank())
                 .and_then(|weapon| rules.weapon(weapon))?;
-        let warhead = self.interner.get(weapon.warhead.as_deref()?)?;
-        Some((weapon.damage, warhead))
+        let warhead = rules.weapon_warhead(weapon)?;
+        Some((weapon.damage, self.interner.intern(&warhead.id)))
     }
 
     /// `ReceiveDamage(&damage, 0, warhead, attacker, true, true, NULL)`.

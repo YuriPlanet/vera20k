@@ -73,17 +73,57 @@ impl RulesPassProcessor {
             // original section-admission branch or use final merged text.
             if ares_way {
                 self.process_ares_country(index, pass, _primary_rules);
-            } else if let Some(section) =
-                pass.section(&self.families[&RulesTypeFamily::Country][index].native_stored_id)
-            {
+            } else {
                 // Script67 also uses this explicit override in stock-way rules.
-                let _explicit_driving = crate::rules::ares_switch::not_ares_reads();
-                self.family_mut(RulesTypeFamily::Country)[index]
-                    .country_veterancy
-                    .read_can_be_driven(section);
+                let _builtin = crate::rules::ares_switch::not_ares_reads();
+                let country = &self.families[&RulesTypeFamily::Country][index];
+                let section = pass.section(&country.native_stored_id);
+                if let Some(parent) = self.country_extension_parent(index) {
+                    if let Some(parent) = parent {
+                        let inherited = self.families[&RulesTypeFamily::Country][parent]
+                            .country_veterancy
+                            .ares
+                            .paradrop
+                            .clone();
+                        self.family_mut(RulesTypeFamily::Country)[index]
+                            .country_veterancy
+                            .ares
+                            .paradrop
+                            .inherit_from(&inherited);
+                    }
+                    self.family_mut(RulesTypeFamily::Country)[index]
+                        .country_veterancy
+                        .ares
+                        .parent_initialized = true;
+                }
+                if let Some(section) = section {
+                    self.read_country_paradrop(index, section);
+                    self.family_mut(RulesTypeFamily::Country)[index]
+                        .country_veterancy
+                        .read_can_be_driven(section);
+                }
             }
             index += 1;
         }
+    }
+
+    /// 1001BDC0 attempts inheritance only once for a non-self parent name.
+    fn country_extension_parent(&self, index: usize) -> Option<Option<usize>> {
+        let countries = &self.families[&RulesTypeFamily::Country];
+        let country = &countries[index];
+        let name = &country.country_parent;
+        (!country.country_veterancy.ares.parent_initialized
+            && !name.is_empty()
+            && !name.eq_ignore_ascii_case(&country.native_stored_id))
+        .then(|| {
+            ares_country_index_of_name(
+                name,
+                countries
+                    .iter()
+                    .map(|member| member.native_stored_id.as_str()),
+            )
+            .map(|parent| usize::from(parent.0))
+        })
     }
 
     /// CountryExt1001C530/1001C5D0: first-attempt parent copy precedes this
@@ -103,10 +143,6 @@ impl RulesPassProcessor {
             return;
         }
         let id = country.native_stored_id.clone();
-        let parent = country.country_parent.clone();
-        let inherit = !country.country_veterancy.ares.parent_initialized
-            && !parent.is_empty()
-            && !parent.eq_ignore_ascii_case(&id);
         if phase == 0 {
             //1001C549..1001C59A initializes the color from the current Side.
             // It does not reset any GUI field, list or parent attempt.
@@ -133,15 +169,9 @@ impl RulesPassProcessor {
             current.loading.read_primary(section);
             current.presentation.read_primary(section);
         }
-        if inherit {
-            let inherited = ares_country_index_of_name(
-                &parent,
-                self.families[&RulesTypeFamily::Country]
-                    .iter()
-                    .map(|member| member.native_stored_id.as_str()),
-            )
-            .map(|index| {
-                self.families[&RulesTypeFamily::Country][usize::from(index.0)]
+        if let Some(parent) = self.country_extension_parent(index) {
+            let inherited = parent.map(|index| {
+                self.families[&RulesTypeFamily::Country][index]
                     .country_veterancy
                     .ares
                     .clone()
@@ -187,26 +217,7 @@ impl RulesPassProcessor {
         // (then remove_non_paradroppables100768C0 keeps InfantryType and
         // UnitType identities) and `ParaDrop.Num`1001C670.
         if let Some(section) = pass.section(&id) {
-            let types = SideRegisteredTypes::collect(&self.families);
-            let paradrop = &mut self.family_mut(RulesTypeFamily::Country)[index]
-                .country_veterancy
-                .ares
-                .paradrop;
-            paradrop.parachute_anim = read_valueable_type(
-                section,
-                "Parachute.Anim",
-                &paradrop.parachute_anim,
-                |name| SideRegisteredTypes::find(&types.animations, name),
-            );
-            paradrop.aircraft =
-                read_valueable_type(section, "ParaDrop.Aircraft", &paradrop.aircraft, |name| {
-                    SideRegisteredTypes::find(&types.aircraft, name)
-                });
-            paradrop.types =
-                read_valueable_type_vector(section, "ParaDrop.Types", &paradrop.types, |name| {
-                    types.techno(name)
-                });
-            paradrop.counts = read_valueable_int_vector(section, "ParaDrop.Num", &paradrop.counts);
+            self.read_country_paradrop(index, section);
         }
         // Color1001C686 is common to every pass and follows inheritance.
         if let Some(section) = pass.section(&id) {
@@ -328,15 +339,57 @@ impl RulesPassProcessor {
             .push(i32::try_from(country_index).expect("native Country index exceeds i32"));
     }
 
+    /// 1001C620..1001C670, after CountryExt's one-shot parent copy.
+    fn read_country_paradrop(
+        &mut self,
+        index: usize,
+        section: &crate::rules::ini_parser::IniSection,
+    ) {
+        if !section.keys().any(|key| {
+            matches!(
+                key,
+                "Parachute.Anim" | "ParaDrop.Aircraft" | "ParaDrop.Types" | "ParaDrop.Num"
+            )
+        }) {
+            return;
+        }
+        let types = SideRegisteredTypes::collect(&self.families);
+        let paradrop = &mut self.family_mut(RulesTypeFamily::Country)[index]
+            .country_veterancy
+            .ares
+            .paradrop;
+        paradrop.parachute_anim = read_valueable_type(
+            section,
+            "Parachute.Anim",
+            &paradrop.parachute_anim,
+            |name| SideRegisteredTypes::find(&types.animations, name),
+        );
+        paradrop.aircraft =
+            read_valueable_type(section, "ParaDrop.Aircraft", &paradrop.aircraft, |name| {
+                SideRegisteredTypes::find(&types.aircraft, name)
+            });
+        paradrop.types =
+            read_valueable_type_vector(section, "ParaDrop.Types", &paradrop.types, |name| {
+                types.techno(name)
+            });
+        paradrop.counts = read_valueable_int_vector(section, "ParaDrop.Num", &paradrop.counts);
+    }
+
     pub(super) fn process_super_weapon_family(
         &mut self,
         pass: &IniFile,
         _fixed_eva: &EvaRegistry,
         _fixed_sounds: &SoundRegistry,
     ) {
+        use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
+
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::SuperWeapon) {
+            let prior = &self.families[&RulesTypeFamily::SuperWeapon][index].body;
+            let nuke_was_redirected = !ares_way
+                && SuperWeaponType::read_kind(prior) == Some(SuperWeaponKind::MultiMissile)
+                && SuperWeaponKind::MultiMissile.has_redirect_settings(prior);
             if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
@@ -377,19 +430,36 @@ impl RulesPassProcessor {
                         .super_weapon_phobos_availability = availability;
                 }
                 {
-                    // A later pass may opt this type into a base target or
-                    // an activation price. Retain ordered reads without
-                    // enabling Ares or allocating Ares-only dependencies.
+                    // Retain ordered SWTypeExt reads for authored definitions
+                    // without turning on the game's other Ares extensions.
                     let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                     let _ares = crate::rules::ares_switch::ares_reads();
                     // LoadFromINIFile10033250: the first call runs the Type
                     // handler's Initialize, then LoadFromINI10033370 reads
                     // EVA.Ready/Activated/Detected before the other fields.
-                    let kind = self.families[&RulesTypeFamily::SuperWeapon][index]
-                        .body
-                        .read_name("Type", 0x28)
-                        .map(str::to_owned);
-                    let kind = kind.as_deref();
+                    let body = &self.families[&RulesTypeFamily::SuperWeapon][index].body;
+                    let kind = body.read_string_with("Type", 0x28, None, |current, name| {
+                        // ReadINI 0x006CEC5B..0x006CEC7E retains the last
+                        // recognized type when a later layer rejects Type.
+                        SuperWeaponKind::from_ini_str(name)
+                            .map(|_| name.to_owned())
+                            .or(current)
+                    });
+                    let kind_id = kind.as_deref().and_then(SuperWeaponKind::from_ini_str);
+                    let builtin_handler =
+                        kind_id.is_some_and(|kind| kind.has_redirect_settings(body));
+                    let builtin_rules = kind_id.is_some_and(|kind| {
+                        kind.is_extension() || builtin_handler || kind.has_extension_settings(body)
+                    });
+                    // SW_Protect::HandlesType (Ares 3.0p1 0x10075BF0) routes
+                    // Type=IronCurtain to the same Initialize and LoadFromINI.
+                    let kind = kind.as_deref().map(|kind| {
+                        if kind.eq_ignore_ascii_case("IronCurtain") {
+                            "Protect"
+                        } else {
+                            kind
+                        }
+                    });
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
                         .read_pass(&raw, kind);
@@ -398,8 +468,15 @@ impl RulesPassProcessor {
                     if initialized {
                         presentation.eva.initialize_for_kind(kind, _fixed_eva);
                         presentation.texts.initialize_for_kind(kind);
-                        // SW_Protect::Initialize10074B60: SW_AnimHeight=5.
-                        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Protect")) {
+                        // SW_Protect::Initialize (3.0p1 0x10075C1D): SW_AnimHeight=5.
+                        if kind_id.is_some_and(|kind| {
+                            matches!(
+                                kind,
+                                SuperWeaponKind::IronCurtain
+                                    | SuperWeaponKind::Protect
+                                    | SuperWeaponKind::ForceShield
+                            )
+                        }) {
                             presentation.height = 5;
                         }
                         presentation.messages.initialize_for_kind(kind);
@@ -539,8 +616,9 @@ impl RulesPassProcessor {
                     }
                     availability.read_shots_pass(&raw);
                     // SW.CreateRadarEvent, SW.Range and SW.Group, then the
-                    // Protect/Battery LoadFromINI (10074C20/1006ECC0) after
-                    // the common reads; Battery's vectors use Find only.
+                    // Protect LoadFromINI (3.0p1 0x10075CD0) and Battery
+                    // LoadFromINI (3.0 0x1006ECC0) follow the common reads.
+                    // Battery's vectors use Find only.
                     let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
                     let mut reads = crate::rules::superweapon_type::AresHandlerReads::default();
                     if is("Battery") {
@@ -580,7 +658,9 @@ impl RulesPassProcessor {
                         // SW_NuclearMissile::Initialize10073360 allocates its
                         // payload weapon and finds PSIWARN; LoadFromINI
                         // 10073410's reads look the types up only (1000A370).
-                        if initialized && ares_way {
+                        if (ares_way && initialized)
+                            || (!ares_way && builtin_handler && !nuke_was_redirected)
+                        {
                             let payload = self
                                 .find_or_allocate(RulesTypeFamily::Weapon, "NukePayload")
                                 .map(|index| {
@@ -735,7 +815,7 @@ impl RulesPassProcessor {
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.
-                    if ares_way {
+                    if ares_way || builtin_rules {
                         reads.warhead = self.resolve_scalar_from(
                             &raw,
                             "SW.Warhead",
@@ -756,13 +836,7 @@ impl RulesPassProcessor {
                         self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                             .generic_super_weapon_warhead = warhead;
                     }
-                    if raw
-                        .read_name("Type", 0x28)
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
-                        || self.families[&RulesTypeFamily::SuperWeapon][index]
-                            .unit_delivery
-                            .is_some()
-                    {
+                    if is("UnitDelivery") {
                         let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
                             tokens
                                 .into_iter()
@@ -788,7 +862,8 @@ impl RulesPassProcessor {
                                     // Do not silently bind an ambiguous cross-category ID
                                     // to an unrelated type. Unknown/none tokens add none.
                                     (matches.len() == 1)
-                                        .then(|| matches.into_iter().next().unwrap())
+                                        .then(|| matches.into_iter().next())
+                                        .flatten()
                                 })
                                 .collect()
                         });

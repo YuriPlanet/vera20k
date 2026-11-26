@@ -73,6 +73,26 @@ impl Simulation {
         stable_id: u64,
         spawn: crate::sim::projectile::ProjectileSpawn,
     ) -> u64 {
+        self.place_projectile(stable_id, spawn, None);
+        stable_id
+    }
+
+    pub(crate) fn admit_projectile_with_rules(
+        &mut self,
+        stable_id: u64,
+        spawn: crate::sim::projectile::ProjectileSpawn,
+        rules: &RuleSet,
+    ) {
+        self.place_projectile(stable_id, spawn, Some(rules));
+        self.unlimbo_alpha_shape(stable_id, ObjectKind::Projectile, rules);
+    }
+
+    fn place_projectile(
+        &mut self,
+        stable_id: u64,
+        spawn: crate::sim::projectile::ProjectileSpawn,
+        rules: Option<&RuleSet>,
+    ) {
         let location = crate::sim::projectile::bullet_unlimbo_coord(
             self.resolved_terrain.as_ref(),
             &self.effective_shared_cell_dummy(),
@@ -80,13 +100,46 @@ impl Simulation {
         );
         self.projectiles
             .spawn_at(stable_id, self.session.binary_frame(), spawn, location);
-        let registered = self.register_projectile(stable_id, spawn.flat);
+        let registered = self.register_projectile_on_first_put(stable_id, spawn.flat, rules);
         debug_assert!(registered);
         if let Some(style) = spawn.line_trail {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::LineTrailConstructed { stable_id, style });
         }
-        stable_id
+    }
+
+    /// Ares 3.0p1 ObjectClass_Put (`0x5F4FE7 -> 0x1001B490`) calls
+    /// BulletExt::CreateAttachedSystem (`0x1001A140`). The system's owner
+    /// is the Bullet. Its target argument is the firer, whose coordinates
+    /// and House the system constructor (`0x0062DC50`) retains.
+    pub(super) fn attach_projectile_particle_system(&mut self, bullet: u64, rules: &RuleSet) {
+        let Some(projectile) = self.projectiles.get(bullet) else {
+            return;
+        };
+        let Some(system) = projectile
+            .payload()
+            .projectile_type()
+            .and_then(|id| self.interner.projectile_type(id, rules))
+            .and_then(|kind| kind.attached_system)
+        else {
+            return;
+        };
+        let position = projectile.position();
+        let coords = glam::IVec3::new(position.x, position.y, position.z);
+        if coords == glam::IVec3::ZERO {
+            // An empty coordinate exits Put at 0x005F4EEF before the hook.
+            return;
+        }
+        let firer = self.substrate.entities.get(projectile.source_id());
+        self.spawn_particle_system(
+            system,
+            coords,
+            firer.map(|entity| crate::sim::combat::TargetKind::Entity(entity.stable_id())),
+            Some(bullet),
+            glam::IVec3::ZERO,
+            firer.map(|entity| entity.owner()),
+            rules,
+        );
     }
 
     /// `BulletClass::Construct @ 0x004664C0`, `0x00466519..0x0046653B`: a
@@ -171,8 +224,7 @@ impl Simulation {
                 .and_then(|id| self.interner.projectile_type(id, rules))
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
-            self.admit_projectile(stable_id, projectile);
-            self.unlimbo_alpha_shape(stable_id, ObjectKind::Projectile, rules);
+            self.admit_projectile_with_rules(stable_id, projectile, rules);
             Self::construct_bullet_scheme(
                 &self.interner,
                 &self.substrate,

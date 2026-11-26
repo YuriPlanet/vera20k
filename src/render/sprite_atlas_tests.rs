@@ -2829,6 +2829,74 @@ fn animation_atlas_candidates_keep_exact_type_image_and_skip_unread_d() {
 }
 
 #[test]
+fn particle_palettes_follow_types_and_rules_layers_with_ares_off() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let directory = StoredFrameTestDirectory::new();
+    std::fs::write(directory.0.join("FX.SHP"), raw_shp(&[([3, 2], 16)])).unwrap();
+    for (file, byte) in [
+        ("ANIM.PAL", 1),
+        ("SMOKESNO.PAL", 2),
+        ("NEXTSNO~~~.PAL", 3),
+        ("BADPAL.PAL", 9),
+    ] {
+        std::fs::write(directory.0.join(file), [byte; 768]).unwrap();
+    }
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Particles]\n0=MIST\n1=AFTER\n2=FIRE\n3=PLAIN\n\
+         [MIST]\nBehavesLike=Smoke\nImage=FX\nPalette=SMOKE~~~.PAL\nNextParticle=AFTER\n\
+         [AFTER]\nBehavesLike=Spark\nImage=FX\nPalette=SMOKE~~~.PAL\n\
+         [FIRE]\nBehavesLike=Fire\nImage=FX\nPalette=SMOKE~~~.PAL\n\
+         [PLAIN]\nBehavesLike=Smoke\nImage=FX\n",
+    ))
+    .with_ares_mix(false)
+    .with_ares_keys_off(true);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[MIST]\nBehavesLike=Smoke\nPalette=\n\
+             [AFTER]\nBehavesLike=Spark\nPalette=NEXT~~~~~~.PAL\n\
+             [FIRE]\nBehavesLike=Fire\nPalette=BADPAL\n",
+        ),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert!(!rules.ares());
+    let unit = Palette::from_rgb(|_| [40; 3]);
+    let PreparedSpriteAtlas::Raster(work, _) = prepare_sprite_atlas(
+        1024,
+        &crate::sim::entity_store::EntityStore::new(),
+        &assets,
+        &unit,
+        "SNO",
+        "SNOW",
+        Some(&rules),
+        Some(rules.art()),
+        &Default::default(),
+        &[],
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        None,
+        None,
+        None,
+    ) else {
+        panic!("the shared particle SHP must reach the atlas");
+    };
+
+    assert_eq!(work.sources.len(), 1, "palette variants share one SHP");
+    assert_eq!(work.render_palettes.len(), 3);
+    for (name, expected) in [("MIST", 8), ("AFTER", 12), ("FIRE", 4), ("PLAIN", 4)] {
+        let id = rules.p_type_id_by_name(name).unwrap();
+        let key = ShpSpriteKey::particle(id, rules.particle_type(id), 0);
+        let raster = work.keys.iter().find(|raster| raster.key == key).unwrap();
+        let color = work.render_palettes[raster.palette].color(16);
+        assert_eq!([color.r, color.g, color.b], [expected; 3], "{name}");
+    }
+}
+
+#[test]
 #[ignore = "requires a wgpu adapter; separate native Particle, Techno and saved unread Anim images"]
 fn cell_anim_keeps_particle_and_object_images_independent_across_load() {
     use crate::rules::ini_parser::IniFile;

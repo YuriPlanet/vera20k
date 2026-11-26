@@ -3,6 +3,25 @@
 use super::*;
 
 #[test]
+fn named_alpha_image_changes_save_compatibility_for_an_ares_record_system() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[ParticleSystems]\n0=SmokeSys\n[SmokeSys]\nHoldsWhat=Smoke\nBehavesLike=Smoke\n\
+         [Particles]\n0=Smoke\n1=Unused\n[Smoke]\nBehavesLike=Smoke\n[Unused]\nBehavesLike=Smoke\n",
+    ))
+    .unwrap();
+    assert!(rules.ares());
+    let stock = rules.simulation_config_hash();
+    // Isolate this effective setting from the source INI hash.
+    let unused = rules.p_type_id_by_name("Unused").unwrap();
+    rules.particle_types[unused.0 as usize].alpha_image = "GLOW".into();
+    assert_eq!(rules.simulation_config_hash(), stock);
+    let held = rules.p_type_id_by_name("Smoke").unwrap();
+    rules.particle_types[held.0 as usize].alpha_image = "GLOW".into();
+    assert_ne!(rules.simulation_config_hash(), stock);
+}
+
+#[test]
 fn simulation_config_hash_covers_registered_slot_names_offsets_and_runtime() {
     let ini = IniFile::from_str("[BuildingTypes]\n0=B\n[B]\nImage=BODY\n[Animations]\n0=N\n1=D\n");
     let make = |slot: &str, runtime: &str| {

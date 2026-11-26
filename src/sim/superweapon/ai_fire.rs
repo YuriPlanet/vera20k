@@ -42,6 +42,7 @@ use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_targeting::TargetMask;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::GameEntity;
@@ -381,7 +382,7 @@ fn extension_target(
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<(u16, u16)> {
     use crate::rules::superweapon_targeting::{AiTargetPreference as P, AiTargetingMode as M};
-    // PickTarget10038640 prefers these cells without a CanFireAt call. It
+    // Ares 3.0p1 PickTarget 0x100390E0 prefers these cells without a CanFireAt call. It
     // constructs the same ephemeral data even when a preference wins.
     let data = super::targeting::prepare(sim, rules, owner, sw);
     let house = sim.houses.get(&owner)?;
@@ -391,16 +392,26 @@ fn extension_target(
     // Defensive preference reads +54F8, which gamemd never sets (0x0050DA40).
     let kind = house.preferred_super_weapon_target_kind();
     match policy.mode() {
+        // Native cases 0 and 0xF both return no cell at 0x1003982B. Team
+        // scripts select Iron Curtain targets through 0x006EFC70 separately.
         M::None | M::IronCurtain => None,
         M::NoTarget | M::HunterSeeker | M::Attack | M::LowPower | M::LowPowerAttack => Some((0, 0)),
         M::PsychicDominator => ares_spread_target(sim, rules, owner, sw, policy, &data, false),
         M::GeneticMutator => ares_spread_target(sim, rules, owner, sw, policy, &data, true),
-        M::Offensive => offensive_target(sim, rules, owner, sw, policy, &data),
+        M::Offensive | M::Stealth => rated_target(
+            sim,
+            rules,
+            owner,
+            sw,
+            policy,
+            &data,
+            policy.mode() == M::Stealth,
+        ),
         M::Nuke | M::LightningStorm => {
             //100386CE: type1 uses the shared rating selector. Team quarry
             // results bypass CanFireAt, like the preferred-cell path.
             if kind == 1 {
-                offensive_target(sim, rules, owner, sw, policy, &data)
+                rated_target(sim, rules, owner, sw, policy, &data, false)
             } else {
                 let cell = find_team_target(sim, rules, owner, kind, registry);
                 (cell != NO_CELL).then_some((cell.0 as u16, cell.1 as u16))
@@ -490,45 +501,145 @@ fn extension_target(
                     .is_ok()
                     .then_some(cell)
             }),
-        // These distinct3.0 selectors are still pending native ports. Do not
-        // silently replace a parsed mode with Offensive or another behavior.
-        M::Stealth | M::MultiMissile | M::LightningRandom => None,
+        M::MultiMissile => {
+            multi_missile_target(sim, rules, owner, sw, policy.automatic().target, &data)
+        }
+        M::LightningRandom => lightning_random_target(sim, rules, owner, sw, &data),
     }
 }
 
-/// GetPotentialAITargets100328D0 chooses native registries from the effective
-/// automatic target mask. All arrays retain construction/removal order.
+/// Ares 3.0p1 GetPotentialAITargets `0x100332D0` chooses native registries
+/// from the effective automatic target mask. A buildings-only search can use
+/// a House's Building vector. All arrays retain construction/removal order.
+#[derive(Clone, Copy)]
+enum PotentialTargetRegistry {
+    Technos,
+    Buildings,
+    HouseBuildings(InternedId),
+    Infantry,
+    Foot,
+}
+
+impl PotentialTargetRegistry {
+    fn for_mask(mask: TargetMask, house: Option<InternedId>) -> Self {
+        let buildings = mask.intersects(TargetMask::BUILDING);
+        let infantry = mask.intersects(TargetMask::INFANTRY);
+        let units = mask.intersects(TargetMask::UNIT);
+        match (buildings, infantry, units) {
+            (true, false, false) => house.map_or(Self::Buildings, Self::HouseBuildings),
+            (false, true, false) => Self::Infantry,
+            (false, _, true) => Self::Foot,
+            _ => Self::Technos,
+        }
+    }
+
+    fn len(self, sim: &Simulation) -> usize {
+        let entities = &sim.substrate.entities;
+        match self {
+            Self::Technos => entities.techno_registry_len(),
+            Self::Buildings => entities.building_registry_len(),
+            Self::HouseBuildings(house) => sim
+                .houses
+                .get(&house)
+                .map_or(0, |house| house.base_projection().buildings().len()),
+            Self::Infantry => entities.infantry_registry_len(),
+            Self::Foot => entities.foot_registry_len(),
+        }
+    }
+
+    fn entity(self, sim: &Simulation, index: usize) -> Option<&GameEntity> {
+        let entities = &sim.substrate.entities;
+        let id = match self {
+            Self::Technos => entities.techno_registry_at(index),
+            Self::Buildings => entities.building_registry_at(index),
+            Self::HouseBuildings(house) => sim
+                .houses
+                .get(&house)?
+                .base_projection()
+                .buildings()
+                .get(index)
+                .copied(),
+            Self::Infantry => entities.infantry_registry_at(index),
+            Self::Foot => entities.foot_registry_at(index),
+        }?;
+        entities.get(id)
+    }
+}
+
 fn potential_targets(
     sim: &Simulation,
-    mask: crate::rules::superweapon_targeting::TargetMask,
+    mask: TargetMask,
+    house: Option<InternedId>,
 ) -> impl Iterator<Item = &GameEntity> {
-    use crate::rules::superweapon_targeting::TargetMask as T;
-    let entities = &sim.substrate.entities;
-    let buildings = mask.intersects(T::BUILDING);
-    let feet = mask.intersects(T::INFANTRY) || mask.intersects(T::UNIT);
-    let array = if buildings && !feet {
-        1
-    } else if buildings || !feet {
-        0
-    } else if mask.intersects(T::INFANTRY) && !mask.intersects(T::UNIT) {
-        2
-    } else {
-        3
-    };
-    let count = match array {
-        1 => entities.building_registry_len(),
-        2 => entities.infantry_registry_len(),
-        3 => entities.foot_registry_len(),
-        _ => entities.techno_registry_len(),
-    };
-    (0..count)
-        .filter_map(move |index| match array {
-            1 => entities.building_registry_at(index),
-            2 => entities.infantry_registry_at(index),
-            3 => entities.foot_registry_at(index),
-            _ => entities.techno_registry_at(index),
-        })
-        .filter_map(move |id| entities.get(id))
+    let registry = PotentialTargetRegistry::for_mask(mask, house);
+    (0..registry.len(sim)).filter_map(move |index| registry.entity(sim, index))
+}
+
+/// Ares 3.0p1 MultiMissile `0x1003961C -> 0x10038ED0` ranks the
+/// candidate cells by the attacking House's map threat (`0x0056BCD0`). A
+/// fully cloaked techno instead consumes one Scenario draw in 0..=100.
+/// Only a strict improvement above zero calls automatic CanFireAt.
+fn multi_missile_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    mask: TargetMask,
+    data: &super::targeting::TargetingData,
+) -> Option<(u16, u16)> {
+    let enemy = sim.houses.get(&owner)?.enemy_house();
+    let registry = PotentialTargetRegistry::for_mask(mask, enemy);
+    let mut best = 0;
+    let mut target = None;
+    for index in 0..registry.len(sim) {
+        let Some(entity) = registry.entity(sim, index) else {
+            continue;
+        };
+        let at = ai_target_cell(sim, entity);
+        let value = if ai_target_is_cloaked(entity) {
+            sim.scenario_rng.next_range_i32_inclusive(0, 100)
+        } else {
+            sim.house_threat_at_cell(owner, at).unwrap_or_default()
+        };
+        let cell = (at.0 as u16, at.1 as u16);
+        if value > best
+            && super::targeting::check_with_data(sim, rules, owner, sw, cell, true, data).is_ok()
+        {
+            best = value;
+            target = Some(cell);
+        }
+    }
+    target
+}
+
+/// Ares 3.0p1 LightningRandom `0x10039758`: use up to five in-bounds
+/// cells for automatic CanFireAt, drawing X and then Y on the Scenario
+/// stream. The native In_Bounds diamond (`0x00568300`) excludes (0, 0).
+fn lightning_random_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    data: &super::targeting::TargetingData,
+) -> Option<(u16, u16)> {
+    let (size_width, size_height) = sim.map_size_diamond()?;
+    let [_, _, width, height] = sim.map_rect()?;
+    if size_width <= 0 || size_height <= 0 || width > i32::from(i16::MAX) {
+        return None;
+    }
+    for _ in 0..5 {
+        let at = loop {
+            let x = sim.scenario_rng.next_range_i32_inclusive(0, width) as i16;
+            let y = sim.scenario_rng.next_range_i32_inclusive(0, height) as i16;
+            if sim.map_cell_in_bounds((x, y)) {
+                break (x as u16, y as u16);
+            }
+        };
+        if super::targeting::check_with_data(sim, rules, owner, sw, at, true, data).is_ok() {
+            return Some(at);
+        }
+    }
+    None
 }
 
 /// The MultiMissile arm (`0x00509968..0x005099E6`), also
@@ -637,23 +748,25 @@ fn find_best_rally_target(
     pick_best_rally_target(&entries, &mut sim.scenario_rng, rules.ares_form())
 }
 
-/// Ares Hooks.Targeting.cpp: OffensiveTargetSelector/ PickIonCannonTarget.
-/// Shares native eligibility and values, but ignores cloaked objects and
-/// scripted target preferences. Only a final tie selection draws Scenario RNG.
-fn offensive_target(
+/// Ares 3.0p1 `0x10038CC0 -> 0x10038750`: Offensive (`0x100393E4`)
+/// restricts to the current enemy when set and excludes cloak. Stealth
+/// (`0x1003942F`) allows all houses and requires cloak. Both use the same
+/// eligibility, values and Scenario tie selection.
+fn rated_target(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     policy: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     data: &super::targeting::TargetingData,
+    stealth: bool,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
-    let enemy = house.enemy_house();
+    let enemy = house.enemy_house().filter(|_| !stealth);
     let mut best = 0;
     let mut picks = Vec::new();
     let mask = policy.automatic().target;
-    for entity in potential_targets(sim, mask) {
+    for entity in potential_targets(sim, mask, enemy) {
         if enemy.is_some_and(|enemy| entity.owner() != enemy) {
             continue;
         }
@@ -661,7 +774,7 @@ fn offensive_target(
         let cell = (entry.cell.0 as u16, entry.cell.1 as u16);
         if !entry.candidate
             || !entry.in_playfield
-            || entry.cloaked
+            || entry.cloaked != stealth
             || entry.value < best
             || super::targeting::check_with_data(sim, rules, owner, sw, cell, true, data).is_err()
         {
@@ -709,7 +822,7 @@ fn ares_spread_target(
     let mask = policy.automatic().target;
     let (id, _) = best_spread_center(
         terrain,
-        potential_targets(sim, mask),
+        potential_targets(sim, mask, None),
         crate::sim::combat::cell_spread::sweep(if genetic { 1 } else { 3 }),
         |entity| {
             if genetic && entity.on_bridge() {
@@ -794,12 +907,7 @@ fn rally_entry(
     } else {
         (false, 0)
     };
-    let coords =
-        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain.as_ref());
-    let cell = (
-        lepton_to_cell_packed(coords.x),
-        lepton_to_cell_packed(coords.y),
-    );
+    let cell = ai_target_cell(sim, entity);
     RallyEntry {
         candidate,
         value,
@@ -810,12 +918,26 @@ fn rally_entry(
             sim.resolved_terrain.as_ref(),
             None,
         ),
-        cloaked: entity
-            .cloak
-            .as_ref()
-            .is_some_and(|cloak| cloak.is_fully_cloaked())
-            || entity.building_cloak_stage() == 15,
+        cloaked: ai_target_is_cloaked(entity),
     }
+}
+
+fn ai_target_cell(sim: &Simulation, entity: &GameEntity) -> (i16, i16) {
+    let coords =
+        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain.as_ref());
+    (
+        lepton_to_cell_packed(coords.x),
+        lepton_to_cell_packed(coords.y),
+    )
+}
+
+/// Ares 3.0p1 `0x10045F70` tests CloakState 2 and Building fade stage 15.
+fn ai_target_is_cloaked(entity: &GameEntity) -> bool {
+    entity
+        .cloak
+        .as_ref()
+        .is_some_and(|cloak| cloak.is_fully_cloaked())
+        || entity.building_cloak_stage() == 15
 }
 
 /// The value AI_FindBestRallyTarget gives an enemy object

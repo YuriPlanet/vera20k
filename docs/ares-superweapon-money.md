@@ -108,6 +108,12 @@ remain refused. Clearing a Chronosphere/Warp's
 phase flags does not turn its nonzero money setting into a supported single
 stage. Both source and destination clicks must be on the map.
 
+A ChronoSphere handler uses `SW.PostDependent` or the first Warp in registry
+order. If several Spheres share that Warp, the active ticket supplies the
+actual Sphere and its amount. VERA keeps that settlement rule even for a
+source in slot 0. The 3.0p1 common Launch uses the destination's extension
+fields in that slot (`0x10033953..0x10033964`).
+
 Ares's [Chronosphere flags](https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Misc/SWTypes/ChronoSphere.cpp#L14)
 exclude money at source selection, and its
 [launch owner](https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Ext/SWType/Body.cpp#L469)

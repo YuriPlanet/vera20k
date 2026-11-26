@@ -230,6 +230,7 @@ mod receiver {
         /// which [`Self::deliver_ares_emp`] takes like the ground ones.
         pub(crate) fn apply_ares_emp_detonation(
             &mut self,
+            builtin_superweapon: bool,
             impact: crate::sim::projectile::ProjectileCoord,
             source: Option<u64>,
             warhead: &WarheadType,
@@ -240,7 +241,14 @@ mod receiver {
                 return;
             }
             for target in self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules) {
-                let result = self.deliver_ares_emp(target, source, warhead, rules, effects);
+                let result = self.deliver_ares_emp(
+                    builtin_superweapon,
+                    target,
+                    source,
+                    warhead,
+                    rules,
+                    effects,
+                );
                 if result == EmpDelivery::Unsupported {
                     log::debug!("Ares EMP victim {target} requires a later dependency chain");
                 }
@@ -389,6 +397,7 @@ mod receiver {
         /// mind-controlled ones included, and every EMP-prone building.
         fn deliver_ares_emp(
             &mut self,
+            builtin_superweapon: bool,
             target: u64,
             source: Option<u64>,
             warhead: &WarheadType,
@@ -411,7 +420,9 @@ mod receiver {
                 .is_some_and(|tunnel| {
                     tunnel.state() == crate::sim::movement::tunnel_movement::TunnelState::Idle
                 });
-            if !rules.ares() && !surfaced_tunnel {
+            // P1 GenericWarhead::Activate calls the full EMP receiver at
+            // 0x100727AF. Ordinary projectiles keep their built-in Tunnel scope.
+            if !rules.ares() && !builtin_superweapon && !surfaced_tunnel {
                 return EmpDelivery::Rejected;
             }
             let Some(object) = self.interner.object_type(victim.type_ref(), rules) else {
@@ -1226,6 +1237,7 @@ mod receiver {
                 assert!(sim.apply_command("Americans", &select, Some(&rules)));
                 assert_eq!(
                     sim.deliver_ares_emp(
+                        false,
                         target,
                         Some(source),
                         rules.warhead("EMPWH").unwrap(),
@@ -1247,14 +1259,28 @@ mod receiver {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
             let (mut sim, rules, target, source) = tagged_emp_scene(0, 2);
             let wh = rules.warhead("EMPWH").unwrap();
-            sim.deliver_ares_emp(target, Some(source), wh, &rules, &mut FrameEffects::empty());
+            sim.deliver_ares_emp(
+                false,
+                target,
+                Some(source),
+                wh,
+                &rules,
+                &mut FrameEffects::empty(),
+            );
             assert_eq!(emp_event_kinds(&sim), [63, 62]);
             assert!(sim.trigger_local_is_set_for_test(0));
             assert!(sim.trigger_local_is_set_for_test(1));
             assert!(!sim.trigger_local_is_set_for_test(2));
             assert!(!sim.trigger_local_is_set_for_test(3));
             sim.clear_tag_dispatch_trace_for_test();
-            sim.deliver_ares_emp(target, Some(source), wh, &rules, &mut FrameEffects::empty());
+            sim.deliver_ares_emp(
+                false,
+                target,
+                Some(source),
+                wh,
+                &rules,
+                &mut FrameEffects::empty(),
+            );
             assert!(
                 emp_event_kinds(&sim).is_empty(),
                 "capped repeat is not a transition"
@@ -1265,10 +1291,18 @@ mod receiver {
                 emp_event_kinds(&sim).is_empty(),
                 "timer expiry has no removal events"
             );
-            sim.deliver_ares_emp(target, Some(source), wh, &rules, &mut FrameEffects::empty());
+            sim.deliver_ares_emp(
+                false,
+                target,
+                Some(source),
+                wh,
+                &rules,
+                &mut FrameEffects::empty(),
+            );
             sim.clear_tag_dispatch_trace_for_test();
             let healing = self::rules("EMP.Duration=-3\nEMP.Cap=-1\n");
             sim.deliver_ares_emp(
+                false,
                 target,
                 Some(source),
                 healing.warhead("EMPWH").unwrap(),
@@ -1286,6 +1320,7 @@ mod receiver {
             for (delta, source_present) in [(10, true), (0, false)] {
                 let (mut sim, rules, target, source) = tagged_emp_scene(delta, 2);
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     source_present.then_some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -1297,6 +1332,7 @@ mod receiver {
                 assert!(!sim.trigger_local_is_set_for_test(1));
                 let healing = self::rules("EMP.Duration=-3\nEMP.Cap=-1\n");
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     source_present.then_some(source),
                     healing.warhead("EMPWH").unwrap(),
@@ -1331,6 +1367,7 @@ mod receiver {
             assert!(!sim.trigger_local_is_set_for_test(2));
             assert!(!sim.trigger_local_is_set_for_test(3));
             sim.deliver_ares_emp(
+                false,
                 target,
                 Some(source),
                 rules.warhead("EMPWH").unwrap(),
@@ -1358,6 +1395,7 @@ mod receiver {
                 if healing {
                     sim.attach_object_trigger_tag(target, None);
                     sim.deliver_ares_emp(
+                        false,
                         target,
                         Some(source),
                         rules.warhead("EMPWH").unwrap(),
@@ -1372,6 +1410,7 @@ mod receiver {
                     rules
                 };
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -1396,6 +1435,7 @@ mod receiver {
                 if healing {
                     let initial = rules("");
                     sim.deliver_ares_emp(
+                        false,
                         target,
                         Some(source),
                         initial.warhead("EMPWH").unwrap(),
@@ -1429,6 +1469,7 @@ mod receiver {
                 sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
                 sim.attach_object_trigger_tag(target, Some("EMP"));
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -1694,6 +1735,7 @@ mod receiver {
                 }
                 let (mut sim, rules, target, source, _) = building_scene(&extra);
                 let result = sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -1914,6 +1956,7 @@ mod receiver {
                         ),
                         "hit" => assert_eq!(
                             sim.deliver_ares_emp(
+                                false,
                                 target,
                                 Some(source),
                                 rules.warhead("EMPWH").unwrap(),
@@ -2238,6 +2281,7 @@ mod receiver {
                 .set_current_for_test(MissionId::from_raw(5), 0);
             assert_eq!(
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -2312,6 +2356,7 @@ mod receiver {
             assert!(sim.can_deploy_slash_unload(target, &rules));
             assert_eq!(
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -2483,6 +2528,7 @@ mod receiver {
             );
             assert_eq!(
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -2592,6 +2638,7 @@ mod receiver {
                 .select();
             assert_eq!(
                 sim.deliver_ares_emp(
+                    false,
                     target,
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
@@ -2664,6 +2711,7 @@ mod receiver {
                 let warhead = rules.warhead("EMPWH").unwrap();
                 assert_eq!(
                     sim.deliver_ares_emp(
+                        false,
                         target,
                         Some(source),
                         warhead,
@@ -2697,6 +2745,7 @@ mod receiver {
                 let anim_count = sim.substrate.anims.len();
                 assert_eq!(
                     sim.deliver_ares_emp(
+                        false,
                         target,
                         Some(source),
                         warhead,
@@ -2916,6 +2965,7 @@ mod receiver {
                 let source = (!f["no_firer"].as_bool().unwrap_or(false)).then_some(source);
                 for expected in row["result"].as_array().unwrap() {
                     let verdict = sim.deliver_ares_emp(
+                        false,
                         target,
                         source,
                         rules.warhead("EMPWH").unwrap(),
@@ -3044,6 +3094,7 @@ mod receiver {
             };
             let rng = sim.scenario_rng.logical_state();
             sim.apply_ares_emp_detonation(
+                false,
                 impact,
                 Some(source),
                 rules.warhead("EMPWH").unwrap(),
@@ -3225,12 +3276,20 @@ mod receiver {
                 }
                 let wh = rules.warhead("EMPWH").unwrap();
                 assert_eq!(
-                    sim.deliver_ares_emp(jet, Some(source), wh, &rules, &mut FrameEffects::empty()),
+                    sim.deliver_ares_emp(
+                        false,
+                        jet,
+                        Some(source),
+                        wh,
+                        &rules,
+                        &mut FrameEffects::empty()
+                    ),
                     EmpDelivery::Applied
                 );
                 assert!(destroyed(&sim, jet), "{extra}");
                 assert_eq!(
                     sim.deliver_ares_emp(
+                        false,
                         jumpjet,
                         Some(source),
                         wh,
@@ -3301,6 +3360,7 @@ mod receiver {
             let wh = rules.warhead("EMPWH").unwrap();
             assert_eq!(
                 sim.deliver_ares_emp(
+                    false,
                     spawner,
                     Some(source),
                     wh,

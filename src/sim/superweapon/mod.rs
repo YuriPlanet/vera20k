@@ -129,31 +129,42 @@ pub fn pre_dependent<'r>(
 
 /// The source of a paid two-stage pair (VERA extension, Ares settlement): a
 /// `PostClick=` type whose [`pre_dependent`] pair carries money on either
-/// side. Stock zero-cost pairs answer `None` and keep the native path, as
-/// every pair does in a game Ares doesn't play in.
+/// side. Stock zero-cost pairs keep the native path.
 pub fn paid_pair_source<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,
 ) -> Option<(&'r str, &'r SuperWeaponType)> {
-    if !rules.ares_form() || !sw.post_click {
+    if !sw.uses_extension_rules(rules) || !sw.post_click {
         return None;
     }
-    // A handler's PostClick type has no PreDependent (LoadFromINIFile
-    // writes -1); Fire_SW pairs it with the House's last Super. The
-    // ticket pairs it with the first ChronoSphere whose player click
-    // selects it (1006ED30), the source that click leaves last.
-    let source = if sw.kind.has_ares_handler() {
+    if sw.uses_ares_handler(rules) {
         rules.super_weapon_order.iter().find_map(|name| {
             let source = rules.super_weapon(name)?;
-            (source.kind == crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere
-                && chronosphere::ares_chrono_warp_for(rules, source)
-                    .is_some_and(|warp| warp.eq_ignore_ascii_case(&sw.id)))
-            .then_some((name.as_str(), source))
+            paid_pair_matches(rules, source, sw).then_some((name.as_str(), source))
         })
     } else {
-        pre_dependent(rules, sw)
-    };
-    source.filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
+        pre_dependent(rules, sw).filter(|(_, source)| paid_pair_matches(rules, source, sw))
+    }
+}
+
+/// A handler pairs a Warp with the actual Sphere that selected it (P1
+/// 0x10033953..0x10033964). Several Spheres can select the same Warp.
+fn paid_pair_matches(rules: &RuleSet, source: &SuperWeaponType, sw: &SuperWeaponType) -> bool {
+    if !source.uses_extension_rules(rules)
+        || !sw.uses_extension_rules(rules)
+        || !sw.post_click
+        || (source.money_amount == 0 && sw.money_amount == 0)
+    {
+        return false;
+    }
+    if sw.uses_ares_handler(rules) {
+        source.kind == crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere
+            && source.uses_ares_handler(rules)
+            && chronosphere::ares_chrono_warp_for(rules, source)
+                .is_some_and(|warp| warp.eq_ignore_ascii_case(&sw.id))
+    } else {
+        pre_dependent(rules, sw).is_some_and(|(_, pre)| pre.id.eq_ignore_ascii_case(&source.id))
+    }
 }
 
 /// The type whose money/refusal settings final activation uses. PostClick
@@ -971,13 +982,9 @@ impl SuperWeaponInstance {
             if sw.use_charge_drain {
                 self.charge_drain_state = 0;
             }
-            if sw.uses_extension_rules(rules)
-                && sw.kind.has_ares_handler()
+            if sw.uses_ares_handler(rules)
                 && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
             {
-                // These handlers already retain successful launch history.
-                // Stock redirects need their own success boundary before using
-                // initial/virtual charge; do not invent history for them.
                 self.apply_ares_grant_charge(sw, metadata.charge(), frame);
             }
         }
@@ -1198,9 +1205,11 @@ impl SuperWeaponInstance {
     /// held, for [`Self::recharge_time`] (VERA: [`Self::next_recharge`],
     /// which differs only with building charges). `CameoChargeState`, -1 on
     /// both restarts, is the sidebar's.
-    fn finish_click_fire(&mut self, sw: &SuperWeaponType, current_frame: u32) {
+    fn finish_click_fire(&mut self, sw: &SuperWeaponType, current_frame: u32, ares: bool) {
         let frame = current_frame as i32;
-        if !sw.post_click {
+        // Ares 3.0p1 0x10035D92..0x10035DA8 leaves readiness set for
+        // both click phases. The paired Fire_SW tail resets the source.
+        if !(sw.post_click || ares && sw.pre_click) {
             self.is_ready = false;
         }
         if self.one_time {
@@ -1802,8 +1811,12 @@ pub fn superweapon_views_for_owner(
         // The wallet, the target constraints and the select hook's refusal
         // are Ares': without it a cameo is never darkened or refused for
         // them.
-        let can_afford =
-            !ares || money::can_afford(&sim.houses, *owner, financial_type(rules, sw_type));
+        let payment_type = sim
+            .paid_super_weapon_selection(*owner)
+            .filter(|selection| selection.destination == inst.type_id)
+            .and_then(|selection| rules.super_weapon(sim.interner.resolve(selection.source)))
+            .unwrap_or_else(|| financial_type(rules, sw_type));
+        let can_afford = !ares || money::can_afford(&sim.houses, *owner, payment_type);
         let constraints_blocked = ares
             && rules
                 .super_weapon_metadata(type_id_str)
@@ -2017,10 +2030,10 @@ pub(super) fn deactivate_ares_handler(
     is_player: bool,
     effects: &mut FrameEffects<'_>,
 ) {
-    if !sw.kind.has_ares_handler() {
+    if !sw.uses_ares_handler(rules) {
         return;
     }
-    match sw.kind {
+    match sw.launch_kind(rules) {
         crate::rules::superweapon_type::SuperWeaponKind::Battery => {
             battery::deactivate(sim, rules, owner, sw);
         }
@@ -2156,10 +2169,7 @@ pub(crate) fn tick_active_superweapon_effects(
     let chrono = sim.step_chrono_screen();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
-    unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
-    if rules.ares_form() {
-        chronosphere::ares_tick_chrono_warps(sim, rules, overlay_registry, frame_effects);
-    }
+    chronosphere::ares_tick_chrono_warps(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }
 
@@ -2659,7 +2669,11 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
     if ares && sim.session.is_observer_house(owner) {
         return providers;
     }
-    for name in rules.super_weapon_order.iter().filter(|_| has_extension_rules) {
+    for name in rules
+        .super_weapon_order
+        .iter()
+        .filter(|_| has_extension_rules)
+    {
         if rules
             .super_weapon_metadata(name)
             .is_some_and(|metadata| metadata.availability().always_granted())

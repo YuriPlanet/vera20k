@@ -2,12 +2,10 @@
 
 While Ares plays in a game (`RuleSet::ares`), every build draws the software
 cursor through the Ares `[MouseCursors]` list and lets types name the cursors
-of their actions. The superweapon cursors are superweapon code and follow the
-Ares superweapons (`RuleSet::ares_form`, how the Rules were read).
-Only Rules read the Ares way hold the list's lines and the `Cursor.*` keys, so
-a game whose Rules were read the stock way draws the list's defaults. A game
-with neither switch keeps the compiled cursor table (`0x0082D028`) and its
-action switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`).
+of their actions. On `Base-for-modders`, a built-in superweapon handler can
+read `Cursor` and `NoCursor` from `[MouseCursors]` with Ares Off. Other
+`Cursor.*` controls follow the Ares setting. Ordinary stock actions draw
+their compiled cursors (`DisplayClass::SetCursorFromAction @ 0x004AAE90`).
 
 ```ini
 [MouseCursors]                          ; rulesmd.ini, every Rules pass
@@ -103,6 +101,3 @@ click queues the same On/Off Line record as the original engine.
 - Overrides another selected object's What_Action left in the same frame are
   not reproduced; only the best object's answer writes them. An Attack that a
   class arm answers without the Techno rung still takes `Cursor.Attack`.
-- Unported stock redirects (ParaDrop, IronCurtain, ForceShield,
-  PsychicReveal) keep the stock superweapon cursor; UnitDelivery and the other
-  handled types now show their `Cursor`.

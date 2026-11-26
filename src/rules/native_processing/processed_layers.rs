@@ -389,14 +389,28 @@ impl ProcessedRulesLayers {
             ));
         }
         let families = &registry.families;
-        // Stock passes retain arguments for a later per-type opt-in. Only
-        // real SuperWeapon declarations may carry these staging fields.
-        // RuleSet projects them only for eligible definitions. Creating an
-        // Ares GenericWarhead pointer still requires the Ares reader.
+        // Stock passes retain per-definition extension references. Validate
+        // the definition that read each field and the typed registry used
+        // to resolve its references before rebuilding the RuleSet.
         if !registry.reads_ares_way
             && families.iter().any(|(&family, members)| {
                 members.iter().any(|member| {
-                    member.generic_super_weapon_warhead.is_some()
+                    member
+                        .generic_super_weapon_warhead
+                        .as_ref()
+                        .is_some_and(|warhead| {
+                            family != RulesTypeFamily::SuperWeapon
+                                || !member.body.read_string_with(
+                                    "Type",
+                                    0x28,
+                                    false,
+                                    |seen, value| {
+                                        seen || value.eq_ignore_ascii_case("GenericWarhead")
+                                    },
+                                )
+                                || find_existing_type(families, RulesTypeFamily::Warhead, warhead)
+                                    .is_none()
+                        })
                         || member
                             .super_weapon_building_requirements
                             .as_ref()
@@ -567,9 +581,14 @@ impl ProcessedRulesLayers {
                         "explicit factory extension belongs to the wrong type family",
                     ));
                 }
-                if member.ares_side.is_some()
-                    != (registry.reads_ares_way && family == RulesTypeFamily::Side)
-                {
+                let invalid_side = match &member.ares_side {
+                    Some(side) => {
+                        family != RulesTypeFamily::Side
+                            || (!registry.reads_ares_way && side.phase != 0)
+                    }
+                    None => registry.reads_ares_way && family == RulesTypeFamily::Side,
+                };
+                if invalid_side {
                     return Err(RulesError::InvalidSavedState(
                         "retained Side sidebar extension belongs to the wrong family",
                     ));

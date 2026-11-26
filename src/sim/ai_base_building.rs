@@ -1157,11 +1157,9 @@ fn place_building(
     {
         crate::sim::mission::authority::commence_entity_mission(building, now);
     }
-    // Ares BuildingClass_KickOutUnit_Firewall (10014A50, hook 0x445355):
+    // Ares 3.0p1 BuildingClass_KickOutUnit_Firewall (0x10015060, hook 0x445355):
     // a firestorm wall section fills the gaps to the sections it links to.
-    if rules.ares_form() {
-        sim.ares_build_lines(product, (rx, ry), owner, rules, registry, effects);
-    }
+    sim.ares_build_lines(product, (rx, ry), owner, rules, registry, effects);
     true
 }
 

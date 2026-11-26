@@ -828,12 +828,23 @@ impl Simulation {
         self.kill_cargo_passengers(transport, attacker, true, context);
     }
 
-    /// Ares `TechnoExt::KillCargo @ 100455E0` (3.0) for a Foot: the
-    /// KillPassengers loop with `LiberateMember(-1, false)`, except that each
-    /// passenger's own cargo dies with the same (here no) killer. Its
-    /// Building arm, the occupants first, is reached only by the building
-    /// chronoshift VERA does not port.
-    pub(crate) fn ares_kill_cargo(&mut self, transport: u64, context: UninitContext<'_>) {
+    /// Ares 3.0p1 `TechnoExt::KillCargo @ 0x10046150`, called by ChronoWarp
+    /// at `0x100707DC`: a building's garrison goes first, then the normal
+    /// cargo loop with `LiberateMember(-1, false)`. Nested cargo uses the
+    /// same killer (none), in contrast with gamemd's KillPassengers.
+    pub(crate) fn ares_kill_cargo(&mut self, transport: u64, mut context: UninitContext<'_>) {
+        if self
+            .substrate
+            .entities
+            .get(transport)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            crate::sim::passenger::garrison_eject::kill_building_occupants_for_chronoshift(
+                self,
+                transport,
+                context.reborrow(),
+            );
+        }
         self.kill_cargo_passengers(transport, None, false, context);
     }
 

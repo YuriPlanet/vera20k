@@ -574,6 +574,85 @@ fn ares_generic_warhead_command_applies_area_damage_and_consumes_charge_once() {
 }
 
 #[test]
+fn builtin_generic_warhead_damages_beyond_the_stock_spread_table() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, owner, typ, center) = fixture("[Payload]\nCellSpread=14\n", "Russians");
+    let inside = sim
+        .spawn_object_at_height("TARGET", "Americans", 28, 15, 0, 0, &rules)
+        .unwrap();
+    let outside = sim
+        .spawn_object_at_height("TARGET", "Americans", 30, 15, 0, 0, &rules)
+        .unwrap();
+    assert!(!rules.ares());
+
+    let [x, y, z] = crate::sim::superweapon::deck_coords(&sim, (15, 15));
+    let warhead_ref = sim.interner.intern("Payload");
+    world_receiver::apply_area_damage(
+        &mut sim,
+        &rules,
+        None,
+        ProjectileCoord::new(x, y, z),
+        20,
+        rules.warhead("Payload").unwrap(),
+        true,
+        (RAD_NO_ATTACKER, Some(owner), warhead_ref),
+        &mut FrameEffects::default(),
+    );
+    assert_eq!(sim.entities().get(center).unwrap().health.current(), 180);
+    assert_eq!(sim.entities().get(inside).unwrap().health.current(), 200);
+
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    assert_eq!(sim.entities().get(center).unwrap().health.current(), 105);
+    assert_eq!(sim.entities().get(inside).unwrap().health.current(), 125);
+    assert_eq!(sim.entities().get(outside).unwrap().health.current(), 200);
+}
+
+#[test]
+fn generic_warhead_captures_the_cell_head_before_damage_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, owner, typ, target) = fixture(
+        "[Payload]\nMindControl.Permanent=yes\nRipple.Radius=8\n\
+         [TARGET]\nImmuneToPsionics=no\n",
+        "Russians",
+    );
+    assert!(!rules.ares_form());
+    assert_eq!(
+        sim.native_cell_content((15, 15)).next(),
+        Some(crate::sim::occupancy::CellObjectMember::Entity(target))
+    );
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    let captured = sim.entities().get(target).unwrap();
+    assert_eq!(captured.owner(), owner);
+    assert!(captured.seldom.mind_control.permanent());
+    assert_eq!(captured.health.current(), 200);
+    assert_eq!(sim.ion_blasts().count(), 1);
+}
+
+#[test]
+fn generic_warhead_checks_curtain_before_emp_and_attach_effect_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    for curtain in [0, 45] {
+        let (mut sim, rules, owner, typ, target) = fixture(
+            &format!(
+                "[Strike]\nSW.Damage=0\n[Payload]\nEMP.Duration=90\nIronCurtain.Duration={curtain}\n\
+                     AttachEffect.Duration=15\nAttachEffect.FirepowerMultiplier=2\n\
+                     [TARGET]\nImmuneToEMP=no\n"
+            ),
+            "Russians",
+        );
+        assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+        let target = sim.entities().get(target).unwrap();
+        assert_eq!(target.is_under_emp(), curtain == 0);
+        assert_eq!(target.invulnerability.is_some(), curtain != 0);
+        assert_eq!(
+            f64::from_bits(target.firepower_multiplier().bits()),
+            if curtain == 0 { 2.0 } else { 1.0 }
+        );
+        assert_eq!(target.health.current(), 200);
+    }
+}
+
+#[test]
 fn ares_generic_warhead_source_obeys_damage_self() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     for damage_self in [false, true] {

@@ -81,6 +81,23 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
 }
 
 #[test]
+fn builtin_shared_warp_settles_the_sphere_that_selected_it() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules(
+        "[SuperWeaponTypes]\n5=PaidSphere\n\
+         [Sphere]\nSW.PostDependent=Warp\n\
+         [PaidSphere]\nType=ChronoSphere\nIsPowered=no\nSW.PostDependent=Warp\nMoney.Amount=-100\n",
+    );
+    let (mut sim, owner) = world(&rules, 1000, true);
+    let paid = ready(&mut sim, &rules, owner, "PaidSphere", false);
+    assert!(fire(&mut sim, &rules, owner, paid, (10, 10)));
+    let ticket = sim.paid_super_weapon_selection(owner).unwrap();
+    assert_eq!(ticket.source, paid);
+    assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
+    assert_eq!(sim.houses[&owner].economy().credits(), 900);
+}
+
+#[test]
 fn superweapon_money_two_stage_cancel_reselect_and_old_commands_cannot_replay() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=500\n");

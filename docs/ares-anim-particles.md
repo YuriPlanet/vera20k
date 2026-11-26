@@ -1,12 +1,12 @@
 # Optional Ares anim and particle extensions
 
 This page covers Ares 3.0's AnimTypeExt (`Ext/AnimType`), ParticleTypeExt
-(`Ext/ParticleType`) and ParticleSystemExt (`Ext/ParticleSystem`), which every
-build runs when the game plays Ares ([Ares](ares.md)). The AnimType keys are read from the anim's ART
+(`Ext/ParticleType`) and ParticleSystemExt (`Ext/ParticleSystem`).
+On `Base-for-modders`, ParticleType `Palette=` and projectile `AttachedSystem=`
+work with Ares Off. The AnimType keys are read from the anim's ART
 section by `AnimTypeExt::LoadFromINIFile` (`1000A4B0`, hook
 `1000A760` at `0x4287DC`/`0x4287E9`), after the original body; the ParticleType keys from
-its rules section (`100291A0`, hook `10029230` at `0x645405`). A game without Ares uses
-none of them.
+its rules section (`100291A0`, hook `10029230` at `0x645405`).
 
 Focused tests: `sim::ares_anim_type_tests`, `sim::particles::ares_gas_tests`,
 `sim::particles::ares_system::tests`.
@@ -28,20 +28,43 @@ auras whose weapon has a zero-damage warhead. See the
 | `0x4250C9`, `0x42511B`, `0x42513F` | `1000AD10` | Expired Flamer/Scorch fires: a Flamer anim makes one to three SmallFire/LargeFire anims (two RandomRanged(0,99) rolls); a Scorch anim under height 10 off water/beach/ice/rock makes a SmallFire attached to its owner | residual: retail sets no `SmallFire=`/`LargeFire=` and no `Flamer=yes`, so the arms make nothing (the Flamer rolls still draw); needs `MapClass::GetRandomCoordsNear` |
 | `0x4242CA` | `1000B210` | A `TrailerSeperation=` below 1 spawns no trailer (the original divides by it, so a negative one spawns on signed multiples) | ported: `trailer_cadence_matches` under `rules.ares()` |
 | ParticleType `DamageRange` | `100291A0`; hook `0x62C23D` `100297C0` | Valueable<double>, 0. Above zero a Gas particle collects the objects of every cell within `ceil(range)` in CellSpreadEnumerator order whose Location is within `range * 256` leptons (at most 0x100), then damages each still alive with the original distance, no attacker and the system's owner House | ported: `particles::gas::damage_in_range` |
-| ParticleType `Palette` | hook `0x62D015` `10029790` | Particles draw through their type's palette | presentation: not ported (also the Ares smoke records below draw through ANIM.PAL) |
+| ParticleType `Palette` | Ares 3.0p1 `0x645405 → 0x10029D40`, `0x62D015 → 0x1002A2A0`, `0x1002721A..0x10027260` | Named PAL for SHP particles and Ares smoke records. Omitted or unavailable files use ANIM.PAL | built in: particle type projection and sprite atlas |
+
+## Particle palettes
+
+Set `Palette=mist~~~.pal` in a ParticleType rules section to select a PAL for
+its SHP. The first `~~~` takes the current theater's extension, so temperate
+uses `misttem.pal`. Use the full filename, including `.pal`. A missing or
+empty key retains the earlier request. An unavailable PAL in the final request
+falls back to ANIM.PAL. Two types can use the same SHP and different palettes.
+Point draws for Spark and Railgun use their existing point colors. An Ares
+smoke record that draws a successor's SHP uses that successor's palette.
+
+## Projectile particle systems
+
+Set `AttachedSystem=` in the projectile's rules section to name a registered
+ParticleSystemType. An unknown or empty value keeps the previous reference.
+`none` clears it. The projectile placement hook (Ares 3.0p1
+`0x5F4FE7 → 0x1001B490 → 0x1001A140`) starts one system at the projectile's
+location. A `BehavesLike=Smoke` system follows the projectile while it flies.
+When the projectile leaves play, the system stops emitting and its existing
+particles finish their lifetimes. ART `Trailer` and `SpawnDelay` continue
+to control animation trails.
 
 ## ParticleSystemExt
 
 Ares 3.0 simulates a Smoke, Spark or Railgun system itself when its `HoldsWhat`
-particle type has no `UseLineTrail` and no AlphaImage art and behaves like the system
+particle type has no `UseLineTrail` and no loaded AlphaImage and behaves like the system
 (Ares maps a particle `BehavesLike` below 2 to `value == 0`, so a Smoke system holding
 a type with no `BehavesLike` counts too). Every retail Smoke, Spark and Railgun system
 qualifies. Such a system keeps two record vectors instead of
 ParticleClass children and draws from the synchronised Scenario stream in Ares' own
 order, so the records are simulation state: they are saved with the system
 (`ParticleSystem::ares`) and folded into the world hash. Owner: `sim::particles::ares_system`.
-The constructor allocates the extension whenever the game's Ares switch
-(`RuleSet::ares`) is on, so retail data keeps the stock particles.
+VERA selects this AI with Ares on and for a projectile’s built-in `AttachedSystem`.
+A particle with a nonempty `AlphaImage=` uses ordinary ParticleClass AI even if its
+SHP is missing. Ares 3.0p1 checks the loaded image at `0x100273A2`. In VERA the
+agreed rules decide which AI consumes Scenario RNG. The local SHP supplies the glow.
 
 | Hook | Ares.dll | Behaviour | Status |
 | --- | --- | --- | --- |
@@ -75,17 +98,17 @@ The updates (all on the Scenario stream, `RandomRanged(1, 0x7FFFFFFF)` scaled by
   `SpawnFrames` grows by `Slowdown` until `SpawnCutoff`.
 
 Residuals:
-- `UseLineTrail=` (ARTMD.INI, the particle image's section) is not read for particle
-  types and counts as false. Trigger: a mod setting it on a particle image; effect: that
-  system runs Ares' simulation instead of ParticleClass; no retail image sets it.
+- A particle image's `UseLineTrail=yes` in ARTMD keeps its system on
+  ParticleClass AI (3.0p1 `0x10027395`). ParticleClass line trail drawing is
+  still pending. An authored line trail therefore uses the correct AI
+  without drawing the line.
 - VERA keeps no `LaserFenceFrame` (`+0x618`), so a spark counts a `LaserFence=yes`
   building as an online section; VERA builds no fence sections yet.
 - Native division traps (a zero `SpawnFrames` period, a zero StateAI period) spawn or
   advance nothing in VERA; a spark or smoke record whose cell VERA cannot evaluate
   (slope type above 20) dies.
-- Presentation: smoke records draw through ANIM.PAL, not the type's Ares `Palette=`; a
-  point whose colour index has no next list entry is skipped (Ares reads past the
-  list); the Detail query runs after the whole Display traversal rather than between
-  the Air and Top layers.
+- Presentation: a point whose colour index has no next list entry is skipped
+  (Ares reads past the list). The Detail query runs after the whole Display
+  traversal rather than between the Air and Top layers.
 - A stock ParticleClass spark (one Ares leaves alone) still answers walls with the stock
   list rather than Ares' `Wall=` hook `0x480534` (`particles::spark`).

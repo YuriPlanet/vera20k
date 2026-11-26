@@ -497,28 +497,35 @@ fn retail_superweapon_scripts_run_ported_actions() {
 #[path = "chronoshift_building_tests.rs"]
 mod chronoshift_building_tests;
 
-/// Ares's action 55 (hook 6EFC70, 10039EF0) takes the first type whose
+/// Ares 3.0p1 action 55 (0x006EFC70 -> 0x1003AD70 -> 0x1003A970) takes the first type whose
 /// `SW.AITargeting` is IronCurtain and whose `SW.Group` is the argument, and
 /// fires it by its own index; the native firing row's group-0 Iron Curtain
 /// does not match argument 9, so the step completes without a launch.
 #[test]
 fn ares_iron_curtain_action_matches_ai_mode_and_group() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = rows()
         .into_iter()
         .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
         .unwrap();
-    for (extra, fires) in [(&[][..], false), (&[(1, "SW.Group=9\n")][..], true)] {
+    for (ares, extra, argument, fires) in [
+        (true, &[][..], 9, false),
+        (true, &[(1, "SW.Group=9\n")][..], 9, true),
+        (false, &[(1, "SW.Group=9\n")][..], 8, false),
+        (false, &[(1, "SW.Group=9\n")][..], 9, true),
+    ] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
         let Replay {
             mut sim,
             rules,
             team,
             ..
         } = replay_with(&row, false, extra);
+        assert_eq!(rules.ares_form(), ares);
+        assert_eq!(rules.ares(), ares);
         AI_FIRE_LOG.set(Some(Vec::new()));
         sim.team_action_iron_curtain(
             team,
-            9,
+            argument,
             &rules,
             None,
             &mut crate::sim::world::FrameEffects::default(),
@@ -537,7 +544,141 @@ fn ares_iron_curtain_action_matches_ai_mode_and_group() {
         } else {
             Vec::new()
         };
-        assert_eq!(fired, expected, "group read {extra:?}");
+        assert_eq!(
+            fired, expected,
+            "Ares {ares}, group read {extra:?}, argument {argument}"
+        );
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}
+
+#[test]
+fn action_55_uses_the_leaders_house_and_group_with_ares_off() {
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let mut row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    // Both curtains use SW1's running recharge timer (ClickFire 0x006CB933).
+    row["supers"][2] = row["supers"][1].clone();
+    for (has_custom, argument, expected) in [(false, 0, "SW1"), (true, 0, "SW1"), (true, 9, "SW2")]
+    {
+        row["supers"][2]["granted"] = json!(has_custom);
+        row["supers"][2]["charged"] = json!(has_custom);
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, &[(2, "SW.Group=9\n")]);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let enemy = sim.interner.get(ENEMY).unwrap();
+        let custom = sim.interner.get("SW2").unwrap();
+        let mut enemy_curtain = SuperWeaponInstance::new(custom, enemy, 0);
+        enemy_curtain.set_is_active_for_test(true);
+        enemy_curtain.set_is_ready_for_test(true);
+        sim.super_weapons
+            .map_mut_for_test()
+            .entry(enemy)
+            .or_default()
+            .insert(custom, enemy_curtain);
+
+        sim.team_action_iron_curtain(team, argument, &rules, None, &mut Default::default());
+        let fired = sim.interner.get(expected).unwrap();
+        assert!(
+            !sim.super_weapons[&owner][&fired].is_ready(),
+            "{expected} should fire"
+        );
+        assert!(sim.super_weapons[&enemy][&custom].is_ready());
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}
+
+#[test]
+fn action_55_fires_the_first_ready_stock_or_group_zero_curtain() {
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let mut row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    let supers = row["supers"].clone();
+    for (custom_index, ready, custom_fires) in
+        [(0, false, false), (2, true, false), (0, true, true)]
+    {
+        row["supers"] = supers.clone();
+        row["supers"][custom_index] = supers[1].clone();
+        row["supers"][custom_index]["charged"] = json!(ready);
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, &[(custom_index, "SW.Group=0\n")]);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let stock = sim.interner.get("SW1").unwrap();
+        let custom = sim.interner.get(&format!("SW{custom_index}")).unwrap();
+
+        sim.team_action_iron_curtain(team, 0, &rules, None, &mut Default::default());
+        assert_eq!(
+            sim.super_weapons[&owner][&stock].is_ready(),
+            custom_fires,
+            "stock charge"
+        );
+        assert_eq!(
+            sim.super_weapons[&owner][&custom].is_ready(),
+            ready && !custom_fires,
+            "custom charge"
+        );
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}
+
+#[test]
+fn action_55_mixed_group_zero_uses_the_selected_registry_slot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let mut row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    // The plain stock curtain is at slot 2. Slot 1 is the Type= index used
+    // only by the native fallback, irrespective of the type registered there.
+    row["supers"][2] = row["supers"][1].clone();
+    for (kind, custom_settings, charged, expected) in [
+        (1, "SW.Group=0\n", false, "SW2"),
+        (1, "SW.Group=9\n", true, "SW2"),
+        (0, "SW.Group=9\n", true, "SW1"),
+    ] {
+        row["supers"][1]["kind"] = json!(kind);
+        row["supers"][1]["charged"] = json!(charged);
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, &[(1, custom_settings)]);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let stock = sim.interner.get("SW2").unwrap();
+        let slot_one = sim.interner.get("SW1").unwrap();
+
+        AI_FIRE_LOG.set(Some(Vec::new()));
+        sim.team_action_iron_curtain(team, 0, &rules, None, &mut Default::default());
+        let fired: Vec<_> = AI_FIRE_LOG
+            .take()
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                AiFireEvent::Fire(id, cell) => Some((id, cell)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fired, [(sim.interner.get(expected).unwrap(), (12, 13))]);
+        assert_eq!(
+            sim.super_weapons[&owner][&stock].is_ready(),
+            expected != "SW2"
+        );
+        if expected == "SW2" {
+            assert_eq!(sim.super_weapons[&owner][&slot_one].is_ready(), charged);
+        }
         assert!(sim.team_script_vm.teams[&team].advance_pending);
     }
 }

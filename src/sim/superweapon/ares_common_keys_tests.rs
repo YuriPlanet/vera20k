@@ -9,19 +9,22 @@ use crate::rules::native_processing::RulesLayerStack;
 use crate::sim::command::Command;
 
 fn rules(extra: &str) -> RuleSet {
-    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+    let art = IniFile::from_str("[PLANT]\nFoundation=1x1\n");
+    let processed = RulesLayerStack::new(rules_ini(extra))
+        .process_with_fixed_art(&art)
+        .unwrap();
+    RuleSet::from_processed_rules(&processed).unwrap()
+}
+
+fn rules_ini(extra: &str) -> IniFile {
+    crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Countries]\n0=Americans\n1=Russians\n\
          [BuildingTypes]\n0=PLANT\n\
          [PLANT]\nStrength=1000\nTurret=no\nSight=0\nPower=-100\nPowered=yes\n\
          [VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSight=0\n\
          [Warheads]\n0=Payload\n[Payload]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          {extra}"
-    ));
-    let art = IniFile::from_str("[PLANT]\nFoundation=1x1\n");
-    let processed = RulesLayerStack::new(ini)
-        .process_with_fixed_art(&art)
-        .unwrap();
-    RuleSet::from_processed_rules(&processed).unwrap()
+    ))
 }
 
 fn scene(rules: &RuleSet, name: &str) -> (Simulation, InternedId, InternedId) {
@@ -213,6 +216,138 @@ fn show_cameo_hides_only_an_auto_fire_super_from_the_strip() {
 }
 
 #[test]
+fn configured_iron_curtain_uses_its_animation_report_and_protect_duration() {
+    let ini = rules_ini(
+        "[General]\nIronCurtainInvokeAnim=FALLBACK\n\
+         [Animations]\n0=INVOKE\n1=FALLBACK\n\
+         [SuperWeaponTypes]\n0=Iron\n1=StockIron\n2=QuietIron\n\
+         [Iron]\nType=IronCurtain\nIsPowered=no\nAction=None\n\
+         SW.Animation=INVOKE\nSW.AffectsHouse=team\nProtect.Duration=200\n\
+         StartSound=TypeStart\nSW.Sound=LaunchCue\nCursor=Attack\n\
+         [StockIron]\nType=IronCurtain\nAction=None\nIsPowered=no\nSW.UseAITargeting=yes\n\
+         [QuietIron]\nType=IronCurtain\nAction=None\nIsPowered=no\nSW.Animation=none\n",
+    );
+    let art_ini = IniFile::from_str(
+        "[PLANT]\nFoundation=1x1\n[INVOKE]\nEnd=4\nRate=1\nReport=InvokeReport\n\
+         [FALLBACK]\nEnd=4\nRate=1\n",
+    );
+    for ares_way in [false, true] {
+        let _read_mode = crate::rules::ares_switch::read_ares_way(ares_way);
+        let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+            &ini,
+            &art_ini,
+            &["InvokeReport", "TypeStart", "LaunchCue"],
+        )
+        .unwrap();
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+        for name in ["INVOKE", "FALLBACK"] {
+            art.bind_anim_frame_count_for_test(name, 4);
+        }
+        rules.install_art_fixture(art);
+        assert_eq!(rules.ares(), ares_way);
+        assert!(rules.super_weapon_uses_ai_targeting("StockIron"));
+        assert_eq!(
+            rules.ares_super_weapon_cursors("Iron").unwrap().cursor,
+            crate::rules::ares_mouse_cursor::index::ATTACK,
+        );
+        if !ares_way {
+            let stock = rules.super_weapon("StockIron").unwrap();
+            assert!(stock.has_action("None"));
+            assert!(stock.uses_extension_rules(&rules));
+            assert!(!stock.uses_ares_handler(&rules));
+        }
+        let quiet = rules.super_weapon("QuietIron").unwrap();
+        assert!(quiet.has_action("IronCurtain"));
+        let (mut quiet_sim, owner, quiet) = scene(&rules, "QuietIron");
+        grant(&mut quiet_sim, &rules, owner, quiet);
+        quiet_sim
+            .super_weapons
+            .instance_mut(&owner, &quiet)
+            .unwrap()
+            .is_ready = true;
+        assert!(fire(&mut quiet_sim, &rules, owner, quiet, (10, 10)));
+        assert!(
+            quiet_sim.anims().next().is_none(),
+            "explicit none suppresses fallback"
+        );
+
+        let (mut sim, owner, iron) = scene(&rules, "Iron");
+        let vehicle = sim
+            .spawn_object("TANK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let building = sim
+            .spawn_object("PLANT", "Americans", 11, 10, 0, &rules)
+            .unwrap();
+        grant(&mut sim, &rules, owner, iron);
+        sim.super_weapons
+            .instance_mut(&owner, &iron)
+            .unwrap()
+            .is_ready = true;
+        sim.sound_events.clear_for_test();
+        assert!(fire(&mut sim, &rules, owner, iron, (10, 10)));
+
+        let mut anims = sim.anims();
+        let (invoke_id, invoke) = anims.next().expect("an invocation animation");
+        assert!(anims.next().is_none(), "one invocation, Ares={ares_way}");
+        assert_eq!(sim.interner.resolve(invoke.type_id()), "INVOKE");
+        assert!(sim.sound_events.iter().any(|event| matches!(
+            event,
+            SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+                if anim_id == invoke_id && sound_id.name_in(&rules) == "INVOKEREPORT"
+        )));
+        assert!(sim.sound_events.iter().any(|event| matches!(
+            event,
+            SimSoundEvent::SuperWeaponActivation { sw_type, .. } if *sw_type == iron
+        )));
+        assert!(sim.sound_events.iter().any(|event| matches!(
+            event,
+            SimSoundEvent::VocAtCoord { sound_id, .. }
+                if sound_id.name_in(&rules).eq_ignore_ascii_case("LaunchCue")
+        )));
+        let iron = rules.super_weapon("Iron").unwrap();
+        assert!(iron.has_action("IronCurtain"));
+        assert_eq!(iron.kind.native_index(), 1);
+        for id in [vehicle, building] {
+            let entity = sim.substrate.entities.get(id).unwrap();
+            let remaining = entity
+                .invulnerability
+                .as_ref()
+                .map(|state| state.timer().remaining(sim.session.binary_frame() as i32));
+            assert_eq!(remaining, Some(200));
+        }
+    }
+}
+
+#[test]
+fn iron_curtain_retains_its_handler_when_a_layer_rejects_type() {
+    use crate::rules::native_processing::RulesLayerKind;
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let mut layers = RulesLayerStack::new(rules_ini(
+        "[SuperWeaponTypes]\n0=Iron\n[Iron]\nType=IronCurtain\nAction=None\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Iron]\nType=Unknown\nProtect.Duration=330\n"),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert!(!rules.ares());
+    assert!(
+        rules
+            .super_weapon("Iron")
+            .unwrap()
+            .has_action("IronCurtain")
+    );
+    assert_eq!(
+        rules
+            .super_weapon_metadata("Iron")
+            .unwrap()
+            .launch()
+            .protect_duration(),
+        Some(330),
+    );
+}
+
+#[test]
 fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
@@ -262,6 +397,44 @@ fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
         SimSoundEvent::RadarEvent { radar }
             if radar.event_type == crate::sim::radar::RadarEventType::ImpactSilent)));
     assert_eq!(sim.super_weapons[&owner][&sw].ares_launch_count, 1);
+}
+
+#[test]
+fn protect_oversized_ranges_reach_map_targets_and_keep_the_native_row_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for (range, last_target_protected) in [("2050,1", false), ("2100", true)] {
+        let rules = rules(&format!(
+            "[SuperWeaponTypes]\n0=Shield\n[Shield]\nType=Protect\nRechargeTime=1\n\
+             IsPowered=no\nProtect.Duration=200\nSW.Range={range}\n"
+        ));
+        let (mut sim, owner, sw) = scene(&rules, "Shield");
+        let mut spawn = |x, y| {
+            sim.spawn_object("TANK", "Americans", x, y, 0, &rules)
+                .unwrap()
+        };
+        let center = spawn(10, 10);
+        // Ares TryGetCellAt aliases the rectangle's final column (1034,10)
+        // to (10,12) on the retail 512-stride map; (11,12) is outside it.
+        let last_column = spawn(10, 12);
+        let next_column = spawn(11, 12);
+        grant(&mut sim, &rules, owner, sw);
+        sim.super_weapons
+            .instance_mut(&owner, &sw)
+            .unwrap()
+            .is_ready = true;
+        assert!(fire(&mut sim, &rules, owner, sw, (10, 10)));
+        let protected = |id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .invulnerability
+                .is_some()
+        };
+        assert!(protected(center), "{range}");
+        assert!(protected(last_column), "{range}");
+        assert_eq!(protected(next_column), last_target_protected, "{range}");
+    }
 }
 
 #[test]

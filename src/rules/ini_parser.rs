@@ -38,8 +38,8 @@ pub mod ini_value;
 #[path = "ini_directives.rs"]
 pub mod directives;
 
-/// Ares's `+` keys, `[Child]:[Base]` sections and later-wins keys, which an
-/// Ares launch adds to every INI text load.
+/// INI text loading, including built-in `+` keys and `[Child]:[Base]` headers
+/// and Ares mode's later-wins duplicate-key rule.
 #[path = "ini_ares_syntax.rs"]
 mod ares_syntax;
 
@@ -463,66 +463,48 @@ impl IniFile {
     /// `*.PKT` map catalogs merge that way too (`0x00699B58`); VERA reads them
     /// as fresh files.
     pub fn from_bytes(data: &[u8]) -> Result<Self, RulesError> {
+        Self::from_bytes_numbered(data, 0)
+    }
+
+    pub(super) fn from_bytes_numbered(
+        data: &[u8],
+        first_iterator_key: i32,
+    ) -> Result<Self, RulesError> {
+        Self::read_ini_bytes(data, first_iterator_key, None)
+    }
+
+    fn read_ini_bytes(
+        data: &[u8],
+        first_iterator_key: i32,
+        including: Option<&IniFile>,
+    ) -> Result<Self, RulesError> {
         let complete = data
             .iter()
             .rposition(|byte| *byte == b'\n')
             .map_or(&[][..], |end| &data[..=end]);
         let text = crate::util::native_string::widen_bytes(complete);
-        Ok(Self::from_str(&text))
+        Ok(ares_syntax::load_fresh(
+            &text,
+            crate::rules::ares_switch::ares_way(),
+            first_iterator_key,
+            including,
+        ))
+    }
+
+    pub(super) fn next_iterator_key(&self) -> i32 {
+        self.next_iterator_key
     }
 
     /// `LoadFromStraw` (`0x00525A60`) into an empty INI. An Ares launch
-    /// hooks this reader for every INI it loads, so a thread that reads the
-    /// Ares way (`ares_switch::ares_way`: a game that ships `ares.mix`) adds
-    /// Ares's syntax here.
+    /// hooks this reader for every INI it loads. VERA recognizes authored `+`
+    /// and inheritance headers in either mode. The repeated-key policy still
+    /// follows the thread's `ares_switch::ares_way`.
     #[expect(
         clippy::should_implement_trait,
         reason = "infallible constructor; FromStr would force a Result on every caller"
     )]
     pub fn from_str(text: &str) -> Self {
-        if crate::rules::ares_switch::ares_way() {
-            ares_syntax::load_fresh(text)
-        } else {
-            Self::load_fresh(text)
-        }
-    }
-
-    fn load_fresh(text: &str) -> Self {
-        let mut ini = Self::empty();
-        let mut current_section = None;
-        for line in read_lines(text) {
-            match lex_line(&line) {
-                Some(NativeLine::Header { name, .. }) => {
-                    let index = ini.sections.len();
-                    ini.sections.push(IniSection::new(name.to_string()));
-                    ini.first_section.entry(name.to_string()).or_insert(index);
-                    current_section = Some(index);
-                }
-                Some(NativeLine::Entry { key, value }) => {
-                    if let Some(index) = current_section {
-                        ini.sections[index].insert_initial(key, value);
-                    }
-                }
-                None => {}
-            }
-        }
-
-        // Retail provenance: INI lexical loading — `INIClass__LoadFromStraw` @ `0x00525A60`.
-        // Active read mode destroys a candidate section unless at least one
-        // accepted nonempty entry was linked into it.
-        ini.discard_entryless_sections();
-        for section in &mut ini.sections {
-            section.build_fresh_index();
-        }
-        let mut index: Vec<_> = ini
-            .sections
-            .iter()
-            .enumerate()
-            .map(|(ordinal, section)| (ini_name_crc(&section.name), ordinal))
-            .collect();
-        crate::util::retail_pointer_sort::sort_by(&mut index, |a, b| a.0.cmp(&b.0));
-        ini.fresh_section_index = Some(index);
-        ini
+        ares_syntax::load_fresh(text, crate::rules::ares_switch::ares_way(), 0, None)
     }
 
     /// `ReadCCFile` of an Ares `[#include]` or Phobos `$Include` file into

@@ -884,14 +884,10 @@ pub(super) fn anim_world_render_coords(
 /// the literal index, not IsVeins) use the global x_PAL Convert, with
 /// resource brightness fixed at 1000 and 0x7E at the cell's common scalar;
 /// every other overlay takes its cell's Convert at that scalar. Walls
-/// (OverlayType+0x2A8, 0047F96A..0047F9C1) take the current house's
-/// ColorScheme Convert (A83D4C+0x16054 -> B054D4[]+0x30C) at the cell's
-/// +0x10A scalar. Every Convert reads A, so unexplored shroud selects palette
-/// row 0 (black).
-///
-/// RESIDUAL: that scheme's house remap of wall art is absent from this RGBA
-/// atlas; walls keep their unremapped colours. Trigger: every wall draw.
-/// Effect: remap-range wall pixels show source colours. Presentation only.
+/// (OverlayType+0x2A8, 0047F96A..0047F9C1) use a ColorScheme Convert
+/// at the cell's +0x10A scalar. Ares changes the scheme's house while
+/// keeping this brightness. Every Convert reads A, so unexplored shroud
+/// selects palette row 0 (black).
 fn ordinary_overlay_palette_light(
     overlay_id: u8,
     flags: Option<&OverlayTypeFlags>,
@@ -925,6 +921,8 @@ struct CellOverlayInputs<'a> {
     /// Rules and interner resolving a rubble cell's recorded building type.
     rules: Option<&'a crate::rules::ruleset::RuleSet>,
     interner: Option<&'a crate::sim::intern::StringInterner>,
+    house_colors: Option<&'a crate::map::houses::HouseColorMap>,
+    current_house: Option<crate::sim::intern::InternedId>,
     tiberium_types: Option<&'a crate::rules::tiberium_type::TiberiumTypeRegistry>,
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     lighting: &'a crate::map::lighting::CellLightGrid,
@@ -937,6 +935,25 @@ struct CellOverlayInputs<'a> {
     viewer: Option<crate::sim::intern::InternedId>,
     fog: Option<&'a crate::sim::vision::FogState>,
     fog_of_war: bool,
+}
+
+/// Ares 3.0p1 CellClass_DrawOverlay_WallRemap (0x47F9A4 -> 0x1005D410).
+/// A nonnegative Cell+0x50 supplies the House at the 0x47F9AA continuation.
+/// A negative owner resumes at the stock load of PlayerPtr from 0xA83D4C.
+fn wall_palette_row(
+    input: &CellOverlayInputs<'_>,
+    flags: Option<&OverlayTypeFlags>,
+    live_cell: Option<&crate::sim::overlay_grid::OverlayCell>,
+) -> Option<u32> {
+    if !flags.is_some_and(|flags| flags.wall && !flags.tiberium) {
+        return None;
+    }
+    let owner = live_cell
+        .and_then(|cell| cell.wall_owner)
+        .or(input.current_house)?;
+    let owner_name = input.interner?.try_resolve(owner)?;
+    let color = *input.house_colors?.get(owner_name)?;
+    input.atlas.wall_palette_row(color)
 }
 
 /// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0 for
@@ -1116,6 +1133,11 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             input.lighting,
             (entry.rx, entry.ry),
         );
+        let wall_palette = if rubble_key.is_none() {
+            wall_palette_row(input, overlay_flags, live_overlay_cell)
+        } else {
+            None
+        };
         let mut instance = SpriteInstance {
             position: [
                 screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
@@ -1127,6 +1149,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             depth,
             tint,
             palette_light,
+            source_palette: wall_palette.unwrap_or(0),
             alpha: 1.0,
             z_adjust: body_z.z_adjust,
             z_gradient: pack_z_gradient(body_z.gradient, false)
@@ -1143,7 +1166,11 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         bodies.push(super::CellBody {
             cell: (entry.rx, entry.ry),
             draw: super::CellBodyDraw {
-                atlas: super::CellBodyAtlas::Overlay,
+                atlas: if wall_palette.is_some() {
+                    super::CellBodyAtlas::Wall
+                } else {
+                    super::CellBodyAtlas::Overlay
+                },
                 render_z: body_z.render_z,
             },
             instance,
@@ -1243,30 +1270,24 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
-    let (viewer, fog, fog_of_war) =
-        state
-            .match_state
-            .sim_runtime
-            .presentation()
-            .map_or((None, None, false), |runtime| {
-                let sim = &runtime.simulation;
-                let viewer = crate::app::input::commands::preferred_local_owner_name(state)
-                    .as_deref()
-                    .and_then(|name| sim.interner().get(name));
-                (
-                    viewer.filter(|_| {
-                        state.translucent_fog_enabled()
-                            && !state.match_state.sandbox_full_visibility
-                    }),
-                    Some(sim.fog()),
-                    sim.session().game_options().fog_of_war,
-                )
-            });
-    let terrain = state
+    let sim = state
         .match_state
         .sim_runtime
         .presentation()
-        .and_then(|runtime| runtime.simulation.resolved_terrain());
+        .map(|runtime| &runtime.simulation);
+    let (viewer, fog, fog_of_war) = sim.map_or((None, None, false), |sim| {
+        let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+            .as_deref()
+            .and_then(|name| sim.interner().get(name));
+        (
+            viewer.filter(|_| {
+                state.translucent_fog_enabled() && !state.match_state.sandbox_full_visibility
+            }),
+            Some(sim.fog()),
+            sim.session().game_options().fog_of_war,
+        )
+    });
+    let terrain = sim.and_then(|sim| sim.resolved_terrain());
     // Only the entries whose body can reach the view, still in index order:
     // the opaque leaf keeps the first pixel on equal Z (0x004991EA..0x004991EC),
     // so the bodies' order is part of the image.
@@ -1278,18 +1299,17 @@ pub(crate) fn build_overlay_instances(
         entries: &window_entries,
         atlas,
         names: &state.match_state.match_presentation.overlay_names,
-        live_grid: state
-            .match_state
-            .sim_runtime
-            .presentation()
-            .and_then(|runtime| runtime.simulation.overlay_grid()),
+        live_grid: sim.and_then(|sim| sim.overlay_grid()),
         registry: state.overlay_registry(),
         rules: state.rules(),
-        interner: state
-            .match_state
-            .sim_runtime
-            .presentation()
-            .map(|runtime| runtime.simulation.interner()),
+        interner: sim.map(|sim| sim.interner()),
+        house_colors: Some(
+            state
+                .match_state
+                .match_presentation
+                .effective_house_color_map(),
+        ),
+        current_house: sim.and_then(|sim| sim.session().current_house()),
         tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
         terrain,
         lighting: state.match_state.match_presentation.lighting.grid(),
@@ -1328,12 +1348,7 @@ pub(crate) fn build_overlay_instances(
     }
 
     // Terrain objects from [Terrain] section.
-    let Some(sim) = state
-        .match_state
-        .sim_runtime
-        .presentation()
-        .map(|rt| &rt.simulation)
-    else {
+    let Some(sim) = sim else {
         return;
     };
     // A map holds far more trees than a view: each one off the window costs
@@ -1926,6 +1941,212 @@ mod tests {
         ] {
             let light = super::ordinary_overlay_palette_light(0, Some(&other), &grid, (3, 4));
             assert_eq!(light.rgb565(stone, 100, 2), 0);
+        }
+    }
+
+    /// Exercise the retained owner, the unowned PlayerPtr fallback and a
+    /// non-wall through the same atlas, cell sweep and SHP draw submission.
+    #[test]
+    #[ignore = "requires a GPU adapter for the wall palette readback"]
+    fn wall_owner_colors_reach_the_overlay_pixels() {
+        use super::{CellOverlayInputs, build_cell_overlay_bodies};
+        use crate::assets::asset_manager::AssetManager;
+        use crate::assets::pal_file::Palette;
+        use crate::map::overlay::OverlayEntry;
+        use crate::map::source::test_support::TestDirectory;
+        use crate::render::batch::{BatchRenderer, InstanceBufferPool};
+        use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
+        use crate::rules::house_colors::HouseColorIndex;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::intern::StringInterner;
+        use crate::sim::overlay_grid::OverlayGrid;
+
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[OverlayTypes]\n0=WALLTEST\n1=ROCKTEST\n[WALLTEST]\nWall=yes\n\
+             [ROCKTEST]\nWall=no\n[Colors]\nVIEWER=85,255,255\nOWNER=170,255,255\n",
+        ))
+        .unwrap();
+        assert!(!rules.ares());
+        let registry = rules.overlay_registry();
+        let wall = registry.id_for_name("WALLTEST").unwrap();
+        let rock = registry.id_for_name("ROCKTEST").unwrap();
+        let entries = [(4, wall), (5, wall), (6, rock)].map(|(rx, overlay_id)| OverlayEntry {
+            rx,
+            ry: 2,
+            overlay_id,
+            frame: 0,
+        });
+        let mut interner = StringInterner::default();
+        let viewer = interner.intern("Viewer");
+        let owner = interner.intern("Owner");
+        let house_colors = [
+            ("Viewer".to_owned(), HouseColorIndex(0)),
+            ("Owner".to_owned(), HouseColorIndex(1)),
+        ]
+        .into_iter()
+        .collect();
+        let mut grid = OverlayGrid::from_overlay_entries(&entries, 10, 10);
+        grid.place_owned_wall(4, 2, wall, 0, owner);
+
+        // Source index 16 is remappable, index 96 is the same stone in all three draws.
+        let mut shp = [0; 34];
+        for (offset, value) in [(2, 2u16), (4, 1), (6, 1), (12, 2), (14, 1)] {
+            shp[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        shp[28..32].copy_from_slice(&32u32.to_le_bytes());
+        shp[32..].copy_from_slice(&[16, 96]);
+        let dir = TestDirectory::new("wall-owner-color");
+        for name in [
+            "WALLTEST.TEM",
+            "ROCKTEST.TEM",
+            "WALLTEST.SHP",
+            "ROCKTEST.SHP",
+        ] {
+            dir.write(name, &shp);
+        }
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let palette = Palette::from_rgb(|index| match index {
+            16 => [176, 80, 16],
+            96 => [40, 128, 144],
+            _ => [0; 3],
+        });
+        let gpu = Gpu::new();
+        let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let atlas = crate::render::overlay_atlas::build_overlay_atlas_on_device(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            &entries,
+            &[],
+            &[],
+            &assets,
+            &palette,
+            &palette,
+            &palette,
+            "tem",
+            "TEMPERATE",
+            registry,
+            &rules,
+            None,
+            &[],
+        )
+        .unwrap();
+        let names = crate::render::overlay_assets::render_overlay_names(registry);
+        let view_size = [256, 220];
+        let view = camera(view_size);
+        let mut bodies = Vec::new();
+        build_cell_overlay_bodies(
+            &CellOverlayInputs {
+                entries: &entries,
+                atlas: &atlas,
+                names: &names,
+                live_grid: Some(&grid),
+                registry: Some(registry),
+                rules: Some(&rules),
+                interner: Some(&interner),
+                house_colors: Some(&house_colors),
+                current_house: Some(viewer),
+                tiberium_types: None,
+                terrain: None,
+                lighting: &crate::map::lighting::CellLightGrid::new(),
+                camera: view.camera_pos,
+                viewport: view.screen_size,
+                origin_y: view.world_origin_y,
+                world_height: view.world_height,
+                viewer: None,
+                fog: None,
+                fog_of_war: false,
+            },
+            &mut bodies,
+        );
+        assert_eq!(bodies.len(), 3);
+        assert_eq!(
+            bodies
+                .iter()
+                .map(|body| body.instance.source_palette)
+                .collect::<Vec<_>>(),
+            [2, 1, 0],
+        );
+        let points: Vec<_> = bodies.iter().map(|body| body.instance.position).collect();
+        let mut instances = Vec::new();
+        let mut draws = Vec::new();
+        super::super::submit_cell_body_sweep(bodies, &mut instances, &mut draws);
+        batch.write_camera(&gpu.queue, view);
+        let color = gpu.target(view_size, format);
+        let depth = gpu.target(view_size, wgpu::TextureFormat::Depth32Float);
+        let color_view = color.create_view(&Default::default());
+        let depth_view = depth.create_view(&Default::default());
+        let mut pool = InstanceBufferPool::new();
+        pool.upload_on_device(&gpu.device, &gpu.queue, "walls", &instances);
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &color_view,
+            &depth_view,
+            65535,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        );
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            crate::app::presentation::render::draw_pooled_cell_bodies(
+                &mut pass,
+                &batch,
+                &pool,
+                Some(&atlas),
+                None,
+                "walls",
+                &draws,
+            );
+        }
+        let read = gpu.read(&mut encoder, &color);
+        let output = gpu.finish(encoder, &[read], view_size).remove(0);
+        let pixel = |point: [f32; 2], dx: usize| {
+            let offset = (point[1] as usize * view_size[0] as usize + point[0] as usize + dx) * 4;
+            &output[offset..offset + 4]
+        };
+        let expected_pixel = |instance: &crate::render::batch::SpriteInstance, rgb, index| {
+            encoded(instance.palette_light.rgb565(rgb, index, 127), format)
+        };
+        let owner_rgb = rules.house_color_ramps.ramp(HouseColorIndex(1))[0];
+        let viewer_rgb = rules.house_color_ramps.ramp(HouseColorIndex(0))[0];
+        let expected = [
+            [owner_rgb.r, owner_rgb.g, owner_rgb.b],
+            [viewer_rgb.r, viewer_rgb.g, viewer_rgb.b],
+            [176, 80, 16],
+        ];
+        assert_ne!(expected[0], expected[1]);
+        for (point, rgb) in points.into_iter().zip(expected) {
+            let instance = instances
+                .iter()
+                .find(|instance| instance.position == point)
+                .unwrap();
+            assert_eq!(pixel(point, 0), expected_pixel(instance, rgb, 16));
+            assert_eq!(
+                pixel(point, 1),
+                expected_pixel(instance, [40, 128, 144], 96)
+            );
         }
     }
 

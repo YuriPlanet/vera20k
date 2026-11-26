@@ -1,10 +1,10 @@
-# Optional Ares firestorm walls
+# Ares firestorm walls
 
 Ares 3.0 brings back Tiberian Sun's firestorm
 wall as a superweapon (`Type=Firestorm`, SW_Firewall) that powers a House's
-`Firestorm.Wall=` building sections while it drains. Every build reads these
-keys in Ares games. On Base-for-modders, a Firestorm with nonzero
-`Money.Amount` also uses this wall path and its startup fee with Ares off.
+`Firestorm.Wall=` building sections while it drains. On `Base-for-modders`,
+`Type=Firestorm` works with Ares Off, including its optional startup fee.
+Map actions 92 and 93 can also toggle the trigger House's firestorm.
 [Ares rules](ares.md) · [Startup fees](ares-superweapon-money.md)
 
 ```ini
@@ -61,15 +61,18 @@ House is short of power). Every change updates each of the House's sections:
   the House's first Firestorm Super instead.
 - Infantry and vehicles cannot enter a powered section and walk through an
   unpowered one; a powered section cannot be sold and shows no health bar.
-- Each change ends with `Update_Pathfinding_1` (RebuildZoneConnectivity
+- Each toggle ends with `Update_Pathfinding_1` (RebuildZoneConnectivity
   `0x0056C510`, from the retained classes) and `Update_Pathfinding_2`
   (`0x00586990`) over the sections' cells, whose Recalc reaches
   RecalcZoneType's building arm: a section of a House whose firestorm is
-  up makes its cell Impassable (`0x00483D9E`, Ares `10014B70`, hook
-  `0x483D94`), so the zone hierarchy no longer connects through a powered
+  up makes its cell Impassable (`0x00483D94` → 3.0p1 `0x10015180`,
+  resumes at `0x00483D9E`), so the zone hierarchy no longer connects through a powered
   wall; dropping it gives the cell back its terrain class. A restored game
   gives powered sections' cells the class again before its navigation
-  rebuild.
+  rebuild. Placement, removal, overlay changes and map action 40 use the same
+  live wall test when they recalculate zones. `Firestorm.Wall=yes` enables the
+  wall behavior for map actions 92 and 93 with Ares Off, including maps that
+  do not declare a Firestorm superweapon.
 - Placing a section (by the player or the computer) fills the gap to a
   same-House or allied section up to `GuardRange` cells away in each straight
   direction with new sections that build up; the placement cursor marks
@@ -110,16 +113,6 @@ House is short of power). Every change updates each of the House's sections:
 
 ## Not included
 
-- RecalcZoneType's building arm runs only in SetFirestormState's batch
-  (`map::resolved_terrain::recalc_zone_type_with_buildings`, from
-  `Simulation::ares_firestorm_update_pathfinding`). VERA's other Recalc
-  writers (an overlay change on the cell, the playfield resize of trigger
-  action 40) take the terrain inputs alone, and a section placed or
-  removed while the firestorm is up keeps its cell's class until the next
-  toggle, where native's placement Recalc applies the arm at once.
-  Effect: the zones connect through that one section until the next
-  toggle; the path grid blocks it either way. Frequency: building a
-  section during a firestorm.
 - Trench lines (`IsTrench`, the other half of `IsLinkable`) link through
   the same line building and placement shadow, and trench traversal
   moves occupants between neighbouring trenches

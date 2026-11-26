@@ -710,6 +710,12 @@ impl Simulation {
                     {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
+                                firestorm_zone: crate::sim::ares_firestorm::FirestormZoneView::new(
+                                    &self.ares_firestorm,
+                                    &self.substrate,
+                                    &self.interner,
+                                    rules,
+                                ),
                                 wall_gates: crate::sim::cell_kernel::WallGateConnections::new(
                                     &self.substrate,
                                     &self.interner,

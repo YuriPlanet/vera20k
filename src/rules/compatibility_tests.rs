@@ -9,11 +9,12 @@ fn processed() -> ProcessedRulesLayers {
     RulesLayerStack::new(IniFile::from_str(
         "[BuildingTypes]\n0=GATE\n[GATE]\nStrength=100\n\
          [InfantryTypes]\n0=INF\n[INF]\nStrength=100\n\
-         [SuperWeaponTypes]\n0=REVEAL\n1=STRIKE\n2=DELIVERY\n\
+         [SuperWeaponTypes]\n0=REVEAL\n1=STRIKE\n2=DELIVERY\n3=PLAIN\n\
          [REVEAL]\nType=PsychicReveal\nRechargeTime=2\nAuxBuilding=GATE\n\
          Money.Amount=-500\nSW.NegBuildings=GATE\n\
          [STRIKE]\nType=GenericWarhead\nSW.Warhead=PAYLOAD\nSW.Damage=75\n\
-         [DELIVERY]\nType=UnitDelivery\nDeliver.Types=INF\nSW.Deferment=7\n",
+         [DELIVERY]\nType=UnitDelivery\nDeliver.Types=INF\nSW.Deferment=7\n\
+         [PLAIN]\nType=PsychicReveal\nAction=PsychicReveal\n",
     ))
     .process()
     .unwrap()
@@ -31,36 +32,36 @@ fn compiled_capability_controls_real_readers_and_roundtrip() {
         assert_eq!(reveal.kind, SuperWeaponKind::PsychicReveal);
         assert_eq!(reveal.aux_building.as_deref(), Some("GATE"));
         assert_eq!(reveal.recharge_time_frames, 1800);
-        if ares_way {
-            assert_eq!(reveal.money_amount, -500);
-            assert_eq!(
-                reveal.building_requirements.as_ref().unwrap().negative,
-                ["GATE"]
-            );
-            let strike = rules.super_weapon("STRIKE").unwrap();
-            assert_eq!(strike.generic_warhead.as_ref().unwrap().damage, 75);
-            assert!(rules.warhead("PAYLOAD").is_some());
-            let delivery = rules.super_weapon("DELIVERY").unwrap();
-            assert_eq!(
-                rules
-                    .super_weapon_metadata("DELIVERY")
-                    .unwrap()
-                    .launch()
-                    .deferment(),
-                Some(7)
-            );
-            assert_eq!(delivery.unit_delivery.as_ref().unwrap().types.len(), 1);
-        } else {
-            assert_eq!(reveal.money_amount, 0);
-            assert!(reveal.building_requirements.is_none());
-            for id in ["STRIKE", "DELIVERY"] {
-                let sw = rules.super_weapon(id).unwrap();
-                assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
-                assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
-                assert_eq!(sw.money_amount, 0);
-            }
-            assert!(rules.warhead("PAYLOAD").is_none());
-        }
+        assert_eq!(rules.ares_form(), ares_way);
+        assert_eq!(reveal.money_amount, -500);
+        assert_eq!(
+            reveal.building_requirements.as_ref().unwrap().negative,
+            ["GATE"]
+        );
+        let strike = rules.super_weapon("STRIKE").unwrap();
+        let payload = strike.generic_warhead.as_ref().unwrap();
+        assert_eq!(payload.damage, 75);
+        assert_eq!(payload.warhead.as_deref(), Some("PAYLOAD"));
+        assert!(rules.warhead("PAYLOAD").is_some());
+        assert!(strike.uses_ares_handler(&rules));
+        let delivery = rules.super_weapon("DELIVERY").unwrap();
+        assert_eq!(
+            rules
+                .super_weapon_metadata("DELIVERY")
+                .unwrap()
+                .launch()
+                .deferment(),
+            Some(7)
+        );
+        assert_eq!(delivery.unit_delivery.as_ref().unwrap().types.len(), 1);
+        assert!(delivery.uses_ares_handler(&rules));
+        assert_eq!(
+            rules
+                .super_weapon("PLAIN")
+                .unwrap()
+                .uses_ares_handler(&rules),
+            ares_way
+        );
         assert_eq!(
             rules.simulation_config_hash(),
             RuleSet::from_processed_rules(&original)

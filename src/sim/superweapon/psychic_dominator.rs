@@ -247,9 +247,9 @@ pub(super) fn process(
     frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     // Ares hook 53AF40 (10037B40) skips the stock Process; its state
-    // machine (10070BA0) runs in its place. On the switch like the Ares
-    // launch and AbortFire in `fire.rs` that start this state.
-    if rules.ares_form() {
+    // machine (10070BA0) runs in its place. A built-in launch registers
+    // that same machine on a scenario with stock rules.
+    if rules.ares_form() || sim.psychic_dominator.ares_machine {
         return ares_process(sim, rules, overlay_registry, frame_effects);
     }
     match sim.psychic_dominator.status {

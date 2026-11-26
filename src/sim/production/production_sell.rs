@@ -55,11 +55,9 @@
 //!   empty (`0x006C95E0`), and the inspected storage writers do not fill it.
 //!   `Full=` admits Foot team members, not Buildings (`0x0065DE7B`). Native
 //!   saved games can retain nonempty stores; their sale payout remains open.
-//! - A unit's sale on a repair depot (the SELL event's unit arm,
-//!   `0x004C6F5A..0x004C6F96`, `foot_can_be_sold`, [`foot_on_sold`]) runs
-//!   only with Ares, whose SellUnit cursor reaches it; stock DetermineAction
-//!   answers NoSell for every Foot, so a game without Ares keeps the
-//!   receiver building-only.
+//! - Ares's sell tool checks `foot_can_be_sold` before issuing SELL. A stock
+//!   superweapon configured with `Action=SellUnit` also reaches SELL's unit
+//!   arm (`0x004C6F5A..0x004C6F96`, [`foot_on_sold`]).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::rule_policy::RulePolicy;
@@ -197,8 +195,8 @@ pub(crate) fn sell_useless_repair_contact(
 }
 
 /// `FootClass::On_Sold @ 0x004D9F70` (vt+0x1A0) with a nonzero control, as
-/// the depot's computer sale ([`sell_useless_repair_contact`]) and, with
-/// Ares, the SELL event's unit arm (`EventClass::Execute 0x004C6F5A..
+/// the depot's computer sale ([`sell_useless_repair_contact`]) and
+/// the SELL event's unit arm (`EventClass::Execute 0x004C6F5A..
 /// 0x004C6F96`) call it: for the owner's player (`IsHumanPlayer @
 /// 0x0050B6F0`, `0x004D9F81..0x004D9FB0`) `EVA_UnitSold` and the global
 /// `[AudioVisual] SellSound=`, then GetRefund (`0x0070ADA0`) to the owner
@@ -213,8 +211,7 @@ pub(crate) fn foot_on_sold(
 ) -> bool {
     // Ares FootClass_Sell_Detonate (hook 0x4D9F7B), On_Sold's first step.
     // RESIDUAL: a blast that destroys the unit ends the sale here; native
-    // runs the rest of On_Sold on the destroyed unit. Only Ares sells a
-    // Foot, so this whole function runs only while Ares plays.
+    // runs the rest of On_Sold on the destroyed unit.
     if rules.ares_form()
         && !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects())
     {
@@ -564,11 +561,11 @@ pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     if ares && entity.seldom.ares.ares_raid.raided() {
         return false;
     }
-    // Ares 3.0 BuildingClass_IsSellable_FirestormWall (10014A20, hook
+    // Ares 3.0p1 BuildingClass_IsSellable_FirestormWall (0x10015030, hook
     // 0x449518) tests `Firestorm.Wall` in place of `FirestormWall=`, then
     // the stock owner test (`0x00449522`): only while its House's firestorm
     // is down.
-    let wall_sale = if ares {
+    let wall_sale = if ares || object.ares_firestorm_wall() {
         object.building_type_ext().firestorm_wall && !sim.ares_firestorm.is_active(entity.owner())
     } else {
         object.firestorm_wall

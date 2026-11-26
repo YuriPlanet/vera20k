@@ -517,6 +517,7 @@ fn dummy_sweep_keeps_shared_overlay_but_never_fabricates_grid_residents() {
                 (super::super::RAD_NO_ATTACKER, None, wh),
                 Some(center_impact(0)),
                 0,
+                false,
                 &mut crate::sim::world::FrameEffects::default(),
             );
             assert!(result.receivers.is_empty());
@@ -1746,6 +1747,7 @@ fn wall_cleanup_preserves_neighbor_targets_until_an_explicit_outer_sweep() {
         (super::super::RAD_NO_ATTACKER, None, wh),
         Some(center_impact(0)),
         0,
+        false,
         &mut crate::sim::world::FrameEffects::default(),
     );
     let overlays = world.overlay_grid.as_ref().unwrap();
@@ -1905,6 +1907,7 @@ fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
             (super::super::RAD_NO_ATTACKER, None, warhead_ref),
             Some(center_impact(0)),
             0,
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
 

@@ -50,6 +50,7 @@ impl Simulation {
                             .any(|cell| cell == coord)
                         })
                 });
+        let building_impassable = self.firestorm_zone_cell_impassable(coord, rules);
         let terrain = self.resolved_terrain.as_mut().unwrap();
         let outcome = match terrain.recalc_resident_bridge_cell(
             index,
@@ -64,6 +65,9 @@ impl Simulation {
                 return;
             }
         };
+        if building_impassable {
+            terrain.recalc_zone_type_with_buildings_at(coord, true);
+        }
         self.overlay_grid
             .as_mut()
             .unwrap()

@@ -341,13 +341,19 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
 
     fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         // The shared dummy's derived attributes are not modeled.
-        if let Some((x, y)) = self.real_coord(cell)
-            && let (Some(grid), Some(terrain)) = (
+        if let Some((x, y)) = self.real_coord(cell) {
+            let building_impassable = self.sim.firestorm_zone_cell_impassable((x, y), self.rules);
+            if let (Some(grid), Some(terrain)) = (
                 self.sim.overlay_grid.as_mut(),
                 self.sim.resolved_terrain.as_mut(),
-            )
-        {
-            grid.recalculate_runtime_cell(terrain, self.registry, (x, y));
+            ) {
+                grid.recalculate_runtime_cell_with_building(
+                    terrain,
+                    self.registry,
+                    (x, y),
+                    building_impassable,
+                );
+            }
         }
         Ok(())
     }

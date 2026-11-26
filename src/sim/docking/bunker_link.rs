@@ -1052,6 +1052,7 @@ mod tests {
                 z_leptons,
             }),
             z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
         // Native cell-list order: the prepended tank's record precedes the
@@ -1207,6 +1208,7 @@ mod tests {
                 z_leptons,
             }),
             z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
         // The impact cell is the tank's own foundation-centre cell, so its
@@ -1301,6 +1303,7 @@ mod tests {
                 z_leptons,
             }),
             z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
         let mut run = world_receiver::ReceiverRun::default();

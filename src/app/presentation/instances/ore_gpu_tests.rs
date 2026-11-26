@@ -294,6 +294,8 @@ impl Probe {
                         registry: Some(scene.runtime.resources.rules.overlay_registry()),
                         rules: Some(&scene.runtime.resources.rules),
                         interner: Some(scene.sim().interner()),
+                        house_colors: None,
+                        current_house: None,
                         tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
                         terrain: Some(terrain),
 

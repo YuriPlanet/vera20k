@@ -158,14 +158,14 @@ impl RuleSet {
             .is_some_and(|policy| policy.use_ai_targeting())
     }
 
-    /// The ordered SWTypeExt targeting fields of an Ares GenericWarhead or
-    /// UnitDelivery type. Stock types keep their retail dispatch owners.
+    /// The ordered SWTypeExt targeting fields used by the active handler
+    /// or by an authored built-in targeting rule.
     pub(crate) fn super_weapon_target_policy(
         &self,
         id: &str,
     ) -> Option<crate::rules::superweapon_targeting::AresSuperWeaponTargetingState> {
         let sw = self.super_weapon(id)?;
-        if !sw.has_builtin_rules() && !(self.ares && sw.kind.has_ares_handler()) {
+        if !sw.has_builtin_rules() && !sw.uses_ares_handler(self) {
             return None;
         }
         self.super_weapon_metadata(id)
@@ -833,7 +833,7 @@ impl RuleSet {
 
     #[inline]
     pub(crate) fn attach_effects_enabled(&self) -> bool {
-        self.ares || self.temporal_attach_effects_enabled()
+        self.ares || self.temporal_attach_effects_enabled() || self.builtin_generic_attach_effects
     }
 
     #[inline]
@@ -844,6 +844,11 @@ impl RuleSet {
     #[inline]
     pub(crate) fn emp_enabled(&self) -> bool {
         self.ares || self.builtin_tunnel_emp
+    }
+
+    #[inline]
+    pub(crate) fn builtin_generic_emp(&self) -> bool {
+        self.builtin_generic_emp
     }
 
     /// Whether Phobos plays in this game: its Rules layers or map hold a key

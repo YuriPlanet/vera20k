@@ -86,6 +86,7 @@ fn ares_area_damage_rolls_the_impact_cliff() {
         (super::RAD_NO_ATTACKER, None, warhead_ref),
         None,
         1,
+        false,
         &mut FrameEffects::default(),
     );
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());

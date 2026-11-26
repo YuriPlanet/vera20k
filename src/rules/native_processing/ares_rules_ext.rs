@@ -23,9 +23,9 @@ pub(crate) struct AresGlobalControls {
     #[serde(default = "AresGlobalControls::default_type_select_use_deploy")]
     pub(super) type_select_use_deploy: bool,
     /// RulesExt+14F `[General] ChronoInfantryCrush`: constructor1002A360
-    /// stores the dword 0x01010100 at +14C (+14F true); 1002AB60 reads it
-    /// with Valueable<bool>. The Teleport make-room hook (718275,
-    /// 1004B980) reads it.
+    /// stores the dword 0x01010100 at +14C (+14F true). The P1 reader
+    /// 0x1002B981..0x1002B996 uses Valueable<bool>; MakeRoom (0x1004C5E0)
+    /// consumes it.
     #[serde(default = "AresGlobalControls::default_chrono_infantry_crush")]
     pub(super) chrono_infantry_crush: bool,
     /// RulesExt+144 `[CrateRules] RandomCrateMoney` (Valueable<int>,
@@ -146,9 +146,8 @@ impl AresGeneralRules {
         }
     }
 
-    /// 1002A800's reads of these keys: InfantryElectrocuted first (its
-    /// Find-only lookup `electrocuted`), then after EngineerAlwaysCaptureTech
-    /// EnemyWrench, and after HSBuilding the hunter-seeker values.
+    /// 1002A800 reads InfantryElectrocuted first (Find only), then EnemyWrench
+    /// after EngineerAlwaysCaptureTech.
     pub(super) fn read_after_type_data(
         &mut self,
         pass: &IniFile,
@@ -162,6 +161,13 @@ impl AresGeneralRules {
             return;
         };
         self.enemy_wrench = general.read_ares_bool("EnemyWrench", self.enemy_wrench);
+    }
+
+    /// 1002A800 reads the stock hunter-seeker flight tunables after HSBuilding.
+    pub(super) fn read_hunter_seeker_speeds(
+        &mut self,
+        general: &crate::rules::ini_parser::IniSection,
+    ) {
         for (slot, key) in [
             "HunterSeekerDetonateProximity",
             "HunterSeekerDescendProximity",
@@ -379,8 +385,6 @@ impl AresGlobalControls {
         if let Some(section) = pass.section("General") {
             self.type_select_use_deploy =
                 section.read_ares_bool("TypeSelectUseDeploy", self.type_select_use_deploy);
-            self.chrono_infantry_crush =
-                section.read_ares_bool("ChronoInfantryCrush", self.chrono_infantry_crush);
             // 1002AB60 reads it between IronCurtainFlash and
             // ChronoInfantryCrush; neither neighbour is a pointer.
             self.repair_stop_on_insufficient_funds = section.read_ares_bool(
@@ -412,6 +416,15 @@ impl AresGlobalControls {
             .and_then(crate::rules::mission_data::MissionType::from_map_name)
         {
             self.emp_ai_recover_mission = Some(mission);
+        }
+    }
+
+    /// 0x1002B981..0x1002B996 reads every reached General section.
+    pub(super) fn read_chrono_infantry_crush(&mut self, pass: &IniFile) {
+        let _builtin = crate::rules::ares_switch::not_ares_reads();
+        if let Some(section) = pass.section("General") {
+            self.chrono_infantry_crush =
+                section.read_ares_bool("ChronoInfantryCrush", self.chrono_infantry_crush);
         }
     }
 

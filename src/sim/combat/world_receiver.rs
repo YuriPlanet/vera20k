@@ -542,6 +542,7 @@ pub(crate) fn collect_area(
     origin: (u64, Option<InternedId>, InternedId),
     air_impact: Option<combat_aoe::AoEAirImpact>,
     impact_z: i32,
+    use_ares_spread: bool,
     effects: &mut FrameEffects<'_>,
 ) -> combat_aoe::AoEDamageResult {
     #[cfg(not(test))]
@@ -598,7 +599,9 @@ pub(crate) fn collect_area(
             .cell_target_detaches
             .append(&mut cliff_effects.cell_target_detaches);
     }
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
+    let offsets =
+        cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares() || use_ares_spread);
+    for &(dx, dy) in offsets.iter() {
         // Ares 3.0 DamageArea_ChainReaction (10051000, hook 0x48964F): the
         // cell's CellChainReact precedes its Reduce_Tiberium (the prelude).
         if rules.ares() {
@@ -615,6 +618,12 @@ pub(crate) fn collect_area(
         let (spread_cell, detached_cell) = {
             let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
                 rules,
+                crate::sim::ares_firestorm::FirestormZoneView::new(
+                    &world.ares_firestorm,
+                    &world.substrate,
+                    &world.interner,
+                    rules,
+                ),
                 warhead,
                 damage,
                 affects_tiberium,
@@ -786,7 +795,7 @@ pub(crate) fn apply_area_damage_in_run(
     origin: (u64, Option<InternedId>, InternedId),
     pings: &mut Vec<UnderAttackEvent>,
 ) -> (DeathEffects, bool, AreaDamageResult) {
-    apply_area_damage_in_run_with_target(
+    apply_area_damage_in_run_with_options(
         world,
         run,
         rules,
@@ -796,16 +805,21 @@ pub(crate) fn apply_area_damage_in_run(
         warhead,
         affects_tiberium,
         origin,
-        None,
+        AreaDamageOptions::default(),
         pings,
     )
 }
 
-/// [`apply_area_damage_in_run`] with Phobos `WarheadTypeExt::DamageAreaWithTarget`'s
-/// `DamageAreaTarget` (`WarheadType/Body.cpp:137..146`): the target the
-/// per-target pass of a warhead without `CellSpread` visits. Stock never
-/// reads it.
-pub(crate) fn apply_area_damage_in_run_with_target(
+#[derive(Default)]
+pub(crate) struct AreaDamageOptions {
+    /// Phobos `DamageAreaWithTarget` (`WarheadType/Body.cpp:137..146`): the
+    /// target the per-target pass of a warhead without `CellSpread` visits.
+    pub(crate) target: Option<u64>,
+    /// Apply the Ares cell enumerator to this area call even with Ares Off.
+    pub(crate) use_ares_spread: bool,
+}
+
+pub(crate) fn apply_area_damage_in_run_with_options(
     world: &mut Simulation,
     run: &mut ReceiverRun,
     rules: &RuleSet,
@@ -815,7 +829,7 @@ pub(crate) fn apply_area_damage_in_run_with_target(
     warhead: &WarheadType,
     affects_tiberium: bool,
     origin: (u64, Option<InternedId>, InternedId),
-    area_target: Option<u64>,
+    options: AreaDamageOptions,
     pings: &mut Vec<UnderAttackEvent>,
 ) -> (DeathEffects, bool, AreaDamageResult) {
     let area = collect_area_at(
@@ -827,6 +841,7 @@ pub(crate) fn apply_area_damage_in_run_with_target(
         warhead,
         affects_tiberium,
         origin,
+        options.use_ares_spread,
         run.effects(),
     );
     let mut effects = DeathEffects::default();
@@ -852,12 +867,12 @@ pub(crate) fn apply_area_damage_in_run_with_target(
         origin.0,
         origin.1,
         impact,
-        area_target,
+        options.target,
         &area.aoe.receivers,
         &mut effects,
     );
     #[cfg(not(feature = "phobos"))]
-    let _ = area_target;
+    let _ = options.target;
     #[cfg(not(feature = "phobos"))]
     let crit_active = false;
     let (nested, area_result) = commit_area_with_dispatch(
@@ -917,6 +932,7 @@ fn collect_area_at<'r>(
     warhead: &'r WarheadType,
     affects_tiberium: bool,
     origin: (u64, Option<InternedId>, InternedId),
+    use_ares_spread: bool,
     effects: &mut FrameEffects<'_>,
 ) -> AreaAtImpact<'r> {
     // Observe the shared entry, including Bullet and nested receiver calls;
@@ -949,6 +965,7 @@ fn collect_area_at<'r>(
             z_leptons,
         }),
         z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32),
+        use_ares_spread,
         effects,
     );
     AreaAtImpact {
@@ -1481,16 +1498,16 @@ fn commit_entity(
         // past the type gates: an active firestorm wall section returns 0
         // and the hit shortens its House's firestorm drain instead.
         if world
-                .substrate
-                .entities
-                .get(target_id)
-                .is_some_and(|target| {
-                    target.category() == EntityCategory::Structure
-                        && !super::receiver_call::building_type_gate_returns_zero(
-                            world.interner.object_type(target.type_ref(), rules),
-                            event.receiver_flags,
-                        )
-                })
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| {
+                target.category() == EntityCategory::Structure
+                    && !super::receiver_call::building_type_gate_returns_zero(
+                        world.interner.object_type(target.type_ref(), rules),
+                        event.receiver_flags,
+                    )
+            })
             && world.ares_firestorm_absorbs_damage(target_id, event.damage, rules)
         {
             break 'receiver;
@@ -3468,14 +3485,11 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     // Ares hook 46B371 (10036880): a superweapon's falling nuke takes that
     // type's `Nuke.Payload` (its speed and BulletType) with its GetDamage
     // and GetWarhead; without a payload it logs and keeps NukePayload.
-    let nuke_sw = rules.ares().then(|| {
-        world
-            .projectiles
-            .get(detonation.projectile_id)
-            .and_then(|bullet| bullet.ares_nuke_sw())
-    });
+    let nuke_sw = world
+        .projectiles
+        .get(detonation.projectile_id)
+        .and_then(|bullet| bullet.ares_nuke_sw());
     let (weapon, warhead, damage) = match nuke_sw
-        .flatten()
         .and_then(|sw| rules.super_weapon(world.interner.resolve(sw)))
         .and_then(|sw| crate::sim::superweapon::nuke::ares_payload_hit(rules, sw))
     {
@@ -3521,7 +3535,7 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
         super::admit_fired_bullet(world, rules, weapon, bullet_id, bullet);
     }
     // Hook 46B423 (10036930): the falling nuke keeps the superweapon type.
-    if let Some(nuke_sw) = nuke_sw {
+    if nuke_sw.is_some() {
         world.projectiles.set_ares_nuke_sw(bullet_id, nuke_sw);
     }
 }
@@ -4021,13 +4035,20 @@ fn emit_detonation_receivers<'r>(
                 &mut out.effects,
             );
             world.apply_ares_emp_detonation(
+                false,
                 coordinate,
                 Some(detonation.source_id),
                 warhead,
                 rules,
                 run.effects(),
             );
-            world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+            world.apply_ares_attach_effect_detonation(
+                false,
+                coordinate,
+                source_house,
+                warhead,
+                rules,
+            );
             // applyOccupantDamage, snapped bullets only: a shot that passes
             // through to a garrison's occupant is neutered.
             if ares_snapped_target(world, detonation).is_some()
@@ -4072,13 +4093,14 @@ fn emit_detonation_receivers<'r>(
         // A configured EMP warhead can hit a surfaced Tunnel mover in the
         // built-in path. Keep that admission in the shared EMP receiver.
         world.apply_ares_emp_detonation(
+            false,
             coordinate,
             Some(detonation.source_id),
             warhead,
             rules,
             run.effects(),
         );
-        world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+        world.apply_ares_attach_effect_detonation(false, coordinate, source_house, warhead, rules);
     }
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only
@@ -4138,6 +4160,7 @@ fn emit_detonation_receivers<'r>(
                     source_house,
                     detonation.payload.warhead,
                 ),
+                false,
                 run.effects(),
             );
             #[cfg(test)]

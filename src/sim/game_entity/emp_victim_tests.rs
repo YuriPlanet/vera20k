@@ -551,6 +551,7 @@ fn ares_emp_warnings_require_a_malicious_warhead() {
                 sim.resolved_terrain.as_ref(),
             );
             sim.apply_ares_emp_detonation(
+                false,
                 crate::sim::projectile::ProjectileCoord {
                     x: centre.x,
                     y: centre.y,

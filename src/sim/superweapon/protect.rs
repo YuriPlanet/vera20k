@@ -1,14 +1,14 @@
-//! Ares `Type=Protect` (`src/Misc/SWTypes/Protect.cpp`): an Iron Curtain
-//! over a rectangle or range with its own duration, sounds and blackout.
+//! Ares SW_Protect (`src/Misc/SWTypes/Protect.cpp`) handles `Type=Protect`
+//! and redirected `Type=IronCurtain` or `Type=ForceShield`, with their own
+//! area, duration, sounds and blackout.
 //!
-//! Installed Ares: Activate `0x10074750`, Initialize `0x10074B60` (Iron
+//! Ares 3.0p1: Activate `0x10075800`, Initialize `0x10075C10` (Iron
 //! Curtain EVA lines, AnimHeight 5, AITargeting IronCurtain, the IronCurtain
-//! cursor), LoadFromINI `0x10074C20` (`Protect.Duration`, `.PowerOutage`,
-//! `.PlayFadeSoundTime`), GetRange `0x10074AD0` (the type's `SW.Range`, else
-//! a 3x3 rectangle) and GetAnim `0x10074A90` (`SW.Animation`, else
-//! `IronCurtainInvokeAnim=`, built by the common Launch). A Protect type is
-//! never the Force Shield arm: Protect_IsForceShield is set only for a
-//! redirected `Type=ForceShield`, whose stock owner VERA keeps.
+//! cursor), LoadFromINI `0x10075CD0` (`Protect.Duration`, `.PowerOutage`,
+//! `.PlayFadeSoundTime`), GetRange `0x10075B80` (the type's `SW.Range`, else
+//! a 3x3 rectangle or `ForceShieldRadius=`) and GetAnim `0x10075B40`
+//! (`SW.Animation`, else the corresponding stock invoke anim). The raw
+//! ForceShield type sets the force byte in this handler.
 //!
 //! Activate on a charged Super, at the target cell's GetCoords: the type's
 //! `StartSound=`, then (with a `SpecialSound=`) the fade countdown of
@@ -17,7 +17,7 @@
 //! area's cells (`CellClass::GetContent`) once, in UniqueID order
 //! (DistinctCollector), skipping an immobilized (`+0x27C`) or warping-out
 //! (`+0x270`) one and those `SW.AffectsHouse`/`SW.AffectsTarget` exclude,
-//! gets IronCurtain (vt+0x154) with the duration, the owner and force 0.
+//! gets IronCurtain (vt+0x154) with the duration, the owner and force byte.
 //! It reports activation even when uncharged.
 //!
 //! Ledger: the invoke anim's and each curtain receiver's own RNG draws; timer
@@ -30,12 +30,15 @@ use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::TargetMask;
-use crate::rules::superweapon_type::SuperWeaponType;
+use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
 use crate::sim::intern::InternedId;
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::superweapon::invulnerability::InvulnKind;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
-/// SW_Protect::Activate `0x10074750` for `owner`'s Super of `sw_type`.
+/// Ares 3.0p1 SW_Protect::Activate `0x10075800` for `owner`'s Super of `sw_type`.
+/// The Launch hook at `0x006CC390` skips the stock case for this handler and
+/// resumes at `0x006CDE40` after the common Launch.
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -54,11 +57,25 @@ pub(super) fn launch(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let duration = launch
-        .protect_duration()
-        .unwrap_or(rules.general.iron_curtain_duration);
-    let coords @ [x, y, z] = super::deck_coords(sim, (rx, ry));
-    // 1007479B: StartSound (+0xC4) through VocClass::PlayAt.
+    let general = &rules.general;
+    let force = sw.kind == SuperWeaponKind::ForceShield;
+    // 0x10075869..0x1007592F chooses the defaults using Protect_IsForceShield.
+    let (kind, duration, fade, outage) = if force {
+        (
+            InvulnKind::ForceShield,
+            general.force_shield_duration,
+            general.force_shield_fade_sound_time,
+            general.force_shield_blackout_duration,
+        )
+    } else {
+        (InvulnKind::IronCurtain, general.iron_curtain_duration, 0, 0)
+    };
+    let duration = launch.protect_duration().unwrap_or(duration);
+    // 0x1007585F uses CellClass::GetCoords for StartSound and the fade
+    // timer. The shared presentation adds bridge height to its own cues.
+    let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
+    let coords @ [x, y, z] = [ground.x, ground.y, ground.z];
+    // 0x1007589F..0x100758AF: StartSound (+0xC4) through VocClass::PlayAt.
     if sw.start_sound.is_some() {
         sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
             sw_type,
@@ -69,19 +86,22 @@ pub(super) fn launch(
     if sw.special_sound.is_some()
         && let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type)
     {
-        let fade = launch.protect_fade_sound_time().unwrap_or(0);
+        let fade = launch.protect_fade_sound_time().unwrap_or(fade);
         instance.arm_fade(duration.wrapping_sub(fade), coords);
     }
     // HouseClass::CreatePowerOutage (0x0050BC90) for a positive blackout.
-    let outage = launch.protect_power_outage().unwrap_or(0);
+    let outage = launch.protect_power_outage().unwrap_or(outage);
     if outage > 0 && sim.houses.contains_key(&owner) {
         let frame = sim.session.binary_frame();
         sim.power_states
             .house_mut(owner)
             .start_blackout(frame, outage);
     }
-    // GetRange10074AD0: the type's SW.Range, else a 3x3 rectangle.
+    // GetRange 0x10075B80: SW.Range, else ForceShieldRadius or 3x3.
     let range = match launch.range() {
+        (width, height) if width < 0.0 && height < 0 && force => {
+            (general.force_shield_radius as f32, -1)
+        }
         (width, height) if width < 0.0 && height < 0 => (3.0, 3),
         range => range,
     };
@@ -107,6 +127,7 @@ pub(super) fn launch(
             category,
             Some(owner),
             duration,
+            kind,
             frame_effects,
         );
     }
@@ -120,9 +141,9 @@ pub(super) fn area_technos(sim: &Simulation, range: (f32, i32), center: (u16, u1
     area_technos_with(sim, range, center, false)
 }
 
-/// Helpers::Alex::for_each_in_rect_or_spread (the Dominator's,
-/// `10037840`): the same rectangle, else for a height of 0 or less the
-/// CellSpread of `max(int(width), 0)` when positive.
+/// Ares 3.0p1 PsyDom_Fire (0x100382E0, hook 0x0053B080): a rectangle, or
+/// the CellSpreadEnumerator at 0x10036560. The caller truncates the range
+/// at 0x100384D7, ignores nonpositive values, and enumerates through band 256.
 pub(super) fn area_technos_in_spread(
     sim: &Simulation,
     range: (f32, i32),
@@ -137,54 +158,90 @@ fn area_technos_with(
     center: (u16, u16),
     spread: bool,
 ) -> Vec<u64> {
-    let (cx, cy) = (i32::from(center.0 as i16), i32::from(center.1 as i16));
-    let mut cells = Vec::new();
-    if spread && !(height > 0 && (width as i32) > 0) {
-        if height <= 0 && (width as i32) > 0 {
-            for &(dx, dy) in crate::sim::combat::cell_spread::sweep(width as i32 as usize) {
-                cells.push((cx + i32::from(dx), cy + i32::from(dy)));
-            }
-        }
-    } else if height > 0 && (width as i32) > 0 {
-        // for_each_in_rect: width x height cells from center - size/2.
-        let width = width as i32;
-        let (left, top) = (cx - width / 2, cy - height / 2);
-        for y in top..top + height {
-            for x in left..left + width {
-                cells.push((x, y));
-            }
-        }
-    } else if height <= 0 && width >= 0.0 {
-        // CellRangeEnumerator: LTRB of range = 2*floor(r+0.99)+1 from
-        // center - range/2 to left/top + range (inclusive), kept within the
-        // squared cell distance.
-        let radius = f64::from(width);
-        let range = ((radius + 0.99).floor() as i32) * 2 + 1;
-        let (left, top) = (cx - range / 2, cy - range / 2);
-        for y in top..=top + range {
-            for x in left..=left + range {
-                let (dx, dy) = (f64::from(x - cx), f64::from(y - cy));
-                if dx * dx + dy * dy <= radius * radius {
-                    cells.push((x, y));
-                }
-            }
-        }
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return Vec::new();
+    };
+    // SW_Protect's rectangle uses cvttss2si at 0x10036841. An overflow
+    // or non-finite width does not produce a positive rectangle.
+    if !width.is_finite() || (height > 0 && !(1.0..2_147_483_648.0).contains(&width)) {
+        return Vec::new();
     }
-    let terrain = sim.resolved_terrain.as_ref();
+    let rectangle = height > 0;
+    let (cx, cy) = (i32::from(center.0 as i16), i32::from(center.1 as i16));
     let mut found = std::collections::BTreeMap::new();
-    for (x, y) in cells {
+    let mut visit = |x, y| {
         // MapClass::TryGetCellAt: only real cells.
-        let crate::sim::cell_rect::CellRef::Real(real) =
-            crate::sim::cell_rect::get_cellclass_fallback(terrain, x, y)
-        else {
-            continue;
+        let Some(index) = terrain.native_fixed_cell_index(x as i16, y as i16) else {
+            return;
         };
+        let real = &terrain.cells()[index];
         for member in sim.native_cell_content((real.rx, real.ry)) {
             let CellObjectMember::Entity(id) = member else {
                 continue;
             };
             if let Some(entity) = sim.substrate.entities.get(id) {
                 found.entry(entity.native_unique_id()).or_insert(id);
+            }
+        }
+    };
+    if spread && !rectangle {
+        if height <= 0 && (1.0..2_147_483_648.0).contains(&width) {
+            let band = (width as u16).min(crate::sim::cell_rect::MAX_CELL_SPREAD);
+            for (dx, dy) in crate::sim::cell_rect::cell_spread_rings(0, band) {
+                visit(cx + i32::from(dx), cy + i32::from(dy));
+            }
+        }
+    } else if width >= 0.0 {
+        // Ares 3.0p1: 0x10036830 enumerates a centered width x height;
+        // 0x100702A0 accepts integer cell offsets inside the squared radius.
+        let (left, right, top, bottom) = if rectangle {
+            let width = width as i32;
+            let (left, top) = (cx - width / 2, cy - height / 2);
+            (left, left + width - 1, top, top + height - 1)
+        } else {
+            // CellStruct components are signed words, so no offset on an
+            // axis can exceed u16::MAX, even for a much larger authored radius.
+            let reach = width.min(f32::from(u16::MAX)) as i32;
+            (cx - reach, cx + reach, cy - reach, cy + reach)
+        };
+        // Stop an oversized mod range at the signed CellStruct boundary;
+        // letting the native word counter wrap can repeat the enumeration.
+        let left = left.max(i32::from(i16::MIN));
+        let right = right.min(i32::from(i16::MAX));
+        let top = top.max(i32::from(i16::MIN));
+        let bottom = bottom.min(i32::from(i16::MAX));
+        let radius_squared = f64::from(width) * f64::from(width);
+        let in_circle = |x: i32, y: i32| {
+            let (dx, dy) = (f64::from(x - cx), f64::from(y - cy));
+            dx * dx + dy * dy <= radius_squared
+        };
+        let candidates = i64::from(right - left + 1) * i64::from(bottom - top + 1);
+        if candidates <= terrain.cells().len() as i64 {
+            for y in top..=bottom {
+                for x in left..=right {
+                    if rectangle || in_circle(x, y) {
+                        visit(x, y);
+                    }
+                }
+            }
+        } else {
+            // TryGetCellAt uses x + stride*y. A real cell (x,y) is also
+            // reached by (x+k*stride,y-k). Intersect these aliases with the
+            // requested bounds instead of iterating an arbitrarily large area.
+            let stride = i32::from(terrain.cell_grid().side());
+            let occupancy = &sim.substrate.occupancy;
+            use crate::sim::movement::locomotor::MovementLayer;
+            for layer in [MovementLayer::Ground, MovementLayer::Bridge] {
+                for (x, y) in occupancy.occupied_cells_on_layer(layer) {
+                    let (x, y) = (i32::from(x), i32::from(y));
+                    let first = (-(x - left).div_euclid(stride)).max(y - bottom);
+                    let last = (right - x).div_euclid(stride).min(y - top);
+                    if first <= last
+                        && (rectangle || (first..=last).any(|k| in_circle(x + k * stride, y - k)))
+                    {
+                        visit(x, y);
+                    }
+                }
             }
         }
     }

@@ -289,7 +289,7 @@ fn handler_initial_mode(type_name: &str) -> u8 {
         ("PsychicDominator", 3),            // 10070A01
         ("SpyPlane", 4),                    // 10075865
         ("GeneticConverter", 5),            // 100720DF
-        ("ForceShield", 6),                 // 10074B9A
+        ("ForceShield", 6),                 // Ares 3.0p1 10075C4A
         ("PsychicReveal", 4),               // 10075336
         ("SonarPulse", 9),                  // 100756E5
         ("UnitDelivery", 4),                // 100759D4
@@ -398,6 +398,14 @@ impl AresSuperWeaponTargetingState {
             }
             if type_name.is_some_and(|name| name.eq_ignore_ascii_case("HunterSeeker")) {
                 self.affects_house = HouseMask::ENEMIES;
+            }
+            // Ares 3.0p1 SW_Protect::Initialize 10075C54/10075C5D sets
+            // Affects and Requires to Team and Buildings for Force Shield.
+            if is("ForceShield") {
+                self.affects_house = HouseMask::TEAM;
+                self.affects_target = TargetMask::BUILDING;
+                self.manual.house = HouseMask::TEAM;
+                self.manual.target = TargetMask::BUILDING;
             }
             // SW_EMPulse::Initialize10071440: SW.RangeMaximum -1.0 and
             // SW.RangeMinimum 0.0 (+0x468/+0x460).

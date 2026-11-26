@@ -155,8 +155,8 @@ fn the_radar_keeps_an_override_only_with_radar_frames() {
 
 /// `SWTypeExt::ExtData::WhatAction @ 10033EB0`: the Spy Plane, whose Ares
 /// handler names the SpyPlane cursor (10075800), shows it over a cell it may
-/// fire at and Disallowed elsewhere; a stock type without a ported handler
-/// keeps the stock path.
+/// fire at and Disallowed elsewhere. Protect's Force Shield arm initializes
+/// cursor 0x4F and NoCursor 0x50 at 3.0p1 0x10075C66..0x10075C7A.
 #[test]
 fn a_handled_super_weapon_shows_its_cursor_or_no_cursor() {
     let Some((_, rules)) = scene("") else {
@@ -172,6 +172,10 @@ fn a_handled_super_weapon_shows_its_cursor_or_no_cursor() {
     );
     assert_eq!(
         super_weapon_cursor(&rules, "ForceShieldSpecial", true),
-        None
+        Some(index::FORCE_SHIELD)
+    );
+    assert_eq!(
+        super_weapon_cursor(&rules, "ForceShieldSpecial", false),
+        Some(index::NO_FORCE_SHIELD)
     );
 }

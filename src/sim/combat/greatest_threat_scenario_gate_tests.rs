@@ -280,6 +280,7 @@ fn retail_area_damage_skips_a_harvester_while_scenario_bit_800_is_set() {
             (crate::sim::combat::RAD_NO_ATTACKER, None, he),
             None,
             0,
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(

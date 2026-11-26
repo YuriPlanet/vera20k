@@ -74,6 +74,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, firer: u64, emitter: u64, wh: &str
         &sim.entities().get(firer).unwrap().position,
     );
     sim.apply_ares_attach_effect_detonation(
+        false,
         ProjectileCoord::new(p.x, p.y, p.z),
         Some(sim.entities().get(emitter).unwrap().owner()),
         rules.warhead(wh).unwrap(),

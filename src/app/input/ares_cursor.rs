@@ -99,7 +99,12 @@ const TABLE_LEN: usize = 0x4A;
 /// may name one of its entries, so while Ares plays or its superweapons are
 /// on.
 pub(crate) fn draws_through_list(rules: &RuleSet) -> bool {
-    rules.ares() || rules.ares_form()
+    rules.ares()
+        || rules.ares_form()
+        || rules
+            .super_weapons
+            .values()
+            .any(|sw| sw.uses_ares_handler(rules))
 }
 
 /// The override table one What_Action query wrote

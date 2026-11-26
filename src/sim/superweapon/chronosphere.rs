@@ -966,6 +966,9 @@ pub(super) fn ares_tick_chrono_warps(
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: &mut FrameEffects<'_>,
 ) {
+    if sim.ares_chrono_warps.machines.is_empty() {
+        return;
+    }
     let machines = std::mem::take(&mut sim.ares_chrono_warps.machines);
     let mut kept = Vec::with_capacity(machines.len());
     for mut machine in machines {
@@ -1260,10 +1263,9 @@ fn ares_arm_chrono_warp(
     else {
         return;
     };
-    runtime.arm_chrono(crate::sim::movement::teleport_movement::ChronoWarp::new(
-        destination,
-        frame,
-    ));
+    runtime.arm_chrono(
+        crate::sim::movement::teleport_movement::ChronoWarp::from_extension(destination, frame),
+    );
     crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.seldom.drop_credit.credit_warp(warp.owner);

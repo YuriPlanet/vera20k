@@ -3,11 +3,10 @@
 Ares 3.0 corrects a set of gamemd behaviours
 in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
 `Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`, plus the crate fix
-in `Misc/Savegame.cpp`; these take no INI keys. Every build makes these corrections when the game plays Ares
-([Ares](ares.md)); other games keep the original behaviour, bugs included. Each Rust
-port sits in the engine owner of the hooked gamemd function, behind the game's
-Ares switch (`rules::ares_switch`), with the Ares.dll function
-and the gamemd hook cited next to it. Part 2 (the Buffer and Perf rows at
+in `Misc/Savegame.cpp`. These take no INI keys. Every build includes the
+fixes listed below ([Ares settings](ares.md)). On `Base-for-modders`, the
+wall color fix applies in every Ares setting. Each Rust port cites its
+Ares.dll function and gamemd hook. Part 2 (the Buffer and Perf rows at
 the end of the table) also has `sim::ares_bugfixes_buffer_tests` and
 `sim::combat::ares_cliff_tests`.
 
@@ -61,7 +60,7 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x47243F` | `1005C680` | A captured computer building queues Guard, no fate roll | ported: `capture_manager::decide_unit_fate` |
 | `0x4748A0` | `1005CC40` | ReadPip without the default-as-index distortion; integer values | ported: `IniSection::read_pip` (`rules/ini_value.rs`); a negative integer keeps the current frame |
 | `0x4759D4` | `1005CD00` | WriteEdge with an out-of-range edge | n/a: INI writer |
-| `0x47F9A4` | `1005C6F0` | Walls drawn in their owner's colour | presentation |
+| `0x47F9A4` | `1005C6F0` (3.0), `1005D410` (3.0p1) | Draws wall remap pixels in the cell owner's colour. A cell without an owner follows the original player palette path | built in: overlay presentation |
 | `0x483BF1`, `0x565215` | `1006ADE0`, `1006AEC0` | A loaded save keeps its crates: CellClass::Load no longer clears a CRATE or WCRATE overlay (179, 242) and Map's no-init constructor no longer empties the crate slots (#895374, `Misc/Savegame.cpp`) | ported: `Simulation::restore_map_authority_after_user_load` skips `reset_crates_after_user_load` |
 | `0x48A4F9` | `1005D070` | A negative damage packet selects its explosion by magnitude | ported: `detonation_anim::select_with_context` |
 | `0x4B5EB0`, `0x4B5F9E`, `0x4B619F` | `1005C8B0`, `1005C890`, `1005C870` | Drop pod trailer smoke without a weapon, report divide by zero, no AtmosphereEntry anim when unset | superweapon: the DropPod locomotor (`0x004B5B70`, `0x004B6040`) has no port yet |

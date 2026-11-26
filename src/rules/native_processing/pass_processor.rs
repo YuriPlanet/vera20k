@@ -327,6 +327,7 @@ impl RulesPassProcessor {
             self.allocate_explicit_family(pass, "WeaponTypes", RulesTypeFamily::Weapon, 0x800);
             self.ares_global_controls.read_before_type_data(pass);
         }
+        self.ares_global_controls.read_chrono_infantry_crush(pass);
         // The same 1002AB60 reads the tiberium globals after CanMakeStuffUp;
         // its warhead and anim are Find-only reads against this pass's
         // registries so far.
@@ -374,35 +375,36 @@ impl RulesPassProcessor {
                 .building
                 .read_after_type_data(pass);
         }
-        if ares_way
-            && let Some(buildings) = pass.section("SpecialWeapons").and_then(|section| {
+        {
+            // A later layer can name either of these superweapon types.
+            // Retain their Find-only defaults in the original pass order.
+            let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
+            if let Some(buildings) = pass.section("SpecialWeapons").and_then(|section| {
                 self.resolve_existing_list_from(
                     section,
                     "HSBuilding",
                     RulesTypeFamily::Building,
                     2048,
                 )
-            })
-        {
-            self.ares_global_controls.hunter_seeker_buildings = buildings;
-        }
-        // 1002A800 then reads DropPodTrailer, DropPodTypes, DropPodMinimum
-        // and DropPodMaximum (both pointer reads Find, never allocate).
-        if ares_way {
-            let general = pass.section("General");
-            let trailer = general.and_then(|section| {
-                self.resolve_existing_type_from(
-                    section,
+            }) {
+                self.ares_global_controls.hunter_seeker_buildings = buildings;
+            }
+            if let Some(general) = pass.section("General") {
+                self.ares_global_controls
+                    .general
+                    .read_hunter_seeker_speeds(general);
+                // 1002A800 then reads DropPodTrailer, DropPodTypes, DropPodMinimum
+                // and DropPodMaximum (both pointer reads Find, never allocate).
+                let trailer = self.resolve_existing_type_from(
+                    general,
                     "DropPodTrailer",
                     RulesTypeFamily::Animation,
-                )
-            });
-            let types = general.and_then(|section| {
-                self.resolve_existing_techno_type_list_from(section, "DropPodTypes")
-            });
-            self.ares_global_controls
-                .drop_pod
-                .read_pass(general, trailer, types);
+                );
+                let types = self.resolve_existing_techno_type_list_from(general, "DropPodTypes");
+                self.ares_global_controls
+                    .drop_pod
+                    .read_pass(Some(general), trailer, types);
+            }
         }
         self.ares_global_controls
             .building
@@ -1055,7 +1057,8 @@ impl RulesPassProcessor {
         // Country bodies. It does not require [Sides] or a Side section.
         // Country-only prepasses do not enter this hook. The live loop sees
         // only Sides allocated now, not any allocated by later Country reads.
-        if crate::rules::ares_switch::ares_way() {
+        let ares_way = crate::rules::ares_switch::ares_way();
+        if ares_way {
             let side_types = SideRegisteredTypes::collect(&self.families);
             let side_count = self
                 .families
@@ -1081,6 +1084,37 @@ impl RulesPassProcessor {
                 );
                 self.family_mut(RulesTypeFamily::Side)[array_index].ares_side = Some(side);
             }
+        } else {
+            let _builtin = crate::rules::ares_switch::not_ares_reads();
+            for index in 0..self.family_len(RulesTypeFamily::Side) {
+                let member = &self.families[&RulesTypeFamily::Side][index];
+                let Some(section) = pass.section(&member.native_stored_id) else {
+                    continue;
+                };
+                if !section.keys().any(|key| {
+                    matches!(
+                        key,
+                        "HunterSeeker" | "ParaDrop.Aircraft" | "ParaDrop.Types" | "ParaDrop.Num"
+                    )
+                }) {
+                    continue;
+                }
+                let mut side = self.family_mut(RulesTypeFamily::Side)[index]
+                    .ares_side
+                    .take()
+                    .unwrap_or_default();
+                super::ares_house_state::read_side_hunter_seeker(
+                    &mut side.fields,
+                    section,
+                    |name| {
+                        self.find_existing(RulesTypeFamily::Vehicle, name)
+                            .map(|index| self.resolved_type_key(RulesTypeFamily::Vehicle, index))
+                    },
+                );
+                let side_types = SideRegisteredTypes::collect(&self.families);
+                super::ares_house_state::read_side_paradrop(&mut side.fields, section, &side_types);
+                self.family_mut(RulesTypeFamily::Side)[index].ares_side = Some(side);
+            }
         }
         // Installed BeforeTypeData679A15 reads ArmorTypes/defaults before
         // any ordinary ObjectType/Warhead body in this Process pass. Only
@@ -1090,7 +1124,8 @@ impl RulesPassProcessor {
         }
         // 1002AEF0 reads [MouseCursors] after ArmorTypes, before any Type
         // body of this pass names a cursor.
-        if crate::rules::ares_switch::ares_way() {
+        {
+            let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
             self.ares_mouse_cursors.read_pass(pass);
         }
         // Ares RulesClass_BeforeTypeData679A15 -> 1002AEF0. This is after
@@ -1157,7 +1192,7 @@ impl RulesPassProcessor {
         self.process_plain_family(RulesTypeFamily::Terrain, pass, fixed_art, fixed_sounds);
         self.process_plain_family(RulesTypeFamily::Smudge, pass, fixed_art, fixed_sounds);
         self.process_plain_family(RulesTypeFamily::Overlay, pass, fixed_art, fixed_sounds);
-        self.process_particle_family(pass, fixed_sounds);
+        self.process_particle_family(pass, fixed_art, fixed_sounds);
         self.process_particle_system_family(pass, fixed_sounds);
         self.process_voxel_anim_family(pass, fixed_art, fixed_sounds);
         // MissionControl adds no Type references.

@@ -34,6 +34,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, target: u64, source: u64, wh: &str
     // Call the production pre-damage receiver directly. Ordinary ReceiveDamage
     // itself decloaks victims, so a zero-damage Bullet alone could mask this bug.
     sim.apply_ares_attach_effect_detonation(
+        false,
         ProjectileCoord::new(p.x, p.y, p.z),
         Some(sim.entities().get(source).unwrap().owner()),
         rules.warhead(wh).unwrap(),

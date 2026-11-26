@@ -403,41 +403,91 @@ fn a_placed_trench_fills_the_gap_only_to_its_own_kind() {
 /// firestorm gives the cell back its ground class.
 #[test]
 fn a_powered_section_cell_takes_the_impassable_zone_class() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
     use crate::map::resolved_terrain::zone_class;
     let (mut sim, rules) = arena();
     let _west = sim
         .spawn_object("FSWALL", "Americans", 10, 10, 0, &rules)
         .unwrap();
-    let class = |sim: &Simulation, cell: (u16, u16)| {
-        let terrain = sim.resolved_terrain.as_ref().unwrap();
-        let cached = terrain.cell(cell.0, cell.1).unwrap().zone_type;
-        let retained = sim
-            .zone_grid
-            .as_ref()
-            .unwrap()
-            .base_movement_class_at(cell.0, cell.1)
-            .unwrap();
-        (cached, retained)
-    };
     assert_eq!(
-        class(&sim, (10, 10)),
+        zone_classes(&sim, (10, 10)),
         (zone_class::GROUND, zone_class::GROUND)
     );
 
     firestorm(&mut sim, &rules, "Americans", true);
     assert_eq!(
-        class(&sim, (10, 10)),
+        zone_classes(&sim, (10, 10)),
         (zone_class::IMPASSABLE, zone_class::IMPASSABLE)
     );
     assert_eq!(
-        class(&sim, (11, 10)),
+        zone_classes(&sim, (11, 10)),
         (zone_class::GROUND, zone_class::GROUND)
     );
 
     firestorm(&mut sim, &rules, "Americans", false);
     assert_eq!(
-        class(&sim, (10, 10)),
+        zone_classes(&sim, (10, 10)),
         (zone_class::GROUND, zone_class::GROUND)
     );
+}
+
+fn zone_classes(sim: &Simulation, (rx, ry): (u16, u16)) -> (u8, u8) {
+    (
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(rx, ry)
+            .unwrap()
+            .zone_type,
+        sim.zone_grid
+            .as_ref()
+            .unwrap()
+            .base_movement_class_at(rx, ry)
+            .unwrap(),
+    )
+}
+
+#[test]
+fn builtin_firestorm_reclassifies_a_section_on_placement_and_removal() {
+    use crate::map::resolved_terrain::zone_class::{GROUND, IMPASSABLE};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules) = arena();
+    let cell = (15, 15);
+    assert!(!rules.ares_form());
+    firestorm(&mut sim, &rules, "Americans", true);
+    let wall = sim
+        .spawn_object("FSWALL", "Americans", cell.0, cell.1, 0, &rules)
+        .unwrap();
+    assert_eq!(zone_classes(&sim, cell), (IMPASSABLE, IMPASSABLE));
+    sim.uninit_with_rules(wall, &rules);
+    assert!(sim.ares_firestorm.is_active(house(&sim, "Americans")));
+    assert_eq!(zone_classes(&sim, cell), (GROUND, GROUND));
+}
+
+#[test]
+fn builtin_firestorm_survives_overlay_recalc_and_map_area_change() {
+    use crate::map::resolved_terrain::zone_class::IMPASSABLE;
+    use crate::rules::overlay_types::OverlayTypeRegistry;
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules) = arena();
+    let cell = (15, 15);
+    sim.spawn_object("FSWALL", "Americans", cell.0, cell.1, 0, &rules)
+        .unwrap();
+    firestorm(&mut sim, &rules, "Americans", true);
+    let registry = OverlayTypeRegistry::from_ini(
+        &IniFile::from_str("[OverlayTypes]\n0=ROAD\n[ROAD]\nLand=Road\n[Road]\nWheel=100%\n"),
+        None,
+    );
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
+    overlays.place_overlay(cell.0, cell.1, 0, 0);
+    sim.overlay_grid = Some(overlays);
+    sim.advance_tick(&[], Some(&rules), None, Some(&registry), 16);
+    assert_eq!(zone_classes(&sim, cell), (IMPASSABLE, IMPASSABLE));
+    assert!(sim.change_visible_map_area(
+        [2, 2, 16, 12],
+        crate::sim::world::UninitContext::new(&rules)
+    ));
+    assert_eq!(zone_classes(&sim, cell), (IMPASSABLE, IMPASSABLE));
 }

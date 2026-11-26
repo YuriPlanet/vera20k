@@ -531,6 +531,8 @@ pub(super) fn techno_common_steps(
     sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
     if rules.ares() {
         sim.update_ares_operator_operability(id, rules, effects);
+    }
+    if rules.ares() || rules.builtin_generic_emp() {
         // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
         //the stock head. EMP expiry itself must not invent a future-power sweep.
         sim.update_ares_emp_operability(id, rules, effects);

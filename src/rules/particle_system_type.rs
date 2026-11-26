@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
-use crate::rules::particle_type::ParticleTypeId;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType, ParticleTypeId};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 /// VERA's bound on `ParticleCap=` (only its upper end: a negative cap keeps
@@ -154,6 +154,19 @@ pub struct ParticleSystemType {
 }
 
 impl ParticleSystemType {
+    /// The held particle's line-trail flag and behavior gates in Ares 3.0p1
+    /// ParticleSystemExt (0x10027395..0x10027413). For behavior below 2,
+    /// the DLL compares the system behavior to (particle_behavior == 0).
+    pub(crate) fn supports_ares_records(&self, particle: &ParticleType) -> bool {
+        use ParticleBehavesLike as P;
+        use ParticleSystemBehavesLike as S;
+        !particle.use_line_trail
+            && matches!(
+                (self.behaves_like, particle.behaves_like),
+                (S::Smoke, P::Smoke | P::Unknown) | (S::Spark, P::Spark) | (S::Railgun, P::Railgun)
+            )
+    }
+
     /// Parse a ParticleSystemType from an INI section.
     ///
     /// `holds_what` keeps the constructor's unbound value (-1, `0x006440B3`):

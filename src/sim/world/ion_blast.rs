@@ -135,9 +135,7 @@ impl Simulation {
     /// IonBlastClass_Update_Duration (hook 0x53CBF5, installed 100541B0)
     /// takes a mapped warhead's `Ripple.Radius + 1` when lower.
     fn ion_blast_lifetime(&self, blast: &IonBlast, rules: &RuleSet) -> i32 {
-        if rules.ares()
-            && let Some(ion) = self.ares_ion_cannon(blast, rules)
-        {
+        if let Some(ion) = self.ares_ion_cannon(blast, rules) {
             return ion.blast_lifetime();
         }
         LAST_FRAME
@@ -212,11 +210,7 @@ impl Simulation {
         let coord = blast.coord;
         let general = &rules.general;
         let ion_cannon_warhead = rules.bridge_warheads.ion_cannon_name.as_str();
-        let ares = if rules.ares() {
-            self.ares_ion_cannon(blast, rules)
-        } else {
-            None
-        };
+        let ares = self.ares_ion_cannon(blast, rules);
         let (blast_anim, beam_anim, warhead_name, damage, rock) = match ares {
             Some(ion) => (
                 ion.blast(&general.ion_blast_anim),

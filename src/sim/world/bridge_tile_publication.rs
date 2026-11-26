@@ -220,6 +220,7 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
             .as_ref()
             .and_then(|grid| grid.finalized_map_cell(coord.0, coord.1))
             .ok_or("missing live bridge overlay cell")?;
+        let building_impassable = sim.firestorm_zone_cell_impassable(coord, self.publication.rules);
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         let previous_level = terrain.cells()[index].level;
         let outcome = terrain.recalc_resident_bridge_cell(
@@ -237,6 +238,9 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
                 });
         }
         let outcome = outcome.map_err(|error| error.to_string())?;
+        if building_impassable {
+            terrain.recalc_zone_type_with_buildings_at(coord, true);
+        }
         // Original47D2B0 publishes Map+68 class/height and Map+70 height
         // before returning to the next ordered repair callback. Publication
         // must survive a later presentation failure and must not rebuild IDs.

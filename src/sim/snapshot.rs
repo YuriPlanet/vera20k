@@ -443,6 +443,10 @@ pub enum SnapshotRestoreError {
     InvalidSavedCellLand(String),
     #[error("invalid UnitDelivery snapshot state: {0}")]
     InvalidUnitDelivery(&'static str),
+    #[error(
+        "the saved superweapon attached to object {object_id} has no enabled matching definition"
+    )]
+    InvalidAttachedSuperWeapon { object_id: u64 },
     #[error("invalid paid two-stage selection: {0}")]
     InvalidPaidSuperWeaponSelection(&'static str),
     #[error("invalid superweapon launch history: {0}")]

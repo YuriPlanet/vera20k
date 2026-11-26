@@ -1776,13 +1776,18 @@ pub(crate) fn draw_pooled_cell_bodies<'a>(
     );
     for (start, count, draw) in cell_body_runs(draws) {
         let texture = match draw.atlas {
-            CellBodyAtlas::Overlay => overlay_atlas.map(|atlas| {
-                (
-                    &atlas.texture,
+            CellBodyAtlas::Overlay | CellBodyAtlas::Wall => overlay_atlas.and_then(|atlas| {
+                let texture = if draw.atlas == CellBodyAtlas::Wall {
+                    atlas.wall_texture()?
+                } else {
+                    &atlas.texture
+                };
+                Some((
+                    texture,
                     atlas
                         .zshape_bind_group()
                         .unwrap_or_else(|| batch.default_zshape_bind_group()),
-                )
+                ))
             }),
             CellBodyAtlas::Bridge => {
                 bridge_atlas.map(|atlas| (&atlas.texture, batch.default_zshape_bind_group()))
@@ -1855,7 +1860,7 @@ mod tests {
     fn cell_body_runs_keep_the_sweep_across_atlases_and_policies() {
         use RenderZPolicy::{None, ReadWrite};
         let draw = |atlas, render_z| CellBodyDraw { atlas, render_z };
-        let wall = draw(CellBodyAtlas::Overlay, ReadWrite);
+        let wall = draw(CellBodyAtlas::Wall, ReadWrite);
         let ore = draw(CellBodyAtlas::Overlay, None);
         let bridge = draw(CellBodyAtlas::Bridge, ReadWrite);
         assert_eq!(

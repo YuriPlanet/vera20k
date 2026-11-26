@@ -31,6 +31,10 @@ pub(crate) fn is_powered(
 pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components::DriveCoord> {
     use crate::sim::components::DriveCoord;
     let null = DriveCoord { x: 0, y: 0, z: 0 };
+    if let Some(pod) = entity.ares_drop_pod() {
+        // DropPod::Destination 0x004B5B40 copies the pod's own target.
+        return Some(pod.destination().unwrap_or(null));
+    }
     let loco = entity.locomotor.as_ref()?;
     Some(match loco.active_kind() {
         LocomotorKind::Drive => loco.track_destination(TrackFamily::Drive).unwrap_or(null),
@@ -65,6 +69,10 @@ pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components:
 /// ordinary move/stop controls (infantry_teleport_destination) establish the
 /// Cell setter/Stop boundaries; full Process/Chronosphere lifetime stays bounded.
 pub fn is_moving(entity: &GameEntity) -> Option<bool> {
+    if entity.ares_drop_pod().is_some() {
+        // ILocomotion+0x10, DropPod::Is_Moving 0x004B5B30.
+        return Some(true);
+    }
     let locomotor = entity.locomotor.as_ref()?;
     match locomotor.active_kind() {
         LocomotorKind::Drive => Some(super::track_head::motion_state(entity, TrackFamily::Drive).0),
@@ -95,6 +103,10 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
 /// Walk, Hover `0x00514C80`, Teleport and Jumpjet `0x0054D0D0`). No locomotor
 /// answers false. `rules` gives Drive and Ship the owner's speed getter.
 pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_frame: u32) -> bool {
+    if entity.ares_drop_pod().is_some() {
+        // 0x004B6610 delegates to the pod's Is_Moving.
+        return true;
+    }
     let Some(locomotor) = entity.locomotor.as_ref() else {
         return false;
     };
@@ -119,6 +131,10 @@ pub(crate) fn is_really_moving_now(
     rules: super::SpeedRules<'_>,
     binary_frame: u32,
 ) -> bool {
+    if entity.ares_drop_pod().is_some() {
+        // DropPod uses the base 0x004B4C50 delegation to Is_Moving_Now.
+        return true;
+    }
     match entity
         .locomotor
         .as_ref()

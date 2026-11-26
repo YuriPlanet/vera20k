@@ -712,12 +712,12 @@ pub(super) fn restore_object_references(
     }
 
     for (&system_id, system) in sim.substrate.particle_systems.iter() {
-        // A VoxelAnim owns its AttachedSystem (`0x007498A5`); Smoke follows
-        // it through `target_get_coords`, which resolves that store too.
-        if let Some(owner_id) = system
-            .owner_entity()
-            .filter(|&owner| !sim.substrate.voxel_anims.contains_key(owner))
-        {
+        // VoxelAnim 0x007498A5 and Ares 3.0p1 BulletExt 0x1001A196 both
+        // attach systems to moving objects. Smoke follows the retained
+        // owner through GetCoords, including after loading a snapshot.
+        if let Some(owner_id) = system.owner_entity().filter(|&owner| {
+            !sim.substrate.voxel_anims.contains_key(owner) && sim.projectiles.get(owner).is_none()
+        }) {
             require_object_reference(
                 &entity_ids,
                 sim.terrain_objects.objects(),

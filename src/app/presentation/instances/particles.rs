@@ -14,10 +14,9 @@ use crate::render::batch::SpriteInstance;
 use crate::render::draw_state::DrawState;
 use crate::render::native_z::ZGradient;
 use crate::render::palette_light::PaletteLight;
-use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteKey};
+use crate::render::sprite_atlas::ShpSpriteKey;
 use crate::render::surface_line::SurfaceDraw;
 use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncoding};
-use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::particle_type::ParticleBehavesLike;
 use crate::util::lepton::absolute_leptons_to_screen;
 
@@ -131,7 +130,7 @@ pub(super) fn build_particle_system_instance(
         system,
         kind,
         &mut input.detail.borrow_mut(),
-        input.rules.ares(),
+        input.rules.ares() || system.ares().is_some(),
     );
     if let Some(mut record) = record {
         record.coord = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
@@ -282,8 +281,9 @@ pub(super) fn build_particle_instance(
         return;
     };
     let flags = particle_draw_flags(detail_level, particle.translucency());
+    let key = ShpSpriteKey::particle(particle.type_id(), kind, frame);
     let Some((piece, page)) =
-        particle_shp_piece(atlas, image, frame, coord, point, flags, &mut parent, axis)
+        particle_shp_piece(atlas, &key, coord, point, flags, &mut parent, axis)
     else {
         return;
     };
@@ -316,28 +316,21 @@ pub(super) fn build_particle_instance(
 }
 
 /// Particle62CFF9's DrawSHP of one frame at `coord` (screen `point`): global
-/// ANIM87F6C0 at brightness 1000 (PUSH0x3E8), independently of cell lighting,
-/// depth `-15 - AdjustForZ` and the vertical Z gradient, with the `flags`
-/// translucency selector. Ares' ExtData::Draw (`10026430`) passes the same for
-/// its smoke records. Returns the piece and its atlas page.
+/// ANIM87F6C0 or the ParticleType's custom Convert (Ares 3.0p1 `0x1002A2A0`,
+/// hook `0x62D015`). Brightness is 1000 (PUSH0x3E8), depth is
+/// `-15 - AdjustForZ` with a vertical Z gradient, and `flags` select
+/// translucency. The extension smoke draw `0x1002721A..0x10027260` uses the
+/// same palette and draw inputs. Returns the piece and its atlas page.
 fn particle_shp_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
-    image: &str,
-    frame: u16,
+    key: &ShpSpriteKey,
     coord: glam::IVec3,
     point: (f32, f32),
     flags: u32,
     parent: &mut crate::render::tactical_draw_plan::ObjectDraw,
     axis: crate::render::batch::DepthAxis,
 ) -> Option<(ObjectPieceInstance, usize)> {
-    let key = ShpSpriteKey {
-        palette_context: ShpPaletteContext::Particle,
-        type_id: image.into(),
-        facing: 0,
-        frame,
-        house_color: HouseColorIndex(0),
-    };
-    let entry = atlas.get(&key)?;
+    let entry = atlas.get(key)?;
     if flags & 6 != 0 {
         parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
     }
@@ -376,19 +369,17 @@ fn particle_shp_piece(
 const ARES_DRAW_ID_BASE: u64 = 0xA4E5_0000_0000_0000;
 const ARES_DRAW_ORDER_BASE: u64 = 1 << 62;
 
-/// Ares 3.0 DrawParticleSystems (Ares.dll `10026760`), which the hook at
-/// `0x6D9427` (`10029100`) runs after the Air layer: every system's Ares
-/// records (`ExtData::Draw @ 10026430`), in ParticleSystemClass::Array order,
+/// Ares 3.0p1 DrawParticleSystems (`0x10027280`), which the hook at
+/// `0x6D9427` (`0x10029C10`) runs after the Air layer: every system's Ares
+/// records (`ExtData::Draw @ 0x10026F50`), in ParticleSystemClass::Array order,
 /// when the detail level is above 0 and `RulesExt::DetailsCurrentlyEnabled`
 /// holds (the frame rate reaches `60 / GameSpeed` or the minimum). Spark and
 /// railgun records are single points with the stock point's A and Z tests;
 /// those on shrouded cells are skipped under FogOfWar. Smoke records draw
 /// their type's frame `State`.
 ///
-/// RESIDUAL (presentation): the smoke draws through ANIM.PAL, not the
-/// particle type's Ares `Palette=` (`ParticleTypeExt`, not ported), and a
-/// point whose colour index has no next entry is skipped where Ares reads past
-/// the list.
+/// RESIDUAL (presentation): a point whose colour index has no next entry is
+/// skipped where Ares reads past the list.
 pub(super) fn build_ares_particle_draws(
     input: &DisplayEffectInputs<'_>,
     context: &ParticleDrawContext,
@@ -399,14 +390,18 @@ pub(super) fn build_ares_particle_draws(
     };
     use crate::render::tactical_draw_plan::{ObjectDraw, TacticalLayer};
 
-    // Without the game's Ares switch no system has records, and the hook's
-    // Detail query below must not touch the stock Detail latch.
-    if !input.rules.ares() {
-        return;
-    }
     let sim = input.sim;
     let systems = sim.particle_systems();
     if systems.is_empty() || input.detail_level == 0 {
+        return;
+    }
+    let mut extensions = systems
+        .iter()
+        .filter_map(|(_, system)| system.ares())
+        .peekable();
+    // Ares Off can still have records from a projectile's AttachedSystem.
+    // Keep the stock Detail latch untouched when there are no such systems.
+    if !input.rules.ares() && extensions.peek().is_none() {
         return;
     }
     let enabled = {
@@ -437,10 +432,7 @@ pub(super) fn build_ares_particle_draws(
         sequence += 1;
         parent
     };
-    for (_, system) in systems.iter() {
-        let Some(ext) = system.ares() else {
-            continue;
-        };
+    for ext in extensions {
         let held = input.rules.particle_type(ext.held_type());
         for record in ext.particles() {
             let coord = record.coords();
@@ -509,10 +501,10 @@ pub(super) fn build_ares_particle_draws(
                 _ => 0,
             };
             let mut parent = next_parent(BlitPolicy::z_read(SpriteEncoding::Plain));
+            let key = ShpSpriteKey::particle(smoke.type_id(), kind, frame);
             if let Some((piece, _)) = particle_shp_piece(
                 atlas,
-                kind.image.as_str(),
-                frame,
+                &key,
                 coord,
                 point,
                 0x2E00 | selector,

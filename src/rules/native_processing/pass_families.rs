@@ -344,6 +344,19 @@ impl RulesPassProcessor {
                 {
                     self.family_mut(RulesTypeFamily::Projectile)[index].shrapnel_weapon = weapon;
                 }
+                // Ares 3.0p1 0x10019BC6 -> 0x10019850: find an existing
+                // ParticleSystemType by name. None clears it, a miss retains.
+                let system = crate::rules::ares_switch::not_ares_read(|| {
+                    self.resolve_existing_type_from(
+                        raw,
+                        "AttachedSystem",
+                        RulesTypeFamily::ParticleSystem,
+                    )
+                });
+                if let Some(system) = system {
+                    self.family_mut(RulesTypeFamily::Projectile)[index]
+                        .projectile_attached_system = system;
+                }
             }
             index += 1;
         }
@@ -443,6 +456,18 @@ impl RulesPassProcessor {
                     );
                 }
             }
+            self.read_warhead_nuke_impact(pass, index, ares_way);
+            // Find-only references used by applyRipples in both the P1
+            // projectile and GenericWarhead detonation paths.
+            let [ion_blast, ion_beam, ion_warhead] = [
+                ("IonCannon.Blast", RulesTypeFamily::Animation),
+                ("IonCannon.Beam", RulesTypeFamily::Animation),
+                ("IonCannon.Warhead", RulesTypeFamily::Warhead),
+            ]
+            .map(|(key, family)| {
+                pass.section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| self.resolve_existing_type_from(raw, key, family))
+            });
             if ares_way {
                 let sparkle = pass
                     .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
@@ -490,53 +515,13 @@ impl RulesPassProcessor {
                     .and_then(|raw| {
                         self.resolve_existing_techno_type_list_from(raw, "DeathWeapon.Suppress")
                     });
-                // IonCannon.Blast/.Beam (Nullable<Anim> 1002B4D0) and
-                // IonCannon.Warhead (Nullable<Warhead> 10008D00): Find reads.
-                let [ion_blast, ion_beam, ion_warhead] = [
-                    ("IonCannon.Blast", RulesTypeFamily::Animation),
-                    ("IonCannon.Beam", RulesTypeFamily::Animation),
-                    ("IonCannon.Warhead", RulesTypeFamily::Warhead),
-                ]
-                .map(|(key, family)| {
-                    pass.section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
-                        .and_then(|raw| self.resolve_existing_type_from(raw, key, family))
-                });
-                // 10051D10's first call finds NUKEBALL for a NUKE warhead;
-                // PreImpactAnim is a ValueableIdx<Anim> FindIndex read.
-                let nuke_ball = self
-                    .find_existing(
-                        RulesTypeFamily::Animation,
-                        crate::rules::effect_asset_catalog::NUKE_BALL_ANIM,
-                    )
-                    .map(|index| self.resolved_type_key(RulesTypeFamily::Animation, index));
-                let pre_impact_anim = pass
-                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
-                    .and_then(|raw| {
-                        self.resolve_existing_type_from(
-                            raw,
-                            "PreImpactAnim",
-                            RulesTypeFamily::Animation,
-                        )
-                    });
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
                     .expect("Warhead family exists during its reader")[index];
-                if !member.ares_warhead_loaded {
-                    member.ares_warhead_loaded = true;
-                    if member.native_stored_id.eq_ignore_ascii_case("NUKE") {
-                        member
-                            .ares_warhead
-                            .as_mut()
-                            .expect("WH Ares extension")
-                            .combat_mut()
-                            .initialize_nuke(nuke_ball);
-                    }
-                }
                 let section = pass.section(&member.native_stored_id);
                 if let Some(section) = section {
                     let ares = member.ares_warhead.as_mut().expect("WH Ares extension");
-                    ares.combat_mut().read_nuke_pass(section, pre_impact_anim);
                     ares.read_pass(section, sparkle, animation);
                     ares.combat_mut().read_pass(
                         section,
@@ -580,11 +565,51 @@ impl RulesPassProcessor {
                 let extension = &mut self.family_mut(RulesTypeFamily::Warhead)[index].ares_warhead;
                 let settings = extension.get_or_insert_with(Default::default);
                 settings.read_builtin_pass(section, sparkle, animation);
+                let combat = settings.combat_mut();
+                combat.read_detonation_pass(section);
+                combat
+                    .ion_cannon_mut()
+                    .read_pass(section, ion_blast, ion_beam, ion_warhead);
                 if *settings == Default::default() {
                     *extension = None;
                 }
             }
             index += 1;
+        }
+    }
+
+    fn read_warhead_nuke_impact(&mut self, pass: &IniFile, index: usize, ares_way: bool) {
+        // The built-in Nuke can first appear in a later layer. Keep the live
+        // WarheadTypeExt nuclear fields from every pass without enabling Ares.
+        let _builtin = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
+        let member = &self.families[&RulesTypeFamily::Warhead][index];
+        let section = pass.section(&member.native_stored_id);
+        // Ares 3.0p1 0x75DEAF -> 0x10053B70 calls 0x100529C0. Its first
+        // visit initializes NUKE even without a section, using FindIndex.
+        let initialize =
+            !member.ares_warhead_loaded && member.native_stored_id.eq_ignore_ascii_case("NUKE");
+        let nuke_ball = if initialize {
+            self.find_existing(
+                RulesTypeFamily::Animation,
+                crate::rules::effect_asset_catalog::NUKE_BALL_ANIM,
+            )
+            .map(|index| self.resolved_type_key(RulesTypeFamily::Animation, index))
+        } else {
+            None
+        };
+        let pre_impact_anim = section.and_then(|section| {
+            self.resolve_existing_type_from(section, "PreImpactAnim", RulesTypeFamily::Animation)
+        });
+        let member = &mut self.family_mut(RulesTypeFamily::Warhead)[index];
+        member.ares_warhead_loaded = true;
+        if initialize || section.is_some() {
+            let combat = member.ares_warhead.get_or_insert_default().combat_mut();
+            if initialize {
+                combat.initialize_nuke(nuke_ball);
+            }
+            if let Some(section) = section {
+                combat.read_nuke_pass(section, pre_impact_anim);
+            }
         }
     }
 
@@ -697,13 +722,25 @@ impl RulesPassProcessor {
         }
     }
 
-    pub(super) fn process_particle_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
+    pub(super) fn process_particle_family(
+        &mut self,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
+    ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Particle) {
             if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
             {
-                self.family_mut(RulesTypeFamily::Particle)[index]
-                    .read_object_sound(&raw, fixed_sounds);
+                let theater = self.image_theater;
+                let member = &mut self.family_mut(RulesTypeFamily::Particle)[index];
+                let art = member.object_image.read_ini(
+                    raw,
+                    fixed_art,
+                    ObjectImageKind::Ordinary,
+                    theater,
+                );
+                member.read_object_sound(raw, fixed_sounds);
                 if let Some(warhead) =
                     self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80)
                 {
@@ -718,7 +755,7 @@ impl RulesPassProcessor {
                 }
                 self.family_mut(RulesTypeFamily::Particle)[index]
                     .particle_read
-                    .apply_pass(&raw);
+                    .apply_pass(raw, art);
             }
             index += 1;
         }

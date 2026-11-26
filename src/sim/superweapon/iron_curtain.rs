@@ -164,6 +164,7 @@ pub(crate) fn launch(
                     category,
                     Some(owner),
                     rules.general.iron_curtain_duration,
+                    InvulnKind::IronCurtain,
                     frame_effects,
                 );
                 curtained += 1;
@@ -251,6 +252,7 @@ pub(crate) fn at_waypoint(
                     category,
                     None,
                     rules.general.iron_curtain_duration,
+                    InvulnKind::IronCurtain,
                     frame_effects,
                 );
             }
@@ -260,9 +262,9 @@ pub(crate) fn at_waypoint(
     true
 }
 
-/// One dispatch of ObjectClass vt+154 with its duration argument, the Iron
-/// Curtain's (force byte 0). Super6CCFF8 and Action6E37C9 pass
-/// `IronCurtainDuration=`; Ares SW_Protect::Activate10074750 its own and
+/// One dispatch of ObjectClass vt+154 with its duration and force byte.
+/// Super6CCFF8 and Action6E37C9 pass `IronCurtainDuration=`;
+/// Ares 3.0p1 SW_Protect::Activate (0x10075800) passes its own and
 /// WarheadTypeExt::applyIronCurtain10052890 its capped one. All enter the
 /// same Infantry522600 / Foot4DEAE0 / Building457C90 overrides.
 pub(crate) fn curtain_object(
@@ -273,6 +275,7 @@ pub(crate) fn curtain_object(
     category: EntityCategory,
     house: Option<InternedId>,
     duration: i32,
+    kind: InvulnKind,
     frame_effects: &mut FrameEffects<'_>,
 ) {
     match category {
@@ -289,20 +292,13 @@ pub(crate) fn curtain_object(
                 else {
                     return;
                 };
-                match organic_curtain_outcome(rules, object, InvulnKind::IronCurtain) {
+                match organic_curtain_outcome(rules, object, kind) {
                     (crate::rules::invulnerability_rules::IronCurtainEffect::Ignore, _) => {}
                     (crate::rules::invulnerability_rules::IronCurtainEffect::Invulnerable, _) => {
                         let frame = sim.session.binary_frame();
                         if let Some(entity) = sim.substrate.entities.get_mut(id) {
                             let object = sim.interner.object_type(entity.type_ref(), rules);
-                            techno_iron_curtain(
-                                entity,
-                                object,
-                                frame,
-                                duration,
-                                InvulnKind::IronCurtain,
-                                rules.ares(),
-                            );
+                            techno_iron_curtain(entity, object, frame, duration, kind);
                         }
                     }
                     (crate::rules::invulnerability_rules::IronCurtainEffect::Kill, warhead) => {
@@ -331,21 +327,20 @@ pub(crate) fn curtain_object(
                 frame_effects,
             )
         }
-        EntityCategory::Unit | EntityCategory::Aircraft => {
-            foot_iron_curtain(sim, rules, overlay_registry, id, duration, frame_effects)
-        }
+        EntityCategory::Unit | EntityCategory::Aircraft => foot_iron_curtain(
+            sim,
+            rules,
+            overlay_registry,
+            id,
+            duration,
+            kind,
+            frame_effects,
+        ),
         _ => {
             let frame = sim.session.binary_frame();
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 let object = sim.interner.object_type(entity.type_ref(), rules);
-                techno_iron_curtain(
-                    entity,
-                    object,
-                    frame,
-                    duration,
-                    InvulnKind::IronCurtain,
-                    rules.ares(),
-                );
+                techno_iron_curtain(entity, object, frame, duration, kind);
             }
         }
     }
@@ -366,6 +361,7 @@ fn foot_iron_curtain(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     duration: i32,
+    kind: InvulnKind,
     frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(organic) = sim
@@ -388,7 +384,7 @@ fn foot_iron_curtain(
             else {
                 return;
             };
-            match organic_curtain_outcome(rules, object, InvulnKind::IronCurtain) {
+            match organic_curtain_outcome(rules, object, kind) {
                 (crate::rules::invulnerability_rules::IronCurtainEffect::Ignore, _) => return,
                 (crate::rules::invulnerability_rules::IronCurtainEffect::Kill, warhead) => {
                     receive_strength_as_c4(
@@ -442,14 +438,7 @@ fn foot_iron_curtain(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.parasite.end_paralysis(frame);
         let object = sim.interner.object_type(entity.type_ref(), rules);
-        techno_iron_curtain(
-            entity,
-            object,
-            frame,
-            duration,
-            InvulnKind::IronCurtain,
-            rules.ares(),
-        );
+        techno_iron_curtain(entity, object, frame, duration, kind);
     }
 }
 

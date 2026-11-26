@@ -49,6 +49,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, target: u64, source: u64, wh: &str
     );
     let house = sim.entities().get(source).unwrap().owner();
     sim.apply_ares_attach_effect_detonation(
+        false,
         ProjectileCoord::new(coord.x, coord.y, coord.z),
         Some(house),
         rules.warhead(wh).unwrap(),

@@ -28,6 +28,8 @@ mod tests;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct PendingDelivery {
     sw_type: InternedId,
+    /// The activating Super's House. Deliver.Owner selects the cargo Owner.
+    firer: InternedId,
     owner: InternedId,
     cell: (u16, u16),
     issued_frame: u32,
@@ -45,7 +47,7 @@ pub(crate) struct UnitDeliveryState {
 impl UnitDeliveryState {
     pub(crate) fn hash_state(&self, hasher: &mut impl Hasher) {
         if !self.pending.is_empty() {
-            b"unit-delivery-v1".hash(hasher);
+            b"unit-delivery-v2".hash(hasher);
             self.hash(hasher);
         }
     }
@@ -71,6 +73,7 @@ impl UnitDeliveryState {
     pub(crate) fn validate(&self, sim: &Simulation) -> Result<(), &'static str> {
         if self.pending.iter().any(|delivery| {
             !sim.houses.contains_key(&delivery.owner)
+                || !sim.houses.contains_key(&delivery.firer)
                 || delivery.types.is_empty()
                 || sim.interner.try_resolve(delivery.sw_type).is_none()
                 || delivery.due_frame.wrapping_sub(delivery.issued_frame) > i32::MAX as u32
@@ -97,6 +100,7 @@ fn a_game_without_ares_rejects_pending_unit_delivery_state() {
     assert!(state.validate_ares_compatibility(false, |_| false).is_ok());
     state.pending.push(PendingDelivery {
         sw_type,
+        firer: owner,
         owner,
         cell: (20, 20),
         issued_frame: 0,
@@ -156,7 +160,6 @@ pub(crate) fn admits(
 }
 
 /// Target-independent preflight is also shared with the AI before search/RNG.
-/// Only a game Ares plays in ([`RuleSet::ares`]) delivers.
 pub(crate) fn configured(
     sim: &Simulation,
     rules: &RuleSet,
@@ -184,8 +187,6 @@ pub(crate) fn launch(
     sw_type: InternedId,
     sw: &SuperWeaponType,
     cell: (u16, u16),
-    registry: Option<&OverlayTypeRegistry>,
-    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(config) = sw.unit_delivery.as_ref() else {
         return false;
@@ -193,18 +194,18 @@ pub(crate) fn launch(
     let Some(delivery_owner) = delivery_owner(sim, rules, owner, config.owner) else {
         return false;
     };
-    // SW_UnitDelivery::Activate (Ares 3.0 10075920; Ares source
-    // Misc/SWTypes/UnitDelivery.cpp, `SW_Deferment.Get(-1)`): the common
-    // SW.Deferment Nullable (SWTypeExt +0x254), 20 frames when it is unset
-    // or negative.
+    // Ares 3.0p1 SW_UnitDelivery::Activate (0x100769D0): a nullable
+    // SW.Deferment (SWTypeExt +0x254), or 20 frames when unset or negative.
+    // 0x100769FE..0x10076A4D registers a machine even for zero deferment.
     let deferment = rules
         .super_weapon_metadata(&sw.id)
         .and_then(|metadata| metadata.launch().deferment())
         .filter(|frames| *frames >= 0)
         .unwrap_or(20);
     let frame = sim.session.binary_frame();
-    let request = PendingDelivery {
+    sim.unit_deliveries.pending.push(PendingDelivery {
         sw_type,
+        firer: owner,
         owner: delivery_owner,
         cell,
         issued_frame: frame,
@@ -212,12 +213,7 @@ pub(crate) fn launch(
         types: config.types.clone(),
         base_normal: config.base_normal,
         activation_sound: config.activation_sound.clone(),
-    };
-    if deferment == 0 {
-        apply(sim, rules, request, registry, effects);
-    } else {
-        sim.unit_deliveries.pending.push(request);
-    }
+    });
     true
 }
 
@@ -229,15 +225,15 @@ pub(crate) fn tick(
 ) {
     let pending = std::mem::take(&mut sim.unit_deliveries.pending);
     let mut retained = Vec::new();
-    // ra2-mono's support scheduler visits pending entries last-to-first.
-    for request in pending.into_iter().rev() {
+    // Ares 3.0p1 LogicClass_Update (0x0055AFB3 -> 0x1006F150) visits
+    // machines in registration order. 0x1006E0A0 expires the frame timer.
+    for request in pending {
         if sim.session.binary_frame().wrapping_sub(request.due_frame) as i32 >= 0 {
             apply(sim, rules, request, registry, effects);
         } else {
             retained.push(request);
         }
     }
-    retained.reverse();
     retained.append(&mut sim.unit_deliveries.pending);
     sim.unit_deliveries.pending = retained;
 }
@@ -249,34 +245,29 @@ fn apply(
     registry: Option<&OverlayTypeRegistry>,
     effects: &mut FrameEffects<'_>,
 ) {
-    // Update10075DE0 prints Message.Activate first. Its firer is the
-    // Super's owner; the request retains the resolved payload owner, which
-    // differs only for a non-invoker Deliver.Owner (colour with FirerColor).
+    // 3.0p1 UnitDeliveryStateMachine::Update at 0x10076EB2..0x10076EC3
+    // passes Super+0x2C to PrintMessage, which uses its colour when
+    // Message.FirerColor is set (0x10034603..0x1003461B).
     sim.sound_events
         .emit(SimSoundEvent::AresSuperWeaponActivated {
-            owner: request.owner,
+            owner: request.firer,
             sw_type: request.sw_type,
         });
-    if !sim.houses.contains_key(&request.owner) {
-        return;
-    }
-    // Ares UnitDeliveryStateMachine::Update plays this before PlaceUnits,
-    // so discovery/creation events from the payload follow the activation.
-    // Source: Ares 4f1d9299, src/Misc/SWTypes/UnitDelivery.cpp.
+    // 0x10076EDB..0x10076F09 plays the cue at the cell centre with Z=0,
+    // before entering PlaceUnits (0x10076B10).
     if let Some(sound) = request.activation_sound.as_ref() {
-        let ground = crate::sim::projectile::cell_ground_coord(
-            sim.resolved_terrain.as_ref(),
-            request.cell.0,
-            request.cell.1,
-        );
+        let (x, y) = request.cell;
         sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
             rules.sound_name(sound),
             crate::sim::anim_class::AnimWorldCoord {
-                x: ground.x,
-                y: ground.y,
-                z: ground.z,
+                x: i32::from(x as i16) * 256 + 128,
+                y: i32::from(y as i16) * 256 + 128,
+                z: 0,
             },
         ));
+    }
+    if !sim.houses.contains_key(&request.owner) {
+        return;
     }
     for payload in &request.types {
         place(sim, rules, &request, payload, registry, effects);
@@ -417,19 +408,26 @@ fn place(
         return;
     }
     if !building {
-        let mission =
-            if sim.houses[&request.owner].is_controlled_by_human(sim.session.rule_policy()) {
-                MissionType::AreaGuard
-            } else {
-                MissionType::Hunt
-            };
-        let _ = sim.mission_queue_exact(
-            id,
-            MissionId::from_known(mission),
-            1,
-            sim.session.binary_frame(),
-            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
-        );
+        // Ares 3.0p1 SW_UnitDelivery::PlaceUnits (0x10076E01..0x10076E19)
+        // queues Hunt only for an AI recipient with a current AreaGuard mission.
+        if sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.mission.current().known() == Some(MissionType::AreaGuard))
+            && sim
+                .houses
+                .get(&request.owner)
+                .is_some_and(|house| !house.is_controlled_by_human(sim.session.rule_policy()))
+        {
+            let _ = sim.mission_queue_exact(
+                id,
+                MissionId::from_known(MissionType::Hunt),
+                1,
+                sim.session.binary_frame(),
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+            );
+        }
         // Ares PlaceUnits explicitly scatters flying Foot types after Put. Their
         // ground-idle locomotor does not start moving merely from AreaGuard/Hunt.
         // Reuse the class Scatter owner, including its existing Scenario draws

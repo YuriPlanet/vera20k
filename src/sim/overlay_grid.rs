@@ -999,8 +999,18 @@ impl OverlayGrid {
         registry: &OverlayTypeRegistry,
         cell: (u16, u16),
     ) -> OverlayRecalcOutcome {
+        self.recalculate_runtime_cell_with_building(terrain, registry, cell, false)
+    }
+
+    pub(crate) fn recalculate_runtime_cell_with_building(
+        &mut self,
+        terrain: &mut ResolvedTerrainGrid,
+        registry: &OverlayTypeRegistry,
+        cell: (u16, u16),
+        building_impassable: bool,
+    ) -> OverlayRecalcOutcome {
         terrain.read_cliff_back_neighbours(cell, registry.cliff_back_impassability());
-        self.recalculate_deferred_cell(terrain, registry, cell)
+        self.recalculate_deferred_cell_with_building(terrain, registry, cell, building_impassable)
     }
 
     /// [`Self::recalculate_runtime_cell`] for a Recalc whose neighbour reads
@@ -1013,15 +1023,30 @@ impl OverlayGrid {
         registry: &OverlayTypeRegistry,
         cell: (u16, u16),
     ) -> OverlayRecalcOutcome {
+        self.recalculate_deferred_cell_with_building(terrain, registry, cell, false)
+    }
+
+    fn recalculate_deferred_cell_with_building(
+        &mut self,
+        terrain: &mut ResolvedTerrainGrid,
+        registry: &OverlayTypeRegistry,
+        (rx, ry): (u16, u16),
+        building_impassable: bool,
+    ) -> OverlayRecalcOutcome {
         self.bump_mutation_epoch();
-        let old_zone = terrain.cell(cell.0, cell.1).map(|cell| cell.zone_type);
-        let navigation_changed =
-            recalc_overlay_passability(self, terrain, registry, cell.0, cell.1);
+        let old_zone = terrain.cell(rx, ry).map(|cell| cell.zone_type);
+        let navigation_changed = recalc_overlay_passability_with_building(
+            self,
+            terrain,
+            registry,
+            (rx, ry),
+            building_impassable,
+        );
         let zone_changed = old_zone
-            .zip(terrain.cell(cell.0, cell.1).map(|cell| cell.zone_type))
+            .zip(terrain.cell(rx, ry).map(|cell| cell.zone_type))
             .is_some_and(|(old, new)| old != new);
-        if navigation_changed && !self.synchronous_navigation_cells.contains(&cell) {
-            self.synchronous_navigation_cells.push(cell);
+        if navigation_changed && !self.synchronous_navigation_cells.contains(&(rx, ry)) {
+            self.synchronous_navigation_cells.push((rx, ry));
         }
         OverlayRecalcOutcome {
             navigation_changed,
@@ -1080,6 +1105,22 @@ pub fn recalc_overlay_passability(
     rx: u16,
     ry: u16,
 ) -> bool {
+    recalc_overlay_passability_with_building(
+        overlay_grid,
+        resolved_terrain,
+        registry,
+        (rx, ry),
+        false,
+    )
+}
+
+pub(crate) fn recalc_overlay_passability_with_building(
+    overlay_grid: &mut OverlayGrid,
+    resolved_terrain: &mut ResolvedTerrainGrid,
+    registry: &OverlayTypeRegistry,
+    (rx, ry): (u16, u16),
+    building_impassable: bool,
+) -> bool {
     let Some(slope_type) = resolved_terrain.cell(rx, ry).map(|cell| cell.slope_type) else {
         return false;
     };
@@ -1104,6 +1145,7 @@ pub fn recalc_overlay_passability(
         flags,
         land_flags,
         registry.cliff_back_rock(),
+        building_impassable,
     );
     cleared_resource_for_slope || projection_changed
 }
@@ -1146,6 +1188,10 @@ pub(crate) enum WallPointerTarget {
 /// recursive and cleanup-visit order.
 pub(crate) trait WallDamageTransactionHost {
     fn wall_connects_to_gate(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool;
+
+    fn building_blocks_zone_cell(&self, _cell: (u16, u16)) -> bool {
+        false
+    }
 
     fn dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16));
 
@@ -1539,7 +1585,15 @@ fn damage_wall_recursive(
     if let NativeRuntimeOverlayCell::Real(rx, ry) = target
         && let Some(terrain) = resolved_terrain.as_deref_mut()
     {
-        let recalc = grid.recalculate_runtime_cell(terrain, registry, (rx, ry));
+        let building_impassable = host
+            .as_deref()
+            .is_some_and(|host| host.building_blocks_zone_cell((rx, ry)));
+        let recalc = grid.recalculate_runtime_cell_with_building(
+            terrain,
+            registry,
+            (rx, ry),
+            building_impassable,
+        );
         if let Some(host) = host.as_deref_mut() {
             host.navigation_step(
                 terrain,
@@ -1924,7 +1978,15 @@ pub(crate) fn refresh_wall_neighborhood_with_host(
             continue;
         };
         if was_wall && let Some(terrain) = resolved_terrain.as_deref_mut() {
-            let recalc = grid.recalculate_runtime_cell(terrain, registry, (nx, ny));
+            let building_impassable = host
+                .as_deref()
+                .is_some_and(|host| host.building_blocks_zone_cell((nx, ny)));
+            let recalc = grid.recalculate_runtime_cell_with_building(
+                terrain,
+                registry,
+                (nx, ny),
+                building_impassable,
+            );
             if recalc.zone_changed
                 && let Some(host) = host.as_deref_mut()
             {
@@ -2078,7 +2140,15 @@ fn cleanup_wall_neighbors_into(
             // removal's retained-count reversal is completed here only after
             // that Recalc proves the reduced zone changed.
             if let Some(terrain) = resolved_terrain.as_deref_mut() {
-                let recalc = grid.recalculate_runtime_cell(terrain, registry, (nx, ny));
+                let building_impassable = host
+                    .as_deref()
+                    .is_some_and(|host| host.building_blocks_zone_cell((nx, ny)));
+                let recalc = grid.recalculate_runtime_cell_with_building(
+                    terrain,
+                    registry,
+                    (nx, ny),
+                    building_impassable,
+                );
                 if recalc.zone_changed
                     && let Some(host) = host.as_deref_mut()
                 {
