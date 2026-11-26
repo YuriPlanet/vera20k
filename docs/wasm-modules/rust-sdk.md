@@ -1,16 +1,16 @@
 # Rust SDK reference
 
-[English](wasm-modules-sdk.md) | [简体中文](wasm-modules-sdk.zh-CN.md)
+[English](rust-sdk.md) | [简体中文](rust-sdk.zh-CN.md)
 
 Every type, function and macro of the Rust SDK for Wasm modules, `vera20k-sdk`
 (`sdk/rust/vera20k-sdk` in the VERA20K source). The first part covers simulation
 modules (`rules.wasm`), the second client modules (`ui.wasm`). The
-[guide](wasm-modules.md) says where modules go and what the limits are; the tutorials
-walk through a [simulation module](wasm-modules-tutorial.md) and a
-[client module](wasm-modules-ui-tutorial.md).
+[guide](guide.md) says where modules go and what the limits are; the tutorials
+walk through a [simulation module](rust-tutorial.md) and a
+[client module](rust-ui-tutorial.md).
 
 This reference follows the SDK source. Numbers (property, event and action IDs) are the
-ones the SDK and this engine use; the [RFC appendix](rfcs/0001-wasm-extension-modules-api.md)
+ones the SDK and this engine use; the [RFC appendix](../rfcs/0001-wasm-extension-modules-api.md)
 lists the same entries with their full semantics.
 
 **Tiers.** The API is a preview (crate version 0.1.0). The RFC sorts every entry into a
@@ -180,7 +180,7 @@ index (RFC open question 5).
 Every property is a constant: `Prop::Health`, `Prop::Money`, `Prop::FirepowerMultiplier`, ...
 A `.` in a name is written `_` (`Prop::Passable_Foot` is `Passable.Foot`,
 `Prop::Factory_Vehicle_Ready` is `Factory.Vehicle.Ready`). The full list with value
-types, writability and tiers is [appendix section 7](rfcs/0001-wasm-extension-modules-api.md#7-properties);
+types, writability and tiers is [appendix section 7](../rfcs/0001-wasm-extension-modules-api.md#7-properties);
 `sdk/rust/vera20k-sdk/src/props.rs` has the numbers.
 
 Writable with `set`: `Health` (no kill credit; 0 or less is `Refused`), `Owner`, `Rank`,
@@ -601,7 +601,7 @@ Register in `init!` only; anywhere else stops the module.
 - A module action's record carries its target and text: `record.target()`,
   `record.args_text(buf)` (INI `Wasm:name(target,text)`, or `ActionDef::module_with`).
 
-See the [guide](wasm-modules.md#ini-names-a-module-registers) for the INI side and
+See the [guide](guide.md#ini-names-a-module-registers) for the INI side and
 `sdk/examples/ini-shield`, `ini-aura`, `ini-counter` and `ini-academy` for complete mods.
 
 ## Notifications and messages
@@ -759,7 +759,7 @@ through `set`/`client::set_bytes`: `Hold` (0 `TopLeft`, 1 `Top`, 2 `TopRight`,
   others; a create past it is `Refused`.
 - A node created later is drawn over one created before.
 
-The [interface layout](interface-layout.md#parts-for-interface-modules) guide shows the
+The [interface layout](../interface-layout.md#parts-for-interface-modules) guide shows the
 layout parts made for modules (a button without `Command`, `Image`, `Bar`, `List`).
 
 ## The player, camera and cursor

@@ -1,15 +1,15 @@
 # 教程：客户端模块（`ui.wasm`）
 
-[English](wasm-modules-ui-tutorial.md) | [简体中文](wasm-modules-ui-tutorial.zh-CN.md)
+[English](rust-ui-tutorial.md) | [简体中文](rust-ui-tutorial.zh-CN.md)
 
 这份教程在对局画面上做一个按钮：“Reinforcements: Rhino tank, $2000”（增援：犀牛坦克，2000 块）。
 点一下就买一辆犀牛坦克，每个玩家只能买一次；买完按钮消失，EVA 播报增援已到达。它要两个模块配合完成：
 客户端模块（`ui.wasm`）负责按钮，模拟模块（`rules.wasm`）负责坦克。
 完整代码在 VERA20K 源码的 `sdk/examples/ui-reinforcements` 里。
 
-- 写给谁：做过[模拟模块教程](wasm-modules-tutorial.zh-CN.md)，或者 Rust 熟到能看懂它。
-- 参考资料：[Rust SDK 参考](wasm-modules-sdk.zh-CN.md)、[模块指南](wasm-modules.zh-CN.md)；
-  用界面布局摆放按钮见[界面布局](interface-layout.md)。
+- 写给谁：做过[模拟模块教程](rust-tutorial.zh-CN.md)，或者 Rust 熟到能看懂它。
+- 参考资料：[Rust SDK 参考](rust-sdk.zh-CN.md)、[模块指南](guide.zh-CN.md)；
+  用界面布局摆放按钮见[界面布局](../interface-layout.md)。
 - 预览版提醒：名字和数值在第 1 版之前可能还会变。
 
 ## 1. 为什么要两个模块
@@ -38,7 +38,7 @@ ui.wasm（你的机器）               rules.wasm（每台机器）
 ## 2. 建项目
 
 你需要装好带 `wasm32-unknown-unknown` 目标的 Rust，并拿到 VERA20K 源码，做法和
-[模拟模块教程](wasm-modules-tutorial.zh-CN.md#2-准备环境)的 2.1 节、2.2 节一样。复制示例：
+[模拟模块教程](rust-tutorial.zh-CN.md#2-准备环境)的 2.1 节、2.2 节一样。复制示例：
 
 ```sh
 cp -R sdk/examples/ui-reinforcements sdk/examples/my-reinforcements
@@ -235,7 +235,7 @@ asset wasm-check rules.wasm
 `asset wasm-check` 只检查模拟模块。`ui.wasm` 由游戏在对局加载它时检查，拒绝时会在聊天栏告诉你；
 对局随后会在没有它的情况下继续进行。
 
-建一个包含两个模块的 mod 文件夹（`Mods` 文件夹在 VERA20K 文件夹里，见[模块指南](wasm-modules.zh-CN.md)）：
+建一个包含两个模块的 mod 文件夹（`Mods` 文件夹在 VERA20K 文件夹里，见[模块指南](guide.zh-CN.md)）：
 
 ```text
 Mods/MyReinforcements/
@@ -264,7 +264,7 @@ About=A button that buys a Rhino tank.
 
 ## 6. 用界面布局摆放按钮
 
-mod 可以用自己的界面布局来摆放按钮，而不是让模块去创建。在 mod 的 `veraui.ini`（见[界面布局](interface-layout.md)）里，
+mod 可以用自己的界面布局来摆放按钮，而不是让模块去创建。在 mod 的 `veraui.ini`（见[界面布局](../interface-layout.md)）里，
 给战场的部件加一个不带 `Command` 的按钮：
 
 ```ini
@@ -281,7 +281,7 @@ Y=60
 
 这样 `Ui::find("BuyReinforcements")` 就能找到这个部件（名字是去掉界面布局前缀后的部分），
 模块只需要改它的文字和可见性。不带 `Command` 的按钮本身什么都不做：点击只会通知模块。
-地图也可以用同样的方法，在 `[VeraUI]` 里给自己的客户端模块加部件（见[地图自己的部件](interface-layout.md#a-maps-own-parts)）。
+地图也可以用同样的方法，在 `[VeraUI]` 里给自己的客户端模块加部件（见[地图自己的部件](../interface-layout.md#a-maps-own-parts)）。
 
 ## 7. 客户端模块还能做什么
 
@@ -353,5 +353,5 @@ if !hint_seen {
 - 地图的客户端模块在 mod 默认的 `[VeraWasm] MapUI=overlay` 下，只能改它自己的节点；`MapUI=no` 则不加载它。
 - 目前请把客户端模块放在 mod 里发布：`asset wasm-embed` 还不能写入地图的 `ui.wasm`。
 
-限制、调试和其他事件见[模块指南](wasm-modules.zh-CN.md)和 [SDK 参考](wasm-modules-sdk.zh-CN.md)。
+限制、调试和其他事件见[模块指南](guide.zh-CN.md)和 [SDK 参考](rust-sdk.zh-CN.md)。
 `sdk/examples/ui-ping` 是最小的一对模块；`sdk/examples/muster-field/ui` 是一个完整界面，带面板、卡片和图片。

@@ -1,6 +1,6 @@
 # Tutorial: a client module in TypeScript (`ui.wasm`)
 
-[English](wasm-modules-ui-tutorial-ts.md) | [简体中文](wasm-modules-ui-tutorial-ts.zh-CN.md)
+[English](ts-ui-tutorial.md) | [简体中文](ts-ui-tutorial.zh-CN.md)
 
 This tutorial builds a button on the match screen: "Reinforcements: Rhino tank, $2000".
 A click buys one Rhino tank, once per player; the button then disappears and EVA says
@@ -8,12 +8,12 @@ the reinforcements have arrived. It takes two modules that work together, a clie
 module (`ui.wasm`) for the button and a simulation module (`rules.wasm`) for the tank.
 The complete code is `sdk/typescript/examples/ui-reinforcements` in the VERA20K source.
 
-- Who it is for: you have done the [simulation module tutorial](wasm-modules-tutorial-ts.md)
+- Who it is for: you have done the [simulation module tutorial](ts-tutorial.md)
   and have Node.js and the SDK set up as in its section 2.
-- Reference: [TypeScript SDK reference](wasm-modules-sdk-ts.md#client-modules),
-  [guide](wasm-modules.md), [interface layout](interface-layout.md) for buttons placed
+- Reference: [TypeScript SDK reference](ts-sdk.md#client-modules),
+  [guide](guide.md), [interface layout](../interface-layout.md) for buttons placed
   by a layout.
-- Prefer Rust? The [Rust client tutorial](wasm-modules-ui-tutorial.md) builds the same
+- Prefer Rust? The [Rust client tutorial](rust-ui-tutorial.md) builds the same
   button.
 - Preview: names and numbers may still change before version 1.
 
@@ -297,7 +297,7 @@ match loads it and tells you in the chat list if it refuses it; the match then p
 without it.
 
 Make a mod folder with both modules (the `Mods` folder is in the VERA20K folder, see
-[section 4 of the simulation tutorial](wasm-modules-tutorial-ts.md#4-try-it-in-the-game)):
+[section 4 of the simulation tutorial](ts-tutorial.md#4-try-it-in-the-game)):
 
 ```text
 Mods/MyReinforcements/
@@ -333,7 +333,7 @@ If nothing happens:
 ## 6. Place the button with a layout
 
 A mod can place the button with its interface layout instead of letting the module create
-it. In the mod's `veraui.ini` ([interface layout](interface-layout.md)), add a button
+it. In the mod's `veraui.ini` ([interface layout](../interface-layout.md)), add a button
 without `Command` to the battlefield's parts:
 
 ```ini
@@ -351,7 +351,7 @@ Y=60
 `Ui.find("BuyReinforcements")` now finds this part (its name after the layout's prefix),
 and the module only changes its label and visibility. A button without `Command` does
 nothing by itself: a click only tells the modules. A map can add parts for its own client
-module the same way, in `[VeraUI]` ([a map's own parts](interface-layout.md#a-maps-own-parts)).
+module the same way, in `[VeraUI]` ([a map's own parts](../interface-layout.md#a-maps-own-parts)).
 
 ## 7. More things a client module can do
 
@@ -478,7 +478,7 @@ simulation does.
 - The client module may use floats, `Client.random` and anything else the compiler
   allows: it changes the game only through messages, which the simulation module checks.
   The TypeScript rules of the
-  [simulation tutorial](wasm-modules-tutorial-ts.md#6-how-this-typescript-differs) apply
+  [simulation tutorial](ts-tutorial.md#6-how-this-typescript-differs) apply
   here too.
 - The simulation module must treat every message as untrusted: check the length, every
   value, and whether the sender may do it now.
@@ -490,8 +490,8 @@ simulation does.
 - For now ship a client module in a mod: `asset wasm-embed` does not yet write a map's
   `ui.wasm`.
 
-Limits, debugging and the other events are in the [guide](wasm-modules.md#limits) and
-the [SDK reference](wasm-modules-sdk-ts.md#client-modules).
+Limits, debugging and the other events are in the [guide](guide.md#limits) and
+the [SDK reference](ts-sdk.md#client-modules).
 `sdk/typescript/examples/ui-ping` is the smallest pair of modules;
 `sdk/typescript/examples/muster-field/ui` a full interface with panels, cards and
 pictures.

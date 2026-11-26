@@ -1,6 +1,6 @@
 # Tutorial: a simulation module in TypeScript (`rules.wasm`)
 
-[English](wasm-modules-tutorial-ts.md) | [简体中文](wasm-modules-tutorial-ts.zh-CN.md)
+[English](ts-tutorial.md) | [简体中文](ts-tutorial.zh-CN.md)
 
 This tutorial takes you from nothing to a Wasm module for VERA20K written in TypeScript,
 tried in a game. At the end you have a "bounty" mod: whoever kills a GI or a conscript
@@ -8,13 +8,13 @@ gets 200 credits.
 
 - Who it is for: modders who edit `rulesmd.ini` and want gameplay INI cannot express. A
   little JavaScript or TypeScript is enough.
-- Reference: where modules go and the limits are in the [guide](wasm-modules.md); every
-  SDK function is in the [TypeScript SDK reference](wasm-modules-sdk-ts.md); the design
-  is [RFC 0001](rfcs/0001-wasm-extension-modules.md) and every number is in its
-  [appendix](rfcs/0001-wasm-extension-modules-api.md).
+- Reference: where modules go and the limits are in the [guide](guide.md); every
+  SDK function is in the [TypeScript SDK reference](ts-sdk.md); the design
+  is [RFC 0001](../rfcs/0001-wasm-extension-modules.md) and every number is in its
+  [appendix](../rfcs/0001-wasm-extension-modules-api.md).
 - Want an interface (buttons, panels)? Read this first, then the
-  [client module tutorial](wasm-modules-ui-tutorial-ts.md).
-- Prefer Rust? The [Rust tutorial](wasm-modules-tutorial.md) makes the same mod.
+  [client module tutorial](ts-ui-tutorial.md).
+- Prefer Rust? The [Rust tutorial](rust-tutorial.md) makes the same mod.
 - Preview: the API is still a `0.x` preview; names and numbers may change before
   version 1. The game tells you when a module needs a newer API.
 
@@ -37,7 +37,7 @@ A module is a compiled WebAssembly file. This tutorial makes a **simulation modu
 called `rules.wasm` in the game: it runs with the match, and every player's machine runs
 the same copy, so online games stay in step. (The other kind is the **client module**
 `ui.wasm`, which runs only on your machine and does the interface; see the
-[client module tutorial](wasm-modules-ui-tutorial-ts.md).)
+[client module tutorial](ts-ui-tutorial.md).)
 
 Your TypeScript never reaches the game. The SDK compiles it to WebAssembly ahead of time
 with [AssemblyScript](https://www.assemblyscript.org), and the game loads the result like
@@ -395,7 +395,7 @@ A few ideas to keep in mind:
 ## 7. Quick reference
 
 Each block below is a complete file that compiles; take the lines you need. The
-[SDK reference](wasm-modules-sdk-ts.md) has every function.
+[SDK reference](ts-sdk.md) has every function.
 
 ### Lifecycle
 
@@ -474,7 +474,7 @@ function readAll(units: StaticArray<Techno>): void {
 }
 ```
 
-Every property is in [appendix section 7](rfcs/0001-wasm-extension-modules-api.md#7-properties);
+Every property is in [appendix section 7](../rfcs/0001-wasm-extension-modules-api.md#7-properties);
 in the SDK they are constants of `Prop`, with `_` for a `.` in the name
 (`Prop.Passable_Foot` is `Passable.Foot`).
 
@@ -526,7 +526,7 @@ function examples(unit: Techno, house: House): void {
 ```
 
 The atomic actions and the map trigger actions are listed in
-[appendix section 5](rfcs/0001-wasm-extension-modules-api.md#5-action-kinds).
+[appendix section 5](../rfcs/0001-wasm-extension-modules-api.md#5-action-kinds).
 
 ### Modifiers (temporary multipliers)
 
@@ -541,7 +541,7 @@ function boost(unit: Techno): void {
 ```
 
 Firepower, armor, speed, rate of fire, range multiplier and extra range work, and
-cloakable, forced decloak and disabled weapons; the [SDK reference](wasm-modules-sdk-ts.md#modifiers)
+cloakable, forced decloak and disabled weapons; the [SDK reference](ts-sdk.md#modifiers)
 lists the rest. Modifiers stack with Phobos AttachEffects; without modifiers the game
 behaves exactly as before.
 
@@ -583,7 +583,7 @@ function example(unit: Techno): void {
 unit or building); it is required. `visibility` says which client modules may read it: `private` (the
 house's own player), `allies`, `insight` (object scope), `public`. Variables are saved
 with the game. `notify` declares notification names for client modules (generated into
-`src/generated/notify.ts`); the [client tutorial](wasm-modules-ui-tutorial-ts.md) uses
+`src/generated/notify.ts`); the [client tutorial](ts-ui-tutorial.md) uses
 one.
 
 ### Filter clauses and immediate actions
@@ -638,7 +638,7 @@ have answered first), and `d.setResult(value)` gives yours; without it the previ
 stands. Modules can decide the damage a hit does, whether a type may be built or queued,
 whether a house is defeated, whether a player command is accepted, and also shots,
 retaliation, destinations, crushing, harvesting, deploying, the idle mission, movement
-and paths; the [SDK reference](wasm-modules-sdk-ts.md#decisions) lists them all. A
+and paths; the [SDK reference](ts-sdk.md#decisions) lists them all. A
 decision handler **only reads** (`log` works): an action, a property or variable write
 there stops the module. It should not allocate either (no `new`, no string building).
 
@@ -699,7 +699,7 @@ in the mod's `rulesmd.ini`, without changing the code.
 
 **Prepare the mod's `rulesmd.ini` first**: a mod's `rulesmd.ini` replaces the game's
 entirely, so start from a full copy. **Options → Mods → New Mod** in the game makes a mod
-with the original files; see [modding](modding.md).
+with the original files; see [modding](../modding.md).
 
 Example: when a GI drops below 30% health it heals 50, once per GI.
 
@@ -735,7 +735,7 @@ Trigger section keys:
 | `Repeat` | `OneTimeOr` (default), `OneTimeAnd`, `Repeating` |
 
 A mistake keeps the match from starting, with a message naming the section and key. The
-full syntax is in the [guide](wasm-modules.md#triggers-in-ini). A map cannot bind types
+full syntax is in the [guide](guide.md#triggers-in-ini). A map cannot bind types
 with `Wasm.Tags` (it is ignored there, and the match says so); a map's module binds in
 code.
 
@@ -789,7 +789,7 @@ INI triggers use the module event as `Event=Wasm:Demo.ShieldBroken`; code raises
 `Action.raiseEvent` and listens with `Trigger.onModuleEvent`. Values are the merged rules
 text, unchecked: parse them with `Ini.int`, `Ini.ints`, `Ini.yesNo`, `Ini.split`, and stop
 with `fail(...)` naming the section and key when one is wrong. See the
-[guide](wasm-modules.md#ini-names-a-module-registers) and
+[guide](guide.md#ini-names-a-module-registers) and
 `sdk/typescript/examples/ini-counter` for a complete mod.
 
 ### Put the module in a map
@@ -824,7 +824,7 @@ function and the reason. Common reasons:
 | --- | --- | --- |
 | `exceeded its operation budget` | Too much work in one call | Spread it over frames (`new Every(N)`), read in batches with `Techno.read` or `getMany` |
 | `trapped: …` | The code crashed: an index out of bounds, a `null` used as an object, a `throw`, a `fail(...)`, memory used up | Check lengths before indexing, `if (x != null)` before use. For an index out of range, a `null` dereference or a `throw`, the module's log line just before reads `abort: <message> at <file>:<line>:<column>`, the place in your source |
-| `made an invalid call: …` | The API was used wrongly: an argument out of range, a variable of the wrong scope, a write in a decision handler, a registration outside the top level; the reason follows | Check the call against the [SDK reference](wasm-modules-sdk-ts.md) |
+| `made an invalid call: …` | The API was used wrongly: an argument out of range, a variable of the wrong scope, a write in a decision handler, a registration outside the top level; the reason follows | Check the call against the [SDK reference](ts-sdk.md) |
 | `cannot keep up: … event records are waiting` | More events than the module can handle | Bind fewer objects or add filter clauses with `.where(...)` |
 
 **The build fails**
@@ -894,14 +894,14 @@ the save, with its top-level variables as they were.
 
 ## More
 
-- [TypeScript SDK reference](wasm-modules-sdk-ts.md): every function, `vera.json` and the
+- [TypeScript SDK reference](ts-sdk.md): every function, `vera.json` and the
   build command
-- [Client module tutorial](wasm-modules-ui-tutorial-ts.md): a button on the screen
+- [Client module tutorial](ts-ui-tutorial.md): a button on the screen
   (`ui.wasm`)
-- [Guide](wasm-modules.md): where modules go, INI syntax, limits and debugging
-- [Rust tutorial](wasm-modules-tutorial.md): the same mod in Rust
-- [RFC 0001](rfcs/0001-wasm-extension-modules.md): the design (the TypeScript SDK is
-  section 5a); the [appendix](rfcs/0001-wasm-extension-modules-api.md): every import,
+- [Guide](guide.md): where modules go, INI syntax, limits and debugging
+- [Rust tutorial](rust-tutorial.md): the same mod in Rust
+- [RFC 0001](../rfcs/0001-wasm-extension-modules.md): the design (the TypeScript SDK is
+  section 5a); the [appendix](../rfcs/0001-wasm-extension-modules-api.md): every import,
   event, action and property
 - Examples in `sdk/typescript/examples/`: ports of the Rust examples; `tutorial-bounty` is
   this tutorial's.

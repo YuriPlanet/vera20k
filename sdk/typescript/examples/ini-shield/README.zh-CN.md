@@ -50,6 +50,6 @@ cd sdk/typescript && npm install
 node bin/vera20k.js build examples/ini-shield
 ```
 
-得到 `build/rules.wasm`（TypeScript 写的，和 Rust 版 `sdk/examples/ini-shield` 行为相同），和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules.md](../../../../docs/wasm-modules.md)）。
+得到 `build/rules.wasm`（TypeScript 写的，和 Rust 版 `sdk/examples/ini-shield` 行为相同），和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules/guide.md](../../../../docs/wasm-modules/guide.md)）。
 
 无人操作时，模块会在玩家基地附近放几辆带护盾的坦克和步兵（美方对电脑方），让它们互相攻击，每个功能第一次生效时在日志里写一行 `DEMO-OK …`，供引擎测试 `ini_demo_mods_reach_their_marks` 检查。

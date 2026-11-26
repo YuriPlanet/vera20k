@@ -9,7 +9,7 @@
 | 创建日期 | 2026-11-16 |
 | 涉及的 API | `vera:sim@1.0`、`vera:client@1.0`（预览） |
 
-**实现状态。** 0.1.0 版描述引擎已实现的样子：第 1 阶段（`rules.wasm`，含控制点）和第 2 阶段（`ui.wasm` 客户端模块）都已进入引擎，随附 Rust SDK 和 [TypeScript SDK](../wasm-modules-sdk-ts.zh-CN.md)。引擎与早先草案不一致之处，本文以引擎为准。尚未实现的设计保留在文中，标为“0.1.0 未实现”，或在附录中标为 `later`。API 处于 `0.x` 预览期（流程第 4 步）：版本 1 冻结之前，编号、上限和布局仍可能变化。
+**实现状态。** 0.1.0 版描述引擎已实现的样子：第 1 阶段（`rules.wasm`，含控制点）和第 2 阶段（`ui.wasm` 客户端模块）都已进入引擎，随附 Rust SDK 和 [TypeScript SDK](../wasm-modules/ts-sdk.zh-CN.md)。引擎与早先草案不一致之处，本文以引擎为准。尚未实现的设计保留在文中，标为“0.1.0 未实现”，或在附录中标为 `later`。API 处于 `0.x` 预览期（流程第 4 步）：版本 1 冻结之前，编号、上限和布局仍可能变化。
 
 ## 概要
 
@@ -83,7 +83,7 @@ Repeat=Repeating         ; TagRepeat 的取值
 
 ### 模块代码
 
-引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。下面分别用两套官方 SDK 表达同一行为：Rust 示例用的是 0.1.0 的 SDK，TypeScript 示例用于说明设计。可构建的例子见 [TypeScript 模拟模块教程](../wasm-modules-tutorial-ts.zh-CN.md)和[客户端模块教程](../wasm-modules-ui-tutorial-ts.zh-CN.md)。类型绑定在 INI 和代码中任选一处；若用上一节的 INI，只注册具名回调，省略代码中的触发器创建。
+引擎只看到编译好的模块，源码和编译器都在作者自己的工具里。下面分别用两套官方 SDK 表达同一行为：Rust 示例用的是 0.1.0 的 SDK，TypeScript 示例用于说明设计。可构建的例子见 [TypeScript 模拟模块教程](../wasm-modules/ts-tutorial.zh-CN.md)和[客户端模块教程](../wasm-modules/ts-ui-tutorial.zh-CN.md)。类型绑定在 INI 和代码中任选一处；若用上一节的 INI，只注册具名回调，省略代码中的触发器创建。
 
 ```ts
 // TypeScript 设计示例

@@ -2,7 +2,7 @@
 
 VERA20K Wasm 扩展模块的演示：一个小型自走棋战役，由 `rules.wasm`（玩法）和
 `ui.wasm`（界面）组成。这是 Rust 版（`sdk/examples/muster-field`）的 TypeScript
-移植，行为与 Rust 版相同。玩法见 [docs/wasm-modules.md](../../../../docs/wasm-modules.md)。
+移植，行为与 Rust 版相同。玩法见 [docs/wasm-modules/guide.md](../../../../docs/wasm-modules/guide.md)。
 
 ## 构建
 
@@ -14,7 +14,7 @@ node bin/vera20k.js build examples/muster-field/ui      # ui/build/ui.wasm
 ```
 
 把 `rules/build/rules.wasm` 和 `ui/build/ui.wasm` 放进同一个 mod 文件夹
-（docs/wasm-modules.md）。`data/` 是两个模块共用的表格和协议（Rust 版的
+（docs/wasm-modules/guide.md）。`data/` 是两个模块共用的表格和协议（Rust 版的
 `muster-field-data` crate），不含任何引擎调用。
 
 ## 权利声明

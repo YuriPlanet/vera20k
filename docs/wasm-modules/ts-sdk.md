@@ -1,17 +1,17 @@
 # TypeScript SDK reference
 
-[English](wasm-modules-sdk-ts.md) | [简体中文](wasm-modules-sdk-ts.zh-CN.md)
+[English](ts-sdk.md) | [简体中文](ts-sdk.zh-CN.md)
 
 Every namespace, class and function of the TypeScript SDK for Wasm modules,
 `@vera20k/sdk` (`sdk/typescript` in the VERA20K source), and its `vera20k` command. The
 first part covers simulation modules (`rules.wasm`), the second client modules
-(`ui.wasm`). The [guide](wasm-modules.md) says where modules go and what the limits are;
-the tutorials walk through a [simulation module](wasm-modules-tutorial-ts.md) and a
-[client module](wasm-modules-ui-tutorial-ts.md).
+(`ui.wasm`). The [guide](guide.md) says where modules go and what the limits are;
+the tutorials walk through a [simulation module](ts-tutorial.md) and a
+[client module](ts-ui-tutorial.md).
 
-The SDK has the same capabilities as the [Rust SDK](wasm-modules-sdk.md), under
+The SDK has the same capabilities as the [Rust SDK](rust-sdk.md), under
 TypeScript names; where this page is short on the semantics of an entry, the Rust
-reference and the [RFC appendix](rfcs/0001-wasm-extension-modules-api.md) say more. The
+reference and the [RFC appendix](../rfcs/0001-wasm-extension-modules-api.md) say more. The
 property, event and action tables and the event and decision views are generated from
 the Rust SDK, so the numbers are the same.
 
@@ -169,7 +169,7 @@ It does not run the engine's other load checks; `asset wasm-check` does.
   `onRender`, `onFrame` and `onClientEvent` add a function each time they are called;
   all of them run, in registration order.
 - **Language.** The code is AssemblyScript-compatible TypeScript; the
-  [tutorial](wasm-modules-tutorial-ts.md#6-how-this-typescript-differs) lists what that
+  [tutorial](ts-tutorial.md#6-how-this-typescript-differs) lists what that
   rules out (closures over locals, `for…of`, `try`, unions, untyped object literals).
 - Names marked `@internal` in the source (`check`, `utf8`, `OUT`, `keyOf`, `run*`, ...)
   are exported for the SDK's own use; don't rely on them.
@@ -265,7 +265,7 @@ for `Armor`, `Overlay`, `Sound`, `ScriptType`, `AiTrigger` and `EventKind`.
 `Prop` is a namespace of constants (`Prop.Health`, `Prop.Money`,
 `Prop.FirepowerMultiplier`, ...) and the type `Prop` is `i32`. A `.` in an engine name is
 written `_`: `Prop.Passable_Foot` is `Passable.Foot`. The full list with value types,
-writability and tiers is [appendix section 7](rfcs/0001-wasm-extension-modules-api.md#7-properties).
+writability and tiers is [appendix section 7](../rfcs/0001-wasm-extension-modules-api.md#7-properties).
 
 Writable with `set`: `Health` (no kill credit; 0 or less is `Refused`), `Owner`, `Rank`,
 `Mission`, `Ammo`, `Online`, a trigger's `Enabled`, `House` and `Repeat`, a house's
@@ -689,7 +689,7 @@ Parsing (each returns `otherwise` for a malformed value, with `lastStatus()` `No
 | `Ini.yesNo(text, otherwise = false): bool` | First letter `y`, `t` or `1` true; `n`, `f` or `0` false |
 | `Ini.ints(text, out: StaticArray<i64>, otherwise = 0): i32` | The first `out.length` integers into `out`; returns a mask with bit `i` set when part `i` was good |
 
-See the [guide](wasm-modules.md#ini-names-a-module-registers) for the INI side and
+See the [guide](guide.md#ini-names-a-module-registers) for the INI side and
 `sdk/typescript/examples/ini-counter` for a complete mod.
 
 ## Notifications and messages

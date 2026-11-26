@@ -9,7 +9,7 @@
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1.0`, `vera:client@1.0` (preview) |
 
-**Implementation status.** Version 0.1.0 describes the engine as implemented: phase 1 (`rules.wasm`, the control points included) and phase 2 (`ui.wasm` client modules) are in the engine, together with the Rust SDK and [TypeScript SDK](../wasm-modules-sdk-ts.md). Where the engine differs from earlier drafts, this text follows the engine. Design that is not implemented yet stays in the text and is marked "not implemented in 0.1.0" or carries tier `later` in the appendix. The API is a `0.x` preview (Process step 4): numbers, limits and layouts may still change before version 1 freezes.
+**Implementation status.** Version 0.1.0 describes the engine as implemented: phase 1 (`rules.wasm`, the control points included) and phase 2 (`ui.wasm` client modules) are in the engine, together with the Rust SDK and [TypeScript SDK](../wasm-modules/ts-sdk.md). Where the engine differs from earlier drafts, this text follows the engine. Design that is not implemented yet stays in the text and is marked "not implemented in 0.1.0" or carries tier `later` in the appendix. The API is a `0.x` preview (Process step 4): numbers, limits and layouts may still change before version 1 freezes.
 
 ## Summary
 
@@ -83,7 +83,7 @@ Each E1 runs its own instance of `GIPanic` (section 7). Only an E1 below 30% hea
 
 ### Module code
 
-Only the compiled module reaches the engine. Authors keep the source and compiler in their toolchain. Both official SDKs express the same behavior below: the Rust example uses the 0.1.0 SDK, the TypeScript sketches illustrate the design. For buildable examples, see the [TypeScript simulation tutorial](../wasm-modules-tutorial-ts.md) and [client tutorial](../wasm-modules-ui-tutorial-ts.md). Bind the type in either INI or code. With the INI above, register the named callback and omit trigger creation in code.
+Only the compiled module reaches the engine. Authors keep the source and compiler in their toolchain. Both official SDKs express the same behavior below: the Rust example uses the 0.1.0 SDK, the TypeScript sketches illustrate the design. For buildable examples, see the [TypeScript simulation tutorial](../wasm-modules/ts-tutorial.md) and [client tutorial](../wasm-modules/ts-ui-tutorial.md). Bind the type in either INI or code. With the INI above, register the named callback and omit trigger creation in code.
 
 ```ts
 // TypeScript design sketch

@@ -681,8 +681,8 @@ Hold=TopRight
   off (its `Clickable` starts at 1); a click on it never reaches the map.
 - Rows and columns may hold them, as they hold buttons and texts.
 - How a module finds and changes these parts: the
-  [client module tutorial](wasm-modules-ui-tutorial.md) and the
-  [Rust SDK reference](wasm-modules-sdk.md#nodes).
+  [client module tutorial](wasm-modules/rust-ui-tutorial.md) and the
+  [Rust SDK reference](wasm-modules/rust-sdk.md#nodes).
 
 ### A map's own parts
 

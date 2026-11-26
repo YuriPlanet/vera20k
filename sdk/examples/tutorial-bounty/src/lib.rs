@@ -1,4 +1,4 @@
-//! The module of the modding tutorial (docs/wasm-modules-tutorial.zh-CN.md):
+//! The module of the modding tutorial (docs/wasm-modules/rust-tutorial.zh-CN.md):
 //! whoever kills a GI or a conscript gets 200 credits.
 #![no_std]
 
