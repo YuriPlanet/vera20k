@@ -51,6 +51,6 @@ Repeat=Repeating
 cargo build --release
 ```
 
-把 `target/wasm32-unknown-unknown/release/ini_academy.wasm` 改名为 `rules.wasm`，和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules.md](../../../docs/wasm-modules.md)）。
+把 `target/wasm32-unknown-unknown/release/ini_academy.wasm` 改名为 `rules.wasm`，和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules/guide.md](../../../docs/wasm-modules/guide.md)）。
 
 无人操作时，模块会在玩家基地附近放一座战斗碉堡和几个步兵，命令他们进驻，每个功能第一次生效时在日志里写一行 `DEMO-OK …`，供引擎测试 `ini_demo_mods_reach_their_marks` 检查。

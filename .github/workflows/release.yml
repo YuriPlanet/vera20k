@@ -250,7 +250,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config desktop-file-utils mesa-vulkan-drivers xvfb xauth
+          sudo apt-get install -y libasound2-dev pkg-config desktop-file-utils mesa-vulkan-drivers xvfb xauth libxkbcommon-x11-0
       - name: Install Inno Setup 7.1.0
         if: runner.os == 'Windows'
         shell: pwsh

@@ -2185,7 +2185,14 @@ pub(crate) fn draw_bridge_shadows(
 #[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::{CellBodyAtlas, CellBodyDraw, RenderZPolicy, cell_body_runs};
-    const SOURCE: &str = include_str!("draw_passes.rs");
+    // Keep byte offsets and slices in the same source on LF and CRLF checkouts.
+    static PRODUCTION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        include_str!("draw_passes.rs")
+            .split_once("\nmod tests {")
+            .expect("production source before tests")
+            .0
+            .replace("\r\n", "\n")
+    });
 
     #[test]
     fn cell_body_runs_keep_the_sweep_across_atlases_and_policies() {
@@ -2202,10 +2209,7 @@ mod tests {
     }
 
     fn source_offset(needle: &str) -> usize {
-        SOURCE
-            .split("#[cfg(test)]")
-            .next()
-            .expect("production source before tests")
+        PRODUCTION
             .find(needle)
             .unwrap_or_else(|| panic!("missing production draw anchor {needle:?}"))
     }
@@ -2310,7 +2314,7 @@ mod tests {
         // The software cursor draws after the retained composition.
         assert!(pre_cursor_capture < cursor);
 
-        let timer_tail = &SOURCE[sparkle..outcome_start];
+        let timer_tail = &PRODUCTION[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
             3,
@@ -2319,7 +2323,7 @@ mod tests {
         );
         // Exhaustiveness: the description draws exactly once in the span from
         // tooltips to cursor, pinning it out of the tactical tail.
-        let tail = &SOURCE[tooltip_text..cursor];
+        let tail = &PRODUCTION[tooltip_text..cursor];
         assert_eq!(
             tail.matches("\"build_text_fill\"").count(),
             1,
@@ -2368,7 +2372,7 @@ mod tests {
         // still remain inside g_SidebarSurface. No later retained-sidebar or
         // radar batch may repaint that accepted line before the screen-overlay
         // strata begin.
-        let retained_tail = &SOURCE[boundary..message];
+        let retained_tail = &PRODUCTION[boundary..message];
         for later_retained_batch in [
             "\"sidebar_chrome\"",
             "\"sidebar_cameo\"",
@@ -2411,7 +2415,6 @@ mod tests {
         // no sidebar depth: the tooltips and the cursor show over the radar.
         // The column's text may go over the copy there, without depth
         // (`sidebar_surface::column_text`).
-        let production = SOURCE.split("#[cfg(test)]").next().unwrap();
         for layer in [
             "\"sidebar_chrome\"",
             "\"sidebar_cameo\"",
@@ -2425,7 +2428,7 @@ mod tests {
             "\"command_bar\"",
         ] {
             assert!(source_offset(layer) < frame_pass, "{layer}");
-            assert!(!production[frame_pass..].contains(layer), "{layer}");
+            assert!(!PRODUCTION[frame_pass..].contains(layer), "{layer}");
         }
     }
 
@@ -2438,7 +2441,7 @@ mod tests {
         let fill = source_offset("\"tooltip_fill\"");
         let border = source_offset("\"tooltip_border\"");
         assert!(binding < fill);
-        let slice = &SOURCE[binding..border];
+        let slice = &PRODUCTION[binding..border];
         assert!(
             !slice.contains("darken_texture"),
             "tooltip lanes must not draw with the translucent darken strip"

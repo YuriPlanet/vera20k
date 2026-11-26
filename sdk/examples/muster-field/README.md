@@ -1,7 +1,7 @@
 # 佣兵点兵场（Muster Field）
 
 VERA20K Wasm 扩展模块的演示：一个小型自走棋战役，由 `rules.wasm`（玩法）和
-`ui.wasm`（界面）组成。玩法和构建见 [docs/wasm-modules.md](../../../docs/wasm-modules.md)。
+`ui.wasm`（界面）组成。玩法和构建见 [docs/wasm-modules/guide.md](../../../docs/wasm-modules/guide.md)。
 
 ## 权利声明
 

@@ -24,7 +24,7 @@
 //! What it tells the player is in Simplified Chinese.
 //! Build it with `cargo build --release`, rename `muster_field.wasm` to
 //! `rules.wasm` and `muster_field_ui.wasm` to `ui.wasm`, and put both in a
-//! mod folder (docs/wasm-modules.md).
+//! mod folder (docs/wasm-modules/guide.md).
 //!
 //! The interface (`ui/`) shows the camp and has a button for every key:
 //! the simulation publishes the camp as variables and turns each button's

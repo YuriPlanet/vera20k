@@ -19,7 +19,7 @@
 cargo build --release
 ```
 
-把 `target/wasm32-unknown-unknown/release/ai_takeover.wasm` 改名为 `rules.wasm`，和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules.md](../../../docs/wasm-modules.md)）。mod 的 `rulesmd.ini` 会整个替换原版，所以要把 `[VeraWasm]` 一节加进一份完整副本里。
+把 `target/wasm32-unknown-unknown/release/ai_takeover.wasm` 改名为 `rules.wasm`，和 `mod.ini`、`rulesmd.ini` 一起放进 mod 文件夹（见 [docs/wasm-modules/guide.md](../../../docs/wasm-modules/guide.md)）。mod 的 `rulesmd.ini` 会整个替换原版，所以要把 `[VeraWasm]` 一节加进一份完整副本里。
 
 ## 怎么玩
 
