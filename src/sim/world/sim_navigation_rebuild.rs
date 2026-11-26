@@ -9,9 +9,10 @@ use crate::map::entities::EntityCategory;
 use crate::map::overlay::OverlayEntry;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::ares_firestorm::FirestormZoneView;
 use crate::sim::cell_kernel::WallGateConnections;
 use crate::sim::overlay_grid::{
-    OverlayGrid, damage_wall_overlay_with_runtime_host, recalc_overlay_passability,
+    OverlayGrid, damage_wall_overlay_with_runtime_host, recalc_overlay_passability_with_building,
     refresh_wall_neighborhood_with_host,
 };
 use crate::sim::pathfinding::PathGrid;
@@ -184,8 +185,8 @@ impl Simulation {
 
     /// Publish marked-structure footprint changes into the path view only.
     /// Native cell occupation marks are read live by the pathfinder, and the
-    /// zone map is built from terrain movement classes, which structures do
-    /// not change; zone IDs therefore stay as they are.
+    /// zone map is built from terrain movement classes. Actual PlaceDown and
+    /// PlaceUp Recalcs already published any active firestorm wall class.
     fn publish_structure_navigation(&mut self, rules: &RuleSet) {
         let current =
             navigation::structure_movement_cells(&self.substrate.entities, &self.interner, rules);
@@ -193,7 +194,7 @@ impl Simulation {
             .union(&self.structure_navigation_cells)
             .copied()
             .collect();
-        self.publish_recalculated_cells_with_presence(rules, &candidates, &current);
+        self.publish_navigation_cells_with_presence(rules, &candidates, &current);
     }
 
     /// Finalize mutable overlay identity, passability, and canonical navigation
@@ -225,9 +226,20 @@ impl Simulation {
                 .as_mut()
                 .expect("overlay-ready terrain");
             let registry = overlay_registry.expect("overlay-ready registry");
+            let firestorm_zone = FirestormZoneView::new(
+                &self.ares_firestorm,
+                &self.substrate,
+                &self.interner,
+                rules,
+            );
             for &(rx, ry) in &dirty_cells {
-                if recalc_overlay_passability(grid, terrain, registry, rx, ry)
-                    && !navigation_cells.contains(&(rx, ry))
+                if recalc_overlay_passability_with_building(
+                    grid,
+                    terrain,
+                    registry,
+                    (rx, ry),
+                    firestorm_zone.blocks((rx, ry)),
+                ) && !navigation_cells.contains(&(rx, ry))
                 {
                     navigation_cells.push((rx, ry));
                 }
@@ -246,6 +258,7 @@ impl Simulation {
         }
 
         if navigation_rebuild_requested {
+            self.recalc_firestorm_zone_cells(rules, &navigation_cells);
             let _ = self.rebuild_dynamic_navigation(rules);
         } else {
             if structures_changed {
@@ -281,6 +294,35 @@ impl Simulation {
     /// scanned. A cache that cannot take one cell (mis-sized during a load
     /// transition) is rebuilt whole rather than left stale.
     fn publish_recalculated_cells_with_presence(
+        &mut self,
+        rules: &RuleSet,
+        cells: &[(u16, u16)],
+        blocked: &BTreeSet<(u16, u16)>,
+    ) {
+        self.recalc_firestorm_zone_cells(rules, cells);
+        self.publish_navigation_cells_with_presence(rules, cells, blocked);
+    }
+
+    fn recalc_firestorm_zone_cells(&mut self, rules: &RuleSet, cells: &[(u16, u16)]) {
+        // PlaceDown/PlaceUp (`0x005683C0`/`0x005687F0`) and overlay or terrain
+        // updates publish the current ground list's class before zone repair.
+        if self.ares_firestorm.any_active()
+            && let Some(terrain) = self.resolved_terrain.as_mut()
+        {
+            for &cell in cells {
+                let impassable = self.ares_firestorm.blocks_zone_cell(
+                    &self.substrate.occupancy,
+                    &self.substrate.entities,
+                    &self.interner,
+                    rules,
+                    cell,
+                );
+                terrain.recalc_zone_type_with_buildings_at(cell, impassable);
+            }
+        }
+    }
+
+    fn publish_navigation_cells_with_presence(
         &mut self,
         rules: &RuleSet,
         cells: &[(u16, u16)],
@@ -499,6 +541,12 @@ impl Simulation {
         let terrain = self.resolved_terrain.as_mut()?;
         let mut host = SimulationWallRuntimeHost {
             wall_gates: WallGateConnections::new(&self.substrate, &self.interner, rules),
+            firestorm_zone: FirestormZoneView::new(
+                &self.ares_firestorm,
+                &self.substrate,
+                &self.interner,
+                rules,
+            ),
             dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,
@@ -572,6 +620,12 @@ impl Simulation {
         };
         let mut host = SimulationWallRuntimeHost {
             wall_gates: WallGateConnections::new(&self.substrate, &self.interner, rules),
+            firestorm_zone: FirestormZoneView::new(
+                &self.ares_firestorm,
+                &self.substrate,
+                &self.interner,
+                rules,
+            ),
             dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,

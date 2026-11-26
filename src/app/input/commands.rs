@@ -166,7 +166,9 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     let Some(sw) = runtime.resources.rules.super_weapon(section) else {
         return true;
     };
-    if sw.kind != crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+    if sw.kind != crate::rules::superweapon_type::SuperWeaponKind::ForceShield
+        || sw.uses_ares_handler(&runtime.resources.rules)
+    {
         return true;
     }
     let Some(viewer) =
@@ -592,7 +594,41 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
     else {
         return;
     };
+    if action == "SellUnit"
+        && let Some(sale) = stock_super_weapon_sale_at_cursor(state, section)
+        && let Some(owner) = preferred_command_owner(state)
+    {
+        schedule_command(state, &owner, sale);
+    }
     launch_super_weapon_at_cell(state, section, PlaceAction::Stock(&action), cell);
+}
+
+fn stock_super_weapon_sale_at_cursor(state: &AppState, armed: &str) -> Option<Command> {
+    let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state,
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    let picked = visible_object_under_point(state, world_x, world_y)?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
+    stock_super_weapon_sale_command(&runtime.simulation, state.rules()?, armed, picked)
+}
+
+/// BandBox_LeftUp (0x004AC101..0x004AC207) queues SELL for a picked
+/// Unit/Aircraft on action 0x0D, then falls through to the separate SPECIAL_PLACE
+/// (0x004AC20C, Ares 3.0p1 hook 0x10035630).
+fn stock_super_weapon_sale_command(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    armed: &str,
+    picked: u64,
+) -> Option<Command> {
+    (rules.super_weapon(armed)?.uses_stock_sell_unit_action(rules)
+        && matches!(
+            sim.entities().get(picked)?.category(),
+            EntityCategory::Unit | EntityCategory::Aircraft
+        ))
+    .then_some(Command::SellBuilding { entity_id: picked })
 }
 
 /// The superweapon action a release hands `BandBox_LeftUp`'s SPECIAL_PLACE
@@ -630,9 +666,9 @@ pub(crate) fn special_place_type<'a>(
                     .is_some_and(|sw| sw.uses_extension_rules(rules)) =>
         {
             rules
-            .super_weapon(armed)
-            .is_some_and(|sw| sw.has_action(action))
-            .then_some(armed)
+                .super_weapon(armed)
+                .is_some_and(|sw| sw.has_action(action))
+                .then_some(armed)
         }
         PlaceAction::Stock(action) => {
             crate::sim::superweapon::first_super_type_with_action(rules, action)
@@ -1297,6 +1333,39 @@ mod tests {
     use crate::sim::house_state::HouseState;
     use crate::sim::intern::InternedId;
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn stock_sell_unit_click_sells_and_still_requests_special_placement() {
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let ini = crate::sim::arena_fixture::clear_ground_ini(concat!(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSpeed=6\n",
+            "[SuperWeaponTypes]\n0=Sale\n1=Shield\n",
+            "[Sale]\nType=IronCurtain\nAction=SellUnit\n",
+            "[Shield]\nType=IronCurtain\nAction=SellUnit\nProtect.Duration=10\n",
+        ));
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &ini,
+            &IniFile::from_str(""),
+        )
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let tank = sim
+            .spawn_object("TANK", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+
+        assert_eq!(
+            super::stock_super_weapon_sale_command(&sim, &rules, "Sale", tank),
+            Some(Command::SellBuilding { entity_id: tank })
+        );
+        assert_eq!(
+            super::special_place_type(&rules, "Sale", super::PlaceAction::Stock("SellUnit")),
+            Some("Sale")
+        );
+        assert_eq!(
+            super::stock_super_weapon_sale_command(&sim, &rules, "Shield", tank),
+            None
+        );
+    }
 
     #[test]
     fn repair_click_publishes_a_raw_target_and_is_refused_by_a_full_queue() {

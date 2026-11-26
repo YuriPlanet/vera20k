@@ -61,7 +61,7 @@ fn scene_with(extra: &str, art: &str) -> (RuleSet, Simulation, InternedId, Inter
 
 #[test]
 fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let (rules, mut sim, owner, sw_type) =
         scene_with_late_rules("[Seek]\nSW.InitialReady=yes\nSW.VirtualCharge=yes\n");
     sim.super_weapons
@@ -295,28 +295,4 @@ fn computer_hunter_seeker_designated_enemy_rule_controls_the_candidate_pool() {
             acquires.then_some(TargetKind::Entity(target))
         );
     }
-}
-
-#[test]
-fn hunter_seeker_is_not_admitted_without_ares() {
-    let (rules, mut sim, owner, sw_type) = scene();
-    assert_eq!(
-        rules.super_weapon("Seek").unwrap().kind,
-        SuperWeaponKind::NoEffect
-    );
-    assert!(rules.super_weapon("Seek").unwrap().hunter_seeker.is_none());
-    // Also refuse a forged extension record before charge, RNG or wallet writes.
-    let mut rules = rules;
-    rules.super_weapons.get_mut("Seek").unwrap().kind = SuperWeaponKind::HunterSeeker;
-    let before = sim.state_hash();
-    assert!(!sim.fire_super_weapon(
-        &rules,
-        owner,
-        sw_type,
-        (0, 0),
-        None,
-        &mut FrameEffects::default(),
-        false
-    ));
-    assert_eq!(sim.state_hash(), before);
 }

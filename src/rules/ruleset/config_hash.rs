@@ -275,6 +275,28 @@ impl RuleSet {
         } else if !self.ares_super_weapon_metadata.is_empty() {
             b"builtin-superweapon-types-v1".hash(&mut hasher);
             self.ares_super_weapon_metadata.hash(&mut hasher);
+            self.side_ids.hash(&mut hasher);
+            self.side_extensions.hash(&mut hasher);
+            self.hash_superweapon_techno_state(&mut hasher);
+            if self
+                .super_weapons
+                .values()
+                .any(|sw| sw.kind == SuperWeaponKind::DropPod)
+            {
+                self.ares_drop_pod().hash(&mut hasher);
+            }
+            if self
+                .super_weapons
+                .values()
+                .any(|sw| sw.kind == SuperWeaponKind::LightningStorm && sw.uses_ares_handler(self))
+            {
+                Self::by_upper_id(self.object_list.iter().filter_map(|object| {
+                    let rod = object.building_type_ext();
+                    rod.lightning_rod
+                        .then_some((&object.id, rod.lightning_rod_modifier))
+                }))
+                .hash(&mut hasher);
+            }
             for object in &self.object_list {
                 if !object.additional_super_weapons().is_empty() {
                     object.id.hash(&mut hasher);
@@ -440,44 +462,7 @@ impl RuleSet {
                 ignores_firestorm.hash(&mut hasher);
             }
             b"ares-keep-alive-v1".hash(&mut hasher);
-            let influence_types = self
-                .object_list
-                .iter()
-                .filter(|object| {
-                    object.designator_range().is_some()
-                        || object.inhibitor_range().is_some()
-                        || object.hunter_seeker_ignored()
-                })
-                .map(|object| {
-                    (
-                        (object.category, object.id.to_ascii_uppercase()),
-                        (
-                            object.designator_range(),
-                            object.inhibitor_range(),
-                            object.hunter_seeker_ignored(),
-                        ),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            if !influence_types.is_empty() {
-                b"ares-sw-influence-types-v2".hash(&mut hasher);
-                influence_types.hash(&mut hasher);
-            }
-            let chronoshift = self
-                .object_list
-                .iter()
-                .filter(|object| object.ares_chronoshift() != Default::default())
-                .map(|object| {
-                    (
-                        (object.category, object.id.to_ascii_uppercase()),
-                        object.ares_chronoshift(),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            if !chronoshift.is_empty() {
-                b"ares-chronoshift-types-v1".hash(&mut hasher);
-                chronoshift.hash(&mut hasher);
-            }
+            self.hash_superweapon_techno_state(&mut hasher);
             self.object_list
                 .iter()
                 .map(|object| {
@@ -649,16 +634,13 @@ impl RuleSet {
                 aircraft_crash_overrides.hash(&mut hasher);
             }
         }
-        // TechnoClass::IronCurtain (hook 0x70E2B0) uses ForceShield.Modifier
-        // in every game and uses IronCurtain.Modifier when Ares plays.
+        // TechnoClass::IronCurtain (hook 0x70E2B0) uses the corresponding
+        // authored modifier for either protection kind.
         let curtain_modifiers = self
             .object_list
             .iter()
             .filter_map(|object| {
-                let mut modifiers = object.ares_curtain_modifiers();
-                if !self.ares {
-                    modifiers[0] = NativeF64Bits::ONE;
-                }
+                let modifiers = object.ares_curtain_modifiers();
                 (modifiers != [NativeF64Bits::ONE; 2])
                     .then(|| ((object.category, object.id.to_ascii_uppercase()), modifiers))
             })
@@ -824,7 +806,8 @@ impl RuleSet {
             self.object_list
                 .iter()
                 .filter(|object| {
-                    object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel
+                    self.builtin_generic_emp
+                        || object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel
                 })
                 .map(|object| {
                     (
@@ -834,6 +817,15 @@ impl RuleSet {
                 })
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
+        }
+        let builtin_nuke_impact =
+            Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
+                wh.builtin_nuke_impact_settings()
+                    .map(|settings| (name, settings))
+            }));
+        if !builtin_nuke_impact.is_empty() {
+            b"builtin-nuclear-impact-v1".hash(&mut hasher);
+            builtin_nuke_impact.hash(&mut hasher);
         }
 
         // UnitType747734 retains CarriesCrate across later absent/invalid
@@ -1113,6 +1105,14 @@ impl RuleSet {
             b"airburst-weapons-v1".hash(&mut hasher);
             airburst_weapons.hash(&mut hasher);
         }
+        let attached_systems =
+            Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
+                projectile.attached_system.map(|system| (id, system))
+            }));
+        if !attached_systems.is_empty() {
+            b"projectile-attached-system-v1".hash(&mut hasher);
+            attached_systems.hash(&mut hasher);
+        }
         // A later invalid raw token retains BulletType+294. Equal flattened
         // INIs can therefore differ in the child-fan and parent-cluster gates.
         let airburst_flags = self
@@ -1232,6 +1232,21 @@ impl RuleSet {
         );
         if !generic_warheads.is_empty() {
             generic_warheads.hash(&mut hasher);
+            if !self.ares {
+                let effects = generic_warheads
+                    .iter()
+                    .filter_map(|(id, settings)| {
+                        Some((
+                            id,
+                            self.warhead(settings.warhead.as_deref()?)?.ares_rules()?,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                if !effects.is_empty() {
+                    b"builtin-generic-warhead-effects-v1".hash(&mut hasher);
+                    effects.hash(&mut hasher);
+                }
+            }
         }
         let hunters = Self::by_upper_id(
             self.super_weapons
@@ -1241,11 +1256,9 @@ impl RuleSet {
         if !hunters.is_empty() {
             b"ares-hunter-seeker-v1".hash(&mut hasher);
             hunters.hash(&mut hasher);
-            if self.ares {
-                self.ares_global_controls
-                    .hunter_seeker_buildings()
-                    .hash(&mut hasher);
-            }
+            self.ares_global_controls
+                .hunter_seeker_buildings()
+                .hash(&mut hasher);
         }
         // No extension tags means no extra hash input: preserve stock hashes.
         let building_requirements =
@@ -1278,12 +1291,30 @@ impl RuleSet {
             // before running their newly selected handler.
             b"iron-curtain-protect-v1".hash(&mut hasher);
         }
+        let builtin_handlers =
+            Self::by_upper_id(self.super_weapons.iter().filter_map(|(id, sw)| {
+                (!self.ares && sw.uses_ares_handler(self))
+                    .then_some((id, sw.launch_kind(self).native_index()))
+            }));
+        if !builtin_handlers.is_empty() {
+            b"builtin-superweapon-handlers-v1".hash(&mut hasher);
+            builtin_handlers.hash(&mut hasher);
+        }
+        if !self.ares
+            && self
+                .super_weapons
+                .values()
+                .any(|sw| sw.kind == SuperWeaponKind::ChronoWarp && sw.uses_ares_handler(self))
+        {
+            b"builtin-chrono-landing-v1".hash(&mut hasher);
+            self.ares_chrono_infantry_crush().hash(&mut hasher);
+        }
         let default = crate::rules::superweapon_type::AresSuperWeaponPresentation::default();
         let presentation = Self::by_upper_id(
             self.super_weapons
                 .iter()
                 .filter(|(_, sw)| {
-                    sw.presentation != default && (self.ares || redirected_iron_curtain(sw))
+                    sw.presentation != default && (self.ares || sw.uses_ares_handler(self))
                 })
                 .map(|(id, sw)| (id, &sw.presentation)),
         );
@@ -1335,6 +1366,9 @@ impl RuleSet {
         }
         for particle in &self.particle_types {
             (&particle.name, &particle.warhead).hash(&mut hasher);
+            if particle.use_line_trail {
+                b"particle-use-line-trail-v1".hash(&mut hasher);
+            }
         }
         for voxel_anim in &self.voxel_anim_types {
             (
@@ -1844,6 +1878,43 @@ impl RuleSet {
         self.hash_building_body_config(&mut hasher);
         self.hash_building_slot_config(&mut hasher);
         hasher.finish()
+    }
+
+    fn hash_superweapon_techno_state(&self, hasher: &mut impl Hasher) {
+        let influence_types = self
+            .object_list
+            .iter()
+            .filter_map(|object| {
+                let influence = (
+                    object.designator_range(),
+                    object.inhibitor_range(),
+                    object.hunter_seeker_ignored(),
+                );
+                (influence != (None, None, false))
+                    .then(|| ((object.category, object.id.to_ascii_uppercase()), influence))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !influence_types.is_empty() {
+            b"ares-sw-influence-types-v2".hash(hasher);
+            influence_types.hash(hasher);
+        }
+        let chronoshift = self
+            .object_list
+            .iter()
+            .filter_map(|object| {
+                let chronoshift = object.ares_chronoshift();
+                (chronoshift != Default::default()).then(|| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        chronoshift,
+                    )
+                })
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !chronoshift.is_empty() {
+            b"ares-chronoshift-types-v1".hash(hasher);
+            chronoshift.hash(hasher);
+        }
     }
 
     /// Slot constructors consume selected names, offsets and the common runtime

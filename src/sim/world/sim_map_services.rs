@@ -586,6 +586,7 @@ impl Simulation {
         if let Some(terrain) = self.resolved_terrain.as_mut() {
             terrain.recalc_playfield_attributes(bounds);
         }
+        self.recalc_firestorm_zone_classes(context.rules());
 
         // Rebuild from the retained structure-blocked PathGrid. PathGrid does
         // not cache the outside flag; ZoneGrid does, so a full rebuild covers

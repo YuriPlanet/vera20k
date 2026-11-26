@@ -1124,6 +1124,7 @@ fn dispatch_tiberium_reduction_inline(
 /// tiberium prelude and synchronous wall-navigation callbacks.
 pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     rules: &'a RuleSet,
+    firestorm_zone: crate::sim::ares_firestorm::FirestormZoneView<'a>,
     tiberium_amount: Option<i32>,
     ore_growth_state: &'a mut crate::sim::ore_growth::OreGrowthState,
     source_object_cells: &'a BTreeSet<(u16, u16)>,
@@ -1140,6 +1141,10 @@ pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
 }
 
 impl crate::sim::combat::combat_aoe::AoECellPrelude for SimulationAreaDamageCellPrelude<'_> {
+    fn building_blocks_zone_cell(&self, cell: (u16, u16)) -> bool {
+        self.firestorm_zone.blocks(cell)
+    }
+
     fn before_cell(
         &mut self,
         rx: u16,
@@ -1215,6 +1220,7 @@ impl crate::sim::combat::combat_aoe::AoECellPrelude for SimulationAreaDamageCell
 
 pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     rules: &'a RuleSet,
+    firestorm_zone: crate::sim::ares_firestorm::FirestormZoneView<'a>,
     warhead: &crate::rules::warhead_type::WarheadType,
     base_damage: i32,
     affect_resource: bool,
@@ -1236,6 +1242,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
             .then_some(amount);
     SimulationAreaDamageCellPrelude {
         rules,
+        firestorm_zone,
         tiberium_amount,
         ore_growth_state,
         source_object_cells,
@@ -1347,6 +1354,7 @@ pub(crate) fn repair_zone_after_recalc(
 /// Native Cell expiry7258D0 has no Techno listener broadcast.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
     pub(crate) wall_gates: crate::sim::cell_kernel::WallGateConnections<'a>,
+    pub(crate) firestorm_zone: crate::sim::ares_firestorm::FirestormZoneView<'a>,
     pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
@@ -1355,6 +1363,10 @@ pub(crate) struct SimulationWallRuntimeHost<'a> {
 }
 
 impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
+    fn building_blocks_zone_cell(&self, cell: (u16, u16)) -> bool {
+        self.firestorm_zone.blocks(cell)
+    }
+
     fn wall_connects_to_gate(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool {
         self.wall_gates.connects(cell, wall, east_west)
     }

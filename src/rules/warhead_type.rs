@@ -24,6 +24,13 @@ use crate::rules::ini_parser::IniSection;
 use crate::rules::ini_value::{PERCENT_SCALE, crt_atoi, parse_leading_f64};
 use crate::util::native_x87::X87Chop53;
 
+#[derive(Debug, Clone)]
+struct NukeImpactSettings {
+    flash_duration: Option<i32>,
+    pre_impact_anim: Option<String>,
+    follows_anim: bool,
+}
+
 /// A warhead definition parsed from a rules.ini section.
 ///
 /// Warheads are the final link in the damage chain: weapon -> projectile -> warhead.
@@ -48,6 +55,8 @@ pub struct WarheadType {
     /// Immutable view of the separately retained Ares WH extension.
     ares_verses: Option<AresWarheadVerses>,
     ares: Option<crate::rules::ares_warhead::AresWarheadRules>,
+    /// The three impact settings consumed by built-in nuclear superweapons.
+    builtin_nuke_impact: Option<NukeImpactSettings>,
     /// Splash radius in cells (0 = direct hit only). Native `CellSpread=` is a
     /// **float** at `WarheadTypeClass+0x124` (ReadDouble `0x005283d0` called at
     /// `0x0075d3e6`, `FSTP float ptr` at `0x0075d3eb`, key string
@@ -542,11 +551,57 @@ impl WarheadType {
     pub(crate) fn ares_combat(&self) -> Option<&crate::rules::ares_warhead::WarheadCombatRules> {
         self.ares.as_ref().map(|ares| ares.combat())
     }
+
+    pub(crate) fn nuke_impact_settings(&self) -> (Option<i32>, Option<&str>, bool) {
+        self.builtin_nuke_impact_settings()
+            .or_else(|| {
+                self.ares_combat().map(|combat| {
+                    (
+                        combat.nuke_flash_duration(),
+                        combat.pre_impact_anim(),
+                        combat.pre_impact_anim_moves(),
+                    )
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn builtin_nuke_impact_settings(&self) -> Option<(Option<i32>, Option<&str>, bool)> {
+        self.builtin_nuke_impact.as_ref().map(|settings| {
+            (
+                settings.flash_duration,
+                settings.pre_impact_anim.as_deref(),
+                settings.follows_anim,
+            )
+        })
+    }
+
+    pub(crate) fn bind_builtin_nuke_impact(
+        &mut self,
+        combat: &crate::rules::ares_warhead::WarheadCombatRules,
+    ) {
+        let flash_duration = combat.nuke_flash_duration();
+        let animation = combat.pre_impact_anim();
+        let follows_anim = combat.pre_impact_anim_moves();
+        self.builtin_nuke_impact = (flash_duration.is_some()
+            || animation.is_some()
+            || follows_anim)
+            .then(|| NukeImpactSettings {
+                flash_duration,
+                pre_impact_anim: animation.map(str::to_owned),
+                follows_anim,
+            });
+    }
+
     pub(crate) fn bind_ares_rules(
         &mut self,
         rules: Option<&crate::rules::ares_warhead::AresWarheadRules>,
+        ares_way: bool,
     ) {
         self.ares = rules.cloned();
+        if !ares_way && let Some(ares) = &mut self.ares {
+            ares.combat_mut().clear_nuke_impact();
+        }
     }
 
     /// `InfDeath=`'s constructor value (`0x0075CF14`, the zeroed EBX of
@@ -646,6 +701,7 @@ impl WarheadType {
             verses_f64,
             ares_verses: crate::rules::ares_switch::ares_way().then(AresWarheadVerses::default),
             ares: None,
+            builtin_nuke_impact: None,
             cell_spread_f64,
             cell_inset_f32,
             percent_at_max_f64,

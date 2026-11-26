@@ -380,7 +380,14 @@ impl Simulation {
                 //719AA3..719AC9: a newly reinforced member skips the
                 //Chronosphere's terrain kill/sink/transform validation.
                 if warp.pending_state() == 0 {
-                    self.chrono_post_warp_validation(id, marked, rules, registry, &mut ctx.effects);
+                    self.chrono_post_warp_validation(
+                        id,
+                        marked,
+                        rules.ares() || warp.extension_landing(),
+                        rules,
+                        registry,
+                        &mut ctx.effects,
+                    );
                 }
                 if !self.chrono_owner_alive(id) {
                     return Ok(bridge_state_changed);
@@ -591,6 +598,10 @@ impl Simulation {
             return true;
         }
         let owner_infantry = entity.category() == EntityCategory::Infantry;
+        let extension_landing = rules.ares()
+            || entity
+                .chrono_warp()
+                .is_some_and(ChronoWarp::extension_landing);
         let target = (coord.x / 256, coord.y / 256);
         let mut blocked = false;
         if let Some((cell, layer)) = crate::sim::superweapon::cell_grid::selected_cell_list(
@@ -600,9 +611,10 @@ impl Simulation {
         ) {
             let mut next = self.cell_objects(cell, layer).next();
             while let Some(member) = next {
-                // Ares 3.0 1004B980 (hook 0x718275) replaces the walk; it reads
-                // each successor before the kill, as the vanilla loop does.
-                if rules.ares() {
+                // P1 0x1004C5E0 (hook 0x718275 -> 0x7184CE) captures the
+                // current object's successor before ReceiveDamage.
+                if extension_landing {
+                    next = self.next_cell_object(member);
                     self.ares_chrono_make_room(
                         id,
                         owner_infantry,
@@ -624,8 +636,8 @@ impl Simulation {
                         registry,
                         effects,
                     );
+                    next = self.next_cell_object(member);
                 }
-                next = self.next_cell_object(member);
             }
         }
         if let Some(terrain) = self.resolved_terrain.as_ref() {
@@ -651,7 +663,7 @@ impl Simulation {
         true
     }
 
-    /// TeleportLocomotionClass_MakeRoom (Ares 3.0 `1004B980`, hook
+    /// TeleportLocomotionClass_MakeRoom (Ares 3.0p1 `0x1004C5E0`, hook
     /// `0x718275`, resuming at `0x7184CE`) for one object of the destination
     /// cell's list: an object is protected while under the Iron Curtain or
     /// when its TechnoTypeExt `Chronoshift.Crushable` is off. With RulesExt
@@ -882,6 +894,7 @@ impl Simulation {
         &mut self,
         id: u64,
         coord: DriveCoord,
+        extension_landing: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
@@ -901,10 +914,10 @@ impl Simulation {
                 .cell_objects((cx as u16, cy as u16), MovementLayer::Ground)
                 .next();
             while let Some(member) = next {
-                // Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush
-                // (10037BC0, hook 0x7187DA) skips the warper itself.
+                // P1 PreventSelfCrush (0x10038660, hook 0x7187DA) skips
+                // the warper itself and resumes at the next-object read.
                 if let CellObjectMember::Entity(other) = member
-                    && !(rules.ares() && other == id)
+                    && !(extension_landing && other == id)
                     && self.substrate.entities.get(other).is_some_and(|entity| {
                         crate::sim::superweapon::invulnerability::is_invulnerable(
                             entity.invulnerability.as_ref(),
@@ -922,11 +935,11 @@ impl Simulation {
                 (
                     entity.category(),
                     object.naval,
-                    // Ares 3.0 TeleportLocomotionClass_UnfreezeObject_SinkOrSwim
-                    // (1005D420, hook 0x718871): an Amphibious,
+                    // P1 UnfreezeObject_SinkOrSwim (0x1005E1F0, hook
+                    // 0x718871, resume 0x7188B1): an Amphibious,
                     // AmphibiousCrusher, AmphibiousDestroyer or WaterBeach
                     // MovementZone floats too, powered or not.
-                    rules.ares()
+                    extension_landing
                         && matches!(
                             object.movement_zone,
                             MovementZone::Amphibious
@@ -941,12 +954,12 @@ impl Simulation {
         }) else {
             return;
         };
-        // Ares 3.0 TeleportLocomotionClass_Unwarp_SinkJumpJets (10037BE0,
+        // Ares 3.0p1 TeleportLocomotionClass_Unwarp_SinkJumpJets (0x10038680,
         // hook 0x7188F2): on a water tile (`0x004865D0`) a Unit offline for
         // want of power (`+0x1C8`) does not float, and a `SpeedType=Hover`
         // `JumpJet=` Unit goes straight to `0x00718A66`, whose water-tile,
         // non-infantry arm sinks it with no kill booked.
-        let hover = if rules.ares() {
+        let hover = if extension_landing {
             let unit = (water_tile && category == EntityCategory::Unit)
                 .then(|| {
                     let entity = self.substrate.entities.get(id)?;

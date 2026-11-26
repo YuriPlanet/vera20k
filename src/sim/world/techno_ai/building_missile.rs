@@ -192,7 +192,7 @@ fn emp_cannon(
         .as_building()
         .map_or(-1, |leaf| leaf.firing_super_weapon());
     if firing != -1 {
-        if rules.ares() {
+        if rules.ares() || entity.ares_super_weapon().is_some() {
             let super_target = entity.ares_super_target();
             if cannon {
                 if let Some(cell) = super_target
@@ -250,24 +250,20 @@ fn emp_cannon(
             1
         }
         1 => {
-            let (ball, delay) = if rules.ares() {
-                match entity
-                    .ares_super_weapon()
-                    .and_then(|attached| {
-                        rules.super_weapon_metadata(sim.interner.resolve(attached.sw_type))
-                    })
-                    .map(|metadata| metadata.launch().emp_pulse())
-                {
-                    Some(emp) => (
-                        emp.pulse_ball
-                            .clone()
-                            .unwrap_or_else(|| Some(PULSE_BALL_ANIM.to_owned())),
-                        emp.pulse_delay,
-                    ),
-                    None => (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY),
-                }
-            } else {
-                (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY)
+            let (ball, delay) = match entity
+                .ares_super_weapon()
+                .and_then(|attached| {
+                    rules.super_weapon_metadata(sim.interner.resolve(attached.sw_type))
+                })
+                .map(|metadata| metadata.launch().emp_pulse())
+            {
+                Some(emp) => (
+                    emp.pulse_ball
+                        .clone()
+                        .unwrap_or_else(|| Some(PULSE_BALL_ANIM.to_owned())),
+                    emp.pulse_delay,
+                ),
+                None => (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY),
             };
             let flh = fire_coordinate(
                 sim,
@@ -608,7 +604,7 @@ fn spawn_warning(
     let coord = cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
     // Ares hook 44C9FF (10036750): the firing type's `Nuke.PsiWarning`;
     // none skips the warning (0x0044CA7A).
-    let warning = if rules.ares() {
+    let warning = if rules.ares() || firing_nuke(sim, rules, id).is_some() {
         firing_nuke(sim, rules, id)?.psi_warning.clone()?
     } else {
         WARNING_ANIM.to_owned()
@@ -657,10 +653,12 @@ fn launch_missile(
         .mission_leaf
         .as_building()
         .map_or(-1, |leaf| leaf.firing_super_weapon());
-    let weapon = usize::try_from(firing)
+    let firing_sw = usize::try_from(firing)
         .ok()
         .and_then(|index| rules.super_weapon_order.get(index))
-        .and_then(|name| rules.super_weapon(name))
+        .and_then(|name| rules.super_weapon(name));
+    let ares_nuke = rules.ares() || firing_sw.is_some_and(|sw| sw.uses_ares_handler(rules));
+    let weapon = firing_sw
         .and_then(|sw| sw.weapon_type.as_deref())
         .and_then(|name| rules.weapon(name));
     let warhead = weapon.and_then(|weapon| rules.weapon_warhead(weapon));
@@ -691,7 +689,7 @@ fn launch_missile(
     }
     // Ares hook 44CB4C (10036660) replaces the vanilla velocity with (0, 0,
     // 10) for a `Vertical=` BulletType, else (0, 0, 100).
-    let velocity = if rules.ares() {
+    let velocity = if ares_nuke {
         crate::sim::projectile::ProjectileVelocity::new(
             0,
             0,
@@ -738,7 +736,7 @@ fn launch_missile(
     // The hook also remembers the firing type on the missile (BulletExt
     // NukeSW) and takes its `Nuke.TakeOff`, else `[General] NukeTakeOff=`,
     // whose ZAdjust becomes -100 only while still 0.
-    let take_off = if rules.ares() {
+    let take_off = if ares_nuke {
         let firing_type = usize::try_from(firing)
             .ok()
             .and_then(|index| rules.super_weapon_order.get(index))
@@ -751,7 +749,7 @@ fn launch_missile(
         Some(rules.general.nuke_take_off.clone())
     };
     if let Some(anim) = take_off.and_then(|name| spawn_anim(sim, rules, &name, origin, false)) {
-        let unset = if rules.ares() {
+        let unset = if ares_nuke {
             sim.substrate
                 .anims
                 .get(anim)
@@ -786,6 +784,9 @@ fn firing_nuke<'r>(
     let name = rules
         .super_weapon_order
         .get(usize::try_from(firing).ok()?)?;
+    if !rules.super_weapon(name)?.uses_ares_handler(rules) {
+        return None;
+    }
     Some(rules.super_weapon_metadata(name)?.launch().nuke())
 }
 

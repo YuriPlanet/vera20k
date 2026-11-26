@@ -119,3 +119,33 @@ fn the_sell_event_sells_a_unit_standing_on_a_building() {
         assert_eq!(alive, !sold);
     }
 }
+
+#[test]
+fn a_stock_superweapon_can_send_sell_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    for (sw_rules, sold) in [
+        ("", false),
+        (
+            "[SuperWeaponTypes]\n0=Sale\n[Sale]\nType=IronCurtain\nAction=SellUnit\n",
+            true,
+        ),
+    ] {
+        let (mut sim, rules, tank) = scene("", "", sw_rules, 0);
+        let owner = sim.interner.get("Americans").unwrap();
+        let before = sim.houses[&owner].economy().credits();
+        assert!(!rules.ares());
+        assert!(!foot_can_be_sold(&sim, &rules, tank));
+        assert_eq!(
+            sim.apply_command(
+                "Americans",
+                &Command::SellBuilding { entity_id: tank },
+                Some(&rules),
+            ),
+            sold,
+        );
+        assert_eq!(
+            sim.houses[&owner].economy().credits() - before,
+            if sold { 300 } else { 0 },
+        );
+    }
+}

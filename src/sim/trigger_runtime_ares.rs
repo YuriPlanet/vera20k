@@ -18,8 +18,9 @@ use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
 pub(super) const fn event_hooks_enabled(kind: i32, ares: bool) -> bool {
     // Vehicle capture publishes its explicit attached events for Script67
-    // as well as for the existing Ares input paths.
-    ares || matches!(kind, 69 | 70)
+    // as well as for the existing Ares input paths. Ares 3.0p1
+    // 0x1005062B/0x10050678 evaluate the built-in SuperWeapon House events.
+    ares || matches!(kind, 69 | 70 | 75..=77)
 }
 
 impl Simulation {
@@ -88,15 +89,15 @@ impl Simulation {
                         _ => true,
                     }
             }
-            // A Super whose type has index `value` was activated (75) or
-            // deactivated (76).
+            // 0x1005062B: a Super whose type has index `value` was activated
+            // (75) or deactivated (76).
             75 | 76 => {
                 raised
                     && matches!(input.ares_source, Some(AresEventSource::Super(typ))
                         if rules.super_weapon_index(self.interner.resolve(typ))
                             == usize::try_from(value).ok())
             }
-            // A Super of the named type fired at a Cell within 5 Cells of
+            // 0x10050678: a Super of the named type fired within 5 Cells of
             // waypoint `value`: strcmpi of the type ID, then
             // sqrt(dx*dx+dy*dy) <= 5.0 on the Cell deltas.
             77 => {
@@ -256,9 +257,9 @@ impl Simulation {
         )
     }
 
-    /// RaiseOwnerTagEvent (inlined in SWTypeExt::Activate 10032020 and
-    /// Deactivate 100325D0): `kind` with no object and the empty Cell on each
-    /// of `owner`'s House Tags, first to last, rereading the list.
+    /// Ares 3.0p1 SWTypeExt::Activate (0x10032A85/0x10032AB2) and Deactivate
+    /// (0x10033038) raise `kind` on each of `owner`'s House Tags, first to
+    /// last, rereading the list.
     pub(crate) fn raise_ares_super_event(
         &mut self,
         owner: InternedId,
@@ -281,7 +282,7 @@ impl Simulation {
         );
     }
 
-    /// TActionExt::Execute (Ares.dll 100396C0, hook 0x6DD8D7) for Ares' own
+    /// TActionExt::Execute (Ares 3.0p1 0x6DD8D7 -> 0x1003A4A0) for Ares' own
     /// actions 146..149 and the Firestorm actions 92/93; `None` keeps the
     /// stock switch. 98's replacement lives in its stock owner.
     pub(super) fn ares_execute_action(
@@ -296,10 +297,10 @@ impl Simulation {
         let value = action.value;
         Some(match action.entry.kind {
             92 | 93 => {
-                // ActivateFirestorm/DeactivateFirestorm: the trigger's House
-                // raises or drops its firestorm (SetFirestormState 10022590)
-                // unless it already is so; handled either way. Native reads
-                // a null House; VERA refuses.
+                // 0x1003A33D..0x1003A361 checks the trigger House's flag and
+                // changes it through SetFirestormState (0x10023010). The
+                // handler returns at 0x6DFDDD; stock 92/93 only reach its
+                // successful return via 0x6DFDDB. VERA refuses a null House.
                 let Some(house) = context.incoming_house else {
                     return Some(false);
                 };

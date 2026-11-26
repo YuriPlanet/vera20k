@@ -331,6 +331,9 @@ impl Simulation {
                 if rules.ares() {
                     self.ares_make_stuff_up_logic(rules);
                 }
+                // Ares 3.0p1 LogicClass_Update (0x0055AFB3 -> 0x1006F150)
+                // visits delayed UnitDelivery instances before trigger polling.
+                crate::sim::superweapon::unit_delivery::tick(self, rules, overlay_registry, effects);
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }

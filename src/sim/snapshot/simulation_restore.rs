@@ -24,8 +24,8 @@ impl Simulation {
         }
     }
 
-    /// Attachment and paired selections need Ares. Pending deliveries and
-    /// their building overrides can also come from a built-in definition.
+    /// Validate extension state against its rules. Paid selections and
+    /// deliveries can come from built-in superweapon definitions.
     pub(crate) fn validate_ares_state_for_load(
         &self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -64,7 +64,7 @@ impl Simulation {
                     .is_some()
             })
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
-        self.validate_paid_super_weapon_selections_for_load(ares)
+        self.validate_paid_super_weapon_selections_for_load(rules)
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         Ok(())
     }
@@ -706,9 +706,9 @@ impl Simulation {
                 .map_err(|error| SnapshotRestoreError::InvalidSavedCellLand(error.to_string()))?;
         }
 
-        // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
+        // Ares 3.0p1 0x10015180 (hook 0x483D94): a powered firestorm section's
         // Impassable class is a Recalc product the template lacks.
-        self.ares_firestorm_restore_zone_classes(rules);
+        self.recalc_firestorm_zone_classes(rules);
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }

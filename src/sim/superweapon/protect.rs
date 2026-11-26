@@ -1,15 +1,14 @@
 //! Ares SW_Protect (`src/Misc/SWTypes/Protect.cpp`) handles `Type=Protect`
-//! and redirected `Type=IronCurtain`: an Iron Curtain over a rectangle or
-//! range with its own duration, sounds and blackout.
+//! and redirected `Type=IronCurtain` or `Type=ForceShield`, with their own
+//! area, duration, sounds and blackout.
 //!
 //! Ares 3.0p1: Activate `0x10075800`, Initialize `0x10075C10` (Iron
 //! Curtain EVA lines, AnimHeight 5, AITargeting IronCurtain, the IronCurtain
 //! cursor), LoadFromINI `0x10075CD0` (`Protect.Duration`, `.PowerOutage`,
 //! `.PlayFadeSoundTime`), GetRange `0x10075B80` (the type's `SW.Range`, else
-//! a 3x3 rectangle) and GetAnim `0x10075B40` (`SW.Animation`, else
-//! `IronCurtainInvokeAnim=`, built by the common Launch). A Protect type is
-//! never the Force Shield arm: Protect_IsForceShield is set only for a
-//! redirected `Type=ForceShield`, whose stock owner VERA keeps.
+//! a 3x3 rectangle or `ForceShieldRadius=`) and GetAnim `0x10075B40`
+//! (`SW.Animation`, else the corresponding stock invoke anim). The raw
+//! ForceShield type sets the force byte in this handler.
 //!
 //! Activate on a charged Super, at the target cell's GetCoords: the type's
 //! `StartSound=`, then (with a `SpecialSound=`) the fade countdown of
@@ -18,7 +17,7 @@
 //! area's cells (`CellClass::GetContent`) once, in UniqueID order
 //! (DistinctCollector), skipping an immobilized (`+0x27C`) or warping-out
 //! (`+0x270`) one and those `SW.AffectsHouse`/`SW.AffectsTarget` exclude,
-//! gets IronCurtain (vt+0x154) with the duration, the owner and force 0.
+//! gets IronCurtain (vt+0x154) with the duration, the owner and force byte.
 //! It reports activation even when uncharged.
 //!
 //! Ledger: the invoke anim's and each curtain receiver's own RNG draws; timer
@@ -31,9 +30,10 @@ use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::TargetMask;
-use crate::rules::superweapon_type::SuperWeaponType;
+use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
 use crate::sim::intern::InternedId;
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::superweapon::invulnerability::InvulnKind;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// Ares 3.0p1 SW_Protect::Activate `0x10075800` for `owner`'s Super of `sw_type`.
@@ -57,9 +57,20 @@ pub(super) fn launch(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let duration = launch
-        .protect_duration()
-        .unwrap_or(rules.general.iron_curtain_duration);
+    let general = &rules.general;
+    let force = sw.kind == SuperWeaponKind::ForceShield;
+    // 0x10075869..0x1007592F chooses the defaults using Protect_IsForceShield.
+    let (kind, duration, fade, outage) = if force {
+        (
+            InvulnKind::ForceShield,
+            general.force_shield_duration,
+            general.force_shield_fade_sound_time,
+            general.force_shield_blackout_duration,
+        )
+    } else {
+        (InvulnKind::IronCurtain, general.iron_curtain_duration, 0, 0)
+    };
+    let duration = launch.protect_duration().unwrap_or(duration);
     // 0x1007585F uses CellClass::GetCoords for StartSound and the fade
     // timer. The shared presentation adds bridge height to its own cues.
     let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
@@ -75,19 +86,22 @@ pub(super) fn launch(
     if sw.special_sound.is_some()
         && let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type)
     {
-        let fade = launch.protect_fade_sound_time().unwrap_or(0);
+        let fade = launch.protect_fade_sound_time().unwrap_or(fade);
         instance.arm_fade(duration.wrapping_sub(fade), coords);
     }
     // HouseClass::CreatePowerOutage (0x0050BC90) for a positive blackout.
-    let outage = launch.protect_power_outage().unwrap_or(0);
+    let outage = launch.protect_power_outage().unwrap_or(outage);
     if outage > 0 && sim.houses.contains_key(&owner) {
         let frame = sim.session.binary_frame();
         sim.power_states
             .house_mut(owner)
             .start_blackout(frame, outage);
     }
-    // GetRange 0x10075B80: the type's SW.Range, else a 3x3 rectangle.
+    // GetRange 0x10075B80: SW.Range, else ForceShieldRadius or 3x3.
     let range = match launch.range() {
+        (width, height) if width < 0.0 && height < 0 && force => {
+            (general.force_shield_radius as f32, -1)
+        }
         (width, height) if width < 0.0 && height < 0 => (3.0, 3),
         range => range,
     };
@@ -113,6 +127,7 @@ pub(super) fn launch(
             category,
             Some(owner),
             duration,
+            kind,
             frame_effects,
         );
     }
@@ -126,9 +141,9 @@ pub(super) fn area_technos(sim: &Simulation, range: (f32, i32), center: (u16, u1
     area_technos_with(sim, range, center, false)
 }
 
-/// Helpers::Alex::for_each_in_rect_or_spread (the Dominator's,
-/// `10037840`): the same rectangle, else for a height of 0 or less the
-/// CellSpread of `max(int(width), 0)` when positive.
+/// Ares 3.0p1 PsyDom_Fire (0x100382E0, hook 0x0053B080): a rectangle, or
+/// the CellSpreadEnumerator at 0x10036560. The caller truncates the range
+/// at 0x100384D7, ignores nonpositive values, and enumerates through band 256.
 pub(super) fn area_technos_in_spread(
     sim: &Simulation,
     range: (f32, i32),
@@ -173,8 +188,9 @@ fn area_technos_with(
         }
     };
     if spread && !rectangle {
-        if height <= 0 && (width as i32) > 0 {
-            for &(dx, dy) in crate::sim::combat::cell_spread::sweep(width as i32 as usize) {
+        if height <= 0 && (1.0..2_147_483_648.0).contains(&width) {
+            let band = (width as u16).min(crate::sim::cell_rect::MAX_CELL_SPREAD);
+            for (dx, dy) in crate::sim::cell_rect::cell_spread_rings(0, band) {
                 visit(cx + i32::from(dx), cy + i32::from(dy));
             }
         }

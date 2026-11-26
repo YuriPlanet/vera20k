@@ -619,7 +619,7 @@ impl Simulation {
     /// ([`Self::unit_in_contact_war_factory`]).
     ///
     /// Installed Ares replaces the body (hook `0x71AE50`,
-    /// TechnoExt::CanWarpTarget `1004F300`): the target must also lack the
+    /// P1 `0x10050070` -> TechnoExt::CanWarpTarget `0x1004FF60`): the target must also lack the
     /// `UNWARPABLE` rank ability, a building must not be AboutToChronoshift
     /// (registered with an Ares ChronoWarp), and only a Unit in a war factory
     /// that is not Naval stays (GetWarFactoryOf `10045580`, excludeNaval).
@@ -639,12 +639,17 @@ impl Simulation {
         ) {
             return false;
         }
+        // The building's AboutToChronoshift byte at P1 0x1004FFED
+        // belongs to the built-in ChronoWarp state machine.
+        if self.ares_chrono_warps.about_to_chronoshift(target) {
+            return false;
+        }
         if rules.ares_form() {
             let unwarpable = self
                 .object_type(entity.type_ref(), rules)
                 .and_then(|object| object.promotion_abilities())
                 .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw()));
-            if unwarpable || self.ares_chrono_warps.about_to_chronoshift(target) {
+            if unwarpable {
                 return false;
             }
             let naval_factory = entity

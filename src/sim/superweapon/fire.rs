@@ -127,9 +127,8 @@ impl Simulation {
         if super_instance(self, owner, sw_type_id).is_none() {
             return false;
         }
-        // Without Ares, refuse extension identities before any paired-state,
-        // charge, wallet, RNG or presentation writes, including manually
-        // forged rule records.
+        // Refuse inactive extension definitions before any paired-state,
+        // charge, wallet, RNG or presentation writes.
         if !ares && (selection.is_some() || sw.kind.is_extension()) {
             return false;
         }
@@ -137,8 +136,7 @@ impl Simulation {
         // later refuses (e.g. funds changed while queued). Otherwise an old
         // cancel/final for that refused request could match a future retry.
         // This is sequence metadata only: no wallet, charge or pair is touched.
-        let requested_source =
-            selection.filter(|_| rules.ares_form() && sw.pre_click && !sw.post_click);
+        let requested_source = selection.filter(|_| sw.pre_click && !sw.post_click);
         if let Some(request) = requested_source {
             let Some(next) = self.next_paid_super_weapon_selection(rules, owner, sw_type_id) else {
                 return false;
@@ -176,7 +174,7 @@ impl Simulation {
         // Ares hook 4FAE72 (10034C90) pairs a handler's PostClick type with
         // the House's last Super instead of its PreDependent.
         let post_click_source = |sim: &Self| {
-            if ares && sw.launch_kind(rules).has_ares_handler() {
+            if sw.uses_ares_handler(rules) {
                 super::ares_post_click_source(sim, rules, owner)
             } else {
                 super::pre_dependent(rules, sw)
@@ -187,14 +185,13 @@ impl Simulation {
             .then(|| post_click_source(self))
             .flatten()
             .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
-        // The paid two-stage bindings are Ares': without it they hold their
-        // neutral values and every test on them below falls through.
+        // Only enabled extension definitions can form a paid selection.
         let paid_source = if ares {
             super::two_stage::destination_for_source(self, rules, sw_type_id, sw)
         } else {
             None
         };
-        let paid_final = paired.filter(|_| ares && super::paid_pair_source(rules, sw).is_some());
+        let paid_final = paired.filter(|(_, source)| super::paid_pair_matches(rules, source, sw));
         if ares
             && paid_source.is_none()
             && paid_final.is_none()
@@ -202,8 +199,6 @@ impl Simulation {
         {
             return false;
         }
-        // Without Ares `paid_final` is `None` and a `selection` was refused
-        // above, so neither arm runs.
         if let Some((source, source_sw)) = paid_final {
             let Some(ticket) = selection else {
                 return false;
@@ -262,14 +257,19 @@ impl Simulation {
                 super::targeting::on_map(self, cell)
             } else {
                 super::money::valid_target(self, sw, cell)
-            }) || !click_fire_admission(self, owner, sw_type_id, sw, rules.ares_form())
-                || !super::money::admit(
-                    &mut self.sound_events,
-                    &self.houses,
-                    owner,
-                    payment.0,
-                    payment.1,
-                ))
+            }) || !click_fire_admission(
+                self,
+                owner,
+                sw_type_id,
+                sw,
+                sw.uses_ares_handler(rules),
+            ) || !super::money::admit(
+                &mut self.sound_events,
+                &self.houses,
+                owner,
+                payment.0,
+                payment.1,
+            ))
         {
             return false;
         }
@@ -318,7 +318,7 @@ impl Simulation {
                 let frame = self.session.binary_frame();
                 let source = super_instance(self, owner, pre_type).expect("retained paired source");
                 source.paid_selection = None;
-                source.finish_click_fire(pre_sw, frame);
+                source.finish_click_fire(pre_sw, frame, pre_sw.uses_extension_rules(rules));
             }
             // `0x004FAEA6..0x004FAEC1`.
             super_instance(self, owner, pre_type)
@@ -463,7 +463,7 @@ fn click_fire(
     // Paid launches passed this same owner before the outer transaction writes.
     let needs_native_admission = !ares || sw.money_amount == 0;
     if needs_native_admission
-        && !click_fire_admission(sim, owner, sw_type_id, sw, rules.ares_form())
+        && !click_fire_admission(sim, owner, sw_type_id, sw, sw.uses_ares_handler(rules))
     {
         return false;
     }
@@ -533,7 +533,7 @@ fn click_fire(
             instance.is_ready = false;
             return true;
         }
-        instance.finish_click_fire(sw, frame);
+        instance.finish_click_fire(sw, frame, ares);
     }
     true
 }
@@ -574,19 +574,15 @@ fn complete_ares_effect(
     }
     if sw.uses_ares_handler(rules) {
         super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
-        // A built-in Iron Curtain can use Protect in a stock-way map.
-        // Its launch does not broadcast Ares events to that map's House Tags.
-        if rules.ares_form() || sw.kind.is_extension() {
-            super::raise_ares_activation_events(
-                sim,
-                rules,
-                owner,
-                sw_type_id,
-                cell,
-                overlay_registry,
-                frame_effects,
-            );
-        }
+        super::raise_ares_activation_events(
+            sim,
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+        );
     } else if sw.has_builtin_rules() {
         // A built-in selector can reach a stock launch without changing
         // its payload or presentation. Its common SW.Shots is still live.
@@ -653,13 +649,13 @@ fn launch(
     frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     use super::paradrop::ParaDropKind;
-    let ares = rules.ares_form();
+    let ares_handler = sw.uses_ares_handler(rules);
     let launch_kind = sw.launch_kind(rules);
     // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
     // redirected Type's handler Activate runs first; an accepted one ends
     // Launch through the common tail, a refused one falls through to the
     // stock case, which then reports no Ares activation.
-    let redirect_refused = if ares && sw.kind.is_ares_redirect() {
+    let redirect_refused = if ares_handler && sw.kind.is_ares_redirect() {
         let activated = match sw.kind {
             SuperWeaponKind::ChronoSphere => {
                 super::chronosphere::ares_launch_source(
@@ -752,12 +748,11 @@ fn launch(
     {
         return false;
     }
-    match launch_kind {
+    let activated = match launch_kind {
         // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
         // effects. ClickFire's ordinary/one-time finish still runs afterwards.
-        SuperWeaponKind::NoEffect => {}
-        // Stock Launch has no case for an Ares type: without Ares these do
-        // nothing, and Fire_SW has refused them before the click.
+        SuperWeaponKind::NoEffect => false,
+        // An inactive extension type has no stock Launch case.
         SuperWeaponKind::GenericWarhead
         | SuperWeaponKind::UnitDelivery
         | SuperWeaponKind::HunterSeeker
@@ -767,7 +762,10 @@ fn launch(
         | SuperWeaponKind::EMPulse
         | SuperWeaponKind::Firestorm
         | SuperWeaponKind::DropPod
-            if !ares && !sw.has_builtin_rules() => {}
+            if !ares_handler =>
+        {
+            false
+        }
         SuperWeaponKind::HunterSeeker => {
             let activated = super::hunter_seeker::launch(
                 sim,
@@ -800,83 +798,67 @@ fn launch(
             return activated;
         }
         SuperWeaponKind::UnitDelivery => {
-            let activated = super::unit_delivery::launch(
-                sim,
-                rules,
-                owner,
-                sw_type_id,
-                sw,
-                (rx, ry),
-                overlay_registry,
-                frame_effects,
-            );
+            let activated = super::unit_delivery::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
             if activated {
                 super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
             return activated;
         }
         SuperWeaponKind::MultiMissile => {
-            super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+            super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
         }
         SuperWeaponKind::LightningStorm => {
-            super::lightning_storm::launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::lightning_storm::launch(sim, rules, owner, sw_type_id, (rx, ry))
         }
-        SuperWeaponKind::IronCurtain => {
-            super::iron_curtain::launch(
-                sim,
-                rules,
-                owner,
-                rx,
-                ry,
-                sw_type_id,
-                overlay_registry,
-                frame_effects,
-            );
-        }
+        SuperWeaponKind::IronCurtain => super::iron_curtain::launch(
+            sim,
+            rules,
+            owner,
+            rx,
+            ry,
+            sw_type_id,
+            overlay_registry,
+            frame_effects,
+        ),
         SuperWeaponKind::ForceShield => {
-            super::force_shield::launch(sim, rules, owner, rx, ry, sw_type_id, frame_effects);
+            super::force_shield::launch(sim, rules, owner, rx, ry, sw_type_id, frame_effects)
         }
-        SuperWeaponKind::GeneticConverter => {
-            super::genetic_converter::launch(
-                sim,
-                rules,
-                owner,
-                rx,
-                ry,
-                sw_type_id,
-                overlay_registry,
-                frame_effects,
-            );
-        }
+        SuperWeaponKind::GeneticConverter => super::genetic_converter::launch(
+            sim,
+            rules,
+            owner,
+            rx,
+            ry,
+            sw_type_id,
+            overlay_registry,
+            frame_effects,
+        ),
         SuperWeaponKind::PsychicReveal => {
-            super::psychic_reveal::launch(sim, rules, owner, rx, ry, sw_type_id);
+            super::psychic_reveal::launch(sim, rules, owner, rx, ry, sw_type_id)
         }
-        SuperWeaponKind::ParaDrop => {
-            super::paradrop::launch(
-                sim,
-                rules,
-                owner,
-                rx,
-                ry,
-                ParaDropKind::Generic,
-                sw_type_id,
-                frame_effects,
-            );
-        }
-        SuperWeaponKind::AmerParaDrop => {
-            super::paradrop::launch(
-                sim,
-                rules,
-                owner,
-                rx,
-                ry,
-                ParaDropKind::American,
-                sw_type_id,
-                frame_effects,
-            );
-        }
+        SuperWeaponKind::ParaDrop => super::paradrop::launch(
+            sim,
+            rules,
+            owner,
+            rx,
+            ry,
+            ParaDropKind::Generic,
+            sw_type_id,
+            frame_effects,
+        ),
+        SuperWeaponKind::AmerParaDrop => super::paradrop::launch(
+            sim,
+            rules,
+            owner,
+            rx,
+            ry,
+            ParaDropKind::American,
+            sw_type_id,
+            frame_effects,
+        ),
         SuperWeaponKind::ChronoSphere => {
             super::chronosphere::launch_source(sim, rules, owner, sw_type_id, (rx, ry));
+            true
         }
         SuperWeaponKind::ChronoWarp => {
             super::chronosphere::launch_warp(
@@ -888,12 +870,13 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
+            true
         }
         SuperWeaponKind::PsychicDominator => {
-            super::psychic_dominator::launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::psychic_dominator::launch(sim, rules, owner, sw_type_id, (rx, ry))
         }
         SuperWeaponKind::SpyPlane => {
-            super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
+            super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects)
         }
         SuperWeaponKind::GenericWarhead => {
             let activated = super::generic_warhead::launch(
@@ -974,11 +957,8 @@ fn launch(
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             return true;
         }
-    }
-    if redirect_refused {
-        return false;
-    }
-    true
+    };
+    activated && !redirect_refused
 }
 
 /// The retained Super constructed by the scenario House owner. Native valid

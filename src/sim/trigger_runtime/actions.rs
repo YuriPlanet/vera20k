@@ -259,10 +259,10 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
-        // Ares 3.0 TActionExt::Execute (100396C0, hook 0x6DD8D7) answers its
-        // own kinds before the stock switch.
+        // Ares 3.0p1 TActionExt::Execute (0x6DD8D7 -> 0x1003A4A0) runs the
+        // explicitly authored Firestorm actions before the stock switch.
         let ares = rules.ares_form();
-        if ares
+        if (ares || matches!(action.entry.kind, 92 | 93))
             && let Some(handled) = self.ares_execute_action(
                 action,
                 context,

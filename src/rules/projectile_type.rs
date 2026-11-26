@@ -165,6 +165,8 @@ pub struct ProjectileType {
     pub shrapnel_weapon: Option<String>,
     /// Airburst child weapon (+2B0), retained by the ordered Rules reader.
     pub airburst_weapon: Option<String>,
+    /// Ares 3.0p1 BulletTypeExt+0x48, resolved during the ordered Rules read.
+    pub(crate) attached_system: Option<crate::rules::particle_system_type::ParticleSystemTypeId>,
     /// Phobos `BulletTypeExt` airburst/splits settings. Absent keys keep the
     /// Phobos constructor defaults; only Phobos builds read or consume them.
     #[cfg(feature = "phobos")]
@@ -488,6 +490,7 @@ impl ProjectileType {
             // Constructor null; only the ordered Process owner reads it.
             shrapnel_weapon: None,
             airburst_weapon: None,
+            attached_system: None,
             #[cfg(feature = "phobos")]
             phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType::from_section(
                 section,

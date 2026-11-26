@@ -42,6 +42,10 @@ On `Base-for-modders`, new Ares fixes are part of the base engine. A fix to
 normal gameplay applies by default. When a behavior takes an INI key or a map
 script action, that input is enough to enable it.
 
+Wall colors use the cell owner's palette automatically. ParticleType
+`Palette=` and projectile `AttachedSystem=` take effect from the rules
+even with Ares Off. [Wall colors](ares-bugfixes.md) · [Particles and projectiles](ares-anim-particles.md#particle-palettes)
+
 **Options → Game Options → Ares** (`[VERA] Ares=` in VERA.INI) chooses how a start
 treats Ares. Like the mod, it is read at start and holds until the next one:
 
@@ -59,16 +63,19 @@ the network agreement ([Networking](Networking.md#room-rules)); a save keeps the
 answer it was started with.
 
 `[#include]` works in every setting and accepts files in subdirectories of the
-selected mod or installation, for example `0=rules/infantry.ini`. Team script
-actions [65 and 67](ares-triggers.md#team-scripts) and `ForceShield.Modifier=`
-also work directly from their configuration.
+selected mod or installation, for example `0=rules/infantry.ini`. On
+`Base-for-modders`, the [superweapon handlers](ares-superweapon-types.md),
+their modifiers and [map and team script actions](ares-triggers.md) listed
+for Ares Off also work directly from their configuration.
 
 A save records no Ares capability; a save from an older build with the retired `ares`
 feature does not load.
 
 The save reader requires the build's snapshot layout. Animation glow ownership,
-alternate theater art and a map House's low-power override change that layout.
-The reader refuses saves written with earlier layouts.
+alternate theater art, a map House's low-power override and the retained
+projectile particle-system reference change that layout. Pending UnitDelivery
+and ChronoWarp also retain their firing state in the current layout. The reader
+refuses saves written with earlier layouts.
 
 Ares combines with the `phobos` and `npatch` build features, and every implemented feature
 must keep working when they are compiled in. The rule and the pattern for two extensions

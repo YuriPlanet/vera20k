@@ -304,9 +304,7 @@ pub(crate) fn start(
     mut cell: (i16, i16),
     owner: Option<InternedId>,
 ) {
-    if rules.ares_form()
-        && let Some(storm) = ares::current(sim, rules)
-    {
+    if let Some(storm) = ares::current(sim, rules) {
         ares::start(sim, rules, storm, duration, deferment, cell, owner);
         return;
     }
@@ -430,14 +428,12 @@ pub(super) fn process(
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
-    let bridge_changed = if rules.ares_form() {
+    let bridge_changed = if rules.ares_form() || ares::current(sim, rules).is_some() {
         ares::process_lists(sim, rules, overlay_registry, frame_effects)
     } else {
         process_lists(sim, rules, overlay_registry, frame_effects)
     };
-    if rules.ares_form()
-        && let Some(storm) = ares::current(sim, rules)
-    {
+    if let Some(storm) = ares::current(sim, rules) {
         ares::process(sim, rules, storm);
         return bridge_changed;
     }
@@ -623,9 +619,7 @@ impl StormCell {
 /// 0)` and listed as manifesting and present. (The coordinate is compared with
 /// the zero coordinate `0x00A9FA30` first, which a cell centre never is.)
 pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
-    if rules.ares_form()
-        && let Some(storm) = ares::current(sim, rules)
-    {
+    if let Some(storm) = ares::current(sim, rules) {
         ares::create_cloud_bolt(sim, rules, storm, cell);
         return;
     }
@@ -696,9 +690,7 @@ pub(super) fn ground_strike(
     [x, y, _]: [i32; 3],
     frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
-    if rules.ares_form()
-        && let Some(storm) = ares::current(sim, rules)
-    {
+    if let Some(storm) = ares::current(sim, rules) {
         return ares::ground_strike(sim, rules, overlay_registry, storm, [x, y], frame_effects);
     }
     let general = &rules.general;

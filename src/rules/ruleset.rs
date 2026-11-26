@@ -973,8 +973,12 @@ pub struct RuleSet {
     /// Derived from the projected TechnoType and Warhead descriptors, so
     /// games without the built-in effect can skip its per-object visits.
     builtin_attach_effects: bool,
+    /// A built-in GenericWarhead can create ordinary Warhead attachments.
+    builtin_generic_attach_effects: bool,
     /// A retained warhead can reach the surfaced Tunnel EMP receiver.
     builtin_tunnel_emp: bool,
+    /// A built-in GenericWarhead can EMP regular Foots and Buildings.
+    builtin_generic_emp: bool,
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,

@@ -133,7 +133,7 @@ fn iron_curtain_warhead_damages_then_curtains_once_scaled() {
 /// type's `IronCurtain.Modifier`.
 #[test]
 fn techno_curtain_scales_by_the_type_modifier() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let rules = rules("", "IronCurtain.Modifier=1.5\n", "");
     let (mut sim, _, target) = scene(&rules);
     crate::sim::superweapon::iron_curtain::curtain_object(
@@ -144,6 +144,7 @@ fn techno_curtain_scales_by_the_type_modifier() {
         EntityCategory::Unit,
         None,
         101,
+        crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
         &mut FrameEffects::default(),
     );
     assert_eq!(curtain_left(&sim, target), 151);

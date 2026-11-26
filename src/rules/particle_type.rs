@@ -70,9 +70,16 @@ pub struct ParticleType {
     /// @ 0x00644F50` reaches `ObjectTypeClass::ReadINI @ 0x005F92D0`, which
     /// retains the current 25-byte string when Image is missing or empty.
     pub image: String,
+    /// Ares ParticleTypeExt::LoadFromINI (3.0p1 `0x10029CB0`, hook
+    /// `0x00645405`): the last nonempty Palette request replaces the
+    /// conversion, including when the named file cannot be loaded.
+    palette: Option<String>,
     /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
     /// (`+0x213`, `char[25]`), separate from the particle's main Image.
     pub(crate) alpha_image: String,
+    /// ObjectType+0x23A from the fixed ART image section. Ares 3.0p1
+    /// `0x10027395` keeps the ordinary particle system when this is set.
+    pub(crate) use_line_trail: bool,
     /// Native `StartFrame=` (`ParticleTypeClass+0x2EC`): the constructor at
     /// `ParticleTypeClass::Constructor @ 0x00644BE0` starts it at zero;
     /// `ParticleTypeClass::ReadINI @ 0x00644F50` passes its current value
@@ -172,6 +179,8 @@ pub(super) struct ParticleReadState {
     end_state_ai: u8,
     final_damage_state: u8,
     color_list: Vec<[u8; 3]>,
+    #[serde(default)]
+    use_line_trail: bool,
 }
 
 impl Default for ParticleReadState {
@@ -183,12 +192,19 @@ impl Default for ParticleReadState {
             end_state_ai: 0,
             final_damage_state: 0,
             color_list: Vec::new(),
+            use_line_trail: false,
         }
     }
 }
 
 impl ParticleReadState {
-    pub(super) fn apply_pass(&mut self, section: &IniSection) {
+    pub(super) fn apply_pass(&mut self, section: &IniSection, art: Option<&IniSection>) {
+        // ParticleReadINI 0x00644F6D enters ObjectTypeReadINI, which uses the
+        // current value at 0x005F9574 and reads the Image section in fixed ART.
+        // The base constructor clears this bit at 0x005F71B2.
+        if let Some(art) = art {
+            self.use_line_trail = art.read_bool("UseLineTrail", self.use_line_trail);
+        }
         // ParticleTypeClass::ReadINI @ 0x00644F50: fresh ColorList temporary
         // 644F7A..644FE1; signed EndStateAI default at6452DC; strcmpi table
         // 6453BA..6453FF stores -1 for absent/unrecognized BehavesLike.
@@ -205,10 +221,15 @@ impl ParticleReadState {
 }
 
 impl ParticleType {
+    /// The retained Palette filename, before theater substitution.
+    pub fn custom_palette(&self) -> Option<&str> {
+        self.palette.as_deref()
+    }
+
     #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
         let mut read = ParticleReadState::default();
-        read.apply_pass(section);
+        read.apply_pass(section, None);
         Self::from_read_state(name, section, &read, None, None)
     }
 
@@ -223,7 +244,12 @@ impl ParticleType {
             name: name.to_string(),
             behaves_like: read.behaves_like,
             image: section.read_name("Image", 0x19).unwrap_or(name).to_owned(),
+            // CustomPalette::LoadFromINI (0x10077210) uses ReadString with
+            // an empty default and a 0x800-byte buffer. The ordered
+            // section records only passes that reached this particle type.
+            palette: section.read_name("Palette", 0x800).map(str::to_owned),
             alpha_image: section.read_object_alpha_image(""),
+            use_line_trail: read.use_line_trail,
             start_frame: section.read_int("StartFrame", 0),
 
             // ParticleType644BE0/644F50 retain full signed words; the

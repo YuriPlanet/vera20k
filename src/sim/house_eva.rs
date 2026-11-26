@@ -143,11 +143,11 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
         .power_states
         .get(&owner)
         .is_some_and(|power| power.low_power());
-    // Ares HouseClass_Update_BuildConst (1002F5A0, hook 0x004F8C97) first
+    // Ares 3.0p1 HouseClass_Update_BuildConst (0x100300E0, hook 0x004F8C97) first
     // drops the House's firestorm when it is short (SetFirestormState
     // false). Native runs it for the local player's House only; VERA for
     // each human-controlled one, as this whole body.
-    if ares && short {
+    if short && sim.ares_firestorm.is_active(owner) {
         sim.ares_set_firestorm_state(
             owner,
             false,

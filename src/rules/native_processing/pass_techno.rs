@@ -311,9 +311,11 @@ impl RulesPassProcessor {
                 if ares_way {
                     self.family_mut(family)[index].bounty.read_pass(&raw);
                 }
-                if ares_way || family != RulesTypeFamily::Building {
+                {
                     let _built_in = (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
-                    // Find only: this nullable Anim reader never allocates.
+                    // P1 TechnoTypeExt loads EMP susceptibility for Buildings
+                    // as well as Foots, including built-in GenericWarhead victims.
+                    // This Find-only nullable Anim reader never allocates.
                     let sparkle = self.resolve_existing_type_from(
                         &raw,
                         "EMP.Sparkles",
@@ -368,14 +370,18 @@ impl RulesPassProcessor {
                     let member = &mut self.family_mut(family)[index];
                     member.turret_rot_override =
                         raw.read_ares_nullable_int("TurretROT", member.turret_rot_override);
-                    member.curtain_modifiers[0] = raw
-                        .read_ares_double_bits("IronCurtain.Modifier", member.curtain_modifiers[0]);
                 }
                 let member = &mut self.family_mut(family)[index];
-                // Ares 3.0p1 TechnoTypeExt::LoadFromINI 0x1003F427..0x1003F438
-                // reads the built-in Force Shield modifier as Valueable<double>.
-                member.curtain_modifiers[1] = crate::rules::ares_switch::not_ares_read(|| {
-                    raw.read_ares_double_bits("ForceShield.Modifier", member.curtain_modifiers[1])
+                crate::rules::ares_switch::not_ares_read(|| {
+                    // Ares 3.0p1 TechnoTypeExt::LoadFromINI 0x1003F427..0x1003F438.
+                    for (modifier, key) in member
+                        .curtain_modifiers
+                        .iter_mut()
+                        .zip(["IronCurtain.Modifier", "ForceShield.Modifier"])
+                    {
+                        *modifier = raw.read_ares_double_bits(key, *modifier);
+                    }
+                    member.super_weapon_techno.read_pass(&raw);
                 });
                 if ares_way {
                     //1003E232: the common extension applies to all Technos.
@@ -384,7 +390,6 @@ impl RulesPassProcessor {
                             raw.read_ares_bool("HasSpotlight", member.building_has_spotlight)
                         });
                     member.spotlight.read_pass(&raw);
-                    member.super_weapon_techno.read_pass(&raw);
                     // TypeExt LoadFromINI1003DFB0: the Experience.* block,
                     // then the Promote.* block whose two type pointers use
                     // the Find-only reader1003FA40 (as Convert.* below).
@@ -434,10 +439,13 @@ impl RulesPassProcessor {
                 match family {
                     RulesTypeFamily::Building => {
                         let supers = {
-                            let _builtin = (!ares_way)
-                                .then(crate::rules::ares_switch::not_ares_reads);
+                            let _builtin =
+                                (!ares_way).then(crate::rules::ares_switch::not_ares_reads);
                             self.resolve_existing_list_from(
-                                &raw, "SuperWeapons", RulesTypeFamily::SuperWeapon, 2048,
+                                &raw,
+                                "SuperWeapons",
+                                RulesTypeFamily::SuperWeapon,
+                                2048,
                             )
                         };
                         if let Some(supers) = supers {
@@ -538,6 +546,7 @@ impl RulesPassProcessor {
                             ext.read_dock_art(fixed_art.section_or_empty(&image));
                             let _builtin = crate::rules::ares_switch::not_ares_reads();
                             ext.read_firestorm_wall(raw);
+                            ext.read_lightning_rod(raw);
                         }
                         let member = read_member(&mut self.families, family, index);
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,

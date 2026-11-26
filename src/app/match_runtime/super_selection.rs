@@ -32,26 +32,21 @@ fn chrono_warp_selection(rules: &RuleSet) -> Option<&str> {
 }
 
 /// Whether the local selection is the Chrono Warp (`0x008809A0 == 4`). The
-/// Ares hook 6CBCDE (10035870), when the Rules were read the Ares way
-/// (`RuleSet::ares_form`), asks instead whether the selected type's `Type=`
+/// Ares hook 6CBCDE (10035870) asks whether the selected handler's type
 /// is ChronoWarp.
 pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &RuleSet) -> bool {
-    let selected = targeting.and_then(TargetingMode::as_super_weapon);
-    if rules.ares_form() {
-        selected.is_some_and(|name| {
-            rules
-                .super_weapon(name)
-                .is_some_and(|sw| sw.kind == SuperWeaponKind::ChronoWarp)
-        })
-    } else {
-        selected.is_some_and(|name| {
-            chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
-                || rules.super_weapon(name).is_some_and(|warp| {
-                    warp.kind == SuperWeaponKind::ChronoWarp
-                        && crate::sim::superweapon::paid_pair_source(rules, warp).is_some()
-                })
-        })
+    let Some(name) = targeting.and_then(TargetingMode::as_super_weapon) else {
+        return false;
+    };
+    let warp = rules.super_weapon(name);
+    if rules.ares_form() || warp.is_some_and(|sw| sw.uses_ares_handler(rules)) {
+        return warp.is_some_and(|sw| sw.kind == SuperWeaponKind::ChronoWarp);
     }
+    chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
+        || warp.is_some_and(|warp| {
+            warp.kind == SuperWeaponKind::ChronoWarp
+                && crate::sim::superweapon::paid_pair_source(rules, warp).is_some()
+        })
 }
 
 /// The selection writes of the local player's Supers: Launch case 3 selects
@@ -70,7 +65,6 @@ pub(super) fn follow_selection_writes(
     rules: &RuleSet,
     local_owner_name: Option<&str>,
 ) {
-    let ares = rules.ares_form();
     for event in events {
         let (SimSoundEvent::SuperWeaponLaunched { owner, sw_type, .. }
         | SimSoundEvent::SuperWeaponStatusChanged { owner, sw_type }) = event
@@ -118,47 +112,20 @@ pub(super) fn follow_selection_writes(
             }
             continue;
         }
-        // When the Rules were read the Ares way (`RuleSet::ares_form`),
-        // Ares (SWTypeExt::Launch 10033201) clears a redirected Nuke's,
-        // Dominator's or Genetic Mutator's selection only when it is the
-        // fired type.
-        if ares
-            && rules
-                .super_weapon(sim.interner().resolve(*sw_type))
-                .is_some_and(|sw| {
-                    matches!(
-                        sw.kind,
-                        SuperWeaponKind::MultiMissile
-                            | SuperWeaponKind::PsychicDominator
-                            | SuperWeaponKind::GeneticConverter
-                    )
-                })
-        {
-            if selected
-                .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
-            {
-                *targeting = None;
-            }
-            continue;
-        }
         let Some(sw) = rules.super_weapon(sim.interner().resolve(*sw_type)) else {
             continue;
         };
+        let ares = sw.uses_ares_handler(rules);
         let launch_kind = sw.launch_kind(rules);
         match launch_kind {
-            SuperWeaponKind::GenericWarhead
-            | SuperWeaponKind::UnitDelivery
-            | SuperWeaponKind::HunterSeeker
-            | SuperWeaponKind::Protect
-            | SuperWeaponKind::Battery
-            | SuperWeaponKind::SonarPulse
-            | SuperWeaponKind::EMPulse
-            | SuperWeaponKind::Firestorm
-            | SuperWeaponKind::DropPod
-                if ares || launch_kind != sw.kind =>
+            kind if ares
+                && !matches!(
+                    kind,
+                    SuperWeaponKind::ChronoSphere | SuperWeaponKind::ChronoWarp
+                ) =>
             {
-                // Ares new-type cleanup only clears the fired selection:
-                // an automatic launch must not disarm a different SW.
+                // 3.0p1 Launch 0x10033C21..0x10033C49 clears the fired
+                // selection. An automatic launch leaves another armed SW up.
                 if selected
                     .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
                 {
@@ -240,6 +207,36 @@ mod tests {
 
     fn warp_selected() -> Option<TargetingMode> {
         Some(TargetingMode::SuperWeapon("ChronoWarpSpecial".to_string()))
+    }
+
+    #[test]
+    fn a_builtin_storm_clears_only_its_own_selection() {
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[SuperWeaponTypes]\n0=Storm\n[Storm]\nType=LightningStorm\nLightning.Duration=30\n",
+        );
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &ini,
+            &crate::rules::ini_parser::IniFile::empty(),
+        )
+        .unwrap();
+        let mut sim = Simulation::new();
+        let event = SimSoundEvent::SuperWeaponLaunched {
+            owner: sim.intern("Americans"),
+            sw_type: sim.intern("Storm"),
+            world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
+        };
+        for (armed, remains_armed) in [("Storm", false), ("Nuke", true)] {
+            let mut targeting = Some(TargetingMode::SuperWeapon(armed.into()));
+            follow_selection_writes(
+                &mut targeting,
+                &[event.clone()],
+                &sim,
+                &rules,
+                Some("Americans"),
+            );
+            assert_eq!(targeting.is_some(), remains_armed);
+        }
     }
 
     #[test]

@@ -1086,15 +1086,19 @@ fn retail_chrono_warp_onto_the_iron_curtain_kills_the_warper() {
     assert!(!dead(&sim, curtained));
 }
 
-/// Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush (10037BC0, hook
+/// P1 TeleportLocomotionClass_Unwarp_PreventSelfCrush (0x10038660, hook
 /// 0x7187DA): a warper that came under the Iron Curtain during its warp is
 /// not crushed by its own curtain on the landing cell.
 #[test]
-fn ares_iron_curtained_warper_survives_its_own_landing() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let Some((rules, mut sim, americans)) = retail_world() else {
+fn builtin_iron_curtained_warper_survives_its_own_landing() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let Some(rules) = super::ares_stock_types_tests::retail_ares_rules(
+        "[ChronoSphereSpecial]\nChronosphere.AffectsIronCurtain=yes\n",
+    ) else {
         return;
     };
+    assert!(!rules.ares());
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let tank = spawn(&mut sim, &rules, "MTNK", "Americans", SOURCE);
     charge_chronosphere(&mut sim, americans);
     click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
@@ -1106,11 +1110,54 @@ fn ares_iron_curtained_warper_survives_its_own_landing() {
         10_000,
         crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
     );
-    for _ in 0..62 {
+    for _ in 0..80 {
         step(&mut sim, &rules);
     }
     assert!(!dead(&sim, tank));
     assert_eq!(cell(&sim, tank), TARGET);
+}
+
+#[test]
+fn builtin_chronosphere_kill_cargo_removes_a_buildings_garrison() {
+    use crate::rules::ini_parser::IniFile;
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let Some((retail, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    for kill_cargo in [false, true] {
+        let mut ini = retail.clone();
+        let value = if kill_cargo { "yes" } else { "no" };
+        ini.merge(&IniFile::from_str(&format!(
+            "[ChronoSphereSpecial]\nSW.AffectsTarget=all\nChronosphere.KillCargo={value}\n\
+             [GAPOWR]\nCanBeOccupied=yes\nMaxNumberOccupants=2\n"
+        )));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+        assert!(!rules.ares_form());
+        let (rules, mut sim, owner) = world_with(rules, 64, &[]);
+        let building = spawn(&mut sim, &rules, "GAPOWR", "Americans", SOURCE);
+        let occupant = spawn(
+            &mut sim,
+            &rules,
+            "E1",
+            "Americans",
+            (SOURCE.0 - 4, SOURCE.1),
+        );
+        sim.techno_limbo_with_rules(occupant, &rules);
+        assert_eq!(
+            sim.substrate.attach_garrison_occupant(building, occupant),
+            Some(1)
+        );
+
+        charge_chronosphere(&mut sim, owner);
+        click(&mut sim, &rules, owner, "ChronoSphereSpecial", SOURCE);
+        click(&mut sim, &rules, owner, "ChronoWarpSpecial", TARGET);
+
+        let building = sim.substrate.entities.get(building).unwrap();
+        assert!(building.is_warped_out());
+        assert_eq!(building.passenger_role().occupants().is_empty(), kill_cargo);
+        assert_eq!(sim.substrate.entities.get(occupant).is_none(), kill_cargo);
+    }
 }
 
 /// Ares 3.0 TeleportLocomotionClass_Unwarp_SinkJumpJets (10037BE0, hook

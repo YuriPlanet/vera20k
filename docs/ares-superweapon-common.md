@@ -1,7 +1,8 @@
-# Optional Ares superweapon common keys, Battery, Protect and SonarPulse
+# Ares superweapon common keys, Battery, Protect and SonarPulse
 
-A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
-other games keep the original superweapons.
+On `Base-for-modders`, a superweapon can use these keys and the added Ares
+`Type=` names with Ares Off. Install any assets named by the definition in
+the mod's archives. See the [stock redirects](ares-superweapon-types.md#the-redirect).
 
 ```ini
 [SuperWeaponTypes]
@@ -59,17 +60,20 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
   any other type without a charging one, which the stock pass never holds.
 - `SW.CreateRadarEvent` adds the type-13 radar event to a new type's launch
   (`0x10032ED0`).
-- `SW.Group` selects the types Ares's script action 55 fires (`0x10039EF0`): the
+- `SW.Group` selects the types Ares's script action 55 fires (3.0p1
+  `0x006EFC70` → `0x1003AD70` → `0x1003A970`): the
   first `SW.AITargeting=IronCurtain` type whose group equals the argument.
 - `EVA.Impatient` plays on a press of a cameo that cannot fire; `EVA.SelectTarget`
   replaces the stock targeting line.
 - `Message.Detected`, `.Ready`, `.Launch`, `.Activate` print at the detection,
   readiness, launch and UnitDelivery arrival hooks, in the Ares colour rules.
+- `Message.CannotFire` defaults to `MSG:CannotFire` (3.0p1 `0x100323A3`). It
+  supplies the manual refusal when `SW.UseAITargeting` is active.
 - `Text.Preparing`, `.Hold`, `.Ready`, `.Charging`, `.Active` replace the cameo
   status labels of every type (`0x100356A0`); an empty label shows none.
-- `SidebarPalette` names the palette the type's SHP cameo draws with; a file that
-  does not load keeps CAMEO.PAL (hooks `6A9948`/`6A9A2A`). The `~~~` theater
-  substitution is not applied.
+- `SidebarPalette` names the palette the type's SHP cameo draws with. The
+  first `~~~` expands to the active theater's extension, such as `SNO`
+  (3.0p1 `0x10077210`). An unavailable palette falls back to CAMEO.PAL.
 
 ## Battery, Protect and SonarPulse
 
@@ -83,7 +87,13 @@ deactivates it. The 3.0p1 Activate entry (`0x1006FBD0`) requires a current grant
 `Type=Protect` is an Iron Curtain with its own duration, a `SW.Range` rectangle or
 radius (default 3x3), `SW.AffectsHouse`/`SW.AffectsTarget` filters, the type's
 `StartSound=`, a `SpecialSound=` fade (`Protect.PlayFadeSoundTime`) and an optional
-`Protect.PowerOutage` blackout of its owner.
+`Protect.PowerOutage` blackout of its owner. The same handler accepts
+`Type=IronCurtain` and `Type=ForceShield` as described in the
+[redirect rules](ares-superweapon-types.md#iron-curtain-and-force-shield).
+An omitted `Protect.Duration` uses `[CombatDamage] IronCurtainDuration`.
+Force Shield uses its own `[General]` defaults and the receiver uses
+`IronCurtain.Modifier` or `ForceShield.Modifier` according to the protection kind.
+Authored ranges beyond the engine's cell-grid extent have no area effect.
 
 `Type=SonarPulse` restarts the affected Technos' sonar timer with the longer of
 its time left and `SonarPulse.Delay` (default 60) and starts uncloaking any that
@@ -91,12 +101,8 @@ are cloaked; while the timer runs they cannot cloak. It reaches the `SW.Range`
 area (default radius 10), or every Techno with a negative range, which also
 needs no target. By default it affects enemies on water only.
 
-## Not included
-
-`Type=DropPod` (needs the DropPod locomotor), `NoCursor`/`Cursor`
-(Ares `[MouseCursors]` cursor types), `Light.*`, `Message.Abort`
-and the retail-type redirects (`IronCurtain`/`ForceShield` through Protect and the
-other stock handlers) remain outside this port, as do the AI's Stealth and
-IronCurtain target pickers (a computer House does not fire SonarPulse or
-Protect on its own). The trigger events raised on activation and deactivation
-are in [ares-triggers.md](ares-triggers.md).
+The `Stealth`, `MultiMissile` and `LightningRandom` modes use the 3.0p1
+AI target picker. The DLL returns no cell for `IronCurtain` in this picker
+(`0x100390E0`, mode `0xF`). Team script action 55 supplies the target for
+that mode. See [trigger events](ares-triggers.md) and
+[superweapon cursors](ares-cursors.md).

@@ -328,9 +328,7 @@ impl BuildingTypeExtRules {
         if let Some(kind) = section.read_name("IsTrench", 0x800) {
             self.is_trench = Some(kind.to_owned());
         }
-        self.lightning_rod = section.read_bool("LightningRod", self.lightning_rod);
-        self.lightning_rod_modifier =
-            section.read_ares_double_bits("LightningRod.Modifier", self.lightning_rod_modifier);
+        self.read_lightning_rod(section);
         let [destroyed_type, intact_type] = references.rubble_types;
         let [destroyed_anim, intact_anim] = references.rubble_anims;
         if let Some(name) = destroyed_type {
@@ -518,6 +516,14 @@ impl BuildingTypeExtRules {
     /// Ares Point2D `1000FAE0` and Facing32 `1000FBF0`.
     pub(crate) fn read_firestorm_wall(&mut self, section: &IniSection) {
         self.firestorm_wall = section.read_ares_bool("Firestorm.Wall", self.firestorm_wall);
+    }
+
+    /// Ares 3.0p1 BuildingTypeExt reads the rod and its multiplier at
+    /// 0x1000E562. The built-in Lightning Storm uses the same fields.
+    pub(crate) fn read_lightning_rod(&mut self, section: &IniSection) {
+        self.lightning_rod = section.read_bool("LightningRod", self.lightning_rod);
+        self.lightning_rod_modifier =
+            section.read_ares_double_bits("LightningRod.Modifier", self.lightning_rod_modifier);
     }
 
     pub(crate) fn read_dock_art(&mut self, art: &IniSection) {

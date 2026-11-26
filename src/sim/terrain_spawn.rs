@@ -1416,6 +1416,7 @@ mod tests {
             origin,
             None,
             0,
+            false,
             &mut crate::sim::world::FrameEffects::default(),
         );
         let records: Vec<_> = collected

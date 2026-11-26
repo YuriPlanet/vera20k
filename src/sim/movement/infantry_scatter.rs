@@ -648,8 +648,13 @@ impl Simulation {
         else {
             return Ok(false);
         };
+        let pod_active = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| actor.ares_drop_pod().is_some());
         match kind {
-            LocomotorKind::Teleport => {
+            LocomotorKind::Teleport if !pod_active => {
                 // Foot tail: NavCom, then Teleport Move_To, then the accepted
                 // timers whatever it answered (`0x004D96C2..0x004D9707`).
                 let frame = self.session.binary_frame();
@@ -672,7 +677,9 @@ impl Simulation {
                 super::DestinationTiming::from_rules(frame, rules).accept(actor);
                 Ok(accepted)
             }
-            LocomotorKind::Jumpjet => Ok(self.jumpjet_foot_destination(id, requested, rules)),
+            LocomotorKind::Jumpjet if !pod_active => {
+                Ok(self.jumpjet_foot_destination(id, requested, rules))
+            }
             _ => {
                 let coord = super::navcom::nav_target_coordinate(
                     requested,

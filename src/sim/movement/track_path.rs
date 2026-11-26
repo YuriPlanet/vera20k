@@ -1341,8 +1341,19 @@ impl Simulation {
             )
             .unwrap_or_else(|cause| panic!("Unit destination for {id}: {cause}"))
         });
-        let jumpjet_accepted = if skip_move_to {
+        let pod_active = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| actor.ares_drop_pod().is_some());
+        let immediate_move = if skip_move_to {
             None
+        } else if pod_active {
+            let coord = coord.expect("accepted DropPod Move_To captures target +4C");
+            Some(
+                self.ground_foot_move_to(id, requested, coord, rules, frame_effects)
+                    .is_ok(),
+            )
         } else if jumpjet {
             let actor = self.substrate.entities.get_mut(id).expect("same Jumpjet");
             if super::air_movement::fly_coordinate_admitted(actor)
@@ -1364,7 +1375,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("same setter actor");
-        let accepted = if let Some(accepted) = jumpjet_accepted {
+        let accepted = if let Some(accepted) = immediate_move {
             accepted
         } else if skip_move_to {
             super::navcom::publish_nav_com(actor, requested);

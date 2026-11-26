@@ -161,13 +161,9 @@ impl RuleSet {
 
     /// `HouseTypeExt::GetParadropContent @ 0x1001BC20` for a country: its own
     /// `ParaDrop.Types`/`.Num` while the type list is non-empty, else `None`,
-    /// which defers to the side layer (also the answer in a stock game).
+    /// which defers to the side layer.
     pub fn country_paradrop_lists(&self, id: &str) -> Option<(&[String], &[i32])> {
-        if self.ares {
-            self.country_rules(id)?.paradrop.lists()
-        } else {
-            None
-        }
+        self.country_rules(id)?.paradrop.lists()
     }
 
     /// Ares `[Country] ParaDrop.Aircraft=` (`HouseTypeExt +0x154`), which
@@ -175,11 +171,7 @@ impl RuleSet {
     /// never-set or `none` index is `-1` there, so this answers `None` and the
     /// caller keeps the side layer.
     pub fn country_paradrop_aircraft(&self, id: &str) -> Option<&str> {
-        if self.ares {
-            self.country_rules(id)?.paradrop.aircraft.as_deref()
-        } else {
-            None
-        }
+        self.country_rules(id)?.paradrop.aircraft.as_deref()
     }
 
     /// Ares `[Country] Parachute.Anim=` (`HouseTypeExt +0x158`), which
@@ -671,6 +663,9 @@ impl RuleSet {
         &self,
         side: i32,
     ) -> Option<&crate::rules::ares_side_extension::AresSideExtension> {
+        if !self.reads_ares_way {
+            return None;
+        }
         self.side_extensions.get(usize::try_from(side).ok()?)
     }
 
@@ -803,22 +798,22 @@ impl RuleSet {
     /// Allied pair (`SideExt::GetParaDropTypes @ 0x1002E060`,
     /// `GetParaDropNum @ 0x1002DFB0`).
     pub(crate) fn side_paradrop(&self, side: i32) -> Option<(&[String], &[i32])> {
-        if self.ares {
-            let extension = self.side_extension(side)?;
+        if let Some(extension) = usize::try_from(side)
+            .ok()
+            .and_then(|side| self.side_extensions.get(side))
+        {
             if let (Some(types), Some(counts)) =
                 (&extension.paradrop_types, &extension.paradrop_num)
             {
                 return Some((types, counts));
             }
-            let lists = match side {
-                1 => &self.general.sov_paradrop,
-                2 => &self.general.yuri_paradrop,
-                _ => &self.general.ally_paradrop,
-            };
-            Some((lists.infantry.as_slice(), lists.counts.as_slice()))
-        } else {
-            None
         }
+        let lists = match side {
+            1 => &self.general.sov_paradrop,
+            2 => &self.general.yuri_paradrop,
+            _ => &self.general.ally_paradrop,
+        };
+        Some((lists.infantry.as_slice(), lists.counts.as_slice()))
     }
 
     /// `[Side] ParaDrop.Aircraft=` else the plane the SideExt initializer
@@ -827,14 +822,11 @@ impl RuleSet {
     /// `HouseTypeExt::GetParadropPlane @ 0x1001BCB0` falls back to
     /// `FindIndex("PDPLANE")` rather than cancelling the drop.
     pub(crate) fn side_paradrop_aircraft(&self, side: i32) -> Option<&str> {
-        if self.ares {
-            self.side_extension(side)?
-                .paradrop_aircraft
-                .as_ref()?
-                .as_deref()
-        } else {
-            None
-        }
+        self.side_extensions
+            .get(usize::try_from(side).ok()?)?
+            .paradrop_aircraft
+            .as_ref()?
+            .as_deref()
     }
 
     /// `[Side] Parachute.Anim=` only; an unset key leaves the existing
@@ -879,7 +871,8 @@ impl RuleSet {
     /// `[Side] HunterSeeker=` (SideExt+0x94), the fallback UnitType of
     /// SW_HunterSeeker::Activate10072885.
     pub(crate) fn side_hunter_seeker(&self, side: i32) -> Option<&str> {
-        self.side_extension(side)?
+        self.side_extensions
+            .get(usize::try_from(side).ok()?)?
             .hunter_seeker
             .as_ref()?
             .as_deref()

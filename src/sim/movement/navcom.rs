@@ -775,6 +775,9 @@ pub(crate) fn set_destination_internal_coord(
     binary_frame: u32,
 ) -> bool {
     publish_nav_com(entity, target);
+    if entity.ares_drop_pod().is_some() {
+        return false;
+    }
 
     if is_drive_locomotor(entity) {
         drive_set_destination(entity, coord, resolved_terrain, binary_frame);
@@ -986,6 +989,13 @@ impl crate::sim::world::Simulation {
         effects: &mut FrameEffects<'_>,
     ) -> Result<(), crate::sim::world::FrameAdvanceError> {
         if let Some(actor) = self.substrate.entities.get_mut(id)
+            && actor.ares_drop_pod().is_some()
+        {
+            publish_nav_com(actor, requested);
+            self.drop_pod_move_to(id, coord, rules, Some(rules.overlay_registry()), effects);
+            return Ok(());
+        }
+        if let Some(actor) = self.substrate.entities.get_mut(id)
             && set_destination_internal_coord(
                 actor,
                 requested,
@@ -1149,6 +1159,9 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<TrackFollowers> {
         let unit = self.substrate.entities.get(id)?;
+        if unit.ares_drop_pod().is_some() {
+            return None;
+        }
         let first = unit.unit_follower()?;
         if unit.is_unit_follower() || !self.object_type(unit.type_ref(), rules)?.is_train {
             return None;
@@ -1169,6 +1182,10 @@ impl crate::sim::world::Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return Ok(());
         };
+        // DropPod::Stop_Moving (0x004B63A0) returns immediately.
+        if entity.ares_drop_pod().is_some() {
+            return Ok(());
+        }
         let Some(kind) = entity.locomotor.as_ref().map(|loco| loco.active_kind()) else {
             return Ok(());
         };

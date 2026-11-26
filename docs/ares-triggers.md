@@ -1,8 +1,8 @@
 # Optional Ares trigger events and actions
 
-Every build runs these when the game plays Ares ([Ares](ares.md)). Other
-games keep the stock trigger bodies: an event kind outside 0..61 is always met
-and the stock TechTypeExists/DoesNotExist (60/61) stay as they are.
+`Base-for-modders` runs superweapon conditions 75–77 and Firestorm actions
+92–93 from the map with Ares Off. The other Ares trigger extensions follow
+the [Ares setting](ares.md).
 
 ```ini
 [Events]
@@ -52,7 +52,8 @@ Damage also raises 6 and 44 without an attacker, then 84 and 83 while the
 object lives (hook `0x5F57B5`). RecordKill raises 85 with the destroyer's
 House: for a Unit before 7 (hook `0x744745`), for other classes past the class
 test (hook `0x702DD6`), and from the House-sourced kill after 4 for every class
-(hook `0x7032B0`). A launch of a new superweapon type raises 77 then 75 once
+(hook `0x7032B0`). A successful launch through a NewSWType handler raises
+77 then 75 once
 the common Launch has finished (SWTypeExt::Activate `0x10032020`);
 Deactivate (`0x100325D0`) raises 76 after the type's own Deactivate.
 
@@ -88,6 +89,10 @@ into that House's index first (hook `0x71EE79`).
 
 ## Team scripts
 
+- `55,<group>` also chooses the matching `SW.Group` from the defined
+  `SW.AITargeting=IronCurtain` types when Ares is Off. The 3.0p1 path
+  (`0x006EFC70` → `0x1003AD70`) supplies the cell and fires through the
+  ordinary superweapon transaction.
 - `65,<power>` adds a signed amount of auxiliary power to the team's House.
   The House recalculates its output and drain, and the team proceeds to the
   next action.
@@ -98,7 +103,7 @@ into that House's index first (hook `0x71EE79`).
   An attached trigger can use vehicle capture events 69 and 70. A recorded
   hijacker remains subject to its `VehicleThief.OneTime=` rule if the vehicle dies.
 
-The script action itself enables these two behaviors.
+Actions 65 and 67 enable their corresponding behaviors.
 
 ## Where VERA20K owns it
 
@@ -115,7 +120,7 @@ The script action itself enables these two behaviors.
 
 ## Not included
 
-- 76 from a drain running out or a hold runs its Triggers without the frame's
-  sound boundary and overlay table, which those House passes do not receive.
+- Maps using 75–77 need a fresh start if an older Ares Off save did not
+  register their House Tags.
 - PrepareSaveToINI's parameter kinds (hook `0x71F39B`) and the action write
   modes (hook `0x6E3B60`): VERA never writes trigger INIs.

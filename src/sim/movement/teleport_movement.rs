@@ -253,6 +253,10 @@ pub struct ChronoWarp {
     /// Techno `+0x271` WarpingIn: set by state 2, cleared by TimerCheck's
     /// expiry and state 7.
     warping_in: bool,
+    /// A built-in Ares ChronoWarp keeps its landing hooks through every
+    /// relocation tick and across save/load, even with the global switch off.
+    #[serde(default)]
+    extension_landing: bool,
 }
 
 impl std::hash::Hash for ChronoWarp {
@@ -268,6 +272,9 @@ impl std::hash::Hash for ChronoWarp {
         if self.pending_state != 0 {
             b"chrono-pending-v376".hash(state);
             self.pending_state.hash(state);
+        }
+        if self.extension_landing {
+            b"chrono-extension-landing".hash(state);
         }
     }
 }
@@ -287,7 +294,21 @@ impl ChronoWarp {
             latched: true,
             warped_out: false,
             warping_in: false,
+            extension_landing: false,
         }
+    }
+
+    /// P1 SW_ChronoWarp's Foot arm creates the Teleport that later reaches
+    /// the installed MakeRoom and Unwarp hooks.
+    pub(crate) fn from_extension(destination: DriveCoord, frame: u32) -> Self {
+        Self {
+            extension_landing: true,
+            ..Self::new(destination, frame)
+        }
+    }
+
+    pub(crate) fn extension_landing(&self) -> bool {
+        self.extension_landing
     }
 
     /// Chrono reinforcement65F208: the newly placed member starts

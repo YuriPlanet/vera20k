@@ -115,18 +115,16 @@ impl AresSuperWeaponFlags {
 }
 
 impl SuperWeaponKind {
-    /// The implemented NewSWType Activate owners, which only a game read the
-    /// Ares way uses: the new types and the stock Types whose redirect is
-    /// ported.
+    /// The implemented NewSWType Activate owners for added types and stock redirects.
     pub(crate) const fn has_ares_handler(self) -> bool {
         self.is_extension() || self.is_ares_redirect()
     }
 
-    /// Ares 3.0p1 SW_Protect::HandlesType (0x10075BF0) accepts the stock
-    /// Iron Curtain index 1. Keep the raw identity for stock type lookups.
-    fn launch_kind(self, redirect_iron_curtain: bool) -> Self {
+    /// Ares 3.0p1 SW_Protect::HandlesType (0x10075BF0) accepts stock Iron
+    /// Curtain (1) and Force Shield (10). Keep their raw lookups distinct.
+    fn launch_kind(self, redirect_protect: bool) -> Self {
         match self {
-            Self::IronCurtain if redirect_iron_curtain => Self::Protect,
+            Self::IronCurtain | Self::ForceShield if redirect_protect => Self::Protect,
             kind => kind,
         }
     }
@@ -177,8 +175,7 @@ impl SuperWeaponKind {
         }
     }
 
-    /// An Ares new-type identity. A stock-way read never parses one, but forged
-    /// rule records must still be refused by the shared extension gates.
+    /// A NewSWType identity independent of the rules-reading mode.
     pub const fn is_extension(self) -> bool {
         matches!(
             self,
@@ -222,13 +219,8 @@ impl SuperWeaponKind {
         }
     }
 
-    /// Parse from the INI `Type=` string value. Case-insensitive. The Ares
-    /// types are names only when the Rules are read the Ares way.
+    /// Parse the stock and Ares 3.0p1 `Type=` names case-insensitively.
     pub fn from_ini_str(s: &str) -> Option<Self> {
-        Self::parse_kind(s, crate::rules::ares_switch::ares_way())
-    }
-
-    pub(super) fn parse_kind(s: &str, ares: bool) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "multimissile" => Some(Self::MultiMissile),
             "ironcurtain" => Some(Self::IronCurtain),
@@ -242,27 +234,245 @@ impl SuperWeaponKind {
             "geneticconverter" => Some(Self::GeneticConverter),
             "forceshield" => Some(Self::ForceShield),
             "psychicreveal" => Some(Self::PsychicReveal),
-            "unitdelivery" if ares => Some(Self::UnitDelivery),
-            "hunterseeker" if ares => Some(Self::HunterSeeker),
-            "genericwarhead" if ares => Some(Self::GenericWarhead),
-            "protect" if ares => Some(Self::Protect),
-            "battery" if ares => Some(Self::Battery),
-            "sonarpulse" if ares => Some(Self::SonarPulse),
-            "empulse" if ares => Some(Self::EMPulse),
-            // SW_Firewall::GetTypeString 1006D7E0.
-            "firestorm" if ares => Some(Self::Firestorm),
-            // SW_DropPod::GetTypeString 1006D7C0.
-            "droppod" if ares => Some(Self::DropPod),
+            // Ares 3.0p1 NewSWType GetTypeString routines at 1006E7C0..1006E840.
+            "unitdelivery" => Some(Self::UnitDelivery),
+            "hunterseeker" => Some(Self::HunterSeeker),
+            "genericwarhead" => Some(Self::GenericWarhead),
+            "protect" => Some(Self::Protect),
+            "battery" => Some(Self::Battery),
+            "sonarpulse" => Some(Self::SonarPulse),
+            "empulse" => Some(Self::EMPulse),
+            "firestorm" => Some(Self::Firestorm),
+            "droppod" => Some(Self::DropPod),
             _ => None,
         }
     }
 
-    fn has_builtin_rules(self, base_targeting: bool, charge_drain: bool, paid: bool) -> bool {
-        let stock = !self.is_extension()
-            && !matches!(self, Self::NoEffect | Self::ChronoSphere | Self::ChronoWarp);
-        (base_targeting && (stock || self == Self::UnitDelivery))
-            || (paid
-                && ((stock && charge_drain) || matches!(self, Self::Battery | Self::Firestorm)))
+    /// Authored inputs to the existing SWTypeExt common reader (10033370).
+    /// These can apply to stock launches independently of handler selection.
+    pub(in crate::rules) fn has_extension_settings(self, section: &IniSection) -> bool {
+        self != Self::NoEffect
+            && section.keys().any(|key| {
+                matches!(
+                    key,
+                    "Cursor"
+                        | "NoCursor"
+                        | "Money.Amount"
+                        | "Money.DrainAmount"
+                        | "Money.DrainDelay"
+                        | "EVA.Ready"
+                        | "EVA.Activated"
+                        | "EVA.Detected"
+                        | "EVA.Impatient"
+                        | "EVA.InsufficientFunds"
+                        | "EVA.SelectTarget"
+                        | "Message.Abort"
+                        | "Message.Activate"
+                        | "Message.CannotFire"
+                        | "Message.Color"
+                        | "Message.Detected"
+                        | "Message.FirerColor"
+                        | "Message.InsufficientFunds"
+                        | "Message.Launch"
+                        | "Message.Ready"
+                        | "Text.Active"
+                        | "Text.Charging"
+                        | "Text.Hold"
+                        | "Text.Preparing"
+                        | "Text.Ready"
+                        | "SW.ActivationSound"
+                        | "SW.AffectsHouse"
+                        | "SW.AffectsTarget"
+                        | "SW.AIRequiresHouse"
+                        | "SW.AIRequiresTarget"
+                        | "SW.AITargeting"
+                        | "SW.AITargeting.Constraints"
+                        | "SW.AITargeting.Preference"
+                        | "SW.AllowAI"
+                        | "SW.AllowPlayer"
+                        | "SW.AlwaysGranted"
+                        | "SW.Animation"
+                        | "SW.AnimationHeight"
+                        | "SW.AnimationVisibility"
+                        | "SW.AnyDesignator"
+                        | "SW.AnyInhibitor"
+                        | "SW.AutoFire"
+                        | "SW.AuxBuildings"
+                        | "SW.ChargeToDrainRatio"
+                        | "SW.CreateRadarEvent"
+                        | "SW.Damage"
+                        | "SW.Deferment"
+                        | "SW.Designators"
+                        | "SW.FireIntoShroud"
+                        | "SW.ForbiddenHouses"
+                        | "SW.Group"
+                        | "SW.Inhibitors"
+                        | "SW.InitialReady"
+                        | "SW.ManualFire"
+                        | "SW.MaxCount"
+                        | "SW.NegBuildings"
+                        | "SW.PostDependent"
+                        | "SW.Range"
+                        | "SW.RangeMaximum"
+                        | "SW.RangeMinimum"
+                        | "SW.RequiredHouses"
+                        | "SW.RequiresHouse"
+                        | "SW.RequiresTarget"
+                        | "SW.Shots"
+                        | "SW.Sound"
+                        | "SW.TimerVisibility"
+                        | "SW.Unstoppable"
+                        | "SW.UseAITargeting"
+                        | "SW.VirtualCharge"
+                        | "SW.Warhead"
+                )
+            })
+    }
+
+    /// An authored input whose effect relies on this particular NewSWType's
+    /// Activate implementation. Retail definitions use the stock dispatch.
+    pub(in crate::rules) fn has_redirect_settings(self, section: &IniSection) -> bool {
+        if (self.is_ares_redirect() || matches!(self, Self::IronCurtain | Self::ForceShield))
+            && (section.keys().any(|key| {
+                matches!(
+                    key,
+                    "Cursor" | "NoCursor" | "EVA.Ready" | "EVA.Activated" | "EVA.Detected"
+                )
+            }) || section
+                .read_name("Action", 0x20)
+                .is_some_and(|action| action.eq_ignore_ascii_case("Custom")))
+        {
+            // 1003332A assigns the custom action to a redirected NewSWType.
+            return true;
+        }
+        section.keys().any(|key| match self {
+            Self::IronCurtain | Self::ForceShield => matches!(
+                key,
+                "Protect.Duration"
+                    | "Protect.PowerOutage"
+                    | "Protect.PlayFadeSoundTime"
+                    | "SW.Range"
+                    | "SW.Animation"
+                    | "SW.AffectsHouse"
+                    | "SW.AffectsTarget"
+                    | "SW.Group"
+                    | "SW.AITargeting"
+                    | "SW.RequiresHouse"
+                    | "SW.RequiresTarget"
+                    | "SW.AnimationHeight"
+                    | "SW.AnimationVisibility"
+                    | "SW.CreateRadarEvent"
+                    | "SW.Sound"
+                    | "Message.Launch"
+            ),
+            Self::ChronoSphere | Self::ChronoWarp => matches!(
+                key,
+                "SW.PostDependent"
+                    | "Money.Amount"
+                    | "SW.Range"
+                    | "SW.AffectsHouse"
+                    | "SW.AffectsTarget"
+                    | "SW.Deferment"
+                    | "Chronosphere.AffectsIronCurtain"
+                    | "Chronosphere.AffectsUndeployable"
+                    | "Chronosphere.AffectsUnwarpable"
+                    | "Chronosphere.BlastDest"
+                    | "Chronosphere.BlastSrc"
+                    | "Chronosphere.BlowUnplaceable"
+                    | "Chronosphere.KillCargo"
+                    | "Chronosphere.KillOrganic"
+                    | "Chronosphere.KillTeleporters"
+                    | "Chronosphere.ReconsiderBuildings"
+            ),
+            Self::MultiMissile => matches!(
+                key,
+                "Nuke.Payload"
+                    | "Nuke.PsiWarning"
+                    | "Nuke.SiloLaunch"
+                    | "Nuke.TakeOff"
+                    | "SW.ActivationSound"
+                    | "SW.Damage"
+                    | "SW.Deferment"
+                    | "SW.Warhead"
+            ),
+            Self::GeneticConverter => matches!(
+                key,
+                "Mutate.Explosion"
+                    | "Mutate.IgnoreCyborg"
+                    | "Mutate.IgnoreNotHuman"
+                    | "Mutate.KillNatural"
+                    | "SW.AffectsHouse"
+                    | "SW.AffectsTarget"
+                    | "SW.Damage"
+                    | "SW.Deferment"
+                    | "SW.Range"
+                    | "SW.Warhead"
+            ),
+            Self::PsychicDominator => {
+                matches!(
+                    key,
+                    "Dominator.Capture"
+                        | "Dominator.CaptureImmuneToPsionics"
+                        | "Dominator.CaptureMindControlled"
+                        | "Dominator.CapturePermaMindControlled"
+                        | "Dominator.ControlAnim"
+                        | "Dominator.FireAtPercentage"
+                        | "Dominator.FirstAnim"
+                        | "Dominator.FirstAnimHeight"
+                        | "Dominator.PermanentCapture"
+                        | "Dominator.Ripple"
+                        | "Dominator.SecondAnim"
+                        | "Dominator.SecondAnimHeight"
+                        | "SW.AffectsHouse"
+                        | "SW.AffectsTarget"
+                        | "SW.Damage"
+                        | "SW.Deferment"
+                        | "SW.Range"
+                        | "SW.Warhead"
+                ) || matches!(
+                    key,
+                    "Light.Ambient" | "Light.Blue" | "Light.Enabled" | "Light.Green" | "Light.Red"
+                )
+            }
+            Self::PsychicReveal => matches!(key, "SW.Deferment" | "SW.Range"),
+            Self::SpyPlane => matches!(
+                key,
+                "SpyPlane.Type" | "SpyPlane.Count" | "SpyPlane.Mission" | "SW.Deferment"
+            ),
+            Self::LightningStorm => matches!(
+                key,
+                "Lightning.BoltExplosion"
+                    | "Lightning.Bolts"
+                    | "Lightning.CloudHeight"
+                    | "Lightning.Clouds"
+                    | "Lightning.Debris"
+                    | "Lightning.DebrisMax"
+                    | "Lightning.DebrisMin"
+                    | "Lightning.Duration"
+                    | "Lightning.HitDelay"
+                    | "Lightning.IgnoreLightningRod"
+                    | "Lightning.PrintText"
+                    | "Lightning.RadarOutage"
+                    | "Lightning.RadarOutageAffects"
+                    | "Lightning.ScatterCount"
+                    | "Lightning.ScatterDelay"
+                    | "Lightning.Separation"
+                    | "Lightning.Sounds"
+                    | "Light.Ambient"
+                    | "Light.Blue"
+                    | "Light.Enabled"
+                    | "Light.Green"
+                    | "Light.Red"
+                    | "SW.Damage"
+                    | "SW.Deferment"
+                    | "SW.Range"
+                    | "SW.Warhead"
+            ),
+            Self::ParaDrop | Self::AmerParaDrop => {
+                key.starts_with("ParaDrop.") || key == "SW.Deferment"
+            }
+            _ => false,
+        })
     }
 }
 
@@ -378,6 +588,13 @@ impl AresSuperWeaponEva {
                 "EVA_IronCurtainActivated",
                 "EVA_IronCurtainDetected",
             ],
+            // Ares 3.0p1 SW_Protect::Initialize 0x10075C2C..0x10075C44.
+            Some(kind) if kind.eq_ignore_ascii_case("ForceShield") => {
+                self.ready = eva
+                    .entry("EVA_ForceShieldReady")
+                    .map(|entry| entry.name.clone());
+                return;
+            }
             // SW_DropPod::Initialize100710F0.
             Some(kind) if kind.eq_ignore_ascii_case("DropPod") => [
                 "EVA_DropPodReady",
@@ -484,10 +701,10 @@ pub struct AresSuperWeaponMessages {
 
 impl Default for AresSuperWeaponMessages {
     fn default() -> Self {
-        // Ctor100318D9/E5 clears the CSF labels/pointers (CannotFire's label
-        // is set after, below);100318EB/F5 writes Color=-1 and FirerColor=0.
+        // 3.0p1 SWTypeExt constructor sets MSG:CannotFire at 0x100323A3.
+        // The other common message labels start empty.
         Self {
-            cannot_fire: String::new(),
+            cannot_fire: "MSG:CannotFire".to_owned(),
             insufficient_funds: String::new(),
             firer_color: false,
             color_scheme: -1,
@@ -687,8 +904,8 @@ impl AresSuperWeaponPresentation {
 pub struct SuperWeaponType {
     /// This definition uses its authored extension settings in stock mode.
     builtin_rules: bool,
-    /// This stock Iron Curtain definition opts into SW_Protect's launch.
-    builtin_iron_curtain: bool,
+    /// The authored definition selects the NewSWType launch owner.
+    builtin_handler: bool,
     pub(crate) presentation: AresSuperWeaponPresentation,
     /// Section name in rules.ini (e.g., "LightningStormSpecial").
     pub id: String,
@@ -843,6 +1060,13 @@ impl SuperWeaponType {
             .eq_ignore_ascii_case(action)
     }
 
+    /// Stock GetAction (0x006CEF80) leaves SellUnit intact. Ares 3.0p1
+    /// replaces it with the custom action when a NewSWType handler is installed
+    /// (0x10033D41..0x10033D5B).
+    pub fn uses_stock_sell_unit_action(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        self.has_action("SellUnit") && !self.uses_ares_handler(rules)
+    }
+
     pub fn ares_messages(&self) -> &AresSuperWeaponMessages {
         &self.presentation.messages
     }
@@ -873,11 +1097,9 @@ impl SuperWeaponType {
 
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
-    /// The Ares types and reads apply only when the Rules are read the Ares
-    /// way.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         // A standalone section has no earlier ranges or CombatDamage layer.
-        Self::from_ini_section_with_range(id, section, None, false, false, 3)
+        Self::from_ini_section_with_range(id, section, None, false, 3)
     }
 
     pub(crate) fn has_builtin_rules(&self) -> bool {
@@ -892,21 +1114,26 @@ impl SuperWeaponType {
     /// The launch handler selected by this game's rules.
     pub fn launch_kind(&self, rules: &crate::rules::ruleset::RuleSet) -> SuperWeaponKind {
         self.kind
-            .launch_kind(self.builtin_iron_curtain || rules.ares_form())
+            .launch_kind(self.builtin_handler || rules.ares_form())
     }
 
-    pub(crate) fn uses_ares_handler(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
-        let kind = self.launch_kind(rules);
-        kind.has_ares_handler()
-            && (rules.ares_form() || (self.builtin_rules && kind.is_extension()))
+    /// Whether Launch dispatches this definition through its NewSWType handler.
+    pub fn uses_ares_handler(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        (self.builtin_handler || rules.ares_form()) && self.launch_kind(rules).has_ares_handler()
+    }
+
+    /// Keep the last recognized Type across the ordered INI passes (6CEC5B).
+    pub(in crate::rules) fn read_kind(section: &IniSection) -> Option<SuperWeaponKind> {
+        section.read_string_with("Type", 0x28, None, |current, value| {
+            SuperWeaponKind::from_ini_str(value).or(current)
+        })
     }
 
     pub(crate) fn from_ini_section_with_range(
         id: &str,
         section: &IniSection,
         processed_range: Option<(f32, i32)>,
-        base_targeting: bool,
-        configured_protect: bool,
+        paired_chrono_warp: bool,
         psychic_reveal_radius: i32,
     ) -> Self {
         let ares_way = crate::rules::ares_switch::ares_way();
@@ -917,29 +1144,19 @@ impl SuperWeaponType {
         // ReadINI6CEC2D..6CEC7E: each 0x28-byte ReadString is compared
         // against the kind names; a rejected name leaves the prior field.
         let charge_drain = section.read_bool("UseChargeDrain", false);
-        let has_price = crate::rules::ares_switch::not_ares_read(|| {
-            section.read_ares_int("Money.Amount", 0) != 0
-        });
-        let kind = section
-            .read_string_with("Type", 0x28, None, |current, value| {
-                SuperWeaponKind::parse_kind(value, true)
-                    .filter(|kind| {
-                        ares_way
-                            || !kind.is_extension()
-                            || kind.has_builtin_rules(base_targeting, charge_drain, has_price)
-                    })
-                    .or(current)
-            })
+        let kind = Self::read_kind(section)
             // Ctor6CE5B0 initializes Type to -1; rejected/missing reads do
             // not remove the registered type or skip its other fields.
             .unwrap_or(SuperWeaponKind::NoEffect);
-        let builtin_iron_curtain = kind == SuperWeaponKind::IronCurtain && configured_protect;
-        let builtin_rules =
-            builtin_iron_curtain || kind.has_builtin_rules(base_targeting, charge_drain, has_price);
-        let launch_kind = kind.launch_kind(ares_way || builtin_iron_curtain);
+        let builtin_handler = kind.is_extension()
+            || kind.has_redirect_settings(section)
+            || (kind == SuperWeaponKind::ChronoWarp && paired_chrono_warp);
+        let builtin_rules = builtin_handler || kind.has_extension_settings(section);
+        let launch_kind = kind.launch_kind(ares_way || builtin_handler);
         let _builtin = (builtin_rules && !ares_way).then(crate::rules::ares_switch::not_ares_reads);
+        let use_handler = ares_way || builtin_handler;
         let ares_way = ares_way || builtin_rules;
-        let (extension_kind, ares_click_flags) = if ares_way {
+        let (extension_kind, ares_click_flags) = if use_handler {
             (
                 launch_kind.has_ares_handler(),
                 (
@@ -956,7 +1173,7 @@ impl SuperWeaponType {
         };
         Self {
             builtin_rules,
-            builtin_iron_curtain,
+            builtin_handler,
             presentation: AresSuperWeaponPresentation::default(),
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
@@ -985,7 +1202,7 @@ impl SuperWeaponType {
             // keeps its 0x20-byte ReadString (`0x00474EE0`), which a stock-way
             // read uses for every Type.
             action: match launch_kind {
-                _ if !ares_way => section.read_action_name("Action").map(str::to_string),
+                _ if !use_handler => section.read_action_name("Action").map(str::to_string),
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
                 // SW_HunterSeeker::Initialize clears Action (10072A16) after
                 // the first pass's stock read; a later Action= is not modeled.
@@ -998,6 +1215,9 @@ impl SuperWeaponType {
                 SuperWeaponKind::Firestorm => None,
                 // SW_Protect::Initialize (3.0p1 0x10075C10) installs the custom action
                 // and SW_Cursor=IronCurtain; VERA names that cursor by action.
+                SuperWeaponKind::Protect if kind == SuperWeaponKind::ForceShield => {
+                    Some("ForceShield".to_string())
+                }
                 SuperWeaponKind::Protect => Some("IronCurtain".to_string()),
                 // Both LoadFromINI handlers overwrite Action (10075360, 10075710).
                 // The ordered rules reader supplies the retained range and
@@ -1058,9 +1278,12 @@ impl SuperWeaponType {
             sidebar_image: section
                 .read_name("SidebarImage", 0x100)
                 .map(|name| truncate_native_bytes(name, 0x18).to_string()),
-            // Ares-own fields that only Ares paths read.
-            sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
-            sidebar_palette: crate::rules::ares_switch::ares_read(|| {
+            // 10033B50..10033B66 and CustomPalette::LoadFromINI are local
+            // to this definition's cameo, even when it has no launch type.
+            sidebar_pcx: crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_pcx_filename("SidebarPCX")
+            }),
+            sidebar_palette: crate::rules::ares_switch::not_ares_read(|| {
                 section.read_name("SidebarPalette", 2048).map(str::to_owned)
             }),
             show_timer: section.read_bool("ShowTimer", false),
@@ -2228,6 +2451,9 @@ impl AresSuperWeaponLaunch {
         if initialized && is("PsychicReveal") {
             self.radar_event = false; // SW_PsychicReveal::Initialize100752FA.
         }
+        if initialized && is("ForceShield") {
+            self.radar_event = false; // 3.0p1 SW_Protect::Initialize10075C38.
+        }
         if initialized && is("SonarPulse") {
             // SW_SonarPulse::Initialize100756D0.
             self.radar_event = false;
@@ -2270,10 +2496,7 @@ impl AresSuperWeaponLaunch {
             self.mutate.ignore_cyborg = false;
             self.mutate.ignore_not_human = false;
         }
-        if initialized
-            && is("MultiMissile")
-            && let Some((payload, psi_warning)) = reads.nuke_defaults
-        {
+        if let Some((payload, psi_warning)) = reads.nuke_defaults {
             self.nuke.payload = payload;
             self.nuke.psi_warning = psi_warning;
             self.nuke.silo_launch = true;
@@ -2377,7 +2600,7 @@ impl AresSuperWeaponLaunch {
         } else if is("Firestorm") {
             // SW_Firewall::LoadFromINI10071620 hard-codes it each pass.
             self.radar_event = false;
-        } else if is("Protect") {
+        } else if is("Protect") || is("ForceShield") {
             self.protect_duration =
                 section.read_ares_nullable_int("Protect.Duration", self.protect_duration);
             self.protect_power_outage =
@@ -2863,7 +3086,8 @@ mod tests {
         let clear = rules.super_weapon("Clear").unwrap().ares_messages();
         assert_eq!(clear.color_scheme(), -1, "unregistered <none> clears");
         assert!(!clear.firer_color());
-        assert!(clear.cannot_fire().is_empty() && clear.insufficient_funds().is_empty());
+        assert_eq!(clear.cannot_fire(), "MSG:CannotFire");
+        assert!(clear.insufficient_funds().is_empty());
     }
 
     use crate::rules::ini_parser::IniFile;
@@ -3085,41 +3309,50 @@ Type=BogusType
     }
 
     #[test]
-    fn stock_way_keeps_unrecognized_types_without_extension_payloads() {
+    fn stock_way_only_redirects_authored_force_shield() {
+        use crate::rules::superweapon_targeting::{AiTargetingMode, HouseMask, TargetMask};
+        let _ares = crate::rules::ares_switch::read_ares_way(false);
         let ini = IniFile::from_str(
-            "[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n\
-             [Delivery]\nType=UnitDelivery\nDeliver.Types=UNIT\n\
-             [Reveal]\nType=PsychicReveal\nMoney.Amount=-500\nRechargeTime=2\n\
-             Action=PsychicReveal\nRange=7\nLineMultiplier=2\nSW.RequiresTarget=unknown-mask\n",
+            "[SuperWeaponTypes]\n0=Plain\n1=Authored\n\
+             [Plain]\nType=ForceShield\nAction=ForceShield\n\
+             [Authored]\nType=ForceShield\nProtect.Duration=90\n",
         );
-        for id in ["Strike", "Delivery"] {
-            let sw = SuperWeaponType::from_ini_section(id, ini.section(id).unwrap());
-            assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
-            assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
-            assert!(sw.action.is_none());
-            assert_eq!(sw.money_amount, 0);
-        }
-        let stock = SuperWeaponType::from_ini_section("Reveal", ini.section("Reveal").unwrap());
-        assert_eq!(stock.kind, SuperWeaponKind::PsychicReveal);
-        assert_eq!(stock.recharge_time_frames, 1800);
-        assert_eq!(stock.action.as_deref(), Some("PsychicReveal"));
-        assert_eq!(stock.range, 7.0);
-        assert_eq!(stock.line_multiplier, 2);
-        assert_eq!(stock.money_amount, 0);
-        assert!(stock.generic_warhead.is_none());
-        assert!(stock.unit_delivery.is_none());
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        assert!(!rules.ares_form());
+        let plain = rules.super_weapon("Plain").unwrap();
+        assert_eq!(plain.launch_kind(&rules), SuperWeaponKind::ForceShield);
+        let modified = rules.super_weapon("Authored").unwrap();
+        assert_eq!(modified.kind.native_index(), 10);
+        assert_eq!(modified.launch_kind(&rules), SuperWeaponKind::Protect);
+        assert_eq!(modified.action.as_deref(), Some("ForceShield"));
+        let metadata = rules.super_weapon_metadata("Authored").unwrap();
+        assert_eq!(metadata.launch().protect_duration(), Some(90));
+        assert!(!metadata.launch().radar_event());
+        let targeting = metadata.targeting();
+        assert_eq!(targeting.mode(), AiTargetingMode::ForceShield);
+        assert_eq!(targeting.affects_house(), HouseMask::TEAM);
+        assert_eq!(targeting.affects_target(), TargetMask::BUILDING);
+        assert_eq!(targeting.manual().house, HouseMask::TEAM);
+        assert_eq!(targeting.manual().target, TargetMask::BUILDING);
     }
 
-    /// Read the stock way `Type=DropPod` names no Type: the stock reader
-    /// keeps the constructor's -1, so nothing drops (Ares SW_DropPod
-    /// `1006D7C0` is absent).
     #[test]
-    fn stock_way_reads_type_drop_pod_as_no_type() {
+    fn stock_way_reads_drop_pod_and_retains_global_fallbacks() {
+        let _ares = crate::rules::ares_switch::read_ares_way(false);
         let ini = crate::rules::ini_parser::IniFile::from_str(
-            "[Drop]\nType=DropPod\nDropPod.Types=MTNK\n",
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=200\n\
+             [General]\nDropPodMinimum=3\nDropPodTypes=MTNK\n\
+             [Sides]\nGDI=x\n[GDI]\nHunterSeeker=MTNK\n\
+             [SuperWeaponTypes]\n0=Drop\n1=Seek\n[Drop]\nType=DropPod\n[Seek]\nType=HunterSeeker\n",
         );
-        let sw = SuperWeaponType::from_ini_section("Drop", ini.section("Drop").unwrap());
-        assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
-        assert!(!sw.kind.is_extension());
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let sw = rules.super_weapon("Drop").unwrap();
+        assert_eq!(sw.kind, SuperWeaponKind::DropPod);
+        assert!(sw.uses_ares_handler(&rules));
+        assert!(!rules.ares_form());
+        assert_eq!(rules.ares_drop_pod().minimum, 3);
+        assert_eq!(rules.ares_drop_pod().types[0].id, "MTNK");
+        assert_eq!(rules.side_hunter_seeker(0), Some("MTNK"));
+        assert!(rules.side_eva_voice_index(0).is_none());
     }
 }

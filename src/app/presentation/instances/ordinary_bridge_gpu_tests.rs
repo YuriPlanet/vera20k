@@ -339,6 +339,8 @@ impl Probe {
                 registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 rules: None,
                 interner: None,
+                house_colors: None,
+                current_house: None,
                 tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
                 terrain: Some(&self.terrain),
 
@@ -1201,6 +1203,8 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 registry: Some(registry),
                 rules: Some(rules),
                 interner: Some(sim.interner()),
+                house_colors: None,
+                current_house: None,
                 tiberium_types: Some(&rules.tiberium_types),
                 terrain: Some(terrain),
 

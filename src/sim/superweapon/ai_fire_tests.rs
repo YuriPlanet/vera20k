@@ -18,6 +18,131 @@ const COMPUTER: &str = "Computer";
 const ENEMY: &str = "Enemy";
 const ALLY: &str = "Ally";
 
+fn native_extension_selector_scene(mode: &str) -> (RuleSet, Simulation, InternedId) {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let art = IniFile::from_str("[PLAIN]\nFoundation=1x1\n");
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+        "[SuperWeaponTypes]\n0=Special\n[Special]\nType=LightningStorm\nSW.AITargeting={mode}\n\
+         [BuildingTypes]\n0=PLAIN\n[PLAIN]\nStrength=100\n\
+         [VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSpeed=4\n"
+    ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+    assert!(!rules.ares());
+    let mut sim = Simulation::with_seed(5);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    for owner in [COMPUTER, ENEMY, ALLY] {
+        let owner = sim.interner.intern(owner);
+        sim.houses
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
+    }
+    let computer = sim.interner.get(COMPUTER).unwrap();
+    let enemy = sim.interner.get(ENEMY).unwrap();
+    sim.houses
+        .get_mut(&computer)
+        .unwrap()
+        .set_enemy_house_for_test(Some(enemy));
+    sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+        theater: "TEMPERATE".into(),
+        fill: "Clear".into(),
+        level: 0,
+        width: 32,
+        height: 32,
+        local_left: 1,
+        local_top: 1,
+        local_width: 30,
+        local_height: 30,
+    });
+    (rules, sim, computer)
+}
+
+fn select_extension_target(
+    rules: &RuleSet,
+    sim: &mut Simulation,
+    computer: InternedId,
+) -> Option<(u16, u16)> {
+    let sw = rules.super_weapon("Special").unwrap();
+    let policy = rules.super_weapon_target_policy("Special").unwrap();
+    extension_target(sim, rules, computer, sw, policy, None)
+}
+
+#[test]
+fn stealth_ai_selects_a_cloaked_object_outside_its_current_enemy_house() {
+    let (rules, mut sim, computer) = native_extension_selector_scene("Stealth");
+    sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+    crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "superweapon selector flat64");
+    sim.spawn_object_at_height("TANK", ENEMY, 24, 24, 0, 0, &rules)
+        .unwrap();
+    let outside_enemy = sim
+        .spawn_object_at_height("TANK", ALLY, 26, 26, 0, 0, &rules)
+        .unwrap();
+    let cloak = &mut sim.substrate.entities.get_mut(outside_enemy).unwrap().cloak;
+    crate::sim::cloak_disguise::CloakRuntime::install(cloak, 0, true);
+
+    assert_eq!(
+        select_extension_target(&rules, &mut sim, computer),
+        Some((26, 26))
+    );
+}
+
+#[test]
+fn multi_missile_ai_keeps_the_first_maximum_from_the_enemy_building_array() {
+    let (rules, mut sim, computer) = native_extension_selector_scene("MultiMissile");
+    sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+    crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "superweapon selector flat64");
+    let placements = [
+        (ALLY, (19, 35), 200),
+        (ENEMY, (30, 30), 100),
+        (ENEMY, (44, 38), 100),
+    ];
+    for (house, (x, y), _) in placements {
+        sim.spawn_object_at_height("PLAIN", house, x as u16, y as u16, 0, 0, &rules)
+            .unwrap();
+    }
+    let house = sim.houses.get_mut(&computer).unwrap();
+    house.clear_spatial_threat();
+    for (_, cell, value) in placements {
+        house.adjust_spatial_threat(cell, value, false).unwrap();
+    }
+    let rng_before = sim.scenario_rng.state();
+
+    assert_eq!(
+        select_extension_target(&rules, &mut sim, computer),
+        Some((30, 30))
+    );
+    assert_eq!(sim.scenario_rng.state(), rng_before);
+}
+
+#[test]
+fn lightning_random_ai_retries_full_size_cells_in_native_draw_order() {
+    let (rules, mut sim, computer) =
+        native_extension_selector_scene("LightningRandom\nSW.AIRequiresTarget=Water");
+    // P1 PickTarget 0x100390E0 with map Size 32x32 and retail RNG seed 5
+    // visits (46,25), then (9,37). A rejection of the first ends at RNG
+    // indices (6,109) on acceptance of the second; all five end at (18,121).
+    sim.resolved_terrain = Some(test_grid(64, 64, |x, y| {
+        let mut cell = test_terrain_cell(x, y);
+        if (x, y) == (9, 37) {
+            cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        }
+        cell
+    }));
+
+    assert_eq!(
+        select_extension_target(&rules, &mut sim, computer),
+        Some((9, 37))
+    );
+    let rng = sim.scenario_rng.logical_view();
+    assert_eq!((rng.index_a, rng.index_b), (6, 109));
+
+    sim.scenario_rng = SimRng::new(5);
+    sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+    assert_eq!(select_extension_target(&rules, &mut sim, computer), None);
+    let rng = sim.scenario_rng.logical_view();
+    assert_eq!((rng.index_a, rng.index_b), (18, 121));
+}
+
 /// `SuperWeaponTypeClass +0xB4` values in the Type= name table's order.
 const TYPE_NAMES: [&str; 12] = [
     "MultiMissile",

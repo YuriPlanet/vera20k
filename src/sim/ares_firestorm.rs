@@ -29,8 +29,9 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
-use crate::sim::world::{FrameEffects, Simulation};
+use crate::sim::world::{FrameEffects, ObjectSubstrate, Simulation};
 
 /// Building+0x584 (Special) holds the powered anim, Building+0x588
 /// (SpecialTwo) the flicker.
@@ -69,6 +70,36 @@ impl FirestormHouses {
         self.active.contains(&house)
     }
 
+    /// The building arm of CellClass::RecalcZoneType walks the ground list
+    /// (`0x00483D72..0x00483DD2`). Ares 3.0p1 hook `0x00483D94 -> 0x10015180`
+    /// sends a `Firestorm.Wall` building to `0x00483D9E`, which reads its
+    /// owner's live FirestormActive byte. Non-walls resume at `0x00483DB0`.
+    pub(crate) fn blocks_zone_cell(
+        &self,
+        occupancy: &OccupancyGrid,
+        entities: &EntityStore,
+        interner: &StringInterner,
+        rules: &RuleSet,
+        (rx, ry): (u16, u16),
+    ) -> bool {
+        self.any_active()
+            && occupancy.get(rx, ry).is_some_and(|cell| {
+                cell.iter_layer(MovementLayer::Ground)
+                    .filter_map(|item| entities.get(item.entity_id))
+                    .any(|entity| {
+                        entity.category() == EntityCategory::Structure
+                            && self.is_active(entity.owner())
+                            && interner
+                                .object_type_in_category(
+                                    entity.type_ref(),
+                                    crate::rules::object_type::ObjectCategory::Building,
+                                    rules,
+                                )
+                                .is_some_and(is_firewall_type)
+                    })
+            })
+    }
+
     /// SetFirestormState's head (`10022590`): false when `house` already is
     /// `active`, else it becomes so (the inlined UpdateAnyFirestormActive
     /// follows from the set).
@@ -86,6 +117,41 @@ impl FirestormHouses {
             std::hash::Hash::hash(b"ares-firestorm-houses-v1", hasher);
             std::hash::Hash::hash(&self.active, hasher);
         }
+    }
+}
+
+/// Read-only access to live Cell lists while a caller borrows terrain or
+/// navigation mutably. No firestorm or occupancy state is retained here.
+pub(crate) struct FirestormZoneView<'a> {
+    houses: &'a FirestormHouses,
+    substrate: &'a ObjectSubstrate,
+    interner: &'a StringInterner,
+    rules: &'a RuleSet,
+}
+
+impl<'a> FirestormZoneView<'a> {
+    pub(crate) fn new(
+        houses: &'a FirestormHouses,
+        substrate: &'a ObjectSubstrate,
+        interner: &'a StringInterner,
+        rules: &'a RuleSet,
+    ) -> Self {
+        Self {
+            houses,
+            substrate,
+            interner,
+            rules,
+        }
+    }
+
+    pub(crate) fn blocks(&self, cell: (u16, u16)) -> bool {
+        self.houses.blocks_zone_cell(
+            &self.substrate.occupancy,
+            &self.substrate.entities,
+            self.interner,
+            self.rules,
+            cell,
+        )
     }
 }
 
@@ -258,20 +324,14 @@ impl Simulation {
         self.ares_firestorm_update_pathfinding(&cells, rules);
     }
 
-    /// SetFirestormState's tail (`10022590`): `Update_Pathfinding_1`
+    /// SetFirestormState's tail (3.0p1 `0x10023106..0x10023115`): `Update_Pathfinding_1`
     /// (RebuildZoneConnectivity `0x0056C510`, from the retained classes,
     /// before any of these cells changed) and `Update_Pathfinding_2`
     /// (`0x00586990`) over the sections' `cells`, whose Recalc (`0x0047D2B0`)
     /// reaches RecalcZoneType's building arm: a `Firestorm.Wall` section of
     /// a House whose firestorm is up makes its cell Impassable (`0x00483D9E`,
-    /// Ares 10014B70, hook 0x483D94), any other leaves the terrain class.
+    /// Ares 3.0p1 0x10015180, hook 0x483D94), other buildings leave the terrain class.
     /// The path grid keeps blocking every building cell either way.
-    ///
-    /// RESIDUAL: VERA's other Recalc writers (an overlay change, the
-    /// playfield resize) take the terrain inputs alone, so a later Recalc
-    /// of a powered section's cell there drops the Impassable class; a
-    /// section placed or removed while the firestorm is up keeps its
-    /// cell's class until the next toggle.
     pub(crate) fn ares_firestorm_update_pathfinding(
         &mut self,
         cells: &[(u16, u16)],
@@ -301,25 +361,20 @@ impl Simulation {
         }
     }
 
-    /// RecalcZoneType's building arm for the cell at `(rx, ry)` (its
-    /// building, CellClass::GetBuilding): a `Firestorm.Wall` section whose
-    /// House's firestorm (HouseClass+0x1FA) is up.
-    fn ares_firestorm_cell_impassable(&self, rx: u16, ry: u16, rules: &RuleSet) -> bool {
-        self.ares_cell_building(i32::from(rx), i32::from(ry))
-            .and_then(|id| self.substrate.entities.get(id))
-            .is_some_and(|section| {
-                self.ares_firestorm.is_active(section.owner())
-                    && self
-                        .object_type(section.type_ref(), rules)
-                        .is_some_and(is_firewall_type)
-            })
+    pub(crate) fn firestorm_zone_cell_impassable(&self, cell: (u16, u16), rules: &RuleSet) -> bool {
+        self.ares_firestorm.blocks_zone_cell(
+            &self.substrate.occupancy,
+            &self.substrate.entities,
+            &self.interner,
+            rules,
+            cell,
+        )
     }
 
-    /// A restored world rebuilds its navigation from the terrain template,
-    /// whose classes know no buildings: give every powered section's cell
-    /// back the Impassable class its last Recalc gave it, before that
-    /// rebuild.
-    pub(crate) fn ares_firestorm_restore_zone_classes(&mut self, rules: &RuleSet) {
+    /// Reapply the building arm after a whole-map terrain Recalc. Action 40
+    /// (`0x006E21E0`) and snapshot restoration then rebuild navigation from
+    /// the same classes an ordinary Recalc derives from the active walls.
+    pub(crate) fn recalc_firestorm_zone_classes(&mut self, rules: &RuleSet) {
         if !self.ares_firestorm.any_active() {
             return;
         }
@@ -327,9 +382,13 @@ impl Simulation {
             .substrate
             .entities
             .iter_sorted()
-            .filter(|(_, entity)| entity.category() == EntityCategory::Structure)
-            .filter_map(|(id, _)| self.object_coords_cell(id))
-            .filter(|&(rx, ry)| self.ares_firestorm_cell_impassable(rx, ry, rules))
+            .filter(|(id, entity)| {
+                entity.category() == EntityCategory::Structure
+                    && self.ares_firestorm.is_active(entity.owner())
+                    && self.ares_is_firewall(*id, rules)
+            })
+            .flat_map(|(_, entity)| crate::sim::occupancy::entity_occupancy_cells(entity))
+            .filter(|&cell| self.firestorm_zone_cell_impassable(cell, rules))
             .collect();
         if let Some(terrain) = self.resolved_terrain.as_mut() {
             for cell in cells {
@@ -1160,7 +1219,9 @@ impl crate::sim::pathfinding::zone_incremental::ZoneBatchHost for FirestormZoneB
         let (Ok(rx), Ok(ry)) = (u16::try_from(x), u16::try_from(y)) else {
             return Ok(());
         };
-        let impassable = self.sim.ares_firestorm_cell_impassable(rx, ry, self.rules);
+        let impassable = self
+            .sim
+            .firestorm_zone_cell_impassable((rx, ry), self.rules);
         if let Some(terrain) = self.sim.resolved_terrain.as_mut() {
             terrain.recalc_zone_type_with_buildings_at((rx, ry), impassable);
         }

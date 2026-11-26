@@ -85,9 +85,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     // Ares hook 467E59 (10036960): the superweapon's radar event, then the
     // flash for its duration (the manual FadeIn and ChangeLighting), then
     // the wait on the warhead's PreImpactAnim.
-    if rules.ares_form()
-        && let Some(ball) = impact.ares()
-    {
+    if let Some(ball) = impact.ares() {
         if ball.radar {
             sim.sound_events.emit(SimSoundEvent::RadarEvent { radar });
         }
@@ -114,8 +112,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
             .projectiles
             .get(impact.projectile_id())
             .and_then(|bullet| sim.interner.warhead_type(bullet.payload().warhead, rules))
-            .and_then(|warhead| warhead.ares_rules())
-            .and_then(|ares| ares.combat().pre_impact_anim())
+            .and_then(|warhead| warhead.nuke_impact_settings().1)
             .map(str::to_owned);
         if let Some(anim) = anim.filter(|_| impact.waits()) {
             let anim = sim.interner.intern(&anim);
@@ -171,9 +168,9 @@ pub(crate) fn ares_nuke_ball(
     nuke_sw: Option<InternedId>,
 ) -> crate::sim::projectile::AresNukeBall {
     let warhead = interner.warhead_type(warhead, rules);
-    let combat = warhead
-        .and_then(|warhead| warhead.ares_rules())
-        .map(|ares| ares.combat());
+    let (duration, pre_impact_anim, _) = warhead
+        .map(|warhead| warhead.nuke_impact_settings())
+        .unwrap_or_default();
     let nuke_maker = warhead.is_some_and(|warhead| warhead.nuke_maker);
     let metadata = nuke_sw
         .filter(|_| !nuke_maker)
@@ -183,14 +180,12 @@ pub(crate) fn ares_nuke_ball(
         Some(metadata) => (metadata.launch().lighting().enabled(), 30),
         None => (true, 0),
     };
-    let duration = combat
-        .and_then(|combat| combat.nuke_flash_duration())
-        .unwrap_or(flash_default);
+    let duration = duration.unwrap_or(flash_default);
     crate::sim::projectile::AresNukeBall {
         sw_bullet,
         radar: metadata.is_some_and(|metadata| metadata.launch().radar_event()),
         flash: (allow_flash && duration > 0).then_some(duration),
-        pre_impact_anim: combat.is_some_and(|combat| combat.pre_impact_anim().is_some()),
+        pre_impact_anim: pre_impact_anim.is_some(),
         nuke_sw: nuke_sw.filter(|_| sw_bullet),
     }
 }

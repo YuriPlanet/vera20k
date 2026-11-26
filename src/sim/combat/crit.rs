@@ -54,7 +54,8 @@ use super::combat_aoe::AreaDamageReceiver;
 use super::effects::DeathEffects;
 use super::receiver_call::EntityDamageEvent;
 use super::world_receiver::{
-    ReceiverRun, apply_area_damage_in_run_with_target, commit_entities, commit_projectiles,
+    AreaDamageOptions, ReceiverRun, apply_area_damage_in_run_with_options, commit_entities,
+    commit_projectiles,
 };
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
@@ -540,7 +541,7 @@ fn crit_effects(
             // The pings follow the area's effects in `effects`, so they
             // gather apart first.
             let mut pings = Vec::new();
-            let (nested, _crit_active, _area_result) = apply_area_damage_in_run_with_target(
+            let (nested, _crit_active, _area_result) = apply_area_damage_in_run_with_options(
                 world,
                 run,
                 rules,
@@ -550,7 +551,10 @@ fn crit_effects(
                 crit_warhead,
                 true,
                 (source_id, source_house, crit_ref),
-                Some(target_id),
+                AreaDamageOptions {
+                    target: Some(target_id),
+                    ..AreaDamageOptions::default()
+                },
                 &mut pings,
             );
             effects.append(nested);

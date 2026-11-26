@@ -1,7 +1,6 @@
 # Ares HunterSeeker launch
 
-A game that ships `ares.mix` recognizes `Type=HunterSeeker` and reads its extension
-keys in every build ([Ares](ares.md)); other games do not.
+`Base-for-modders` recognizes `Type=HunterSeeker` with Ares Off.
 
 The launch handler follows installed Ares `SW_HunterSeeker::Activate`
 (`0x10072850`) and its building callback (`0x10072190`). Configuration stays

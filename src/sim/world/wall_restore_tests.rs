@@ -148,6 +148,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         (crate::sim::combat::RAD_NO_ATTACKER, None, he),
         None,
         0,
+        false,
         &mut effects,
     );
     assert_eq!(
@@ -179,6 +180,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         (crate::sim::combat::RAD_NO_ATTACKER, None, he),
         None,
         0,
+        false,
         &mut effects,
     );
     assert!(empty.cell_target_detaches.is_empty());

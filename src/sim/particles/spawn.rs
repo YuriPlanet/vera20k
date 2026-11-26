@@ -373,14 +373,14 @@ impl Simulation {
             owner_fire_link: false,
             alive: true,
             in_limbo: false,
-            // Ares 3.0 ParticleSystemClass_CTOR (Ares.dll 10028D10, hook
-            // 0x62DF05 at the constructor's end) allocates the extension,
-            // whose constructor (100267E0) picks Ares' own simulation.
-            ares: rules
-                .ares()
-                .then(|| super::ares_system::AresParticleSystemExt::for_system(pst, rules))
-                .flatten()
-                .map(Box::new),
+            // Ares 3.0p1 ParticleSystemClass_CTOR (0x62DF05 -> 0x10029820)
+            // picks the extension mode in 0x10027300. A Bullet attachment
+            // also uses this constructor behavior with the global mode off.
+            ares: (rules.ares()
+                || owner_entity.is_some_and(|owner| self.projectiles.get(owner).is_some()))
+            .then(|| super::ares_system::AresParticleSystemExt::for_system(pst, rules))
+            .flatten()
+            .map(Box::new),
         };
         debug_assert!(
             !self.substrate.entities.contains(stable_id)

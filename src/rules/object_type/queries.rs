@@ -327,7 +327,7 @@ impl ObjectType {
     ) {
         self.emp = emp.cloned();
         self.promotion_abilities = abilities.cloned();
-        self.curtain_modifiers[1] = curtain_modifiers[1];
+        self.curtain_modifiers = curtain_modifiers;
         let ares_way = crate::rules::ares_switch::ares_way();
         self.self_attach_effect = attachment
             .filter(|settings| ares_way || settings.is_enabled(false))
@@ -336,7 +336,6 @@ impl ObjectType {
             self.cloak_allowed = cloak_allowed;
             self.turret_rot_override = turret_rot_override;
             self.aircraft_crashable = aircraft_crashable;
-            self.curtain_modifiers[0] = curtain_modifiers[0];
         }
     }
 
@@ -489,14 +488,15 @@ impl ObjectType {
         &mut self,
         ext: &crate::rules::ares_building_type::BuildingTypeExtRules,
         ares_way: bool,
-        builtin_firestorm: bool,
     ) {
         if ares_way {
             self.building_type_ext = ext.clone();
         } else {
             self.building_type_ext.dock_unload_cell = ext.dock_unload_cell;
             self.building_type_ext.dock_unload_facing = ext.dock_unload_facing;
-            self.building_type_ext.firestorm_wall = builtin_firestorm && ext.firestorm_wall;
+            self.building_type_ext.firestorm_wall = ext.firestorm_wall;
+            self.building_type_ext.lightning_rod = ext.lightning_rod;
+            self.building_type_ext.lightning_rod_modifier = ext.lightning_rod_modifier;
         }
     }
 

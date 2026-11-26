@@ -343,6 +343,7 @@ mod tests {
             &sim.entities().get(target).unwrap().position,
         );
         sim.apply_ares_attach_effect_detonation(
+            false,
             ProjectileCoord {
                 x: coord.x,
                 y: coord.y,
@@ -718,6 +719,7 @@ mod receiver {
         /// House captured from the live firer before either effect, not a Techno.
         pub(crate) fn apply_ares_attach_effect_detonation(
             &mut self,
+            builtin_superweapon: bool,
             impact: crate::sim::projectile::ProjectileCoord,
             source_house: Option<InternedId>,
             warhead: &WarheadType,
@@ -727,7 +729,9 @@ mod receiver {
                 return;
             };
             let settings = extension.attach_effect();
-            if !settings.is_enabled(rules.ares()) {
+            // P1 GenericWarhead::Activate calls the standard AttachEffect
+            // receiver at 0x100727BE even without the projectile hook.
+            if !settings.is_enabled(rules.ares() || builtin_superweapon) {
                 return;
             }
             let targets = self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules);

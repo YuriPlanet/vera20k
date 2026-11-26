@@ -35,18 +35,21 @@ pub(crate) struct CountryVeterancyState {
     pub(super) infantry: Vec<String>,
     pub(super) units: Vec<String>,
     pub(super) aircraft: Vec<String>,
-    /// Only a read the Ares way leaves this from its default.
+    /// Stock-way reads retain the country settings required by built-in behavior.
     pub(super) ares: AresCountryState,
 }
 
-// A stock-way read leaves `ares` at its default, so a stock game folds the
-// three lists alone, as before.
+// A stock game with no authored extension payload folds the three lists alone.
 impl Hash for CountryVeterancyState {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.infantry.hash(state);
         self.units.hash(state);
         self.aircraft.hash(state);
-        if self.ares != AresCountryState::default() {
+        let empty = AresCountryState {
+            parent_initialized: self.ares.parent_initialized,
+            ..AresCountryState::default()
+        };
+        if self.ares != empty {
             self.ares.hash(state);
         }
     }
@@ -54,7 +57,7 @@ impl Hash for CountryVeterancyState {
 
 /// Live Side identity plus the immutable selected extension fields. The
 /// retained ProcessedType owns initialization and reads; the RuleSet view does
-/// not replay either. Rules read the stock way have no extension.
+/// not replay either. Stock-way rules can retain authored superweapon fallbacks.
 pub(crate) type SideProjection<'a> = (
     &'a str,
     Option<&'a crate::rules::ares_side_extension::AresSideExtension>,
@@ -187,22 +190,7 @@ impl AresSideState {
                 read_ares_type_ref(section, "Parachute.Anim", &fields.parachute_anim, |name| {
                     SideRegisteredTypes::find(&types.animations, name)
                 });
-            fields.paradrop_aircraft = read_ares_type_ref(
-                section,
-                "ParaDrop.Aircraft",
-                &fields.paradrop_aircraft,
-                |name| SideRegisteredTypes::find(&types.aircraft, name),
-            );
-            // `remove_non_paradroppables` keeps only InfantryType and UnitType
-            // identities after the vector read.
-            fields.paradrop_types = read_nullable_type_vector(
-                section,
-                "ParaDrop.Types",
-                fields.paradrop_types.as_ref(),
-                |name| types.techno(name),
-            );
-            fields.paradrop_num =
-                read_nullable_int_vector(section, "ParaDrop.Num", fields.paradrop_num.as_ref());
+            read_side_paradrop(fields, section, types);
             fields.sidebar_mix_file_index =
                 section.read_ares_int("Sidebar.MixFileIndex", fields.sidebar_mix_file_index);
             fields.sidebar_yuri_file_names =
@@ -219,10 +207,9 @@ impl AresSideState {
                 fields.message_text_color_index,
                 &color_index,
             );
-            fields.hunter_seeker =
-                read_ares_type_ref(section, "HunterSeeker", &fields.hunter_seeker, |name| {
-                    SideRegisteredTypes::find(&types.vehicles, name)
-                });
+            read_side_hunter_seeker(fields, section, |name| {
+                SideRegisteredTypes::find(&types.vehicles, name)
+            });
             for (key, target) in [
                 (
                     "CampaignScore.Background",
@@ -355,6 +342,38 @@ impl AresSideState {
         fields.multiplayer_score_win_theme = Some("SCORE".to_owned());
         fields.multiplayer_score_lose_theme = Some("SCORE".to_owned());
     }
+}
+
+/// SideExt 1002E450 binds the HunterSeeker fallback through UnitType::Find.
+pub(super) fn read_side_hunter_seeker(
+    fields: &mut crate::rules::ares_side_extension::AresSideExtension,
+    section: &IniSection,
+    find_vehicle: impl Fn(&str) -> Option<String>,
+) {
+    fields.hunter_seeker =
+        read_ares_type_ref(section, "HunterSeeker", &fields.hunter_seeker, find_vehicle);
+}
+
+/// SideExt 1002E450 applies the registered plane, infantry/vehicles and counts.
+pub(super) fn read_side_paradrop(
+    fields: &mut crate::rules::ares_side_extension::AresSideExtension,
+    section: &IniSection,
+    types: &SideRegisteredTypes,
+) {
+    fields.paradrop_aircraft = read_ares_type_ref(
+        section,
+        "ParaDrop.Aircraft",
+        &fields.paradrop_aircraft,
+        |name| SideRegisteredTypes::find(&types.aircraft, name),
+    );
+    fields.paradrop_types = read_nullable_type_vector(
+        section,
+        "ParaDrop.Types",
+        fields.paradrop_types.as_ref(),
+        |name| types.techno(name),
+    );
+    fields.paradrop_num =
+        read_nullable_int_vector(section, "ParaDrop.Num", fields.paradrop_num.as_ref());
 }
 
 /// Ares `Nullable<T*>`/`Valueable<T*>`/`ValueableIdx<T>` reads

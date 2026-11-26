@@ -833,7 +833,7 @@ impl RuleSet {
 
     #[inline]
     pub(crate) fn attach_effects_enabled(&self) -> bool {
-        self.ares || self.temporal_attach_effects_enabled()
+        self.ares || self.temporal_attach_effects_enabled() || self.builtin_generic_attach_effects
     }
 
     #[inline]
@@ -844,6 +844,11 @@ impl RuleSet {
     #[inline]
     pub(crate) fn emp_enabled(&self) -> bool {
         self.ares || self.builtin_tunnel_emp
+    }
+
+    #[inline]
+    pub(crate) fn builtin_generic_emp(&self) -> bool {
+        self.builtin_generic_emp
     }
 
     /// Whether Phobos plays in this game: its Rules layers or map hold a key

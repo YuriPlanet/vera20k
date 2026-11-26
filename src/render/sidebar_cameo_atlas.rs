@@ -339,11 +339,7 @@ fn render_cameo(
         cameo.kind = CameoKind::OrdinaryPcx;
         return Some(cameo);
     }
-    let custom = if ares {
-        techno_cameo_palette(type_id, &rules_image, rules, asset_manager)
-    } else {
-        None
-    };
+    let custom = techno_cameo_palette(type_id, &rules_image, rules, asset_manager);
     let palette = custom.as_ref().unwrap_or(palette);
     // `TechnoTypeClass::ReadINI` loads `<Cameo>.SHP` (`0x00715A1D..0x00715A3D`)
     // and nothing else before the stock placeholder.
@@ -432,10 +428,7 @@ fn render_alt_cameo(
     rules: &RuleSet,
     palette: &Palette,
 ) -> Option<RenderedCameo> {
-    let custom = rules
-        .ares()
-        .then(|| techno_cameo_palette(type_id, rules_image, rules, asset_manager))
-        .flatten();
+    let custom = techno_cameo_palette(type_id, rules_image, rules, asset_manager);
     let palette = custom.as_ref().unwrap_or(palette);
     let alt_cameo = rules
         .art()
@@ -449,8 +442,7 @@ fn render_alt_cameo(
 
 /// Ares StripClass_Draw_Main (1005E390, hook 0x6A9A2A): a techno's SHP
 /// cameo draws with its art `CameoPalette` when that file loads, else
-/// CAMEO.PAL. The `~~~` theater placeholder is not resolved here (the atlas
-/// is not built per theater), so such a name keeps CAMEO.PAL.
+/// CAMEO.PAL. The palette loader resolves the active theater at atlas build.
 fn techno_cameo_palette(
     type_id: &str,
     rules_image: &str,
@@ -464,6 +456,18 @@ fn techno_cameo_palette(
 }
 
 pub(crate) fn load_cameo_palette(asset_manager: &AssetManager, name: &str) -> Option<Palette> {
+    // Ares 3.0p1 CustomPalette::Read at 0x10077210 substitutes only the
+    // first ~~~, using the active theater's three-letter filename extension.
+    let resolved;
+    let name = if name.contains("~~~") {
+        let extension = asset_manager
+            .active_theater()
+            .and_then(crate::map::theater::theater_extension)?;
+        resolved = name.replacen("~~~", extension, 1);
+        &resolved
+    } else {
+        name
+    };
     ui_art_candidates(asset_manager, name).find_map(|asset| Palette::from_bytes(asset.bytes).ok())
 }
 
@@ -478,9 +482,7 @@ fn render_superweapon_cameo(
     rules: &RuleSet,
 ) -> Option<RenderedCameo> {
     let key = &sw.id;
-    let ares = rules.ares();
-    if ares
-        && let Some(name) = sw.sidebar_pcx()
+    if let Some(name) = sw.sidebar_pcx()
         && let Some(mut cameo) = render_pcx_cameo(key, name, asset_manager)
     {
         cameo.kind = CameoKind::SuperWeapon;
@@ -488,12 +490,9 @@ fn render_superweapon_cameo(
     }
     // Ares SidebarPalette (hooks 6A9948/6A9A2A): the type's own palette for
     // its SHP cameo when the file loads, else CAMEO.PAL.
-    let custom = if ares {
-        sw.sidebar_palette()
-            .and_then(|name| load_cameo_palette(asset_manager, name))
-    } else {
-        None
-    };
+    let custom = sw
+        .sidebar_palette()
+        .and_then(|name| load_cameo_palette(asset_manager, name));
     let palette = custom.as_ref().unwrap_or(palette);
     if let Some(image_name) = sw.sidebar_image.as_deref() {
         let shp_name = format!("{image_name}.SHP");
@@ -1333,7 +1332,7 @@ mod tests {
     /// SW cameo SHP; a missing file keeps CAMEO.PAL.
     #[test]
     fn superweapon_sidebar_palette_draws_its_cameo() {
-        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let _ares = crate::rules::ares_switch::read_ares_way(false);
         use crate::{
             assets::asset_manager::AssetManager, assets::pal_file::Palette,
             map::source::test_support::TestDirectory, rules::ini_parser::IniFile,
@@ -1344,14 +1343,21 @@ mod tests {
         let mut pal = vec![0u8; 768];
         pal[3..6].copy_from_slice(&[10, 20, 30]);
         dir.write("swicon.pal", &pal);
-        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        dir.write("swicon.sno.pal", &pal);
+        let mut assets = AssetManager::from_loose_root_for_test(dir.path());
+        assets.activate_theater_archives("SNOW", &[]).unwrap();
         let cameo = Palette::from_rgb(|_| [1, 2, 3]);
         let custom = Palette::from_bytes(&pal).unwrap();
-        for (key, palette) in [("swicon.pal", &custom), ("missing.pal", &cameo)] {
+        for (key, palette) in [
+            ("swicon.pal", &custom),
+            ("swicon.~~~.pal", &custom),
+            ("missing.~~~.pal", &cameo),
+        ] {
             let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
                 "[SuperWeaponTypes]\n0=Cell\n[Cell]\nSidebarImage=SWICON\nSidebarPalette={key}\n"
             )))
             .unwrap();
+            assert!(!rules.ares());
             let sw = rules.super_weapon("Cell").unwrap();
             let drawn = super::render_superweapon_cameo(sw, &assets, &cameo, &rules).unwrap();
             let shp = assets.get_ref("SWICON.SHP").unwrap();
@@ -1503,20 +1509,13 @@ mod tests {
         write_pcx(&dir, "normal.pcx", [30, 50, 70]);
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let selected = super::render_superweapon_cameo(&sw, &assets, &palette, &rules).unwrap();
-        if rules.ares() {
-            assert_eq!(fallback.type_id, "SW");
-            assert_eq!(selected.type_id, "SW");
-            assert_eq!([selected.canvas_width, selected.canvas_height], [60, 48]);
-            let ini = IniFile::from_str("[PCXONLY]\nType=PsychicReveal\nSidebarPCX=Normal.PCX\n");
-            let pcx_only =
-                SuperWeaponType::from_ini_section("PCXONLY", ini.section("PCXONLY").unwrap());
-            assert!(
-                super::render_superweapon_cameo(&pcx_only, &assets, &palette, &rules).is_some()
-            );
-        } else {
-            assert_eq!(selected.type_id, "SW");
-            assert_eq!([selected.canvas_width, selected.canvas_height], [2, 2]);
-        }
+        assert_eq!(fallback.type_id, "SW");
+        assert_eq!(selected.type_id, "SW");
+        assert_eq!([selected.canvas_width, selected.canvas_height], [60, 48]);
+        let ini = IniFile::from_str("[PCXONLY]\nType=PsychicReveal\nSidebarPCX=Normal.PCX\n");
+        let pcx_only =
+            SuperWeaponType::from_ini_section("PCXONLY", ini.section("PCXONLY").unwrap());
+        assert!(super::render_superweapon_cameo(&pcx_only, &assets, &palette, &rules).is_some());
     }
 
     #[test]

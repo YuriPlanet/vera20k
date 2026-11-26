@@ -99,7 +99,7 @@ impl Simulation {
                 continue;
             }
             let duration = if duration > 0 {
-                ares_curtain_duration(Some(object), duration, InvulnKind::IronCurtain, true)
+                ares_curtain_duration(Some(object), duration, InvulnKind::IronCurtain)
             } else {
                 duration
             };
@@ -160,6 +160,7 @@ impl Simulation {
                 category,
                 source_house,
                 new,
+                InvulnKind::IronCurtain,
                 run.effects(),
             );
             if let Some(victim) = self.substrate.entities.get_mut(target) {

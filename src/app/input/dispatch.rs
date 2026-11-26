@@ -555,13 +555,12 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
 }
 
 /// The tactical release past the placement branch: the superweapon's
-/// SPECIAL_PLACE, a planning node's connection, the band box and the click.
+/// SELL/SPECIAL_PLACE, a planning node's connection, the band box and the click.
 fn tactical_left_up(state: &mut AppState) {
     // DetermineAction answers the armed superweapon's action only with
     // nothing selected (`0x00692610..0x00692673`); with a selection it is the
     // best object's What_Action, which the click below dispatches. With
-    // nothing selected the dispatch has no receiver, so SPECIAL_PLACE alone
-    // remains.
+    // nothing selected, dispatch the superweapon action itself.
     let selection_empty = selected_stable_ids_in_order(
         state
             .match_state

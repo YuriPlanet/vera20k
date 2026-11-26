@@ -16,6 +16,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::rules::art_data;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_type::SuperWeaponKind;
 
 /// Raw and consumer-visible frame counts for one authoritative effect asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -246,6 +247,34 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         {
             insert(animation);
         }
+        if sw.kind == SuperWeaponKind::GenericWarhead
+            && sw.uses_ares_handler(rules)
+            && let Some(animation) = sw
+                .generic_warhead
+                .as_ref()
+                .and_then(|settings| rules.warhead(settings.warhead.as_deref()?))
+                .and_then(|warhead| warhead.ares_rules())
+                .map(|warhead| warhead.attach_effect())
+                .filter(|effect| effect.duration() != 0)
+                .and_then(|effect| effect.animation())
+        {
+            insert(animation);
+        }
+        if sw.kind == SuperWeaponKind::MultiMissile
+            && sw.uses_ares_handler(rules)
+            && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
+        {
+            let nuke = metadata.launch().nuke();
+            for animation in [
+                nuke.psi_warning.as_deref(),
+                nuke.take_off.as_ref().and_then(|name| name.as_deref()),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                insert(animation);
+            }
+        }
     }
     if ares_way || rules.has_builtin_firestorm() {
         let firestorm = rules.ares_firestorm_globals();
@@ -264,6 +293,29 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     let mut configured_emp = false;
     for warhead in rules.warheads_iter() {
         for name in &warhead.anim_list {
+            insert(name);
+        }
+        if let Some(ion) = warhead.ares_combat().map(|combat| combat.ion_cannon())
+            && ion.enabled()
+        {
+            for name in [
+                ion.blast(&rules.general.ion_blast_anim),
+                ion.beam(&rules.general.ion_beam_anim),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                insert(name);
+            }
+        }
+        // Ares 3.0p1 BulletClass_Update_NukeBall (0x467E59 -> 0x10037400)
+        // needs the registered PreImpactAnim's frames before its wait starts.
+        let nuke = if ares_way {
+            Some(warhead.nuke_impact_settings())
+        } else {
+            warhead.builtin_nuke_impact_settings()
+        };
+        if let Some((_, Some(name), _)) = nuke {
             insert(name);
         }
         // Installed Ares EMP10062610/10062FD0 constructs the retained
@@ -309,6 +361,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     if ares_way || configured_emp || rules.temporal_attach_effects_enabled() {
         for object in rules.all_objects() {
             if (ares_way
+                || rules.builtin_generic_emp()
                 || configured_emp
                     && object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel)
                 && let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles())
@@ -1237,6 +1290,83 @@ mod tests {
         assert_eq!(frames("SELF_AE"), Some(6));
         assert_eq!(frames("HIT_AE"), Some(6));
         assert_eq!(frames("OFF_AE"), None);
+    }
+
+    /// The first Warhead pass supplies the default and authored impacts. A
+    /// scenario can enable the built-in Nuke without rereading the base layer.
+    #[test]
+    fn builtin_nuke_retains_warhead_defaults_and_binds_authored_impact_art() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[SuperWeaponTypes]\n0=NukeSpecial\n[NukeSpecial]\nType=MultiMissile\n\
+             [Warheads]\n0=NUKE\n1=Blast\n\
+             [Animations]\n0=NUKEBALL\n1=STOCK\n2=NBRST\n3=NWARN\n4=NTAKE\n\
+             [Blast]\nNukeFlash.Duration=12\nPreImpactAnim=NBRST\nPreImpactAnim.Moves=yes\n",
+        ))
+        .with_ares_mix(false)
+        .with_ares_keys_off(true);
+        let art = IniFile::from_str(
+            "[NUKEBALL]\n[STOCK]\n[NBRST]\nLoopCount=1\n[NWARN]\nLoopCount=1\n[NTAKE]\nLoopCount=1\n",
+        );
+        let project = |layers: &RulesLayerStack| {
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap()
+        };
+        let stock = project(&layers);
+        assert_eq!(
+            stock.warhead("NUKE").unwrap().nuke_impact_settings(),
+            (None, None, false)
+        );
+        assert_eq!(
+            stock.warhead("Blast").unwrap().nuke_impact_settings(),
+            (None, None, false)
+        );
+        assert!(!anim_class_roots(&stock).iter().any(|name| name == "NBRST"));
+
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[NukeSpecial]\nNuke.SiloLaunch=no\nNuke.TakeOff=NTAKE\nNuke.PsiWarning=NWARN\n\
+                 [Blast]\nPreImpactAnim=UnknownAnimation\n",
+            ),
+        );
+        let mut rules = project(&layers);
+        assert!(!rules.ares() && !rules.ares_form());
+        assert_eq!(
+            rules.warhead("NUKE").unwrap().nuke_impact_settings(),
+            (Some(30), Some("NUKEBALL"), false)
+        );
+        let blast = rules.warhead("Blast").unwrap();
+        assert!(blast.ares_combat().is_none());
+        assert_eq!(
+            blast.nuke_impact_settings(),
+            (Some(12), Some("NBRST"), true)
+        );
+
+        let root = TestRoot::new();
+        let overrides = ["NBRST", "NWARN", "NTAKE"];
+        for name in overrides {
+            std::fs::write(
+                root.path().join(format!("{name}.SHP")),
+                shp_with_undecodable_pixels(5),
+            )
+            .unwrap();
+        }
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        let roots = anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+        for name in overrides {
+            assert_eq!(
+                rules
+                    .art()
+                    .anim_runtime_config(name)
+                    .and_then(|config| config.raw_shp_frame_count),
+                Some(5),
+                "{name}"
+            );
+        }
     }
 
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {

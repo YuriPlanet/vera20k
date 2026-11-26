@@ -222,19 +222,15 @@ pub struct AresParticleSystemExt {
 }
 
 impl AresParticleSystemExt {
-    /// `ExtData::ExtData @ 100267E0`: a system whose type holds a particle
+    /// Ares 3.0p1 `ExtData::ExtData @ 0x10027300`: a system whose type holds a particle
     /// type without `UseLineTrail` and AlphaImage art, whose `BehavesLike`
     /// matches the system's (ParticleType numbers Gas 0 and Smoke 1 the other
     /// way round; Ares maps every value below 2 to `value == 0`), and which
     /// behaves like Smoke, Spark or Railgun.
-    ///
-    /// RESIDUAL: VERA does not read `UseLineTrail=` (ARTMD.INI, the particle
-    /// image's section) for particle types and counts it false; no retail
-    /// particle image sets it.
     pub(crate) fn for_system(system: &ParticleSystemType, rules: &RuleSet) -> Option<Self> {
         let held_type = system.holds_what?;
         let held = rules.particle_type(held_type);
-        if rules.alpha_image(&held.alpha_image).is_some() {
+        if held.use_line_trail || rules.alpha_image(&held.alpha_image).is_some() {
             return None;
         }
         let behaves = held.behaves_like as i32;

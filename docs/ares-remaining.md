@@ -4,9 +4,8 @@ This page lists what the Ares 3.0 port still lacks, and for each gap the gamemd 
 depends on. The supported chains are listed in [ares.md](ares.md); each chain's addresses,
 dispositions and smaller residuals are in its own `docs/ares-*.md`, and the hooks skipped
 on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
-The [Ares 3.0p1 V2.5 index](zh-CN/ares-3.0-differences-v2.5.html) tracks
-the individual items on `Base-for-modders`, including 70 partially implemented
-and 24 unimplemented entries.
+The [Ares 3.0p1 V3.0 index](zh-CN/ares-3.0-differences-v3.0.html) tracks
+the individual items and their implementation status on `Base-for-modders`.
 
 ## Where it stands
 
@@ -30,8 +29,9 @@ and 24 unimplemented entries.
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
 - Tests at the commit that adds this page, when Ares was still a build feature
   (RA2_DIR set to a retail install): besides one fixture expectation fixed afterwards
-  (the WithConst test), the failures were environment-only: the local retail install is
-  Traditional Chinese, so `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
+  (the WithConst test), the failures came from running English fixtures against
+  localized retail data. They affected
+  `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
   and six client CSF tests (selection_navigation x4,
   `messages::trigger_message_csf_labels_match_original_lookup_through_retail_archive_reader`,
   `tooltips::retail_ifv_tip_names_its_turret_or_passenger`) compare against English text.
@@ -58,15 +58,25 @@ only that house.
 |---|---|---|
 | `CanMakeStuffUp` | The Rules draws and the 90-frame infantry panic are ported and the written values are saved in `AresMadeUpRules`, but nothing reads them yet: 28 Rules fields with about 110 read sites, many in free functions without a Simulation | [ares-warhead-residuals.md](ares-warhead-residuals.md) |
 | EMP | Tunnel movers during digging, surfacing and underground travel. A landed Aircraft's Fly Power_Off spin (0x4CFD20) and a LaserFencePost's fence recalc (0x4533A0) also remain. VERA builds no fence sections. | [ares-emp.md](ares-emp.md) |
-| Superweapon AI targeting | The `Stealth`, `MultiMissile` and `LightningRandom` pickers | [Ares 3.0p1 V2.5 index](zh-CN/ares-3.0-differences-v2.5.html#ares-entry-not-supported-037) |
 | Refinery storage | The Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
 | Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
 | Deactivated objects | The deactivated What_Action over an object gates only the hover cursor of the object that owns it; the click paths keep their stock rungs below the ClickedAction refusal | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Firestorm zones | Recalc writers other than the toggle (an overlay change, trigger action 40) and placing a section during a firestorm keep the old zone class | [ares-firestorm.md](ares-firestorm.md) |
 | `StartInMultiplayer.WithConst` | By the ported chain a human's starting yard is never Grand_Opened (no lights or active anims), and its House's primary centre falls back to the start cell (4FD150 republishes none, 1001ED60 restores the saved cell); compare with the game in a mod that sets it | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
-| DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
+| DropPod | Repeated vision reveal and custom class-triggered locomotor replacement differ. | [ares-superweapon-types.md](ares-superweapon-types.md) |
+| GenericWarhead | With Ares Off, the receiver still uses the stock protection flash. Charge-drain payloads and exact automatic target tie order remain outside the verified launch path. | [ares-generic-warhead.md](ares-generic-warhead.md) |
 | HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
 | Terrain fire | Finish_Fire_Death's crumble of a zero-health tree (a lethal hit removes the tree first), the spread runs after the animation step | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
+
+## Superweapon differences that need no implementation
+
+- The limits on planes, passengers, pods, scatter attempts and debris bound the work a
+  rules value can trigger in one frame. Drop pods also reject out-of-bounds landing
+  animation indices. [V3.0 limits](zh-CN/ares-3.0-differences-v3.0.html#ares-entry-difference-114)
+- Native Ares save import is outside the current compatibility scope. A saved defensive
+  preferred cell would matter only if the imported field already held a coordinate.
+  Earlier VERA superweapon layouts remain subject to the save version check.
+  [Defensive preferred cell](zh-CN/ares-3.0-differences-v3.0.html#ares-entry-difference-027) ·
+  [VERA save layout](zh-CN/ares-3.0-differences-v3.0.html#superweapon-legacy-save-layout)
 
 ## Smaller gameplay residuals
 
@@ -85,7 +95,6 @@ data.
 | UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
 | Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| Map events 75–77 still require Ares, including for the built-in superweapons | none | [ares-triggers.md](ares-triggers.md) |
 | AttachEffect airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |

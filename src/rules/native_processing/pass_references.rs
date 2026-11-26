@@ -256,12 +256,10 @@ impl RulesPassProcessor {
         );
         // ReadGeneral's DropPodHeight, DropPodSpeed and DropPodAngle, which
         // only the Ares DropPod launch reaches (`DropPodLocomotorRules`).
-        if ares_way {
-            self.ares_global_controls
-                .drop_pod
-                .locomotor
-                .read_general(section);
-        }
+        self.ares_global_controls
+            .drop_pod
+            .locomotor
+            .read_general(section);
 
         // Ares 3.0 Buf_General (1005BB00, hook 0x66D55E) reads these lists
         // at ReadGeneral's start through ParseList (1005B340 and its other
@@ -395,7 +393,7 @@ impl RulesPassProcessor {
                 let resolved = self.resolve_scalar_from(section, key, family, 0x80);
                 // ReadGeneral's DropPodWeapon (Rules+0x5A4), for the Ares
                 // DropPod locomotor (`DropPodLocomotorRules`).
-                if ares_way && key == "DropPodWeapon" {
+                if key == "DropPodWeapon" {
                     self.ares_global_controls
                         .drop_pod
                         .locomotor
@@ -411,7 +409,7 @@ impl RulesPassProcessor {
     fn store_general_list(&mut self, key: &str, resolved: Option<Vec<String>>) {
         // ReadGeneral's DropPod= (Rules+0x108), the landed pod's anims, for
         // the Ares DropPod locomotor (`DropPodLocomotorRules`).
-        if crate::rules::ares_switch::ares_way() && key == "DropPod" {
+        if key == "DropPod" {
             self.ares_global_controls
                 .drop_pod
                 .locomotor
@@ -729,12 +727,10 @@ impl RulesPassProcessor {
             }
             // DropPodPuff (Rules+0x4C) and AtmosphereEntry (+0x354), for the
             // Ares DropPod locomotor (`DropPodLocomotorRules`).
-            if ares_way {
-                self.ares_global_controls
-                    .drop_pod
-                    .locomotor
-                    .read_audio_visual(key, resolved);
-            }
+            self.ares_global_controls
+                .drop_pod
+                .locomotor
+                .read_audio_visual(key, resolved);
         }
         let tree_fire =
             self.resolve_list_from(section, "TreeFire", RulesTypeFamily::Animation, 0x80);

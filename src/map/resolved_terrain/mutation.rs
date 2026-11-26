@@ -29,6 +29,7 @@ impl ResolvedTerrainGrid {
         flags: Option<&OverlayTypeFlags>,
         land_flags: Option<&OverlayTypeFlags>,
         cliff_back_rock: Option<&LandTypeSemantics>,
+        building_impassable: bool,
     ) -> bool {
         // Like the cell recalc, an unchanged projection marks no chunk for
         // the presentation copy to take (see `terrain_cells`).
@@ -36,8 +37,14 @@ impl ResolvedTerrainGrid {
             return false;
         };
         self.cells.begin_shadow(index);
-        let changed =
-            self.apply_overlay_attributes_shadowed(rx, ry, flags, land_flags, cliff_back_rock);
+        let changed = self.apply_overlay_attributes_shadowed(
+            rx,
+            ry,
+            flags,
+            land_flags,
+            cliff_back_rock,
+            building_impassable,
+        );
         self.cells.end_shadow();
         changed
     }
@@ -49,6 +56,7 @@ impl ResolvedTerrainGrid {
         flags: Option<&OverlayTypeFlags>,
         land_flags: Option<&OverlayTypeFlags>,
         cliff_back_rock: Option<&LandTypeSemantics>,
+        building_impassable: bool,
     ) -> bool {
         let overlay_zone = overlay_reduced_zone_type(flags);
         let new_blocks = matches!(
@@ -103,12 +111,13 @@ impl ResolvedTerrainGrid {
         terrain_cell.overlay_zone_type = overlay_zone;
         terrain_cell.ground_walk_blocked =
             land_ground_blocked || terrain_cell.terrain_object_blocks || new_blocks;
-        terrain_cell.zone_type = recalc_zone_type(
+        terrain_cell.zone_type = super::recalc_zone_type_with_buildings(
             terrain_cell.outside_playfield,
             terrain_cell.overlay_zone_type,
             terrain_cell.land_type,
             terrain_cell.speed_costs.wheel,
             terrain_cell.terrain_object_occupation,
+            building_impassable,
         );
 
         let new = (

@@ -276,6 +276,19 @@ fn superweapon_money_unready_does_not_pay() {
 }
 
 #[test]
+fn builtin_money_does_not_charge_for_a_stock_nuke_without_a_silo() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules(
+        "[SuperWeaponTypes]\n5=Nuke\n[Nuke]\nType=MultiMissile\nIsPowered=no\n\
+         Action=Nuke\nMoney.Amount=-500\n",
+    );
+    let (mut sim, owner) = world(&rules, 1000, true);
+    let nuke = ready(&mut sim, &rules, owner, "Nuke", false);
+    assert!(fire(&mut sim, &rules, owner, nuke, (10, 10)));
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
+}
+
+#[test]
 fn superweapon_money_paid_battery_starts_and_stops_with_ares_off() {
     let _stock = crate::rules::ares_switch::read_ares_way(false);
     let rules = rules(
@@ -285,7 +298,9 @@ fn superweapon_money_paid_battery_starts_and_stops_with_ares_off() {
          [Storm]\nMoney.Amount=-1\n",
     );
     assert!(!rules.ares());
-    assert_eq!(rules.super_weapon("Storm").unwrap().money_amount, 0);
+    let storm = rules.super_weapon("Storm").unwrap();
+    assert_eq!(storm.money_amount, -1);
+    assert!(!storm.uses_ares_handler(&rules));
     let (mut sim, owner) = world(&rules, 800, true);
     let sw = ready(&mut sim, &rules, owner, "PsychicFlashSpecial", false);
     assert!(fire(&mut sim, &rules, owner, sw, (0, 0)));
@@ -375,14 +390,20 @@ fn superweapon_money_ai_refuses_before_target_search_or_rng() {
 
 #[test]
 fn superweapon_money_zero_cost_chronosphere_keeps_native_source_and_warp() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let rules = rules("");
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules("[Sphere]\nSW.PostDependent=Warp\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let sphere = ready(&mut sim, &rules, owner, "Sphere", false);
     let warp = sim.interner.get("Warp").unwrap();
     assert!(fire(&mut sim, &rules, owner, sphere, (10, 10)));
-    assert!(!fire(&mut sim, &rules, owner, sphere, (10, 10)));
+    assert!(sim.super_weapons[&owner][&sphere].is_ready());
+    sim.sound_events.clear_for_test();
+    superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner, &mut Default::default());
+    assert!(!sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::SuperWeaponReady { sw_type, .. } if *sw_type == sphere
+    )));
     assert!(fire(&mut sim, &rules, owner, warp, (15, 15)));
+    assert!(!sim.super_weapons[&owner][&sphere].is_ready());
     assert_eq!(sim.houses[&owner].economy().credits(), 1000);
     assert_eq!(sim.houses[&owner].economy().spent_credits(), 0);
 }

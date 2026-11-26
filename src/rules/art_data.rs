@@ -1425,9 +1425,7 @@ impl ArtRegistry {
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
-            let cameo_palette = crate::rules::ares_switch::ares_read(|| {
-                section.read_name("CameoPalette", 2048).map(str::to_owned)
-            });
+            let cameo_palette = section.read_name("CameoPalette", 2048).map(str::to_owned);
             let new_theater: bool = section.read_bool("NewTheater", false);
             let theater: bool = section.read_bool("Theater", false);
             let scorch: bool = section.read_bool("Scorch", false);

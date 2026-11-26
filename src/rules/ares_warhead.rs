@@ -419,11 +419,7 @@ impl WarheadCombatRules {
         death_weapon_suppress: Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>,
     ) {
         let _ares = crate::rules::ares_switch::ares_reads();
-        self.mind_control_permanent =
-            section.read_ares_bool("MindControl.Permanent", self.mind_control_permanent);
-        self.iron_curtain_duration =
-            section.read_ares_int("IronCurtain.Duration", self.iron_curtain_duration);
-        self.iron_curtain_cap = section.read_ares_int("IronCurtain.Cap", self.iron_curtain_cap);
+        self.read_detonation_pass(section);
         if let Some(anim) = inf_death_anim {
             self.inf_death_anim = anim;
         }
@@ -431,8 +427,6 @@ impl WarheadCombatRules {
         self.sonar_duration = section.read_ares_int("Sonar.Duration", self.sonar_duration);
         self.disable_weapons_duration =
             section.read_ares_int("DisableWeapons.Duration", self.disable_weapons_duration);
-        self.iron_curtain_flash =
-            section.read_ares_nullable_bool("IronCurtain.Flash", self.iron_curtain_flash);
         self.temporal_health_factor =
             section.read_ares_double_bits("Temporal.HealthFactor", self.temporal_health_factor);
         if temporal_warp_away.is_some() {
@@ -491,18 +485,16 @@ impl WarheadCombatRules {
         );
     }
 
-    /// The `NUKE` Initialize of Extension<WarheadTypeClass>::LoadFromINI
-    /// 10051D10's first call (with or without a section; the caller keeps
-    /// that state): `PreImpactAnim` = FindIndex("NUKEBALL") and
-    /// `NukeFlash.Duration` = 30.
+    /// Ares 3.0p1 `NUKE` initializes on the first call (0x100529D9..0x10052A04):
+    /// `PreImpactAnim` = FindIndex("NUKEBALL") and `NukeFlash.Duration` = 30.
     pub(crate) fn initialize_nuke(&mut self, nuke_ball: Option<String>) {
         self.pre_impact_anim = nuke_ball;
         self.nuke_flash_duration = Some(30);
     }
 
-    /// LoadFromINIFile 10051D80's NukeFlash.Duration, PreImpactAnim (a
-    /// ValueableIdx: a found name or `none` replaces, an unknown keeps) and
-    /// PreImpactAnim.Moves.
+    /// Ares 3.0p1 0x10052CF5..0x10052D29 reads NukeFlash.Duration,
+    /// PreImpactAnim (a ValueableIdx: a found name or `none` replaces, an
+    /// unknown keeps) and PreImpactAnim.Moves.
     pub(crate) fn read_nuke_pass(
         &mut self,
         section: &IniSection,
@@ -533,6 +525,12 @@ impl WarheadCombatRules {
         self.pre_impact_anim_moves
     }
 
+    pub(crate) fn clear_nuke_impact(&mut self) {
+        self.nuke_flash_duration = None;
+        self.pre_impact_anim = None;
+        self.pre_impact_anim_moves = false;
+    }
+
     /// The Voc overrides, read with NullableIdx<Voc> 1000E9D0.
     pub(crate) fn bind_sound_overrides(
         &mut self,
@@ -548,6 +546,18 @@ impl WarheadCombatRules {
 
     pub(crate) fn mind_control_permanent(&self) -> bool {
         self.mind_control_permanent
+    }
+
+    /// The P1 WarheadTypeExt INI fields used by both BulletClass and the
+    /// built-in GenericWarhead activation at 0x10072670.
+    pub(crate) fn read_detonation_pass(&mut self, section: &IniSection) {
+        self.mind_control_permanent =
+            section.read_ares_bool("MindControl.Permanent", self.mind_control_permanent);
+        self.iron_curtain_duration =
+            section.read_ares_int("IronCurtain.Duration", self.iron_curtain_duration);
+        self.iron_curtain_cap = section.read_ares_int("IronCurtain.Cap", self.iron_curtain_cap);
+        self.iron_curtain_flash =
+            section.read_ares_nullable_bool("IronCurtain.Flash", self.iron_curtain_flash);
     }
     /// `IronCurtain.Duration` and `IronCurtain.Cap`.
     pub(crate) fn iron_curtain(&self) -> (i32, i32) {

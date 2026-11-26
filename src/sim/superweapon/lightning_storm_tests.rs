@@ -1720,7 +1720,7 @@ fn ares_storm_reads_its_handler_keys_over_layers() {
 /// CurrentLightningStorm and its light.
 #[test]
 fn ares_storm_starts_with_its_type_keys() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let rules = ares_storm_rules(
         "Lightning.Duration=30\nLightning.RadarOutage=7\nLightning.RadarOutageAffects=all\n\
          Lightning.HitDelay=4\nLightning.ScatterDelay=0\nLight.Ambient=12\nLight.Red=7\n",
@@ -1806,7 +1806,7 @@ fn ares_storm_starts_with_its_type_keys() {
 /// `WeatherConBoltExplosion=`.
 #[test]
 fn ares_storm_strike_scales_a_lightning_rods_damage() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
     let rules = ares_storm_rules("SW.Damage=200\nLightning.BoltExplosion=WCCLOUD2\n");
     let (mut sim, houses) = ares_storm_world(&rules);
     let at = (30, 30);

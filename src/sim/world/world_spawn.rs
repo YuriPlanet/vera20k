@@ -3234,7 +3234,14 @@ impl Simulation {
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
         // Ares hook 0x44A04C (10053D60), right after that handover: the unit
         // takes the building's EMP counter and sparkle.
-        if rules.ares() {
+        if rules.ares()
+            || (rules.builtin_generic_emp()
+                && self
+                    .substrate
+                    .entities
+                    .get(sid)
+                    .is_some_and(|building| building.is_under_emp()))
+        {
             self.copy_ares_emp_to_undeployed(sid, new_sid, rules);
         }
         // BuildingClass::Mission_Selling 0x0044A0D4..0x0044A115: the unit

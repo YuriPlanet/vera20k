@@ -1,7 +1,6 @@
 # Ares GenericWarhead
 
-A game that ships `ares.mix` reads and plays these keys in every build
-([Ares](ares.md)); other games keep the original superweapons.
+`Base-for-modders` recognizes `Type=GenericWarhead` with Ares Off.
 
 VERA supports an initial, INI-selected `Type=GenericWarhead` implementation.
 It detonates an existing warhead at the selected cell without creating a
@@ -128,9 +127,8 @@ Intentional boundaries/adaptations:
   fallback, test-range synthetic launchers and additional Ares availability
   rules are not transplanted into this PR. Launch sites use VERA's existing
   provider owner, including native `AuxBuilding` prerequisites.
-- ra2-mono's delayed support-effect state and custom extensions are not
-  copied: this launch is synchronous as in Ares GenericWarhead. The source's
-  broader pipeline is not a claim that VERA now implements AttachEffect/EMP.
+- GenericWarhead launches synchronously and shares the existing combat
+  effect implementations.
 
 - Target masks accept any occupant whose type and house both qualify. This
   differs from Ares's singular `Cell.GetContent()` selection in mixed-occupant
@@ -139,13 +137,21 @@ Intentional boundaries/adaptations:
 
 ## Compatibility boundary
 
-This is not general Ares compatibility and does not load an Ares DLL.
-Only warhead behavior already represented by VERA's shared combat pipeline
-is available. Ares warhead extensions such as EMP, attached effects, ripple,
-iron-curtain effects and permanent mind control are not added by this feature.
-Custom cursors, additional selector strategies and stock-type Ares redirections
-remain separate work. Shared launch animations/sounds use the presentation owner
-rather than this payload. Charge-drain superweapons remain unsupported here.
+With Ares Off, a GenericWarhead payload can use the warhead's ripple, Iron
+Curtain, EMP, AttachEffect and permanent mind control. The 3.0p1 activation
+(`0x10072670`) runs the effects in that order before ordinary damage. A
+successful permanent capture of the first object on the selected cell layer
+skips area damage, the explosion animation and the flash. Charge-drain
+GenericWarhead remains outside this launch path.
+
+With Ares Off, GenericWarhead's ordinary area damage uses the 3.0p1 cell
+enumerator. `SW_GenericWarhead::Activate` calls `MapClass::DamageArea` at
+`0x10072800` through `0x1000AC30` to `0x00489280`. Its hooks at `0x004895B8`,
+`0x004895C7` and `0x004899BE` replace the stock ground offset table and visit
+rings through band 256. Per-receiver distance and falloff use the shared
+damage path. A stock area call with the same warhead still uses the stock
+table when Ares is Off. In that mode the stock receiver still flashes when
+an invulnerable target takes a hit.
 
 Implementation references:
 

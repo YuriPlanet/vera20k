@@ -1,7 +1,8 @@
-# Optional Ares handlers for the stock Chronosphere, Nuke, Dominator and Genetic Mutator
+# Ares superweapon handlers
 
-A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
-other games keep the original superweapons.
+On `Base-for-modders`, an authored Ares superweapon type or stock handler
+override works with Ares Off. An ordinary stock definition uses its original
+handler in that mode.
 
 ```ini
 [ChronoSphereSpecial]
@@ -41,8 +42,12 @@ handlers and the `Ext/SWType` hooks); no Ares DLL is loaded.
 
 ## The redirect
 
-In an Ares game the stock `Type=` ChronoSphere, ChronoWarp, MultiMissile,
-PsychicDominator and GeneticConverter are handed to their NewSWType handlers, on the
+`ChronoSphere`, `ChronoWarp`, `MultiMissile`, `PsychicDominator`,
+`GeneticConverter`, `ParaDrop`, `AmerParaDrop`, `SpyPlane`, `LightningStorm`
+and `PsychicReveal` select their NewSWType handlers in an Ares game or when
+their definition supplies a handler key, such as `Nuke.Payload`,
+`SpyPlane.Type` or `Lightning.Duration`. A configured ChronoSphere also
+selects its paired ChronoWarp handler. These handlers use the
 dispatch [the common keys](ares-superweapon-common.md) introduced: each handler's
 Initialize sets its defaults on the first rules pass with the section, its LoadFromINI
 reads its keys, the custom action replaces `Action=`, `PreClick`/`PostClick` come from
@@ -54,8 +59,39 @@ plays `SW.Sound`, raises the radar event and prints `Message.Launch`, each unles
 Flags skip it, and remembers the House's last Super (SWLastIndex), which a PostClick
 Super uses as its source.
 
-The Iron Curtain and Force Shield keep their stock handlers. The paradrops,
-Spy Plane, Lightning Storm and Psychic Reveal use their Ares redirects.
+`GenericWarhead`, `UnitDelivery`, `Protect`, `Battery`, `SonarPulse`,
+`HunterSeeker`, `EMPulse`, `Firestorm` and `DropPod` select their built-in
+handlers from `Type=` alone. Common limits, availability, charges, prices
+and targeting can also be set on stock definitions.
+
+## Iron Curtain and Force Shield
+
+The Protect handler accepts `Type=IronCurtain` and `Type=ForceShield` (Ares
+3.0p1 `SW_Protect::HandlesType`, `0x10075BF0`). With Ares Off, such a definition
+selects Protect through its handler keys, including `SW.Animation`, `SW.Range`,
+`Protect.Duration`, `Protect.PowerOutage` and `Protect.PlayFadeSoundTime`.
+Force Shield uses its Force Shield timer and protection byte and defaults to
+friendly buildings in `[General] ForceShieldRadius`. Its duration, blackout,
+fade and animation defaults come from the stock Force Shield keys.
+
+```ini
+[IronCurtainSpecial]
+Type=IronCurtain
+SW.Animation=IRONBLST
+Protect.Duration=450
+```
+
+The shared launch creates one invocation animation. It uses
+`[General] IronCurtainInvokeAnim` or `ForceShieldInvokeAnim` when `SW.Animation`
+is omitted. An explicit
+`SW.Animation=none` skips the animation. The animation plays its ARTMD
+`StartSound`, with `Report` as its fallback. The superweapon's own
+`StartSound` and `SW.Sound` are independent cues. The default animation
+height is 5 leptons. Protect's duration, area and outage settings are listed
+in [the common superweapon keys](ares-superweapon-common.md#battery-protect-and-sonarpulse).
+
+Older saves can fail the rules compatibility check when a definition now
+selects a built-in handler. Start a new scenario for that ruleset.
 
 ## Psychic Reveal
 
@@ -110,7 +146,9 @@ ripple, `Dominator.SecondAnim`, GetDamage/GetWarhead (`SW.Damage`/`SW.Warhead`, 
 `SW.Range` (default the `DominatorCaptureRange=` spread) that the SW filters and
 `.CaptureMindControlled`, `.CapturePermaMindControlled`, `.CaptureImmuneToPsionics`
 admit joins the firer, permanently with `.PermanentCapture`, ringed by
-`.ControlAnim`. A second launch while one runs prints `Message.Abort`
+`.ControlAnim`. A positive single-value `SW.Range` is truncated to a whole-cell
+band and uses the 3.0p1 enumerator through band 256 (`0x100384D7` → `0x10036560`).
+A second launch while one runs prints `Message.Abort`
 (`Msg:DominatorActive`). Its `Light.*` tints the scenario while it runs:
 `Light.Enabled=no` keeps the normal light, `Light.Ambient` and `Light.Red`/`.Green`/
 `.Blue` replace the Dominator light's values. A nuke flash takes its type's `Light.*`
@@ -127,8 +165,9 @@ common Launch builds `SW.Animation` (else `IonBlast=`) and plays `SW.Sound` (els
 
 ## Not included
 
-The nuke flash's later relights (CurrentNukeType) are not applied. The other stock redirects, `NoCursor`/`Cursor` and the Ares trigger
-events remain outside this port; part 2 below lists what it adds and what still stays out.
+Later nuke-flash relights still lack the type's `Light.*`. With Ares Off,
+the warhead's `NukeFlash.Duration`, `PreImpactAnim` and `PreImpactAnim.Moves`
+apply to a missile from a configured Nuke handler.
 
 ## Part 2: building chronoshift, make-room, Spy Plane
 
@@ -185,11 +224,13 @@ as its ready line.
 **Unit Delivery.** A `Deliver.BaseNormal=no` building reserves no base space for the
 computer's planning, and placing it does not extend the base either.
 
+A built-in ChronoSphere retains the launch path during MakeRoom and Unwarp.
+`Chronoshift.Crushable` and `[General] ChronoInfantryCrush` apply with Ares Off.
+
 ### Still not included
 
-- EMPulse and `Type=DropPod` (part 4 adds EMPulse and the DropPod readers).
-- During a building chronoshift its light stays on, a cloak generator keeps cloaking
-  and `AboutToChronoshift` has no reader (Ares's own CanWarpTarget is not ported).
+- During a building chronoshift its light stays on and a cloak generator keeps
+  cloaking. The temporal weapon's CanWarpTarget now reads the pending warp.
 - An unknown `SpyPlane.Type` sends nothing (natively it reads out of range), and an
   off-map target cell is not replaced by the shared dummy cell.
 
@@ -258,8 +299,7 @@ rules. A nuke flash with a duration below -1 never ends.
 ### Still not included after part 3
 
 - The building chronoshift's light and cloak generator, `AboutToChronoshift`
-  and Ares's CanWarpTarget (see part 2's list); EMPulse and DropPod are
-  part 4's.
+  and Ares's CanWarpTarget (see part 2's list).
 - A palette built while a storm, nuke flash or Dominator is active takes the
   stock colours, not the type's `Light.*` (hook `0x555E50`).
 
@@ -325,7 +365,6 @@ mode.
 
 ### Still not included after part 4
 
-- `Type=DropPod`'s launch: see part 5.
 - An EMP cannon whose weapon 0 is `IsLaser=` aims its barrel by vt+0x2C8's
   laser arm (`0x0043E968`); VERA uses the EMP arm. When no arc reaches the
   cell, the stock barrel takes an uninitialized word; VERA's barrel counts
@@ -394,8 +433,8 @@ near the cell for twice its Damage unless an ally stands there. On the
 ground the Foot leaves limbo again at its Location with `DropPodPuff=` and
 `DropPod=` item 0 (item 1 for a far-side entry), idles, commences its
 mission and scatters; a refused Unlimbo blows 100 `C4Warhead=` and leaves it
-in limbo. The stock RulesClass keys are kept only in an Ares game: no stock
-path installs the DropPod locomotor.
+in limbo. The RulesClass keys are available when a `Type=DropPod` definition
+installs the DropPod locomotor.
 
 A computer House fires it through the Ares AI's DropPod mode (PickTarget
 `10038640`, case 0x13): one Scenario `RandomRanged(1, 4)` picks a zone
@@ -415,13 +454,11 @@ is the one the base-return search (House500200) uses.
 
 ### Still not included after part 5
 
-- A negative DropPod count loops about 2^32 tries natively; VERA makes none.
-- CreateWithDroppod's SetDestination runs only the Foot tail (NavCom and the
-  pod's Move_To), not the class setter's prologue; a `Teleporter=` Unit's
-  setter arm is not taken. Its See(0, 0) repeats the Unlimbo's reveal.
-- While the pod flies, Is_Moving, the layer and a mission's Move_To reach the
-  Foot's own locomotor, which natively stays suspended and unasked; a Guard
-  that finds a target mid-air can leave a Drive destination behind.
+- Negative or overflowing attempt counts produce no payload. A positive
+  launch is limited to 1,024 pods and 3,072 attempts.
+- Active pod movement reports its own destination and keeps the underlying
+  locomotor suspended. The DLL's repeated sight reveal and COM replacement
+  for custom class-driven locomotor swaps remain separate differences.
 - A landing past the end of `DropPod=` (no item 0, or no item 1 for a
   far-side entry) reads out of bounds natively; VERA shows no pod.
 

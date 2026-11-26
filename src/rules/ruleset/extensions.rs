@@ -92,7 +92,7 @@ impl RuleSet {
         id: &str,
     ) -> Option<crate::rules::ares_mouse_cursor::SuperWeaponCursors> {
         let sw = self.super_weapon(id)?;
-        (sw.launch_kind(self).has_ares_handler()
+        (sw.uses_ares_handler(self)
             || sw
                 .action
                 .as_deref()
@@ -146,10 +146,13 @@ impl RuleSet {
     }
 
     pub(crate) fn has_builtin_firestorm(&self) -> bool {
-        self.super_weapons.values().any(|sw| {
-            sw.has_builtin_rules()
-                && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
-        })
+        self.object_list
+            .iter()
+            .any(|object| object.ares_firestorm_wall())
+            || self.super_weapons.values().any(|sw| {
+                sw.has_builtin_rules()
+                    && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
+            })
     }
 
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.

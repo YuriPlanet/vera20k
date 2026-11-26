@@ -127,30 +127,38 @@ fn paid_superweapon_input_free_pair_keeps_native_command_shape() {
 }
 
 #[test]
-fn disabled_ares_money_keeps_two_stage_clicks_on_stock_commands() {
+fn builtin_paid_chronosphere_queues_ticketed_commands_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
     let (rules, mut sim, owner, source, destination) = fixture(true);
+    assert!(!rules.ares_form());
     let source_click = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();
+    let ticket = sim
+        .next_paid_super_weapon_selection(&rules, owner, source)
+        .unwrap();
     assert_eq!(
         source_click,
-        Command::LaunchSuperWeapon {
-            sw_type_id: source,
+        Command::BeginPaidSuperWeapon {
+            selection: ticket,
             target_rx: 10,
             target_ry: 10,
         }
     );
     schedule_command_in_sim(&mut sim, "Americans", source_click);
     drain(&mut sim, &rules);
-    assert!(sim.paid_super_weapon_selection(owner).is_none());
+    assert_eq!(sim.paid_super_weapon_selection(owner), Some(ticket));
     assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
+    let click = super_weapon_click_command(&sim, &rules, owner, destination, (15, 15)).unwrap();
     assert_eq!(
-        super_weapon_click_command(&sim, &rules, owner, destination, (15, 15)),
-        Some(Command::LaunchSuperWeapon {
-            sw_type_id: destination,
+        click,
+        Command::CompletePaidSuperWeapon {
+            selection: ticket,
             target_rx: 15,
             target_ry: 15,
-        })
+        }
     );
-    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
+    schedule_command_in_sim(&mut sim, "Americans", click);
+    drain(&mut sim, &rules);
+    assert_eq!(sim.houses()[&owner].economy().credits(), 500);
 }
 
 // Exercise the same rules-dependent issue boundary as the normal SW cursor,

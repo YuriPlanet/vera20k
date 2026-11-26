@@ -406,6 +406,15 @@ impl Simulation {
     }
 
     pub fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {
+        self.register_projectile_on_first_put(stable_id, flat, None)
+    }
+
+    pub(in crate::sim::world) fn register_projectile_on_first_put(
+        &mut self,
+        stable_id: u64,
+        flat: bool,
+        rules: Option<&RuleSet>,
+    ) -> bool {
         if self.projectiles.get(stable_id).is_none() {
             return false;
         }
@@ -416,6 +425,13 @@ impl Simulation {
             DisplayLayer::AIR
         };
         Self::submit_object_display(&mut self.substrate, stable_id, layer);
+        // Ares 3.0p1 Put at 0x005F4FE7 runs after Display submission and
+        // before the Bullet's Logic insertion at 0x005F5040. The system enters
+        // Logic first. Parasite re-Fire and restored membership use the
+        // same registration without repeating the BulletExt constructor.
+        if let Some(rules) = rules {
+            self.attach_projectile_particle_system(stable_id, rules);
+        }
         self.register_logic_object(stable_id)
     }
 

@@ -497,28 +497,35 @@ fn retail_superweapon_scripts_run_ported_actions() {
 #[path = "chronoshift_building_tests.rs"]
 mod chronoshift_building_tests;
 
-/// Ares's action 55 (hook 6EFC70, 10039EF0) takes the first type whose
+/// Ares 3.0p1 action 55 (0x006EFC70 -> 0x1003AD70 -> 0x1003A970) takes the first type whose
 /// `SW.AITargeting` is IronCurtain and whose `SW.Group` is the argument, and
 /// fires it by its own index; the native firing row's group-0 Iron Curtain
 /// does not match argument 9, so the step completes without a launch.
 #[test]
 fn ares_iron_curtain_action_matches_ai_mode_and_group() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = rows()
         .into_iter()
         .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
         .unwrap();
-    for (extra, fires) in [(&[][..], false), (&[(1, "SW.Group=9\n")][..], true)] {
+    for (ares, extra, argument, fires) in [
+        (true, &[][..], 9, false),
+        (true, &[(1, "SW.Group=9\n")][..], 9, true),
+        (false, &[(1, "SW.Group=9\n")][..], 8, false),
+        (false, &[(1, "SW.Group=9\n")][..], 9, true),
+    ] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
         let Replay {
             mut sim,
             rules,
             team,
             ..
         } = replay_with(&row, false, extra);
+        assert_eq!(rules.ares_form(), ares);
+        assert_eq!(rules.ares(), ares);
         AI_FIRE_LOG.set(Some(Vec::new()));
         sim.team_action_iron_curtain(
             team,
-            9,
+            argument,
             &rules,
             None,
             &mut crate::sim::world::FrameEffects::default(),
@@ -537,7 +544,10 @@ fn ares_iron_curtain_action_matches_ai_mode_and_group() {
         } else {
             Vec::new()
         };
-        assert_eq!(fired, expected, "group read {extra:?}");
+        assert_eq!(
+            fired, expected,
+            "Ares {ares}, group read {extra:?}, argument {argument}"
+        );
         assert!(sim.team_script_vm.teams[&team].advance_pending);
     }
 }

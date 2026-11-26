@@ -245,7 +245,7 @@ fn configured_iron_curtain_uses_its_animation_report_and_protect_duration() {
         }
         rules.install_art_fixture(art);
         assert_eq!(rules.ares(), ares_way);
-        assert_eq!(rules.super_weapon_uses_ai_targeting("StockIron"), ares_way);
+        assert!(rules.super_weapon_uses_ai_targeting("StockIron"));
         assert_eq!(
             rules.ares_super_weapon_cursors("Iron").unwrap().cursor,
             crate::rules::ares_mouse_cursor::index::ATTACK,
@@ -253,7 +253,8 @@ fn configured_iron_curtain_uses_its_animation_report_and_protect_duration() {
         if !ares_way {
             let stock = rules.super_weapon("StockIron").unwrap();
             assert!(stock.has_action("None"));
-            assert!(!stock.uses_extension_rules(&rules));
+            assert!(stock.uses_extension_rules(&rules));
+            assert!(!stock.uses_ares_handler(&rules));
         }
         let quiet = rules.super_weapon("QuietIron").unwrap();
         assert!(quiet.has_action("IronCurtain"));

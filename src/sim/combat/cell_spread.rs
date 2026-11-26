@@ -109,7 +109,9 @@ pub fn splash_cells(cell_spread: f64) -> &'static [(i16, i16)] {
 /// 0.99)` (EAX at `0x4895B8`): ring by ring up to `min(band, 0x100)`, and no
 /// cell at all for a negative band. Bands 1..10 hold the stock cells with
 /// `(-1,-1)` and `(1,-1)` swapped; band 11 has no repeated `(-3,11)` and
-/// wider bands are no longer clamped.
+/// wider bands use the enumerator's 256-band limit. In 3.0p1 the three hooks
+/// enter at `0x10053EA0`, `0x10053F00`, and `0x10053F20`. They resume at
+/// `0x4895C3`/`0x4899DA`, `0x4895D7`, and `0x4895C0`/`0x4899DA`.
 pub fn area_damage_cells(cell_spread: f64, ares: bool) -> std::borrow::Cow<'static, [(i16, i16)]> {
     if ares {
         let band = X87Chop53::ftol_f64_low_masked(cell_spread + 0.99);

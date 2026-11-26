@@ -40,10 +40,14 @@ pub(super) fn destination_for_source(
         return None;
     }
     let source = sim.interner.resolve(source);
+    if !source.eq_ignore_ascii_case(&sw.id) {
+        return None;
+    }
     rules.super_weapon_order.iter().find_map(|name| {
         let destination = rules.super_weapon(name)?;
-        let (pre, _) = super::paid_pair_source(rules, destination)?;
-        (pre == source && !destination.pre_click && !destination.use_charge_drain)
+        (super::paid_pair_matches(rules, sw, destination)
+            && !destination.pre_click
+            && !destination.use_charge_drain)
             .then(|| sim.interner.get(name))
             .flatten()
     })
@@ -88,19 +92,28 @@ impl Simulation {
         Ok(())
     }
 
-    /// Paid selections are Ares state: saved ones load only into a game Ares
-    /// plays in (`Simulation::validate_ares_state_for_load`).
+    /// A source with saved ticket history must still have an enabled paid
+    /// pair. A pending ticket must name that pair's destination.
     pub(crate) fn validate_paid_super_weapon_selections_for_load(
         &self,
-        ares: bool,
+        rules: &RuleSet,
     ) -> Result<(), &'static str> {
-        if ares {
-            return Ok(());
-        }
         for (_, weapons) in self.super_weapons.iter() {
-            for (_, instance) in weapons {
-                if instance.paid_sequence != 0 || instance.paid_selection.is_some() {
-                    return Err("paid selections require a game Ares plays in");
+            for (source, instance) in weapons {
+                if instance.paid_sequence == 0 && instance.paid_selection.is_none() {
+                    continue;
+                }
+                let destination = self
+                    .interner
+                    .try_resolve(*source)
+                    .and_then(|name| rules.super_weapon(name))
+                    .and_then(|sw| destination_for_source(self, rules, *source, sw));
+                if destination.is_none()
+                    || instance
+                        .paid_selection
+                        .is_some_and(|ticket| destination != Some(ticket.destination))
+                {
+                    return Err("paid selection history requires its enabled superweapon pair");
                 }
             }
         }
@@ -109,8 +122,7 @@ impl Simulation {
 
     /// Read projection for command producers. No money or local cursor state is
     /// owned here. A completed/cancelled sequence is never reused after reload.
-    /// Only the Ares launch path stores one, so a game without Ares reads
-    /// `None`.
+    /// Only an enabled paid pair stores a selection.
     pub fn paid_super_weapon_selection(
         &self,
         owner: InternedId,
@@ -124,9 +136,6 @@ impl Simulation {
         owner: InternedId,
         source: InternedId,
     ) -> Option<PaidSuperWeaponSelection> {
-        if !rules.ares_form() {
-            return None;
-        }
         let sw = rules.super_weapon(self.interner.resolve(source))?;
         Some(PaidSuperWeaponSelection {
             source,
@@ -150,7 +159,7 @@ impl Simulation {
         owner: InternedId,
         selection: PaidSuperWeaponSelection,
     ) -> bool {
-        if !rules.ares_form() {
+        if !rules.has_super_weapon_extension_rules() {
             return false;
         }
         let Some(instance) = super_weapons.instance_mut(&owner, &selection.source) else {
@@ -227,7 +236,7 @@ pub(super) fn source_available(
             providers.provided.contains(&source),
             !low_power && providers.online.contains(&source),
             providers.charging.contains(&source),
-            rules.ares_form(),
+            sw.uses_extension_rules(rules),
         ),
         super::SuperHold::Unchanged | super::SuperHold::Suspend(false)
     )

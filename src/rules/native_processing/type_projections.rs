@@ -943,6 +943,14 @@ impl ProcessedRulesLayers {
         })
     }
 
+    /// Existing ParticleSystemTypes retained by the projectile's INI reads.
+    pub(crate) fn projectile_attached_system_states(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.member_states(RulesTypeFamily::Projectile, |member| {
+            member.projectile_attached_system.as_deref()
+        })
+        .filter_map(|(name, system)| system.map(|system| (name, system)))
+    }
+
     pub(super) fn member_states<'a, T>(
         &'a self,
         family: RulesTypeFamily,

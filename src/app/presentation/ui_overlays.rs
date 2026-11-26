@@ -2097,9 +2097,8 @@ pub(crate) fn techno_extras_for_parent(
     if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() {
         return strip;
     }
-    // The bomb clock, the 10049FE0 markers and the firestorm wall's bar
-    // follow `RuleSet::ares_form`, as `Simulation::bomb_clock_frame` and
-    // BuildingTypeExt do. The submerged strip follows `RuleSet::ares`.
+    // The bomb clock and the 10049FE0 markers follow `RuleSet::ares_form`.
+    // The submerged strip follows `RuleSet::ares`.
     let ares_form = rules.is_some_and(RuleSet::ares_form);
     let ares = rules.is_some_and(RuleSet::ares);
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
@@ -2347,9 +2346,9 @@ pub(crate) fn techno_extras_for_parent(
         let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
             return strip;
         };
-        // Ares TechnoClass_DrawHealthBar_FirestormWall (100150D0, hook
+        // Ares 3.0p1 TechnoClass_DrawHealthBar_FirestormWall (0x100156E0, hook
         // 0x6F64CB): a `Firestorm.Wall` section draws no bar (0x6F6832).
-        if ares_form && object.ares_firestorm_wall() {
+        if object.ares_firestorm_wall() {
             return strip;
         }
         let geometry = BuildingBarGeometry::new(rules, object);

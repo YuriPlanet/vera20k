@@ -65,6 +65,10 @@ pub(crate) struct AoELayerContext<'a> {
 /// producer can preserve exact inter-cell RNG order without moving those
 /// authorities into combat_aoe.
 pub(crate) trait AoECellPrelude {
+    fn building_blocks_zone_cell(&self, _cell: (u16, u16)) -> bool {
+        false
+    }
+
     fn before_cell(
         &mut self,
         rx: u16,
@@ -95,6 +99,12 @@ struct AoEWallDamageHost<'borrow, 'prelude> {
 }
 
 impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
+    fn building_blocks_zone_cell(&self, cell: (u16, u16)) -> bool {
+        self.prelude
+            .as_deref()
+            .is_some_and(|prelude| prelude.building_blocks_zone_cell(cell))
+    }
+
     fn wall_connects_to_gate(&self, cell: (u16, u16), wall: u8, east_west: bool) -> bool {
         self.wall_gates
             .as_ref()

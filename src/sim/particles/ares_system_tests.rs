@@ -46,6 +46,49 @@ fn unit(rng: &mut SimRng) -> i32 {
     rng.next_range_i32_inclusive(1, i32::MAX)
 }
 
+#[test]
+fn art_line_trail_keeps_particle_system_on_stock_ai() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Particles]\n0=SMOKE\n[ParticleSystems]\n0=SYSTEM\n\
+         [SMOKE]\nBehavesLike=Smoke\nImage=TRAIL\n\
+         [SYSTEM]\nBehavesLike=Smoke\nHoldsWhat=SMOKE\n",
+    ))
+    .with_ares_mix(false)
+    .with_ares_keys_off(true);
+    let fixed_art =
+        IniFile::from_str("[TRAIL]\nUseLineTrail=yes\n[KEEP]\nRate=1\n[CLEAR]\nUseLineTrail=no\n");
+    let without_line_trail = IniFile::from_str("[TRAIL]\nUseLineTrail=no\n");
+    let project = |layers: &RulesLayerStack, art: &IniFile| {
+        let rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(art).unwrap()).unwrap();
+        assert!(!rules.ares());
+        let system = rules.particle_system_type(rules.ps_type_id_by_name("SYSTEM").unwrap());
+        (
+            AresParticleSystemExt::for_system(system, &rules).map(|ext| ext.mode()),
+            rules.simulation_config_hash(),
+        )
+    };
+
+    let (with_trail, hash) = project(&layers, &fixed_art);
+    let (without_trail, other_hash) = project(&layers, &without_line_trail);
+    assert_eq!(with_trail, None);
+    assert_eq!(without_trail, Some(AresSystemMode::Smoke));
+    assert_ne!(hash, other_hash);
+
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[SMOKE]\nBehavesLike=Smoke\nImage=KEEP\n"),
+    );
+    assert_eq!(project(&layers, &fixed_art).0, None);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[SMOKE]\nBehavesLike=Smoke\nImage=CLEAR\n"),
+    );
+    assert_eq!(project(&layers, &fixed_art).0, Some(AresSystemMode::Smoke));
+}
+
 /// A one-frame spark burst: the radius walk draw first, no percentage draw on
 /// the last spawn frame, `ParticleCap/2 + 0..ParticleCap/2` sparks with three
 /// direction draws and a lifetime draw each, then one colour draw per spark.

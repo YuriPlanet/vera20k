@@ -43,6 +43,7 @@
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_targeting::AiTargetingMode;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
@@ -74,7 +75,8 @@ impl Simulation {
     /// Iron Curtain (`Type=` 1) at the cell of the team's centre once
     /// [`Self::team_super_step`] allows, then the action finishes. It also
     /// finishes without members or such a Super, and waits while the Super
-    /// nearly has its charge.
+    /// nearly has its charge. An authored extension Iron Curtain or an
+    /// extension Super with IronCurtain targeting uses the group-aware action.
     pub(super) fn team_action_iron_curtain(
         &mut self,
         team_id: u64,
@@ -83,7 +85,17 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        if rules.ares_form() {
+        if rules.ares_form()
+            || rules.super_weapon_order.iter().any(|name| {
+                rules.super_weapon(name).is_some_and(|sw| {
+                    sw.uses_extension_rules(rules)
+                        && (sw.kind == SuperWeaponKind::IronCurtain
+                            || rules.super_weapon_metadata(name).is_some_and(|metadata| {
+                                metadata.targeting().mode() == AiTargetingMode::IronCurtain
+                            }))
+                })
+            })
+        {
             self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
         } else {
             let checked = self.team_leader(team_id, rules).and_then(|leader| {
@@ -213,15 +225,15 @@ impl Simulation {
         }
     }
 
-    /// Ares's action 55 (hook 6EFC70, Ares.dll 1003A2F0 -> 10039EF0): the
-    /// leader's House walks every SuperWeaponType whose `SW.AITargeting` is
-    /// IronCurtain and whose `SW.Group` equals the argument. The first one
-    /// charged, with House power (drain 0 or not above output) unless the type
-    /// is not `IsPowered`, fires (Fire_SW by its own index) at the team's
-    /// centre cell and the step completes. Before that, the first granted one
-    /// whose elapsed charge reaches `AIMinorSuperReadyPercent` (x87: both
-    /// counts stored as binary32, `jb` skips an unordered compare) makes the
-    /// step wait; with neither, it completes, as it does without a leader.
+    /// Ares 3.0p1 action 55 (0x006EFC70 -> 0x1003AD70, calls 0x1003A970,
+    /// resumes at 0x006EFE4F) walks the leader's House Supers. It checks
+    /// IronCurtain targeting and the action's `SW.Group` (0x1003AA18..0x1003AA2F).
+    /// The first charged match with sufficient House power or `IsPowered=no`
+    /// fires at the team's centre by its own index (0x1003AB56) and finishes
+    /// the step. A granted match past `AIMinorSuperReadyPercent` makes the
+    /// team wait if none can fire (x87 stores both counts as binary32 and
+    /// skips an unordered compare). Without a ready or nearly-ready match,
+    /// or without a leader, the action finishes.
     fn team_action_ares_iron_curtain(
         &mut self,
         team_id: u64,
@@ -230,7 +242,6 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        use crate::rules::superweapon_targeting::AiTargetingMode;
         use crate::util::native_x87::{MaskedX87Chop53 as F, MaskedX87Ordering as O};
         let mut found = None;
         let mut fire = false;
