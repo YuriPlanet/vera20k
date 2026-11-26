@@ -154,6 +154,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as env:
               env.write(f'RA2_DIR={mix.parent.resolve()}\n')
           EOF
+      - name: Run guest modules under WASI
+        # This runner takes its own -- before the test harness arguments.
+        run: >
+          CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/tools/wasm/wasi_run.mjs"
+          cargo test --release --locked -p vera20k-wasm-ext --lib --target wasm32-wasip1
+          -- -- --test-threads=1
       - name: Build sim-bench
         # The default 1 MiB wasm stack is too small for a map load.
         run: >

@@ -11,9 +11,8 @@
 //! reads the `vera.vars`, `vera.actions`, `vera.notify` and `vera.delivery`
 //! sections ([`sections`]). A client module (`ui.wasm`, [`ClientModuleOn`])
 //! runs under `vera:client@1.0` and reaches the game through [`ClientHost`]
-//! ([`client`]). Desktop builds run modules with Wasmtime, the browser build
-//! with the browser's own WebAssembly engine, both after the same load-time
-//! rewrite.
+//! ([`client`]). Desktop builds run modules with Wasmtime, WASI tools with wasmi,
+//! and the browser with its WebAssembly engine, all after the same rewrite.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
 //! takes a trailing `out` pointer for the value and returns the status. Stable
@@ -46,10 +45,10 @@ mod event_kinds;
 pub use event_kinds::{DELIVERED_EVENTS, FIRST_DELIVERED_EVENT, STOCK_EVENTS, event_kind_id};
 
 /// A simulation module on this platform's runtime: Wasmtime on the
-/// desktop, the browser's own WebAssembly engine in the browser. Both run
-/// the same rewritten bytes ([`instrument`]) and give identical results.
+/// desktop, wasmi on WASI, and the browser's own WebAssembly engine in the
+/// browser. All run the same rewritten bytes ([`instrument`]) and give identical results.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub type SimModule = SimModuleOn<native::Wasmtime>;
+pub type SimModule = SimModuleOn<native::Embedded>;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub type SimModule = SimModuleOn<browser::Browser>;
 
@@ -66,7 +65,7 @@ pub use client_module::ClientModuleOn;
 
 /// A client module on this platform's runtime, as [`SimModule`] is.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub type ClientModule = ClientModuleOn<native::Wasmtime>;
+pub type ClientModule = ClientModuleOn<native::Embedded>;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub type ClientModule = ClientModuleOn<browser::Browser>;
 

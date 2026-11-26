@@ -22,7 +22,7 @@ content as work lands; do not append a diary.
 | Sandbox: load checks, budgets, delivery, saves of memory/globals, one `SimModule` over a runtime | `wasm-ext/src/module.rs` |
 | Load-time rewrite every runtime runs: basic-block metering, bulk-memory charges, weighted call depth, NaN canonicalization, float globals stored as integer bits, memory maximum capped at the limit, exported mutable globals | `wasm-ext/src/instrument.rs` |
 | The `vera:sim` imports, written once over a `Guest` view and linked into both runtimes. A new import is a function here plus one line in `for_each_import!`; neither runtime file changes | `wasm-ext/src/host.rs` |
-| Runtimes: Wasmtime (desktop), the browser's own WebAssembly engine through js-sys (browser) | `wasm-ext/src/native.rs`, `wasm-ext/src/browser.rs`; rewrite tests in `rewrite_tests.rs` |
+| Runtimes: Wasmtime (desktop), wasmi (standalone WASI tools), the browser's own WebAssembly engine through js-sys (browser) | `wasm-ext/src/native.rs`, `wasm-ext/src/browser.rs`; rewrite tests in `rewrite_tests.rs` |
 | ABI types: import table, `Status`, `SimHost` trait, `PROPERTIES`, `Query`/`Clause` parsing | `wasm-ext/src/lib.rs` |
 | Action kind names and numbers (stock 0..149, atomic from 1000), `lookup`/`name_of(ActionKind)` | `wasm-ext/src/action_kinds.rs` |
 | `TriggerDef`/`EventDef`/`ActionDef` parsing, `EventRecord`, event and action numbers | `wasm-ext/src/triggers.rs` |
@@ -117,7 +117,7 @@ module (merge timers into one function).
   headless Chrome on 2026-11-24 with 200,000-operation calls after the rewrite: per
   call 0.025 ms computation, 0.045 ms calls (fib), 0.22 ms host calls (`get`),
   against 0.9 / 2.4 / 0.4 ms for the wasmi 2 interpreter, which missed the 2 ms bar
-  on calls and was dropped. Both runtimes execute the same rewritten bytes
+  on calls in the browser. Standalone WASI tools use wasmi. All runtimes execute the same rewritten bytes
   (`instrument.rs`, RFC sections 3 and 4): each basic block is charged in full
   before it runs, one operation per original instruction; `memory.copy/fill/init`
   and `table.copy/init` add one per 8 bytes of length; each function adds 4 +
