@@ -110,11 +110,6 @@ Thumbs.db
 !/docs/wasm-modules.md
 !/docs/wasm-modules-tutorial.zh-CN.md
 !/docs/wasm-modules-tutorial-ts.zh-CN.md
-!/docs/wasm-modules-tutorial-ts.md
-!/docs/wasm-modules-ui-tutorial-ts.md
-!/docs/wasm-modules-ui-tutorial-ts.zh-CN.md
-!/docs/wasm-modules-sdk-ts.md
-!/docs/wasm-modules-sdk-ts.zh-CN.md
 !/docs/map-format.md
 !/docs/terrain-deformation.md
 !/docs/ts-ice.md
@@ -122,6 +117,11 @@ Thumbs.db
 !/docs/dormant-stock-rules.md
 !/docs/ts-ion-cannon.md
 !/docs/ts-webs.md
+!/docs/wasm-modules-tutorial-ts.md
+!/docs/wasm-modules-ui-tutorial-ts.md
+!/docs/wasm-modules-ui-tutorial-ts.zh-CN.md
+!/docs/wasm-modules-sdk-ts.md
+!/docs/wasm-modules-sdk-ts.zh-CN.md
 !/docs/_config.yml
 !/docs/index.md
 !/docs/menu-reference.md
