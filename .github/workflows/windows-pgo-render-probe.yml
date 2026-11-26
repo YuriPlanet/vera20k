@@ -26,7 +26,10 @@ jobs:
         with:
           cache-targets: false
           save-if: false
-      - run: .github/release/windows/fetch-dxc.ps1 -Package dist
+      - name: Fetch the release shader compiler
+        run: |
+          New-Item -Path dist -ItemType Directory | Out-Null
+          .github/release/windows/fetch-dxc.ps1 -Package dist
       - name: Fetch retail data
         env:
           RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
