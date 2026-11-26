@@ -179,6 +179,9 @@ fn run_with(
     event_loop: EventLoop<()>,
     mut mod_switch: Option<crate::app::mods::ModSwitch>,
 ) -> Result<i32> {
+    // Android reaches here without `main`; on the desktop `main` started it.
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::sim::parallel::start_worker_pool();
     // A player started this launch and may have no console: a failure that
     // ends it shows a message box. Spawn, replay and capture launches come
     // from other programs and scripts, which must never wait on a click.
