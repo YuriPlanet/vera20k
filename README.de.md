@@ -136,6 +136,14 @@ Auszahlungen an Mitwirkende:
   <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Das ursprüngliche Red Alert 2 in VERA20K 0.41</a></li>
+</ul>
+
 ## Danksagung und Rechtliches
 
 Danke an OpenRA, XCC Mixer, das ModEnc-Wiki, Project Perfect Mod, EA für die Veröffentlichung

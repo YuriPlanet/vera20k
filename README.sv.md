@@ -133,6 +133,14 @@ Utbetalningar till medverkande:
   <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Originalversionen av Red Alert 2 i VERA20K 0.41</a></li>
+</ul>
+
 ## Tack och juridisk information
 
 Tack till OpenRA, XCC Mixer, ModEnc-wikin, Project Perfect Mod, EA:s GPL-utgåva av källkoden till

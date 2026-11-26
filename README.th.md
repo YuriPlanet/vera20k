@@ -120,6 +120,14 @@ VERA20K ใช้กติกาของ Yuri's Revenge ภาคต้นฉ�
   <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 ภาคดั้งเดิมใน VERA20K 0.41</a></li>
+</ul>
+
 ## เครดิตและข้อกฎหมาย
 
 ขอบคุณ OpenRA, XCC Mixer, วิกิ ModEnc, Project Perfect Mod, EA ที่เผยแพร่ซอร์สโค้ดของ

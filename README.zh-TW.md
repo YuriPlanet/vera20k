@@ -127,6 +127,14 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
   <li><a href="https://www.youtube.com/watch?v=7r_z_7w0InA&amp;t=1440s">Survival Fortress 5.0</a></li>
 </ul>
 
+<p>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+</p>
+
+<ul type="none">
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩原版《紅色警戒 2》</a></li>
+</ul>
+
 ## 致謝與法律宣告
 
 感謝 OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA 以 GPL 許可證釋出的
