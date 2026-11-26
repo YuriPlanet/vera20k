@@ -220,6 +220,8 @@ impl Simulation {
     /// stock curtain competes in group 0 using its native readiness. An action
     /// naming a nonzero group falls back to stock only if this house has no
     /// matching active or fireable custom curtain (stock ignores the argument).
+    /// The mixed group-0 selection fires its winner by registry slot. A custom
+    /// curtain occupying stock's Type= index must not receive that launch.
     fn team_iron_curtain_step(
         &self,
         owner: InternedId,
@@ -234,7 +236,8 @@ impl Simulation {
         let frame = self.session.binary_frame() as i32;
         let mut stock = None;
         let mut matched = None;
-        for name in &rules.super_weapon_order {
+        let mut grouped = false;
+        for (index, name) in rules.super_weapon_order.iter().enumerate() {
             let Some(sw) = rules.super_weapon(name) else {
                 continue;
             };
@@ -254,14 +257,23 @@ impl Simulation {
                 if argument != 0 {
                     continue;
                 }
-                candidate
+                let Some(id) = self.interner.get(name) else {
+                    continue;
+                };
+                (candidate.0, TeamSuper::Grouped(id))
             } else {
                 let Some(metadata) = rules.super_weapon_metadata(name) else {
                     continue;
                 };
-                if metadata.targeting().mode() != AiTargetingMode::IronCurtain
-                    || metadata.launch().group() != argument
-                {
+                if metadata.targeting().mode() != AiTargetingMode::IronCurtain {
+                    continue;
+                }
+                // Even a different group's curtain at Type=1 would intercept
+                // the native call if we used that slot for group 0's winner.
+                if argument == 0 && index == SuperWeaponKind::IronCurtain.native_index() as usize {
+                    grouped = true;
+                }
+                if metadata.launch().group() != argument {
                     continue;
                 }
                 let Some(id) = self.interner.get(name) else {
@@ -279,16 +291,21 @@ impl Simulation {
                 ) else {
                     continue;
                 };
+                grouped = true;
                 (step, TeamSuper::Grouped(id))
             };
-            if step == SuperStep::Fire {
-                return Some((step, weapon));
-            }
-            if matched.is_none() || step == SuperStep::Wait {
+            // First ready wins in registry order; otherwise any nearly-ready
+            // candidate keeps the action waiting.
+            if !matches!(matched, Some((SuperStep::Fire, _)))
+                && (matched.is_none() || step != SuperStep::Finish)
+            {
                 matched = Some((step, weapon));
             }
+            if grouped && matches!(matched, Some((SuperStep::Fire, _))) {
+                return matched;
+            }
         }
-        matched.or(stock)
+        if grouped { matched } else { stock }
     }
 
     /// 0x1003AA48..0x1003AAC6: readiness may ignore power for an unpowered

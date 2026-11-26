@@ -632,3 +632,53 @@ fn action_55_fires_the_first_ready_stock_or_group_zero_curtain() {
         assert!(sim.team_script_vm.teams[&team].advance_pending);
     }
 }
+
+#[test]
+fn action_55_mixed_group_zero_uses_the_selected_registry_slot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let mut row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    // The plain stock curtain is at slot 2. Slot 1 is the Type= index used
+    // only by the native fallback, irrespective of the type registered there.
+    row["supers"][2] = row["supers"][1].clone();
+    for (kind, custom_settings, charged, expected) in [
+        (1, "SW.Group=0\n", false, "SW2"),
+        (1, "SW.Group=9\n", true, "SW2"),
+        (0, "SW.Group=9\n", true, "SW1"),
+    ] {
+        row["supers"][1]["kind"] = json!(kind);
+        row["supers"][1]["charged"] = json!(charged);
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, &[(1, custom_settings)]);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let stock = sim.interner.get("SW2").unwrap();
+        let slot_one = sim.interner.get("SW1").unwrap();
+
+        AI_FIRE_LOG.set(Some(Vec::new()));
+        sim.team_action_iron_curtain(team, 0, &rules, None, &mut Default::default());
+        let fired: Vec<_> = AI_FIRE_LOG
+            .take()
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                AiFireEvent::Fire(id, cell) => Some((id, cell)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fired, [(sim.interner.get(expected).unwrap(), (12, 13))]);
+        assert_eq!(
+            sim.super_weapons[&owner][&stock].is_ready(),
+            expected != "SW2"
+        );
+        if expected == "SW2" {
+            assert_eq!(sim.super_weapons[&owner][&slot_one].is_ready(), charged);
+        }
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}
