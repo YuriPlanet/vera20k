@@ -1,6 +1,8 @@
 //! "Muster Field", a playtest `rules.wasm` (RFC 0001 preview): a small
 //! auto-battler against one computer house, played with ordinary unit orders
-//! or with its `ui.wasm`'s panels.
+//! or with its `ui.wasm`'s panels. Its play follows the 红警酒馆 of MK,
+//! a Bilibili creator (README.md); it is a demonstration, not to be
+//! published as a mod of its own.
 //!
 //! - A campaign of waves: between battles the company stands in camp, the
 //!   dead return, and the player spends the pay.

@@ -1211,10 +1211,12 @@ pub fn open() {
     opening(missing);
 }
 
-/// At most four lines, the row last: the newest line stays longest.
+/// At most five lines, the row last: the newest line stays longest. The
+/// first muster opens with the credit (README.md).
 fn opening(missing: i64) {
     let muster = MUSTERS.get();
     if muster == 1 {
+        log("玩法参考 B 站 UP 主 MK 的红警酒馆，致谢。");
         log("把货位佣兵移到空地＝雇佣；队员移动＝列阵，移回货位＝遣散退半价。");
         Line::new()
             .text("军需官：S 换货 ")
