@@ -12,7 +12,9 @@ const NEEDS = {
   on_rules: [/\bonRules\s*\(/],
   on_frame: [/\bonFrame\s*\(/],
   on_events: [/\.\s*enqueue(With)?\s*[<(]/, /\bnamedAction\s*[<(]/, /\bActionDef\s*\.\s*module\s*[<(]/, /\bIni\s*\.\s*(key|registry)\s*[<(]/],
-  on_decide: [/\.\s*decideSync\s*[<(]/, /\bnamedAction\s*[<(]/],
+  // A named action reaches `on_decide` only as an INI `Decide=` handler,
+  // which takes a decision view (see `namedDecider` below).
+  on_decide: [/\.\s*decideSync\s*[<(]/],
   on_message: [/\bonMessage\s*\(/],
   client_on_start: [/\bonStart\s*\(/],
   client_on_render: [/\bonRender\s*\(/],
@@ -43,6 +45,7 @@ export default class VeraTransform extends Transform {
     for (const [name, patterns] of Object.entries(NEEDS)) {
       if (patterns.some((p) => p.test(text))) state.found.uses.add(name);
     }
+    if (namedDecider(text)) state.found.uses.add("on_decide");
     for (const source of parser.sources) {
       if (!isExports(source)) continue;
       for (const statement of source.statements) {
@@ -51,6 +54,22 @@ export default class VeraTransform extends Transform {
       }
     }
   }
+}
+
+/**
+ * Whether a `namedAction("Name", fn)` names a function whose parameter is a
+ * decision view (`…Decision` or `DecideRecord`), which INI can bind as
+ * `Decide=Wasm:Name`.
+ */
+function namedDecider(text) {
+  for (const m of text.matchAll(/\bnamedAction\s*(?:<\s*(\w+)\s*>)?\s*\(\s*["'][^"']*["']\s*,\s*(\w+)/g)) {
+    if (m[1] && /(Decision|DecideRecord)$/.test(m[1])) return true;
+    const fn = m[2];
+    const decl = new RegExp(`(?:function\\s+${fn}\\s*\\(|\\b${fn}\\s*=\\s*\\()\\s*\\w+\\s*:\\s*(\\w+)`);
+    const d = text.match(decl);
+    if (d && /(Decision|DecideRecord)$/.test(d[1])) return true;
+  }
+  return false;
 }
 
 class VeraError extends Error {

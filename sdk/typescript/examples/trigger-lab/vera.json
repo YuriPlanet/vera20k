@@ -1,0 +1,8 @@
+{
+  "kind": "rules",
+  "entry": "src/index.ts",
+  "out": "build/rules.wasm",
+  "vars": [
+    { "name": "Built", "scope": "house", "visibility": "public", "initial": 0 }
+  ]
+}
