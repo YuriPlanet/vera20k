@@ -1868,11 +1868,9 @@ impl Simulation {
                     EntityCategory::Structure => false,
                 })
         {
-            // Ares 3.0 FootClass_UpdatePosition_HunterSeeker (1004E050, hook
+            // Ares FootClass_UpdatePosition_HunterSeeker (P1 0x1004ECC0, hook
             // 0x4D8D95): a hunter leaving the map hits its Target first.
-            if ares {
-                self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
-            }
+            self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
             self.uninit_with_context(id, UninitContext::new(rules).with_effects(effects));
             return;
         }

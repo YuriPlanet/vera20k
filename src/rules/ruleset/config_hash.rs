@@ -1259,6 +1259,21 @@ impl RuleSet {
             self.ares_global_controls
                 .hunter_seeker_buildings()
                 .hash(&mut hasher);
+            if !self.ares_form() {
+                b"builtin-hunter-seeker-flight-v1".hash(&mut hasher);
+                self.ares_general().hunter_seeker_speeds().hash(&mut hasher);
+                self.object_list
+                    .iter()
+                    .filter(|object| object.hunter_seeker)
+                    .map(|object| {
+                        (
+                            (object.category, object.id.to_ascii_uppercase()),
+                            object.techno_combat().hunter_seeker_overrides(),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>()
+                    .hash(&mut hasher);
+            }
         }
         // No extension tags means no extra hash input: preserve stock hashes.
         let building_requirements =

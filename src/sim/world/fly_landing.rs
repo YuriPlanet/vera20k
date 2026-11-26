@@ -62,7 +62,7 @@ impl Simulation {
             .first_building_on_layer(x as u16, y as u16, MovementLayer::Ground)
     }
 
-    /// Ares 3.0 FlyLocomotionClass_UpdateLanding 1004D8A0 (hook 0x4CE85A)
+    /// Ares FlyLocomotionClass_UpdateLanding P1 0x1004E510 (hook 0x4CE85A)
     /// replaces a `HunterSeeker=` type's landing (to 0x4CE852): it never
     /// lands. Without a Target (+0x2B4) it asks Acquire_Hunter_Seeker_Target
     /// (Fly vt+0x94, [`Self::acquire_hunter_seeker_target`]); when that
@@ -126,14 +126,7 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        if rules.ares()
-            && self
-                .substrate
-                .entities
-                .get(id)
-                .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
-                .is_some_and(|object| object.hunter_seeker)
-        {
+        if self.hunter_seeker_type(id, rules).is_some() {
             self.ares_hunter_seeker_reacquire(id, rules, frame_effects);
             return;
         }

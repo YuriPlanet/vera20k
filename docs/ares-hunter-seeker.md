@@ -21,7 +21,9 @@ placement, mission, target and cleanup owners.
   target acquisition and saves. Fly locomotors acquire an initial eligible
   target using the shared target setter and Scenario RNG; other locomotors'
   acquisition method remains a no-op. Harvesters receive Area Guard, others
-  Attack.
+  Attack. With Ares Off, a launched Fly with `HunterSeeker=yes` retains its
+  flight and detonation behavior. The saved launch identity is checked against
+  the active HunterSeeker definition when restoring a player save.
 - `HunterSeeker.RandomOnly`, the common effect masks and
   `HunterSeeker.Ignore` control the initial target pool. Ignore is retained
   across ordered reads and participates in the simulation configuration hash.
@@ -39,8 +41,7 @@ placement, mission, target and cleanup owners.
   GenericWarhead and UnitDelivery share these readers and playback consumers;
   stock redirected superweapons retain their existing announcement paths.
 
-This is a bounded launch and initial-acquisition port, plus three hooks of
-the flight (`Ext/Techno/Hooks.HunterSeeker.cpp`):
+The flight uses the HunterSeeker hooks in `Ext/Techno/Hooks.HunterSeeker.cpp`.
 
 - Height step (`FlyRuntime::step_height`): a `HunterSeeker=` Fly that is not
   a Dropship climbs at `HunterSeeker.EmergeSpeed` while taking off and

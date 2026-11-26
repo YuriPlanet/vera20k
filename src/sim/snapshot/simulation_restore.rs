@@ -9,6 +9,8 @@ use super::object_references::{
     RestoredObjectIndex, restore_object_references, validate_passenger_size_tables,
 };
 use super::{SnapshotMapRestoreOutput, SnapshotRestoreError, SnapshotTerrainAssetPreparation};
+use crate::map::entities::EntityCategory;
+use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::world::Simulation;
 
 impl Simulation {
@@ -24,8 +26,8 @@ impl Simulation {
         }
     }
 
-    /// Validate extension state against its rules. Paid selections and
-    /// deliveries can come from built-in superweapon definitions.
+    /// Validate extension state against the rules that will resume it,
+    /// including built-in superweapons in games with Ares Off.
     pub(crate) fn validate_ares_state_for_load(
         &self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -38,9 +40,9 @@ impl Simulation {
                     .flatten()
             })
         };
-        for (_, entity) in self.substrate.entities.iter_sorted() {
+        for (object_id, entity) in self.substrate.entities.iter_sorted() {
             entity
-                .validate_ares_compatibility(ares, |id| {
+                .validate_delivery_for_load(ares, |id| {
                     self.interner.try_resolve(id).is_some_and(|name| {
                         rules.super_weapon_order.iter().any(|sw| {
                             builtin_delivery(sw).is_some_and(|delivery| {
@@ -55,6 +57,30 @@ impl Simulation {
                     })
                 })
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+            if ares
+                || (entity.ares_super_weapon().is_none() && entity.ares_super_target().is_none())
+            {
+                continue;
+            }
+            // Ares HunterSeeker's callback at 0x10072190 and EMPulse's launch
+            // at 0x100711C0 attach their Super to live objects. The binding
+            // can outlive the launch's ready flag, so validate the definition.
+            let valid = entity
+                .ares_super_weapon()
+                .and_then(|attached| self.interner.try_resolve(attached.sw_type))
+                .and_then(|name| rules.super_weapon(name))
+                .filter(|sw| sw.uses_ares_handler(rules))
+                .is_some_and(|sw| match sw.kind {
+                    SuperWeaponKind::HunterSeeker => {
+                        entity.category() == EntityCategory::Unit
+                            && entity.ares_super_target().is_none()
+                    }
+                    SuperWeaponKind::EMPulse => entity.category() == EntityCategory::Structure,
+                    _ => false,
+                });
+            if !valid {
+                return Err(SnapshotRestoreError::InvalidAttachedSuperWeapon { object_id });
+            }
         }
         self.unit_deliveries
             .validate_ares_compatibility(ares, |id| {

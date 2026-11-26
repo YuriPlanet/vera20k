@@ -10041,7 +10041,7 @@ VERA 已在造价和出售价格中使用此设置；如果通过 <code>Soylent<
 <p><strong><code>[SpecialWeapons]►HSBuilding=</code></strong></p>
 <p><strong><code>[TechnoType]►HunterSeeker.Ignore=</code></strong></p>
 <p class="dll-evidence" data-dll-kind="verified" data-audit-version="2.5"><strong>Ares 3.0p1 DLL 指令</strong> 狩猎者激活 <code>0x10073880</code> 使用 HSBuilding 回退，飞行钩 <code>0x004CDE64</code> 到 <code>0x1004E5A0</code>、<code>0x004CDF54</code> 到 <code>0x1004E690</code>、<code>0x004CE85A</code> 到 <code>0x1004E510</code> 分别进入狩猎者移动分支。类型的距离、速度和忽略目标字段读点在 <code>0x1003F970</code> 至 <code>0x1003F9EF</code>。</p>
-<p><strong>VERA现状</strong> HSBuilding、所选目标忽略标志以及飞升、接近、下降与近距引爆由相关发射和 Fly 运动链实施。若类型未采用 Fly 或未启用 HunterSeeker，则不会取得追击特性。</p>
+<p><strong>VERA现状</strong> 内置超武发射使用 HSBuilding 回退和目标忽略标志。载具使用 Fly 运动方式并设置 <code>HunterSeeker=yes</code> 时，关闭 Ares 也能自动起飞、追踪和近距引爆。引爆使用主武器绑定的弹头，飞升、下降及引爆距离使用载具定义中的覆盖值。</p>
 <p>对应源码 <a href="../../src/sim/hunter_seeker.rs" title="src/sim/hunter_seeker.rs">hunter_seeker.rs</a> · <a href="../../src/sim/superweapon/hunter_seeker.rs" title="src/sim/superweapon/hunter_seeker.rs">hunter_seeker.rs</a> · <a href="../../src/sim/movement/fly_height.rs" title="src/sim/movement/fly_height.rs">fly_height.rs</a></p>
 <details class="prior-description"><summary>V2.0 旧记录</summary>
 <p><strong><code>[SpecialWeapons]►HSBuilding=</code></strong>（建筑类型列表）</p>
@@ -12679,7 +12679,7 @@ VERA 也会分别读取其他松散的 PKT 文件；如果两个 PKT 都列出�
 <p><strong><code>[SuperWeapon]►SW.MaxCount=</code>、<code>EMPulse.PulseDelay=</code></strong></p>
 <p><strong><code>[SuperWeapon]►EMPulse.PulseBall=</code></strong></p>
 <p class="dll-evidence" data-dll-kind="verified" data-audit-version="2.5"><strong>Ares 3.0p1 DLL 指令</strong> EMP 激活在 <code>0x100721D0</code>，发射器判定在 <code>0x100724A0</code>，名单为空才在 <code>0x100724F8</code> 调用基础资格并检查 EMPulseCannon。Linked 和 Cannons 分别在 <code>0x10072541</code> 与 <code>0x1007259D</code> 有读点，TargetSelf 直接走炮台自身的引爆分支。</p>
-<p><strong>VERA现状</strong> 同一效果实现名单优先、联动发射、范围、炮台数量和即时自爆。非自瞄 EMP 炮还经炮台转向和蓄能链；自身普通范围伤害仍检查 DamageSelf。</p>
+<p><strong>VERA现状</strong> 同一效果实现名单优先、联动发射、范围、炮台数量和即时自爆。非自瞄 EMP 炮经炮台转向和蓄能后发射，自身普通范围伤害仍检查 DamageSelf。关闭 Ares 也可以从同版本存档读回炮台的超武绑定及目标格。</p>
 <p>对应源码 <a href="../../src/sim/superweapon/emp_pulse.rs" title="src/sim/superweapon/emp_pulse.rs">emp_pulse.rs</a></p>
 <details class="prior-description"><summary>V2.0 旧记录</summary>
 <p><strong><code>[SuperWeapon]►Type=EMPulse</code></strong></p>
@@ -14379,7 +14379,7 @@ VERA 也会分别读取其他松散的 PKT 文件；如果两个 PKT 都列出�
 <h3 id="events-757677" class="entry-heading kind-supported"><span class="status-label kind-supported">已支持或等效</span> 地图 <code>[Events]</code>：超武发射、停用与附近发射事件</h3>
 <p><strong><code>76,0,&lt;超武编号&gt;</code>、<code>77,2,&lt;路径点&gt;,&lt;超武类型&gt;</code></strong></p>
 <p class="dll-evidence" data-dll-kind="verified" data-audit-version="2.5"><strong>Ares 3.0p1 DLL 指令</strong> 原版 Launch 钩点 <code>0x006CC390</code> 进入 <code>0x10036000</code>，再到 SWTypeExt 发射流程。成功返回后 <code>0x10032A85</code>、<code>0x10032AB2</code> 依次发布 77、75。放电停用在 <code>0x10033038</code> 发布 76。铁幕和力场护盾均由 Protect 进入共同流程。</p>
-<p><strong>VERA现状</strong> 地图写入事件 75、76 或 77 即可匹配成功的扩展超武发射与放电停用。共同发射流程先发布带目标格的 77，再发布 75；内置放电超武的停用发布 76。用扩展参数启动 Protect 的铁幕和力场护盾也进入共同流程。未配置扩展参数的原版发射只走原版路径。</p>
+<p><strong>VERA现状</strong> 地图写入事件 75、76 或 77 即可匹配成功的扩展超武发射与放电停用。共同发射流程先发布带目标格的 77，再发布 75，内置放电超武的停用发布 76。关闭 Ares 时，内置超武只向明确订阅本次事件的触发器成员投递。用扩展参数启动 Protect 的铁幕和力场护盾也进入共同流程。未配置扩展参数的原版发射只走原版路径。</p>
 <p>对应源码 <a href="../../src/sim/superweapon/fire.rs" title="src/sim/superweapon/fire.rs">fire.rs</a> · <a href="../../src/sim/superweapon/mod.rs" title="src/sim/superweapon/mod.rs">mod.rs</a> · <a href="../../src/sim/superweapon/iron_curtain.rs" title="src/sim/superweapon/iron_curtain.rs">iron_curtain.rs</a> · <a href="../../src/sim/superweapon/force_shield.rs" title="src/sim/superweapon/force_shield.rs">force_shield.rs</a></p>
 <details class="prior-description"><summary>V2.5 本次更新前记录</summary>
 <p><strong>VERA现状</strong> Ares 地图事件可用时，共享扩展发射成功后依次触发 77、75，放电停用触发 76。接入 Protect 的铁幕也进入这条事件链。力场护盾的原版发射跳过它。关闭 Ares 时，单独配置铁幕可使用 Protect 效果，地图事件 75–77 仍由地图的 Ares 开关控制。</p>

@@ -278,6 +278,8 @@ impl RulesPassProcessor {
                         let _built_in = crate::rules::ares_switch::not_ares_reads();
                         retained.read_deploy_dir(raw);
                     }
+                    let _builtin = crate::rules::ares_switch::not_ares_reads();
+                    retained.read_hunter_seeker_overrides(raw);
                     self.family_mut(family)[index].techno_combat = retained;
                 }
                 if ares_way {

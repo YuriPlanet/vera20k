@@ -1,7 +1,7 @@
 //! Trigger event evaluation: HasOccurred71E940's predicates, their House
 //! lookups, and EventRegister7264C0's per-Trigger event registration.
 
-use super::{EVENT_ANY, TagEventInput, resolve_trigger_house};
+use super::{AresEventSource, EVENT_ANY, TagEventInput, resolve_trigger_house};
 use crate::sim::world::Simulation;
 
 impl Simulation {
@@ -496,18 +496,27 @@ impl Simulation {
             return false;
         }
         let type_index = trigger.type_index;
-        let incoming_house = resolve_trigger_house(
-            self,
-            self.trigger_runtime.definitions.trigger_types[type_index]
-                .owner
-                .as_deref(),
-            rules,
-        );
+        let definition = &self.trigger_runtime.definitions.trigger_types[type_index];
+        // Ares 3.0p1 Activate (0x10032A85/0x10032AB2) and Deactivate
+        // (0x10033038) broadcast to all owner House Tags. The built-in
+        // superweapon events without full Ares only visit Trigger members
+        // that ask for the raised event, including in a linked Tag.
+        if !rules.ares_form()
+            && matches!(
+                input.ares_source,
+                Some(AresEventSource::Super(_) | AresEventSource::Launch { .. })
+            )
+            && !definition
+                .events
+                .iter()
+                .any(|event| event.condition.kind == input.kind)
+        {
+            return false;
+        }
+        let incoming_house = resolve_trigger_house(self, definition.owner.as_deref(), rules);
         let mut result = true;
         if !input.force {
-            let count = self.trigger_runtime.definitions.trigger_types[type_index]
-                .events
-                .len();
+            let count = definition.events.len();
             for ordinal in 0..count {
                 let bit = 1u32.wrapping_shl(ordinal as u32);
                 let completed = self

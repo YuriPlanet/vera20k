@@ -264,6 +264,47 @@ fn builtin_superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     assert_eq!(locals(&sim, 5), [true, false, true, false, true]);
 }
 
+#[test]
+fn builtin_superweapon_event_skips_stock_house_triggers_until_the_house_poll() {
+    for ares in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
+        let (mut sim, rules, overlays, houses) =
+            event_ingress_fixture_with_rules("[SuperWeaponTypes]\n0=Cell\n[Cell]\nType=Battery\n");
+        assert_eq!(rules.ares_form(), ares);
+        let owner = houses[0];
+        let cell = sim.interner.get("Cell").unwrap();
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            concat!(
+                "[Triggers]\n",
+                "SW=Country0,LINKED,Super activated,0,1,1,1,0\n",
+                "LINKED=Country0,<none>,Linked funds,0,1,1,1,0\n",
+                "FUNDS=Country0,<none>,Funds,0,1,1,1,0\n",
+                "[Tags]\nSW_TAG=2,Super activated,SW\nFUNDS_TAG=2,Funds,FUNDS\n",
+                "[Events]\nSW=1,75,0,0\nLINKED=1,52,0,10000\nFUNDS=1,52,0,10000\n",
+                "[Actions]\nSW=1,56,0,0,0,0,0,0,A\n",
+                "LINKED=1,56,0,1,0,0,0,0,A\nFUNDS=1,56,0,2,0,0,0,0,A\n",
+            ),
+        );
+        let mut effects = FrameEffects::default();
+        sim.session.set_binary_frame_for_test(7);
+        sim.raise_ares_super_event(
+            owner,
+            75,
+            AresEventSource::Super(cell),
+            &rules,
+            Some(&overlays),
+            &mut effects,
+        );
+        assert_eq!(locals(&sim, 3), [true, ares, ares]);
+
+        sim.session.set_binary_frame_for_test(8);
+        sim.raise_house_tags(owner, &rules, Some(&overlays), &mut effects);
+        assert_eq!(locals(&sim, 3), [true, true, true]);
+    }
+}
+
 /// Ares 3.0p1 0x1003A33D..0x1003A361 handles explicit map actions 92 and 93
 /// for the incoming House without checking for a granted Firestorm super.
 #[test]

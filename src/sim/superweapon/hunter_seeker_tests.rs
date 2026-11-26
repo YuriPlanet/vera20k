@@ -64,6 +64,7 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
     let _ares = crate::rules::ares_switch::read_ares_way(false);
     let (rules, mut sim, owner, sw_type) =
         scene_with_late_rules("[Seek]\nSW.InitialReady=yes\nSW.VirtualCharge=yes\n");
+    assert!(!rules.ares());
     sim.super_weapons
         .instance_mut(&owner, &sw_type)
         .unwrap()
@@ -151,13 +152,25 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         "hunter-seeker",
         0,
     );
-    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
         .sim;
+    restored.validate_ares_state_for_load(&rules).unwrap();
     assert_eq!(
         restored.entities().get(id).unwrap().ares_super_weapon(),
         Some(crate::sim::hunter_seeker::AttachedSuper { owner, sw_type })
     );
+    let unknown = restored.interner.intern("TARGET");
+    restored
+        .substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .set_ares_super_weapon(crate::sim::hunter_seeker::AttachedSuper {
+            owner,
+            sw_type: unknown,
+        });
+    assert!(restored.validate_ares_state_for_load(&rules).is_err());
 }
 
 /// The callback seeds FindNearbyLocation from GetCoords (vt+0x48 at
@@ -293,6 +306,56 @@ fn computer_hunter_seeker_designated_enemy_rule_controls_the_candidate_pool() {
                 .attack_target
                 .target(),
             acquires.then_some(TargetKind::Entity(target))
+        );
+    }
+}
+
+#[test]
+fn builtin_hunter_seeker_fly_detonates_at_its_type_proximity_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (rules, mut sim, owner, sw_type) = scene_with_late_rules(
+        "[Seek]\nHunterSeeker.Type=FLYER\n\
+         [FLYER]\nHunterSeeker=yes\nPrimary=StrikeGun\nFlightLevel=80\n\
+         HunterSeeker.DetonateProximity=4096\nHunterSeeker.EmergeSpeed=40\n\
+         [StrikeGun]\nDamage=150\nROF=30\nRange=1\nProjectile=Invisible\nSpeed=100\nWarhead=StrikeWH\n\
+         [Projectiles]\n0=Invisible\n[Invisible]\nInviso=yes\n\
+         [Warheads]\n0=StrikeWH\n[StrikeWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    assert!(!rules.ares());
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 100);
+    sim.spawn_object("LAUNCHER", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("TARGET", "Russians", 14, 8, 0, &rules)
+        .unwrap();
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw_type,
+        (0, 0),
+        None,
+        &mut FrameEffects::default(),
+        false,
+    ));
+    let hunter = sim
+        .entities()
+        .values()
+        .find(|entity| entity.ares_super_weapon().is_some())
+        .unwrap();
+    assert_eq!(
+        hunter.attack_target.target(),
+        Some(TargetKind::Entity(target))
+    );
+    let hunter = hunter.stable_id();
+    for _ in 0..4 {
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+    }
+    for victim in [hunter, target] {
+        assert!(
+            sim.entities()
+                .get(victim)
+                .is_none_or(|entity| { entity.health.current() <= 0 || !entity.is_object_alive() }),
+            "victim {victim} remains after hunter {hunter} acquired target {target}"
         );
     }
 }

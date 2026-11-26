@@ -1066,23 +1066,12 @@ impl AresTechnoTypeRules {
             section.read_ares_nullable_int("Smoke.ChanceDead", damage.smoke_chance_dead);
         // Then the hunter-seeker overrides, before HunterSeeker.Ignore
         // (`rules::superweapon_influence`).
-        for (slot, key) in [
-            "HunterSeeker.DetonateProximity",
-            "HunterSeeker.DescendProximity",
-            "HunterSeeker.AscentSpeed",
-            "HunterSeeker.DescentSpeed",
-            "HunterSeeker.EmergeSpeed",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            self.residual.hunter_seeker[slot] =
-                section.read_ares_nullable_int(key, self.residual.hunter_seeker[slot]);
-        }
+        self.read_hunter_seeker_overrides(section);
         // After HunterSeeker.*: CivilianEnemy, then DamageSparks; after the
         // particle-system lists, the berserk, Assaulter and crush blocks.
         let combat = &mut self.combat;
         combat.civilian_enemy = section.read_ares_bool("CivilianEnemy", combat.civilian_enemy);
+        let damage = &mut self.damage;
         damage.damage_sparks =
             section.read_ares_nullable_bool("DamageSparks", damage.damage_sparks);
         combat.berserk_rof_multiplier = section
@@ -1336,6 +1325,28 @@ impl AresTechnoTypeRules {
     /// 0x4D9EBD).
     pub(crate) fn unsellable(&self, units_unsellable: bool) -> bool {
         self.residual.unsellable.unwrap_or(units_unsellable)
+    }
+
+    /// TechnoTypeExt::LoadFromINI (P1 0x1003F970..0x1003F9D9) reads
+    /// nullable overrides before HunterSeeker.Ignore.
+    pub(crate) fn read_hunter_seeker_overrides(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        for (key, value) in [
+            "HunterSeeker.DetonateProximity",
+            "HunterSeeker.DescendProximity",
+            "HunterSeeker.AscentSpeed",
+            "HunterSeeker.DescentSpeed",
+            "HunterSeeker.EmergeSpeed",
+        ]
+        .into_iter()
+        .zip(&mut self.residual.hunter_seeker)
+        {
+            *value = section.read_ares_nullable_int(key, *value);
+        }
+    }
+
+    pub(crate) fn hunter_seeker_overrides(&self) -> [Option<i32>; 5] {
+        self.residual.hunter_seeker
     }
 
     /// `HunterSeeker.AscentSpeed`, `.DescentSpeed` and `.EmergeSpeed`,

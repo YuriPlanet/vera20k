@@ -42,6 +42,10 @@ so Ares' Persistable answer (hook `0x71F9C0`) never reaches a latch.
 | 86 | at most Value of the named type exist | every Logic poll |
 | 87, 88 | House Value has no KeepAlive objects (87) or KeepAlive Buildings (88) | House Tag polls |
 
+With Ares Off, built-in superweapon events 75–77 visit only Trigger members that
+declare the raised event. Ordinary House polling still evaluates stock conditions.
+Full Ares uses its owner-wide House Tag dispatch.
+
 House Value is the House array index; 87/88 resolve it as below. Type names
 match without case (TechnoTypeClass::Find `0x10007EA0`); a significant type is
 counted through each House's tracked count, an Insignificant or DontScore one
