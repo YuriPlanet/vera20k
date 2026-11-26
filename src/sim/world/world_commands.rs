@@ -682,7 +682,7 @@ impl Simulation {
                 let _ = self.assign_target_represented(*entity_id, None, rules, frame_effects);
                 // NPatch (NPExt item 74, #2962): Stop must drop what this
                 // techno holds aloft, not only its radio and destination.
-                if rules.npatch()
+                if rules.npatch_fixes()
                     && self
                         .substrate
                         .entities

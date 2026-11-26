@@ -2062,7 +2062,7 @@ fn commit_entity(
         // hit, so the surviving-building response above never runs. Warn
         // before the death postlude removes the building.
         if entered_techno_death
-            && rules.npatch()
+            && rules.npatch_fixes()
             && fatal_category == EntityCategory::Structure
             && event.warhead_ref == world.interner.intern(&rules.bridge_warheads.c4_name)
         {

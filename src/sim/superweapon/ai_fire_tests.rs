@@ -441,7 +441,7 @@ fn the_best_rally_target_matches_native() {
         }
         let mut rng = SimRng::new(int(&row["seed"]) as u64);
         assert_eq!(
-            pick_best_rally_target(&entries, &mut rng, rules.ares(), rules.npatch()),
+            pick_best_rally_target(&entries, &mut rng, rules.ares(), rules.npatch_fixes()),
             cell(&row["cell"]),
             "{row}"
         );

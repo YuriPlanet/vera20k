@@ -905,7 +905,7 @@ fn open_topped_port_coordinate(
     // NPatch (#2974): a fortress riding inside another hull keeps the port
     // offset but takes the outermost hull's live position.
     let outer = rules
-        .npatch()
+        .npatch_fixes()
         .then(|| world.outermost_transporter(transport_id))
         .flatten()
         .and_then(|id| entities.get(id));

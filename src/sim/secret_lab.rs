@@ -81,7 +81,7 @@ impl Simulation {
         if choices.is_empty() {
             return;
         }
-        if rules.npatch() {
+        if rules.npatch_fixes() {
             // NPATCH (NPExt bug-fix changelog item 86, issue #2933): native
             // 68C112..68C1B5 removes a slot from a temporary index vector but
             // then uses the drawn POSITION, not its value, against the

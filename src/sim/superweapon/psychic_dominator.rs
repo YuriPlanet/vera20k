@@ -365,7 +365,7 @@ fn mind_control_area(
         // Lightning Storm's house slot (0x00A9FACC), which is empty whenever
         // no storm is active, so building kills reached no score and no
         // destroyed-buildings count.
-        let storm_house = if rules.npatch() {
+        let storm_house = if rules.npatch_fixes() {
             sim.psychic_dominator.owner
         } else {
             sim.lightning_storm.owner()

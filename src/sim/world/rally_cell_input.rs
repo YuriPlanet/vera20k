@@ -84,7 +84,7 @@ impl Simulation {
             bounds,
             size,
             self.session.binary_frame(),
-            rules.npatch(),
+            rules.npatch_fixes(),
             &RallyCellClick {
                 clicked: (clicked.0 as i16, clicked.1 as i16),
                 location: crate::sim::movement::ground_pose::position_world_coord(&entity.position),

@@ -136,7 +136,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return true;
         };
-        object.selectable && !(rules.npatch() && object.spawned)
+        object.selectable && !(rules.npatch_fixes() && object.spawned)
     }
 
     /// Object5F4520's state/type admission, shared by provisional local input

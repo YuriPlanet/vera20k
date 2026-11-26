@@ -1516,7 +1516,7 @@ fn npatch_a_tower_in_its_construction_body_supplies_no_support_beam() {
 #[test]
 fn npatch_prism_modifier_stays_stable_across_keyless_general_passes() {
     let rules_layer = || {
-        IniFile::from_str("[General]\nPrismSupportModifier=130%\nVehicleParachute=VEHCHUTE\n")
+        IniFile::from_str("[General]\nNPatch=yes\nPrismSupportModifier=130%\nVehicleParachute=VEHCHUTE\n")
     };
     let modifier = |layers: RulesLayerStack| {
         let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
@@ -1536,7 +1536,7 @@ fn npatch_prism_modifier_stays_stable_across_keyless_general_passes() {
     assert_eq!(modifier(layers), read_once);
 
     let never_named = modifier(RulesLayerStack::new(IniFile::from_str(
-        "[General]\nName=No prism key anywhere\nVehicleParachute=VEHCHUTE\n",
+        "[General]\nNPatch=yes\nName=No prism key anywhere\nVehicleParachute=VEHCHUTE\n",
     )));
     assert_eq!(never_named, 100);
 }

@@ -16,7 +16,7 @@ struct LocalHealthHost<'a, F> {
 }
 
 impl<F: FnMut(&mut GameEntity, HealthCallback)> ObjectHealthHost for LocalHealthHost<'_, F> {
-    fn npatch(&self) -> bool {
+    fn npatch_fixes(&self) -> bool {
         self.npatch
     }
 

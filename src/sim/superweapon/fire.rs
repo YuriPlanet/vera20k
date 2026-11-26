@@ -199,7 +199,7 @@ impl Simulation {
         // Update_Owned_Supers 0x0050AF10 sets on an IsPowered Super for low
         // power or no online provider. Under NPatch a held Sphere refuses the
         // warp click before any write: no launch, pairing, timer or alert.
-        if rules.npatch()
+        if rules.npatch_fixes()
             && let Some((pre_type, _)) = paired
             && super_instance(self, owner, pre_type).is_some_and(|pre| pre.is_suspended())
         {

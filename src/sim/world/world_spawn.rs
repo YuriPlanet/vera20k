@@ -3242,7 +3242,7 @@ impl Simulation {
             // gate (`HouseClass::Update` `0x004F8E92..0x004F8F77`) keeps the
             // empty house alive forever. Delete the phantom with the
             // building. Native retains the limbo identity.
-            if rules.npatch() {
+            if rules.npatch_fixes() {
                 self.uninit_with_context(
                     new_sid,
                     super::UninitContext::new(rules).with_effects(frame_effects),

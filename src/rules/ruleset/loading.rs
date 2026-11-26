@@ -60,6 +60,7 @@ impl RuleSet {
             processed.npatch_inputs(),
             &reads,
         );
+        rules.npatch_fixes = rules.general.npatch_enabled == Some(true);
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         rules.apply_ra2(crate::util::ra2_launch::enabled());
         Ok(rules)
@@ -1996,6 +1997,7 @@ impl RuleSet {
             phobos: false,
             kratos: false,
             npatch: false,
+            npatch_fixes: false,
             ra2: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),

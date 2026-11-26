@@ -627,7 +627,7 @@ fn base_action(
     // limits the warp-in arm to Cell targets, so a pre-emergence chrono
     // legionnaire fell through to the attack rung, whose pure weapon-range
     // alternative showed a force-attack cursor over friendlies.
-    let warping = if rules.npatch() {
+    let warping = if rules.npatch_fixes() {
         actor.is_warped_out() || actor.is_warping_in()
     } else {
         actor.is_warped_out() || (actor.is_warping_in() && matches!(target, TargetKind::Cell(..)))

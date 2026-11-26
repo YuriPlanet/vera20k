@@ -304,7 +304,7 @@ fn eject_garrison_passengers_at_edges(
         // NPatch (NPExt item 52, #2967): a manual Release order with no
         // ring exit leaves the garrison inside instead of silently
         // UnIniting every occupant without a kill record.
-        if rules.npatch() && matches!(mode, GarrisonEjectMode::Release) {
+        if rules.npatch_fixes() && matches!(mode, GarrisonEjectMode::Release) {
             return Some(0);
         }
         // 458180..458190: no exit and not interior -> KillOccupants(NULL),
@@ -487,7 +487,7 @@ pub(crate) fn sell_building_occupants(
     };
     // NPatch (NPExt item 52, #2967): the Release arm's no-exit path is a
     // no-op, so the wrapper must not clear the occupant vector.
-    if rules.npatch() && matches!(mode, GarrisonEjectMode::Release) && ejected == 0 {
+    if rules.npatch_fixes() && matches!(mode, GarrisonEjectMode::Release) && ejected == 0 {
         return 0;
     }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {

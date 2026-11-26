@@ -518,7 +518,7 @@ impl Simulation {
         // applies afterwards, so an explicit `JumpjetSpeed=` override wins.
         let jumpjet_params = (kind == LocomotorKind::Jumpjet).then(|| {
             let mut params = object.jumpjet_params.clone();
-            if rules.npatch() {
+            if rules.npatch_fixes() {
                 params.speed = crate::util::fixed_math::SimFixed::saturating_from_num(object.speed);
             }
             jumpjet_override.apply_to(&mut params);

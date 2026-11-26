@@ -511,7 +511,7 @@ pub(crate) fn build_display_effect_instances(
         .into_iter()
         .flatten()
         .any(|ring| ring.eq_ignore_ascii_case(type_name));
-        if input.rules.npatch()
+        if input.rules.npatch_fixes()
             && is_control_ring
             && anim
                 .owner_entity()

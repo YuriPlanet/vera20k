@@ -53,6 +53,19 @@ fn a_pass_key_turns_npatch_on() {
 fn npatch_global_yes_turns_npatch_on() {
     let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nNPatch=yes\n")).unwrap();
     assert!(rules.npatch());
+    assert!(rules.npatch_fixes());
+}
+
+/// An individual NPatch feature key turns its own extension paths on, but not
+/// the NPExt bug-fix chains.
+#[test]
+fn a_feature_key_does_not_turn_the_fixes_on() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nDisableParallelAIQueues=yes\n",
+    ))
+    .unwrap();
+    assert!(rules.npatch());
+    assert!(!rules.npatch_fixes());
 }
 
 /// An explicit `no` keeps NPatch off even when an NPatch-only key would
@@ -64,6 +77,7 @@ fn npatch_global_no_overrides_an_npatch_key() {
     ))
     .unwrap();
     assert!(!rules.npatch());
+    assert!(!rules.npatch_fixes());
 }
 
 /// Stock rules hold none of the extension keys, so a retail game plays as

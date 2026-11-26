@@ -896,7 +896,7 @@ fn shows_alt_cameo(
                 ObjectCategory::Building => house.building_veterancy(),
             };
     }
-    if rules.npatch() {
+    if rules.npatch_fixes() {
         if rules.country_starts_veteran(country, obj) {
             return true;
         }

@@ -55,7 +55,7 @@ fn award_kill_experience(
     }
     let cost_of = |object: &ObjectType| rules.cost_of(object, victim_house);
     let recipient_cost = |recipient_id: u64, object: &ObjectType| -> i32 {
-        if rules.npatch() {
+        if rules.npatch_fixes() {
             let house = entities
                 .get(recipient_id)
                 .map(|entity| entity.owner())

@@ -82,7 +82,7 @@ impl Simulation {
         // move sounds. Native `FootClass::AI @ 0x004DA530` reads no lift
         // field and plays the victim's own move-sound tail. The skip also
         // skips that tail's Main RNG draw (`0x004DAACB`).
-        let magnetron_held = rules.npatch() && entity.lift.source().is_some();
+        let magnetron_held = rules.npatch_fixes() && entity.lift.source().is_some();
         if changed_or_moving && !falling_or_crashing && !magnetron_held {
             let sounds = interner
                 .object_type(entity.type_ref(), rules)

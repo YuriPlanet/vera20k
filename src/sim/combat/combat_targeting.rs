@@ -326,7 +326,7 @@ pub(crate) fn should_retaliate(
     // has a Target; `0x00708867` the mission's `Retaliate=`.
     if world.capture_manager_is_full(victim.stable_id(), rules)
         || victim.spawn_manager.is_some()
-        || ((human || rules.npatch()) && victim.attack_target.target().is_some())
+        || ((human || rules.npatch_fixes()) && victim.attack_target.target().is_some())
         || crate::sim::mission::control::current_control(rules, &victim.mission)
             .is_some_and(|entry| !entry.retaliate)
     {

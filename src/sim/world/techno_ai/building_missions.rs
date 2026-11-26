@@ -1485,7 +1485,7 @@ fn prism_supporter(
             && candidate.drain.draining_me().is_none()
             && candidate.mission.effective() != attack
             && candidate_id != id
-            && !(rules.npatch() && candidate.in_construction_bstate());
+            && !(rules.npatch_fixes() && candidate.in_construction_bstate());
         if !admitted {
             continue;
         }

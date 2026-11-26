@@ -769,7 +769,7 @@ fn apply_sidebar_action_inner(
                 // NPatch (NPExt item 89, #2940): either selection-mode toggle
                 // also drops the bare Super pointer.
                 if crate::app::state::active_rules(frontend, match_state)
-                    .is_some_and(|rules| rules.npatch())
+                    .is_some_and(|rules| rules.npatch_fixes())
                     && match_state.input.armed_super_weapon_type().is_some()
                 {
                     match_state.input.targeting_mode = None;

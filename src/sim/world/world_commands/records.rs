@@ -584,7 +584,7 @@ impl Simulation {
         // friendship, so a foreign harvester caught in the selection is
         // retasked onto area guard and stalls. Under NPatch the fallback also
         // demands the issuing house's control, like the ordinary arm.
-        if rules.npatch() && miner && !player_can_order_actor {
+        if rules.npatch_fixes() && miner && !player_can_order_actor {
             miner = false;
         }
         if !ordinary && !miner {

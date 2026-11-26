@@ -179,9 +179,9 @@ pub(super) enum HealthCallback {
 /// Short object borrows let the same Object5F5390 body invoke synchronous world
 /// callbacks. The host owns access, not a second health or event algorithm.
 pub(super) trait ObjectHealthHost {
-    /// [`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch); the
-    /// observation-only harness keeps stock.
-    fn npatch(&self) -> bool {
+    /// [`RuleSet::npatch_fixes`](crate::rules::ruleset::RuleSet::npatch_fixes);
+    /// the observation-only harness keeps stock.
+    fn npatch_fixes(&self) -> bool {
         false
     }
     fn object(&self) -> Option<&GameEntity>;
@@ -276,7 +276,7 @@ pub(super) fn commit(
     // (`0x00442476`, requested through `0x00442706`) never reaches its
     // damaged-building arm. Under npatch the exact boundary is on the yellow
     // side of both compares, so that hit crosses and the next one does not.
-    let yellow_crossed = if host.npatch() {
+    let yellow_crossed = if host.npatch_fixes() {
         yellow < previous && post <= yellow
     } else {
         yellow <= previous && post < yellow

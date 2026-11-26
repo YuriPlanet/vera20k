@@ -2577,7 +2577,7 @@ fn evaluate_candidate(
     // dumps fire into curtained units and every shot is wasted. The capture
     // and occupy scans (mask `0x200` engineer, `0x8000` occupiable, `0x10000`
     // tech buildings) fire nothing and keep native.
-    if ctx.rules.npatch() && ctx.mask & 0x18200 == 0 {
+    if ctx.rules.npatch_fixes() && ctx.mask & 0x18200 == 0 {
         let frame = ctx
             .fire_world
             .map_or(0, |world| world.session.binary_frame());

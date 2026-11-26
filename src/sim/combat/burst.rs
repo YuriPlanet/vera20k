@@ -163,7 +163,7 @@ mod tests {
                 entity,
                 Some(TargetKind::Cell(5, 4)),
                 rules.ares_form(),
-                rules.npatch(),
+                rules.npatch_fixes(),
             );
             entity
                 .passive_scan
@@ -194,7 +194,7 @@ mod tests {
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index through the NULL assignment; NPATCH keeps a
             // mid-burst index the same way (issue #2945).
-            let reset = if rules.ares_form() || rules.npatch() {
+            let reset = if rules.ares_form() || rules.npatch_fixes() {
                 1
             } else {
                 0
@@ -206,7 +206,7 @@ mod tests {
                 entity,
                 Some(TargetKind::Cell(6, 4)),
                 rules.ares_form(),
-                rules.npatch(),
+                rules.npatch_fixes(),
             );
             assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
         }
@@ -224,7 +224,7 @@ mod tests {
 
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[Animations]\n0=VEHCHUTE\n\
-             [General]\nVehicleParachute=VEHCHUTE\n\
+             [General]\nNPatch=yes\nVehicleParachute=VEHCHUTE\n\
              [VehicleTypes]\n0=TANK\n[TANK]\nStrength=200\nSpeed=6\nPrimary=Gun\n\
              [Gun]\nDamage=10\nROF=100\nRange=8\nBurst=2\n",
         ))
@@ -241,7 +241,7 @@ mod tests {
             entity,
             Some(TargetKind::Cell(5, 4)),
             rules.ares_form(),
-            rules.npatch(),
+            rules.npatch_fixes(),
         );
         entity.seldom.weapon_burst.complete_shot(2);
         assert_eq!(entity.seldom.weapon_burst.index(), 1, "mid-burst");
@@ -320,7 +320,7 @@ mod tests {
                         actor,
                         Some(TargetKind::Cell(6, 4)),
                         rules.ares_form(),
-                        rules.npatch(),
+                        rules.npatch_fixes(),
                     );
                 }
                 actor
@@ -367,14 +367,14 @@ mod tests {
                 assert!(!actor.passive_scan.acquired(), "{command:?}");
                 // Ares 0x6FCF53 (1005D320) never resets the index; NPATCH
                 // keeps a mid-burst one (issue #2945).
-                let kept = i32::from(!had_target || rules.ares_form() || rules.npatch());
+                let kept = i32::from(!had_target || rules.ares_form() || rules.npatch_fixes());
                 assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
                 // The next non-null assignment must retain the observed index.
                 represented_assign_target(
                     actor,
                     Some(TargetKind::Cell(7, 4)),
                     rules.ares_form(),
-                    rules.npatch(),
+                    rules.npatch_fixes(),
                 );
                 assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
             }

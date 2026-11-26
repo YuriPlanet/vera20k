@@ -599,7 +599,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
-    let npatch = state.rules().is_some_and(|rules| rules.npatch());
+    let npatch = state.rules().is_some_and(|rules| rules.npatch_fixes());
     crate::app::reset_scenario_exit_runtime(
         &mut state.frontend,
         &mut state.match_state,

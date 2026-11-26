@@ -20,7 +20,7 @@ fn npatch_tech_derrick_pump_starts_on_capture_not_placement() {
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(
-            "[General]\nVehicleParachute=VEHCHUTE\n\
+            "[General]\nNPatch=yes\nVehicleParachute=VEHCHUTE\n\
              [BuildingTypes]\n0=CAOILD\n1=CIVAN\n\
              [CAOILD]\nStrength=1000\nNeedsEngineer=yes\n\
              [CIVAN]\nStrength=1000\n\

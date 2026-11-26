@@ -450,7 +450,7 @@ impl<'a> FireSubject<'a> {
         };
         FirerPart {
             ares: self.rules.ares(),
-            npatch: self.rules.npatch(),
+            npatch: self.rules.npatch_fixes(),
             kratos: self.rules.kratos(),
             class,
             frame: frame as i32,

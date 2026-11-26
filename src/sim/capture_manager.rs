@@ -291,7 +291,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Vec<CaptureLinkCoordinates> {
         let mut links = self.capture_link_coordinates_inner(id, rules, false);
-        if !rules.npatch() {
+        if !rules.npatch_fixes() {
             return links;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -329,7 +329,7 @@ impl Simulation {
         let selected = force_selected || controller.seldom.selection.is_selected();
         // A controller riding in a hull keeps a stale position. NPExt draws
         // from the outermost transport instead.
-        let origin = if rules.npatch() {
+        let origin = if rules.npatch_fixes() {
             self.outermost_transporter(id).unwrap_or(id)
         } else {
             id
@@ -1556,7 +1556,7 @@ impl Simulation {
                     // victim returns to. Native plays it through a plain
                     // `VocClass::PlayAt`, so every player heard it.
                     let audience = controller_owner
-                        .filter(|_| rules.npatch())
+                        .filter(|_| rules.npatch_fixes())
                         .map(|controller| [controller, original_owner]);
                     let event = SimSoundEvent::voc_at_for(
                         rules.sound_name(sound),

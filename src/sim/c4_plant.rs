@@ -346,7 +346,7 @@ impl Simulation {
             )
             // NPatch (NPExt item 30, #2973): a building captured by an ally
             // must not take a fresh charge from that ally's demolition unit.
-            || (rules.npatch()
+            || (rules.npatch_fixes()
                 && self.substrate.entities.get(id).is_some_and(|planter| {
                     crate::sim::combat::combat_weapon::is_ally_by_object(
                         Some(&self.house_alliances),

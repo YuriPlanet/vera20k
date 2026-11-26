@@ -635,7 +635,7 @@ fn find_best_rally_target(
         .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity, ladder))
         .collect();
     let ares = ladder == RallyLadder::BestRally && rules.ares_form();
-    pick_best_rally_target(&entries, &mut sim.scenario_rng, ares, rules.npatch())
+    pick_best_rally_target(&entries, &mut sim.scenario_rng, ares, rules.npatch_fixes())
 }
 
 /// VERA's Tiberian Sun Ion Cannon arm: Firestorm 2.0's House AI picker

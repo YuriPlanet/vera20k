@@ -535,7 +535,7 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, rout
         entity.bind_building_sell_rate(sell_rate);
     }
     entity.install_building_down(route);
-    if rules.npatch() {
+    if rules.npatch_fixes() {
         // NPatch (NPExt item 73, #2970): the sale takes the Selling mission
         // now, but the gattling report loop would otherwise survive until
         // stage 2's limbo.

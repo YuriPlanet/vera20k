@@ -339,7 +339,7 @@ pub fn install_entity_attack_target_for_test(
         Some(TargetKind::Entity(target_id)),
         Some(TargetKind::Entity(target_id)),
         RuleSet::empty_for_test().ares_form(),
-        RuleSet::empty_for_test().npatch(),
+        RuleSet::empty_for_test().npatch_fixes(),
     );
 
     true

@@ -2,8 +2,9 @@
 
 NPatch is a long-standing binary patch for Yuri's Revenge that predates the DLL-based Ares and
 Phobos extensions. VERA20K implements the supported behavior in Rust. NPatch is in every
-build and switches on from a game's data, like Ares: adding its keys to the Rules layers,
-the selected mode or the map is all it takes.
+build and switches on from a game's data, like Ares: adding `NPatch=yes` to the Rules layers,
+the selected mode or the map turns the extension on; a single feature key turns on only that
+feature. The global bug-fix chains need `NPatch=yes`.
 
 ```ini
 [General]
@@ -14,6 +15,11 @@ NPatch=yes
 when no NPatch-only key is present; `no` keeps them off even when one is; absent leaves the
 answer to the keys below. The key is a plain read, so its own presence never turns NPatch on.
 The log names either this answer or the deciding NPatch-only key.
+
+Bug-fix chains are stricter: `RuleSet::npatch_fixes` is on only with `NPatch=yes`. An
+individual NPatch key turns on its own feature paths (the canopy, AI queue or build-limit
+behavior it names), not every NPExt fix. `NPatch=no` or an absent master key keeps the
+fixes off while their automatic feature detection still runs.
 
 Without the global key, `rules::npatch_switch` decides per game from any key only an NPatch
 reader found (`VehicleParachute`, `DisableParallelAIQueues` or its ext173 name

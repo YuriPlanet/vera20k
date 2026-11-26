@@ -458,7 +458,7 @@ impl Simulation {
                     entity,
                     None,
                     rules.ares_form(),
-                    rules.npatch(),
+                    rules.npatch_fixes(),
                 );
             }
             self.assign_null_destination(owner, rules, Some(rules.overlay_registry()), effects);
@@ -1315,7 +1315,7 @@ impl Simulation {
                 .get_mut(listener)
                 .unwrap();
             entity.parasite.eater = None;
-            if rules.npatch() {
+            if rules.npatch_fixes() {
                 entity.parasite.end_paralysis(frame);
             }
         }
@@ -1373,7 +1373,7 @@ impl Simulation {
                     source,
                     None,
                     rules.ares_form(),
-                    rules.npatch(),
+                    rules.npatch_fixes(),
                 );
             }
             return;

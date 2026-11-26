@@ -377,7 +377,7 @@ impl Simulation {
                                 requested,
                                 stored,
                                 rules.ares_form(),
-                                rules.npatch(),
+                                rules.npatch_fixes(),
                             )
                         {
                             self.assign_target_fire_teardown(firer, rules, registry);
@@ -853,7 +853,7 @@ impl Simulation {
             // still pay, and enemy victims pay twice. Skipping it leaves the
             // single, alliance-gated Record_The_Kill award as the whole
             // payment.
-            if !rules.npatch() {
+            if !rules.npatch_fixes() {
                 self.temporal_veterancy(head, target, rules);
             }
             false

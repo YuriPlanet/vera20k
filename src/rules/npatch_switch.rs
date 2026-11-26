@@ -16,7 +16,11 @@
 //!
 //! The pass reads travel with the processed rules ([`NPatchInputs`]), so a
 //! save, a replay and every peer reach the same answer from the same files.
-//! The log names the deciding key, so a modder can see why.
+//! Individual keys feed only [`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch),
+//! whose feature owners read their own field or key; the NPExt bug-fix chains
+//! read `RuleSet::npatch_fixes`, set only by `NPatch=yes`, so one feature key
+//! never turns every fix on. The log names the deciding key, so a modder can
+//! see why.
 //!
 //! NPatch has no build feature and no player setting: every build carries the
 //! switch, and only the data decides.

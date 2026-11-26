@@ -435,7 +435,7 @@ impl Simulation {
             }
         } else if crashable {
             self.set_object_height(id, 0, rules, frame_effects);
-            let bridge_state_changed = if balloon_hover || rules.npatch() {
+            let bridge_state_changed = if balloon_hover || rules.npatch_fixes() {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
             } else {
                 self.unit_death_explosion(
@@ -714,7 +714,7 @@ impl Simulation {
             let crashing_sound = object.and_then(|object| object.crashing_sound.as_deref());
             // NPatch (NPExt item 19, #2956): a Magnetron drop is not a
             // self-powered crash; NPExt suppresses the crash voice and sound.
-            let magnetron_drop = rules.npatch() && entity.seldom.drop_credit.being_manipulated();
+            let magnetron_drop = rules.npatch_fixes() && entity.seldom.drop_credit.being_manipulated();
             if let Some(voice) = voice
                 && Simulation::is_human_player(session, houses, owner)
                 && !magnetron_drop

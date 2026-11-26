@@ -763,7 +763,7 @@ impl Simulation {
             // an occupied cell leaks one object per frame until the game
             // stalls. Under NPatch the failed creation is freed; the anim
             // still steps back and retries below.
-            if rules.npatch() {
+            if rules.npatch_fixes() {
                 self.discard_constructed_limbo(infantry, rules, frame_effects);
             }
             if let Some(anim) = self.substrate.anims.get_mut(id) {

@@ -288,7 +288,7 @@ impl Simulation {
         // NPATCH (NPExt bug-fix changelog item 85, issue #2986): the magnetic
         // wave's tracking bound is the owner's weapon 0 range, the slot the
         // wave code reads (GetWeapon(0) at `0x0075F330`).
-        let magnetic_range_leptons = (rules.npatch() && wave.wave_type() == 3)
+        let magnetic_range_leptons = (rules.npatch_fixes() && wave.wave_type() == 3)
             .then(|| {
                 let entity = owner?;
                 let object = self.interner.object_type(entity.type_ref(), rules)?;
@@ -625,7 +625,7 @@ impl Simulation {
         // NPatch (NPExt item 75, #2962): a wave that decays (a target switch
         // or a range end) must not leave its held victim aloft with no beam.
         let held_by_this_wave = rules
-            .npatch()
+            .npatch_fixes()
             .then(|| {
                 let wave = self.waves.get(id)?;
                 let owner = wave.owner_id()?;

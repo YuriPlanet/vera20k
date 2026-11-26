@@ -29,14 +29,14 @@ impl RuleSet {
         if self.ares {
             self.ares_global_controls.type_select_use_deploy()
         } else {
-            !self.npatch()
+            !self.npatch_fixes()
         }
     }
 
     /// `[General] PrismSupportModifier=`, the percent each supporter adds:
     /// native's compounded value, or NPATCH's retained one (issue #2928).
     pub fn prism_support_modifier(&self) -> i32 {
-        if self.npatch() {
+        if self.npatch_fixes() {
             self.general.prism_support.npatch_modifier
         } else {
             self.general.prism_support.modifier

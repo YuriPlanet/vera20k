@@ -151,7 +151,7 @@ impl HudFacts {
                     )
                     .map(|weapon| weapon.range_leptons),
                     rules.ares(),
-                    rules.npatch(),
+                    rules.npatch_fixes(),
                 )
             }),
             foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
@@ -189,7 +189,7 @@ impl HudFacts {
                 }),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
-            } else if rules.npatch() && entity.passenger_role().cargo().is_some() {
+            } else if rules.npatch_fixes() && entity.passenger_role().cargo().is_some() {
                 sim.selected_capture_link_coordinates(id, rules)
             } else {
                 Vec::new()

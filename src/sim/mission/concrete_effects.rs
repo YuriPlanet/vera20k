@@ -365,7 +365,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             requested,
             stored,
             self.rules.ares_form(),
-            self.rules.npatch(),
+            self.rules.npatch_fixes(),
         ) {
             sim.assign_target_fire_teardown(
                 prepared.receiver,

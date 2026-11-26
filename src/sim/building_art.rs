@@ -455,7 +455,7 @@ impl Simulation {
         // that fill skips a MultiplayPassive owner, and the capture's
         // Grand_Opening re-run (Building 0x00448CEF) fills the slots the skip
         // left empty once a non-passive house takes it; filled slots stay.
-        let fill_opening_slots = if rules.npatch() && object.needs_engineer {
+        let fill_opening_slots = if rules.npatch_fixes() && object.needs_engineer {
             !owner_passive && (first_opening || captured && opening_slots_empty)
         } else {
             first_opening

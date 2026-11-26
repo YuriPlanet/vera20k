@@ -330,7 +330,7 @@ pub(super) fn handle_control_group_command(
         // drop the bare Super pointer, so its reference ring does not stay
         // attached after an ordinary team key.
         if crate::app::state::active_rules(frontend, match_state)
-            .is_some_and(|rules| rules.npatch())
+            .is_some_and(|rules| rules.npatch_fixes())
             && match_state.input.armed_super_weapon_type().is_some()
         {
             match_state.input.targeting_mode = None;

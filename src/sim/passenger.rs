@@ -1151,7 +1151,7 @@ pub fn can_dock_occupier_garrison(
         // let drop to red could never re-enter it. Under NPatch the
         // building's own house is exempt; every other house keeps the
         // refusal.
-        if red_health && !(rules.npatch() && same_owner) {
+        if red_health && !(rules.npatch_fixes() && same_owner) {
             return false;
         }
         // `0x00457D98`: `TechnoClass::IsMindControlled`.

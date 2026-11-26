@@ -985,7 +985,7 @@ impl Simulation {
         // (`0x0044404D`) and only Find_Docking_Bay or PointerExpired clears,
         // so it covers any padded aircraft not in the air, parked or taking
         // off too; an aircraft in the air already loses the target below.
-        if context.rules().npatch()
+        if context.rules().npatch_fixes()
             && let Some(entity) = entity
             && entity.category() == crate::map::entities::EntityCategory::Aircraft
             && (entity.death.is_dying() || entity.ammo().is_some_and(|ammo| ammo.dock().is_some()))

@@ -1331,7 +1331,7 @@ impl Simulation {
         // everyone's current attack target. Native only resets the captured
         // object's own orders, so a Tanya or Boris keeps walking its stale
         // Target into a building its house now owns.
-        if rules.npatch() {
+        if rules.npatch_fixes() {
             let attackers: Vec<u64> = self
                 .live_object_order_snapshot()
                 .into_iter()

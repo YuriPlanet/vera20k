@@ -57,7 +57,7 @@ fn ares_radial_indicator_radius_answers_the_sensor_range() {
         rules
             .object(name)
             .unwrap()
-            .building_sensor_range(true, Some(0x800), rules.ares(), rules.npatch())
+            .building_sensor_range(true, Some(0x800), rules.ares(), rules.npatch_fixes())
     };
     assert_eq!(range("GAP"), 3);
     assert_eq!(range("PSY"), 9);
