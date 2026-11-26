@@ -5,7 +5,7 @@ use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
 use crate::app::input::state::MatchInputState;
@@ -218,6 +218,16 @@ fn game_installation_label(game_files: Option<&std::path::Path>) -> String {
             }
         },
     )
+}
+
+/// What an input handler or poll asks its entry point to run, at the point it
+/// returned ([`App::apply_step`]).
+#[must_use = "a step runs only when App::apply_step applies it"]
+pub(crate) enum ClientStep {
+    /// `leave_shell_dialog(kind, then)`: slide out, run `then` when the slide ends.
+    Leave(ShellSlideKind, ShellExitThen),
+    /// A route change or rebuild step that runs at once.
+    Now(ShellExitThen),
 }
 
 impl App {
@@ -1536,7 +1546,17 @@ impl App {
                     Self::leave_shell_dialog(
                         state,
                         ShellSlideKind::MoviesAndCredits,
-                        move |state| App::handle_movies_credits_action(state, action),
+                        move |state| {
+                            let step = App::handle_movies_credits_action(
+                                &state.renderer.gpu,
+                                &mut state.frontend,
+                                &state.persistence.options_profile,
+                                action,
+                            );
+                            if let Some(step) = step {
+                                App::apply_step(state, step);
+                            }
+                        },
                     );
                 }
             }
@@ -1895,6 +1915,18 @@ impl App {
         then: impl FnOnce(&mut AppState) + 'static,
     ) {
         Self::begin_leaving_shell_dialog(state, kind, false, Box::new(then));
+    }
+
+    /// Run the step a handler returned, where it returned: a leave begins as
+    /// [`Self::leave_shell_dialog`] begins it, and a route change or rebuild
+    /// step runs at once.
+    pub(super) fn apply_step(state: &mut AppState, step: ClientStep) {
+        match step {
+            ClientStep::Leave(kind, then) => {
+                Self::begin_leaving_shell_dialog(state, kind, false, then)
+            }
+            ClientStep::Now(then) => then(state),
+        }
     }
 
     /// Leave network setup `dialog` for the agreed start: the only result the

@@ -1593,7 +1593,15 @@ impl App {
                 )?;
             }
             _ if screen_page == ScreenPage::FullscreenMovie => {
-                Self::advance_fullscreen_movie(state)?;
+                let step = Self::advance_fullscreen_movie(
+                    &state.renderer.gpu,
+                    &mut state.frontend.fullscreen_movie,
+                    &mut state.audio,
+                    &state.persistence.options_profile,
+                );
+                if let Some(step) = step {
+                    Self::apply_step(state, step);
+                }
                 if state.frontend.fullscreen_movie.is_some() {
                     crate::app::frontend::movies_credits_render::render_fullscreen_movie(
                         &state.renderer,
@@ -1613,7 +1621,16 @@ impl App {
                 }
             }
             _ if screen_page == ScreenPage::CreditsRoll => {
-                Self::advance_credits_roll(state);
+                let step = Self::advance_credits_roll(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence.options_profile,
+                );
+                if let Some(step) = step {
+                    Self::apply_step(state, step);
+                }
                 if state.frontend.credits_roll.is_some() {
                     crate::app::frontend::movies_credits_render::render_credits_roll(
                         state.platform.window_active,
