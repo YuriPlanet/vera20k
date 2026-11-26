@@ -1,0 +1,74 @@
+name: Windows PGO render probe
+on:
+  push:
+    branches: [feature/release-windows-render-probe]
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: windows-latest
+    timeout-minutes: 55
+    env:
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
+      VERA20K_LANGUAGE_FOLDER: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          cache-targets: false
+          save-if: false
+      - run: .github/release/windows/fetch-dxc.ps1 -Package dist
+      - name: Fetch retail data
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: python -m tools.ci_retail_data
+      - name: Build the instrumented game
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $raw = New-Item -Path "$env:RUNNER_TEMP\render-raw" -ItemType Directory
+          $env:CARGO_ENCODED_RUSTFLAGS = ('-C', 'target-feature=+crt-static', "-Cprofile-generate=$($raw.FullName)") -join [char]31
+          cargo build --locked --profile fast --target x86_64-pc-windows-msvc --no-default-features -p vera20k --bin vera20k
+          if ($LASTEXITCODE -ne 0) { throw "Instrumented build failed ($LASTEXITCODE)" }
+          Copy-Item 'dist/dxcompiler.dll' 'target/x86_64-pc-windows-msvc/fast/'
+      - name: Render the release training skirmish
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:LLVM_PROFILE_FILE = "$env:RUNNER_TEMP\render-raw\%m-%p.profraw"
+          @'
+          import os
+          from pathlib import Path
+          import tempfile
+          from tools import pgo_train, scale_bench_client
+
+          exe = Path('target/x86_64-pc-windows-msvc/fast/vera20k.exe').resolve(strict=True)
+          retail = Path(os.environ['RA2_DIR'])
+          map_path = next(path for path in retail.iterdir() if path.name.lower() == pgo_train.MAP.lower())
+          raw = Path(os.environ['LLVM_PROFILE_FILE']).parent
+          with tempfile.TemporaryDirectory(prefix='pgo-render-probe-') as temp:
+              folder = scale_bench_client.launch_folder(Path(temp) / 'client', map_path,
+                                                       computers=pgo_train.COMPUTERS, seed=pgo_train.SEED)
+              before = set(raw.glob('*.profraw'))
+              try:
+                  cost = scale_bench_client.client_run(exe, folder, (1, pgo_train.CLIENT_TICKS), timeout=600)
+              finally:
+                  logs = folder / 'logs' / 'ra2.log'
+                  if logs.exists():
+                      lines = logs.read_text(errors='replace').splitlines()
+                      markers = ('Graphics adapters offered:', 'Using GPU adapter:', 'software renderer',
+                                 'DirectX 12 shaders', 'SHP loading upload', 'External launch result:')
+                      print('\n'.join(line for line in lines if any(marker in line for marker in markers)))
+                      print('\n'.join(lines[-18:]))
+              assert cost['pictures'] > 0 and cost['last_frame'] >= pgo_train.CLIENT_TICKS
+              pgo_train.require_profile(raw, before, 'rendered skirmish')
+              print(f'Rendered {cost["pictures"]} pictures through frame {cost["last_frame"]}')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Rendered skirmish failed ($LASTEXITCODE)" }
