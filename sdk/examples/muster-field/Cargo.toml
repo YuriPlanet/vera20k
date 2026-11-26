@@ -11,7 +11,6 @@ path = "src/lib.rs"
 
 [dependencies]
 vera20k-sdk = { path = "../../rust/vera20k-sdk" }
-muster-field-data = { path = "data" }
 
 [profile.release]
 opt-level = "s"
@@ -20,4 +19,3 @@ panic = "abort"
 strip = true
 
 [workspace]
-members = ["data", "ui"]

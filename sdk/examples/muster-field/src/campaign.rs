@@ -2,10 +2,9 @@
 
 use crate::battle::{self, Report};
 use crate::state::{BANNERS, Num, PICKS, WAVE};
-use crate::text::{Line, Say};
+use crate::text::Line;
 use crate::waves::{self, WAVES};
 use crate::{perks, world};
-use muster_field_data::proto::Last;
 
 const PURSE: i64 = 1600;
 const START_BANNERS: i64 = 3;
@@ -21,8 +20,6 @@ static RESULT: Num = Num::new(NOTHING);
 static KILLS: Num = Num::new(0);
 static PAID: Num = Num::new(0);
 static SUPPLY: Num = Num::new(0);
-/// The last battle as `proto::Last` packs it; unlike [`RESULT`] it stays.
-static LAST: Num = Num::new(0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Next {
@@ -37,7 +34,6 @@ pub fn begin() {
     BANNERS.set(START_BANNERS);
     PICKS.set(0);
     RESULT.set(NOTHING);
-    LAST.set(0);
     let change = (PURSE - world::credits()).clamp(i64::from(i32::MIN), i64::from(i32::MAX));
     let _ = world::pay(change as i32);
 }
@@ -77,15 +73,6 @@ pub fn settle(report: &Report) -> Next {
         }
         Next::Muster
     };
-    LAST.set(
-        Last {
-            result: if report.won { 1 } else { 2 },
-            supply: SUPPLY.get() == 1,
-            kills,
-            paid,
-        }
-        .pack(),
-    );
     if next != Next::Muster {
         outcome(Line::new()).log();
         RESULT.set(NOTHING);
@@ -132,9 +119,4 @@ pub fn announce() {
         .num(BANNERS.get())
         .log();
     RESULT.set(NOTHING);
-}
-
-/// The last battle, packed, for the interface.
-pub fn last() -> i64 {
-    LAST.get()
 }

@@ -1,9 +1,6 @@
-//! The raw `vera:sim@1.0` and `vera:client@1.0` imports and fixed layouts
-//! (RFC 0001 appendix, "Fixed layouts", 1.1 and 2.1). Every import returns
-//! its status and writes a value through a trailing out pointer; `frame` and
-//! `client_frame` alone return their value. A simulation module calls only
-//! the first block, a client module only the second: the engine refuses a
-//! module importing the other world's functions.
+//! The raw `vera:sim@1.0` imports and fixed layouts (RFC 0001 appendix,
+//! "Fixed layouts" and 1.1). Every import returns its status and writes a
+//! value through a trailing out pointer; `frame` alone returns its value.
 //!
 //! A module imports only what it calls: the linker drops unused imports, so
 //! declaring all of them here costs nothing.
@@ -79,85 +76,6 @@ unsafe extern "C" {
         key: i32,
         out: *mut i32,
     ) -> i32;
-}
-
-#[link(wasm_import_module = "vera:client@1.0")]
-unsafe extern "C" {
-    pub fn client_frame() -> i32;
-    pub fn client_random(lo: i32, hi: i32, out: *mut i32) -> i32;
-    pub fn client_log(ptr: *const u8, len: i32);
-    pub fn client_has_kind(table: i32, id: i32) -> i32;
-    pub fn client_lookup(kind: i32, ptr: *const u8, len: i32, out: *mut i32) -> i32;
-    pub fn client_name_of(kind: i32, id: i32, out: *mut u8, cap: i32, len_out: *mut i32) -> i32;
-    pub fn client_get(reference: i64, prop: i32, out: *mut i64) -> i32;
-    pub fn client_get_many(
-        refs: *const i64,
-        n: i32,
-        props: *const i32,
-        m: i32,
-        out: *mut i64,
-        count_out: *mut i32,
-    ) -> i32;
-    pub fn client_find(
-        query: *const u8,
-        len: i32,
-        out: *mut i64,
-        cap: i32,
-        res: *mut FindResult,
-    ) -> i32;
-    pub fn client_var_get(scope: i64, var: i32, out: *mut i64) -> i32;
-    pub fn client_set(reference: i64, prop: i32, value: i64) -> i32;
-    pub fn client_set_bytes(reference: i64, prop: i32, ptr: *const u8, len: i32) -> i32;
-    pub fn client_node_create(
-        kind: i32,
-        parent: i64,
-        props: *const PropValue,
-        len: i32,
-        out: *mut i64,
-    ) -> i32;
-    pub fn client_node_remove(node: i64) -> i32;
-    pub fn client_node_find(ptr: *const u8, len: i32, out: *mut i64) -> i32;
-    pub fn client_action(kind: i32, target: i64, params: *const ActionParams, len: i32) -> i32;
-    pub fn client_send_order(ptr: *const u8, len: i32) -> i32;
-    pub fn client_send_message(ptr: *const u8, len: i32) -> i32;
-    pub fn client_storage_read(
-        key: *const u8,
-        key_len: i32,
-        out: *mut u8,
-        cap: i32,
-        len_out: *mut i32,
-    ) -> i32;
-    pub fn client_storage_write(
-        key: *const u8,
-        key_len: i32,
-        data: *const u8,
-        data_len: i32,
-    ) -> i32;
-}
-
-/// `ClientEventRecord`, 32 bytes, read in place in `client_on_events`.
-#[repr(C)]
-#[derive(Clone, Copy, Default, Debug)]
-pub struct ClientEventRecord {
-    pub kind: i32,
-    /// `Notify`: the sending module's source, 0 mod, 1 map.
-    pub source: i32,
-    pub reference: i64,
-    pub id: i32,
-    pub value: i32,
-    /// `Notify`: its bytes; `SimEvent`: one `EventRecord`; both in the
-    /// delivery area.
-    pub data: i32,
-    pub data_len: i32,
-}
-
-/// `PropValue`, 16 bytes: an initial property of `client_node_create`.
-#[repr(C)]
-#[derive(Clone, Copy, Default, Debug)]
-pub struct PropValue {
-    pub prop: i32,
-    pub reserved: i32,
-    pub value: i64,
 }
 
 /// `ActionParams`, 72 bytes.
@@ -398,9 +316,6 @@ const _: () = {
     assert!(size_of::<ActionDef>() == 80);
     assert!(size_of::<EventRecord>() == 120);
     assert!(size_of::<DecideRecord>() == 160);
-    assert!(size_of::<ClientEventRecord>() == 32);
-    assert!(core::mem::offset_of!(ClientEventRecord, data) == 24);
-    assert!(size_of::<PropValue>() == 16);
     // The offsets the engine writes (RFC 0001 appendix, fixed layouts).
     assert!(core::mem::offset_of!(EventRecord, args) == 108);
     assert!(core::mem::offset_of!(EventRecord, target) == 112);
