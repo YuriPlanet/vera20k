@@ -76,9 +76,13 @@ def train(game: Path, bench: Path, retail: Path, work: Path, raw: Path) -> list[
         reason = json.loads(result.read_bytes()).get('reason') if result.is_file() else None
         if not (sys.platform == 'darwin' and reason and 'No suitable GPU adapter found' in reason):
             # The temporary launch folder goes away even on a failed CI job.
-            log = folder / 'logs' / 'ra2.log'
-            detail = '\n'.join(log.read_text(errors='replace').splitlines()[-10:]) if log.is_file() else ''
-            raise RuntimeError(f'{error}\n{detail}') from error
+            details = []
+            for log in (folder / 'stdout.log', folder / 'logs' / 'ra2.log'):
+                if log.is_file():
+                    # The panic headline precedes the backtrace.
+                    lines = log.read_text(errors='replace').splitlines()
+                    details.append(f'{log.name}\n' + '\n'.join(lines[-100:]))
+            raise RuntimeError('\n'.join([str(error), *details])) from error
         for path in set(raw.glob('*.profraw')) - start:
             path.unlink()
         reports.append('Rendered match unavailable: macOS reported no suitable GPU adapter.')
