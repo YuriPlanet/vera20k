@@ -799,7 +799,11 @@ pub(crate) fn render_multiplayer_setup(
     // lobby's.
     #[cfg(target_os = "android")]
     if !leaving && !view.dialog.wol() {
-        let rect = super::room_chat_send_rect(layout.chat, layout.chat_log, layout.page.scale);
+        let rect = crate::ui::shell::geom::room_chat_send_rect(
+            layout.chat,
+            layout.chat_log,
+            layout.page.scale,
+        );
         super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(

@@ -173,8 +173,7 @@ mod receiver {
                 .is_some()
         };
         !object.invisible_in_game
-            && ((object.powered
-                && crate::sim::power_system::native_building_power_drain(object.power) > 0)
+            && ((object.powered && object.power_drain() > 0)
                 || object.radar
                 || super_weapon(object.super_weapon.as_deref())
                 || super_weapon(object.super_weapon2.as_deref())

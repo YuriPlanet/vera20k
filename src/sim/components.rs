@@ -637,8 +637,8 @@ impl FootSpeedState {
         self.limpeted
     }
 
-    pub(crate) fn set_limpeted(&mut self, limpeted: bool) {
-        self.limpeted = limpeted;
+    pub(crate) fn sync_limpets(&mut self, limpets: &crate::sim::limpet::Limpets) {
+        self.limpeted = limpets.is_attached();
     }
 
     /// Fixed projection for diagnostics and fixed-input fixture adapters.
