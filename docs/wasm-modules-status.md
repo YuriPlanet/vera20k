@@ -6,11 +6,10 @@ content as work lands; do not append a diary.
 
 ## Where the work is
 
-- Repository: `YuriPlanet/vera20k`. Phase 1 is on `main` (#5183); the control
-  points below (phase 2a) follow it (#5245). The client modules (phase 2,
-  `ui.wasm`) are in #5251.
-- Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
-  The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
+- Repository: `YuriPlanet/vera20k`. Phase 1 (#5183), the control points (phase 2a,
+  #5245) and the client modules (phase 2, `ui.wasm`, #5251) are all on `main`.
+- Scope: RFC phase 1 (`rules.wasm`), then phase 2 (`ui.wasm`), then phase 3. The Rust
+  SDK is the one to validate with; a TypeScript SDK is being written.
 - Feedback: the RFC draft PR
   [YuriPlanet/vera20k#4653](https://github.com/YuriPlanet/vera20k/pull/4653) carries
   two comments asking for review: the modding tutorial and the four playtest mods.
@@ -40,8 +39,9 @@ content as work lands; do not append a diary.
 | Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
 | Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
 | INI registration (RFC 0001 section 6h): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
-| Modder guide | `docs/wasm-modules.md` |
-| Tutorials (Chinese) | `docs/wasm-modules-tutorial.zh-CN.md` (Rust, builds and checks); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript, written ahead of the SDK from RFC 5a and appendix 3 to review the planned API; nothing in it is compiled) |
+| Modder guide | `docs/wasm-modules.md` (`.zh-CN.md` beside each English page) |
+| Tutorials | `docs/wasm-modules-tutorial.md` (Rust simulation module), `docs/wasm-modules-ui-tutorial.md` (Rust client module); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript) |
+| Rust SDK reference | `docs/wasm-modules-sdk.md` |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
@@ -564,7 +564,7 @@ left is listed under residuals. Small follow-ups found by the playtest mods:
   builds; a module cannot tell up front (raised on the RFC PR).
 
 Before version 1 (RFC "Process"): the TypeScript SDK
-(deferred by the maintainer), phase 3 (a real mission with
+(in progress), phase 3 (a real mission with
 modules, external modders, freeze), and the later items (peer calls,
 `TargetChanged`'s decision form, `MissionChanged`).
 
@@ -654,7 +654,7 @@ modules, external modders, freeze), and the later items (peer calls,
 
 ## Done (phase 2: client modules, RFC 0.0.24)
 
-PR #5251 (on the control points, #5245). A mod's and a
+PR #5251 (merged). A mod's and a
 map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
 
 - Sandbox: `wasm-ext/src/client.rs` (`ClientHost`, `ClientEvent`, records, kinds),
@@ -702,7 +702,9 @@ map's `ui.wasm` run under `vera:client@1.0` on the presentation side.
   `rules.wasm` received both messages (each credits its sender), each player got
   only its own `Pong`, no desync.
 
-Not yet: a look at the drawn module nodes in a real client; the lobby hint for
+Not yet: `asset` verbs for client modules (`wasm-embed` writes only
+`[VeraWasmRulesPack]`, `wasm-check` loads only `vera:sim` modules, so a map's
+`[VeraWasmUIPack]` has no tool); a look at the drawn module nodes in a real client; the lobby hint for
 `MapUI=no` and the room switch "allow automation"; `Decoration`, `MapMarker`,
 `ItemProgress` (`later`). Choices to review: one `ItemTooltips` value per grid (the
 last writer wins); a module's `Art` on a `veraui.ini` part shows only pictures that

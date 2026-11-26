@@ -1,11 +1,14 @@
 # Wasm 模块 Mod 开发教程
 
+[English](wasm-modules-tutorial.md) | [简体中文](wasm-modules-tutorial.zh-CN.md)
+
 这份教程带你从零开始，用 Rust 给 VERA20K 写一个 Wasm 模块，并放进游戏里试玩。读完后你会做出一个“击杀悬赏”mod：谁打死美国大兵或动员兵，谁就拿 200 块赏金。
 
 - 写给谁：会改 `rulesmd.ini`、想做 INI 做不到的玩法的 modder。用过一点编程语言就够了，Rust 只用到最基础的部分。
-- 参考资料：功能清单见[模块指南](wasm-modules.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.md)。
+- 参考资料：模块放在哪、有哪些限制见[模块指南](wasm-modules.zh-CN.md)；SDK 的每个函数见 [Rust SDK 参考](wasm-modules-sdk.zh-CN.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)。
+- 想做界面（按钮、面板）？先读完这份，再看[客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)。
 - 预览版提醒：接口还在 `0.x` 预览阶段，名字和编号在正式版前可能会变。游戏会在模块需要更新的接口时直接告诉你。
-- 想用 TypeScript？见 [TypeScript 版教程](wasm-modules-tutorial-ts.zh-CN.md)（SDK 尚未实现，教程用于提前评审 API）。
+- 想用 TypeScript？TypeScript SDK 正在编写中，见 [TypeScript 版教程](wasm-modules-tutorial-ts.zh-CN.md)。
 
 ## 目录
 
@@ -22,7 +25,7 @@
 
 ## 1. 模块是什么
 
-模块是一个编译好的 WebAssembly 文件，游戏里叫 `rules.wasm`。它和对局一起运行，每个玩家的机器上都跑同一份，所以联机也不会不同步。
+模块是一个编译好的 WebAssembly 文件。这份教程做的是**模拟模块**，游戏里叫 `rules.wasm`：它和对局一起运行，每个玩家的机器上都跑同一份，所以联机也不会不同步。（另一种是**客户端模块** `ui.wasm`，只在本机运行、负责界面，见[客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)。）
 
 模块能做的事：
 
@@ -258,7 +261,10 @@ vera20k_sdk::on_frame!(f);              // 每帧运行
 vera20k_sdk::on_frame!(every = 15, f);  // 每 15 帧（1 秒）运行一次
 vera20k_sdk::on_events!(KEY => f);      // 处理触发器投递的事件
 vera20k_sdk::on_decide!(KEY => f);      // 处理可决定事件
+vera20k_sdk::on_message!(f);            // 处理客户端模块发来的消息
 ```
+
+每个宏在一个模块里最多用一次。
 
 ### 名字和引用
 
@@ -279,7 +285,7 @@ let hp = unit.health()?;                          // 常用属性有快捷函数
 let owner = unit.owner()?;
 ```
 
-全部属性见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.md#7-properties)。一次要读很多对象的属性时用 `get_many`，比逐个读快。
+全部属性见[附录第 7 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#7-属性)。一次要读很多对象的属性时用 `get_many`，比逐个读快。
 
 ### 搜索
 
@@ -292,7 +298,7 @@ let mut page = [0i64; 16];
 let (count, next) = Find::houses().where_prop(Prop::IsHuman, Op::Eq, 1).page(&mut page, 0)?;
 ```
 
-搜索还可以用 `near(cell, 半径)` 和 `within(cell, 宽, 高)` 限定范围。结果按创建顺序排列，`next` 不为 0 时说明还有下一页。
+搜索还可以用 `near(cell, 半径)`（半径单位是 lepton，256 lepton 为一格）和 `within(cell, 宽, 高)` 限定范围。结果按创建顺序排列，`next` 不为 0 时说明还有下一页（哪怕这一页没装满，甚至是空的）。一个 `Find` 最多带 8 个筛选条件。
 
 ### 动作
 
@@ -305,7 +311,7 @@ let tank = Action::create_object(cell, rhino, house)?;  // 在地格上造一个
 unit.set_mission(Mission::Hunt)?;                   // 改任务
 ```
 
-原子动作和原版触发器动作的完整列表见[附录第 5 节](rfcs/0001-wasm-extension-modules-api.md#5-action-kinds)。
+原子动作和原版触发器动作的完整列表见[附录第 5 节](rfcs/0001-wasm-extension-modules-api.zh-CN.md#5-动作种类)。
 
 ### 修饰器（临时改属性倍率）
 
@@ -315,7 +321,7 @@ let boost = Modifier::multiply(unit, Prop::FirepowerMultiplier, fixed(2.0), 150)
 boost.remove()?;   // 提前移除
 ```
 
-可用的倍率有攻击力、护甲、速度、射速、射程、暴击，还有不死、隐形、禁用武器等。它们和 Phobos 的 AttachEffect 叠加，没有修饰器时行为和原版完全一致。
+可用的有攻击力、护甲、速度、射速、射程倍率和射程加成，还有可隐形、强制显形、禁用武器；转向速度（`ROTMultiplier`）和免疫（`ImmunityFlags`）是 `preview`；暴击和不死只在带 Phobos 的版本里生效。它们和 Phobos 的 AttachEffect 叠加，没有修饰器时行为和原版完全一致。
 
 ### 变量
 
@@ -356,7 +362,9 @@ vera20k_sdk::on_scenario_start!(start);
 vera20k_sdk::on_decide!(HALVE => halve);
 ```
 
-目前可以决定的有：受到的伤害、能否建造某类型、能否排进生产队列、所属方是否判负、是否接受玩家命令。决定函数里**只能读、不能写**，在里面执行动作或写属性会让模块被停用。
+可以决定的有：受到的伤害、能否建造某类型、能否排进生产队列、所属方是否判负、是否接受玩家命令，以及开火、反击、目的地、碾压、采哪一格矿、能否展开、闲置时的任务、移动和寻路等（后面这些多数是 `preview`），完整列表见 [SDK 参考](wasm-modules-sdk.zh-CN.md)。决定函数里**只能读、不能写**（`log` 可以用），在里面执行动作、写属性或变量会让模块被停用。
+
+一个模块同时用 `on_events!` 和 `on_decide!` 时，后写的那个要加 `shared_delivery:`，例如 `vera20k_sdk::on_decide!(shared_delivery: HALVE => halve);`，因为两个宏都会声明投递区，而一个模块只能有一个。
 
 ### 给单位下任务、给电脑方下指令
 
@@ -365,7 +373,7 @@ let units = [tank];
 computer_house.order(&Order::move_to(&units, Cell::at(60, 40)))?;
 ```
 
-`House::order` 只能下给电脑方，在下一帧执行，和玩家点鼠标下的命令走同一套校验。
+`House::order` 只能下给电脑方，在下一帧执行，和玩家点鼠标下的命令走同一套校验。一条指令最多带 64 个单位。
 
 要指挥**任何一方**的单位，包括玩家自己的，用任务：它以单位所属一方的名义执行，就像那一方的玩家点了鼠标。
 
@@ -421,7 +429,7 @@ Repeat=OneTimeOr
 | `Difficulty` | `Easy`、`Normal`、`Hard`，逗号分隔 |
 | `Repeat` | `OneTimeOr`（默认）、`OneTimeAnd`、`Repeating` |
 
-写错时，对局不会开始，提示会指出是哪个段的哪个键出了问题。完整语法见[模块指南](wasm-modules.md#triggers-in-ini)。
+写错时，对局不会开始，提示会指出是哪个段的哪个键出了问题。完整语法见[模块指南](wasm-modules.zh-CN.md)。
 
 地图不能用 `Wasm.Tags` 绑定类型，地图里写了会被忽略，开局时会有提示。地图的模块要在代码里绑定。
 
@@ -437,6 +445,8 @@ asset wasm-extract 新地图.map 取出来的.wasm         # 把模块取出来
 
 `wasm-embed` 会自动写好 `[VeraWasm] Api=` 和 `RulesSize=`。还建议在地图的 `[Basic]` 里加上 `VeraMinVersion=`，写你制作时用的 VERA20K 版本。这样旧版本的游戏会明确拒绝这张地图，而不是悄悄地在没有模块的情况下开局。
 
+`wasm-embed` 只写模拟模块（`rules.wasm`）。地图的客户端模块（`ui.wasm`）目前还没有工具能嵌进去，暂时请放在 mod 里。
+
 把新地图放进 VERA20K 文件夹下的 `Maps` 里，就能在地图列表里选到它。
 
 mod 可以控制地图模块，在 mod 自己的 `rulesmd.ini` 里设置：
@@ -444,7 +454,7 @@ mod 可以控制地图模块，在 mod 自己的 `rulesmd.ini` 里设置：
 ```ini
 [VeraWasm]
 MapWasm=no        ; 不允许带模块的地图在这个 mod 下开局
-MapBudget=50000   ; 地图模块每帧可用的运算量
+MapBudget=100000  ; 地图模块每帧可用的运算量（默认 100000，最多 500000）
 ```
 
 ## 9. 调试与排错
@@ -462,7 +472,7 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
 | --- | --- | --- |
 | `exceeded its operation budget` | 一帧内运算太多，超出预算 | 把工作分摊到多帧（`every = N`），用 `get_many` 批量读 |
 | `trapped: …` | 代码崩溃了（数组越界、`panic!`、`unwrap` 失败） | 用 `if let` / `match` 处理 `Err` |
-| `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对，后面会写具体原因 | 对照附录检查参数 |
+| `made an invalid call: …` | 接口用错了，比如参数超范围、变量作用域不对、在决定函数里写东西，后面会写具体原因 | 对照 [SDK 参考](wasm-modules-sdk.zh-CN.md)检查参数 |
 | `cannot keep up: … event records are waiting` | 事件积压太多，处理不过来 | 减少绑定范围，或加筛选条件 `where_prop` |
 
 **`wasm-check` 不通过**
@@ -476,7 +486,7 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
 
 **对局开不起来**
 
-一般是 INI 触发器写错了，或者地图要求的版本比游戏新。看开局时的提示，它会写明是哪个段、哪个键。
+一般是 INI 触发器写错了、`[VeraWasm]` 里的预算低于 20,000、地图要求的版本比游戏新，或者 mod 设了 `MapWasm=no` 却选了带模块的地图。看开局时的提示，它会写明是哪个段、哪个键。
 
 ## 10. 规则与限制
 
@@ -494,11 +504,11 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
 | --- | --- |
 | 模块大小 | 8 MiB |
 | 内存 | mod 模块 32 MiB，地图模块 16 MiB |
-| 每帧运算量 | 默认也是最多 200,000；mod 可以在 `[VeraWasm]` 里调低 |
+| 每次调用的运算量（预算） | mod 模块默认也是最多 500,000，地图模块默认 100,000；mod 可以在 `[VeraWasm]` 里用 `Budget`、`MapBudget` 调整（最少 20,000，最多 500,000） |
 | 启动调用（`init`、`on_rules`、`on_scenario_start`） | 每次 5,000,000 |
 | 每个模块的触发器 | 256 个 |
-| 每次搜索的筛选条件 | 16 个 |
-| 每帧给电脑方的指令 | 64 条 |
+| 每次搜索的筛选条件 | 引擎 16 个，Rust SDK 的 `Find` 8 个 |
+| 每帧给电脑方的指令 | 256 条，共 4,096 个单位；每条最多 64 个单位 |
 
 **存档**
 
@@ -512,8 +522,10 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
 
 ## 参考
 
-- [模块指南（英文）](wasm-modules.md)：功能总览和 INI 语法
-- [RFC 0001](rfcs/0001-wasm-extension-modules.md)：设计说明，[附录](rfcs/0001-wasm-extension-modules-api.md)：全部接口、事件、动作、属性
+- [模块指南](wasm-modules.zh-CN.md)：模块放在哪、INI 语法、限制和排错
+- [Rust SDK 参考](wasm-modules-sdk.zh-CN.md)：SDK 的每个函数、事件、动作
+- [客户端模块教程](wasm-modules-ui-tutorial.zh-CN.md)：做一个界面按钮（`ui.wasm`）
+- [RFC 0001](rfcs/0001-wasm-extension-modules.zh-CN.md)：设计说明，[附录](rfcs/0001-wasm-extension-modules-api.zh-CN.md)：全部接口、事件、动作、属性
 - [开发进度](wasm-modules-status.md)：当前版本实现了哪些、还缺什么
 - 示例模块（`sdk/examples/`）：
 
@@ -531,3 +543,8 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
   | `siege-doctrine` | 试玩 mod：加载时改规则，四种可决定事件（生产、排队、命令、判负） |
   | `meteor-storm` | 试玩 mod：地格搜索与属性、计时触发器、弹头与动画、随机数、任务倒计时 |
   | `trigger-lab` | 试玩 mod：出生、开火、载员事件，四种轮询，即时动作、一次性、启用/禁用触发器、批量读 |
+  | `ini-shield`、`ini-aura`、`ini-counter`、`ini-academy` | 只用 INI 配置的 mod：模块注册 INI 名字 |
+  | `ai-takeover` | 接管电脑所属方，用指令来玩 |
+  | `control-bench` | 基准 mod：几乎覆盖所有模拟控制点 |
+  | `ui-ping`、`ui-reinforcements` | 客户端模块和模拟模块配合：消息、通知、变量 |
+  | `muster-field` | 一个小型自走棋战役，带完整界面 |
