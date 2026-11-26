@@ -156,11 +156,13 @@ storage with the world the simulation thread ticks:
   the other state only gameplay reads. Its fog is only the local player's
   (`FogState::presentation_copy`), whose shroud knowledge, like its terrain,
   overlays, smudges, terrain objects, interner and occupation grids, is the
-  previous copy brought up to date by copying only the chunks a write
-  changed (`util::synced`); the clone of the rest and the fog copy run at
-  once beside those syncs. Its Dummy cell, ally graph and Main RNG are its
-  own. Release builds take it when a tick is lent; debug builds with
-  every frame, so every test draw reads a lent tick's view.
+  previous copy brought up to date. The occupation grids track changes one
+  dense cell at a time and reuse the destination's occupant lists.
+  The House array, the substrate stores, the
+  clone of the rest and the fog copy run at once beside those syncs. Its
+  Dummy cell, ally graph and Main RNG are its own. Release builds take it when
+  a tick is lent; debug builds with every frame, so every test draw reads a
+  lent tick's view.
 
 The app's Main RNG is its own cell from a scenario's install on
 (`Simulation::install_fresh_process_main`); the simulation draws its own
@@ -198,8 +200,9 @@ What the snapshot costs the main thread:
   the tick files them.
 - A retired frame's object records and draw caches are freed on the pool
   (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
-- The world copy's syncs, the local player's fog and the Anim store's clone
-  run on the pool beside the clone of its other parts.
+- The world copy's cell-at-a-time syncs, the local player's fog, the Anim
+  store, the House array and the substrate stores it carries run on the pool
+  beside the clone of its small rest.
 - The first world copy is a whole one; desktop takes it when a scenario is
   installed (`SimHost::install`), so the first lent tick only syncs it.
 
@@ -413,18 +416,21 @@ separate Main RNG generators.
 
 Not done:
 
-- **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. Measured
-  in a release build on sim-bench's 20,000-unit, 30-house march, on a
-  12-core machine other builds kept at a load of 30–40, the main thread's
-  part per lent tick: capturing the frame 5.0–5.6 ms (records and scene
-  frame side by side), syncing the world copy 3.5–3.8 ms, freeing the old
-  frame 0 ms (1.6–1.9 ms of pool work), 8.5–9.4 ms in all. The code before
-  these changes, run beside it: 9.3–10.6 + 2.7–3.0 ms capture, 6.4–7.4 ms
-  copy, 3.4–3.5 ms freeing, 21.8–24.5 ms in all. A record is 1,104 bytes.
-  The records are bound by reading 20,000 objects scattered in memory: each
-  touches several cache lines of its `GameEntity`. Left: answer placement,
-  lighting and the status strip only for objects near the screen (radar
-  facts stay for every object).
+- **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. The world
+  copy now takes 1.6 ms per lent tick, under that for its part: measured in
+  shipping `sim-bench` on the 20,000-unit, 30-house battle map (`--scenario
+  battle --map battle30.map --ticks 600 --threads 16
+  --presentation-frame`), AMD Ryzen 7 9800X3D (8 cores/16 threads),
+  2026-11-26: `presentation_copy_mean_ms` 1.611 and 1.622 over 300 frames,
+  against 3.462 and 3.189 for the copy before this change; all 600 per-frame
+  hashes and the final `a76b4b338c2e955a` matched. The cells a write reached
+  sync instead of their whole columns, and the House array and substrate
+  stores clone on the pool. Capturing the frame (5.0–5.6 ms on the earlier
+  12-core machine) and freeing are unchanged, so the whole snapshot is still
+  above 2 ms. A record is 1,104 bytes, and capture is bound by reading 20,000
+  objects scattered in memory, each touching several cache lines of its
+  `GameEntity`. Left: answer placement, lighting and the status strip only for
+  objects near the screen (radar facts stay for every object).
 - **The simulation thread ticking on its own**, several ticks per hand-off
   (Phase 4's first residual), is the next phase.
 

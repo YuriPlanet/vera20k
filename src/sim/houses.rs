@@ -105,6 +105,21 @@ impl Houses {
         self.order.iter().map(|name| &self.states[name])
     }
 
+    /// A copy for the presentation world, which no simulation writes: the
+    /// House bodies clone on the worker pool, one House an item, and the
+    /// registration order and grid clone beside them. Every key keeps its
+    /// body, so lookups and [`Self::order`] answer as the source did.
+    pub(crate) fn presentation_copy(&self) -> Self {
+        let keys: Vec<_> = self.states.keys().copied().collect();
+        let bodies: Vec<_> = self.states.values().collect();
+        let cloned = crate::sim::parallel::map(&bodies, |house| (**house).clone());
+        Self {
+            cell_grid: self.cell_grid,
+            states: keys.into_iter().zip(cloned).collect(),
+            order: self.order.clone(),
+        }
+    }
+
     /// Request the House+0x1FC tech-tree recheck for a registered house.
     pub(super) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
         if let Some(house) = self.get_mut(&owner) {

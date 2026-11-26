@@ -488,6 +488,29 @@ fn threat_receivers_ask_their_own_ally_masks() {
     }
 }
 
+/// The presentation copy keeps every House body under its key, in the
+/// registration order a draw reads (`Houses::order`), even though the bodies
+/// clone on the worker pool.
+#[test]
+fn the_presentation_copy_carries_every_house_in_registration_order() {
+    let mut sim = Simulation::new();
+    let allied = sim.interner.intern("Americans");
+    let soviet = sim.interner.intern("Russians");
+    // Register in the opposite order to the interned keys.
+    sim.houses
+        .register(HouseState::new(soviet, 1, None, false, 0, 20));
+    sim.houses
+        .register(HouseState::new(allied, 0, None, true, 0, 10));
+
+    let copy = sim.presentation_copy(None, None);
+
+    assert_eq!(copy.houses.order(), &[soviet, allied]);
+    assert_eq!(copy.houses.get(&allied).unwrap().side_index(), 0);
+    assert!(copy.houses.get(&allied).unwrap().is_human());
+    assert_eq!(copy.houses.get(&soviet).unwrap().side_index(), 1);
+    assert!(!copy.houses.get(&soviet).unwrap().is_human());
+}
+
 /// The presentation copy of the world holds no House threat grid, and the
 /// live world keeps its own as it was.
 #[test]
