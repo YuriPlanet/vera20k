@@ -19,6 +19,10 @@ VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K 遭遇戰設定介面和遊戲畫面" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> 觀看 Command &amp; Conquer Vietnam 在 VERA20K 的 Arctic Circle 16 地圖上挑戰 29 個冷酷 AI。</a>
+</p>
+
 ## 下載與遊玩
 
 1. 從 Steam 或 EA app 安裝《紅色警戒2：尤里的復仇》。
@@ -39,6 +43,8 @@ VERA20K 由玩家打造、為玩家而做，專案的方向由玩家說了算。
 貢獻者可以負責引擎的某些部分，並有很大的自由度去做推動 VERA20K 發展的改動。
 
 維護者會協助審查、整合和合併。你的貢獻會完整保留你的署名。
+
+管理員：[hrusten](https://github.com/hrusten)、[996666925](https://github.com/996666925)、[EncoreAlpha](https://github.com/EncoreAlpha)、[HaoJun0823](https://github.com/HaoJun0823)、[libi](https://github.com/libi)、[zzzzzzh123](https://github.com/zzzzzzh123)、[八音盒 (1372704087)](https://github.com/1372704087)
 
 討論在 [Discord](https://discord.gg/kmjRUn5m5F) 和 QQ 群（1097193563）進行。
 

@@ -23,6 +23,10 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K skirmish setup screen and in-game view" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Command &amp; Conquer Vietnam plays VERA20K on Arctic Circle 16 against 29 Brutal AIs.</a>
+</p>
+
 ## Download and play
 
 1. Install Red Alert 2: Yuri's Revenge from Steam or the EA app.
@@ -46,7 +50,7 @@ move VERA20K forward.
 Maintainers will help with review, integration and merging. You'll keep full credit for your
 contribution.
 
-Admins: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123)
+Admins: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123), [八音盒 (1372704087)](https://github.com/1372704087)
 
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 

@@ -19,6 +19,10 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K のスカーミッシュ設定画面とゲーム画面" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Command &amp; Conquer Vietnam が VERA20K のマップ「Arctic Circle 16」で難易度 Brutal の AI 29 勢力に挑戦。</a>
+</p>
+
 ## ダウンロードとプレイ
 
 1. Steam または EA app から Red Alert 2: Yuri's Revenge をインストールします。
@@ -39,6 +43,8 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 コントリビューターはエンジンの領域ごとに責任を持つことができ、VERA20K を前進させる変更を幅広い裁量で行えます。
 
 レビュー、統合、マージはメンテナーがサポートします。あなたの貢献のクレジットは、すべてあなたのものです。
+
+管理者：[hrusten](https://github.com/hrusten)、[996666925](https://github.com/996666925)、[EncoreAlpha](https://github.com/EncoreAlpha)、[HaoJun0823](https://github.com/HaoJun0823)、[libi](https://github.com/libi)、[zzzzzzh123](https://github.com/zzzzzzh123)、[八音盒 (1372704087)](https://github.com/1372704087)
 
 議論は [Discord](https://discord.gg/kmjRUn5m5F) と QQ グループ（1097193563）で行っています。
 

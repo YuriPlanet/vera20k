@@ -21,6 +21,10 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 <img src="docs/images/vera20k-screenshots.png" alt="หน้าตั้งค่าการต่อสู้และภาพขณะเล่น VERA20K" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> ชม Command &amp; Conquer Vietnam เล่น VERA20K บนแผนที่ Arctic Circle 16 เจอกับ AI ระดับ Brutal 29 ฝ่าย</a>
+</p>
+
 ## ดาวน์โหลดและเล่น
 
 1. ติดตั้ง Red Alert 2: Yuri's Revenge จาก Steam หรือแอป EA
@@ -41,6 +45,8 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 ผู้ร่วมพัฒนาสามารถรับผิดชอบส่วนต่าง ๆ ของเอนจินได้ โดยมีอิสระอย่างมากในการเปลี่ยนแปลงที่ช่วยผลักดัน VERA20K ไปข้างหน้า
 
 ผู้ดูแลโครงการจะช่วยในการรีวิว การผสานรวม และการเมิร์จ คุณจะได้รับเครดิตเต็มที่สำหรับผลงานของคุณ
+
+ผู้ดูแล: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123), [八音盒 (1372704087)](https://github.com/1372704087)
 
 การพูดคุยอยู่ใน [Discord](https://discord.gg/kmjRUn5m5F) และในกลุ่ม QQ (1097193563)
 

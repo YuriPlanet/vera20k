@@ -23,6 +23,10 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 
 <img src="docs/images/vera20k-screenshots.png" alt="شاشة إعداد المناوشات ومشهد من اللعب في VERA20K" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> شاهد قناة Command &amp; Conquer Vietnam وهي تلعب VERA20K على خريطة Arctic Circle 16 ضد 29 خصمًا يتحكم بهم الحاسوب على مستوى Brutal.</a>
+</p>
+
 ## التنزيل واللعب
 
 1. ثبّت Red Alert 2: Yuri's Revenge من Steam أو تطبيق EA.
@@ -43,6 +47,8 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 يمكن للمساهمين تولي مسؤولية أجزاء من المحرك، مع حرية واسعة لإجراء تغييرات تدفع VERA20K إلى الأمام.
 
 سيساعد القائمون على المشروع في المراجعة والتكامل والدمج، وسيُنسب إليك الفضل كاملًا في مساهمتك.
+
+المشرفون: [hrusten](https://github.com/hrusten)، [996666925](https://github.com/996666925)، [EncoreAlpha](https://github.com/EncoreAlpha)، [HaoJun0823](https://github.com/HaoJun0823)، [libi](https://github.com/libi)، [zzzzzzh123](https://github.com/zzzzzzh123)، [八音盒 (1372704087)](https://github.com/1372704087)
 
 النقاش يجري على [Discord](https://discord.gg/kmjRUn5m5F) وفي مجموعة QQ (1097193563).
 

@@ -22,6 +22,10 @@ VERA20K делают игроки для игроков, и последнее �
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: настройки схватки и кадр из игры" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Command &amp; Conquer Vietnam играет в VERA20K на карте Arctic Circle 16 против 29 компьютерных соперников на уровне Brutal.</a>
+</p>
+
 ## Скачать и играть
 
 1. Установи Red Alert 2: Yuri's Revenge через Steam или приложение EA.
@@ -44,6 +48,8 @@ VERA20K делают игроки для игроков, и последнее �
 
 Мейнтейнеры помогут с ревью, интеграцией и слиянием. Авторство вклада полностью остаётся
 за тобой.
+
+Администраторы: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123), [八音盒 (1372704087)](https://github.com/1372704087)
 
 Обсуждение идёт в [Discord](https://discord.gg/kmjRUn5m5F) и в QQ-группе (1097193563).
 

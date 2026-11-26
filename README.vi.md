@@ -23,6 +23,10 @@ dự án.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: màn hình thiết lập skirmish và cảnh trong trận" width="100%">
 
+<p>
+  <a href="https://www.youtube.com/watch?v=njpQRCTZ_MY"><img src="docs/images/cnc-vietnam.webp" width="72" height="72" align="middle" alt=""> Xem Command &amp; Conquer Vietnam chơi VERA20K trên bản đồ Arctic Circle 16, đối đầu với 29 đối thủ máy ở độ khó Brutal.</a>
+</p>
+
 ## Tải về và chơi
 
 1. Cài Red Alert 2: Yuri's Revenge từ Steam hoặc ứng dụng EA.
@@ -45,6 +49,8 @@ Người đóng góp có thể nhận phụ trách các phần của engine, v�
 
 Những người bảo trì sẽ hỗ trợ xem xét, tích hợp và sát nhập. Bạn vẫn được ghi công đầy đủ cho đóng góp
 của mình.
+
+Quản trị viên: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123), [八音盒 (1372704087)](https://github.com/1372704087)
 
 Thảo luận diễn ra trên [Discord](https://discord.gg/kmjRUn5m5F) và trong nhóm QQ (1097193563).
 
