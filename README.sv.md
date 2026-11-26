@@ -134,11 +134,11 @@ Utbetalningar till medverkande:
 </ul>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> visar upp VERA20K.
 </p>
 
 <ul type="none">
-  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Originalversionen av Red Alert 2 i VERA20K 0.41</a></li>
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 i VERA20K 0.41</a></li>
 </ul>
 
 ## Tack och juridisk information

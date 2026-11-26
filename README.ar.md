@@ -133,11 +133,11 @@ cargo run --release --bin vera20k
 </ul>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&emsp;HaoJun Yang (HaoJun0823)</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&emsp;تسلّط قناة <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> الضوء على VERA20K.
 </p>
 
 <ul type="none">
-  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">لعبة Red Alert 2 الأصلية في VERA20K 0.41</a></li>
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 في VERA20K 0.41</a></li>
 </ul>
 
 ## شكر ومعلومات قانونية

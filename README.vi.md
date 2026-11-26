@@ -135,11 +135,11 @@ Các hình thức chi trả cho người đóng góp:
 </ul>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;VERA20K được giới thiệu trên kênh <a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a>.
 </p>
 
 <ul type="none">
-  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 bản gốc trên VERA20K 0.41</a></li>
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">Red Alert 2 trên VERA20K 0.41</a></li>
 </ul>
 
 ## Ghi công và pháp lý

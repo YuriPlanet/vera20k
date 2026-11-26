@@ -128,11 +128,11 @@ VERA20K 默认使用《尤里的复仇》原版规则。你可以在 **Options**
 </ul>
 
 <p>
-  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="">&ensp;HaoJun Yang (HaoJun0823)</a>
+  <a href="https://www.youtube.com/@haojunyang2337"><img src="docs/images/haojun0823.webp" width="24" height="24" align="middle" alt="HaoJun Yang"></a>&ensp;<a href="https://www.youtube.com/@haojunyang2337">HaoJun Yang</a> 频道介绍了 VERA20K。
 </p>
 
 <ul type="none">
-  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩原版《红色警戒 2》</a></li>
+  <li><a href="https://www.youtube.com/watch?v=ucz-EiMeW88">在 VERA20K 0.41 中玩《红色警戒 2》</a></li>
 </ul>
 
 ## 致谢与法律声明
