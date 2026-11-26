@@ -10,9 +10,15 @@
 //! in-match `0xCF`; what native shows behind it after B5 closes is not
 //! captured.
 
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
-use crate::app::{App, AppState};
+use crate::app::{App, PlatformState};
 use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::descriptor::DialogResourceId;
@@ -34,13 +40,31 @@ pub(crate) enum SurrenderButton {
 /// Queue_Exit (`0x0048CB3A..0x0048CB47`); a House that is defeated, flagged
 /// to die, has won or has lost (`+0x1F5..+0x1F8`) returns to state 0;
 /// otherwise the box opens.
-pub(crate) fn open(state: &mut AppState) {
-    if state.frontend.multiplayer_shell_runtime.lan_observer() {
-        App::apply_in_game_modal_outcome(state, ModalOutcome::LeaveMatch { destruct: false });
+pub(crate) fn open(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    if frontend.multiplayer_shell_runtime.lan_observer() {
+        App::apply_in_game_modal_outcome(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            ModalOutcome::LeaveMatch { destruct: false },
+        );
         return;
     }
-    let finished = state
-        .match_state
+    let finished = match_state
         .sim_runtime
         .runtime()
         .and_then(|runtime| {
@@ -50,13 +74,13 @@ pub(crate) fn open(state: &mut AppState) {
         })
         .unwrap_or(true);
     App::enter_in_game_menu_state(
-        &mut state.platform,
-        &state.renderer,
-        &mut state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio,
-        &mut state.persistence,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
         if finished {
             InGameMenuState::Closed
         } else {
@@ -123,28 +147,58 @@ pub(crate) fn root(presentation: &MatchPresentationState) -> Option<vera20k_gui:
 }
 
 /// One pointer message on the box (`down`: `None` moves).
-pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let layout = layout(&state.renderer, &state.frontend.screen);
-    let (x, y) = state.match_state.input.cursor_px();
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let layout = layout(renderer, &frontend.screen);
+    let (x, y) = match_state.input.cursor_px();
     let event = super::dialog_page::event_at(x, y, down);
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let ui = &mut match_state.match_presentation.dialog_ui;
     let rect = |id| rect_of(&layout, id);
     let events =
         super::dialog_page::route(ui, DIALOG, nodes, rect, super::dialog_page::no_sync, event);
     for event in super::dialog_page::play_cues(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
         events,
     ) {
         match event {
-            PageEvent::Activated(0x5AE) => activate(state, SurrenderButton::Ok),
-            PageEvent::Activated(2) => activate(state, SurrenderButton::Cancel),
+            PageEvent::Activated(0x5AE) => activate(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                SurrenderButton::Ok,
+            ),
+            PageEvent::Activated(2) => activate(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                SurrenderButton::Cancel,
+            ),
             _ => {}
         }
     }
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 
 /// Whether `button` shows pushed.
@@ -153,15 +207,51 @@ pub(crate) fn pressed(presentation: &MatchPresentationState, button: SurrenderBu
 }
 
 /// Enter (IDOK) and Escape (IDCANCEL) both give result 1.
-pub(crate) fn key(state: &mut AppState) {
-    activate(state, SurrenderButton::Cancel);
+pub(crate) fn key(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    activate(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        SurrenderButton::Cancel,
+    );
 }
 
 /// OK queues EVENT_DESTRUCT for the player and Queue_Exit, clearing the
 /// latch (`0x0048CBAE..0x0048CC23`); anything else returns to state 0.
-fn activate(state: &mut AppState, button: SurrenderButton) {
+fn activate(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    button: SurrenderButton,
+) {
     App::apply_in_game_modal_outcome(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
         match button {
             SurrenderButton::Ok => ModalOutcome::LeaveMatch { destruct: true },
             SurrenderButton::Cancel => ModalOutcome::Enter(InGameMenuState::Closed),

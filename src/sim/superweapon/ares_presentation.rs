@@ -43,7 +43,9 @@ pub(super) fn on_launch(
     let animation = match &presentation.animation {
         _ if flags.has(F::NO_ANIM) => None,
         Some(animation) => animation.clone(),
-        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
+        None if sw.kind.ares_handler_kind()
+            == crate::rules::superweapon_type::SuperWeaponKind::Protect =>
+        {
             Some(rules.general.iron_curtain_invoke_anim.clone())
         }
         // SW_GeneticMutator::GetAnim10071F30: `[General] IonBlast=`.

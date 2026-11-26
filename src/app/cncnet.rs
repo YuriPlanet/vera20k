@@ -1121,11 +1121,31 @@ impl App {
                         log::info!(
                             "Spawn action: pressing Leave (abort box secondary {secondary:?})"
                         );
-                        crate::app::input::abort::activate(state, AbortButton::Leave);
+                        crate::app::input::abort::activate(
+                            &mut state.platform,
+                            &state.renderer,
+                            &state.diag,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
+                            AbortButton::Leave,
+                        );
                     }
                     SpawnAction::Resign if secondary == AbortSecondary::Observe => {
                         log::info!("Spawn action: resigning through the abort box's Observe");
-                        crate::app::input::abort::activate(state, AbortButton::Secondary);
+                        crate::app::input::abort::activate(
+                            &mut state.platform,
+                            &state.renderer,
+                            &state.diag,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
+                            AbortButton::Secondary,
+                        );
                     }
                     SpawnAction::Resign => {
                         log::warn!(

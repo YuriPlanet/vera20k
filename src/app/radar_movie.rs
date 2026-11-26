@@ -13,14 +13,17 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use crate::app::AppState;
+use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::movie_playback::MoviePlayback;
 use crate::app::movie_subtitles::{self, SubtitleTrack};
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::audio_bag::AudioIndex;
 use crate::audio::arbiter::HandleOwner;
@@ -261,30 +264,48 @@ fn reconcile_pause_clock(
 
 /// Service outside the simulation gate. Only actual sidebar draws advance the
 /// housing timer; media and its pause must remain live when117 stops simulation.
-pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+pub(crate) fn service(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
+    if frontend.screen != crate::ui::game_screen::GameScreen::InGame {
         return;
     }
-    if ai_runs(&state.match_state) {
-        radar_ai(
-            &mut state.audio,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
+    if ai_runs(match_state) {
+        radar_ai(audio, frontend, match_state, process_assets, wall_ms);
+    }
+    if match_state.match_presentation.radar_movies.queue.is_empty() {
+        wind_down_retired(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             wall_ms,
         );
-    }
-    if state
-        .match_state
-        .match_presentation
-        .radar_movies
-        .queue
-        .is_empty()
-    {
-        wind_down_retired(state, wall_ms);
         return;
     }
-    play_head(state, wall_ms);
+    play_head(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        wall_ms,
+    );
 }
 
 /// Whether `RadarClass::AI @ 0x00653850` (vt+0x28) runs this pass. It runs
@@ -320,9 +341,18 @@ fn ai_runs(match_state: &MatchState) -> bool {
 /// (`0x0065792B`) and plays MovieOn; the movie-done arm then plays MovieOff
 /// (`0x00657C2C..0x00657C5B`), restores the Normal floor (`0x00657C71`) and
 /// drops the movie's pause (`0x00657C85..0x00657CD4`).
-fn wind_down_retired(state: &mut AppState, wall_ms: u64) {
-    if !state
-        .match_state
+fn wind_down_retired(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
+    if !match_state
         .match_presentation
         .radar_anim
         .as_ref()
@@ -330,14 +360,10 @@ fn wind_down_retired(state: &mut AppState, wall_ms: u64) {
     {
         return;
     }
-    let ai_runs = ai_runs(&state.match_state);
-    let eva = state
-        .process_assets
-        .audio_catalog()
-        .map(|catalog| catalog.eva());
-    let (selected_done, _) = prelude_inputs(&state.audio, eva);
-    let Some(movie_on) = state
-        .match_state
+    let ai_runs = ai_runs(match_state);
+    let eva = process_assets.audio_catalog().map(|catalog| catalog.eva());
+    let (selected_done, _) = prelude_inputs(audio, eva);
+    let Some(movie_on) = match_state
         .match_presentation
         .radar_anim
         .as_mut()
@@ -345,35 +371,32 @@ fn wind_down_retired(state: &mut AppState, wall_ms: u64) {
     else {
         return;
     };
-    let pause = state
-        .match_state
+    let pause = match_state
         .match_presentation
         .radar_movies
         .set_scenario_pause(false);
     if movie_on {
-        if let Some(sfx) = state.audio.sfx_player.as_mut() {
+        if let Some(sfx) = audio.sfx_player.as_mut() {
             sfx.resume_eva(); //65792B/753580
         }
-        play_radar_sound_loop(
-            &mut state.audio,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            true,
+        play_radar_sound_loop(audio, frontend, match_state, process_assets, true);
+    }
+    play_radar_sound_loop(audio, frontend, match_state, process_assets, false);
+    set_detail_floor(frontend, match_state, false);
+    if let Some(input) = pause {
+        crate::app::match_runtime::scenario_pause::apply_pause_service(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            input,
         );
     }
-    play_radar_sound_loop(
-        &mut state.audio,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        false,
-    );
-    set_detail_floor(&state.frontend, &state.match_state, false);
-    if let Some(input) = pause {
-        crate::app::match_runtime::scenario_pause::apply_pause_service(state, input);
-    }
-    reconcile_pause_clock(&state.frontend.screen, &mut state.match_state, wall_ms);
+    reconcile_pause_clock(&frontend.screen, match_state, wall_ms);
 }
 
 /// The movie half of `RadarClass::AI`: admission (`0x00653963`) and, in mode
@@ -492,9 +515,18 @@ pub(crate) fn resume_eva_outside_prelude(audio: &mut AppAudioRuntime) {
 }
 
 /// Draw and step the FIFO head once Radar has opened for it.
-fn play_head(state: &mut AppState, wall_ms: u64) {
-    let ready = state
-        .match_state
+fn play_head(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
+    let ready = match_state
         .match_presentation
         .radar_anim
         .as_ref()
@@ -502,45 +534,46 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
     if !ready {
         return;
     }
-    let pause = state
-        .match_state
+    let pause = match_state
         .match_presentation
         .radar_movies
         .queue
         .front()
         .expect("nonempty admitted FIFO")
         .pause_simulation;
-    state
-        .match_state
+    match_state
         .match_presentation
         .radar_anim
         .as_mut()
         .expect("radar admission")
         .set_movie_pause(pause);
-    if let Some(input) = state
-        .match_state
+    if let Some(input) = match_state
         .match_presentation
         .radar_movies
         .set_scenario_pause(pause)
     {
-        crate::app::match_runtime::scenario_pause::apply_pause_service(state, input);
+        crate::app::match_runtime::scenario_pause::apply_pause_service(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            input,
+        );
     }
-    reconcile_pause_clock(&state.frontend.screen, &mut state.match_state, wall_ms);
-    let voice_volume = state
-        .persistence
-        .options_profile
-        .voice_volume
-        .clamp(0.0, 1.0);
-    let active = playback_active(&state.platform, &state.match_state.match_presentation);
-    if state
-        .match_state
+    reconcile_pause_clock(&frontend.screen, match_state, wall_ms);
+    let voice_volume = persistence.options_profile.voice_volume.clamp(0.0, 1.0);
+    let active = playback_active(platform, &match_state.match_presentation);
+    if match_state
         .match_presentation
         .radar_movies
         .playing
         .is_none()
     {
-        let surface = state
-            .match_state
+        let surface = match_state
             .match_presentation
             .radar_movies
             .queue
@@ -551,17 +584,10 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
             .expect("unstarted head owns video");
         // Radar's 0x005BF360 callback posts HUD rows instead of a movie overlay.
         // Its cue cursor stays with the FIFO head and advances only while active.
-        let playback = MoviePlayback::new(
-            surface,
-            state.audio.movie_mixer(),
-            voice_volume,
-            None,
-            active,
-        );
-        state.match_state.match_presentation.radar_movies.playing = Some(playback);
+        let playback = MoviePlayback::new(surface, audio.movie_mixer(), voice_volume, None, active);
+        match_state.match_presentation.radar_movies.playing = Some(playback);
     }
-    let playback = state
-        .match_state
+    let playback = match_state
         .match_presentation
         .radar_movies
         .playing
@@ -570,7 +596,7 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
     // Both pauses are separate from scenario pause and the audio service gate.
     playback.set_active(active);
     playback.set_voice_volume(voice_volume);
-    let completed = match playback.step(&state.renderer.gpu) {
+    let completed = match playback.step(&renderer.gpu) {
         Ok(completed) => completed,
         Err(error) => {
             log::warn!("Radar movie playback failed: {error}");
@@ -579,8 +605,7 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
     };
     let surface = playback.surface();
     let movie_frame = surface.next_frame() as u32;
-    state
-        .match_state
+    match_state
         .match_presentation
         .radar_anim
         .as_mut()
@@ -588,16 +613,14 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
         .paint_movie(
             surface.batch_texture(),
             [surface.width(), surface.height()],
-            state
-                .match_state
+            match_state
                 .match_presentation
                 .sidebar_layout_spec
                 .radar_movie_origin(),
         );
     let mut due = Vec::new();
     if active
-        && let Some(subtitles) = state
-            .match_state
+        && let Some(subtitles) = match_state
             .match_presentation
             .radar_movies
             .queue
@@ -612,26 +635,21 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
     }
     for (text, duration) in due {
         crate::app::input::messages::post_movie_subtitle(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
             &text,
             duration,
         );
     }
     if completed {
-        let (has_next, service) = state
-            .match_state
-            .match_presentation
-            .radar_movies
-            .finish_playing();
-        state
-            .match_state
+        let (has_next, service) = match_state.match_presentation.radar_movies.finish_playing();
+        match_state
             .match_presentation
             .radar_anim
             .as_mut()
@@ -639,32 +657,30 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
             .finish_movie(has_next);
         if has_next {
             //657BB9..657BE1: EndLooping, MovieOn, phase4 frame25.
-            play_radar_sound_loop(
-                &mut state.audio,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                true,
-            );
+            play_radar_sound_loop(audio, frontend, match_state, process_assets, true);
         }
         if let Some(input) = service {
-            crate::app::match_runtime::scenario_pause::apply_pause_service(state, input);
+            crate::app::match_runtime::scenario_pause::apply_pause_service(
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                input,
+            );
         }
         if !has_next {
             //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
-            state.audio.retire_movie_audio(wall_ms);
-            play_radar_sound_loop(
-                &mut state.audio,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                false,
-            );
-            set_detail_floor(&state.frontend, &state.match_state, false);
-            reconcile_pause_clock(&state.frontend.screen, &mut state.match_state, wall_ms);
+            audio.retire_movie_audio(wall_ms);
+            play_radar_sound_loop(audio, frontend, match_state, process_assets, false);
+            set_detail_floor(frontend, match_state, false);
+            reconcile_pause_clock(&frontend.screen, match_state, wall_ms);
         }
     }
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 
 /// The detail floor a radar movie sets: `PlayRadarMovie` stage 2 calls
@@ -713,28 +729,41 @@ pub(crate) fn retire_for_load(
 ///5BF450 runs before abort/victory/defeat fades, scene replacement and a
 ///load's world replacement; no radar pass follows it there, so the radar's
 ///own wind-down runs here too. Repeated callers must be harmless.
-pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
-    let held = state
-        .match_state
-        .match_presentation
-        .radar_movies
-        .scenario_hold;
+pub(crate) fn retire(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
+    let held = match_state.match_presentation.radar_movies.scenario_hold;
     // Clear Radar's own movie flag before its shared684180 output is applied.
     // 5BF450 leaves a prelude's EVA suspend to RadarClass::AI's next resume.
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.radar_movies = RadarMovies::default();
     if let Some(radar) = presentation.radar_anim.as_mut() {
         radar.retire_movies();
     }
     if held {
         crate::app::match_runtime::scenario_pause::apply_pause_service(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             ScenarioPauseInput::Resume,
         );
     }
-    state.audio.retire_movie_audio(wall_ms);
-    if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
-        reconcile_pause_clock(&state.frontend.screen, &mut state.match_state, wall_ms);
+    audio.retire_movie_audio(wall_ms);
+    if frontend.screen == crate::ui::game_screen::GameScreen::InGame {
+        reconcile_pause_clock(&frontend.screen, match_state, wall_ms);
     }
 }
 

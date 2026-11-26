@@ -7,14 +7,16 @@
 
 use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, NodeSpec};
 
+use crate::app::App;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
-use crate::app::{App, AppState};
 use crate::audio::sfx::SfxPlayer;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::controller::DialogController;
@@ -213,43 +215,80 @@ pub(crate) fn layout<L>(
 /// One left-button message (`down`: `None` moves) on the in-game shell
 /// dialog `menu` shows, if it is one of these.
 pub(crate) fn in_game_pointer(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     menu: crate::ui::pause_menu::InGameMenuState,
     down: Option<bool>,
 ) {
     use crate::ui::pause_menu::InGameMenuState;
     match menu {
-        InGameMenuState::Menu => super::pause_menu::pointer(state, down),
-        InGameMenuState::AbortConfirm => super::abort::pointer(state, down),
-        InGameMenuState::Surrender => super::surrender::pointer(state, down),
+        InGameMenuState::Menu => super::pause_menu::pointer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::AbortConfirm => super::abort::pointer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
+        InGameMenuState::Surrender => super::surrender::pointer(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            down,
+        ),
         InGameMenuState::Sound => super::sound::pointer(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             down,
         ),
         InGameMenuState::Diplomacy => super::diplomacy::pointer(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             down,
         ),
         InGameMenuState::MissionBriefing => super::restate::pointer(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             down,
         ),
         _ => {}

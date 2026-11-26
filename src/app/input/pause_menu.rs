@@ -2,6 +2,7 @@
 //! FF; rendering and hit-testing share the loaded side-art geometry
 //! (72FC60,60B000,60B350,60B7A0).
 
+use crate::app::App;
 use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
@@ -15,7 +16,6 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
-use crate::app::{App, AppState};
 use crate::audio::sfx::SfxPlayer;
 use crate::ui::main_menu_dialogs::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout};
@@ -110,13 +110,27 @@ impl InGameOptionsPage {
 
 /// Fit the match to changed display choices, as a window resize does: the
 /// zoom pass, then the sidebar laid out again for the new frame.
-fn refit_match(state: &mut AppState) {
-    App::sync_zoom_pass(
-        &state.platform,
-        &mut state.renderer,
-        &state.persistence.options_profile,
+fn refit_match(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    App::sync_zoom_pass(platform, renderer, &persistence.options_profile);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
     );
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
 }
 
 /// The template the open in-game menu was created from.
@@ -216,8 +230,17 @@ pub(crate) fn options_page_layout(
 
 /// What the page's controls did takes effect through the main menu's own
 /// path. A match has to be fitted to a new frame as a window resize does.
-fn run_options_page(state: &mut AppState) {
-    let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
+fn run_options_page(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    let Some(page) = match_state.match_presentation.options_page.as_mut() else {
         return;
     };
     let output = page.dialog.drain_output();
@@ -250,14 +273,32 @@ fn run_options_page(state: &mut AppState) {
                 )
         )
     });
-    let language = App::run_launcher_options_events(state, output.cues, output.events);
+    let language = App::run_launcher_options_events(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        output.cues,
+        output.events,
+    );
     if refit {
-        refit_match(state);
+        refit_match(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
     if language {
-        let labels =
-            App::launcher_options_labels(state.frontend.shell_route, &state.process_assets);
-        if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+        let labels = App::launcher_options_labels(frontend.shell_route, process_assets);
+        if let Some(page) = match_state.match_presentation.options_page.as_mut() {
             page.dialog.set_labels(labels);
         }
     }
@@ -265,39 +306,49 @@ fn run_options_page(state: &mut AppState) {
     // and commits its page on the way, and come back to it.
     match child {
         Some(InGameMenuState::Keyboard) => crate::app::input::keyboard::open(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             crate::ui::shell::keyboard::KeyboardParent::GameControls,
         ),
         Some(InGameMenuState::Sound) => crate::app::input::sound::open(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
         ),
         _ => {}
     }
     // The match ignores the mouse while the menu is open, so Edit Layout
     // closes it as Resume does before the mode takes the mouse.
     if edit_layout {
-        activate(state, PauseMenuButton::Resume);
+        activate(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            PauseMenuButton::Resume,
+        );
         crate::app::input::layout_edit::start(
-            &state.platform,
-            &state.renderer,
-            &state.diag,
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            &state.persistence,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
         );
     }
 }
@@ -305,24 +356,29 @@ fn run_options_page(state: &mut AppState) {
 /// The pointer over the Options page: `pressed` is the left button's new
 /// state, `None` a move. True when the menu's other controls don't get to see
 /// it: an open list or a held slider has the pointer, or the page has gone.
-fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
-    let Some(layout) = options_page_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) else {
+fn options_page_pointer(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    pressed: Option<bool>,
+) -> bool {
+    let Some(layout) = options_page_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return false;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
-    let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
+    let Some(page) = match_state.match_presentation.options_page.as_mut() else {
         return false;
     };
     let was_taken = page.dialog.shell_pointer_taken();
@@ -331,8 +387,17 @@ fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
         Some(false) => page.dialog.shell_mouse_up(x, y, &layout),
         None => page.dialog.shell_mouse_move(x, y, &layout),
     }
-    run_options_page(state);
-    was_taken || state.match_state.match_presentation.options_page.is_none()
+    run_options_page(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
+    was_taken || match_state.match_presentation.options_page.is_none()
 }
 
 /// Esc on a page of the Options column goes back to Game Controls and the
@@ -349,15 +414,32 @@ pub(crate) fn back_from_options(presentation: &mut MatchPresentationState) -> bo
 }
 
 /// Esc closes the page's open list before anything else hears it.
-pub(crate) fn close_options_list(state: &mut AppState) -> bool {
-    let closed = state
-        .match_state
+pub(crate) fn close_options_list(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) -> bool {
+    let closed = match_state
         .match_presentation
         .options_page
         .as_mut()
         .is_some_and(|page| page.dialog.shell_close_list());
     if closed {
-        run_options_page(state);
+        run_options_page(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
     closed
 }
@@ -739,35 +821,46 @@ pub(crate) fn sync(
 
 /// One pointer message on the menu (`down`: `None` moves). The Options page
 /// sees it first; a disabled button neither hovers nor takes a press.
-pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = current_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.persistence,
-    ) else {
+pub(super) fn pointer(
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &mut ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    down: Option<bool>,
+) {
+    let Some(layout) = current_layout(platform, renderer, frontend, match_state, persistence)
+    else {
         return;
     };
-    if options_page_pointer(state, down) {
+    if options_page_pointer(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        down,
+    ) {
         return;
     }
-    let states = button_states(&state.match_state);
+    let states = button_states(match_state);
     let template = layout.template;
-    let positions = state
-        .match_state
-        .match_presentation
-        .internet_pause
-        .positions;
+    let positions = match_state.match_presentation.internet_pause.positions;
     let event = super::dialog_page::shell_event(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
         down,
     );
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let ui = &mut match_state.match_presentation.dialog_ui;
     let rect = |id| {
         let enabled = template
             .button(id)
@@ -785,16 +878,26 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
     // 0x0061374B..0x00613771).
     for event in super::dialog_page::play_cues(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
         events,
     ) {
         match event {
             PageEvent::Activated(id) => {
                 if let Some(button) = template.button(id) {
-                    activate(state, button);
+                    activate(
+                        platform,
+                        renderer,
+                        diag,
+                        frontend,
+                        match_state,
+                        process_assets,
+                        audio,
+                        persistence,
+                        button,
+                    );
                 }
             }
             // A moved trackbar's notification sets its right static.
@@ -804,17 +907,16 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
                 final_: false,
             } => {
                 if let Some(slider) = InternetSlider::from_id(id)
-                    && state
-                        .match_state
+                    && match_state
                         .match_presentation
                         .internet_pause
                         .set(slider, value)
                 {
                     App::play_page_cue(
-                        &state.frontend,
-                        &state.match_state,
-                        &state.process_assets,
-                        &mut state.audio.sfx_player,
+                        frontend,
+                        match_state,
+                        process_assets,
+                        &mut audio.sfx_player,
                         crate::ui::shell::page::PageCue::ListClick,
                     );
                 }
@@ -824,102 +926,120 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     }
 }
 
-fn activate(state: &mut AppState, button: PauseMenuButton) {
+fn activate(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    button: PauseMenuButton,
+) {
     match button {
         // gamemd's 4F11B0 writes state 5 here and BBB opens as its own
         // dialog. VERA shows BBB's settings as the menu's first page.
         PauseMenuButton::GameControls => {
-            if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+            if let Some(page) = match_state.match_presentation.options_page.as_mut() {
                 page.dialog.select_category(Category::GameControls);
             }
         }
         PauseMenuButton::Resume => {
             resume_internet_events(
-                &state.platform,
-                &state.renderer,
-                &state.diag,
-                &state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
-                &state.persistence,
+                platform,
+                renderer,
+                diag,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+                persistence,
             );
             App::enter_in_game_menu_state(
-                &mut state.platform,
-                &state.renderer,
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
-                &mut state.audio,
-                &mut state.persistence,
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
                 InGameMenuState::Closed,
             )
         }
         // 0x522 (`0x004F16C0..0x004F16EA`): GameMode 4 writes state 2 while
         // `[0xB779C4]` is set, every other game state 3.
         PauseMenuButton::Abort => {
-            if state
-                .match_state
+            if match_state
                 .sim_runtime
                 .runtime()
                 .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
             {
-                crate::app::input::surrender::open(state);
+                crate::app::input::surrender::open(
+                    platform,
+                    renderer,
+                    diag,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
+                );
             } else {
                 App::enter_in_game_menu_state(
-                    &mut state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &mut state.match_state,
-                    &state.process_assets,
-                    &mut state.audio,
-                    &mut state.persistence,
+                    platform,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    audio,
+                    persistence,
                     InGameMenuState::AbortConfirm,
                 )
             }
         }
         PauseMenuButton::Load => App::open_saved_game_browser(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SavedSeedMode::Load,
         ),
         PauseMenuButton::Save => App::open_saved_game_browser(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SavedSeedMode::Save,
         ),
         PauseMenuButton::Delete => App::open_saved_game_browser(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SavedSeedMode::Delete,
         ),
         PauseMenuButton::SharedPause => {
-            toggle_multiplayer_pause(&state.platform.window, &mut state.match_state);
+            toggle_multiplayer_pause(&platform.window, match_state);
         }
         // BBB's 0x52C: A3 opens over the menu and comes back to it.
         PauseMenuButton::Keyboard => crate::app::input::keyboard::open(
-            &mut state.platform,
-            &state.renderer,
-            &mut state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &mut state.audio,
-            &mut state.persistence,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             crate::ui::shell::keyboard::KeyboardParent::GameControls,
         ),
     }

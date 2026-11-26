@@ -8,8 +8,8 @@ use super::{
     restore_accepted_options, service_event, settings_dir, spawned_visit_mut, update_required_text,
     wire,
 };
-use crate::app::AppState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
+use crate::app::{App, AppState};
 use crate::i18n::tr;
 use crate::ui::wol_account::AccountSuccess;
 use crate::util::time::Instant;
@@ -346,18 +346,48 @@ pub(super) fn apply_response(
                         // Acknowledge cleanup before binding another attempt.
                         service.begin_leave(Instant::now());
                     }
-                    super::lobby::online_request_failed(state, id, failure.wol_code());
+                    let step = super::lobby::online_request_failed(
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &state.renderer,
+                        id,
+                        failure.wol_code(),
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 }
             }
             // VERA: a refused visit leaves the player in their room
             // (docs/lobby-protocol.md "Visiting the lobby").
             "visit_lobby" => {
-                super::lobby::online_request_failed(state, id, failure.wol_code());
+                let step = super::lobby::online_request_failed(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    id,
+                    failure.wol_code(),
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
             }
             // A watch joins no room, so nothing needs leaving; a place it
             // took anyway frees itself once its grant runs out.
             "watch" => {
-                super::lobby::online_request_failed(state, id, failure.wol_code());
+                let step = super::lobby::online_request_failed(
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    id,
+                    failure.wol_code(),
+                );
+                if let Some(step) = step {
+                    App::apply_step(state, step);
+                }
             }
             "leave" => service.leave_failed(id, Instant::now()),
             "logout" => service.logout_failed(id, Instant::now()),

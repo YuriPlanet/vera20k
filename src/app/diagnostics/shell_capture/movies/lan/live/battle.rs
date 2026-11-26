@@ -320,7 +320,18 @@ impl BattleOpening {
                 {
                     self.yard = Some(id);
                     self.starting_credits = Some(credits(&state.match_state)?);
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     action = Some("GAPOWR cameo: Produce");
                     self.step = Step::Started;
                 }
@@ -331,7 +342,18 @@ impl BattleOpening {
                     && factory.progress >= 2
                 {
                     self.first_product = factory.id;
-                    cameo(state, "GAPOWR", true)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        true,
+                    )?;
                     action = Some("running GAPOWR right-click: Suspend");
                     self.step = Step::Holding;
                 }
@@ -362,7 +384,18 @@ impl BattleOpening {
                     "held Factory changed progress or identity"
                 );
                 if frame >= held_at + 30 {
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     action = Some("held GAPOWR left-click: resume Produce");
                     self.step = Step::Resumed { progress };
                 }
@@ -375,7 +408,18 @@ impl BattleOpening {
                         factory.id == self.first_product,
                         "resume replaced the paid product"
                     );
-                    cameo(state, "GAPOWR", true)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        true,
+                    )?;
                     action = Some("resumed Factory advanced; Suspend before cancellation");
                     self.step = Step::CancelHold;
                 }
@@ -384,7 +428,18 @@ impl BattleOpening {
                 if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && !factory.running
                 {
-                    cameo(state, "GAPOWR", true)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        true,
+                    )?;
                     action = Some("held GAPOWR right-click: Abandon");
                     self.step = Step::Cancelling;
                 }
@@ -397,7 +452,18 @@ impl BattleOpening {
                         Some(credits(&state.match_state)?) == self.starting_credits,
                         "Abandon did not refund the paid production cost"
                     );
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     action = Some("observed full refund; restart GAPOWR");
                     self.step = Step::Completing;
                 }
@@ -411,7 +477,18 @@ impl BattleOpening {
                         "cancelled product was reused"
                     );
                     self.placed_product = factory.id;
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     ensure!(
                         state
                             .match_state
@@ -454,7 +531,18 @@ impl BattleOpening {
                         Some(id) == self.placed_product,
                         "PLACE replaced the paid product identity"
                     );
-                    cameo(state, "GAPILE", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPILE",
+                        false,
+                    )?;
                     self.step = Step::BarracksStarted;
                     action = Some("same paid GAPOWR completed; GAPILE cameo: Produce");
                 }
@@ -476,7 +564,18 @@ impl BattleOpening {
                         factory.id == self.barracks_product,
                         "GAPILE completion replaced its paid identity"
                     );
-                    cameo(state, "GAPILE", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPILE",
+                        false,
+                    )?;
                     ensure!(
                         state
                             .match_state
@@ -519,7 +618,8 @@ impl BattleOpening {
                         Some(id) == self.barracks_product,
                         "GAPILE PLACE replaced its paid identity"
                     );
-                    let (clicked, prepared) = rally_click(state, id)?;
+                    let (clicked, prepared) =
+                        rally_click(&state.platform, &state.frontend, &state.match_state, id)?;
                     let eva_requests_added = planning_rally_with_mouse(state, id, clicked)?;
                     ensure!(
                         simulation(&state.match_state.sim_runtime)?
@@ -560,7 +660,18 @@ impl BattleOpening {
                     self.gi_cost =
                         Some(sim.cost_of(owner, rules.object("E1").context("retail E1")?, rules));
                     self.gi_wallet = Some(wallet(&state.match_state)?);
-                    cameo(state, "E1", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "E1",
+                        false,
+                    )?;
                     self.step = Step::GiStarted;
                     action = Some("raw ARCHIVE executed on GAPILE; E1 cameo: Produce");
                 }
@@ -574,7 +685,18 @@ impl BattleOpening {
                         self.gi_products.len() == 1 && factory.id == Some(self.gi_products[0].id),
                         "first E1 was not retained before queueing successor"
                     );
-                    cameo(state, "E1", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "E1",
+                        false,
+                    )?;
                     self.step = Step::GiQueued;
                     action = Some("running paid E1 retained; second E1 cameo: Produce");
                 }
@@ -659,7 +781,7 @@ impl BattleOpening {
             }
             Step::Approaching if host => {
                 let [actor, target] = self.fighter_ids()?;
-                if mouse_can_pick(state, target)? {
+                if mouse_can_pick(&state.platform, &state.frontend, &state.match_state, target)? {
                     select_entity(state, actor)?;
                     click_entity(state, target)?;
                     self.attack_input_frame = Some(frame);
@@ -804,7 +926,18 @@ impl BattleOpening {
             Step::RepairFinishing if self.repair[usize::from(!host)].full.is_some() => {
                 if self.sale_enabled {
                     repair_mode_key(state, false)?;
-                    cameo(state, "E1", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "E1",
+                        false,
+                    )?;
                     self.step = Step::SaleStarting;
                     action = Some(
                         "paid repair reached full health; Repair key off and real E1 sale-head Produce",
@@ -819,7 +952,18 @@ impl BattleOpening {
             }
             Step::SaleStarting if self.sale[usize::from(!host)].first_charge.is_some() => {
                 let producer = self.barracks_product.context("original paid sale GAPILE")?;
-                cameo(state, "E1", false)?;
+                cameo(
+                    &mut state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    "E1",
+                    false,
+                )?;
                 sell_mode_key(state, true)?;
                 click_entity(state, producer)?;
                 ensure!(
@@ -2824,8 +2968,13 @@ fn rally_eva_requests(match_audio: &MatchAudioState) -> usize {
         .count()
 }
 
-fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16))> {
-    let sim = simulation(&state.match_state.sim_runtime)?;
+fn rally_click(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    producer: u64,
+) -> Result<((u16, u16), (u16, u16))> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let source = sim
         .entities()
         .get(producer)
@@ -2835,8 +2984,7 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         "diagnostic attempted a remote House's rally input query"
     );
     let origin = (source.position.rx(), source.position.ry());
-    let rules = crate::app::state::active_rules(&state.frontend, &state.match_state)
-        .context("retail rules")?;
+    let rules = crate::app::state::active_rules(frontend, match_state).context("retail rules")?;
     for (dx, dy) in [
         (6, 0),
         (0, 6),
@@ -2853,8 +3001,7 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         ) else {
             continue;
         };
-        let Some(cell) = state
-            .match_state
+        let Some(cell) = match_state
             .resolved_terrain()
             .and_then(|terrain| terrain.cell(x, y))
         else {
@@ -2862,15 +3009,10 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         };
         let world = crate::app::input::camera::cell_centre_world_point(x, y, cell.level);
         if crate::app::input::entity_pick::hover_object_at_point(
-            crate::app::input::entity_pick::presented(
-                &state.platform,
-                &state.frontend,
-                &state.match_state,
-                sim,
-            ),
+            crate::app::input::entity_pick::presented(platform, frontend, match_state, sim),
             world.0,
             world.1,
-            &local_owner(&state.match_state.session)?,
+            &local_owner(&match_state.session)?,
             false,
         )
         .is_some()
@@ -2979,21 +3121,21 @@ fn legal_move_cell(
     anyhow::bail!("no ordinary GI Move goal near {desired:?}")
 }
 
-fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
-    let sim = simulation(&state.match_state.sim_runtime)?;
+fn mouse_can_pick(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    id: u64,
+) -> Result<bool> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let entity = sim.entities().get(id).context("opposing GI")?;
-    let presented = crate::app::input::entity_pick::presented(
-        &state.platform,
-        &state.frontend,
-        &state.match_state,
-        sim,
-    );
+    let presented = crate::app::input::entity_pick::presented(platform, frontend, match_state, sim);
     let world = presented.screen_position(entity);
     Ok(crate::app::input::entity_pick::hover_object_at_point(
         presented,
         world.0,
         world.1,
-        &local_owner(&state.match_state.session)?,
+        &local_owner(&match_state.session)?,
         false,
     )
     .and_then(|object| object.techno())
@@ -3266,7 +3408,15 @@ pub(super) fn mobile_move_with_mouse(
             );
             legal_move_cell(&state.frontend, &state.match_state, id, desired)
                 .ok()
-                .filter(|cell| *cell != from && clicks_own_cell(state, *cell))
+                .filter(|cell| {
+                    *cell != from
+                        && clicks_own_cell(
+                            &state.platform,
+                            &state.frontend,
+                            &state.match_state,
+                            *cell,
+                        )
+                })
         })
         .context("reachable tactical Move target")?;
     ground_order_with_mouse(state, id, to)?;
@@ -3276,11 +3426,16 @@ pub(super) fn mobile_move_with_mouse(
 /// A click on a cell's centre orders that cell only when no taller cell or
 /// object covers the point: random Quick Match maps put some candidates
 /// behind a cliff.
-fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
+fn clicks_own_cell(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    cell: (u16, u16),
+) -> bool {
     let (Ok(world), Ok(sim), Ok(owner)) = (
-        ground_world_point(&state.match_state, cell),
-        simulation(&state.match_state.sim_runtime),
-        local_owner(&state.match_state.session),
+        ground_world_point(match_state, cell),
+        simulation(&match_state.sim_runtime),
+        local_owner(&match_state.session),
     ) else {
         return false;
     };
@@ -3290,12 +3445,7 @@ fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
         crate::app::match_runtime::sim_tick::tactical_cells(sim),
     ) == cell
         && empty_ground_point(
-            crate::app::input::entity_pick::presented(
-                &state.platform,
-                &state.frontend,
-                &state.match_state,
-                sim,
-            ),
+            crate::app::input::entity_pick::presented(platform, frontend, match_state, sim),
             world,
             &owner,
         )
@@ -3789,31 +3939,44 @@ fn live_type(match_state: &MatchState, type_id: &str) -> Result<Option<(u64, (u1
         }))
 }
 
-fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
-    let id = simulation(&state.match_state.sim_runtime)?
+fn cameo(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    type_id: &str,
+    right: bool,
+) -> Result<()> {
+    let id = simulation(&match_state.sim_runtime)?
         .interner()
         .get(type_id)
         .context("retail cameo type")?;
     ensure!(
-        crate::ui::sidebar::SidebarTab::all().iter().any(|tab| state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .model.cameo_strips()
-            .items(*tab)
+        crate::ui::sidebar::SidebarTab::all()
             .iter()
-            .any(|cameo| cameo.id == CameoId::Object(id))),
+            .any(|tab| match_state
+                .match_presentation
+                .sidebar_projection
+                .model
+                .cameo_strips()
+                .items(*tab)
+                .iter()
+                .any(|cameo| cameo.id == CameoId::Object(id))),
         "{type_id} is absent from the actual retained local sidebar"
     );
     dispatch::apply_sidebar_action(
-        &mut state.platform,
-        &state.renderer,
-        &state.diag,
-        &mut state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
-        &mut state.audio,
-        &mut state.persistence,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
         SidebarAction::CameoPress {
             type_id: type_id.into(),
             right,

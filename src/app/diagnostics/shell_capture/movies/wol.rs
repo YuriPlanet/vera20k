@@ -1607,14 +1607,13 @@ fn login_click(state: &mut AppState, rect: RectPx) {
     welcome_click(state, rect);
 }
 
-fn setup_view(state: &AppState) -> Result<crate::ui::multiplayer_setup::SetupView> {
-    setup::view(
-        &state.renderer,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-    )
-    .context("C2/C9 view")
+fn setup_view(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Result<crate::ui::multiplayer_setup::SetupView> {
+    setup::view(renderer, frontend, match_state, process_assets).context("C2/C9 view")
 }
 
 /// Row `row`'s combo in `column` and the page row it stands on: VERA's room
@@ -1685,7 +1684,12 @@ fn press_header(
     state: &mut AppState,
     group: crate::ui::multiplayer_setup::SetupGroup,
 ) -> Result<()> {
-    let view = setup_view(state)?;
+    let view = setup_view(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )?;
     let row = view
         .headers
         .iter()

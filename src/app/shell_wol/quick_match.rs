@@ -415,6 +415,7 @@ use crate::app::match_runtime::session::MatchSession;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_network_setup::agreement::{
     OriginalGameChange, changed_files_text, original_game_changes,
 };
@@ -549,7 +550,19 @@ pub(super) fn advance(state: &mut AppState) {
     else {
         return;
     };
-    lobby::quick_match_join(state, target, QUICK_MATCH_KEY);
+    let step = lobby::quick_match_join(
+        &mut state.frontend,
+        &state.platform.window,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.renderer,
+        &state.persistence.options_profile,
+        target,
+        QUICK_MATCH_KEY,
+    );
+    if let Some(step) = step {
+        App::apply_step(state, step);
+    }
     set_stage(state.frontend.wol.as_mut(), stage::IN_LOBBY, Some(20));
     runner_request(
         &mut state.frontend,
@@ -1432,15 +1445,13 @@ fn poll_search(mut wol: Option<&mut WolVisit>) -> Option<Instant> {
 /// `0x007A206E..0x007A20A0`).
 /// RESIDUAL: a list request the service refuses, or a 30 s list wait that
 /// runs out, prints the same line with stage 3 (`0x007A1F82`); the service
-/// reports no list error and the stage-7 timeout ends a lost answer.
-pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) {
-    let Some(search) =
-        globals(state.frontend.wol.as_ref()).and_then(|globals| globals.search.clone())
-    else {
-        return;
-    };
+/// reports no list error and the stage-7 timeout ends a lost answer. The
+/// found game's join step is returned.
+#[must_use]
+pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) -> Option<ClientStep> {
+    let search = globals(state.frontend.wol.as_ref()).and_then(|globals| globals.search.clone())?;
     if search.next_at.is_some() {
-        return;
+        return None;
     }
     let found = games
         .iter()
@@ -1450,8 +1461,15 @@ pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) {
         if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
             globals.search = None;
         }
-        lobby::quick_match_join_game(state, game);
-        return;
+        return lobby::quick_match_join_game(
+            &mut state.frontend,
+            &state.platform.window,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+            game,
+        );
     }
     if search.tries < SEARCH_TRIES {
         if let Some(search) =
@@ -1459,7 +1477,7 @@ pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) {
         {
             search.next_at = Some(Instant::now() + SEARCH_PAUSE);
         }
-        return;
+        return None;
     }
     if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
         globals.search = None;
@@ -1476,6 +1494,7 @@ pub(super) fn games_listed(state: &mut AppState, games: &[WolChannel]) {
     );
     set_stage(state.frontend.wol.as_mut(), stage::JOIN_LOBBY, Some(30));
     advance(state);
+    None
 }
 
 /// The guest's game join answered: `WOL:MatchJoinedGame` and stage 9
@@ -1689,35 +1708,44 @@ pub(super) fn exit(state: &mut AppState) {
 
 /// `0x117`'s Cancel `0x5C0`: after Start Game Now it only closes the page;
 /// a guest's search takes it ([`QuickMatchGlobals::cancel_search`]);
-/// otherwise event 0 ends the runner without a box.
-fn cancel(state: &mut AppState) {
-    if stage(state.frontend.wol.as_ref()) == stage::STARTED {
-        close_dialog(&mut state.frontend);
-        return;
+/// otherwise event 0 ends the runner without a box, the returned step.
+#[must_use]
+fn cancel(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) -> Option<ClientStep> {
+    if stage(frontend.wol.as_ref()) == stage::STARTED {
+        close_dialog(frontend);
+        return None;
     }
-    match globals_mut(state.frontend.wol.as_mut()).and_then(QuickMatchGlobals::cancel_search) {
+    match globals_mut(frontend.wol.as_mut()).and_then(QuickMatchGlobals::cancel_search) {
         Some(Some(host)) => {
             csf_name_line(
-                &mut state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &state.renderer,
+                frontend,
+                match_state,
+                process_assets,
+                renderer,
                 "WOL:MatchGameChannelNotFound",
                 &host,
                 ERROR_COLOR,
             );
             // 0x007A1BB0 returned: the runner's stage-3 test asks again.
             runner_request(
-                &mut state.frontend,
-                state.platform.game_config.as_ref(),
-                &state.match_state,
-                &state.process_assets,
-                &state.renderer,
-                &state.persistence.options_profile,
+                frontend,
+                game_config,
+                match_state,
+                process_assets,
+                renderer,
+                options_profile,
             );
+            None
         }
-        Some(None) => {}
-        None => exit(state),
+        Some(None) => None,
+        None => Some(ClientStep::Now(Box::new(exit))),
     }
 }
 
@@ -1851,23 +1879,41 @@ pub(super) fn cursor_moved(
     }
 }
 
-pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(&state.frontend)
-        || sync(&mut state.frontend, &state.renderer).is_none()
-    {
-        return;
+/// `0x117`'s buttons; Cancel's runner exit is the returned step.
+#[must_use]
+pub(super) fn mouse(
+    frontend: &mut FrontendState,
+    window: &Window,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    sfx_player: &mut Option<SfxPlayer>,
+    pressed: bool,
+) -> Option<ClientStep> {
+    if shell_transition::blocks_shell_input(frontend) || sync(frontend, renderer).is_none() {
+        return None;
     }
     let events = leaf::pointer(
-        &mut state.frontend,
-        &state.platform.window,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
         if pressed { Pointer::Down } else { Pointer::Up },
     );
     if events.contains(&PageEvent::Activated(CANCEL)) {
-        cancel(state);
+        return cancel(
+            frontend,
+            game_config,
+            match_state,
+            process_assets,
+            renderer,
+            options_profile,
+        );
     }
+    None
 }
 
 /// RunMain's postmatch re-entry in modes 1/2 (`0x0077B439..0x0077B442`):
@@ -1936,22 +1982,25 @@ pub(super) fn return_to_lobby(state: &mut AppState) -> bool {
 /// `0x122`'s teardown has run (`0x007A29E0`): both buttons write
 /// `[Ask] AddMatchBuddies` from Don't Ask; Yes adds the opponent while it
 /// may still become a buddy (API+0xE0, the mirror, the locate and ladder
-/// queues). Then mode 0 and the welcome, or the online lobby.
-pub(crate) fn add_buddy_answered(state: &mut AppState, yes: bool, ask_again: bool) {
-    if let Some(file) = super::persona::info_file(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-    ) {
+/// queues). Then mode 0 and the welcome, or the online lobby: the returned
+/// step.
+pub(crate) fn add_buddy_answered(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    yes: bool,
+    ask_again: bool,
+) -> ClientStep {
+    if let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) {
         file.set_ask_add_match_buddies(ask_again);
     }
-    let opponent = globals(state.frontend.wol.as_ref())
+    let opponent = globals(frontend.wol.as_ref())
         .and_then(|globals| globals.opponent.clone())
         .unwrap_or_default();
-    let local = nickname(&state.frontend.wol_account);
-    if yes && state.frontend.wol_buddies.valid_new(&opponent, &local) {
-        super::buddies::add(&mut state.frontend, opponent);
+    let local = nickname(&frontend.wol_account);
+    if yes && frontend.wol_buddies.valid_new(&opponent, &local) {
+        super::buddies::add(frontend, opponent);
     }
-    welcome(state);
+    ClientStep::Now(Box::new(welcome))
 }
 
 #[cfg(all(test, tests_app))]

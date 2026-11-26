@@ -14,13 +14,18 @@ use crate::util::time::Instant;
 use anyhow::Result;
 use vera20k_gui::Prop;
 
-use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, PanelState, encode_family_page, family_art_ready, page_tree,
 };
 use crate::app::frontend::score_shell_render::static_reveal;
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, PageArt, paint_gui_into};
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
     self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED,
@@ -34,41 +39,44 @@ use crate::ui::shell::menu_page::hovered_id;
 /// Paint campaign dialog `0x103` or `0xBC7`. It needs the shared shell chrome,
 /// but no Skirmish score art: each template has its own static controls.
 pub(crate) fn render_campaign_score_page(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.campaign_score_page.is_none()
+    if frontend.campaign_score_page.is_none()
         || !family_art_ready(
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            renderer,
+            frontend,
+            process_assets,
+            &persistence.options_profile,
         )
     {
         return Ok(false);
     }
 
-    let (width, height) =
-        crate::app::frontend::shell_layout::shell_screen_size(&state.renderer.gpu);
-    let fills_window = crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu);
+    let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(&renderer.gpu);
+    let fills_window = crate::app::frontend::shell_layout::fills_window(&renderer.gpu);
     let now = Instant::now();
     // `0x006071E0` owns both slides; `SetSlideChildSuppressProc` hides the
     // dialog's statics (including the SCRA kind-4 static) until SHOW completes,
     // and the teardown repaint covers them while the column slides out.
-    let dialog = state
-        .frontend
+    let dialog = frontend
         .campaign_score_page
         .as_ref()
         .expect("checked before render")
         .dialog;
     let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        &state.frontend.shell_exit,
+        &frontend.shell_exit,
         crate::app::frontend::shell_transition::ShellSlideKind::campaign_score(dialog),
     )
     .cloned();
     let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
+    let wave = exit_wave.or_else(|| frontend.shell_first_paint_slide.clone());
     let children = wave.is_none();
     // `0x006071E0` composites SCRT itself during a slide: frames 5..0 on SHOW,
     // 0..5 on CLOSE, then SCRBK at the dialog origin. Steady WM_PAINT draws
@@ -80,15 +88,13 @@ pub(crate) fn render_campaign_score_page(
             _ => None,
         }),
     };
-    let animation_frames = state
-        .frontend
+    let animation_frames = frontend
         .campaign_score_art
         .as_ref()
         .and_then(|art| art.scra.as_ref())
         .map_or(0, |strip| strip.frames.len());
     let (layout, emblem_frame) = {
-        let page = state
-            .frontend
+        let page = frontend
             .campaign_score_page
             .as_mut()
             .expect("checked before render");
@@ -109,7 +115,7 @@ pub(crate) fn render_campaign_score_page(
     };
     let rect_of = |id| layout.control_rect(id);
     let mut tree = page_tree(
-        &mut state.frontend.shell_controller,
+        &mut frontend.shell_controller,
         dialog.id(),
         || dialog.nodes(),
         rect_of,
@@ -117,9 +123,9 @@ pub(crate) fn render_campaign_score_page(
     );
     // `0xBC7`'s monitor `0x71C` runs the shared kind-4 timer.
     let monitor_frame = (children && dialog == CampaignScoreDialog::CampaignEnd)
-        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(&mut state.frontend))
+        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(frontend))
         .flatten();
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let active = controller.top_id() == Some(dialog.id());
     let hovered = (children && active)
         .then(|| hovered_id(controller, dialog.id()))
@@ -127,11 +133,10 @@ pub(crate) fn render_campaign_score_page(
     let status = hovered
         .and_then(|id| dialog.control(id))
         .and_then(|control| control.tooltip_key)
-        .map(|key| state.process_assets.csf_text(key))
+        .map(|key| process_assets.csf_text(key))
         .unwrap_or_default();
 
     {
-        let frontend = &mut state.frontend;
         let page = frontend
             .campaign_score_page
             .as_mut()
@@ -159,12 +164,11 @@ pub(crate) fn render_campaign_score_page(
 
     // The statics while they reveal, then `0xBC7`'s score cells whole in
     // their row colour, and the SCRA frame the kind-4 timer selected.
-    let campaign_page = state
-        .frontend
+    let campaign_page = frontend
         .campaign_score_page
         .as_ref()
         .expect("checked before render");
-    let scra = (state.frontend.campaign_score_art.as_ref()).and_then(|art| art.scra.as_ref());
+    let scra = (frontend.campaign_score_art.as_ref()).and_then(|art| art.scra.as_ref());
     let text_of = |id: i32| {
         let id = u16::try_from(id).ok()?;
         let cell = children && campaign_page.cell(id).is_some();
@@ -188,7 +192,7 @@ pub(crate) fn render_campaign_score_page(
         rgb: SHELL_TEXT_RGB_ENABLED,
         ..Default::default()
     };
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let nodes = match &tree {
         Some((gui, root)) => Some((gui, *root)),
         None => (controller.root_in(dialog.id())).map(|root| (controller.gui(), root)),
@@ -198,11 +202,11 @@ pub(crate) fn render_campaign_score_page(
         let scale = layout.page.scale;
         paint_gui_into(
             &mut paint,
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            &platform.ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
             None,
             gui,
             root,
@@ -226,12 +230,12 @@ pub(crate) fn render_campaign_score_page(
     };
     let title = dialog.page().title_key;
     let mut frame = FamilyFrame::new("Campaign Score Shell", &layout.page, panel, title).on(
-        &state.frontend.shell_controller,
+        &frontend.shell_controller,
         dialog.id(),
         &tree,
     );
     frame.over = paint;
-    if let Some(art) = state.frontend.campaign_score_art.as_ref() {
+    if let Some(art) = frontend.campaign_score_art.as_ref() {
         let background = layout.background;
         let mut background_sprites = Vec::with_capacity(1);
         // Paint mode 1's `Background_Overlay` (`0x0072E730` from
@@ -282,6 +286,16 @@ pub(crate) fn render_campaign_score_page(
     } else {
         frame.backdrop = true;
     }
-    encode_family_page(state, encoder, destination, frame);
+    encode_family_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        encoder,
+        destination,
+        frame,
+    );
     Ok(true)
 }
