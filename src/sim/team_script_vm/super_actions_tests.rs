@@ -559,8 +559,8 @@ fn action_55_uses_the_leaders_house_and_group_with_ares_off() {
         .into_iter()
         .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
         .unwrap();
-    // SW1 is the charged stock curtain; SW2 is a second curtain in group 9.
-    row["supers"][2]["kind"] = json!(1);
+    // Both curtains use SW1's running recharge timer (ClickFire 0x006CB933).
+    row["supers"][2] = row["supers"][1].clone();
     for (has_custom, argument, expected) in [(false, 0, "SW1"), (true, 0, "SW1"), (true, 9, "SW2")]
     {
         row["supers"][2]["granted"] = json!(has_custom);
@@ -590,6 +590,45 @@ fn action_55_uses_the_leaders_house_and_group_with_ares_off() {
             "{expected} should fire"
         );
         assert!(sim.super_weapons[&enemy][&custom].is_ready());
+        assert!(sim.team_script_vm.teams[&team].advance_pending);
+    }
+}
+
+#[test]
+fn action_55_fires_the_first_ready_stock_or_group_zero_curtain() {
+    let _ares = crate::rules::ares_switch::read_ares_way(false);
+    let mut row = rows()
+        .into_iter()
+        .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())
+        .unwrap();
+    let supers = row["supers"].clone();
+    for (custom_index, ready, custom_fires) in
+        [(0, false, false), (2, true, false), (0, true, true)]
+    {
+        row["supers"] = supers.clone();
+        row["supers"][custom_index] = supers[1].clone();
+        row["supers"][custom_index]["charged"] = json!(ready);
+        let Replay {
+            mut sim,
+            rules,
+            team,
+            ..
+        } = replay_with(&row, false, &[(custom_index, "SW.Group=0\n")]);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let stock = sim.interner.get("SW1").unwrap();
+        let custom = sim.interner.get(&format!("SW{custom_index}")).unwrap();
+
+        sim.team_action_iron_curtain(team, 0, &rules, None, &mut Default::default());
+        assert_eq!(
+            sim.super_weapons[&owner][&stock].is_ready(),
+            custom_fires,
+            "stock charge"
+        );
+        assert_eq!(
+            sim.super_weapons[&owner][&custom].is_ready(),
+            ready && !custom_fires,
+            "custom charge"
+        );
         assert!(sim.team_script_vm.teams[&team].advance_pending);
     }
 }

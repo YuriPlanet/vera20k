@@ -1379,6 +1379,21 @@ impl RuleSet {
                 }
             }
         }
+        // Older full-Ares saves could hold either particle AI for a named
+        // AlphaImage, depending on the local SHP. Mark only systems for which
+        // that choice matters. Built-in bullet attachments already have their
+        // own compatibility domain above.
+        if self.ares {
+            for system in &self.particle_system_types {
+                if let Some(particle) = system.holds_what.map(|id| self.particle_type(id))
+                    && !particle.alpha_image.is_empty()
+                    && system.supports_ares_records(particle)
+                {
+                    b"ares-particle-alpha-image-ai-v1".hash(&mut hasher);
+                    system.name.hash(&mut hasher);
+                }
+            }
+        }
         for particle in &self.particle_types {
             (&particle.name, &particle.warhead).hash(&mut hasher);
             if particle.use_line_trail {

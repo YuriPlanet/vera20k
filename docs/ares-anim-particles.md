@@ -54,15 +54,17 @@ to control animation trails.
 ## ParticleSystemExt
 
 Ares 3.0 simulates a Smoke, Spark or Railgun system itself when its `HoldsWhat`
-particle type has no `UseLineTrail` and no AlphaImage art and behaves like the system
+particle type has no `UseLineTrail` and no loaded AlphaImage and behaves like the system
 (Ares maps a particle `BehavesLike` below 2 to `value == 0`, so a Smoke system holding
 a type with no `BehavesLike` counts too). Every retail Smoke, Spark and Railgun system
 qualifies. Such a system keeps two record vectors instead of
 ParticleClass children and draws from the synchronised Scenario stream in Ares' own
 order, so the records are simulation state: they are saved with the system
 (`ParticleSystem::ares`) and folded into the world hash. Owner: `sim::particles::ares_system`.
-The constructor allocates the extension whenever the game's Ares switch
-(`RuleSet::ares`) is on, so retail data keeps the stock particles.
+VERA selects this AI with Ares on and for a projectile’s built-in `AttachedSystem`.
+A particle with a nonempty `AlphaImage=` uses ordinary ParticleClass AI even if its
+SHP is missing. Ares 3.0p1 checks the loaded image at `0x100273A2`. In VERA the
+agreed rules decide which AI consumes Scenario RNG. The local SHP supplies the glow.
 
 | Hook | Ares.dll | Behaviour | Status |
 | --- | --- | --- | --- |

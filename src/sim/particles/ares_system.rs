@@ -1,6 +1,6 @@
 //! Ares 3.0 ParticleSystemExt (`Ext/ParticleSystem`, ExtMap at Ares.dll
 //! `100C1B24`): Smoke, Spark and Railgun systems whose held particle type has
-//! no LineTrail and no AlphaImage. Ares simulates them in its own particle
+//! no LineTrail and no named AlphaImage. Ares simulates them in its own particle
 //! records instead of ParticleClass objects, drawing from the synchronised
 //! Scenario stream, and draws the records itself after the Air layer.
 //!
@@ -222,24 +222,13 @@ pub struct AresParticleSystemExt {
 }
 
 impl AresParticleSystemExt {
-    /// Ares 3.0p1 `ExtData::ExtData @ 0x10027300`: a system whose type holds a particle
-    /// type without `UseLineTrail` and AlphaImage art, whose `BehavesLike`
-    /// matches the system's (ParticleType numbers Gas 0 and Smoke 1 the other
-    /// way round; Ares maps every value below 2 to `value == 0`), and which
-    /// behaves like Smoke, Spark or Railgun.
+    /// Ares 3.0p1 ExtData::ExtData (0x10027300) keeps ParticleClass AI for a
+    /// loaded AlphaImage (0x100273A2). VERA uses the authored name so local
+    /// SHP availability cannot change the Scenario RNG or saved particle mode.
     pub(crate) fn for_system(system: &ParticleSystemType, rules: &RuleSet) -> Option<Self> {
         let held_type = system.holds_what?;
         let held = rules.particle_type(held_type);
-        if held.use_line_trail || rules.alpha_image(&held.alpha_image).is_some() {
-            return None;
-        }
-        let behaves = held.behaves_like as i32;
-        let behaves = if behaves < 2 {
-            i32::from(behaves == 0)
-        } else {
-            behaves
-        };
-        if system.behaves_like as i32 != behaves {
+        if !held.alpha_image.is_empty() || !system.supports_ares_records(held) {
             return None;
         }
         let mode = match system.behaves_like {

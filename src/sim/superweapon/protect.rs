@@ -161,23 +161,20 @@ fn area_technos_with(
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return Vec::new();
     };
-    // A centered rectangle this wide can span every cell of the largest
-    // supported map. Refuse larger authored dimensions before enumeration.
-    // CellSpread already clamps its input to the native table.
-    let max_span = i32::from(crate::map::cell_index::MAX_CELL_SIDE) * 2 + 1;
-    let rectangle = height > 0 && (width as i32) > 0;
-    if (!spread || rectangle) && (width > max_span as f32 || height > max_span) {
+    // SW_Protect's rectangle uses cvttss2si at 0x10036841. An overflow
+    // or non-finite width does not produce a positive rectangle.
+    if !width.is_finite() || (height > 0 && !(1.0..2_147_483_648.0).contains(&width)) {
         return Vec::new();
     }
+    let rectangle = height > 0;
     let (cx, cy) = (i32::from(center.0 as i16), i32::from(center.1 as i16));
     let mut found = std::collections::BTreeMap::new();
     let mut visit = |x, y| {
         // MapClass::TryGetCellAt: only real cells.
-        let crate::sim::cell_rect::CellRef::Real(real) =
-            crate::sim::cell_rect::get_cellclass_fallback(Some(terrain), x, y)
-        else {
+        let Some(index) = terrain.native_fixed_cell_index(x as i16, y as i16) else {
             return;
         };
+        let real = &terrain.cells()[index];
         for member in sim.native_cell_content((real.rx, real.ry)) {
             let CellObjectMember::Entity(id) = member else {
                 continue;
@@ -194,27 +191,56 @@ fn area_technos_with(
                 visit(cx + i32::from(dx), cy + i32::from(dy));
             }
         }
-    } else if rectangle {
-        // for_each_in_rect: width x height cells from center - size/2.
-        let width = width as i32;
-        let (left, top) = (cx - width / 2, cy - height / 2);
-        for y in top..top + height {
-            for x in left..left + width {
-                visit(x, y);
+    } else if width >= 0.0 {
+        // Ares 3.0p1: 0x10036830 enumerates a centered width x height;
+        // 0x100702A0 accepts integer cell offsets inside the squared radius.
+        let (left, right, top, bottom) = if rectangle {
+            let width = width as i32;
+            let (left, top) = (cx - width / 2, cy - height / 2);
+            (left, left + width - 1, top, top + height - 1)
+        } else {
+            // CellStruct components are signed words, so no offset on an
+            // axis can exceed u16::MAX, even for a much larger authored radius.
+            let reach = width.min(f32::from(u16::MAX)) as i32;
+            (cx - reach, cx + reach, cy - reach, cy + reach)
+        };
+        // Stop an oversized mod range at the signed CellStruct boundary;
+        // letting the native word counter wrap can repeat the enumeration.
+        let left = left.max(i32::from(i16::MIN));
+        let right = right.min(i32::from(i16::MAX));
+        let top = top.max(i32::from(i16::MIN));
+        let bottom = bottom.min(i32::from(i16::MAX));
+        let radius_squared = f64::from(width) * f64::from(width);
+        let in_circle = |x: i32, y: i32| {
+            let (dx, dy) = (f64::from(x - cx), f64::from(y - cy));
+            dx * dx + dy * dy <= radius_squared
+        };
+        let candidates = i64::from(right - left + 1) * i64::from(bottom - top + 1);
+        if candidates <= terrain.cells().len() as i64 {
+            for y in top..=bottom {
+                for x in left..=right {
+                    if rectangle || in_circle(x, y) {
+                        visit(x, y);
+                    }
+                }
             }
-        }
-    } else if height <= 0 && width >= 0.0 {
-        // CellRangeEnumerator: LTRB of range = 2*floor(r+0.99)+1 from
-        // center - range/2 to left/top + range (inclusive), kept within the
-        // squared cell distance.
-        let radius = f64::from(width);
-        let range = ((radius + 0.99).floor() as i32) * 2 + 1;
-        let (left, top) = (cx - range / 2, cy - range / 2);
-        for y in top..=top + range {
-            for x in left..=left + range {
-                let (dx, dy) = (f64::from(x - cx), f64::from(y - cy));
-                if dx * dx + dy * dy <= radius * radius {
-                    visit(x, y);
+        } else {
+            // TryGetCellAt uses x + stride*y. A real cell (x,y) is also
+            // reached by (x+k*stride,y-k). Intersect these aliases with the
+            // requested bounds instead of iterating an arbitrarily large area.
+            let stride = i32::from(terrain.cell_grid().side());
+            let occupancy = &sim.substrate.occupancy;
+            use crate::sim::movement::locomotor::MovementLayer;
+            for layer in [MovementLayer::Ground, MovementLayer::Bridge] {
+                for (x, y) in occupancy.occupied_cells_on_layer(layer) {
+                    let (x, y) = (i32::from(x), i32::from(y));
+                    let first = (-(x - left).div_euclid(stride)).max(y - bottom);
+                    let last = (right - x).div_euclid(stride).min(y - top);
+                    if first <= last
+                        && (rectangle || (first..=last).any(|k| in_circle(x + k * stride, y - k)))
+                    {
+                        visit(x, y);
+                    }
                 }
             }
         }

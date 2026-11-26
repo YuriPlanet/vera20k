@@ -1089,6 +1089,7 @@ fn retail_chrono_warp_onto_the_iron_curtain_kills_the_warper() {
 /// P1 TeleportLocomotionClass_Unwarp_PreventSelfCrush (0x10038660, hook
 /// 0x7187DA): a warper that came under the Iron Curtain during its warp is
 /// not crushed by its own curtain on the landing cell.
+#[cfg(tests_sim_superweapon)]
 #[test]
 fn builtin_iron_curtained_warper_survives_its_own_landing() {
     let _stock = crate::rules::ares_switch::read_ares_way(false);

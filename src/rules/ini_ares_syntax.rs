@@ -14,7 +14,7 @@
 //! Separate files that are not included still have separate section stores.
 //!
 //! Ares mode keeps its later-wins repeated-key policy (`0x10066590`). INIs
-//! read with Ares Off keep their first authored value. Both modes let the
+//! read with Ares Off select repeated keys through the stock CRC index. Both modes let the
 //! child replace an inherited default. See `docs/ares-ini-syntax.md` for the
 //! native load boundaries. There are no RNG draws, timers or pointer detaches.
 
@@ -138,6 +138,7 @@ fn replace_entry(
     key: &str,
     value: &str,
 ) {
+    section.fresh_index = None;
     if let Some(old) = by_crc.insert(ini_name_crc(key), key.to_owned()) {
         section.entries.remove(&old);
         section.key_order.retain(|stored| *stored != old);
@@ -182,7 +183,7 @@ fn is_blank(c: char) -> bool {
     matches!(u32::from(c), 0x01..=0x20 | 0x80..=0xFF)
 }
 
-/// `IniSectionIncludes::PreProcess` (Ares.dll `10065470`) over the text after
+/// `IniSectionIncludes::PreProcess` (Ares 3.0p1 `0x100663F0`) over the text after
 /// a header's `]`: blanks, `:`, blanks, `[`, blanks, the base name, blanks,
 /// `]`, where a `;` first ends the header. The INI being loaded answers.
 fn inheritance_base(tail: &str) -> Option<&str> {
@@ -222,7 +223,7 @@ impl CopyBudget {
     }
 }
 
-/// `IniSectionIncludes::CopySection` (Ares.dll `10065380`): PutString each
+/// `IniSectionIncludes::CopySection` (Ares 3.0p1 `0x10066300`): PutString each
 /// entry of `base`, in list order, under `name`, once [`CopyBudget`] admits
 /// the copy.
 fn inherited_entries(
@@ -249,7 +250,13 @@ fn inherited_entries(
         outer
             .into_iter()
             .chain(earlier)
-            .flat_map(IniSection::physical_entries)
+            // A stock parent can contain several physical values for one key.
+            // Inherit the value its reader selects (FindINIEntryIndexPair 0x52B6D0).
+            .flat_map(|parent| {
+                parent
+                    .keys()
+                    .filter_map(|key| parent.get(key).map(|value| (key, value)))
+            })
     };
     let bytes = entries().map(|(key, value)| key.len() + value.len()).sum();
     if !ini.ares_copies.charge(bytes) {
@@ -315,9 +322,6 @@ pub(super) fn load_fresh(
     }
     link(&mut ini, &mut index, current.map(|fresh| fresh.section));
     index.store(&mut ini);
-    for section in &mut ini.sections {
-        section.build_fresh_index();
-    }
     ini.rebuild_first_sections();
     ini
 }
@@ -363,12 +367,14 @@ impl FreshSection {
 /// The fresh arm's section end (`0x005261F7..0x0052636A`): a section with an
 /// entry is linked last and indexed; an empty one is destroyed.
 fn link(ini: &mut IniFile, index: &mut LiveSectionIndex, section: Option<IniSection>) {
-    let Some(section) = section else {
+    let Some(mut section) = section else {
         return;
     };
     if section.entry_count() == 0 {
         return;
     }
+    // A later section in this file can already read this one as its parent.
+    section.build_fresh_index();
     let at = ini.sections.len();
     index.append(ini_name_crc(&section.name), at);
     ini.sections.push(section);

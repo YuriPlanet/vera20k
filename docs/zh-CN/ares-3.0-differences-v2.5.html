@@ -12191,7 +12191,7 @@ VERA 也会分别读取其他松散的 PKT 文件；如果两个 PKT 都列出�
 <p><a id="ares-entry-already-supported-159"></a></p>
 <h3 id="superweapon-34" class="entry-heading kind-supported"><span class="status-label kind-supported">已支持或等效</span> <code>[SuperWeapon]</code>：小队请求指定组的超武</h3>
 <p><strong><code>[SuperWeapon]►SW.AITargeting=IronCurtain</code>、<code>SW.Group=</code></strong></p>
-<p class="dll-evidence" data-dll-kind="verified" data-audit-version="2.5"><strong>Ares 3.0p1 DLL 指令</strong> 小队脚本原版钩点 <code>0x006EFC70</code> 到 <code>0x1003AD70</code>，调用 <code>0x1003A970</code>；<code>0x1003AA0D</code> 至 <code>0x1003AA29</code> 筛选 IronCurtain 模式 15 与 SW.Group，随后读就绪、停用和充能状态，<code>0x1003AA88</code> 调公共发射入口。</p>
+<p class="dll-evidence" data-dll-kind="verified" data-audit-version="2.5"><strong>Ares 3.0p1 DLL 指令</strong> 小队脚本原版钩点 <code>0x006EFC70</code> 到 <code>0x1003AD70</code>，调用 <code>0x1003A970</code>；<code>0x1003AA0D</code> 至 <code>0x1003AA29</code> 筛选 IronCurtain 模式 15 与 SW.Group，随后读就绪、停用和充能状态，<code>0x1003AA88</code> 读取充能时间，<code>0x1003AB56</code> 按选中的超武索引调用公共发射入口。</p>
 <p><strong>VERA现状</strong> 动作 <code>55,&lt;组号&gt;</code> 从小队领队所属方的超武中按 <code>SW.Group</code> 与 <code>SW.AITargeting=IronCurtain</code> 查找，在小队中心格发射。就绪且供电条件满足时发射；只有接近充能完成的匹配项时等待。含相关配置的超武可在 Ares 关闭时按组处理。普通自动选点进入铁幕模式后返回无目标，地图提供的首选格可优先返回。</p>
 <p>对应源码 <a href="../../src/sim/team_script_vm/super_actions.rs" title="src/sim/team_script_vm/super_actions.rs">super_actions.rs 第 217 行</a> · <a href="../../src/sim/team_script_vm/super_actions.rs" title="src/sim/team_script_vm/super_actions.rs">super_actions.rs 第 324 行</a></p>
 <details class="prior-description"><summary>V2.5 本次更新前记录</summary>

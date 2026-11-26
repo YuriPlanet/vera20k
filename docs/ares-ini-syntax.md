@@ -34,8 +34,8 @@ Sight=9
   expansion and logs a skipped copy.
 - **Repeated keys.** Ares-mode text uses the later value and lists it last.
   The stock text reader retains physical duplicates and uses its existing CRC
-  index. In either mode the child's own value takes priority over an inherited
-  default.
+  index. An inherited key takes the value that a read of its parent selects.
+  In either mode the child can override that default.
 
 Independent and diagnostic reads start at a fixed counter, so browsing an
 INI or previewing a map cannot affect a subsequent gameplay load. Fresh
