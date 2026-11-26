@@ -54,7 +54,7 @@ def main():
         training = [sys.executable, '-m', 'tools.pgo_train', '--game', str(game),
                     '--sim-bench', str(bins / ('sim-bench' + suffix))]
         if sys.platform == 'linux':
-            training = ['xvfb-run', '-a', *training]
+            training = ['xvfb-run', '-a', '-s', '-screen 0 1280x1024x24', *training]
         subprocess.run(training, check=True,
                        env={**os.environ, 'LLVM_PROFILE_FILE': str(raw / '%m-%p.profraw')})
 
