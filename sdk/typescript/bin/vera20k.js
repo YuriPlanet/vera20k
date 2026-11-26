@@ -243,6 +243,9 @@ export function init(dir, ui) {
   renameSync(join(dir, "gitignore"), join(dir, ".gitignore"));
   const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   pkg.name = dir.split(/[\\/]/).pop().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  // An SDK run from a checkout rather than installed from a registry: depend
+  // on that checkout.
+  if (!SDK.split(/[\\/]/).includes("node_modules")) pkg.devDependencies["@vera20k/sdk"] = `file:${SDK}`;
   writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
   if (ui) {
     const config = JSON.parse(readFileSync(join(dir, "vera.json"), "utf8"));
