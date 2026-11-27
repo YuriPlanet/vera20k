@@ -662,6 +662,12 @@ impl Simulation {
                 bridge_state_changed: false,
             });
         }
+        // Sleep-check keeps the full native Process in the loop.
+        if !self.idle_sleep.check && self.substrate.entities.is_locomotor_resting(stable_id) {
+            self.idle_sleep.locomotor += 1;
+            self.sample_ground_locomotor_slope(stable_id);
+            return Ok(GroundLocomotorOutcome::default());
+        }
         self.complete_pending_order(stable_id, rules, effects);
         // Walk75AC80..75AC93 keeps the walking controller installed for its
         // whole Process, including arrival and new-destination callbacks.
@@ -692,6 +698,28 @@ impl Simulation {
         result
     }
 
+    /// Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing cell
+    /// slope before any active-track, destination or turn return.
+    fn sample_ground_locomotor_slope(&mut self, stable_id: u64) {
+        let slope = self.substrate.entities.get(stable_id).and_then(|entity| {
+            self.resolved_terrain
+                .as_ref()?
+                .cell(entity.position.rx(), entity.position.ry())
+                .map(|cell| cell.slope_type)
+        });
+        if let Some(slope) = slope
+            && let Some(entity) = self.substrate.entities.get_mut_if(stable_id, |entity| {
+                movement::slope_transition::process_entry_changes(entity, slope)
+            })
+        {
+            movement::slope_transition::sample_process_entry(
+                entity,
+                slope,
+                self.session.binary_frame(),
+            );
+        }
+    }
+
     fn process_ground_movement(
         &mut self,
         stable_id: u64,
@@ -706,25 +734,7 @@ impl Simulation {
             outcome.movement.movers_total += 1;
             return Ok(outcome);
         }
-        // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
-        // cell slope before any active-track, destination or turn return.
-        let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
-            sim.resolved_terrain
-                .as_ref()?
-                .cell(entity.position.rx(), entity.position.ry())
-                .map(|cell| cell.slope_type)
-        });
-        if let Some(slope) = slope
-            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
-                movement::slope_transition::process_entry_changes(entity, slope)
-            })
-        {
-            movement::slope_transition::sample_process_entry(
-                entity,
-                slope,
-                sim.session.binary_frame(),
-            );
-        }
+        sim.sample_ground_locomotor_slope(stable_id);
         match sim.process_track_turn(
             stable_id,
             rules,

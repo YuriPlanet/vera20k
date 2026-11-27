@@ -266,6 +266,8 @@ const QUIET: u8 = 1;
 /// turn having left every step of its AI visit off but its counter, its
 /// timers and its stage clock.
 const STEADY: u8 = 2;
+/// A [`SleepCell`] mark: the ground locomotor's next Process only samples slope.
+const LOCOMOTOR_RESTS: u8 = 4;
 
 /// What a shared store or a fork reads through.
 #[derive(Debug)]
@@ -625,6 +627,20 @@ impl EntityStore {
     pub(crate) fn set_quiet(&mut self, stable_id: u64) {
         if let Some(cell) = self.cell_mut(stable_id) {
             cell.marks |= QUIET;
+        }
+    }
+
+    /// Whether `stable_id`'s ground Process may take the resting fast path.
+    #[inline]
+    pub(crate) fn is_locomotor_resting(&self, stable_id: u64) -> bool {
+        self.cell(stable_id)
+            .is_some_and(|cell| cell.marks & LOCOMOTOR_RESTS != 0)
+    }
+
+    /// Mark `stable_id`'s ground Process resting until its next mutable hand-out.
+    pub(crate) fn set_locomotor_resting(&mut self, stable_id: u64) {
+        if let Some(cell) = self.cell_mut(stable_id) {
+            cell.marks |= LOCOMOTOR_RESTS;
         }
     }
 
