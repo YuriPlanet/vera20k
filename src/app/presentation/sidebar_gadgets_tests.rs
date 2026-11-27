@@ -189,10 +189,12 @@ fn sidebar_action_runs_once_per_frame_offline_and_once_per_pass_online() {
     assert_eq!(sidebar_action_visits(false, false, 41, 40), 0);
 }
 
-/// GScreen Input reaches Sidebar Action, and so the power bar, the strip
-/// scroll and the credits counter, only with the window active (A8ED80), no
-/// in-game menu (A8EDA0, online too), the scenario running (55D82E..55D877)
-/// and no Wait_For_Players dialog (6497EC), whether or not a frame runs.
+/// The power bar, strip scroll and credits counter step with the world: a
+/// deactivated window keeps them running unless a focus freeze is configured,
+/// matching how production progress keeps counting. They stop on a configured
+/// freeze, an in-game menu (A8EDA0, online too), a paused scenario
+/// (55D82E..55D877) or an open Wait_For_Players dialog (6497EC), whether or
+/// not a frame runs.
 #[test]
 fn sidebar_action_gate_matrix() {
     use super::sidebar_action_visits;
@@ -230,7 +232,8 @@ fn sidebar_action_gate_matrix() {
         ..admitting
     };
     for (case, inputs, ticks, expected) in [
-        // A deactivated window keeps an unfrozen world running, unpolled.
+        // A deactivated window keeps its UI clocks stepping with the unfrozen
+        // world, so credits keep rolling behind another window by default.
         (
             "background frame",
             RuntimePassInputs {
@@ -238,13 +241,24 @@ fn sidebar_action_gate_matrix() {
                 ..admitting
             },
             1,
-            0,
+            1,
         ),
         (
             "online background frame",
             RuntimePassInputs {
                 window_active: false,
                 ..lan
+            },
+            1,
+            1,
+        ),
+        // A configured focus freeze is the one gate that stops them, offline.
+        (
+            "focus-frozen background frame",
+            RuntimePassInputs {
+                window_active: false,
+                focus_frozen: true,
+                ..admitting
             },
             1,
             0,
