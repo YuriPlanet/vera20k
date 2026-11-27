@@ -531,6 +531,9 @@ pub struct BuildingPart {
     /// [`LastOperational`]: crate::sim::world::LastOperational
     #[serde(default)]
     pub building_last_operational: crate::sim::world::LastOperational,
+    /// Building+618. Frames 8 and 12 are open laser fence sections.
+    #[serde(default)]
+    pub(crate) laser_fence_frame: crate::sim::laser_fence::LaserFenceFrame,
     /// Building+53C, a signed index: constructor43B783 starts at zero,
     /// InitManagers442C5C installs the owner's Country index, and damage44298B
     /// records an attacker's House index. Sale44A1EF writes -1 before its

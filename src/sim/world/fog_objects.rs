@@ -119,8 +119,7 @@ impl Simulation {
                 rules,
                 self.object_tech_level(object),
             ),
-            no_zshape: object.firestorm_wall
-                || (object.laser_fence && matches!(entity.building_body_state(), Some(8 | 12))),
+            no_zshape: object.firestorm_wall || (object.laser_fence && entity.laser_fence_open()),
             z_adjust: 0,
         }];
         for anim in slots.into_iter().flatten().filter_map(|id| self.anim(id)) {

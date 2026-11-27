@@ -335,18 +335,18 @@ impl ProjectileCollisionWorld<'_> {
                         crate::sim::cell_kernel::WallConnectionStep::Return(true)
                     );
                 if let Some(id) = building {
-                    let exempt = self
-                        .entities
-                        .get(id)
-                        .and_then(|object| self.interner.object_type(object.type_ref(), self.rules))
-                        .is_some_and(|kind| {
-                            kind.is_1x1_with_undeploy()
-                                && kind
-                                    .undeploys_into
-                                    .as_deref()
-                                    .is_some_and(|name| self.rules.object(name).is_some())
-                        });
-                    // LaserFence+stage>=8 has no active retail type/data writer.
+                    let exempt = self.entities.get(id).is_some_and(|object| {
+                        self.interner
+                            .object_type(object.type_ref(), self.rules)
+                            .is_some_and(|kind| {
+                                (kind.laser_fence && object.laser_fence_frame() >= 8)
+                                    || (kind.is_1x1_with_undeploy()
+                                        && kind
+                                            .undeploys_into
+                                            .as_deref()
+                                            .is_some_and(|name| self.rules.object(name).is_some()))
+                            })
+                    });
                     obstacle &= Some(id) != source && !exempt && !self.allied(source, id);
                 }
             }

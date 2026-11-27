@@ -121,7 +121,7 @@ impl Simulation {
             .toggle(false, rules.ares_form() || manual_toggle);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
-        self.set_building_stuff_enabled(id, false, rules);
+        self.set_building_stuff_enabled(id, false, rules, effects);
         //4523DE speaks before509140; the online arm reverses that order.
         if self.house_is_human_player(owner) {
             self.sound_events.emit(SimSoundEvent::HouseEva {
@@ -174,7 +174,7 @@ impl Simulation {
             .toggle(true, rules.ares_form() || was_toggled_off);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
-        self.set_building_stuff_enabled(id, true, rules);
+        self.set_building_stuff_enabled(id, true, rules, effects);
         if let Some(category) = factory {
             crate::sim::production::update_factory_queue(
                 self,

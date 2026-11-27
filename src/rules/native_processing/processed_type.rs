@@ -391,6 +391,9 @@ pub(super) struct ProcessedType {
     /// the current byte as Civilian's default on each reached own-ID body.
     #[serde(default)]
     pub(super) infantry_civilian: bool,
+    /// InfantryType+EC7, cleared by the constructor at 0x005237C9.
+    #[serde(default)]
+    pub(super) infantry_doggie: bool,
     /// TechnoType+C8F: InfantryType ReadINI clears it on every pass
     /// (`0x005240BD`, skipped under Ares), then a reached body sets it from
     /// the retained `Cyborg` byte (`0x005243DD..0x005243E7`).
@@ -1100,6 +1103,7 @@ impl ProcessedType {
             gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
             infantry_civilian: false,
+            infantry_doggie: false,
             infantry_damage_sparks: false,
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),

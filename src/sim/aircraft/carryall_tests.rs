@@ -194,6 +194,65 @@ fn a_loaded_carryall_sets_its_cargo_down_on_unload() {
     );
 }
 
+fn pick_up_team_tank(fx: &mut Fixture) -> (u64, u64, u64) {
+    let carryall = fx.spawn("CARRY", 15, 15);
+    let tank = fx.spawn("TANK", 18, 15);
+    let team = crate::sim::team_script_vm::join_team_for_test(&mut fx.sim, &[tank], false, false);
+    fx.order(Command::MoveToObject {
+        entity_id: carryall,
+        target_id: tank,
+    });
+    assert!(fx.run_until(1500, |sim| carried(sim, carryall, tank)));
+    assert_eq!(fx.sim.team_script_vm.team_for_member(tank), None);
+    (carryall, tank, team)
+}
+
+#[test]
+fn builtin_carryall_returns_its_cargo_to_the_original_team() {
+    let mut fx = Fixture::new("", "");
+    assert!(!fx.rules.ares());
+    let (carryall, tank, team) = pick_up_team_tank(&mut fx);
+    // Team AI sees an empty roster over several ticks with its sole member
+    // aboard. The return still uses the same live team.
+    let transit_frame = fx.sim.session.binary_frame() + 8;
+    assert!(fx.run_until(8, |sim| sim.session.binary_frame() >= transit_frame));
+    assert!(fx.sim.team_script_vm.team(team).is_some());
+
+    fx.order(Command::Move {
+        entity_id: carryall,
+        target_rx: 21,
+        target_ry: 15,
+    });
+    assert!(fx.run_until(1500, |sim| {
+        !sim.substrate.entities.get(tank).unwrap().is_on_carryall()
+    }));
+    assert_eq!(
+        fx.sim
+            .team_script_vm
+            .team_for_member(tank)
+            .map(|(team, _)| team),
+        Some(team),
+    );
+}
+
+#[test]
+fn builtin_carryall_leaves_cargo_teamless_if_the_original_team_is_destroyed() {
+    let mut fx = Fixture::new("", "");
+    assert!(!fx.rules.ares());
+    let (carryall, tank, team) = pick_up_team_tank(&mut fx);
+    fx.sim
+        .destroy_team(team, &fx.rules, &mut Default::default());
+    assert_eq!(fx.sim.team_script_vm.take_carryall_team(tank), None);
+
+    fx.order(Command::UnloadPassengers {
+        transport_id: carryall,
+    });
+    assert!(fx.run_until(600, |sim| {
+        !sim.substrate.entities.get(tank).unwrap().is_on_carryall()
+    }));
+    assert_eq!(fx.sim.team_script_vm.team_for_member(tank), None);
+}
+
 /// WANT_RIDE, Unit `0x0073745C`: ROGER from a free Unit, NEGATORY once it
 /// is tethered (`+0x418`).
 #[test]

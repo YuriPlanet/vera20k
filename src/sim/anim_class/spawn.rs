@@ -839,6 +839,7 @@ impl Simulation {
                 || (middle_frame(config).is_none()
                     && (config.scorch
                         || config.crater
+                        || config.flamer
                         || (config.spawns_particle.is_some() && config.num_particles > 0))));
         let attaches = descriptor
             .owner

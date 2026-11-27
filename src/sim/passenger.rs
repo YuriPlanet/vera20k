@@ -1130,11 +1130,9 @@ pub fn can_dock_occupier_garrison(
     let owner_allows_entry = passenger.owner() == building.owner()
         || owner_is_multiplay_passive(building.owner(), &sim.houses)
         || campaign_players_share_garrison(sim, building.owner(), passenger.owner());
-    let red_health = is_at_or_below_red_hp(
-        building.health.current(),
-        building_obj.strength,
-        rules.general.condition_red,
-    );
+    let red_health = building
+        .health
+        .is_red(building_obj.strength, rules.general.condition_red);
     // Ares 3.0p1 10017710 (hook 0x457D58) adds the campaign owner check.
     // Leave the extension's additional occupier admission in its owner.
     if rules.ares_form() {
@@ -1936,17 +1934,6 @@ impl Simulation {
     }
 }
 
-// Object5F5CD0, reached from CanDock457D8F and ejection45821A, tests
-// ratio with AH41 then separately requires signed actual HP>0.
-fn is_at_or_below_red_hp(current: i32, strength: i32, condition_red: f64) -> bool {
-    use crate::util::native_x87::MaskedX87Ordering::{Equal, Less, Unordered};
-    current > 0
-        && matches!(
-            crate::sim::combat::Health::new(current).compare_ratio(strength, condition_red),
-            Less | Equal | Unordered
-        )
-}
-
 /// Building AI4401A3 and CheckAutoSellOrCivilian458200. Only map garrisons
 /// (CanBeOccupied and TechLevel=-1) take this path. The existing house-array
 /// owner resolves SideClass::FindIndex("Civilian"); no house name is special.
@@ -1970,11 +1957,10 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     {
         return false;
     }
-    if is_at_or_below_red_hp(
-        building.health.current(),
-        object.strength,
-        rules.general.condition_red,
-    ) {
+    if building
+        .health
+        .is_red(object.strength, rules.general.condition_red)
+    {
         garrison_eject::sell_building_occupants(
             sim,
             rules,

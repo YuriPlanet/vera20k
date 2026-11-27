@@ -97,6 +97,13 @@ impl Health {
             X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits())),
         )
     }
+
+    /// `ObjectClass::IsRedHP @ 0x005F5CD0`: AH41 accepts an unordered,
+    /// equal or lower ratio, then the signed actual HP must be positive.
+    pub(crate) fn is_red(self, strength: i32, condition_red: f64) -> bool {
+        self.current > 0
+            && self.compare_ratio(strength, condition_red) != MaskedX87Ordering::Greater
+    }
 }
 
 /// 5F5DD0 uses inclusive red/yellow thresholds and live type Strength.

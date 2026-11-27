@@ -339,7 +339,7 @@ impl Simulation {
             }) && anim.bounce.is_none()
         });
         if middle {
-            self.anim_middle(id, &config, rules, overlay_registry);
+            self.anim_middle(id, &config, rules, overlay_registry, frame_effects);
         }
         let Some(anim) = self.substrate.anims.get_mut(id) else {
             return Ok(bridge_state_changed);
@@ -868,7 +868,7 @@ impl Simulation {
                 .start_sound_active = false;
         }
         if middle_frame(config).is_none() {
-            self.anim_middle(id, config, rules, overlay_registry);
+            self.anim_middle(id, config, rules, overlay_registry, frame_effects);
         }
 
         // AnimClass::Start424D5F..424EF3, original gamemd instructions:
@@ -1080,6 +1080,7 @@ impl Simulation {
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(kind) = config
             .spawns_particle
@@ -1100,7 +1101,7 @@ impl Simulation {
                 }
             }
         }
-        if !(config.scorch || config.crater) {
+        if !(config.scorch || config.crater || config.flamer) {
             return;
         }
         let (Some(stored), Some(coord)) = (
@@ -1115,9 +1116,21 @@ impl Simulation {
             &self.effective_shared_cell_dummy(),
             stored,
         );
-        if stored.z.wrapping_sub(ground) >= ANIM_MIDDLE_MAX_HEIGHT {
-            return;
+        let height = stored.z.wrapping_sub(ground);
+        if height < ANIM_MIDDLE_MAX_HEIGHT && (config.scorch || config.crater) {
+            self.anim_middle_marks(id, config, rules, overlay_registry, coord);
         }
+        self.anim_middle_fire(id, config, height, coord, rules, frame_effects);
+    }
+
+    fn anim_middle_marks(
+        &mut self,
+        id: AnimId,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        coord: AnimWorldCoord,
+    ) {
         // The middle frame's size is on the ART entry, which the lookup
         // finds by the name in ASCII uppercase, on the stack.
         let (width, height) = self
@@ -1143,6 +1156,148 @@ impl Simulation {
             overlay_registry,
             crate::sim::combat::SmudgeSpawnRequest::AnimMiddle { coord, marks },
         );
+    }
+
+    /// Ares P1 AnimClass_Middle_Fire (0x1000AD50, hooks 0x4250C9,
+    /// 0x42511B, 0x42513F) runs after marks, even above their height gate.
+    /// Each configured fire picks its loop count before construction. The
+    /// two Flamer coins are drawn in order, even with null fire types.
+    fn anim_middle_fire(
+        &mut self,
+        id: AnimId,
+        config: &AnimTypeRuntimeConfig,
+        height: i32,
+        coord: AnimWorldCoord,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let small = rules.general.small_fire.as_deref();
+        if config.flamer {
+            self.spawn_middle_fire(rules, small, coord, 64, None, effects);
+            if self.scenario_rng.next_range_i32_inclusive(0, 99) < 50 {
+                self.spawn_middle_fire(rules, small, coord, 160, None, effects);
+            }
+            if self.scenario_rng.next_range_i32_inclusive(0, 99) < 50 {
+                self.spawn_middle_fire(
+                    rules,
+                    rules.general.large_fire.as_deref(),
+                    coord,
+                    112,
+                    None,
+                    effects,
+                );
+            }
+        } else if config.scorch && height < 10 && small.is_some() {
+            let Some(anim) = self.anim(id) else { return };
+            let raw = anim.world_coord;
+            let owner = anim.owner_entity.or(anim.owner_terrain);
+            let land = self.resolved_terrain.as_ref().map_or(0, |terrain| {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                let physical = crate::sim::components::DriveCoord {
+                    x: raw.x,
+                    y: raw.y,
+                    z: raw.z,
+                };
+                cells.land_type(crate::sim::movement::ground_pose::query_object_cell(
+                    &cells, physical,
+                ))
+            });
+            // Cell+0xEC, P1 jump table 0x1000AE68: Water, Rock, Beach, Ice.
+            if !matches!(land, 2 | 3 | 6 | 8) {
+                self.spawn_middle_fire(rules, small, coord, 0, owner, effects);
+            }
+        }
+    }
+
+    /// P1 0x1000AB50 constructs the target type, optionally after
+    /// GetRandomCoordsNear 0x49F420 and MapClass::GetInfantrySpot 0x4ACA10.
+    fn spawn_middle_fire(
+        &mut self,
+        rules: &RuleSet,
+        name: Option<&str>,
+        mut coord: AnimWorldCoord,
+        radius: i32,
+        owner: Option<u64>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(name) = name else { return };
+        if radius > 0 {
+            let grid = self.cell_grid();
+            (coord.x, coord.y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+                grid,
+                &mut self.scenario_rng,
+                coord.x,
+                coord.y,
+                radius,
+                crate::sim::combat::inviso_scatter::RandomDirectionSnap::Preserve,
+            );
+            coord = self.middle_fire_ground_spot(coord, rules);
+        }
+        let loops = self.scenario_rng.next_range_i32_inclusive(1, 2);
+        let type_id = self.interner.intern(name);
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        // Start calls Middle synchronously for a zero-middle animation.
+        // Defer a propagating child in that case to bound recursive user art.
+        let delay = u16::from(rules.art().anim_runtime_config(name).is_some_and(|child| {
+            (child.flamer || child.scorch && rules.general.small_fire.is_some())
+                && middle_frame(child).is_none()
+        }));
+        let descriptor = AnimClassSpawnDescriptor {
+            delay,
+            owner,
+            loop_count: loops,
+            draw_flags: 0x600,
+            ..AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, z)
+        };
+        let _ = self.spawn_anim_at_world_with_constructor(
+            rules,
+            descriptor,
+            coord,
+            AnimConstructorInput::Runtime,
+            effects,
+        );
+    }
+
+    fn middle_fire_ground_spot(
+        &mut self,
+        coord: AnimWorldCoord,
+        rules: &RuleSet,
+    ) -> AnimWorldCoord {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::{bump_crush, ground_pose, walk_head};
+
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return coord;
+        };
+        let input = DriveCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        let Some((slot, bridge)) = bump_crush::pick_infantry_sublocation(
+            Some(terrain),
+            &self.substrate.raw_cell_occupation,
+            &self.substrate.occupancy,
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+            &mut self.scenario_rng,
+            input,
+            true,
+        ) else {
+            return coord;
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let Ok(ground) = ground_pose::query_ground_height(&cells, input) else {
+            return coord;
+        };
+        let spot = walk_head::selected_head(input, slot, ground, bridge);
+        AnimWorldCoord {
+            x: spot.x,
+            y: spot.y,
+            z: spot.z,
+        }
     }
 
     /// Ares 3.0 AnimClass_Expired_SpawnsParticle (1000AE40, hook 0x425002,

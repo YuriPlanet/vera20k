@@ -1,10 +1,9 @@
-//! Ares 3.0 `Type=EMPulse` (`src/Misc/SWTypes/EMPulse.cpp`): the owner's
+//! Ares `Type=EMPulse` (`src/Misc/SWTypes/EMPulse.cpp`): the owner's
 //! EMP cannons fire at the target cell, or each detonates its weapon on
 //! itself.
 //!
-//! Installed Ares: Activate `0x100711C0`, GetLaunchSiteRange `0x10071380`
-//! and IsLaunchSite `0x10071490` (`targeting::launch_sites`), Initialize
-//! `0x10071440` and LoadFromINI `0x10071510` (the Rules owners). A fired
+//! Installed Ares 3.0p1: Activate `0x100721D0`, GetLaunchSiteRange `0x10072390`
+//! and IsLaunchSite `0x100724A0` (`targeting::launch_sites`). A fired
 //! cannon runs gamemd's Mission_Missile EMP arm
 //! (`world::techno_ai::building_missile`), with Ares hooks 44CCE7 and 44CE46.
 //!
@@ -14,12 +13,9 @@
 //! (`0x005B3570`) restarts the cannon's mission clock through the mission
 //! owner. No detach calls.
 //!
-//! RESIDUALS:
-//! - Activate walks `Owner->Buildings` live; a `TargetSelf` detonation that
-//!   removes a building there shifts the vector under the walk, so native
-//!   skips the building after it. VERA walks the list as it stood and skips
-//!   only buildings no longer eligible. Trigger: a self-detonating cannon
-//!   that kills another of the House's buildings; rare.
+//! The original end stays fixed if a detonation removes a house building
+//! during the walk. Rust retains the original slot indices without reading
+//! an expired object reference or using a pointer into a reallocated array.
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -29,12 +25,12 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::world::{FrameEffects, Simulation};
 
-/// SW_EMPulse::Activate (`0x100711C0`) for `owner`'s Super of `sw` at
+/// SW_EMPulse::Activate (Ares 3.0p1 `0x100721D0`) for `owner`'s Super of `sw` at
 /// `cell`: the House's EMPTarget becomes the cell; then, up to
 /// `SW.MaxCount` (negative: all) of the House's buildings in its list order
 /// that are launch sites of the type, within their range of the cell
 /// unless `EMPulse.Linked` or `.TargetSelf` (IsLaunchSiteEligible
-/// `0x1006DA20`), each either
+/// `0x1006EA30`), each either
 /// - remembers the Super and the cell (TryGetCellAt: none off the cell
 ///   grid), takes the type's index as its firing type, queues Missile and
 ///   commences it; or, under `EMPulse.TargetSelf`,
@@ -58,9 +54,11 @@ pub(super) fn launch(
     else {
         return true;
     };
-    if let Some(house) = sim.houses.get_mut(&owner) {
-        house.aim_emp_cannons(cell);
-    }
+    let Some(house) = sim.houses.get_mut(&owner) else {
+        return true;
+    };
+    house.aim_emp_cannons(cell);
+    let end = house.base_projection_mut().begin_building_slot_walk();
     let count = usize::try_from(emp.max_count).unwrap_or(usize::MAX);
     let ignore_range = emp.linked || emp.target_self;
     let target = (i32::from(cell.0), i32::from(cell.1));
@@ -72,20 +70,24 @@ pub(super) fn launch(
     let firing_type = rules
         .super_weapon_index(&sw.id)
         .map_or(-1, |index| index as i32);
-    // A copy, as the launch began: a cannon that fires at itself detonates
-    // through the whole simulation, which can destroy listed buildings.
-    let buildings = sim
-        .houses
-        .get(&owner)
-        .map(|house| house.base_projection().buildings().to_vec())
-        .unwrap_or_default();
     let mut fired = 0;
-    for id in buildings {
+    for slot in 0..end {
         if fired >= count {
             break;
         }
-        // The walk asks each building as it reaches it.
-        let Some(site) = super::targeting::launch_site(sim, rules, owner, sw, id) else {
+        // 0x10072260 dereferences the current slot. After the synchronous
+        // detonation at 0x10072349, 0x1007236A advances it by one.
+        let Some(id) = sim
+            .houses
+            .get(&owner)
+            .and_then(|house| house.base_projection().building_slot(slot))
+        else {
+            continue;
+        };
+        let Some(site_owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
+            continue;
+        };
+        let Some(site) = super::targeting::launch_site(sim, rules, site_owner, sw, id) else {
             continue;
         };
         let eligible = if ignore_range {
@@ -114,6 +116,9 @@ pub(super) fn launch(
                 .set_building_firing_super_weapon(firing_type);
         }
         crate::sim::world::queue_and_commence(sim, id, MissionType::Missile, rules);
+    }
+    if let Some(house) = sim.houses.get_mut(&owner) {
+        house.base_projection_mut().finish_building_slot_walk();
     }
     true
 }

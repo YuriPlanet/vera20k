@@ -62,10 +62,16 @@ Convert.Deploy=DEPLOYED
 - The 3.0 hooks on `Carryall_Unload` 0x416AF0: the cargo comes down facing the
   Carryall's turret with its type's `ROT=`/`TurretROT=` back (Facing 10048920,
   0x416C3A), runs its arrival and powers off when Deactivated (UpdateCargo
-  10048A10, 0x416C94), loses its Transporter, takes Guard and rejoins its team
-  (Guard 100489D0, 0x416CF4); a refused drop destroys the Carryall
+  10048A10, 0x416C94), loses its Transporter, takes Guard and attempts to rejoin
+  its team (3.0p1 Guard 0x10049620, hook 0x416CF4); a refused drop destroys the Carryall
   (DestroyCargo 100488C0, 0x416C4D). A paradropped passenger loses Transporter
   and IsOnCarryall (Paradrop_Carryall 10048B80, 0x415DF6).
+  The successful Guard arm is built in. On ordinary pickup, native Limbo
+  reaches Foot::Detach_All at `0x004D9744` and clears the live team pointer.
+  VERA retains the team identity through the flight, allowing a successfully
+  unloaded vehicle to rejoin if it still passes the team's admission checks.
+  An empty team waits while its last member is aboard. Explicit removal or
+  loss of the cargo cancels its return.
 - Aircraft passengers over the stock CAN_LOAD arm (`aircraft_can_enter_radio`,
   `sim/radio/receive.rs`): a driverless transport answers 0
   (QueryEnterAsPassenger_KillDriver 10048CF0, 0x41946B) and one whose

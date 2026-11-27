@@ -6,6 +6,7 @@
 //! one-write preservation-safe commit. Runtime consumers remain in their
 //! existing app, presentation, and audio owners.
 
+use std::collections::BTreeSet;
 use std::io;
 use std::path::Path;
 
@@ -32,6 +33,7 @@ const VIDEO_SECTION: &str = "Video";
 const AUDIO_SECTION: &str = "Audio";
 const WONLINE_SECTION: &str = "WOnline";
 const NETWORK_SECTION: &str = "Network";
+const UNLOCKED_MOVIES_SECTION: &str = "UnlockedMovies";
 /// VERA's own display preferences. gamemd never reads this section.
 const VERA_SECTION: &str = "VERA";
 
@@ -121,6 +123,13 @@ pub(crate) struct RetailOptionsProfile {
     // `ReadFromINI` `0x005FABA6..0x005FAC54` and written by `WriteToINI`
     // `0x005FAF9E`; Play_Movie raises it through `0x005FBF80`.
     pub(crate) movie_progress: crate::ui::movies_credits_shell::MovieProgress,
+    /// Per-film unlocks from Ares 3.0p1's Options movie hooks. VERA's
+    /// profile is the writable successor of RA2MD.INI.
+    #[cfg(not(test))]
+    unlocked_movies: BTreeSet<String>,
+    /// Existing options fixtures use struct update syntax with Default.
+    #[cfg(test)]
+    pub(crate) unlocked_movies: BTreeSet<String>,
 
     // OptionsClass +0x4A/+0x54/+0x58; ReadFromINI 5FAC88..5FACDE.
     pub(crate) network_socket: u16,
@@ -409,6 +418,7 @@ impl Default for RetailOptionsProfile {
             sound_latency: 9,
             in_game_music: true,
             movie_progress: crate::ui::movies_credits_shell::MovieProgress::default(),
+            unlocked_movies: BTreeSet::new(),
             network_socket: u16::MAX,
             network_card: 0,
             network_destination: String::new(),
@@ -656,6 +666,14 @@ impl RetailOptionsProfile {
         }
 
         self.movie_progress = decode_net_id(ini.section_or_empty(NETWORK_SECTION));
+        // 0x1006AE36..0x1006AE4C looks up each configured movie's exact
+        // name in [UnlockedMovies], with the fresh entry's false default.
+        let movies = ini.section_or_empty(UNLOCKED_MOVIES_SECTION);
+        self.unlocked_movies = movies
+            .keys()
+            .filter(|name| movies.read_bool(name, false))
+            .map(str::to_owned)
+            .collect();
         let network = ini.section_or_empty(NETWORK_SECTION);
         self.network_socket = network.read_int("Socket", i32::from(self.network_socket)) as u16;
         self.network_card = network.read_int("NetCard", self.network_card);
@@ -796,6 +814,24 @@ impl RetailOptionsProfile {
         if self.screen_width == SCREEN_SIZE_UNSET || self.screen_height == SCREEN_SIZE_UNSET {
             self.screen_width = DEFAULT_SCREEN_WIDTH;
             self.screen_height = DEFAULT_SCREEN_HEIGHT;
+        }
+    }
+
+    pub(crate) fn unlocked_movies(&self) -> &BTreeSet<String> {
+        &self.unlocked_movies
+    }
+
+    pub(crate) fn note_movie_played(
+        &mut self,
+        catalog: Option<&crate::ui::movies_credits_shell::CustomMovieCatalog>,
+        stem: &str,
+    ) {
+        self.movie_progress.note_played(stem);
+        if catalog.is_some_and(|catalog| catalog.is_unlockable(stem))
+            && !stem.starts_with(['[', '#'])
+            && !stem.contains(['=', ';', '\r', '\n', '\0'])
+        {
+            self.unlocked_movies.insert(stem.to_owned());
         }
     }
 
@@ -997,6 +1033,22 @@ impl RetailOptionsProfile {
             .collect();
         let output =
             crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
+        // Ares 3.0p1 Options_SaveToINI_MoviesList hooks 0x005FAFFB with
+        // 0x1006B0A0, writing true entries before the shared profile save.
+        let output = if self.unlocked_movies.is_empty() {
+            output
+        } else {
+            let unlocks: Vec<_> = self
+                .unlocked_movies
+                .iter()
+                .map(|stem| (stem.as_str(), "yes"))
+                .collect();
+            crate::util::ini_writer::set_ini_exact_values(
+                &output,
+                UNLOCKED_MOVIES_SECTION,
+                &unlocks,
+            )
+        };
         let output = apply_formatted_section(&output, VERA_SECTION, &formatted.vera);
         // Keys earlier builds wrote: a windowed launch now always opens
         // centred, at gamemd's startup size, and only shell captures select
@@ -1273,6 +1325,45 @@ mod tests {
         let reloaded = load_snapshot(&RetailStartupOptions::default(), &output).retained_profile;
         assert_eq!(loaded.network_destination, "1é.2.3.4");
         assert_eq!(reloaded.network_destination, loaded.network_destination);
+    }
+
+    #[test]
+    fn movie_unlocks_round_trip_exact_stems_and_leave_other_keys_intact() {
+        use crate::ui::movies_credits_shell::CustomMovieCatalog;
+
+        let startup = RetailStartupOptions::default();
+        let input = b"[UnlockedMovies]\nBrief=No\nbrief=No\nOtherMod=no\n; existing comment\n";
+        let catalog = CustomMovieCatalog::read(
+            &IniFile::from_bytes(
+                b"[Movies]\n0=Brief\n1=brief\n2=Fin\xe9\n\
+                  [Brief]\nDescription=TXT_BRIEFING\n[Fin\xe9]\nDescription=TXT_OUTRO\n",
+            )
+            .unwrap(),
+        );
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        // A nonempty custom catalog showing no rows doesn't fall back to
+        // the always-visible retail intro.
+        assert_eq!(
+            catalog.visible_entries(profile.unlocked_movies()),
+            Some(vec![])
+        );
+        profile.note_movie_played(Some(&catalog), "BRIEF");
+        assert!(profile.unlocked_movies().is_empty());
+        profile.note_movie_played(Some(&catalog), "Brief");
+        profile.note_movie_played(Some(&catalog), "Finé");
+        let output = profile.transform_settings(input);
+        assert!(output.starts_with(
+            b"[UnlockedMovies]\nBrief=yes\nbrief=No\nOtherMod=no\nFin\xe9=yes\r\n; existing comment\n",
+        ));
+        let restored = load_snapshot(&startup, &output).retained_profile;
+        let rows = catalog.visible_entries(restored.unlocked_movies()).unwrap();
+        let names = rows.iter().map(|row| row.file.as_ref()).collect::<Vec<_>>();
+        assert_eq!(names, ["Brief", "Finé"]);
+        assert!(
+            CustomMovieCatalog::default()
+                .visible_entries(restored.unlocked_movies())
+                .is_none()
+        );
     }
 
     /// `CRCEngine::operator()` @ `0x004A1DE0` over `"Network"`, executed

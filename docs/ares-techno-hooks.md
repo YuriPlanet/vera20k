@@ -204,7 +204,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `416C3A` | AircraftClass_Carryall_Unload_Facing | `10048920` | ported: [ares-transports.md](ares-transports.md) |
 | `416C4D` | AircraftClass_Carryall_Unload_DestroyCargo | `100488C0` | ported with a residual: [ares-transports.md](ares-transports.md) |
 | `416C94` | AircraftClass_Carryall_Unload_UpdateCargo | `10048A10` | ported: [ares-transports.md](ares-transports.md) |
-| `416CF4` | AircraftClass_Carryall_Unload_Guard | `100489D0` | ported: [ares-transports.md](ares-transports.md) |
+| `416CF4` | AircraftClass_Carryall_Unload_Guard | `10049620` (3.0p1) | built-in: clears Transporter, queues Guard, and attempts team return ([ares-transports.md](ares-transports.md)) |
 | `416E37` | AircraftClass_Mi_MoveCarryall_CanTote | `10048B00` | ported: [ares-transports.md](ares-transports.md) |
 | `417D75` | AircraftClass_GetActionOnObject_CanTote | `10048A60` | ported: [ares-transports.md](ares-transports.md) |
 | `417DD2` | AircraftClass_GetActionOnObject_NoManualUnload | `10048A90` | ported earlier |

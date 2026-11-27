@@ -975,10 +975,8 @@ pub struct RuleSet {
     builtin_attach_effects: bool,
     /// A built-in GenericWarhead can create ordinary Warhead attachments.
     builtin_generic_attach_effects: bool,
-    /// A retained warhead can reach the surfaced Tunnel EMP receiver.
-    builtin_tunnel_emp: bool,
-    /// A built-in GenericWarhead can EMP regular Foots and Buildings.
-    builtin_generic_emp: bool,
+    /// A retained warhead has a nonzero EMP duration.
+    builtin_emp: bool,
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,

@@ -11,6 +11,7 @@ mod movie_list;
 mod page;
 
 pub use credits::{CreditLine, CreditsLayoutFlags, parse_credits};
+pub(crate) use movie_list::CustomMovieCatalog;
 pub use movie_list::{
     MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY, MovieEntry,
     MovieListLayout, MovieListState, MovieProgress, PLAY_MOVIE_CONTROL, active_movie_entries,

@@ -104,8 +104,7 @@ cites each hook.
 
 - The storage pips (0x44D755, 0x709B4E; ares-tiberium.md). The storage
   itself is ported in `sim::ares_tiberium_storage`.
-- Doggie (0x51F628, 0x518CB3, 0x51ABD7,
-  0x5200C1), `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
+- `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
   retail data.
 - Presentation and input: `Message.SilosNeeded`
@@ -353,10 +352,14 @@ DLL removed are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `518CB3` | InfantryClass_ReceiveDamage_Doggie | `10025AD0` | residual: Doggie panic when hurt (dormant) |
-| `51ABD7` | InfantryClass_SetDestination_Doggie | `10025B00` | residual: Doggie stands up to move (dormant) |
-| `51F628` | InfantryClass_Guard_Doggie | `10025960` | residual: Doggie sit-down on tiberium (dormant: no retail `Doggie=yes`) |
-| `5200C1` | InfantryClass_UpdatePanic_Doggie | `10025B50` | residual: Doggie panic on tiberium (dormant) |
+| `518CB3` | InfantryClass_ReceiveDamage_Doggie | `100265F0` (3.0p1) | A sourced fear latch uses 300 when the dog is alive and at or below the red-health threshold. |
+| `51ABD7` | InfantryClass_SetDestination_Doggie | `10026620` (3.0p1) | A prone dog takes the existing Up action before a non-null destination. |
+| `51F628` | InfantryClass_Guard_Doggie | `10026480` (3.0p1) | An idle dog guarding Tiberium turns east and then lies down through the normal Crawls check. |
+| `5200C1` | InfantryClass_UpdatePanic_Doggie | `10026670` (3.0p1) | At 300 fear a stationary dog with no destination lies down on ore or searches for reachable ore within the native 16-cell scan. With a destination it clears Target and starts Move. |
+
+`Doggie=` is read by stock `InfantryTypeClass::ReadINI` at `0x005245E6`–`0x00524600`.
+The hooks run when the type sets the key, including with Ares Off. The matching
+stance uses `Crawls=` from ART. Tiberium healing has separate settings and hooks.
 
 ### Infantry/Hooks.Saboteur.cpp
 

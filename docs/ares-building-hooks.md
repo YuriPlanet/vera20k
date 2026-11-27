@@ -1,7 +1,8 @@
 # Optional Ares gate, wall, trench, tunnel and foundation hooks
 
-Every build takes these hooks when the game plays Ares ([Ares](ares.md));
-other games keep every stock path named below. This page covers the hooks of `Ext/Building/Hooks.Gates.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md)).
+The tunnel hooks also run when the rules register a matching entrance.
+This page covers the hooks of `Ext/Building/Hooks.Gates.cpp`,
 `Hooks.Infiltrate.cpp` (the sidebar and AllyWith ones), `Hooks.Sensor.cpp`
 (the redraw), `Hooks.Trenches.cpp`, `Hooks.Tunnels.cpp` and
 `Ext/BuildingType/Hooks.cpp` (pips, outline, undeploy) that no other page
@@ -82,9 +83,10 @@ SizeLimit=15              ; the largest Size= that may enter
   depots, hospitals alike), and a Unit transport at its ROGER (`1004C270`,
   hook `0x73769E`; `sim::radio::receive`). Garrisons are not gated: their
   occupiers enter through `CanBeOccupiedBy` (`sim::ares_garrison`).
-- **Tunnels.** A building with `Tunnel=` is an entrance of its owner's
-  network of that type (HouseExt `+0x64`, `sim::ares_tunnel`, saved and
-  hashed). CAN_LOAD admits a Foot while the network has room under
+- **Tunnels.** A building whose `Tunnel=` names a registered tunnel is an
+  entrance of its owner's network (HouseExt `+0x64`, `sim::ares_tunnel`,
+  saved and hashed). Select the unit and click an entrance to send it in.
+  CAN_LOAD admits a Foot while the network has room under
   `Passengers=` and its `Size=` is within the building's `SizeLimit=`,
   skipping the contact-capacity gate, and refuses a controller or a
   mind-controlled sender with a capture manager (`100174E0`); DOCK_NOW
@@ -119,11 +121,8 @@ SizeLimit=15              ; the largest Size= that may enter
   it); VERA moves the occupant's carrier link instead. Online, VERA's
   network gate refuses an event whose source building is another
   House's, where Ares trusts it.
-- Tunnels: the building click that radios a clicked unit (`0x10`, hook
-  `0x44351A`, `100172F0`) has no host, since VERA does not port the
-  absorbers' arm of `BuildingClass::ClickedAction_Object` (no RESERVE_DOCK
-  radio, `sim::radio`); EnterTunnel clears OnBridge after Limbo instead of before (as
-  `board_passenger` does); UnloadOne keeps a member whose nearest-cell
+- Tunnels: EnterTunnel clears OnBridge after Limbo instead of before (as
+  `board_passenger` does). UnloadOne keeps a member whose nearest-cell
   search or Unlimbo fails, where native puts a vehicle on cell (0, 0) or
   drops it.
 - `Passengers.Allowed`/`.Disallowed` also gate an aircraft's hold
@@ -149,19 +148,19 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x64BE83` | `1006A620` | sub_64BDD0_PayloadSize1 | ported: as above, the one payload table serves both directions |
 | `0x64C314` | `1006A660` | sub_64BDD0_PayloadSize2 | ported: as above |
 | `0x4586CA` | `10017220` | BuildingClass_KillOccupiers_EachOccupierKilled | ported: `passenger::garrison_eject::kill_building_occupants` runs evalRaidStatus before each assaulted occupant's kill; the vector still holds them all there, so only the all-killed hook `0x458729` can return a raided building |
-| `0x43C326` | `100174E0` | BuildingClass_ReceivedRadioCommand_QueryCanEnter_Tunnel | ported: `sim::radio::receive::can_load`, IsPassengerAllowed included |
-| `0x43C716` | `100176B0` | BuildingClass_ReceivedRadioCommand_RequestCompleteEnter_Tunnel | ported: `sim::radio::receive` DOCK_NOW |
-| `0x44351A` | `100172F0` | BuildingClass_ActionOnObject_Tunnel | residual: the absorbers' click arm it extends is not in VERA |
-| `0x44731C` | `100173A0` | BuildingClass_GetActionOnObject_Tunnel | ported: `app::input::context_order` self click, `Command::UnloadPassengers` admission |
-| `0x44D8A7` | `100174A0` | BuildingClass_Mi_Unload_Tunnel | ported: `transport_unload::ares_tunnel_mission_unload` |
-| `0x442DF2` | `10017350` | BuildingClass_Demolish_Tunnel | ported: `crew_survival::spawn_building_survivors` |
-| `0x44A37F` | `100173E0` | BuildingClass_Mi_Selling_Tunnel | ported: `production_sell::sale_survivors` |
-| `0x71A995` | `100177B0` | TemporalClass_Update_Tunnel | ported: `temporal` erase |
+| `0x43C326` | `10017BD0` | BuildingClass_ReceivedRadioCommand_QueryCanEnter_Tunnel | ported: `sim::radio::receive::can_load` |
+| `0x43C716` | `10017DA0` | BuildingClass_ReceivedRadioCommand_RequestCompleteEnter_Tunnel | ported: `sim::radio::receive` DOCK_NOW |
+| `0x44351A` | `100179E0` | BuildingClass_ActionOnObject_Tunnel | ported: action 4 resumes at `0x443534`, where `ClickedMission` sends Unload (mission `0x10`) to the selected building itself |
+| `0x44731C` | `10017A90` | BuildingClass_GetActionOnObject_Tunnel | ported: `app::input::context_order` self click, `Command::UnloadPassengers` admission |
+| `0x44D8A7` | `10017B90` | BuildingClass_Mi_Unload_Tunnel | ported: `transport_unload::ares_tunnel_mission_unload` |
+| `0x442DF2` | `10017A40` | BuildingClass_Demolish_Tunnel | ported: `crew_survival::spawn_building_survivors` |
+| `0x44A37F` | `10017AD0` | BuildingClass_Mi_Selling_Tunnel | ported: `production_sell::sale_survivors` |
+| `0x71A995` | `10017EA0` | TemporalClass_Update_Tunnel | ported: `temporal` erase |
 | `0x73A23F` | `10017F60` | UnitClass_UpdatePosition_Tunnel | 3.0p1 entrance-owner routing in `movement::per_cell::unit_per_cell_absorber` |
-| `0x73F606` | `100177F0` | UnitClass_IsCellOccupied_Tunnel | ported: `world::object_entry` |
-| `0x741CE5` | `10017830` | UnitClass_SetDestination_Tunnel | ported: `movement::track_path` |
-| `0x51ED8E` | `100176E0` | InfantryClass_GetActionOnObject_Tunnel | ported: `world::world_orders::entry_click_action` |
-| `0x51A2AD` | `10017760` | InfantryClass_UpdatePosition_Tunnel | ported: `movement::per_cell::infantry_per_cell_enter` |
+| `0x73F606` | `10017EE0` | UnitClass_IsCellOccupied_Tunnel | ported: `world::object_entry` |
+| `0x741CE5` | `10017F20` | UnitClass_SetDestination_Tunnel | ported: `movement::track_path` |
+| `0x51ED8E` | `10017DD0` | InfantryClass_GetActionOnObject_Tunnel | ported: `world::world_orders::entry_click_action` |
+| `0x51A2AD` | `10017E50` | InfantryClass_UpdatePosition_Tunnel | ported: `movement::per_cell::infantry_per_cell_enter` |
 | `0x45ECE0` | `10010150` | BuildingTypeClass_GetMaxPips | ported: `ObjectType::pip_max` |
 | `0x465550` | `10010120` | BuildingTypeClass_GetFoundationOutline | equivalent: gamemd `0x00465550` has no caller; the outline consumers read `Foundation::custom_outline` (`docking::building_dock`) |
 | `0x465D4A` | `100101D0` | BuildingTypeClass_IsUndeployable | equivalent: `ObjectType::is_1x1_with_undeploy` reads `Foundation::dimensions`, the custom width and height |

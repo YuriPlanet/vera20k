@@ -10,7 +10,7 @@
 //!
 //! Operates on raw bytes so content that is not valid UTF-8 elsewhere in the
 //! file (e.g. a player name with high-byte characters in another section)
-//! round-trips verbatim and is never matched.
+//! round-trips verbatim.
 //!
 //! ## Dependency rules
 //! - Part of util/ — no dependencies on game modules.
@@ -39,17 +39,44 @@ pub fn set_ini_values(content: &[u8], section: &str, values: &[(&str, &str)]) ->
 /// The same update transaction for native byte strings, without UTF-8 encoding.
 /// Only section/key syntax is text; an existing value may contain any bytes.
 pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8])]) -> Vec<u8> {
+    let bytes: Vec<_> = values
+        .iter()
+        .map(|(key, value)| (key.trim().as_bytes(), *value))
+        .collect();
+    set_ini_bytes(content, section, &bytes, false)
+}
+
+/// Update native, case-sensitive names stored as widened INI bytes.
+pub fn set_ini_exact_values(content: &[u8], section: &str, values: &[(&str, &str)]) -> Vec<u8> {
+    let narrow: Vec<_> = values
+        .iter()
+        .map(|(key, value)| (super::native_string::narrow_widened(key), value.as_bytes()))
+        .collect();
+    let bytes: Vec<_> = narrow
+        .iter()
+        .map(|(key, value)| (key.as_slice(), *value))
+        .collect();
+    set_ini_bytes(content, section, &bytes, true)
+}
+
+fn set_ini_bytes(content: &[u8], section: &str, values: &[(&[u8], &[u8])], exact: bool) -> Vec<u8> {
     if values.is_empty() {
         return content.to_vec();
     }
 
-    let target_section = section.trim();
-    let mut updates: Vec<(&str, &[u8])> = Vec::with_capacity(values.len());
+    let same_name = |left: &[u8], right: &[u8]| {
+        if exact {
+            left == right
+        } else {
+            left.eq_ignore_ascii_case(right)
+        }
+    };
+    let target_section = section.trim().as_bytes();
+    let mut updates: Vec<(&[u8], &[u8])> = Vec::with_capacity(values.len());
     for &(key, value) in values {
-        let key = key.trim();
         if let Some(existing) = updates
             .iter_mut()
-            .find(|(existing_key, _)| existing_key.eq_ignore_ascii_case(key))
+            .find(|(existing_key, _)| same_name(existing_key, key))
         {
             *existing = (key, value);
         } else {
@@ -66,7 +93,7 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
     for (line_index, (text, _)) in lines.iter().enumerate() {
         let header = std::str::from_utf8(text).ok().and_then(section_header_name);
         if let Some(name) = header {
-            if !section_found && name.eq_ignore_ascii_case(target_section) {
+            if !section_found && same_name(name.as_bytes(), target_section) {
                 section_found = true;
                 in_first_block = true;
                 insert_after = Some(line_index);
@@ -78,12 +105,19 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
         if !in_first_block {
             continue;
         }
-        // Parse only the ASCII key prefix: native values need not be UTF-8.
-        let existing_key = key_name_bytes(text);
+        let existing_key = if exact {
+            text.iter()
+                .position(|byte| *byte == b'=')
+                .map(|end| text[..end].trim_ascii())
+                .filter(|key| !matches!(key.first(), None | Some(b';' | b'#' | b'[')))
+        } else {
+            // The regular writer only matches UTF-8 key syntax.
+            key_name_bytes(text).map(str::as_bytes)
+        };
         if let Some(existing_key) = existing_key {
             if let Some(update_index) = updates
                 .iter()
-                .position(|update| update.0.eq_ignore_ascii_case(existing_key))
+                .position(|update| same_name(update.0, existing_key))
             {
                 key_lines[update_index].get_or_insert(line_index);
             }
@@ -111,7 +145,7 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
     for (line_index, (text, terminator)) in lines.iter().enumerate() {
         if let Some(update_index) = key_lines.iter().position(|line| *line == Some(line_index)) {
             let (key, value) = updates[update_index];
-            out.extend_from_slice(key.as_bytes());
+            out.extend_from_slice(key);
             out.push(b'=');
             out.extend_from_slice(value);
             // A replaced last line gains a CRLF: the loader discards a last
@@ -135,7 +169,7 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
                 if !wrote_any && terminator.is_empty() {
                     out.extend_from_slice(CRLF);
                 }
-                out.extend_from_slice(key.as_bytes());
+                out.extend_from_slice(key);
                 out.push(b'=');
                 out.extend_from_slice(value);
                 out.extend_from_slice(CRLF);
@@ -152,7 +186,7 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
         out.extend_from_slice(section.as_bytes());
         out.extend_from_slice(b"]\r\n");
         for (key, value) in updates {
-            out.extend_from_slice(key.as_bytes());
+            out.extend_from_slice(key);
             out.push(b'=');
             out.extend_from_slice(value);
             out.extend_from_slice(CRLF);

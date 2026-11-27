@@ -303,8 +303,9 @@ pub(crate) fn place_infantry_in_native_cell(
 /// [`place_infantry_in_native_cell`] on the cell holding `coords`
 /// (`MapClass::Get_CellClass_At_Coord @ 0x00565730`), on its deck when the cell
 /// has a high bridge (`+0x140 & 0x100`) and `coords` stands at least four
-/// levels above its Level, with the live ground Gate. Every caller passes
-/// `fIgnoreContents` 0. The spot and whether it is on the deck, or `None`
+/// levels above its Level, with the live ground Gate. The Ares animation
+/// fire helper at 0x1000ABA7 sets the native ignore-contents argument.
+/// The spot and whether it is on the deck, or `None`
 /// where PlaceInfantryInCell answers the zero coordinate (`0x0089E778`); the
 /// coordinate it returns is [`super::walk_head::selected_head`] of `coords`.
 ///
@@ -321,6 +322,7 @@ pub(crate) fn pick_infantry_sublocation(
     interner: &crate::sim::intern::StringInterner,
     rng: &mut SimRng,
     coords: DriveCoord,
+    ignore_contents: bool,
 ) -> Option<(u8, bool)> {
     use crate::sim::occupancy::RawCellKey;
     let (key, deck) = match terrain {
@@ -351,7 +353,7 @@ pub(crate) fn pick_infantry_sublocation(
         rules,
         interner,
     };
-    place_infantry_in_native_cell(raw, key, layer, coords, false, gate, rng)
+    place_infantry_in_native_cell(raw, key, layer, coords, ignore_contents, gate, rng)
         .map(|spot| (spot, deck))
 }
 

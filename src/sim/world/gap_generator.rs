@@ -230,6 +230,7 @@ impl Simulation {
             return;
         }
         // `0x0043FB6D..0x0043FBE3`: the working sound precedes the dispatcher.
+        self.recalculate_laser_fence(id, true, rules, frame_effects);
         self.building_working_sound_edge(id, operational, rules, frame_effects);
         self.dispatch_building_operational(id, rules, registry, frame_effects);
         //43FBEF stores the caller's sample, independently of the dispatcher's

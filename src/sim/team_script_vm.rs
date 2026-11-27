@@ -878,6 +878,10 @@ pub struct TeamScriptVm {
     /// destructor, not its Limbo or UnInit.
     #[serde(default)]
     rejoin_team: BTreeMap<u64, u64>,
+    /// The cargo's team before Carryall pickup. VERA's common Limbo drops
+    /// the live membership; the Carryall unload hook still needs its origin.
+    #[serde(default)]
+    carryall_rejoin_team: BTreeMap<u64, u64>,
     /// Scratch for a script action's copy of a team's member ids
     /// ([`Self::copy_members`]), kept so the walks allocate once
     /// per match instead of once per team per step. Empty between walks;
@@ -1202,10 +1206,27 @@ impl TeamScriptVm {
         self.rejoin_team.get(&entity_id).copied()
     }
 
+    pub(crate) fn retain_team_for_carryall(&mut self, cargo: u64, team: u64) {
+        if self.teams.contains_key(&team) {
+            self.carryall_rejoin_team.insert(cargo, team);
+        }
+    }
+
+    pub(crate) fn take_carryall_team(&mut self, cargo: u64) -> Option<u64> {
+        self.carryall_rejoin_team.remove(&cargo)
+    }
+
+    fn has_carryall_return(&self, team: u64) -> bool {
+        self.carryall_rejoin_team
+            .values()
+            .any(|&pending| pending == team)
+    }
+
     /// `TechnoClass::PointerExpired @ 0x00707BB2..0x00707BBA` for every
     /// object as team `team_id` goes: none keeps it to rejoin.
     fn forget_team_to_rejoin(&mut self, team_id: u64) {
         self.rejoin_team.retain(|_, team| *team != team_id);
+        self.carryall_rejoin_team.retain(|_, team| *team != team_id);
     }
 
     /// Latch TeamClass+0x82 for `entity_id`'s current team (Foot+0x5D4),
@@ -1233,6 +1254,7 @@ impl TeamScriptVm {
     /// The object's destructor: its team to rejoin goes with it.
     pub(crate) fn object_deleted(&mut self, entity_id: u64) {
         self.rejoin_team.remove(&entity_id);
+        self.carryall_rejoin_team.remove(&entity_id);
     }
 
     /// The TeamType of the team `entity_id` belongs to (Foot `+0x5D4` then
@@ -1588,6 +1610,10 @@ impl TeamScriptVm {
         if !self.rejoin_team.is_empty() {
             b"team-rejoin-v1".hash(hasher);
             self.rejoin_team.hash(hasher);
+        }
+        if !self.carryall_rejoin_team.is_empty() {
+            b"carryall-rejoin-team-v1".hash(hasher);
+            self.carryall_rejoin_team.hash(hasher);
         }
         let changed: Vec<_> = self
             .ai_trigger_order

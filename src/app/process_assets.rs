@@ -75,6 +75,9 @@ pub(crate) struct ProcessAssets {
     /// CampaignClass's retained array. Init_Game52C605 creates it before
     /// Load_Game_Rules selects Movies; ClearScene685609 rereads its sources.
     campaigns: Option<crate::rules::campaigns::CampaignRegistry>,
+    /// InitGame_MoviesList (Ares 3.0p1 0x1006B090) selects the shell catalog
+    /// once from the launched game's archives, separately from [Movies] in ART.
+    movie_catalog: Option<crate::ui::movies_credits_shell::CustomMovieCatalog>,
     /// MapClass's one process-global fallback CellClass (`0x00ABDC50`). Map
     /// reloads bind their resolved grid to this same live identity.
     pub(crate) shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
@@ -201,6 +204,7 @@ impl ProcessAssets {
             audio_catalog: None,
             native_rules: None,
             campaigns: None,
+            movie_catalog: None,
             shared_cell_dummy: Default::default(),
             csf: None,
             tile_variant_selector_cache: Default::default(),
@@ -444,6 +448,21 @@ impl ProcessAssets {
         if self.campaigns.is_none() {
             self.reload_campaigns(assets);
         }
+        self.movie_catalog.get_or_insert_with(|| {
+            const FILE: &str = "MOVIEMD.INI";
+            if assets.get_ref(FILE).is_none() {
+                return Default::default();
+            }
+            match crate::rules::retail_sources::select_ini(assets, FILE) {
+                Ok(selected) => {
+                    crate::ui::movies_credits_shell::CustomMovieCatalog::read(&selected.ini)
+                }
+                Err(error) => {
+                    log::warn!("Could not load the movie list from {FILE}: {error}");
+                    Default::default()
+                }
+            }
+        });
         if self.audio_catalog.is_none() {
             let index = if self.load_audio_index {
                 assets
@@ -493,6 +512,12 @@ impl ProcessAssets {
 
     pub(crate) fn audio_catalog(&self) -> Option<&ProcessAudioCatalog> {
         self.audio_catalog.as_ref()
+    }
+
+    pub(crate) fn movie_catalog(
+        &self,
+    ) -> Option<&crate::ui::movies_credits_shell::CustomMovieCatalog> {
+        self.movie_catalog.as_ref()
     }
 
     /// Init_Game52C605/ClearScene685609 use fresh local INI objects while keeping the
@@ -1280,6 +1305,58 @@ impl ProcessAssets {
 mod tests {
     use super::{MediaArchiveMode, ProcessAssets};
     use crate::assets::asset_manager::AssetManager;
+
+    #[test]
+    fn movie_catalog_selects_the_mod_ini_with_ares_off() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+        let install = audio_test_install("movie-list");
+        let mod_dir = TestDirectory::new("selected-movie-list");
+        for (name, text) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+            (
+                "moviemd.ini",
+                "[Movies]\n0=StockOverride\n[StockOverride]\nUnlockable=no\n",
+            ),
+        ] {
+            std::fs::write(install.path().join(name), text).unwrap();
+        }
+        std::fs::write(
+            mod_dir.path().join("MOVIEMD.INI"),
+            "[Movies]\n5=Second\n0=First\n2=Second\n\
+             [Second]\nDescription=TXT_SECOND\nUnlockable=no\n\
+             [First]\nDescription=TXT_FIRST\nDiskRequired=-1\nUnlockable=no\n",
+        )
+        .unwrap();
+        let assets = AssetManager::with_mod_and_ares(
+            install.path(),
+            Some(&crate::util::mod_package::ModFolder::loose(
+                mod_dir.path().to_owned(),
+            )),
+            MediaArchiveMode::STOCK_DIGITAL,
+            crate::util::ares_launch::AresSetting::Off,
+            &Default::default(),
+        )
+        .unwrap();
+        let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+        process.initialize_sources_if_needed(&assets).unwrap();
+        let rows = process
+            .movie_catalog()
+            .unwrap()
+            .visible_entries(&Default::default())
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            (&*rows[0].file, &*rows[0].label_key, rows[0].cd),
+            ("Second", "TXT_SECOND", 2)
+        );
+        assert_eq!(
+            (&*rows[1].file, &*rows[1].label_key, rows[1].cd),
+            ("First", "TXT_FIRST", -1)
+        );
+    }
 
     #[test]
     fn original_game_ignores_langrule_while_mods_keep_its_rules_and_digest() {

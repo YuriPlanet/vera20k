@@ -276,10 +276,8 @@ impl Simulation {
     /// - `0x00440A6D..0x00440B01`: a `LaserFencePost=` type (`+0x16BE`)
     ///   UnInits (vt+0xF8) the first building of its coordinate's cell
     ///   (`0x0047C520`) when that is a `LaserFence=` type (`+0x16BF`) of the
-    ///   same house. Its `+0x618 = 0` write (`0x00440A83`), like the
-    ///   LaserFence facing frames at `0x00440A32..0x00440A63`, has no VERA
-    ///   reader: fence sections are not ported (see the residual at
-    ///   `0x00440E2F` in `lifecycle.rs`).
+    ///   same house. It resets its own post state before Unlimbo. The newly
+    ///   placed post's directional spans are recalculated by the Put tail.
     ///
     /// No RNG draw and no timer write on either arm. Residual: an upgrade
     /// type is consumed before this (`unlimbo_constructed_upgrade`), where
@@ -377,13 +375,9 @@ impl Simulation {
     /// only a human's wall and draws no RNG; a wall it refuses stays under
     /// the building.
     ///
-    /// Residual: the Gate arm also calls `0x00453240` on each foundation cell
+    /// The Gate arm also calls `0x00453240` on each foundation cell
     /// whose first building is a `LaserFence=` type of the same house
-    /// (`0x00440725..0x0044075F`). That walks the fence run along the fence's
-    /// facing to its post, reconnects the post (`0x00453060`) or else UnInits
-    /// the fence, and belongs to the fence-section mechanism VERA does not
-    /// have. Until then a Gate placed on its owner's LaserFence building
-    /// shares the cell with it. No retail type is `LaserFence=`.
+    /// (`0x00440725..0x0044075F`), removing the linked span before Mark(PUT).
     fn sell_owned_walls_before_building_unlimbo(
         &mut self,
         id: u64,
@@ -416,11 +410,12 @@ impl Simulation {
             .to_overlay
             .as_deref()
             .and_then(|name| registry.id_for_name(name))];
+        let gate = !wall_tower && to_overlay[0].is_none() && ty.gate;
         let (offsets, sold, any_wall) = if wall_tower {
             (vec![(0, 0)], TOWER_WALLS, false)
         } else if to_overlay[0].is_some() {
             (vec![(0, 0)], to_overlay.as_slice(), false)
-        } else if ty.gate {
+        } else if gate {
             (
                 ty.foundation.cell_offsets().collect(),
                 GATE_WALLS,
@@ -453,6 +448,9 @@ impl Simulation {
                 self.sell_wall_at_cell(
                     &house, None, x as i16, y as i16, true, rules, registry, effects,
                 );
+            }
+            if gate {
+                self.remove_laser_fence_under_gate((x, y), owner, rules, effects);
             }
         }
     }

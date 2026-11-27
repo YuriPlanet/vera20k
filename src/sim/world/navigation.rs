@@ -31,7 +31,9 @@ pub(super) fn marked_structure_movement_cells<'a>(
     interner: &StringInterner,
     rules: &'a RuleSet,
 ) -> impl Iterator<Item = (u16, u16)> + 'a {
-    let marked = entity.category() == EntityCategory::Structure && entity.lifecycle.cell_marked();
+    let marked = entity.category() == EntityCategory::Structure
+        && entity.lifecycle.cell_marked()
+        && !entity.laser_fence_open();
     marked
         .then(|| {
             let object_type = interner.object_type(entity.type_ref(), rules);

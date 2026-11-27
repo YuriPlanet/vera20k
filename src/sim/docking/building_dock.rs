@@ -1580,12 +1580,7 @@ pub(crate) fn mission_repair(
             if powered {
                 // `0x0044C243`: ILoco+0x5C, Hover's override included.
                 if crate::sim::movement::motion_query::is_moving(contact) == Some(false) {
-                    Simulation::locomotor_power_off(
-                        &mut sim.scenario_rng,
-                        &mut sim.substrate,
-                        &sim.resolved_terrain,
-                        unit,
-                    );
+                    sim.locomotor_power_off(unit, rules, frame_effects);
                 }
                 return Some(1);
             }

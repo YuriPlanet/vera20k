@@ -1429,6 +1429,7 @@ impl Simulation {
                 &self.interner,
                 &mut self.scenario_rng,
                 coords,
+                false,
             ) else {
                 continue;
             };

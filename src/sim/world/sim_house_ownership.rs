@@ -638,8 +638,12 @@ impl Simulation {
         {
             building.seldom.ares.display_production_to.remove(new_owner);
         }
+        // Building4483BB first drops its old owner's connected sections.
+        if category == EntityCategory::Structure {
+            self.remove_laser_fence_at_post(stable_id, false, rules, effects);
+        }
         // Building4484AF precedes the delegated Techno owner transfer.
-        self.enable_building_after_owner_change(stable_id, rules);
+        self.enable_building_after_owner_change(stable_id, rules, effects);
         // `0x00448559..0x004486C8`: the objects docked at a building go along
         // with it or are sent off.
         let taken_along = if category == EntityCategory::Structure {
@@ -878,6 +882,10 @@ impl Simulation {
                     .emit(LifecycleOutput::ConstructionYardCaptured { owner: old_owner });
             }
         }
+        // Building448D24..448D48 reconnects the post as its new owner.
+        if category == EntityCategory::Structure {
+            self.place_laser_fence_at_post(stable_id, rules, effects);
+        }
         // A factory leaves the old house's counter (Recount, `0x0044870E`)
         // and joins the new one's (IncrementFactoryCount, `0x00448CDD`),
         // whether it is in limbo or not.
@@ -1015,10 +1023,20 @@ impl Simulation {
                 .and_then(crate::sim::production::factory_category_for_building)
         {
             production::update_factory_queue(
-                self, rules, old_owner, factory_category, effects, false,
+                self,
+                rules,
+                old_owner,
+                factory_category,
+                effects,
+                false,
             );
             production::update_factory_queue(
-                self, rules, new_owner, factory_category, effects, false,
+                self,
+                rules,
+                new_owner,
+                factory_category,
+                effects,
+                false,
             );
         }
         // Building4492D7..449368: the computer's captured-building sale is

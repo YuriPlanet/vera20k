@@ -59,8 +59,8 @@ pub struct BuildingArt {
     /// Building+6EA, constructor43B996 true; distinct from operational6C8.
     /// Its other native writers (ChangeOwner 4484C6, ReadScenarioBuildings
     /// 44FC80, GoOnline 452260, EnableStuff 452410, DisableStuff 452480) also
-    /// share the light/gap/animation owner. Dormant CloakGenerator and
-    /// LaserFencePost tails require their separate mechanisms.
+    /// share the light/gap/animation owner. Laser fence frames use this
+    /// value as an input on both sides of a link.
     stuff_enabled: bool,
     /// Building+6E4: OnConstructionComplete's one-time allocation guard.
     actually_placed: bool,
@@ -1296,7 +1296,9 @@ pub fn current_body_frame(
         BodyFrameInput {
             state: entity.building_body_state().unwrap_or(1),
             base_frame: entity.construction_stage_value(),
-            laser_frame: object.laser_fence.then_some(0),
+            laser_frame: object
+                .laser_fence
+                .then(|| i32::from(entity.laser_fence_frame())),
             firestorm_frame: firestorm_body_frame(entity, object, rules),
             gate_stages: object
                 .gate
@@ -1341,7 +1343,9 @@ pub(crate) fn receiver_body_frame(
                 1
             },
             base_frame: 0,
-            laser_frame: object.laser_fence.then_some(0),
+            laser_frame: object
+                .laser_fence
+                .then(|| i32::from(entity.laser_fence_frame())),
             firestorm_frame: firestorm_body_frame(entity, object, rules),
             gate_stages: object
                 .gate

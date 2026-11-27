@@ -81,6 +81,7 @@ pub(crate) mod house_threat;
 pub(crate) mod hunter_seeker;
 pub mod intern;
 pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8)
+mod laser_fence;
 pub(crate) mod lifecycle_request;
 pub mod light_sources;
 pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomotor 0x00710000)

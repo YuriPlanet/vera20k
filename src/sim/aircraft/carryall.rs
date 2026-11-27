@@ -411,6 +411,10 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) {
+        let team = self
+            .team_script_vm
+            .team_for_member(unit)
+            .map(|(team, _)| team);
         let mut context = UninitContext::new(rules).with_effects(effects);
         let _ = self.techno_limbo_with_context(unit, context.reborrow());
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
@@ -423,7 +427,11 @@ impl Simulation {
         let size = self
             .object_type(type_ref, rules)
             .map_or(1.0, |object| object.size);
-        let _ = self.add_cargo_members(aircraft, &[(unit, size)], context);
+        if self.add_cargo_members(aircraft, &[(unit, size)], context)
+            && let Some(team) = team
+        {
+            self.team_script_vm.retain_team_for_carryall(unit, team);
+        }
     }
 
     /// `AircraftClass::AI`'s Carryall block (`0x00415136..0x00415184`), after
@@ -496,8 +504,8 @@ impl Simulation {
     /// and BREAKs a contact 0 that is the cargo, and takes NearbyLocation
     /// (`0x00703590`) of itself as its destination, or NULL when none is found.
     ///
-    /// Unlike the vehicle and aircraft unloads it neither resets the gunner
-    /// nor queues a mission for the cargo, and plays no sound.
+    /// This unload does not reset a gunner or play a sound. The Ares unload
+    /// hook queues Guard before the cargo rejoins its team.
     pub(crate) fn carryall_unload(
         &mut self,
         aircraft: u64,
@@ -653,23 +661,31 @@ impl Simulation {
                 effects,
             );
         }
-        // Ares 3.0 AircraftClass_Carryall_Unload_Guard (100489D0, hook
-        // 0x416CF4): the cargo's Transporter (`+0x11C`) cleared, Guard queued
-        // to start (vt+0x1E8(5, 1)) and its team takes it again.
-        if ares {
-            if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-                entity.passenger_role_mut().clear_transporter();
-            }
-            let _ = self.mission_queue_exact(
-                cargo,
-                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
-                1,
-                self.session.binary_frame(),
-                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
-            );
-            if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
-                self.team_add_member(team, cargo, false, rules, effects);
-            }
+        // Ares 3.0p1 AircraftClass_Carryall_Unload_Guard (0x10049620,
+        // hook 0x00416CF4, resumes at 0x00416CF9) clears Transporter and
+        // queues Guard (vt+0x1E8(5, 1)), then calls Add_Member(cargo, 0)
+        // on the cargo's Foot+0x5D4 team. Ordinary Mission_Move pickup calls
+        // Unit::Limbo (0x00417283), whose Conceal -> Foot::Detach_All removes
+        // the team at 0x004D9744. VERA keeps the team identity separately
+        // across that detachment so this hook also completes ordinary drops.
+        if let Some(entity) = self.substrate.entities.get_mut(cargo) {
+            entity.passenger_role_mut().clear_transporter();
+        }
+        let _ = self.mission_queue_exact(
+            cargo,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+            1,
+            self.session.binary_frame(),
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
+        let carried_team = self.team_script_vm.take_carryall_team(cargo);
+        if let Some(team) = self
+            .team_script_vm
+            .team_for_member(cargo)
+            .map(|(team, _)| team)
+            .or(carried_team)
+        {
+            self.team_add_member(team, cargo, false, rules, effects);
         }
         let destination = nearby
             .filter(|&cell| cell != (0, 0))

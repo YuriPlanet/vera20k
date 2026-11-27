@@ -1188,6 +1188,10 @@ pub struct GeneralRules {
     /// for BuildingReceiveDamage442785. RulesCtor666568..66659E starts empty;
     /// these runtime keys preserve distinct Anim slots with equal stored IDs.
     pub on_fire: Vec<String>,
+    /// AudioVisual Anim pointers at Rules +0xBDC/+0xBE0. P1 0x1000AD50 uses
+    /// them for animation fire propagation.
+    pub(crate) small_fire: Option<String>,
+    pub(crate) large_fire: Option<String>,
     /// Particle system spawned by exploding barrels.
     /// Parsed from `BarrelParticle=` in `[General]` (NOT `[AudioVisual]`,
     /// despite the proximity to other AudioVisual keys).
@@ -2133,6 +2137,8 @@ impl Default for GeneralRules {
             spy_money_steal_percent: NativeF32Bits::from_bits(0x3F00_0000),
             damage_fire_types: vec![],
             on_fire: Vec::new(),
+            small_fire: None,
+            large_fire: None,
             barrel_particle: None,
             barrel_explode: None,
             barrel_debris: Vec::new(),
@@ -3130,6 +3136,8 @@ impl GeneralRules {
                 .read_double_to_float("SpyMoneyStealPercent", defaults.spy_money_steal_percent),
             damage_fire_types: defaults.damage_fire_types.clone(),
             on_fire: defaults.on_fire.clone(),
+            small_fire: defaults.small_fire,
+            large_fire: defaults.large_fire,
             barrel_particle: defaults.barrel_particle.clone(),
             barrel_explode: defaults.barrel_explode.clone(),
             barrel_debris: defaults.barrel_debris.clone(),

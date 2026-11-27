@@ -33,7 +33,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::movement::air_movement::current_fly_height;
+use crate::sim::movement::air_movement::{AirMovementTickStats, current_fly_height};
 use crate::sim::rocking::RockingState;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SimFixed;
@@ -257,8 +257,9 @@ impl Simulation {
 
     /// The fall block (`0x004CD67F..0x004CD7A4`) of `0x004CD600`, which
     /// `FlyLocomotionClass::Process` (`0x004CCB40`) calls every frame, for a
-    /// dead Fly: above the ground its fall counter grows by one
-    /// (`advance_fall`) and it drops by the new counter, XY unchanged, when its
+    /// dead or unpowered Fly. Its fall counter grows by one when dead or
+    /// by three when still alive (`advance_fall`). It drops by the new counter
+    /// with XY unchanged when its
     /// cell passes `MapClass::In_Bounds` (`0x004CD748`); otherwise only the
     /// counter moves. Returns whether its height then reached zero, the
     /// impact (`0x004CD7A4`); the rest of the function (the paid step and the
@@ -272,11 +273,10 @@ impl Simulation {
     /// layer Ground (`0x004CFCF0`), so the wreck is in its cell's list for
     /// the impact.
     ///
-    /// RESIDUAL: the same block drops an unpowered living Fly by three a frame
-    /// and its impact (`0x004CD8A9..0x004CD9C0`) kills it with the C4 warhead,
-    /// an explosion anim and area damage. Stock play never powers an
-    /// aircraft off, and Ares EMP crashes a flying one before it deactivates
-    /// (`emp.rs`), so the arm is dormant.
+    /// Ares 3.0p1 EMP `0x10063A18..0x10063A2C` exempts a Magnetron-held
+    /// or released aircraft from immediate destruction. If the installed
+    /// locomotor is Fly and has lost power, its living impact uses C4
+    /// (`0x004CD8A9`), distinct from the dead Fly's impact.
     ///
     /// A falling wreck is still alive for its class AI, so one that drifts
     /// past the playfield or `In_Bounds` meets `AircraftClass::AI`'s removal
@@ -286,39 +286,33 @@ impl Simulation {
     pub(super) fn fly_crash_fall(
         &mut self,
         id: u64,
+        dead: bool,
         rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
-    ) -> bool {
+    ) -> Option<AirMovementTickStats> {
         let terrain = self.resolved_terrain.as_ref();
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        if entity.health.current() != 0 || current_fly_height(entity, terrain) == 0 {
-            return false;
-        }
+        let entity = self.substrate.entities.get(id)?;
         let location = crate::sim::movement::ground_pose::object_location(entity, terrain);
         // `0x004CD70C..0x004CD736`: the cell of the unchanged XY, divided
         // toward zero.
         let cell = ((location.x / 256) as i16, (location.y / 256) as i16);
         let placed = self.map_cell_in_bounds(cell);
-        let Some(runtime) = self
+        let runtime = self
             .substrate
             .entities
             .get_mut(id)
             .and_then(|entity| entity.locomotor.as_mut())
-            .and_then(|locomotor| locomotor.fly_runtime_mut())
-        else {
-            return false;
+            .and_then(|locomotor| locomotor.fly_runtime_mut())?;
+        let counter = runtime.advance_fall(dead);
+        let dropped = crate::sim::components::DriveCoord {
+            z: location.z.wrapping_sub(counter),
+            ..location
         };
-        let counter = runtime.advance_fall(true);
         if placed {
             let mut context = UninitContext::new(rules).with_effects(frame_effects);
             self.substrate.display.remove(id);
             self.unmark_entity_remove(id, context.reborrow());
-            let dropped = crate::sim::components::DriveCoord {
-                z: location.z.wrapping_sub(counter),
-                ..location
-            };
             crate::sim::movement::ground_pose::foot_set_location(
                 &mut self.substrate.entities,
                 id,
@@ -336,10 +330,92 @@ impl Simulation {
                 None,
             );
         }
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let entity = self.substrate.entities.get(id)?;
+        if current_fly_height(entity, self.resolved_terrain.as_ref()) > 0 {
+            return None;
+        }
+        Some(if entity.health.current() == 0 {
+            AirMovementTickStats {
+                impact: true,
+                ..AirMovementTickStats::default()
+            }
+        } else {
+            AirMovementTickStats {
+                bridge_state_changed: self.fly_unpowered_impact(
+                    id,
+                    dropped,
+                    rules,
+                    registry,
+                    frame_effects,
+                ),
+                ..AirMovementTickStats::default()
+            }
+        })
+    }
+
+    /// Living Fly impact `0x004CD7AA..0x004CD7D0 -> 0x004CD8A9`.
+    /// The C4 receiver borrows Health directly as its amount. Flash,
+    /// explosion art and area damage retain the pre-receiver Health and
+    /// the proposed fall coordinate, even if the receiver removes the plane.
+    fn fly_unpowered_impact(
+        &mut self,
+        id: u64,
+        dropped: crate::sim::components::DriveCoord,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER, detonation_anim};
+        use crate::sim::projectile::ProjectileCoord;
+
+        self.substrate.aircraft_tracker_remove(id);
+        self.set_object_height(id, 0, rules, effects);
+        let Some(damage) = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| entity.health.current())
+        else {
             return false;
         };
-        current_fly_height(entity, self.resolved_terrain.as_ref()) <= 0
+        self.receive_own_health_c4(id, rules, registry, effects);
+        let impact = ProjectileCoord::new(dropped.x, dropped.y, dropped.z);
+        let warhead = rules.warhead(&rules.bridge_warheads.c4_name);
+        let effect = warhead.and_then(|warhead| {
+            let land = detonation_anim::land_at(self, impact);
+            detonation_anim::effect(self, rules, warhead, damage, land, impact, impact, false)
+        });
+        if let Some(effect) = effect {
+            super::damage_consequences::admit_explosion_effect(self, rules, effect);
+        } else {
+            // 0x4CD96D still calls AnimClass with a null type. It spends
+            // Create_ID at 0x42203D before immediately retiring.
+            self.next_native_runtime_id();
+        }
+        let Some(warhead) = warhead else {
+            return false;
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        self.combat_light_requests.emit(CombatLightRequest::Impact {
+            target_id: None,
+            coord: impact,
+            warhead_ref,
+            damage,
+            force_create: false,
+            flags: 0,
+        });
+        crate::sim::combat::world_receiver::apply_area_damage(
+            self,
+            rules,
+            registry,
+            impact,
+            damage,
+            warhead,
+            true,
+            (RAD_NO_ATTACKER, None, warhead_ref),
+            effects,
+        )
+        .bridge_state_changed
     }
 
     /// The dead Fly's impact, `0x004CD7AA..0x004CD8A8` in the same function:

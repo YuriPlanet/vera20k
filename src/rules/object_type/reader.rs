@@ -728,6 +728,8 @@ impl ObjectType {
             slaved: section.read_bool("Slaved", false),
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
+            // The ordered Infantry ReadINI owner retains this bool over layers.
+            doggie: false,
             // InfantryTypeCtor5237A1; only the ordered retained reader
             // supplies Civilian, independently of Image or House identity.
             civilian: false,

@@ -158,8 +158,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
     state
         .persistence
         .options_profile
-        .movie_progress
-        .note_played(stem);
+        .note_movie_played(state.process_assets.movie_catalog(), stem);
     enqueue_file(state, stem, pause_simulation);
 }
 

@@ -1340,13 +1340,9 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 //73F5EF/73F628 have distinct type/mission pairs. +1D4 is
-                //the live warp latch. Ares 3.0 100177F0 (hook 0x73F606)
+                //the live warp latch. Ares 3.0p1 0x10017EE0 (hook 0x73F606)
                 //sends a `Tunnel=` building down the UnitAbsorb path.
-                let absorber = if live.rules.ares() {
-                    bt.unit_absorb || bt.building_type_ext().tunnel.is_some()
-                } else {
-                    bt.unit_absorb
-                };
+                let absorber = bt.unit_absorb || bt.building_type_ext().tunnel.is_some();
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && bt.grinding))
@@ -1381,6 +1377,11 @@ fn full_foot_entry<'a>(
                 }
             }
             if infantry && bt.invisible_in_game {
+                continue;
+            }
+            // Infantry 0x51C4A6 and Unit 0x73F78E skip a laser fence in
+            // either of the two open +618 frames.
+            if bt.laser_fence && b.open_laser_fence {
                 continue;
             }
             // Ares 3.0 10014D70 (hook 0x51C4C8): an `IsPassable` building

@@ -2532,6 +2532,122 @@ fn a_single_frame_anim_marks_at_start() {
     );
 }
 
+fn middle_fire_world(flags: &str) -> (RuleSet, Simulation) {
+    let ini = IniFile::from_str("[Animations]\n0=MARK\n1=CHILD\n[AudioVisual]\nSmallFire=CHILD\n");
+    let source = IniFile::from_str(&format!("[MARK]\nRate=900\n{flags}\n[CHILD]\nRate=900\n"));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &source).unwrap();
+    let mut art = ArtRegistry::from_ini(&source);
+    art.bind_anim_frame_count_for_test("MARK", 3);
+    art.bind_anim_frame_count_for_test("CHILD", 3);
+    rules.install_art_fixture(art);
+    let mut sim = Simulation::new();
+    sim.session.set_map_width_for_test(8);
+    sim.session.set_map_height_for_test(8);
+    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_flat_ground_grid(8));
+    (rules, sim)
+}
+
+#[test]
+fn builtin_scorch_spawns_at_middle_only_on_eligible_ground() {
+    for (land, height, expected) in [(0, 9, 1), (0, 10, 0), (2, 0, 0)] {
+        let (rules, mut sim) = middle_fire_world("Scorch=yes");
+        assert!(!rules.ares());
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(4, 4)
+            .unwrap()
+            .land_type = land;
+        let parent = spawn_mark(&mut sim, &rules, height);
+        let children = |sim: &Simulation| {
+            sim.substrate
+                .anims
+                .iter()
+                .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHILD")
+                .count()
+        };
+        assert_eq!(children(&sim), 0);
+        for frame in 1..5 {
+            sim.session.set_binary_frame_for_test(frame);
+            sim.visit_anim(parent, &rules, None, &mut FrameEffects::default())
+                .unwrap();
+        }
+        assert_eq!(children(&sim), expected, "land={land}, height={height}");
+    }
+}
+
+#[test]
+fn builtin_scorch_inherits_the_source_animation_owner() {
+    let (rules, mut sim) = middle_fire_world("Scorch=yes");
+    let owner_id = sim.substrate.allocate_stable_id();
+    let house = sim.interner.intern("HOUSE");
+    let unit = sim.interner.intern("UNIT");
+    sim.substrate
+        .entities
+        .insert(GameEntity::new_at_frame_zero_for_test(
+            owner_id,
+            4,
+            4,
+            0,
+            0,
+            house,
+            Health::new(100),
+            unit,
+            EntityCategory::Unit,
+            0,
+            5,
+            false,
+        ));
+    let parent = spawn_mark(&mut sim, &rules, 0);
+    let coord = sim.anim_absolute_coord(parent).unwrap();
+    assert!(sim.set_anim_owner_object(parent, Some(owner_id), &rules));
+    for frame in 1..5 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.visit_anim(parent, &rules, None, &mut FrameEffects::default())
+            .unwrap();
+    }
+    let (&child_id, child) = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHILD")
+        .unwrap();
+    assert_eq!(child.owner_entity(), Some(owner_id));
+    assert_eq!(sim.anim_absolute_coord(child_id), Some(coord));
+}
+
+#[test]
+fn builtin_flamer_spreads_even_above_the_smudge_height() {
+    let (rules, mut sim) = middle_fire_world("Flamer=yes\nScorch=yes");
+    for y in 3..=5 {
+        for x in 3..=5 {
+            sim.substrate.raw_cell_occupation.write_occupant(
+                crate::sim::occupancy::RawCellKey::Real(x, y),
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+                crate::sim::cell_kernel::INFANTRY_OCCUPATION_VEHICLE_BIT,
+                None,
+                true,
+            );
+        }
+    }
+    let parent = spawn_mark(&mut sim, &rules, 30);
+    let coord = sim.anim_absolute_coord(parent).unwrap();
+    for frame in 1..5 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.visit_anim(parent, &rules, None, &mut FrameEffects::default())
+            .unwrap();
+    }
+    let (_, child) = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHILD")
+        .unwrap();
+    assert_ne!(child.world_coord, coord);
+    assert!(child.world_coord.x >= 3 * 256 && child.world_coord.y >= 3 * 256);
+    assert_eq!(child.owner_entity(), None);
+}
+
 #[test]
 fn delay_guard_and_rate_use_passive_frame_anchor() {
     let rules = runtime_rules("[TEST]\nRate=450\nEnd=3\nLoopCount=1\n", &[("TEST", 3)]);

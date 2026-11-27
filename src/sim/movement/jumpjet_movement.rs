@@ -423,6 +423,7 @@ pub(crate) fn infantry_destination_coordinate(
         interner,
         rng,
         input,
+        false,
     )?;
     let first_ground =
         super::ground_pose::ground_surface_z_at([input.x, input.y], false, Some(terrain), None)?;

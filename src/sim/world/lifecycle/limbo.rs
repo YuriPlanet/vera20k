@@ -327,6 +327,14 @@ impl Simulation {
                 .get(stable_id)
                 .is_some_and(|entity| entity.category() == EntityCategory::Structure)
             {
+                // BuildingClass::Limbo 0x445A25 removes the linked sections
+                // on its first admitted call, before the post is unmarked.
+                self.remove_laser_fence_at_post(
+                    stable_id,
+                    false,
+                    context.rules(),
+                    context.effects(),
+                );
                 self.clear_building_damage_fire_slots(stable_id, context.rules());
             }
             HouseTracking::unregister_factory(&mut self.substrate, &mut self.houses, stable_id);

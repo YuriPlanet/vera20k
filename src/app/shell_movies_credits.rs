@@ -71,7 +71,12 @@ impl App {
     /// and the retained selection `DAT_00825C80`.
     pub(super) fn open_movie_list(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
-        let rows = active_movie_entries(state.persistence.options_profile.movie_progress);
+        let profile = &state.persistence.options_profile;
+        let rows = state
+            .process_assets
+            .movie_catalog()
+            .and_then(|catalog| catalog.visible_entries(profile.unlocked_movies()))
+            .unwrap_or_else(|| active_movie_entries(profile.movie_progress));
         state.frontend.movie_list = Some(rows);
         Self::show_shell_page(state, ShellRoute::MovieList, MOVIE_LIST_DIALOG);
         Self::movie_list_sync(state);
@@ -140,12 +145,15 @@ impl App {
         };
         let selected = family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG);
         state.frontend.movie_list_selection = selected.map_or(-1, |row| row as i32);
-        let Some(entry) = selected.and_then(|row| rows.get(row).copied()) else {
+        let Some(file) = selected
+            .and_then(|row| rows.get(row))
+            .map(|entry| entry.file.clone())
+        else {
             return;
         };
         // State 0xE's CD check (0x004790E0 with entry.cd) passes for a
         // complete install: every movie is read from the installed MIX set.
-        Self::start_fullscreen_movie(state, entry.file, MovieReturn::MovieList);
+        Self::start_fullscreen_movie(state, &file, MovieReturn::MovieList);
     }
 
     /// Play_Movie `0x005BED40` from the shell.
@@ -159,8 +167,7 @@ impl App {
         state
             .persistence
             .options_profile
-            .movie_progress
-            .note_played(stem);
+            .note_movie_played(state.process_assets.movie_catalog(), stem);
         // 0x005BED61..0x005BED6A: outside a campaign world Play_Movie
         // returns right after that note, with no video, audio hold or suspend,
         // so a skirmish or multiplayer map's movie action only moves on.

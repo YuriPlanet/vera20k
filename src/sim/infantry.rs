@@ -240,6 +240,9 @@ pub fn apply_fear_from_damage(
     if !(latch && obj.fraidycat) && is_fear_application_blocked(obj, entity) {
         return;
     }
+    // P1 0x100265F0 (hook 0x00518CB3, stock fear store): Doggie uses
+    // 300 in place of 100 on this sourced-hit arm when IsRedHP is true.
+    let red_doggie = latch && obj.doggie && entity.health.is_red(obj.strength, condition_red_ratio);
     let Some(infantry) = entity.infantry.as_mut() else {
         return;
     };
@@ -248,7 +251,7 @@ pub fn apply_fear_from_damage(
     // of adding to it. Only a hit with no damager, or one taken while fear is
     // already above the ceiling, runs the health-band ladder below.
     if latch {
-        infantry.fear_level = if obj.fraidycat {
+        infantry.fear_level = if obj.fraidycat || red_doggie {
             MAX_FEAR
         } else {
             FIRST_HIT_FEAR
@@ -286,6 +289,111 @@ fn repeated_fear_add(
 }
 
 impl crate::sim::world::Simulation {
+    /// Ares 3.0p1 InfantryClass_Guard_Doggie (0x10026480, hook 0x0051F628)
+    /// runs after the Infantry Guard/Sticky shim and before Foot Guard's
+    /// normal cadence. With no Target, NavCom, turn or prone stance, a dog
+    /// sitting on Tiberium faces east, then takes the native Down action.
+    pub(crate) fn doggie_guard_on_tiberium(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), String> {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        let frame = self.session.binary_frame();
+        if !self
+            .object_type(actor.type_ref(), rules)
+            .is_some_and(|object| object.doggie)
+            || actor
+                .infantry
+                .as_ref()
+                .is_none_or(InfantryRuntime::is_prone)
+            || actor.attack_target.target().is_some()
+            || actor.navigation.nav_com().is_some()
+            || actor.body_facing.is_rotating(frame)
+            || !crate::sim::miner::ore_scan::cell_is_tiberium_land(
+                self,
+                registry,
+                (actor.position.rx(), actor.position.ry()),
+            )
+        {
+            return Ok(());
+        }
+        let facing8 = (((u32::from(actor.body_facing.current(frame)) >> 12) + 1) >> 1) & 7;
+        if facing8 == 2 {
+            let _ = self.infantry_do_action(id, 5, false, rules, effects)?;
+        } else if let Some(actor) = self.substrate.entities.get_mut(id) {
+            crate::sim::movement::locomotor_do_turn(actor, 0x4000, frame);
+        }
+        Ok(())
+    }
+
+    /// Ares 3.0p1 InfantryClass_UpdatePanic_Doggie (0x10026670, hook 0x005200C1)
+    /// replaces the positive-fear path, resuming at 0x0052025A. At maximum
+    /// fear and while idle, the dog lies down on ore or searches 16 cells.
+    /// An accepted destination clears Target and commences Move before the
+    /// fear decrement. The hook draws no RNG and changes no attachment.
+    fn doggie_panic_turn(
+        &mut self,
+        id: u64,
+        fear: u16,
+        fearless: bool,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        use crate::sim::miner::ore_scan::{cell_is_tiberium_land, search_for_tiberium_and_move};
+        use crate::sim::mission::{MissionId, MissionType, authority::LiveReadyInputProvider};
+
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return Ok(false);
+        };
+        if fear >= MAX_FEAR
+            && actor.navigation.nav_com().is_none()
+            && crate::sim::movement::motion_query::is_moving(actor) == Some(false)
+        {
+            if cell_is_tiberium_land(self, registry, (actor.position.rx(), actor.position.ry())) {
+                let _ = self.infantry_do_action(id, 5, false, rules, effects)?;
+            } else {
+                // 0x10026430 reaches FootClass::Search_For_Tiberium_And_Move
+                // (0x004DCFE0, range 0x10). Test NavCom, not its return value.
+                search_for_tiberium_and_move(self, rules, registry, id, 16, effects)
+                    .map_err(|cause| format!("Doggie ore search failed: {cause:?}"))?;
+                if self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|actor| actor.navigation.nav_com().is_some())
+                {
+                    self.assign_target_represented(id, None, rules, effects)
+                        .map_err(|cause| format!("Doggie target clear failed: {cause:?}"))?;
+                    let frame = self.session.binary_frame();
+                    let _ = self.mission_queue_exact(
+                        id,
+                        MissionId::from_known(MissionType::Move),
+                        0,
+                        frame,
+                        &LiveReadyInputProvider { rules },
+                    );
+                    let _ = self.substrate.mission_commence_exact(id, frame);
+                }
+            }
+        }
+        if !fearless
+            && let Some(infantry) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|actor| actor.infantry.as_mut())
+        {
+            infantry.fear_level = infantry.fear_level.saturating_sub(1);
+        }
+        Ok(false)
+    }
+
     /// gamemd.exe `InfantryClass__Fear_Decay_Handler @ 0x005200B0`, called by InfantryAI at
     /// 51BF0B after Foot Process and before FireAtTarget5206B0/sequencer520AE0.
     /// Caller owns survival/warped admission. Returns the existing NULL Scatter
@@ -332,6 +440,16 @@ impl crate::sim::world::Simulation {
             .object_type(actor.type_ref(), rules)
             .ok_or("Infantry fear requires its native type")?;
         let fraidycat = object.fraidycat;
+        if object.doggie && infantry.fear_level > 0 {
+            return self.doggie_panic_turn(
+                id,
+                infantry.fear_level,
+                object.fearless,
+                rules,
+                registry,
+                effects,
+            );
+        }
         if infantry.fear_level > 0 {
             //5200CF: Fearless skips only the decrement, not stance requests.
             if can_decay_fear(object) {
@@ -812,6 +930,10 @@ pub fn apply_prone_speed(speed: SimFixed, crawls: bool, multiplier: Option<f64>)
 #[cfg(all(test, tests_sim_h_o))]
 #[path = "infantry_damage_fear_tests.rs"]
 mod damage_fear_tests;
+
+#[cfg(all(test, tests_sim_h_o))]
+#[path = "infantry_doggie_tests.rs"]
+mod doggie_tests;
 
 #[cfg(all(test, tests_sim_h_o))]
 mod tests {

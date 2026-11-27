@@ -238,13 +238,14 @@ fn ares_dig_keys_replace_the_audio_visual_effects() {
     assert_eq!(names(DigEffects::DIG_OUT), (dig_sound, None));
 }
 
-/// Ares TunnelLocomotionClass_Turning (Ares.dll `0x1005D500`, hook
+/// Ares 3.0p1 TunnelLocomotionClass_Turning (`0x1005E2F0`, hook
 /// `0x0072920C`): PreDigIn with a null Destination ends the dig (DugOut)
 /// instead of turning toward the map origin.
 #[test]
-fn ares_null_destination_ends_the_dig() {
-    let _ares = crate::rules::ares_switch::read_ares_way(true);
+fn builtin_null_destination_ends_the_dig_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
     let (mut sim, rules) = fixture();
+    assert!(!rules.ares());
     sim.substrate
         .entities
         .get_mut(DIGGER)

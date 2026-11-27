@@ -168,6 +168,17 @@ impl FireSource {
             tar_com: entity.attack_target.target(),
         }
     }
+
+    /// Building GetFLH453840 and GetTurretPivot453A70 both test
+    /// CanBeOccupied and the current occupant count before reading +0x69C.
+    pub(crate) fn with_building_port(entity: &GameEntity, object: &ObjectType) -> Self {
+        let mut source = Self::of_entity(entity);
+        let occupants = entity.passenger_role().occupants();
+        if object.can_be_occupied && occupants.count() > 0 {
+            source.garrison_fire_index = Some(occupants.fire_index());
+        }
+        source
+    }
 }
 
 impl From<&AttackerSnapshot> for FireSource {
@@ -220,9 +231,7 @@ impl From<&AttackerSnapshot> for FireSource {
 /// `BarrelAnimIsVoxel=` type (GetTurretDrawPosition, [`barrel_voxel_coordinate`]);
 /// otherwise a `TurretAnimIsVoxel=` type adds the pixel offset of its
 /// `TurretAnimX=`/`TurretAnimY=` to the body's result (`0x00453A12..
-/// 0x00453A4C` in shape). [`FireSource::of_entity`] has no firing port, so an
-/// occupied building takes the unoccupied arms here (no EMP cannon is
-/// occupiable in any retail type).
+/// 0x00453A4C in shape). A configured EMP cannon can use the occupied arm.
 pub fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -230,7 +239,12 @@ pub fn turret_pivot_coordinate(
     weapon_index: i32,
 ) -> Option<ProjectileCoord> {
     let obj = world.interner.object_type(entity.type_ref(), rules)?;
-    let source = FireSource::of_entity(entity);
+    let building = entity.category() == EntityCategory::Structure;
+    let source = if building {
+        FireSource::with_building_port(entity, obj)
+    } else {
+        FireSource::of_entity(entity)
+    };
     if entity.category() == EntityCategory::Infantry {
         return Some(
             fire_coordinate(
@@ -246,7 +260,6 @@ pub fn turret_pivot_coordinate(
         );
     }
     let base = fire_coordinate_base(world, rules, &source, obj);
-    let building = entity.category() == EntityCategory::Structure;
     if building {
         if let Some((px, py)) = building_pixel_offset(base.art, &source) {
             let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
@@ -285,6 +298,32 @@ pub fn turret_pivot_coordinate(
         base.x.wrapping_add(delta.0).wrapping_add(voxel_x),
         base.y.wrapping_add(delta.1).wrapping_add(voxel_y),
         base.z.wrapping_add(delta.2),
+    ))
+}
+
+/// BuildingClass::GetBarrelPitch's laser arm (`0x0043E968..0x0043EA27`).
+/// Missile passes the House cell to satisfy the non-null check. The aim
+/// is Techno70BCB0 over the cannon's live TarCom. The origin uses virtual
+/// +AC, the turret-art pixels and weapon 0's FLH height.
+pub(crate) fn building_laser_barrel_pitch(
+    world: &Simulation,
+    rules: &RuleSet,
+    entity: &GameEntity,
+    object: &ObjectType,
+    weapon_flh_height: i32,
+) -> Option<u16> {
+    let source = FireSource::of_entity(entity);
+    let base = fire_coordinate_base(world, rules, &source, object);
+    let (offset_x, offset_y) = PixelConversionBounds::isometric_pixel_to_leptons(
+        object.turret_anim_x,
+        object.turret_anim_y,
+    );
+    let aim =
+        super::aim_coord::led_target_coordinate(world, rules, source.stable_id, source.tar_com);
+    crate::sim::projectile::launch::laser_barrel_pitch(ProjectileCoord::new(
+        aim.x.wrapping_sub(base.x.wrapping_add(offset_x)),
+        aim.y.wrapping_sub(base.y.wrapping_add(offset_y)),
+        aim.z.wrapping_sub(base.z.wrapping_add(weapon_flh_height)),
     ))
 }
 

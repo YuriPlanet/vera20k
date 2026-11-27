@@ -751,7 +751,7 @@ impl Simulation {
         self.drop_object_custom_sound(stable_id);
         // Ares TunnelData::InvalidatePointer (100091E0): a Foot leaving play
         // inside a tunnel drops out of its network.
-        if context.rules.ares() && kind == Some(ObjectKind::Entity) {
+        if kind == Some(ObjectKind::Entity) {
             self.ares_tunnels.forget(stable_id);
         }
         // `ObjectClass::~ObjectClass @ 0x005F3B80` ends by testing the Logic

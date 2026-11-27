@@ -371,6 +371,10 @@ pub(super) fn hash_entity_owed(
         b"building-storage-v1".hash(hasher);
         entity.building_art.storage().hash(hasher);
     }
+    if entity.laser_fence_frame() != 0 {
+        0x618_u16.hash(hasher);
+        entity.laser_fence_frame().hash(hasher);
+    }
     if entity.building.building_last_operational.is_operational() {
         b"building-operational-v1".hash(hasher);
     }
@@ -1226,6 +1230,10 @@ fn hash_locomotor_payload(
             state.landing_effect_latched().hash(hasher);
             state.airport_bound().hash(hasher);
             state.fall_counter().hash(hasher);
+            if let Some(steps) = state.active_power_spin() {
+                b"fly-power-spin-v1".hash(hasher);
+                steps.hash(hasher);
+            }
             state.target_speed().bits().hash(hasher);
             state.current_speed().bits().hash(hasher);
         }

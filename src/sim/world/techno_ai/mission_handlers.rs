@@ -860,13 +860,28 @@ pub(crate) fn dispatch_foot_mission(
         crate::sim::combat::receiver_fixture::observe_fire_visit(sim, id, "guard-shim-return");
     }
 
-    //51F620/51F640 compare the actual shim return with signed-1. Even
-    // a deployed arm's raw Count=-1 (or cadence=-1) resumes its Foot body
-    // after the shim's target/action effects, rather than writing timer-1.
-    let evaluation = if infantry_guard_handled && evaluation.delay == -1 {
+    // 51F620/51F640 compare the shim result with -1. P1 0x10026480
+    // instead falls through on every negative result for the Doggie
+    // Guard/Sticky slot (hook 0x51F628), including an authored Count < -1.
+    let doggie_negative_guard = evaluation.delay < -1
+        && matches!(
+            input.mission,
+            Some(MissionType::Guard | MissionType::Sticky)
+        )
+        && sim.substrate.entities.get(id).is_some_and(|actor| {
+            sim.object_type(actor.type_ref(), rules)
+                .is_some_and(|object| object.doggie)
+        });
+    let evaluation = if infantry_guard_handled && (evaluation.delay == -1 || doggie_negative_guard)
+    {
         match input.mission {
             Some(MissionType::AreaGuard) => evaluate_foot_area_guard(sim, id, rules, ctx),
             Some(mission @ (MissionType::Guard | MissionType::Sticky)) => {
+                if let Err(cause) =
+                    sim.doggie_guard_on_tiberium(id, rules, ctx.overlay_registry, &mut ctx.effects)
+                {
+                    log::debug!("Doggie {id} guard action refused: {cause}");
+                }
                 evaluate_foot_guard_cadence(sim, rules, id, mission, ctx)
             }
             _ => unreachable!("Infantry Guard shim belongs to Guard-family slots"),

@@ -505,10 +505,10 @@ impl Simulation {
         let destination = self
             .tunnel_runtime(id)
             .map_or(NULL_COORD, TunnelRuntime::raw_destination);
-        // Ares 3.0 TunnelLocomotionClass_Turning (Ares.dll 1005D500, hook
-        // 0x0072920C): a null Destination ends the dig (State 7) instead of
-        // turning toward the map origin.
-        if rules.ares_form() && destination == NULL_COORD {
+        // Ares 3.0p1 TunnelLocomotionClass_Turning, hook 0x0072920C ->
+        // 0x1005E2F0, resumes at 0x00729369. A null destination ends the
+        // dig (State 7), including when EMP cleared it during the turn.
+        if destination == NULL_COORD {
             self.tunnel_set_state(id, TunnelState::DugOut);
             return;
         }

@@ -478,15 +478,10 @@ fn mission_unload(
     if rules.ares() {
         sim.ares_kick_out_hospital_armory(id, rules, ctx.overlay_registry, &mut ctx.effects);
     }
-    // Ares 3.0 100174A0 (hook 0x0044D8A7): a loaded tunnel entrance unloads
+    // Ares 3.0p1 0x10017B90 (hook 0x0044D8A7): a loaded tunnel entrance unloads
     // one member of its owner's network (`sim::ares_tunnel`).
-    if rules.ares()
-        && let Some(delay) = crate::sim::transport_unload::ares_tunnel_mission_unload(
-            sim,
-            rules,
-            id,
-            &mut ctx.effects,
-        )
+    if let Some(delay) =
+        crate::sim::transport_unload::ares_tunnel_mission_unload(sim, rules, id, &mut ctx.effects)
     {
         return Some(delay);
     }

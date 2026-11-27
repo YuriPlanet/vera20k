@@ -17,12 +17,9 @@
 //! tools/spatial_oracle/fly_map_edge.py runs the map-edge admission, which
 //! [`fly_map_edge`] replays; aircraft_crash.py the dead fall.
 //!
-//! RESIDUAL: the spin (`0x004CE5A0`). Power_Off (`0x004CFD20`) starts it on
-//! a moving Fly, with two Scenario draws, and then the unpowered fall
-//! (`Simulation::fly_crash_fall`) drops it. Both are unreachable natively:
-//! only an EMP powers off an aircraft, and EMPulseClass's constructor
-//! (`0x004C52B0`) has no caller or pointer in the executable (rulesmd's
-//! `[EMPuls]` says it is disabled in code).
+//! An EMP can start a grounded Fly's power-loss spin (`0x004CFD20`, two
+//! Scenario draws). The spin is applied before UpdateFlightMotion
+//! (`0x004CCBB8` to `0x004CE5A0`). Stock rules have no producer.
 //!
 //! Horizontal_Step ends by deselecting another house's object over the
 //! player's shroud ([`Simulation::deselect_over_player_shroud`]).
@@ -165,7 +162,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> AirMovementTickStats {
-        let mut stats = AirMovementTickStats::default();
+        let stats = AirMovementTickStats::default();
         let flight_level = self.fly_type_flight_level(id, rules);
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return stats;
@@ -199,9 +196,24 @@ impl Simulation {
                 .substrate
                 .mission_commence_exact(id, self.session.binary_frame());
         }
-        if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
-            stats.impact = true;
-            return stats;
+        // 0x004CE636 also invokes the cell's dormant ActivateVeins
+        // (0x00486920) on power restoration, as the Hover spin does.
+        if let Some(entity) = self.substrate.entities.get_mut(id)
+            && entity.health.current() > 0
+            && let Some(locomotor) = entity.locomotor.as_mut()
+        {
+            let powered = locomotor.is_powered();
+            if let Some(delta) = locomotor
+                .fly_runtime_mut()
+                .and_then(|state| state.advance_power_spin(powered))
+            {
+                let frame = self.session.binary_frame();
+                let facing = entity.body_facing.current(frame).wrapping_add(delta);
+                entity.body_facing.snap(facing, frame);
+            }
+        }
+        if let Some(impact) = self.fly_update_flight_motion(id, rules, registry, frame_effects) {
+            return impact;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return stats;
@@ -242,8 +254,8 @@ impl Simulation {
     ///   not zero (`0x004CD60E..0x004CD65F`: vt+0x1B8 against `+0x560`,
     ///   Is_Moving_Now, `0x004138C0`);
     /// - Enter drops cruise mode (`0x004CD664..0x004CD67B`);
-    /// - a dead Fly above the ground falls ([`Self::fly_crash_fall`]); its
-    ///   impact returns true;
+    /// - a dead or unpowered Fly above the ground falls
+    ///   ([`Self::fly_crash_fall`]); the fall can return an impact;
     /// - a living one guarding with a NavCom and nothing queued, not
     ///   AirportBound (Fly `+0x18`), queues Move (`0x004CD9C8..0x004CDA02`);
     /// - past Is_Moving (`0x004CDA08`, `0x004CCA90`) the step
@@ -254,10 +266,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
-    ) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
+    ) -> Option<AirMovementTickStats> {
+        let entity = self.substrate.entities.get(id)?;
         let cell = coord_cell(ground_pose::object_location(
             entity,
             self.resolved_terrain.as_ref(),
@@ -279,21 +289,26 @@ impl Simulation {
         {
             state.prepare_process(mission);
         }
-        if self.fly_crash_fall(id, rules, frame_effects) {
-            return true;
+        let locomotor = entity.locomotor.as_ref()?;
+        let dead = entity.health.current() == 0;
+        if (dead || !locomotor.is_powered())
+            && air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()) != 0
+        {
+            if let Some(impact) = self.fly_crash_fall(id, dead, rules, registry, frame_effects) {
+                return Some(impact);
+            }
+            // A Fly still above ground jumps straight to Is_Moving at 0x004CDA08.
+        } else {
+            // Ares 3.0p1 HunterSeeker_UpdateTarget hooks 0x004CD9C8.
+            self.ares_hunter_seeker_update_target(id, rules);
+            self.substrate.fly_guard_to_move(id);
         }
-        // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
-        // (P1 0x1004E700, hook 0x4CD9C8).
-        self.ares_hunter_seeker_update_target(id, rules);
-        self.substrate.fly_guard_to_move(id);
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
+        let entity = self.substrate.entities.get(id)?;
         if crate::sim::movement::motion_query::is_moving(entity) != Some(true) {
-            return false;
+            return None;
         }
         self.fly_flight_step(id, rules, registry, frame_effects);
-        false
+        None
     }
 
     /// UpdateFlightMotion past its Is_Moving gate (`0x004CDA16..0x004CE4A2`),

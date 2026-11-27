@@ -119,6 +119,66 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
     assert_eq!(sim.ares_tunnels.members(owner, 0), [tank]);
 }
 
+/// P1 0x10017F20/0x10017F60: an Enter order uses the tunnel's shared
+/// network. The self-click's Unload mission (0x443534, hook 0x44D8A7)
+/// brings the unit out at a different entrance without full Ares.
+#[test]
+fn authored_tunnel_entry_and_unload_run_with_ares_off() {
+    use crate::sim::command::Command;
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules) = arena();
+    assert!(!rules.ares());
+    let owner = americans(&sim);
+    sim.session.set_current_house_for_test(Some(owner));
+    let west = spawn(&mut sim, &rules, "TUNA", 12, 10);
+    let east = spawn(&mut sim, &rules, "TUNA", 20, 10);
+    let tank = spawn(&mut sim, &rules, "LTNK", 8, 10);
+    order_unit_into_entrance(&mut sim, &rules, tank, west);
+    assert!(in_limbo(&sim, tank));
+    assert!(sim.ares_tunnel_offers_unload(east, &rules));
+    let record = sim
+        .encode_megamission_record(owner, &Command::UnloadPassengers { transport_id: east })
+        .unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::SynchronizedRecord { record },
+        Some(&rules),
+    ));
+    for _ in 0..12 {
+        if !in_limbo(&sim, tank) {
+            break;
+        }
+        sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 16);
+    }
+    assert!(!in_limbo(&sim, tank));
+    assert!(!sim.ares_tunnel_offers_unload(east, &rules));
+}
+
+/// P1 0x10017DD0 resumes 0x0051ED9C for a listed tunnel even when
+/// the building itself has no Passengers setting.
+#[test]
+fn infantry_click_offers_a_configured_tunnel_with_ares_off() {
+    use crate::sim::world::{EntryBaseAction, EntryClickAction};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules) = arena();
+    assert!(!rules.ares());
+    let owner = americans(&sim);
+    sim.session.set_current_house_for_test(Some(owner));
+    let foot = spawn(&mut sim, &rules, "E1", 8, 10);
+    let entrance = spawn(&mut sim, &rules, "TUNA", 12, 10);
+    let unregistered = spawn(&mut sim, &rules, "TUNX", 16, 10);
+    assert_eq!(
+        sim.entry_click_action(foot, entrance, EntryBaseAction::Select, &rules),
+        Some(EntryClickAction::Enter)
+    );
+    assert_eq!(
+        sim.entry_click_action(foot, unregistered, EntryBaseAction::Select, &rules),
+        None
+    );
+}
+
 #[test]
 fn ares_p1_vehicle_exits_its_allied_tunnel_network() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
