@@ -1205,8 +1205,11 @@ impl App {
     /// page's own text.
     #[cfg(target_os = "android")]
     pub(crate) fn draw_name_dialog_over(
+        platform: &mut PlatformState,
         renderer: &RendererState,
         frontend: &FrontendState,
+        match_state: &mut MatchState,
+        persistence: &PersistenceState,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
     ) {
@@ -1323,6 +1326,16 @@ impl App {
             texture: &atlas.texture,
             instances: sprites,
         }];
+        // The dialog's art covers the page, so the cursor it covered is drawn
+        // again here, above the art.
+        let cursor = crate::app::frontend::shell_pass::top_software_cursor(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            shell_paint::CURSOR_DEPTH,
+        );
         crate::app::frontend::shell_pass::encode_shell_pass_over_page(
             renderer,
             encoder,
@@ -1331,7 +1344,7 @@ impl App {
             ShellComposition {
                 draws: &draws,
                 text: &text,
-                cursor: None,
+                cursor,
                 effects: None,
                 smooth_art: false,
             },
