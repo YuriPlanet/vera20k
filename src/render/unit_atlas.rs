@@ -124,6 +124,27 @@ pub struct UnitSpriteKey {
     pub barrel_pitch: i8,
 }
 
+impl UnitSpriteKey {
+    fn raster_params(
+        &self,
+        slope_blend: Option<VxlSlopeBlend>,
+        use_buffer: bool,
+    ) -> VxlRenderParams {
+        VxlRenderParams {
+            frame: if self.layer == VxlLayer::Shadow {
+                0
+            } else {
+                self.frame
+            },
+            facing: self.facing,
+            slope_type: self.slope_type,
+            slope_blend,
+            use_buffer,
+            ..VxlRenderParams::default()
+        }
+    }
+}
+
 /// UV and offset data for one sprite within the unit atlas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UnitSpriteEntry {
@@ -1497,6 +1518,26 @@ impl UnitModel {
         self.render_styled(key, vpl, None, &mut None, true, depth)
     }
 
+    /// A stable composite of one physical body has the native raster's exact
+    /// crop. Composite parts with separate floating-point depths, and parts
+    /// padded to the hull and gun union, use `render_styled`.
+    pub(super) fn buffered_body(
+        &self,
+        key: &UnitSpriteKey,
+        vpl: Option<&VplFile>,
+    ) -> Option<(vxl_raster::BufferedVoxelRaster, Option<[i32; 4]>)> {
+        let body = self.body.as_ref()?;
+        let (turret, barrel) = self.gun_parts(key.turret_index);
+        if key.layer != VxlLayer::Composite || turret.is_some() || barrel.is_some() {
+            return None;
+        }
+        let params = key.raster_params(None, true);
+        let raster =
+            vxl_raster::BufferedVoxelRaster::prepare(body.vxl(), body.hva(), &params, vpl)?;
+        let bounds = self.native_draw_bounds(&params, key.layer, key.turret_index);
+        Some((raster, bounds))
+    }
+
     /// The style supplied by the native drawer/cache (706F02, 706640),
     /// independently of the selected model's own UseBuffer default.
     /// `depth` rasterizes the requested part, or each part of a Composite,
@@ -1516,18 +1557,7 @@ impl UnitModel {
         {
             return None;
         }
-        let params: VxlRenderParams = VxlRenderParams {
-            frame: if key.layer == VxlLayer::Shadow {
-                0
-            } else {
-                key.frame
-            },
-            facing: key.facing, // already quantized by atlas key generation
-            slope_type: key.slope_type,
-            slope_blend,
-            use_buffer,
-            ..VxlRenderParams::default()
-        };
+        let params = key.raster_params(slope_blend, use_buffer);
         // Aircraft templates are unmasked: the original4148A0->4DB0D0->
         //706BD0->707280 caller supplies NULL for its body-mask surface.
         // Unit Jumpjet has a distinct grounded first-fill mask and fresh
