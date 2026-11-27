@@ -89,9 +89,17 @@ palette indices, so a frame finds its art whatever type, theater or mod draws
 it. `VERA20K_HD_DUMP=<folder>` writes `<hash>.idx` (u16 width, u16 height,
 indices) for every such frame on screen the pack lacks; an offline
 upscaler turns those into pack files.
-Only frames on screen are read from the pack, a few files a frame, into
-one 2048x2048 page (4096x4096 for the art); a full page starts over with
-what is on screen. Frames without art stay native; voxels have their own
+Only frames on screen are read from the pack, into one 2048x2048 page
+(4096x4096 for the art). Reader threads (`render::hd_loader`) open and
+decode the pictures, so a screen of new buildings never stalls a frame; a
+frame draws native until its picture is up, a few frames later. A full page
+copies the frames shown in the last two frames to a fresh page and lets the
+rest go, so nothing on screen blinks back to native and nothing is read
+again. A map's new atlas clears what was keyed by the old atlas's positions
+and palette rows (`SpriteAtlas::instance`); the pictures, keyed by hash,
+stay. A capture reads every picture at once, since it shows one frame;
+`VERA20K_HD_PAGE_SHRINK=<n>` fills only 1/n of each page's side, so a
+capture reaches a full page. Frames without art stay native; voxels have their own
 path (below). Every frame of the SHP sprite atlas takes part: buildings,
 their animations and bibs, infantry, and the effects (explosions, fire,
 smoke, debris, muzzle flashes, SHP projectiles and particles). Translucent
@@ -137,8 +145,10 @@ height (u16 little-endian) and the RGBA the engine colours it with
 write every tile of its theater the pack lacks as `<hash>.rgba` (u16 width,
 u16 height, RGBA) for an offline upscaler. Loading one map per theater
 collects them all. Upscale each tile padded with copies of itself on the
-isometric lattice, so tiles meet without seams. Pictures are read when on screen, up to 96 files a frame,
-into one 4096x4096 page that starts over when full.
+isometric lattice, so tiles meet without seams. Pictures are read when on screen, by reader
+threads as the art's are, into one 4096x4096 page. A full page keeps the
+pictures drawn in the last frame on a fresh page, so the tile pass of a frame
+keeps its pixels when the overlay pass of the same frame fills the page.
 
 Between native pixel centres the pass interpolates the light from the
 tile's neighbouring pixels that still show it, so shadow edges and light
