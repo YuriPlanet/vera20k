@@ -49,6 +49,7 @@ pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
 pub(crate) mod hd_art;
+pub(crate) mod hd_loader;
 pub(crate) mod hd_switch;
 pub(crate) mod hd_terrain;
 pub(crate) mod hud_paint;

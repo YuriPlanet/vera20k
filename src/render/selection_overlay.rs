@@ -84,8 +84,9 @@ pub struct SelectionOverlay {
     ares_bomb_images: NamedStrips,
 }
 
-/// Strips loaded from the files rules keys name, by name, each with the
-/// index the zoomed draw names it by ([`InterfaceStrip`]).
+/// Strips loaded from the files rules keys name, by name, each also at an
+/// index, so a draw can name the strip an instance was cut from
+/// ([`SelectionOverlay::bomb_strip`]) without holding a borrow of it.
 #[derive(Default)]
 struct NamedStrips {
     strips: Vec<CenteredShapeStrip>,
@@ -105,33 +106,6 @@ impl NamedStrips {
     fn get(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.strips.get(self.index(name)?)
     }
-
-    fn has_hd_pages(&self) -> bool {
-        self.strips.iter().any(|strip| strip.hd.is_some())
-    }
-}
-
-/// VERA-only, experimental (`docs/picture-model-art.md`, "Interface art"):
-/// an interface strip the zoomed picture draw names
-/// (`render::picture_zoom::HdSource::Interface`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InterfaceStrip {
-    Placement,
-    Pipbrd,
-    Pips,
-    ScalePips,
-    BombClock,
-    TalkBubble,
-    Wrench,
-    PowerOff,
-    /// PBEACON.SHP in a beacon row's Convert (`BeaconArt::tactical_strip`).
-    Beacon(usize),
-    /// An Ares `IvanBomb.Image` strip ([`SelectionOverlay::bomb_image`]).
-    AresBomb(usize),
-    /// A custom insignia strip ([`SelectionOverlay::insignia_index`]).
-    Insignia(usize),
-    /// A Phobos DigitalDisplay `Shape=` strip, by catalog index.
-    Digital(usize),
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -873,63 +847,6 @@ impl SelectionOverlay {
     /// One custom insignia SHP by normalized file name, when loaded.
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.insignia_shapes.get(name)
-    }
-
-    /// The index the zoomed draw names a custom insignia by
-    /// ([`InterfaceStrip::Insignia`]).
-    pub(crate) fn insignia_index(&self, name: &str) -> Option<usize> {
-        self.insignia_shapes.index(name)
-    }
-
-    /// VERA-only, experimental: the stock strip `strip` names; a beacon's
-    /// is `BeaconArt`'s.
-    pub(crate) fn interface_strip(&self, strip: InterfaceStrip) -> Option<&CenteredShapeStrip> {
-        match strip {
-            InterfaceStrip::Placement => self.placement_shape.as_ref(),
-            InterfaceStrip::Pipbrd => self.pipbrd.as_ref(),
-            InterfaceStrip::Pips => self.pips.as_ref(),
-            InterfaceStrip::ScalePips => self.scale_pips.as_ref(),
-            InterfaceStrip::BombClock => self.bomb_clock.as_ref(),
-            InterfaceStrip::TalkBubble => self.talk_bubble.as_ref(),
-            InterfaceStrip::Wrench => self.repair_wrench.as_ref(),
-            InterfaceStrip::PowerOff => self.power_off.as_ref(),
-            InterfaceStrip::Beacon(_) => None,
-            InterfaceStrip::AresBomb(index) => self.ares_bomb_images.strips.get(index),
-            InterfaceStrip::Insignia(index) => self.insignia_shapes.strips.get(index),
-            #[cfg(feature = "phobos")]
-            InterfaceStrip::Digital(index) => self.digital_shape(index),
-            #[cfg(not(feature = "phobos"))]
-            InterfaceStrip::Digital(_) => None,
-        }
-    }
-
-    /// VERA-only, experimental: whether a stock strip has an HD twin, which
-    /// the zoomed draw needs.
-    pub(crate) fn has_hd_pages(&self) -> bool {
-        use InterfaceStrip::*;
-        [
-            Placement, Pipbrd, Pips, ScalePips, BombClock, TalkBubble, Wrench, PowerOff,
-        ]
-        .into_iter()
-        .any(|strip| {
-            self.interface_strip(strip)
-                .is_some_and(|strip| strip.hd.is_some())
-        }) || self.ares_bomb_images.has_hd_pages()
-            || self.insignia_shapes.has_hd_pages()
-            || self.has_digital_hd_pages()
-    }
-
-    #[cfg(feature = "phobos")]
-    fn has_digital_hd_pages(&self) -> bool {
-        self.digital_shapes
-            .iter()
-            .flatten()
-            .any(|strip| strip.hd.is_some())
-    }
-
-    #[cfg(not(feature = "phobos"))]
-    fn has_digital_hd_pages(&self) -> bool {
-        false
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.

@@ -27,10 +27,16 @@
 use std::path::PathBuf;
 
 use super::hd_art::{TwinSwap, compose_rgba_twin, create_twin_texture, write_twin};
+use super::hd_loader::HdLoader;
 
-/// Pictures whose pack file one frame looks for: the whole map's ground
-/// arrives over a few frames instead of stalling one.
-const LOADS_PER_FRAME: usize = 96;
+/// Pictures asked of the pack readers (`render::hd_loader`) and not yet
+/// back: the whole map's ground arrives over a few frames instead of
+/// stalling one.
+const MAX_IN_FLIGHT: usize = 512;
+
+/// RGBA bytes of finished pictures put on the twin in one frame, so a burst
+/// of arrivals spreads over a few frames.
+const UPLOAD_BYTES_PER_FRAME: usize = 16 << 20;
 
 /// FNV-1a 64 of a tile: width and height (u16 little-endian), then its RGBA.
 pub(crate) fn tile_hash(width: u32, height: u32, rgba: &[u8]) -> u64 {
@@ -101,12 +107,14 @@ pub(crate) fn dump_rgba<'a>(
 
 /// VERA-only, experimental (`docs/zoom-one-pass.md`): an RGBA atlas page's
 /// HD twin, the tile atlas's or the overlay atlas's. Made the first frame it
-/// is asked for, from the 1x page (each picture doubled, nearest), then
-/// [`LOADS_PER_FRAME`] pictures a frame take the pack's art. A twin the
-/// device cannot hold is left out, and the page stays 1x.
+/// is asked for, from the 1x page (each picture doubled, nearest); then the
+/// pack readers (`render::hd_loader`, at most [`MAX_IN_FLIGHT`] at a time)
+/// read every picture's art, which takes its place on the twin when it is
+/// back ([`UPLOAD_BYTES_PER_FRAME`] a frame). A twin the device cannot hold is
+/// left out, and the page stays 1x.
 pub(crate) struct RgbaTwin {
     dir: PathBuf,
-    /// The 1x page's encoded RGBA, until every picture's art was looked for.
+    /// The 1x page's encoded RGBA, until every picture's art is back.
     rgba: Vec<u8>,
     size: [u32; 2],
     /// Each picture's 1x origin and size on the page.
@@ -116,8 +124,11 @@ pub(crate) struct RgbaTwin {
     debug: [u8; 3],
     texture: Option<wgpu::Texture>,
     binding: Option<wgpu::BindGroup>,
-    /// Pictures whose art was looked for, in `pictures` order.
-    read: usize,
+    /// Pictures whose art was asked for, in `pictures` order.
+    asked: usize,
+    /// The pack readers while art is being read; a finished picture's key
+    /// is its index in `pictures`.
+    loader: Option<HdLoader>,
     /// Too big for the device: no twin.
     left_out: bool,
     swap: TwinSwap,
@@ -143,7 +154,8 @@ impl RgbaTwin {
             debug,
             texture: None,
             binding: None,
-            read: 0,
+            asked: 0,
+            loader: None,
             left_out: false,
             swap: TwinSwap::default(),
         })
@@ -157,6 +169,33 @@ impl RgbaTwin {
             rgba.extend_from_slice(&self.rgba[start..start + (width * 4) as usize]);
         }
         rgba
+    }
+
+    /// Where picture `index`'s art is in the pack, and its size there.
+    fn art_path(&self, index: usize) -> (PathBuf, [u32; 2]) {
+        let (origin, size) = self.pictures[index];
+        let native = self.picture(origin, size);
+        let hash = tile_hash(size[0], size[1], &native);
+        (
+            self.dir.join(format!("{hash:016x}.png")),
+            size.map(|v| v * 2),
+        )
+    }
+
+    /// Put `art`, the pack's picture of picture `index`, on the twin.
+    fn put_art(&self, queue: &wgpu::Queue, texture: &wgpu::Texture, index: usize, art: &[u8]) {
+        let Some(&(origin, size)) = self.pictures.get(index) else {
+            return;
+        };
+        let native = self.picture(origin, size);
+        let texels = compose_rgba_twin(&native, size, Some(art), self.debug);
+        write_twin(
+            queue,
+            texture,
+            origin.map(|v| v * 2),
+            size.map(|v| v * 2),
+            &texels,
+        );
     }
 
     /// Put the twin's binding (`make` makes it from the twin's view) in
@@ -206,33 +245,51 @@ impl RgbaTwin {
                 );
             }
         }
-        if on
-            && let Some(texture) = &self.texture
-            && self.read < self.pictures.len()
-        {
-            let end = self
-                .read
-                .saturating_add(super::hd_art::loads_per_frame(LOADS_PER_FRAME))
-                .min(self.pictures.len());
-            for &(origin, size) in &self.pictures[self.read..end] {
-                let native = self.picture(origin, size);
-                let hash = tile_hash(size[0], size[1], &native);
-                let path = self.dir.join(format!("{hash:016x}.png"));
-                let Some(art) = super::hd_art::read_png(&path, size.map(|v| v * 2)) else {
-                    continue;
+        if let Some(texture) = &self.texture {
+            let mut uploaded = 0;
+            while uploaded < UPLOAD_BYTES_PER_FRAME {
+                let Some(loaded) = self.loader.as_mut().and_then(HdLoader::take) else {
+                    break;
                 };
-                let texels = compose_rgba_twin(&native, size, Some(&art), self.debug);
-                write_twin(
-                    queue,
-                    texture,
-                    origin.map(|v| v * 2),
-                    size.map(|v| v * 2),
-                    &texels,
-                );
+                if let Some(art) = loaded.rgba {
+                    uploaded += art.len();
+                    self.put_art(queue, texture, loaded.key as usize, &art);
+                }
             }
-            self.read = end;
-            if self.read == self.pictures.len() {
+            if on && self.asked < self.pictures.len() {
+                if super::hd_art::read_at_once() {
+                    for index in self.asked..self.pictures.len() {
+                        let (path, size) = self.art_path(index);
+                        if let Some(art) = super::hd_loader::read_picture(&path, size) {
+                            self.put_art(queue, texture, index, &art);
+                        }
+                    }
+                    self.asked = self.pictures.len();
+                } else {
+                    while self.asked < self.pictures.len()
+                        && self
+                            .loader
+                            .as_ref()
+                            .is_none_or(|loader| loader.in_flight() < MAX_IN_FLIGHT)
+                    {
+                        let index = self.asked;
+                        let (path, size) = self.art_path(index);
+                        self.loader
+                            .get_or_insert_with(|| HdLoader::new("HD terrain reader"))
+                            .request(index as u64, path, size);
+                        self.asked += 1;
+                    }
+                }
+            }
+            if self.asked == self.pictures.len()
+                && self
+                    .loader
+                    .as_ref()
+                    .is_none_or(|loader| loader.in_flight() == 0)
+            {
+                // Every picture's art is in: the 1x copy and the readers go.
                 self.rgba = Vec::new();
+                self.loader = None;
             }
         }
         self.swap.set(slot, self.binding.as_ref(), on);

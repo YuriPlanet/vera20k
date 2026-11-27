@@ -1872,6 +1872,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     // Extras replay for the separate native body compositions.
                     strip = crate::app::presentation::ui_overlays::TechnoExtras {
                         bomb_clock: strip.bomb_clock,
+                        bomb_image: strip.bomb_image,
                         wrench: strip.wrench,
                         ..Default::default()
                     };

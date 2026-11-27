@@ -1201,9 +1201,12 @@ pub(crate) fn admit_world_and_image_models<'i>(
             set.insert(object.id.clone());
         }
     }
+    // No atlas yet is made even with nothing to read: the unit draw visits
+    // objects only while an atlas exists, and a world whose voxel units all
+    // draw declared models (`docs/picture-model-art.md`) demands no VXL.
     if atlas
         .as_ref()
-        .map_or(demand.is_empty(), |atlas| demand.without(&atlas.covered).is_empty())
+        .is_some_and(|atlas| demand.without(&atlas.covered).is_empty())
     {
         return;
     }

@@ -4298,6 +4298,7 @@ fn a_picture_building_and_parachute_draw_with_no_shp() {
     );
     let placed: HashSet<(&str, u16)> = upload
         .pictures
+        .keys
         .iter()
         .map(|picture| (picture.key.type_id.as_str(), picture.key.frame))
         .collect();

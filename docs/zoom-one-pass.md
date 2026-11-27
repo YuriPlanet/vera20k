@@ -255,8 +255,10 @@ the 1x pixel's in every case; only the colour (or voxel index) is HD.
   cover it, the 1x colour.
 - **SHP frames** (`hd_art::ShpHd`): no full-page twins (a 4096 growth page's
   would be 341 MiB). A frame drawn while on is looked up (its key goes on a
-  demand list from `SpriteAtlas::get`), read from `<pack>/<hash>.png` (24 files
-  a frame, all of them in a capture) and put on an HD page of the sprite atlas
+  demand list from `SpriteAtlas::get`), read from `<pack>/<hash>.png` by the
+  pack reader threads (`render::hd_loader`, 256 in flight; at once in a
+  capture), and once back (32 MiB of pictures a frame) put on an HD page of
+  the sprite atlas
   (at most 4 of 2048 px, each with a 4096 twin): the 1x indices at its place,
   bound like an indexed page (palette rows at 0, indices at 3) with the twin
   at 4 and a linear sampler (`BatchRenderer::create_shp_hd_binding`).
@@ -269,8 +271,9 @@ the 1x pixel's in every case; only the colour (or voxel index) is HD.
   placed; past 4 pages they stay 1x.
 - **Tiles and overlays** (`hd_terrain::RgbaTwin`): with a pack, each atlas
   keeps its 1x RGBA and makes a same-layout twin the first frame it is on
-  (each picture doubled, nearest), then 96 pictures a frame take their
-  `<pack>/terrain/<hash>.png`. The tile atlas's `zdepth_bind_group` becomes
+  (each picture doubled, nearest), then every picture takes its
+  `<pack>/terrain/<hash>.png` as the reader threads bring it back (512 in
+  flight, 16 MiB a frame; at once in a capture). The tile atlas's `zdepth_bind_group` becomes
   the twin with a linear sampler beside the 1x depth plane
   (`create_zdepth_hd_bind_group`; `zdepth_shader.wgsl` tells it by the page
   being larger than the depth plane and reads depth by texel). The overlay

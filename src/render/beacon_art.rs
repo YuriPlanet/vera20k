@@ -144,7 +144,12 @@ impl BeaconArt {
                 .take(palettes.len())
                 .map(|ramp| {
                     (0..frames.frame_count())
-                        .map(|frame| frames.sprite(frame, Some(ramp)))
+                        .map(|frame| {
+                            frames.sprite(
+                                frame,
+                                crate::render::picture_atlas::HouseColor::Baked(ramp),
+                            )
+                        })
                         .collect()
                 })
                 .collect(),

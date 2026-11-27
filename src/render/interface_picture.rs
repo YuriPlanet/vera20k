@@ -17,7 +17,7 @@
 
 use crate::assets::picture_file::PictureFrames;
 use crate::assets::shp_file::ShpFile;
-use crate::render::picture_atlas::{GamePictureFrames, PICTURE_SCALE_MAX};
+use crate::render::picture_atlas::{GamePictureFrames, PICTURE_SCALE_MAX, PictureBytes};
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 
@@ -73,22 +73,24 @@ impl PictureSizes<'_> {
 /// A fitting picture for an interface file.
 pub(crate) struct InterfacePicture {
     pub picture: PictureFrames,
-    /// `NAME.mask.png`, when the caller takes one and it exists.
-    pub mask: Option<PictureFrames>,
     /// Picture pixels per game pixel.
     pub scale: u32,
     /// The game canvas: `PictureSize=`, else the SHP's or PCX's, else the
     /// picture's own size.
     pub canvas: [u32; 2],
+    /// The file `picture` was decoded from and `NAME.mask.png`, when the
+    /// caller takes one and it exists: what [`Self::game_frames`] streams.
+    bytes: PictureBytes,
 }
 
 impl InterfacePicture {
-    /// The picture at game pixels, as the picture art draws at 1x
-    /// (`GamePictureFrames::shrink`): each frame cropped to its drawn pixels
-    /// as an SHP's stored frame, placed on the canvas; the frames at their
-    /// own resolution are kept for the zoomed draw.
+    /// The picture on its game canvas (`GamePictureFrames::stream`): each
+    /// frame cropped to its drawn pixels as an SHP's stored frame and placed
+    /// on the canvas, at game pixels for what the CPU reads and draws (the
+    /// radar beacon, the cameos); the strip's picture page streams its own
+    /// resolution from it (`GamePictureFrames::hd_page_sprites`).
     pub(crate) fn game_frames(&self) -> Option<GamePictureFrames> {
-        GamePictureFrames::shrink(self.picture.clone(), self.mask.as_ref(), Some(self.canvas)).ok()
+        GamePictureFrames::stream(self.bytes.clone(), Some(self.canvas)).ok()
     }
 }
 
@@ -118,6 +120,11 @@ pub(crate) fn find<'a>(
     let name = picture_name(file_name);
     let bytes = lookup(&name)?;
     let mask_name = format!("{}.mask.png", stem(file_name));
+    // An interface file is small: its bytes are copied once, so the strips
+    // can stream it again at its own resolution.
+    let shared = |bytes: &[u8]| {
+        crate::assets::mix_archive::SharedBytes::from(std::sync::Arc::<[u8]>::from(bytes))
+    };
     let read = || -> Result<InterfacePicture, String> {
         let picture = PictureFrames::decode(bytes)
             .map_err(|error| format!("it is not readable ({error})"))?;
@@ -139,6 +146,10 @@ pub(crate) fn find<'a>(
             picture,
             scale,
             canvas,
+            bytes: PictureBytes {
+                picture: shared(bytes),
+                mask,
+            },
         })
     };
     match read() {

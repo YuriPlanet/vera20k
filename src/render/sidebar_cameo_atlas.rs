@@ -669,7 +669,7 @@ fn cameo_from_frames(
     frames: &crate::render::picture_atlas::GamePictureFrames,
 ) -> RenderedCameo {
     let canvas = frames.canvas;
-    match frames.sprite(0, None) {
+    match frames.sprite(0, crate::render::picture_atlas::HouseColor::Own) {
         Some(sprite) => RenderedCameo {
             type_id: key.to_ascii_uppercase(),
             kind: CameoKind::Ordinary,

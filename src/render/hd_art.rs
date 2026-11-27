@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use super::batch::{BatchRenderer, BatchTexture};
+use super::hd_loader::HdLoader;
 use super::overlay_atlas::OverlayAtlas;
 use super::sprite_atlas::{ShpSpriteEntry, ShpSpriteKey, SpriteAtlas, SpriteAtlasPage};
 use super::tile_atlas::TileAtlas;
@@ -38,9 +39,14 @@ const SHP_PAGE: u32 = 2048;
 /// [`SHP_PAGE`]). Frames past them stay 1x.
 const MAX_SHP_PAGES: usize = 4;
 
-/// New pack files read in one frame, so a screen of new buildings arrives
-/// over a few frames instead of stalling one.
-const LOADS_PER_FRAME: usize = 24;
+/// Pictures asked of the pack readers (`render::hd_loader`) and not yet
+/// back: a screen of new frames waits here instead of queueing every frame
+/// of every building.
+const MAX_IN_FLIGHT: usize = 256;
+
+/// RGBA bytes of finished pictures put on the HD pages in one frame, so a
+/// burst of arrivals spreads over a few frames.
+const UPLOAD_BYTES_PER_FRAME: usize = 32 << 20;
 
 /// Frames asked for that one frame looks at, at most; the rest are asked for
 /// again by the next frame's draws.
@@ -131,16 +137,6 @@ fn load_reference_palette(dir: &Path) -> Option<Vec<u8>> {
     Some(rgba)
 }
 
-/// `path`, a PNG exactly `size` pixels, as RGBA; None when it is missing,
-/// unreadable or another size.
-pub(crate) fn read_png(path: &Path, size: [u32; 2]) -> Option<Vec<u8>> {
-    let bytes = std::fs::read(path).ok()?;
-    let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
-        .ok()?
-        .into_rgba8();
-    (image.width() == size[0] && image.height() == size[1]).then(|| image.into_raw())
-}
-
 /// `VERA20K_HD_ART=debug` (`hd_switch::env_override`): HD texels are tinted
 /// as they are put on their twins, `colour` at 35%.
 pub(crate) fn debug_tint(rgb: [u8; 3], colour: [u8; 3]) -> [u8; 3] {
@@ -193,14 +189,11 @@ pub(crate) fn bind_hd_twins(
     }
 }
 
-/// How many new pack files one frame reads: a capture
-/// (`hd_switch::capture_zoom`) shows one frame, so it reads all it needs.
-pub(crate) fn loads_per_frame(normal: usize) -> usize {
-    if super::hd_switch::capture_zoom().is_some() {
-        usize::MAX
-    } else {
-        normal
-    }
+/// Whether pack pictures are read at once on the render thread instead of
+/// by the readers: a capture (`hd_switch::capture_zoom`) shows one frame, so
+/// it reads all it needs before drawing it.
+pub(crate) fn read_at_once() -> bool {
+    super::hd_switch::capture_zoom().is_some()
 }
 
 /// An HD twin texture of `size` texels (level 0): encoded colour
@@ -435,9 +428,11 @@ struct ShpHdPage {
 /// 1x indices at the same place, resolved through the same palette rows; its
 /// binding adds the 2x twin of [`compose_shp_twin`] texels. A frame's key
 /// then has an HD entry, the 1x entry on that page
-/// ([`SpriteAtlas::get`]). Frames are read only when asked for, at most
-/// [`LOADS_PER_FRAME`] files a frame, and stay for the match: an entry handed
-/// out never goes stale.
+/// ([`SpriteAtlas::get`]). Frames are read only when asked for, by the pack
+/// readers (`render::hd_loader`, at most [`MAX_IN_FLIGHT`] at a time), go up
+/// when their picture is back ([`UPLOAD_BYTES_PER_FRAME`] a frame) and stay
+/// for the match: an entry handed out never goes stale. A frame draws 1x
+/// until then.
 pub(crate) struct ShpHd {
     dir: PathBuf,
     dump: Option<PathBuf>,
@@ -456,6 +451,11 @@ pub(crate) struct ShpHd {
     checked: HashSet<ShpSpriteKey>,
     /// Keys drawn this frame and not yet looked at ([`Self::entry`]).
     demand: std::sync::Mutex<HashSet<ShpSpriteKey>>,
+    /// Frame hash → its 1x size and indices while the readers have its
+    /// picture.
+    waiting: HashMap<u64, ([u32; 2], Vec<u8>)>,
+    /// The pack readers, started when the first picture is asked for.
+    loader: Option<HdLoader>,
     active: bool,
     /// No page is left: further frames stay 1x.
     full: bool,
@@ -478,6 +478,8 @@ impl ShpHd {
             entries: HashMap::new(),
             checked: HashSet::new(),
             demand: std::sync::Mutex::new(HashSet::new()),
+            waiting: HashMap::new(),
+            loader: None,
             active: false,
             full: false,
         })
@@ -526,10 +528,13 @@ impl ShpHd {
         }
     }
 
-    /// Look at the keys asked for since the last call: `lookup` gives a
-    /// key's 1x entry and frame indices. A frame the pack has art for is put
-    /// on an HD page (`pages`, the atlas's, gains one when the last is full),
-    /// and each of its keys gets an HD entry.
+    /// Put the pictures the readers finished on the HD pages, then look at
+    /// the keys asked for since the last call: `lookup` gives a key's 1x
+    /// entry and frame indices. A frame the pack has art for is put on an HD
+    /// page (`pages`, the atlas's, gains one when the last is full) once its
+    /// picture is back, and each of its keys then gets an HD entry; a key
+    /// whose picture is still being read is asked for again by a later
+    /// frame's draws.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn load(
         &mut self,
@@ -540,17 +545,29 @@ impl ShpHd {
         palette_rows: &wgpu::TextureView,
         lookup: impl Fn(&ShpSpriteKey) -> Option<(ShpSpriteEntry, Vec<u8>)>,
     ) {
+        let mut uploaded = 0;
+        while uploaded < UPLOAD_BYTES_PER_FRAME {
+            let Some(loaded) = self.loader.as_mut().and_then(HdLoader::take) else {
+                break;
+            };
+            uploaded += self.finish(
+                device,
+                queue,
+                batch,
+                pages,
+                palette_rows,
+                loaded.key,
+                loaded.rgba,
+            );
+        }
         let demand = std::mem::take(
             &mut *self
                 .demand
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         );
-        let (budget, keys) = (
-            loads_per_frame(LOADS_PER_FRAME),
-            loads_per_frame(KEYS_PER_FRAME),
-        );
-        let mut loads = 0;
+        let at_once = read_at_once();
+        let keys = if at_once { usize::MAX } else { KEYS_PER_FRAME };
         for key in demand.into_iter().take(keys) {
             if self.checked.contains(&key) {
                 continue;
@@ -568,29 +585,33 @@ impl ShpHd {
                 continue;
             }
             let hash = frame_hash(size[0], size[1], &indices);
-            let place = match self.frames.get(&hash) {
-                Some(place) => *place,
-                None => {
-                    if loads >= budget {
-                        // Asked for again by a later frame's draws.
+            if !self.frames.contains_key(&hash) {
+                if self.waiting.contains_key(&hash) {
+                    // Asked for again by a later frame's draws.
+                    continue;
+                }
+                if size[0] >= self.side || size[1] >= self.side {
+                    self.frames.insert(hash, None);
+                } else {
+                    let path = self.dir.join(format!("{hash:016x}.png"));
+                    let art_size = size.map(|side| side * 2);
+                    if at_once {
+                        let art = super::hd_loader::read_picture(&path, art_size);
+                        self.waiting.insert(hash, (size, indices));
+                        self.finish(device, queue, batch, pages, palette_rows, hash, art);
+                    } else {
+                        let loader = self
+                            .loader
+                            .get_or_insert_with(|| HdLoader::new("HD art reader"));
+                        if loader.in_flight() < MAX_IN_FLIGHT {
+                            loader.request(hash, path, art_size);
+                            self.waiting.insert(hash, (size, indices));
+                        }
                         continue;
                     }
-                    loads += 1;
-                    let place = self.load_frame(
-                        device,
-                        queue,
-                        batch,
-                        pages,
-                        palette_rows,
-                        hash,
-                        size,
-                        &indices,
-                    );
-                    self.frames.insert(hash, place);
-                    place
                 }
-            };
-            if let Some((page, origin)) = place
+            }
+            if let Some(Some((page, origin))) = self.frames.get(&hash).copied()
                 && let Some(hd) = self.pages.get(page)
                 && let Ok(page_byte) = u8::try_from(hd.atlas_page)
             {
@@ -609,10 +630,11 @@ impl ShpHd {
         }
     }
 
-    /// Read `<hash>.png` and put it on an HD page: None when the pack lacks
-    /// it (the frame is dumped then) or no page has room.
+    /// Put the finished picture `art` of the frame `hash` on an HD page, or
+    /// note that it has none: the pack lacks it (the frame is dumped then) or
+    /// no page has room. Returns the picture's RGBA bytes put up.
     #[allow(clippy::too_many_arguments)]
-    fn load_frame(
+    fn finish(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -620,46 +642,45 @@ impl ShpHd {
         pages: &mut Vec<SpriteAtlasPage>,
         palette_rows: &wgpu::TextureView,
         hash: u64,
-        [width, height]: [u32; 2],
-        indices: &[u8],
-    ) -> Option<(usize, [u32; 2])> {
-        let name = format!("{hash:016x}");
-        let Some(art) = read_png(
-            &self.dir.join(format!("{name}.png")),
-            [width * 2, height * 2],
-        ) else {
+        art: Option<Vec<u8>>,
+    ) -> usize {
+        let Some(([width, height], indices)) = self.waiting.remove(&hash) else {
+            return 0;
+        };
+        let Some(art) = art else {
             if let Some(dump) = &self.dump {
                 let mut bytes = Vec::with_capacity(4 + indices.len());
                 bytes.extend_from_slice(&(width as u16).to_le_bytes());
                 bytes.extend_from_slice(&(height as u16).to_le_bytes());
-                bytes.extend_from_slice(indices);
+                bytes.extend_from_slice(&indices);
                 let _ = std::fs::create_dir_all(dump);
-                let _ = std::fs::write(dump.join(format!("{name}.idx")), bytes);
+                let _ = std::fs::write(dump.join(format!("{hash:016x}.idx")), bytes);
             }
-            return None;
+            self.frames.insert(hash, None);
+            return 0;
         };
-        if width >= self.side || height >= self.side {
-            return None;
+        let place = self.place(device, batch, pages, palette_rows, width, height);
+        if let Some((page, origin)) = place {
+            let hd = &self.pages[page];
+            super::atlas_growth::write_texels(
+                queue,
+                hd.indices.texture(),
+                origin,
+                [width, height],
+                1,
+                &indices,
+            );
+            let texels = compose_shp_twin(&indices, [width, height], &art, &self.reference);
+            write_twin(
+                queue,
+                hd.twin.texture(),
+                origin.map(|v| v * 2),
+                [width * 2, height * 2],
+                &texels,
+            );
         }
-        let (page, origin) = self.place(device, batch, pages, palette_rows, width, height)?;
-        let hd = &self.pages[page];
-        super::atlas_growth::write_texels(
-            queue,
-            hd.indices.texture(),
-            origin,
-            [width, height],
-            1,
-            indices,
-        );
-        let texels = compose_shp_twin(indices, [width, height], &art, &self.reference);
-        write_twin(
-            queue,
-            hd.twin.texture(),
-            origin.map(|v| v * 2),
-            [width * 2, height * 2],
-            &texels,
-        );
-        Some((page, origin))
+        self.frames.insert(hash, place);
+        art.len()
     }
 
     /// Shelf placement, one 1x pixel apart, on the last HD page or a new

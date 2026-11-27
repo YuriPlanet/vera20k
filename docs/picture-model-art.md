@@ -205,10 +205,11 @@ is cropped to its drawn pixels as a stored SHP frame is and placed on the
 canvas as a full-canvas frame would be (centred where the draw centres).
 The palette indices the draws read (the A plane, the self-heal index mask)
 come from the picture's drawn pixels (index 1, 240 for the mask's unlit
-ones), as for any picture. Above 1x (`k` > 1) the zoomed draw takes the
-picture's own pixels (below); at 1x, a PNG alone with no `PictureSize=`
-included, it draws at game pixels only. Declaring `PictureSize=`, or
-shipping a same-size placeholder SHP, gives it the HD copy.
+ones), as for any picture. Above 1x (`k` > 1) the strip's page holds the
+picture's own pixels, sampled at the level the camera needs (below); at 1x,
+a PNG alone with no `PictureSize=` included, its own pixels are its game
+pixels, magnified when the camera zooms in. Declaring `PictureSize=`, or
+shipping a same-size placeholder SHP, gives it a resolution above the game's.
 
 | What | Rule |
 |---|---|
@@ -238,8 +239,9 @@ Files rules keys name (each in the key's own extension's cases):
 | Ares `SidebarPCX=` (SuperWeaponTypes) | beside the PCX | the superweapon cameo, one frame, at 1x |
 | Phobos `SuperWeaponSidebar.*PCX=` (`[Side]`) | beside each PCX | the superweapon sidebar's buttons and column, one frame, at 1x |
 
-The cameos and the sidebar have no zoomed draw, so their pictures draw at
-game pixels (shrunk by the coverage rule below) whatever their scale.
+The cameos and the sidebar are drawn into the sidebar surface at frame
+pixels, not by the world camera, so their pictures draw at game pixels
+(shrunk by the coverage rule below) whatever their scale.
 
 When a picture fits, it replaces the SHP's pixels everywhere that SHP is
 drawn; frame numbers and animation stay the SHP's, and offsets, hotspots
@@ -588,11 +590,10 @@ against this list.
 - Asset lookup: no new probes; a picture or model is opened only by its key.
 - The sprite atlas: no SHP keys for a type with `Picture=`; picture pages and
   entries appended. Existing shaders, pipelines, layouts and passes untouched.
-- Zoomed drawing (chain 6, `render::picture_zoom`): `WorldZoomPass` exposes
-  its scale and window-copy frames; `render_game` prepares the HD list once
-  per frame and keeps the world zoom pass when the Options zoom alone
-  magnifies picture art; `draw_passes` draws it after the frame composite and
-  after the window copy; `SpriteAtlas` holds the HD twin pages.
+- Zoomed drawing (chain 6): the one world camera samples every picture page
+  by lod (`render::picture_zoom` holds the page textures,
+  `render::picture_stream` streams own-resolution tiles while zoomed in;
+  `docs/zoom-one-pass.md`); there is no world zoom pass, HD list or redraw.
 - The overlay and bridge atlases: a building whose rubble art names a
   declared picture takes its rubble body and shadow frames from the picture
   (`picture_atlas::rubble_picture`). Those atlases are already RGBA pages
@@ -658,14 +659,19 @@ against this list.
   texture, the window-system image (`MouseArt::os_image`) and the planning
   badges take their pixels from it, stock and Ares lists alike;
   `os_cursor_image` places already-resampled pixels (`nearest_resample` keeps
-  the SHP's formula). `SelectionOverlay` loads its stock strips through
-  `CenteredShapeStrip::from_interface_assets_on_device`;
-  `from_picture_on_device` builds an HD twin (`hd_page`) for art above 1x;
-  `BeaconArt` draws `pbeacon.png`/`rdrbeacn.png` with each row's ramp.
-  `PictureZoomPass::draw` takes a page lookup (`HdSource`: an atlas page or an
-  `InterfaceStrip`) and binds each run's camera (`HdRun::neutral_a`);
-  `app::presentation::render::picture_zoom::prepare` also takes the frame's
-  beacons and PLACE cells and appends the strips' instances.
+  the SHP's formula). Every interface strip, stock or named by a rules key
+  (`SelectionOverlay`'s pips, markers, placement grid, Ares bomb images and
+  insignia, Phobos DigitalDisplay shapes), loads through
+  `CenteredShapeStrip::from_assets_on_device`, which takes the picture with
+  or without the SHP; `from_picture_on_device` makes it one picture page at
+  the picture's own resolution (`GamePictureFrames::hd_page_sprites`), which
+  the world camera samples by lod, so no strip has a second copy or a second
+  draw. `BeaconArt` draws `pbeacon.png`/`rdrbeacn.png` with each row's ramp.
+  The superweapon cameos and sidebar PCXs take their picture through
+  `sidebar_cameo_atlas::load_interface_pcx` and `render_superweapon_shp`, at
+  game pixels. `interface_picture::PictureSizes` hands every loader
+  `PictureSize=`: the match's art registry, or before a match (the startup
+  cursor) the fixed art INI.
 
 ## Verification
 
@@ -814,8 +820,10 @@ current: say what was done, what was not, and what comes next.
   stem names, else the file's canvas, else its own size at 1x, and drawn
   with no SHP or PCX present (frames, crop and centring from the picture).
   The Ivan bomb clock now binds the `IvanBomb.Image` strip it was cut from
-  (it bound BOMBCURS's texture before), and the zoomed draw copies the
-  insignia, Ares bomb and DigitalDisplay strips' HD twins. `[General]
+  (it bound BOMBCURS's texture before); the insignia, Ares bomb and
+  DigitalDisplay strips are picture pages like every interface strip, drawn
+  at their own resolution by the one camera (`docs/zoom-one-pass.md`), with
+  no HD twin or redraw. `[General]
   Parachute=`/`VehicleParachute=` and `WebbedInfantry=` AnimTypes that
   declare `Picture=` count and draw it with no SHP. Focused tests:
   `render::interface_picture` (size precedence, PNG-only frames and size,
