@@ -1160,7 +1160,7 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `NearbyEnemyCount` | int | R (derived, high) | own | v1 | Number of enemy objects within sight (`Sight`) |
 | `TargetInRange` | bool | R (derived, high) | own | v1 | Current target is within range of the weapon the object selects against it (the primary unless the target calls for the secondary) |
 | `CanFireAtTarget` | bool | R (derived, high) | own | v1 | Can fire at the current target now |
-| `DoorOpen` | bool | W | seen | v1 (writing later) | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing changes the displayed state without starting production or dispatching a unit |
+| `DoorOpen` | bool | W | seen | v1 (writing preview) | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing 1 or 0 holds a war factory's or gate's door drawn open or shut, −1 lets it show its own state again; the door, production, the exit and a gate's passage run on, and a read still answers the door's own state. A vehicle's door has no picture: `Unsupported` |
 | `Animating` | bool | W | seen | v1 (writing later) | Whether the building's working animation is active. `Unsupported` for other objects. Writing changes the displayed state without starting production or dispatching a unit |
 | Modifiable properties | See 7.2 | | | | Modifiable |
 

@@ -418,6 +418,9 @@ pub(crate) struct StructureArt {
     pub(crate) current_body_frame: i32,
     /// `gate_open_body_frame` with its art's GateStages, for a gate.
     pub(crate) gate_open_body_frame: Option<i32>,
+    /// How a Wasm module's `DoorOpen` write holds its door drawn
+    /// (`Simulation::ext_module_door`).
+    pub(crate) module_door: Option<bool>,
 }
 
 impl StructureArt {
@@ -447,14 +450,24 @@ impl StructureArt {
                 at.sim.object_tech_level(object),
             ),
             gate_open_body_frame: gate_stages.and_then(|gate_stages| {
-                building_art::gate_open_body_frame(
-                    entity,
-                    gate_stages,
-                    object.strength,
-                    rules.general.condition_yellow,
-                    at.binary_frame,
-                )
+                match at.sim.ext_module_door(entity.stable_id()) {
+                    Some(open) => building_art::gate_held_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        open,
+                    ),
+                    None => building_art::gate_open_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        at.binary_frame,
+                    ),
+                }
             }),
+            module_door: at.sim.ext_module_door(entity.stable_id()),
         })
     }
 }

@@ -1,7 +1,6 @@
 //! What module actions leave held between frames, beside the modifiers:
-//! the timed conversions `Convert` will undo, the house type list
-//! `AllowType` writes and the animations `AttachAnim` keeps (RFC 0001
-//! appendix 5.3). [`ActionHeld`] is the one
+//! timed conversions, house type restrictions, kept animations and visual overrides.
+//! [`ActionHeld`] is the one
 //! owner; it is saved with the modules and hashed when it holds anything.
 //!
 //! - A timed `Convert` (`value2` frames) remembers the object's type before
@@ -26,6 +25,11 @@
 //!   in limbo (a transport) or fully cloaked, so it gives no hidden object
 //!   away, and puts it back once the object shows again or the engine
 //!   destroyed it. It follows the object's coordinates.
+//! - A `DoorOpen` write holds how a war factory's or gate's door is drawn,
+//!   open (1) or shut (0), until -1 lets the door show its own state again.
+//!   Only the picture follows it ([`Simulation::ext_module_door`]): the door
+//!   itself, production, the exit and a gate's passage keep running as they
+//!   would.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,6 +58,10 @@ pub(crate) struct ActionHeld {
     /// The animations `AttachAnim` keeps, in attach order.
     #[serde(default)]
     anims: Vec<HeldAnim>,
+    /// `DoorOpen` writes: how each building's door is drawn, by creation
+    /// serial.
+    #[serde(default)]
+    doors: BTreeMap<u64, bool>,
 }
 
 /// An animation a module keeps on an object.
@@ -74,6 +82,7 @@ impl ActionHeld {
     pub(super) fn is_empty(&self) -> bool {
         self.conversions.is_empty()
             && self.forbidden.is_empty()
+            && self.doors.is_empty()
             && self.anims.is_empty()
     }
 
@@ -82,6 +91,15 @@ impl ActionHeld {
     /// the total, including attachments waiting for their owner to reappear.
     pub(super) fn can_hold_anim(&self) -> bool {
         self.anims.len() < 65_536
+    }
+
+    /// A `DoorOpen` write: draw `object`'s door open or shut, or (`None`)
+    /// as it is.
+    pub(super) fn hold_door(&mut self, object: u64, open: Option<bool>) {
+        match open {
+            Some(open) => self.doors.insert(object, open),
+            None => self.doors.remove(&object),
+        };
     }
 
     /// After `AttachAnim` attached `anim` to `object`: kept for `frames`
@@ -158,6 +176,7 @@ impl ActionHeld {
     }
 
     pub(super) fn forget_object(&mut self, object: u64) {
+        self.doors.remove(&object);
         self.conversions.remove(&object);
     }
 
@@ -184,6 +203,11 @@ pub(super) fn held_anim_hidden(entity: &crate::sim::game_entity::GameEntity) -> 
 }
 
 impl Simulation {
+    /// How a module's `DoorOpen` write has object `id`'s door drawn.
+    pub fn ext_module_door(&self, id: u64) -> Option<bool> {
+        self.ext_modules.held.doors.get(&id).copied()
+    }
+
     /// The module phase's kept animations, in attach order: one whose time
     /// is up or whose object left the game is destroyed and dropped; one
     /// whose object is in limbo or fully cloaked is destroyed and kept; one

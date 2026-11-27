@@ -70,9 +70,11 @@
 //!   tag-storage indices, so a reference would change the save layout.
 //! - `DisguiseType` answers `Unsupported` for a Mirage disguised as terrain:
 //!   no name kind holds terrain types.
-//! - `DoorOpen` and `Animating` are read-only (the appendix's display write
-//!   is client work); `Animating` reads 1 only where a native caller begins
-//!   Active (the missile silo), since art `AnimActive=` is not bound.
+//! - `DoorOpen` reads the door itself; its write only holds how a war
+//!   factory's or gate's door is drawn (`held::ActionHeld`). `Animating` is
+//!   read-only: VERA binds no art `AnimActive=` body range a write could
+//!   show, and reads 1 only where a native caller begins Active (the
+//!   missile silo).
 //! - `TargetInRange` reads the weapon SelectWeapon picks against the target,
 //!   the primary unless the target calls for the secondary.
 //! - A house's `Name` is not read (player names are not simulation state).
