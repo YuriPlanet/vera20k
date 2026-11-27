@@ -993,7 +993,9 @@ are (`MatchSession::network_personal_rules`). A launcher's network game
 without the Building Production Queue, which its probe leaves out too, so a player's
 Options page cannot keep a launch from starting. The probe also reports the digest in
 [parts](spawn.md#rules-parts), which only explain a difference; a launch the digest
-refuses names this game's parts in its result. So the room's
+refuses names this game's parts in its result. The parts include the effective VERA.INI
+settings, including `WasmBudget`, so a launcher can identify and sync differences. Older
+launchers can ignore this field. The room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
 digest compares the ones each game plays.
