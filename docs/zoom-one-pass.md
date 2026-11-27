@@ -478,3 +478,86 @@ Left:
   point-sampled.
 - Destination-edit replay (`terrain_draw::replays`) needs one texel per
   pixel, so it stays off for picture pages above 1x (more passes only).
+
+## Status: picture streaming
+
+Phase 3a held every picture frame at its own resolution from load: a 4x
+art pack (`yurihd`) filled 6 pages of 16384x16000 texels (about 9 bytes a
+texel with mips, index plane and house layer: some 14 GB of GPU memory and
+several GB of CPU memory while packing), loaded in 140 s, swapped at 1-2
+fps, and 12 animations were refused by the decoder's 512 MiB cap. Now the
+pictures stream like a 3D game's textures (`render::picture_stream`):
+
+- **Resident level only at load.** Every frame the atlas needs is on a
+  scale-1 picture page (the existing `PicturePage` path: its zoom-out mip,
+  index plane, house layer), built from the game-pixel shrink.
+  `GamePictureFrames` no longer keeps the HD frames: `stream` reads the
+  file and its mask a frame at a time in lockstep
+  (`picture_atlas::PictureFrameStream` over `picture_file::FrameStream`),
+  shrinks each frame and drops it, so no picture is refused for size. It
+  keeps a handle on the file (`PictureBytes`: `AssetManager::get_shared`
+  for the picture and the mask, no copy). `page_sprite` is now the
+  game-pixel page sprite; `hd_page_sprites` streams every frame at the
+  picture's resolution once for the interface strips (selection overlay,
+  beacons, placement preview), the only load-time HD users. Overlay,
+  bridge, cameo and rubble art use the game pixels only; the overlay radar
+  colours stream too.
+- **Demand.** `SpriteAtlas::get` asks `PictureStream::entry` first: while
+  active (world camera zoom above 1, threads available) a key of a frame
+  of art above 1x returns its HD entry if the frame is on an HD page (and
+  stamps that page's last use, an atomic), else it moves the frame's slot
+  from idle to wanted (an atomic compare-exchange; only then a mutex'd
+  push) and the game-pixel entry is drawn. HD entries are the game-pixel
+  entry with only `page` and UV changed.
+- **Hook.** `SpriteAtlas::stream_pictures(device, queue, batch, zoom)`,
+  called by `render_game` right after `bind_hd_twins`. Inactive: wanted
+  slots go back to idle, nothing is uploaded (running jobs wait on the
+  full result channel). Active: wanted slots are grouped by file; a file
+  with no running job gets one (at most 4 jobs at once) on two decode
+  threads (`std::thread`, a job channel, a result `sync_channel` of 8
+  tiles, so decoded art never piles up). A job streams the file up to its
+  last wanted frame and, for each wanted frame, builds its HD tile:
+  `hd_page_sprite` (the one crop/class/house/resample implementation,
+  shared with `page_sprite` through `crop_page_sprite`), composed into a
+  tile with `PAGE_GAP` around it rounded to the last level's texel, with
+  its colour and house mip chains (`PicturePage::mip_chain`) and index
+  plane. The hook takes up to 16 MiB of tiles a frame and writes them
+  (`PictureHdPage::write`, `write_texture` per level). A job's end logs
+  one line (file, frames decoded, ms); a failed one keeps its frames at
+  game pixels. Worker panics are caught.
+- **Pages.** `PagePool`: pages of 2048 texels (or the device limit), one
+  page scale each, shelf-packed in game pixels, made by
+  `PictureHdPage::empty` (colour with `page_levels(scale)` mips, R8 index
+  plane, RG8 house layer, `COPY_DST`) and bound through
+  `create_picture_hd_binding` as new pages among the atlas's pages (and in
+  `picture_pages`). Budget 1 GiB (`VERA_PICTURE_HD_BUDGET_MB`), about 36
+  MiB a page. Full: the page whose last use is oldest, and not this or the
+  last frame, is emptied (its frames idle again, their keys back on their
+  game-pixel entries) and reused, made again for another scale if need be;
+  a tile with no evictable page waits until the next eviction or summary.
+  A frame wider or taller than a page (512 game pixels at 4x, 256 at 8x)
+  stays at game pixels (logged once per file).
+- **Summary**: every 600 frames while anything is held or waiting, one
+  line: pages, MiB of the budget, frames HD, decoding, wanted.
+- **Capture** (`VERA20K_HD_CAPTURE_ZOOM`): the hook waits for the frame's
+  jobs and uploads without a budget.
+- **Browser build**: no threads; pictures draw from their game-pixel pages
+  at every zoom.
+- **Tests**: `a_4x_picture_keeps_game_pixels_and_streams_its_own_resolution`
+  (picture_atlas), `a_4x_picture_is_paged_at_game_pixels_and_streams_its_resolution`
+  (sprite atlas prepare), `a_full_pool_evicts_its_least_recently_drawn_page`
+  and `a_drawn_frame_is_wanted_then_redirected_with_its_own_offsets`
+  (picture_stream).
+
+Expected for the 4x pack: the resident pages are the HD pages' texels over
+16 (about 0.1 G texels, under 1 GB of GPU memory with mips and house
+layer) plus at most the 1 GiB HD budget; load decodes and shrinks each file
+once, a frame at a time, with no HD packing. Zoomed in, a frame shows its
+game-pixel page magnified until its tile arrives (a few frames for a
+building, longer for a late frame of a long animation, which is decoded
+from its first frame).
+
+Left: an HD entry handed out stays valid only until its page is evicted;
+every draw takes entries each frame, so nothing should keep one across
+frames (none does today). Decoding a late frame of a long animation reads
+all frames before it (APNG compositing), once per job.

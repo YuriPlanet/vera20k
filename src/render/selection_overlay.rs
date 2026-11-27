@@ -335,9 +335,9 @@ impl CenteredShapeStrip {
     ) -> Option<Self> {
         use crate::render::picture_atlas::{HouseColor, PageSprite, PicturePage};
         let house = ramp.map_or(HouseColor::Own, HouseColor::Baked);
-        let sprites: Vec<Option<PageSprite>> = (0..picture.frame_count())
-            .map(|frame| picture.page_sprite(frame, house))
-            .collect();
+        // The strip is small: its frames at the picture's own resolution
+        // are streamed once and kept.
+        let sprites: Vec<Option<PageSprite>> = picture.hd_page_sprites(house);
         // Every frame of one picture has its page scale.
         let scale = sprites
             .iter()

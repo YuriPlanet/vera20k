@@ -1,7 +1,8 @@
 //! VERA-only, experimental picture art (`Picture=`,
 //! `docs/picture-model-art.md`): the header facts of a PNG or APNG that the
 //! simulation takes where it takes an SHP header's, read without decoding a
-//! pixel.
+//! pixel, and its frames composited one at a time ([`FrameStream`]) or all
+//! together ([`PictureFrames`]).
 
 /// A picture's canvas, in its own pixels, and its frame count: the APNG's
 /// animation frames (`acTL`), or 1 for a plain PNG.
@@ -18,13 +19,20 @@ pub enum PictureError {
     Png(#[from] png::DecodingError),
     #[error("an APNG with no frames")]
     NoFrames,
-    #[error("{0} bytes of frames is more than the {PICTURE_BYTES_MAX} a picture may hold")]
+    #[error(
+        "{0} bytes of frames is more than the {PICTURE_BYTES_MAX} a picture may hold at once; \
+         a picture this big must be streamed frame by frame"
+    )]
     TooLarge(u64),
+    #[error("a canvas too large to decode on this platform")]
+    CanvasTooLarge,
     #[error("a frame region outside the canvas")]
     FrameOutside,
 }
 
-/// The most decoded RGBA bytes one picture may hold, all frames together.
+/// The most decoded RGBA bytes [`PictureFrames::decode`] may hold, all frames
+/// together. A [`FrameStream`] holds one canvas whatever the frame count, so
+/// it is not bound by this.
 pub const PICTURE_BYTES_MAX: u64 = 512 << 20;
 
 /// A picture's frames composited onto its canvas, as an APNG viewer shows
@@ -36,12 +44,44 @@ pub struct PictureFrames {
     pub frames: Vec<Vec<u8>>,
 }
 
-impl PictureFrames {
-    /// Decode and composite every frame of the PNG or APNG `bytes`. An APNG's
-    /// default image that is not part of its animation is skipped; each
-    /// animation frame is drawn onto the canvas by its blend operation and
-    /// then disposed of by its dispose operation (APNG 1.0, `fcTL`).
-    pub fn decode(bytes: &[u8]) -> Result<Self, PictureError> {
+/// The frames of a PNG or APNG composited one at a time, in order, onto one
+/// reused canvas, as an APNG viewer shows them. An APNG's default image that
+/// is not part of its animation is skipped; each animation frame is drawn
+/// onto the canvas by its blend operation and disposed of by its dispose
+/// operation (APNG 1.0, `fcTL`) just before the next frame is drawn.
+///
+/// It holds the canvas, the decoder's output buffer for one frame (at most a
+/// canvas), and, only while a `Previous`-disposed frame shows, the region
+/// that frame covers: so memory stays at about two canvases whatever the
+/// frame count. Frames come strictly in order: compositing depends on every
+/// frame before, so reaching frame `n` means drawing frames `0..n`.
+pub struct FrameStream<'a> {
+    reader: png::Reader<std::io::Cursor<&'a [u8]>>,
+    width: u32,
+    height: u32,
+    frame_count: usize,
+    /// The frame `next_frame` draws next.
+    next: usize,
+    /// The decoder's output for one frame, its own region's samples.
+    buffer: Vec<u8>,
+    canvas: Vec<u8>,
+    /// What the frame on the canvas leaves when it is disposed of.
+    pending: Dispose,
+    /// The canvas region under a `Previous`-disposed frame, before it drew.
+    saved: Vec<u8>,
+}
+
+/// The disposal still owed by the frame on the canvas: its region and op.
+#[derive(Debug, Clone, Copy)]
+struct Dispose {
+    region: [u32; 4],
+    op: png::DisposeOp,
+}
+
+impl<'a> FrameStream<'a> {
+    /// Start reading the PNG or APNG `bytes`: its header, and past an APNG
+    /// default image that is not an animation frame.
+    pub fn new(bytes: &'a [u8]) -> Result<Self, PictureError> {
         let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
         decoder.set_transformations(png::Transformations::normalize_to_color8());
         let mut reader = decoder.read_info()?;
@@ -52,93 +92,175 @@ impl PictureFrames {
         if frame_count == 0 {
             return Err(PictureError::NoFrames);
         }
-        let canvas_bytes = u64::from(width) * u64::from(height) * 4;
-        let total = canvas_bytes * u64::from(frame_count);
-        if total > PICTURE_BYTES_MAX {
-            return Err(PictureError::TooLarge(total));
-        }
         let default_in_animation = animation.is_none() || info.frame_control.is_some();
-        let mut buffer = vec![
-            0;
-            reader
-                .output_buffer_size()
-                .ok_or(PictureError::TooLarge(total))?
-        ];
+        let canvas_len = usize::try_from(u64::from(width) * u64::from(height) * 4)
+            .map_err(|_| PictureError::CanvasTooLarge)?;
+        let buffer_len = reader
+            .output_buffer_size()
+            .ok_or(PictureError::CanvasTooLarge)?;
+        let mut buffer = vec![0; buffer_len];
         if !default_in_animation {
             reader.next_frame(&mut buffer)?;
         }
-        let canvas_len = canvas_bytes as usize;
-        let mut canvas = vec![0u8; canvas_len];
-        let mut frames = Vec::with_capacity(frame_count as usize);
-        for index in 0..frame_count {
-            let output = reader.next_frame(&mut buffer)?;
-            let control = reader.info().frame_control;
-            let region = control.map_or([0, 0, width, height], |control| {
-                [
-                    control.x_offset,
-                    control.y_offset,
-                    control.width,
-                    control.height,
-                ]
-            });
-            let [x, y, w, h] = region;
-            if x.checked_add(w).is_none_or(|right| right > width)
-                || y.checked_add(h).is_none_or(|bottom| bottom > height)
-            {
-                return Err(PictureError::FrameOutside);
+        Ok(Self {
+            reader,
+            width,
+            height,
+            frame_count: usize::try_from(frame_count).map_err(|_| PictureError::CanvasTooLarge)?,
+            next: 0,
+            buffer,
+            canvas: vec![0; canvas_len],
+            pending: Dispose {
+                region: [0; 4],
+                op: png::DisposeOp::None,
+            },
+            saved: Vec::new(),
+        })
+    }
+
+    /// The canvas, `[width, height]` in picture pixels.
+    pub fn size(&self) -> [u32; 2] {
+        [self.width, self.height]
+    }
+
+    /// The animation frames (`acTL`), or 1 for a plain PNG.
+    pub fn frame_count(&self) -> usize {
+        self.frame_count
+    }
+
+    /// The next frame composited onto the canvas, `width * height * 4`
+    /// straight RGBA bytes, row by row; None past the last frame or after an
+    /// error. The bytes are the stream's own canvas, overwritten by the next
+    /// call.
+    pub fn next_frame(&mut self) -> Option<Result<&[u8], PictureError>> {
+        if self.next >= self.frame_count {
+            return None;
+        }
+        match self.draw_next() {
+            Ok(()) => {
+                self.next += 1;
+                Some(Ok(self.canvas.as_slice()))
             }
-            let samples = &buffer[..output.buffer_size()];
-            // RGBA output is used as it is; other layouts are expanded.
-            let expanded;
-            let rgba: &[u8] = if output.color_type == png::ColorType::Rgba {
-                samples
+            Err(error) => {
+                self.next = self.frame_count;
+                Some(Err(error))
+            }
+        }
+    }
+
+    /// Dispose of the frame on the canvas, then decode the next one and draw
+    /// it by its blend operation.
+    fn draw_next(&mut self) -> Result<(), PictureError> {
+        self.dispose();
+        let output = self.reader.next_frame(&mut self.buffer)?;
+        let control = self.reader.info().frame_control;
+        let (width, height) = (self.width, self.height);
+        let region = control.map_or([0, 0, width, height], |control| {
+            [
+                control.x_offset,
+                control.y_offset,
+                control.width,
+                control.height,
+            ]
+        });
+        let [x, y, w, h] = region;
+        if x.checked_add(w).is_none_or(|right| right > width)
+            || y.checked_add(h).is_none_or(|bottom| bottom > height)
+        {
+            return Err(PictureError::FrameOutside);
+        }
+        let op = control.map_or(png::DisposeOp::None, |control| control.dispose_op);
+        // A first frame's Previous disposal acts as Background (APNG 1.0).
+        let op = match (self.next, op) {
+            (0, png::DisposeOp::Previous) => png::DisposeOp::Background,
+            (_, op) => op,
+        };
+        self.pending = Dispose { region, op };
+        let row_bytes = (w * 4) as usize;
+        if op == png::DisposeOp::Previous {
+            self.saved.clear();
+            for row in y..y + h {
+                let start = ((row * width + x) * 4) as usize;
+                self.saved
+                    .extend_from_slice(&self.canvas[start..start + row_bytes]);
+            }
+        }
+        let over = control.is_some_and(|control| control.blend_op == png::BlendOp::Over);
+        let samples = &self.buffer[..output.buffer_size()];
+        let color = output.color_type;
+        for row in 0..h {
+            let to = (((y + row) * width + x) * 4) as usize;
+            let target = &mut self.canvas[to..to + row_bytes];
+            let first = (row * w) as usize;
+            // RGBA output replacing the canvas is copied as it is; anything
+            // else goes pixel by pixel.
+            if !over && color == png::ColorType::Rgba {
+                target.copy_from_slice(&samples[first * 4..first * 4 + row_bytes]);
+                continue;
+            }
+            for (column, target) in target.chunks_exact_mut(4).enumerate() {
+                let source = rgba_sample(samples, color, first + column);
+                let drawn = match (over, source[3]) {
+                    (false, _) | (true, 255) => source,
+                    (true, 0) => continue,
+                    (true, _) => blend_over(source, (&*target).try_into().unwrap()),
+                };
+                target.copy_from_slice(&drawn);
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply the disposal the frame on the canvas still owes.
+    fn dispose(&mut self) {
+        let Dispose {
+            region: [x, y, w, h],
+            op,
+        } = std::mem::replace(
+            &mut self.pending,
+            Dispose {
+                region: [0; 4],
+                op: png::DisposeOp::None,
+            },
+        );
+        if op == png::DisposeOp::None {
+            return;
+        }
+        let row_bytes = (w * 4) as usize;
+        for row in 0..h {
+            let start = (((y + row) * self.width + x) * 4) as usize;
+            let target = &mut self.canvas[start..start + row_bytes];
+            if op == png::DisposeOp::Previous {
+                let from = row as usize * row_bytes;
+                target.copy_from_slice(&self.saved[from..from + row_bytes]);
             } else {
-                expanded = to_rgba(samples, output.color_type, w, h);
-                &expanded
-            };
-            let dispose = control.map_or(png::DisposeOp::None, |control| control.dispose_op);
-            // A first frame's Previous disposal acts as Background (APNG 1.0).
-            let dispose = match (index, dispose) {
-                (0, png::DisposeOp::Previous) => png::DisposeOp::Background,
-                (_, dispose) => dispose,
-            };
-            let saved = (dispose == png::DisposeOp::Previous).then(|| canvas.clone());
-            let over = control.is_some_and(|control| control.blend_op == png::BlendOp::Over);
-            let row_bytes = (w * 4) as usize;
-            for row in 0..h {
-                let from = (row * w * 4) as usize;
-                let to = (((y + row) * width + x) * 4) as usize;
-                let source = &rgba[from..from + row_bytes];
-                let target = &mut canvas[to..to + row_bytes];
-                if !over {
-                    target.copy_from_slice(source);
-                    continue;
-                }
-                for (source, target) in source.chunks_exact(4).zip(target.chunks_exact_mut(4)) {
-                    match source[3] {
-                        255 => target.copy_from_slice(source),
-                        0 => {}
-                        _ => {
-                            let blended = blend_over(
-                                source.try_into().unwrap(),
-                                (&*target).try_into().unwrap(),
-                            );
-                            target.copy_from_slice(&blended);
-                        }
-                    }
-                }
+                target.fill(0);
             }
-            frames.push(canvas.clone());
-            match dispose {
-                png::DisposeOp::None => {}
-                png::DisposeOp::Background => {
-                    for row in y..y + h {
-                        let start = ((row * width + x) * 4) as usize;
-                        canvas[start..start + (w * 4) as usize].fill(0);
-                    }
-                }
-                png::DisposeOp::Previous => canvas = saved.unwrap(),
-            }
+        }
+    }
+
+    /// The bytes of canvases and buffers this stream holds, for tests of its
+    /// memory bound.
+    #[cfg(all(test, tests_assets))]
+    fn held_bytes(&self) -> usize {
+        self.buffer.capacity() + self.canvas.capacity() + self.saved.capacity()
+    }
+}
+
+impl PictureFrames {
+    /// Decode and composite every frame of the PNG or APNG `bytes`
+    /// ([`FrameStream`]), refusing a picture whose frames together are more
+    /// than [`PICTURE_BYTES_MAX`]: one that big must be streamed.
+    pub fn decode(bytes: &[u8]) -> Result<Self, PictureError> {
+        let mut stream = FrameStream::new(bytes)?;
+        let [width, height] = stream.size();
+        let total = u64::from(width) * u64::from(height) * 4 * stream.frame_count() as u64;
+        if total > PICTURE_BYTES_MAX {
+            return Err(PictureError::TooLarge(total));
+        }
+        let mut frames = Vec::with_capacity(stream.frame_count());
+        while let Some(frame) = stream.next_frame() {
+            frames.push(frame?.to_vec());
         }
         Ok(Self {
             width,
@@ -148,34 +270,26 @@ impl PictureFrames {
     }
 }
 
-/// `w` x `h` decoded 8-bit samples of `color` as straight RGBA.
-fn to_rgba(samples: &[u8], color: png::ColorType, w: u32, h: u32) -> Vec<u8> {
-    let pixels = (w * h) as usize;
-    let mut rgba = Vec::with_capacity(pixels * 4);
-    let pixel = |index: usize| -> [u8; 4] {
-        match color {
-            png::ColorType::Grayscale => {
-                let v = samples[index];
-                [v, v, v, 255]
-            }
-            png::ColorType::GrayscaleAlpha => {
-                let v = samples[index * 2];
-                [v, v, v, samples[index * 2 + 1]]
-            }
-            png::ColorType::Rgb => {
-                let s = &samples[index * 3..index * 3 + 3];
-                [s[0], s[1], s[2], 255]
-            }
-            // Indexed is expanded to RGB or RGBA by `normalize_to_color8`.
-            png::ColorType::Rgba | png::ColorType::Indexed => {
-                samples[index * 4..index * 4 + 4].try_into().unwrap()
-            }
+/// Pixel `index` of decoded 8-bit samples of `color` as straight RGBA.
+fn rgba_sample(samples: &[u8], color: png::ColorType, index: usize) -> [u8; 4] {
+    match color {
+        png::ColorType::Grayscale => {
+            let v = samples[index];
+            [v, v, v, 255]
         }
-    };
-    for index in 0..pixels {
-        rgba.extend_from_slice(&pixel(index));
+        png::ColorType::GrayscaleAlpha => {
+            let v = samples[index * 2];
+            [v, v, v, samples[index * 2 + 1]]
+        }
+        png::ColorType::Rgb => {
+            let s = &samples[index * 3..index * 3 + 3];
+            [s[0], s[1], s[2], 255]
+        }
+        // Indexed is expanded to RGB or RGBA by `normalize_to_color8`.
+        png::ColorType::Rgba | png::ColorType::Indexed => {
+            samples[index * 4..index * 4 + 4].try_into().unwrap()
+        }
     }
-    rgba
 }
 
 /// Straight-alpha `source` over `target` (APNG `APNG_BLEND_OP_OVER`).
@@ -201,59 +315,76 @@ fn blend_over(source: [u8; 4], target: [u8; 4]) -> [u8; 4] {
 }
 
 impl PictureFrames {
-    /// The top-left `size` game pixels of frame `frame`, `scale` picture
-    /// pixels per game pixel on each axis, as straight RGBA: a game pixel is
-    /// drawn (alpha 255) when at least half its picture pixels are (alpha at
-    /// least half), its colour their mean; else it is a hole (all 0). The
-    /// coverage rule `render::picture_atlas` shrinks a picture by, without
-    /// its mask. None for a frame past the end or a region outside the
-    /// canvas.
+    /// Frame `frame` shrunk by [`shrunk_region`]. None for a frame past the
+    /// end or a region outside the canvas.
     pub fn shrunk_region(&self, frame: usize, scale: u32, size: [u32; 2]) -> Option<Vec<u8>> {
-        let rgba = self.frames.get(frame)?;
-        if scale == 0 || size[0] * scale > self.width || size[1] * scale > self.height {
-            return None;
-        }
-        let mut out = Vec::with_capacity((size[0] * size[1] * 4) as usize);
-        for y in 0..size[1] {
-            for x in 0..size[0] {
-                let (mut covered, mut sum) = (0u32, [0u32; 3]);
-                for dy in 0..scale {
-                    for dx in 0..scale {
-                        let at = (((y * scale + dy) * self.width + x * scale + dx) * 4) as usize;
-                        if u32::from(rgba[at + 3]) * 2 >= 255 {
-                            covered += 1;
-                            for channel in 0..3 {
-                                sum[channel] += u32::from(rgba[at + channel]);
-                            }
+        shrunk_region(
+            self.frames.get(frame)?,
+            [self.width, self.height],
+            scale,
+            size,
+        )
+    }
+
+    /// Frame `frame`'s [`mean_color`]. None for a frame past the end or with
+    /// nothing drawn.
+    pub fn mean_color(&self, frame: usize) -> Option<[u8; 3]> {
+        mean_color(self.frames.get(frame)?)
+    }
+}
+
+/// The top-left `size` game pixels of one composited frame `rgba` (a
+/// `canvas[0]` x `canvas[1]` picture, as [`FrameStream::next_frame`] gives),
+/// `scale` picture pixels per game pixel on each axis, as straight RGBA: a
+/// game pixel is drawn (alpha 255) when at least half its picture pixels are
+/// (alpha at least half), its colour their mean; else it is a hole (all 0).
+/// The coverage rule `render::picture_atlas` shrinks a picture by, without
+/// its mask. None for a region outside the canvas.
+pub fn shrunk_region(rgba: &[u8], canvas: [u32; 2], scale: u32, size: [u32; 2]) -> Option<Vec<u8>> {
+    let [width, height] = canvas;
+    if scale == 0 || size[0] * scale > width || size[1] * scale > height {
+        return None;
+    }
+    let mut out = Vec::with_capacity((size[0] * size[1] * 4) as usize);
+    for y in 0..size[1] {
+        for x in 0..size[0] {
+            let (mut covered, mut sum) = (0u32, [0u32; 3]);
+            for dy in 0..scale {
+                for dx in 0..scale {
+                    let at = (((y * scale + dy) * width + x * scale + dx) * 4) as usize;
+                    if u32::from(rgba[at + 3]) * 2 >= 255 {
+                        covered += 1;
+                        for channel in 0..3 {
+                            sum[channel] += u32::from(rgba[at + channel]);
                         }
                     }
                 }
-                if covered * 2 >= scale * scale {
-                    let mean = |channel: usize| ((sum[channel] + covered / 2) / covered) as u8;
-                    out.extend_from_slice(&[mean(0), mean(1), mean(2), 255]);
-                } else {
-                    out.extend_from_slice(&[0; 4]);
-                }
+            }
+            if covered * 2 >= scale * scale {
+                let mean = |channel: usize| ((sum[channel] + covered / 2) / covered) as u8;
+                out.extend_from_slice(&[mean(0), mean(1), mean(2), 255]);
+            } else {
+                out.extend_from_slice(&[0; 4]);
             }
         }
-        Some(out)
     }
+    Some(out)
+}
 
-    /// The mean colour of frame `frame`'s drawn pixels (alpha at least half),
-    /// where an SHP frame header holds the radar colour the art author chose
-    /// (`+0x0C..0x0E`). None for a frame past the end or with nothing drawn.
-    pub fn mean_color(&self, frame: usize) -> Option<[u8; 3]> {
-        let (mut count, mut sum) = (0u64, [0u64; 3]);
-        for pixel in self.frames.get(frame)?.chunks_exact(4) {
-            if u32::from(pixel[3]) * 2 >= 255 {
-                count += 1;
-                for channel in 0..3 {
-                    sum[channel] += u64::from(pixel[channel]);
-                }
+/// The mean colour of one composited frame's drawn pixels (alpha at least
+/// half), where an SHP frame header holds the radar colour the art author
+/// chose (`+0x0C..0x0E`). None with nothing drawn.
+pub fn mean_color(rgba: &[u8]) -> Option<[u8; 3]> {
+    let (mut count, mut sum) = (0u64, [0u64; 3]);
+    for pixel in rgba.chunks_exact(4) {
+        if u32::from(pixel[3]) * 2 >= 255 {
+            count += 1;
+            for channel in 0..3 {
+                sum[channel] += u64::from(pixel[channel]);
             }
         }
-        (count > 0).then(|| sum.map(|total| ((total + count / 2) / count) as u8))
     }
+    (count > 0).then(|| sum.map(|total| ((total + count / 2) / count) as u8))
 }
 
 impl PictureHeader {
@@ -378,5 +509,78 @@ mod tests {
             &[CLEAR, CLEAR, GREEN].concat()[..]
         );
         assert_eq!(&picture.frames[2][12..], &[128, 127, 0, 255]);
+    }
+
+    /// Every blend and dispose variant, Previous after a frame that stays
+    /// and after one that is cleared, composites the same one frame at a
+    /// time as all together.
+    #[test]
+    fn a_stream_composites_as_decode_does() {
+        let mut bytes = Vec::new();
+        let mut encoder = png::Encoder::new(&mut bytes, 3, 2);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_animated(5, 0).unwrap();
+        let mut writer = encoder.write_header().unwrap();
+        let frame = |seed: u8, pixels: usize| -> Vec<u8> {
+            (0..pixels * 4)
+                .map(|i| {
+                    if i % 4 == 3 {
+                        [255, 90, 0][i / 4 % 3]
+                    } else {
+                        seed ^ i as u8
+                    }
+                })
+                .collect()
+        };
+        writer.set_dispose_op(png::DisposeOp::Previous).unwrap();
+        writer.write_image_data(&frame(10, 6)).unwrap();
+        writer.set_dispose_op(png::DisposeOp::None).unwrap();
+        writer.set_blend_op(png::BlendOp::Over).unwrap();
+        writer.write_image_data(&frame(20, 6)).unwrap();
+        writer.set_dispose_op(png::DisposeOp::Previous).unwrap();
+        writer.set_frame_dimension(2, 1).unwrap();
+        writer.set_frame_position(1, 1).unwrap();
+        writer.write_image_data(&frame(30, 2)).unwrap();
+        writer.set_dispose_op(png::DisposeOp::Background).unwrap();
+        writer.set_blend_op(png::BlendOp::Source).unwrap();
+        writer.set_frame_position(0, 0).unwrap();
+        writer.write_image_data(&frame(40, 2)).unwrap();
+        writer.set_dispose_op(png::DisposeOp::None).unwrap();
+        writer.set_blend_op(png::BlendOp::Over).unwrap();
+        writer.set_frame_dimension(3, 2).unwrap();
+        writer.write_image_data(&frame(50, 6)).unwrap();
+        writer.finish().unwrap();
+
+        let picture = PictureFrames::decode(&bytes).unwrap();
+        let mut stream = FrameStream::new(&bytes).unwrap();
+        assert_eq!(stream.size(), [3, 2]);
+        assert_eq!(stream.frame_count(), 5);
+        let mut streamed = Vec::new();
+        while let Some(frame) = stream.next_frame() {
+            streamed.push(frame.unwrap().to_vec());
+        }
+        assert_eq!(streamed, picture.frames);
+        // Frame 0's Previous acts as Background, so frame 1 blends over
+        // nothing; frame 2's Previous puts frame 1's pixels back.
+        assert_eq!(&picture.frames[3][3 * 4..], &picture.frames[1][3 * 4..]);
+    }
+
+    /// However many frames a picture has, a stream holds two canvases.
+    #[test]
+    fn a_long_picture_streams_in_two_canvases() {
+        let (width, height) = (16, 8);
+        let canvas = (width * height * 4) as usize;
+        let bytes = test_picture(width, height, Some(300));
+        let header = PictureHeader::read(&bytes).unwrap();
+        let mut stream = FrameStream::new(&bytes).unwrap();
+        assert_eq!(stream.size(), [header.width, header.height]);
+        assert_eq!(stream.frame_count(), header.frames as usize);
+        let mut count = 0;
+        while let Some(frame) = stream.next_frame() {
+            assert_eq!(frame.unwrap().len(), canvas);
+            count += 1;
+        }
+        assert_eq!(count, header.frames as usize);
+        assert!(stream.held_bytes() <= 2 * canvas);
     }
 }

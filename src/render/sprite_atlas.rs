@@ -760,7 +760,8 @@ pub struct SpriteAtlas {
     palettes: ShpPalettes,
     /// VERA-only, experimental: the RGBA pages among `pages` that bind no
     /// palette rows: the picture pages (`render::picture_atlas`, each bound
-    /// once as an HD page, `render::picture_zoom`) and the model page.
+    /// once as an HD page, `render::picture_zoom`), the streamed pictures'
+    /// HD pages (`render::picture_stream`) and the model page.
     picture_pages: HashSet<usize>,
     /// VERA-only, experimental (`docs/zoom-one-pass.md`): VERA's HD art
     /// pages of SHP frames ([`Self::bind_hd_art`]); `Some(None)` once a look
@@ -771,6 +772,11 @@ pub struct SpriteAtlas {
     /// found no page. A refresh draws only frames missing here.
     picture_frames:
         HashMap<crate::render::picture_atlas::PictureFrameId, Option<PictureFramePlace>>,
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): the picture
+    /// frames of art above 1x at their own resolution, streamed onto HD
+    /// pages among `pages` while the camera zooms in
+    /// ([`Self::stream_pictures`]).
+    picture_stream: crate::render::picture_stream::PictureStream,
     /// VERA-only, experimental: the RGBA page among `pages` that declared
     /// models are drawn on each frame (`render::model_draw`), once one is.
     model_page: Option<usize>,
@@ -851,16 +857,19 @@ impl SpriteAtlas {
             picture_pages: HashSet::new(),
             hd: None,
             picture_frames: HashMap::new(),
+            picture_stream: Default::default(),
             model_page: None,
         }
     }
 
     /// VERA-only, experimental (`docs/picture-model-art.md`): add the new
     /// frames of `pictures` on picture pages of their own, each frame once at
-    /// its picture's resolution with its mip levels (`render::picture_zoom`),
-    /// and its keys, placed as SHP frames, from those frames or the ones the
+    /// game pixels with its zoom-out mip level (`render::picture_zoom`), and
+    /// its keys, placed as SHP frames, from those frames or the ones the
     /// pages hold. The pages read their owners' colours from the renderer's
-    /// house ramps, which `pictures` brings.
+    /// house ramps, which `pictures` brings. Frames of art above 1x also
+    /// stream at their own resolution while the camera zooms in
+    /// ([`Self::stream_pictures`]).
     pub(crate) fn append_pictures(
         &mut self,
         device: &wgpu::Device,
@@ -873,14 +882,18 @@ impl SpriteAtlas {
             empty,
             keys,
             ramps,
+            hd_sources,
         } = pictures;
+        let max_side = device.limits().max_texture_dimension_2d;
+        for (file, source) in hd_sources {
+            self.picture_stream.add_file(file, source, max_side);
+        }
         for frame in empty {
             self.picture_frames.insert(frame, None);
         }
         if !ramps.is_empty() {
             batch.write_picture_ramps(queue, &ramps);
         }
-        let max_side = device.limits().max_texture_dimension_2d;
         let new: Vec<_> = frames.iter().map(|(id, _)| id.clone()).collect();
         let mut pages =
             crate::render::picture_atlas::pack_picture_pages(frames, max_side).into_iter();
@@ -915,6 +928,8 @@ impl SpriteAtlas {
             let [width, height] = page.page.uv_extent();
             for (frame, [x, y]) in page.frames {
                 let [w, h] = frame.size.map(|side| side as f32);
+                self.picture_stream
+                    .add_frame(&frame.id, frame.origin, frame.size);
                 self.picture_frames.insert(
                     frame.id,
                     Some(PictureFramePlace {
@@ -943,22 +958,21 @@ impl SpriteAtlas {
                 continue;
             };
             let (offset, canvas_rect) = key.placement(place.canvas, place.origin);
-            self.entries.insert(
-                key.key.clone(),
-                ShpSpriteEntry {
-                    uv_origin: place.uv_origin,
-                    uv_size: place.uv_size,
-                    pixel_size: place.size.map(|side| side as f32),
-                    offset_x: offset[0],
-                    offset_y: offset[1],
-                    canvas_rect,
-                    extended: key.extended,
-                    page: place.page,
-                    // The blitters' RGBA source mode (`sprite_source.wgsl`),
-                    // with the key's house colour when it takes one.
-                    source_palette: key.source_palette(),
-                },
-            );
+            let entry = ShpSpriteEntry {
+                uv_origin: place.uv_origin,
+                uv_size: place.uv_size,
+                pixel_size: place.size.map(|side| side as f32),
+                offset_x: offset[0],
+                offset_y: offset[1],
+                canvas_rect,
+                extended: key.extended,
+                page: place.page,
+                // The blitters' RGBA source mode (`sprite_source.wgsl`),
+                // with the key's house colour when it takes one.
+                source_palette: key.source_palette(),
+            };
+            self.picture_stream.add_key(&key.key, &key.frame, &entry);
+            self.entries.insert(key.key.clone(), entry);
         }
     }
 
@@ -974,11 +988,17 @@ impl SpriteAtlas {
     /// The returned entry includes a `page` field identifying which atlas page
     /// holds this sprite's texture data.
     ///
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): while
-    /// [`Self::bind_hd_art`] has VERA's HD art on, a frame the pack has art
-    /// for is drawn from its HD page: the entry names that page and the
-    /// frame's place on it, everything else as the 1x entry.
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): while the camera
+    /// zooms in, a picture frame of art above 1x on an HD page
+    /// ([`Self::stream_pictures`]) is drawn from there, and one not there
+    /// yet is asked for; while [`Self::bind_hd_art`] has VERA's HD art on, a
+    /// frame the pack has art for is drawn from its HD page. Either entry
+    /// names that page and the frame's place on it, everything else as the
+    /// game-pixel entry.
     pub fn get(&self, key: &ShpSpriteKey) -> Option<&ShpSpriteEntry> {
+        if let Some(entry) = self.picture_stream.entry(key) {
+            return Some(entry);
+        }
         if let Some(Some(hd)) = &self.hd
             && let Some(entry) = hd.entry(key)
         {
@@ -1033,6 +1053,34 @@ impl SpriteAtlas {
                 let indices = ShpFile::decode_frame(shp, *frame).ok()?;
                 Some((entry, indices))
             },
+        );
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`, "picture
+    /// streaming"): the frame's picture streaming hook, once a frame before
+    /// the world's instances are built (after `begin_model_frame`). With the
+    /// world camera's zoom (`camera_zoom`) above 1, the picture frames
+    /// [`Self::get`] handed out since the last call are decoded at their own
+    /// resolution on worker threads, a bounded number of finished ones go
+    /// onto HD pages (new pages among `pages`), and their keys' entries move
+    /// there; the least recently drawn HD page is reused once the budget is
+    /// full (`render::picture_stream`). At zoom 1 or below every picture
+    /// key draws its game-pixel entry.
+    pub(crate) fn stream_pictures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        camera_zoom: f32,
+    ) {
+        self.picture_stream.frame(
+            device,
+            queue,
+            batch,
+            &mut self.pages,
+            &mut self.picture_pages,
+            &self.entries,
+            camera_zoom,
         );
     }
 
@@ -3834,6 +3882,17 @@ pub(crate) fn prepare_sprite_atlas(
             };
             pictures.frame(source, frame.frame, house)
         });
+        // VERA-only, experimental (docs/zoom-one-pass.md): what streams each
+        // new frame's file at its own resolution, for a camera zoomed in.
+        let mut hd_files = HashSet::new();
+        for (frame, source) in &new_frames {
+            let file = (frame.file.clone(), frame.size);
+            if hd_files.insert(file.clone())
+                && let Some(hd) = pictures.hd_source(source)
+            {
+                prepared_pictures.hd_sources.push((file, hd));
+            }
+        }
         let mut empty = HashSet::new();
         for ((id, _), drawn) in new_frames.into_iter().zip(drawn) {
             match drawn {

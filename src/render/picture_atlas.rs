@@ -11,19 +11,25 @@
 //! house-colour pixel (the mask's red) takes the owner's ramp step for its
 //! brightness.
 //!
-//! The GPU holds each frame once, at the picture's own resolution (resampled
-//! to a power-of-two multiple of its game pixels, [`page_scale`]), on a
-//! [`PicturePage`] with mip levels down past one texel per game pixel, and
-//! the blitters sample the level the camera needs (`sprite_source.wgsl`). In
-//! the sprite atlas a frame is drawn once for every owner: a house-colour
-//! texel is black, its index is [`HOUSE_INDEX`] plus the step, a house layer
-//! holds the step, and the blitters add the owner's colour from the house
-//! ramps texture ([`RAMP_STRIP`], [`PICTURE_HOUSE`]). Elsewhere it takes the
-//! ramp before upload. The SHP blitters, their shaders and their Z, shadow
-//! and light rules are the ones every SHP draws through.
+//! The GPU holds each frame at game pixels for good, on a [`PicturePage`]
+//! with a mip level past one texel per game pixel, and the blitters sample
+//! the level the camera needs (`sprite_source.wgsl`). Art of a higher
+//! resolution is streamed in only while the camera zooms in: the frames
+//! drawn are decoded again from the file and put on HD pages at the
+//! picture's own resolution (resampled to a power-of-two multiple of its
+//! game pixels, [`page_scale`]; `render::picture_stream`). The file is read
+//! one frame at a time ([`PictureFrameStream`]), so no picture is held whole
+//! at its own resolution. In the sprite atlas a frame is drawn once for
+//! every owner: a house-colour texel is black, its index is [`HOUSE_INDEX`]
+//! plus the step, a house layer holds the step, and the blitters add the
+//! owner's colour from the house ramps texture ([`RAMP_STRIP`],
+//! [`PICTURE_HOUSE`]). Elsewhere it takes the ramp before upload. The SHP
+//! blitters, their shaders and their Z, shadow and light rules are the ones
+//! every SHP draws through.
 
+use crate::assets::mix_archive::SharedBytes;
 use crate::assets::pal_file::Color;
-use crate::assets::picture_file::{PictureError, PictureFrames};
+use crate::assets::picture_file::{FrameStream, PictureError};
 
 /// A house colour ramp's entries, palette indices 16–31
 /// (`HouseColorRamps::ramp`).
@@ -53,7 +59,7 @@ pub(crate) const RAMP_STRIP: [u32; 2] = [256, 16];
 pub(crate) const ZOOM_OUT_LEVELS: u32 = 1;
 /// Empty game pixels around every frame on a page: enough that no level's
 /// filtering, down to the last zoom-out level, reaches a neighbour.
-const PAGE_GAP: u32 = 1 << ZOOM_OUT_LEVELS;
+pub(crate) const PAGE_GAP: u32 = 1 << ZOOM_OUT_LEVELS;
 
 /// The texels per game pixel a page holds art of `scale` picture pixels per
 /// game pixel at: the next power of two, so that halving the page reaches
@@ -61,6 +67,84 @@ const PAGE_GAP: u32 = 1 << ZOOM_OUT_LEVELS;
 /// once at load (area-weighted, so each game pixel's mean is kept).
 pub(crate) fn page_scale(scale: u32) -> u32 {
     scale.next_power_of_two()
+}
+
+/// The mip levels a page of `scale` texels per game pixel has: down to one
+/// texel per game pixel and [`ZOOM_OUT_LEVELS`] past it.
+pub(crate) fn page_levels(scale: u32) -> u32 {
+    scale.ilog2() + 1 + ZOOM_OUT_LEVELS
+}
+
+/// A picture file's encoded bytes and its mask's, as shares of the assets'
+/// storage (no copy): what its frames at its own resolution are decoded
+/// from again, a frame at a time, whenever they are needed
+/// ([`PictureFrameStream`]), on any thread.
+#[derive(Clone)]
+pub(crate) struct PictureBytes {
+    pub picture: SharedBytes,
+    pub mask: Option<SharedBytes>,
+}
+
+impl std::fmt::Debug for PictureBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PictureBytes")
+            .field("picture", &self.picture.len())
+            .field("mask", &self.mask.as_ref().map(|mask| mask.len()))
+            .finish()
+    }
+}
+
+impl PartialEq for PictureBytes {
+    fn eq(&self, other: &Self) -> bool {
+        *self.picture == *other.picture && self.mask.as_deref() == other.mask.as_deref()
+    }
+}
+
+impl Eq for PictureBytes {}
+
+/// A picture's frames and its mask's, composited one at a time in lockstep
+/// (`FrameStream`): memory stays at a couple of canvases whatever the frame
+/// count, so no picture is too large to read.
+pub(crate) struct PictureFrameStream<'a> {
+    picture: FrameStream<'a>,
+    mask: Option<FrameStream<'a>>,
+}
+
+impl<'a> PictureFrameStream<'a> {
+    pub(crate) fn new(bytes: &'a PictureBytes) -> Result<Self, PictureError> {
+        Ok(Self {
+            picture: FrameStream::new(&bytes.picture)?,
+            mask: bytes.mask.as_deref().map(FrameStream::new).transpose()?,
+        })
+    }
+
+    /// The picture's canvas in its own pixels.
+    pub(crate) fn size(&self) -> [u32; 2] {
+        self.picture.size()
+    }
+
+    pub(crate) fn frame_count(&self) -> usize {
+        self.picture.frame_count()
+    }
+
+    /// The next frame's RGBA and its mask's; None past the last frame. A
+    /// mask that ends first is an error.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn next_frame(&mut self) -> Option<Result<(&[u8], Option<&[u8]>), PictureError>> {
+        let picture = match self.picture.next_frame()? {
+            Ok(frame) => frame,
+            Err(error) => return Some(Err(error)),
+        };
+        let mask = match self.mask.as_mut() {
+            None => None,
+            Some(mask) => match mask.next_frame() {
+                Some(Ok(frame)) => Some(frame),
+                Some(Err(error)) => return Some(Err(error)),
+                None => return Some(Err(PictureError::NoFrames)),
+            },
+        };
+        Some(Ok((picture, mask)))
+    }
 }
 
 /// How a sprite's house-colour pixels are coloured.
@@ -84,19 +168,29 @@ enum MaskClass {
     Unlit,
 }
 
-/// A picture's frames on the `PictureSize=` canvas: at game pixels
-/// (straight RGBA with binary alpha, the mask's class of each pixel), which
-/// is what the game reads and CPU consumers draw, and at the picture's own
-/// resolution, which pages hold ([`Self::page_sprite`]).
+/// A picture's frames on the `PictureSize=` canvas at game pixels (straight
+/// RGBA with binary alpha, the mask's class of each pixel), which is what the
+/// game reads, CPU consumers draw and the atlas keeps on the GPU for good;
+/// and the file they were shrunk from, whose frames at the picture's own
+/// resolution are streamed from it again when needed
+/// ([`Self::hd_page_sprites`], `render::picture_stream`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GamePictureFrames {
     pub canvas: [u32; 2],
     frames: Vec<GameFrame>,
     /// The picture's pixels per game pixel on each axis.
     scale: u32,
-    /// With `scale` above 1, each frame at the picture's own resolution, its
-    /// alpha as decoded; empty for 1x art, whose game frames are its pixels.
-    full: Vec<GameFrame>,
+    bytes: PictureBytes,
+}
+
+/// What streams a picture's frames at its own resolution
+/// ([`GamePictureFrames::hd_source`]): its file, canvas and scale.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HdSource {
+    pub bytes: PictureBytes,
+    pub canvas: [u32; 2],
+    /// The picture's pixels per game pixel, above 1.
+    pub scale: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,9 +210,10 @@ pub(crate) struct PictureSprite {
     pub indices: Vec<u8>,
 }
 
-/// One frame as a picture page holds it ([`GamePictureFrames::page_sprite`]):
-/// the drawn rectangle of [`PictureSprite`], in game pixels, and its texels,
-/// `scale` per game pixel. Its RGBA is premultiplied (holes are 0, so
+/// One frame as a picture page holds it: the drawn rectangle of
+/// [`PictureSprite`], in game pixels, and its texels, `scale` per game
+/// pixel (1 on the atlas's own pages, [`GamePictureFrames::page_sprite`];
+/// the picture's page scale on an HD page, [`hd_page_sprite`]). Its RGBA is premultiplied (holes are 0, so
 /// filtering never darkens an edge) and its index plane holds the
 /// index-plane value of each texel.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,17 +256,19 @@ pub(crate) enum PictureArtError {
 }
 
 impl GamePictureFrames {
-    /// Shrink `picture`, and its `mask` when it has one, to `canvas` game
-    /// pixels. A game pixel is drawn when at least half the picture pixels it
-    /// covers are; its colour is their coverage-weighted mean, and it takes
-    /// the class most of its covered pixels have. Without `canvas` the
-    /// picture is 1x art.
-    pub(crate) fn shrink(
-        picture: PictureFrames,
-        mask: Option<&PictureFrames>,
+    /// Shrink the picture `bytes` holds, and its mask when it has one, to
+    /// `canvas` game pixels, a frame at a time as the file is read (each
+    /// frame at the picture's resolution is dropped once shrunk). A game
+    /// pixel is drawn when at least half the picture pixels it covers are;
+    /// its colour is their coverage-weighted mean, and it takes the class
+    /// most of its covered pixels have. Without `canvas` the picture is 1x
+    /// art.
+    pub(crate) fn stream(
+        bytes: PictureBytes,
         canvas: Option<[u32; 2]>,
     ) -> Result<Self, PictureArtError> {
-        let size = [picture.width, picture.height];
+        let mut stream = PictureFrameStream::new(&bytes)?;
+        let size = stream.size();
         let canvas = canvas.unwrap_or(size);
         let scale = size[0] / canvas[0].max(1);
         if scale == 0 || scale > PICTURE_SCALE_MAX || size != [canvas[0] * scale, canvas[1] * scale]
@@ -181,44 +278,63 @@ impl GamePictureFrames {
                 canvas,
             });
         }
-        if let Some(mask) = mask
-            && ([mask.width, mask.height] != size || mask.frames.len() != picture.frames.len())
+        let frame_count = stream.frame_count();
+        if let Some(mask) = &stream.mask
+            && (mask.size() != size || mask.frame_count() != frame_count)
         {
             return Err(PictureArtError::MaskShape {
-                mask: [mask.width, mask.height],
-                mask_frames: mask.frames.len(),
+                mask: mask.size(),
+                mask_frames: mask.frame_count(),
                 picture: size,
-                frames: picture.frames.len(),
+                frames: frame_count,
             });
         }
-        // Frame by frame side by side: one building's picture can hold a
-        // couple of hundred frames, which would otherwise keep one worker
-        // busy long after the others are done.
-        let indices: Vec<usize> = (0..picture.frames.len()).collect();
-        let frames = crate::sim::parallel::map(&indices, |&index| {
-            let mask = mask.map(|mask| mask.frames[index].as_slice());
-            shrink_frame(&picture.frames[index], mask, size[0], canvas, scale)
-        });
-        // The HD frames keep the picture's own pixels, moved, not copied.
-        let full = if scale > 1 {
-            let classes = crate::sim::parallel::map(&indices, |&index| match mask {
-                Some(mask) => mask.frames[index].chunks_exact(4).map(mask_class).collect(),
-                None => vec![MaskClass::Plain; picture.frames[index].len() / 4],
-            });
-            picture
-                .frames
-                .into_iter()
-                .zip(classes)
-                .map(|(rgba, classes)| GameFrame { classes, rgba })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let mut frames = Vec::with_capacity(frame_count);
+        while let Some(frame) = stream.next_frame() {
+            let (rgba, mask) = frame?;
+            frames.push(shrink_frame(rgba, mask, size[0], canvas, scale));
+        }
+        drop(stream);
         Ok(Self {
             canvas,
             frames,
             scale,
-            full,
+            bytes,
+        })
+    }
+
+    /// [`Self::stream`] of frames already decoded, encoded again: for tests.
+    #[cfg(test)]
+    pub(crate) fn shrink(
+        picture: crate::assets::picture_file::PictureFrames,
+        mask: Option<&crate::assets::picture_file::PictureFrames>,
+        canvas: Option<[u32; 2]>,
+    ) -> Result<Self, PictureArtError> {
+        let encode = |frames: &crate::assets::picture_file::PictureFrames| -> SharedBytes {
+            let bytes = crate::assets::picture_file::encode_frames(
+                frames.width,
+                frames.height,
+                &frames.frames,
+            )
+            .expect("test frames encode");
+            std::sync::Arc::<[u8]>::from(bytes).into()
+        };
+        Self::stream(
+            PictureBytes {
+                picture: encode(&picture),
+                mask: mask.map(encode),
+            },
+            canvas,
+        )
+    }
+
+    /// What streams this picture at its own resolution; None for 1x art,
+    /// whose game frames are its pixels.
+    pub(crate) fn hd_source(&self) -> Option<HdSource> {
+        (self.scale > 1).then(|| HdSource {
+            bytes: self.bytes.clone(),
+            canvas: self.canvas,
+            scale: self.scale,
         })
     }
 
@@ -266,74 +382,57 @@ impl GamePictureFrames {
         })
     }
 
-    /// Frame `frame` as a page holds it: its drawn rectangle (the game-pixel
-    /// crop of [`Self::sprite`]) at the picture's own resolution, resampled
-    /// to [`page_scale`], house-colour pixels as `house` says. A picture
-    /// pixel is drawn when at least half covered, as `shrink` counts it.
-    /// None when [`Self::sprite`] is.
+    /// Frame `frame` as the atlas keeps it on the GPU for good: its drawn
+    /// rectangle (the crop of [`Self::sprite`]) at game pixels, one texel
+    /// each, house-colour pixels as `house` says. None when
+    /// [`Self::sprite`] is.
     pub(crate) fn page_sprite(&self, frame: usize, house: HouseColor<'_>) -> Option<PageSprite> {
         let (origin, size) = self.drawn_rect(frame)?;
-        // 1x art's game frames are its own pixels.
-        let source = if self.scale > 1 {
-            self.full.get(frame)?
-        } else {
-            self.frames.get(frame)?
-        };
-        let scale = self.scale;
-        let width = self.canvas[0] * scale;
-        let hd_size = size.map(|side| side * scale);
-        let pixels = (hd_size[0] * hd_size[1]) as usize;
-        let (mut rgba, mut indices) = (Vec::with_capacity(pixels * 4), Vec::with_capacity(pixels));
-        let deferred = matches!(house, HouseColor::Deferred);
-        let mut layer = Vec::with_capacity(if deferred { pixels * 2 } else { 0 });
-        for y in origin[1] * scale..origin[1] * scale + hd_size[1] {
-            for x in origin[0] * scale..origin[0] * scale + hd_size[0] {
-                let at = (y * width + x) as usize;
-                let pixel: [u8; 4] = source.rgba[at * 4..at * 4 + 4].try_into().unwrap();
-                let mut on_layer = [0; 2];
-                if u32::from(pixel[3]) * 2 < 255 {
-                    rgba.extend_from_slice(&[0; 4]);
-                    indices.push(0);
-                } else {
-                    let (color, index) = match (source.classes[at], house) {
-                        (MaskClass::Unlit, _) => ([pixel[0], pixel[1], pixel[2]], UNLIT_INDEX),
-                        (MaskClass::House, HouseColor::Baked(ramp)) => {
-                            let color = ramp[ramp_step(pixel)];
-                            ([color.r, color.g, color.b], LIT_INDEX)
-                        }
-                        (MaskClass::House, HouseColor::Deferred) => {
-                            // The colour comes from the house layer.
-                            let step = ramp_step(pixel) as u8;
-                            on_layer = [step * HOUSE_LAYER_STEP, 255];
-                            ([0; 3], HOUSE_INDEX + step)
-                        }
-                        _ => ([pixel[0], pixel[1], pixel[2]], LIT_INDEX),
-                    };
-                    rgba.extend_from_slice(&[color[0], color[1], color[2], 255]);
-                    indices.push(index);
-                }
-                if deferred {
-                    layer.extend_from_slice(&on_layer);
-                }
-            }
-        }
-        let page = page_scale(scale);
-        let texel_size = size.map(|side| side * page);
-        let mut layer = deferred.then_some(layer);
-        if page != scale {
-            rgba = resample(&rgba, hd_size, 4, scale, page);
-            indices = resample_nearest(&indices, hd_size, scale, page);
-            layer = layer.map(|layer| resample(&layer, hd_size, 2, scale, page));
-        }
-        Some(PageSprite {
+        let source = self.frames.get(frame)?;
+        Some(crop_page_sprite(
+            &source.rgba,
+            |at| source.classes[at],
+            self.canvas[0],
+            1,
             origin,
             size,
-            scale: page,
-            texel_size,
-            rgba,
-            indices,
-            house: layer,
-        })
+            house,
+        ))
+    }
+
+    /// Every frame as [`Self::page_sprite`] crops it, at the picture's own
+    /// resolution ([`hd_page_sprite`]), streamed from the file again and
+    /// kept: for a small picture that wants its full resolution from the
+    /// start (the interface strips, the placement preview). 1x art's are its
+    /// page sprites; so are a picture's whose file cannot be read again
+    /// (logged).
+    pub(crate) fn hd_page_sprites(&self, house: HouseColor<'_>) -> Vec<Option<PageSprite>> {
+        let page_sprites = || -> Vec<Option<PageSprite>> {
+            (0..self.frame_count())
+                .map(|frame| self.page_sprite(frame, house))
+                .collect()
+        };
+        if self.scale == 1 {
+            return page_sprites();
+        }
+        let streamed = || -> Result<Vec<Option<PageSprite>>, PictureError> {
+            let mut stream = PictureFrameStream::new(&self.bytes)?;
+            let mut sprites = Vec::with_capacity(self.frame_count());
+            for frame in 0..self.frame_count() {
+                let (rgba, mask) = stream.next_frame().ok_or(PictureError::NoFrames)??;
+                sprites.push(self.drawn_rect(frame).map(|(origin, size)| {
+                    hd_page_sprite(rgba, mask, self.canvas, self.scale, origin, size, house)
+                }));
+            }
+            Ok(sprites)
+        };
+        match streamed() {
+            Ok(sprites) => sprites,
+            Err(error) => {
+                log::warn!("A picture cannot be read again at its resolution: {error}");
+                page_sprites()
+            }
+        }
     }
 
     /// Frame `frame`'s drawn rectangle on the canvas, origin and size, as a
@@ -411,6 +510,100 @@ pub(crate) struct StoredPictureFrame {
     pub offset: [f32; 2],
     /// The draw point's place in the sprite.
     pub draw_point: [i32; 2],
+}
+
+/// A frame's drawn rectangle (`origin`, `size` in game pixels, the crop of
+/// [`GamePictureFrames::sprite`]) at the picture's own resolution, from that
+/// frame decoded at `scale` picture pixels per game pixel on `canvas`
+/// (`rgba`, and its `mask` when it has one), as an HD page holds it:
+/// resampled to [`page_scale`], house-colour pixels as `house` says
+/// (`render::picture_stream`, [`GamePictureFrames::hd_page_sprites`]).
+pub(crate) fn hd_page_sprite(
+    rgba: &[u8],
+    mask: Option<&[u8]>,
+    canvas: [u32; 2],
+    scale: u32,
+    origin: [u32; 2],
+    size: [u32; 2],
+    house: HouseColor<'_>,
+) -> PageSprite {
+    let class = |at: usize| {
+        mask.map_or(MaskClass::Plain, |mask| {
+            mask_class(&mask[at * 4..at * 4 + 4])
+        })
+    };
+    crop_page_sprite(rgba, class, canvas[0] * scale, scale, origin, size, house)
+}
+
+/// The page sprite of the rectangle `origin`, `size` (game pixels) of a frame
+/// `width` pixels wide at `scale` pixels per game pixel, each pixel's mask
+/// class from `class_at` (by pixel index): a pixel is drawn when at least
+/// half covered, as the shrink counts it; premultiplied, so holes are 0;
+/// resampled to [`page_scale`] when `scale` is not a power of two. One
+/// implementation for the game-pixel page sprites (`scale` 1) and the HD
+/// ones.
+fn crop_page_sprite(
+    rgba: &[u8],
+    class_at: impl Fn(usize) -> MaskClass,
+    width: u32,
+    scale: u32,
+    origin: [u32; 2],
+    size: [u32; 2],
+    house: HouseColor<'_>,
+) -> PageSprite {
+    let hd_size = size.map(|side| side * scale);
+    let pixels = (hd_size[0] * hd_size[1]) as usize;
+    let (mut out, mut indices) = (Vec::with_capacity(pixels * 4), Vec::with_capacity(pixels));
+    let deferred = matches!(house, HouseColor::Deferred);
+    let mut layer = Vec::with_capacity(if deferred { pixels * 2 } else { 0 });
+    for y in origin[1] * scale..origin[1] * scale + hd_size[1] {
+        for x in origin[0] * scale..origin[0] * scale + hd_size[0] {
+            let at = (y * width + x) as usize;
+            let pixel: [u8; 4] = rgba[at * 4..at * 4 + 4].try_into().unwrap();
+            let mut on_layer = [0; 2];
+            if u32::from(pixel[3]) * 2 < 255 {
+                out.extend_from_slice(&[0; 4]);
+                indices.push(0);
+            } else {
+                let (color, index) = match (class_at(at), house) {
+                    (MaskClass::Unlit, _) => ([pixel[0], pixel[1], pixel[2]], UNLIT_INDEX),
+                    (MaskClass::House, HouseColor::Baked(ramp)) => {
+                        let color = ramp[ramp_step(pixel)];
+                        ([color.r, color.g, color.b], LIT_INDEX)
+                    }
+                    (MaskClass::House, HouseColor::Deferred) => {
+                        // The colour comes from the house layer.
+                        let step = ramp_step(pixel) as u8;
+                        on_layer = [step * HOUSE_LAYER_STEP, 255];
+                        ([0; 3], HOUSE_INDEX + step)
+                    }
+                    _ => ([pixel[0], pixel[1], pixel[2]], LIT_INDEX),
+                };
+                out.extend_from_slice(&[color[0], color[1], color[2], 255]);
+                indices.push(index);
+            }
+            if deferred {
+                layer.extend_from_slice(&on_layer);
+            }
+        }
+    }
+    let page = page_scale(scale);
+    let texel_size = size.map(|side| side * page);
+    let mut layer = deferred.then_some(layer);
+    if page != scale {
+        out = resample(&out, hd_size, 4, scale, page);
+        indices = resample_nearest(&indices, hd_size, scale, page);
+        layer = layer.map(|layer| resample(&layer, hd_size, 2, scale, page));
+    }
+    PageSprite {
+        origin,
+        size,
+        scale: page,
+        texel_size,
+        rgba: out,
+        indices,
+        house: layer,
+    }
 }
 
 /// One frame of `picture_width`-wide RGBA shrunk by `scale` onto `canvas`.
@@ -579,9 +772,11 @@ impl PictureKey {
     }
 }
 
-/// What one sprite atlas build adds from pictures: the frames it drew, the
-/// keys drawn from them or from frames the atlas already holds, and the
-/// house ramps their pages read ([`ramp_strip`]).
+/// What one sprite atlas build adds from pictures: the frames it drew (at
+/// game pixels), the keys drawn from them or from frames the atlas already
+/// holds, the house ramps their pages read ([`ramp_strip`]), and what
+/// streams the new frames' files at their own resolution while the camera
+/// zooms in (`render::picture_stream`).
 #[derive(Default)]
 pub(crate) struct PreparedPictures {
     pub frames: Vec<(PictureFrameId, PictureFrame)>,
@@ -589,6 +784,9 @@ pub(crate) struct PreparedPictures {
     pub empty: Vec<PictureFrameId>,
     pub keys: Vec<PictureKey>,
     pub ramps: Vec<u8>,
+    /// The files of `frames` above 1x art, by [`PictureFrameId`]'s file and
+    /// size.
+    pub hd_sources: Vec<(PictureFile, HdSource)>,
 }
 
 /// Where an atlas key's frames are drawn from: the art section that declares
@@ -629,9 +827,9 @@ pub(crate) struct PictureSources {
     files: std::collections::HashMap<PictureFile, DecodedFile>,
 }
 
-/// A picture file as [`shrink_picture`] decodes it: the file found and the
+/// A picture file as [`stream_picture`] shrinks it: the file found and the
 /// declared `PictureSize=`.
-type PictureFile = (String, Option<[i32; 2]>);
+pub(crate) type PictureFile = (String, Option<[i32; 2]>);
 type DecodedFile = Result<std::sync::Arc<GamePictureFrames>, std::sync::Arc<PictureArtError>>;
 
 impl PictureSources {
@@ -672,7 +870,7 @@ impl PictureSources {
         theater_name: &str,
     ) {
         let mut seen = std::collections::HashSet::new();
-        let todo: Vec<(&PictureSource, Option<(String, &[u8])>)> = sources
+        let todo: Vec<(&PictureSource, Option<(String, SharedBytes)>)> = sources
             .into_iter()
             .filter(|source| !self.decoded.contains_key(*source) && seen.insert(*source))
             .map(|source| {
@@ -683,20 +881,21 @@ impl PictureSources {
             })
             .collect();
         let mut new_files = std::collections::HashSet::new();
-        let files: Vec<(PictureFile, &[u8], &crate::rules::art_data::PictureDecl)> = todo
+        let files: Vec<(
+            PictureFile,
+            SharedBytes,
+            &crate::rules::art_data::PictureDecl,
+        )> = todo
             .iter()
             .filter_map(|(source, found)| {
                 let (file, bytes) = found.as_ref()?;
                 let key = (file.clone(), source.decl.size);
-                (!self.files.contains_key(&key) && new_files.insert(key.clone())).then_some((
-                    key,
-                    *bytes,
-                    &source.decl,
-                ))
+                (!self.files.contains_key(&key) && new_files.insert(key.clone()))
+                    .then(|| (key, bytes.clone(), &source.decl))
             })
             .collect();
         let decoded = crate::sim::parallel::map(&files, |((file, _), bytes, decl)| {
-            decode_file(file, bytes, decl, asset_manager)
+            decode_file(file, bytes.clone(), decl, asset_manager)
         });
         for ((key, _, _), decoded) in files.into_iter().zip(decoded) {
             self.files.insert(key, decoded);
@@ -713,8 +912,9 @@ impl PictureSources {
         }
     }
 
-    /// Frame `frame` of `source`'s picture as a page holds it, house colour
-    /// as `house` says; None when it draws nothing, or when [`Self::frames`] or
+    /// Frame `frame` of `source`'s picture as the atlas keeps it, at game
+    /// pixels ([`GamePictureFrames::page_sprite`]), house colour as `house`
+    /// says; None when it draws nothing, or when [`Self::frames`] or
     /// [`Self::prefetch`] has not decoded `source`. Reads only, so frames can
     /// be drawn side by side.
     pub(crate) fn frame(
@@ -755,6 +955,12 @@ impl PictureSources {
             buildup.and_then(|source| self.decoded_frames(source)),
             bib.and_then(|source| self.decoded_frames(source)),
         )
+    }
+
+    /// What streams `source`'s picture at its own resolution
+    /// ([`GamePictureFrames::hd_source`]), once decoded.
+    pub(crate) fn hd_source(&self, source: &PictureSource) -> Option<HdSource> {
+        self.decoded_frames(source)?.hd_source()
     }
 
     /// `source`'s picture if [`Self::frames`] decoded it.
@@ -806,34 +1012,34 @@ pub(crate) fn picture_file(
 
 /// The file `source` loads in `theater_name` and its bytes; None when no
 /// candidate file is there.
-fn locate_source<'a>(
+fn locate_source(
     source: &PictureSource,
     art: &crate::rules::art_data::ArtRegistry,
-    asset_manager: &'a crate::assets::asset_manager::AssetManager,
+    asset_manager: &crate::assets::asset_manager::AssetManager,
     theater_name: &str,
-) -> Option<(String, &'a [u8])> {
+) -> Option<(String, SharedBytes)> {
     art.picture_candidates(&source.section, &source.decl, theater_name)
         .into_iter()
-        .find_map(|file| asset_manager.get_ref(&file).map(|bytes| (file, bytes)))
+        .find_map(|file| asset_manager.get_shared(&file).map(|bytes| (file, bytes)))
 }
 
-/// [`shrink_picture`], shared by every source that draws `file`.
+/// [`stream_picture`], shared by every source that draws `file`.
 fn decode_file(
     file: &str,
-    bytes: &[u8],
+    bytes: SharedBytes,
     decl: &crate::rules::art_data::PictureDecl,
     asset_manager: &crate::assets::asset_manager::AssetManager,
 ) -> DecodedFile {
-    shrink_picture(file, bytes, decl, asset_manager)
+    stream_picture(file, bytes, decl, asset_manager)
         .map(std::sync::Arc::new)
         .map_err(std::sync::Arc::new)
 }
 
 /// The picture `file` (`bytes`), with its mask beside it, shrunk to the
-/// game pixels `decl` gives.
-fn shrink_picture(
+/// game pixels `decl` gives as it is read ([`GamePictureFrames::stream`]).
+fn stream_picture(
     file: &str,
-    bytes: &[u8],
+    bytes: SharedBytes,
     decl: &crate::rules::art_data::PictureDecl,
     asset_manager: &crate::assets::asset_manager::AssetManager,
 ) -> Result<GamePictureFrames, PictureArtError> {
@@ -841,19 +1047,14 @@ fn shrink_picture(
         "{}.mask.png",
         file.rsplit_once('.').map_or(file, |(stem, _)| stem)
     );
-    let decoded = PictureFrames::decode(bytes).and_then(|picture| {
-        let mask = asset_manager
-            .get_ref(&mask_name)
-            .map(PictureFrames::decode)
-            .transpose()?;
-        Ok((picture, mask))
-    });
-    decoded
-        .map_err(PictureArtError::from)
-        .and_then(|(picture, mask)| {
-            let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
-            GamePictureFrames::shrink(picture, mask.as_ref(), canvas)
-        })
+    let canvas = decl.size.map(|size| size.map(|side| side.unsigned_abs()));
+    GamePictureFrames::stream(
+        PictureBytes {
+            picture: bytes,
+            mask: asset_manager.get_shared(&mask_name),
+        },
+        canvas,
+    )
 }
 
 /// Log `source`'s picture `file` as decoded, or why it cannot be drawn, as
@@ -902,7 +1103,11 @@ pub(crate) fn rubble_pictures(
         return arts.iter().map(|_| None).collect();
     }
     let mut seen = std::collections::HashSet::new();
-    let files: Vec<(PictureFile, &[u8], &crate::rules::art_data::PictureDecl)> = arts
+    let files: Vec<(
+        PictureFile,
+        SharedBytes,
+        &crate::rules::art_data::PictureDecl,
+    )> = arts
         .iter()
         .filter_map(|art| {
             let decl = art.picture.as_ref()?;
@@ -910,11 +1115,11 @@ pub(crate) fn rubble_pictures(
             if !seen.insert(key.clone()) {
                 return None;
             }
-            Some((key, asset_manager.get_ref(&art.shp)?, decl))
+            Some((key, asset_manager.get_shared(&art.shp)?, decl))
         })
         .collect();
     let decoded = crate::sim::parallel::map(&files, |((file, _), bytes, decl)| {
-        decode_file(file, bytes, decl, asset_manager)
+        decode_file(file, bytes.clone(), decl, asset_manager)
     });
     let decoded: std::collections::HashMap<PictureFile, DecodedFile> = files
         .into_iter()
@@ -1076,7 +1281,7 @@ impl PicturePage {
     }
 
     fn levels(&self) -> u32 {
-        (self.scale.ilog2() + 1 + ZOOM_OUT_LEVELS).min(self.size[0].max(self.size[1]).ilog2() + 1)
+        page_levels(self.scale).min(self.size[0].max(self.size[1]).ilog2() + 1)
     }
 }
 
@@ -1241,6 +1446,7 @@ fn blit_plane(
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
+    use crate::assets::picture_file::PictureFrames;
 
     fn picture(width: u32, height: u32, frames: Vec<Vec<u8>>) -> PictureFrames {
         PictureFrames {
@@ -1248,6 +1454,12 @@ mod tests {
             height,
             frames,
         }
+    }
+
+    /// Frame 0 at the picture's own resolution, as HD pages and the
+    /// interface strips take it.
+    fn hd(frames: &GamePictureFrames, house: HouseColor<'_>) -> Option<PageSprite> {
+        frames.hd_page_sprites(house).into_iter().next().flatten()
     }
 
     fn frame_id(frame: usize) -> PictureFrameId {
@@ -1365,7 +1577,7 @@ mod tests {
         let sprite = shrunk.sprite(0, HouseColor::Deferred).unwrap();
         assert_eq!(sprite.rgba, [RED, H, P].concat(), "colours untouched");
         assert_eq!(sprite.indices, [HOUSE_INDEX, HOUSE_INDEX + 9, LIT_INDEX]);
-        let page = shrunk.page_sprite(0, HouseColor::Deferred).unwrap();
+        let page = hd(&shrunk, HouseColor::Deferred).unwrap();
         assert_eq!((page.scale, page.texel_size), (1, [3, 1]));
         assert_eq!(page.rgba, [BLACK, BLACK, P].concat());
         assert_eq!(page.indices, sprite.indices);
@@ -1385,7 +1597,7 @@ mod tests {
         let sprite = shrunk.sprite(0, HouseColor::Deferred).unwrap();
         assert_eq!(sprite.rgba, [H, P].concat());
         assert_eq!(sprite.indices, [HOUSE_INDEX + 9, LIT_INDEX]);
-        let page = shrunk.page_sprite(0, HouseColor::Deferred).unwrap();
+        let page = hd(&shrunk, HouseColor::Deferred).unwrap();
         assert_eq!((page.origin, page.size), (sprite.origin, sprite.size));
         assert_eq!((page.scale, page.texel_size), (2, [4, 2]));
         assert_eq!(
@@ -1410,7 +1622,7 @@ mod tests {
             .concat()
             .concat()
         );
-        let own = shrunk.page_sprite(0, HouseColor::Own).unwrap();
+        let own = hd(&shrunk, HouseColor::Own).unwrap();
         assert!(own.house.is_none());
         assert_eq!(own.rgba[..4], H, "its own colour");
     }
@@ -1507,7 +1719,7 @@ mod tests {
             Some([2, 1]),
         )
         .unwrap();
-        let sprite = shrunk.page_sprite(0, HouseColor::Own).unwrap();
+        let sprite = hd(&shrunk, HouseColor::Own).unwrap();
         assert_eq!((sprite.origin, sprite.size), ([0, 0], [1, 1]));
         assert_eq!((sprite.scale, sprite.texel_size), (2, [2, 2]));
         assert_eq!(sprite.rgba, [RED, NONE, RED, RED].concat());
@@ -1552,7 +1764,7 @@ mod tests {
             Some([1, 1]),
         )
         .unwrap();
-        let sprite = shrunk.page_sprite(0, HouseColor::Own).unwrap();
+        let sprite = hd(&shrunk, HouseColor::Own).unwrap();
         assert_eq!((sprite.scale, sprite.texel_size), (4, [4, 4]));
         let row = [RED, RED, [170, 0, 0, 170], NONE].concat();
         assert_eq!(
@@ -1578,7 +1790,7 @@ mod tests {
         id.deferred = true;
         let frame = PictureFrame {
             canvas: shrunk.canvas,
-            sprite: shrunk.page_sprite(0, HouseColor::Deferred).unwrap(),
+            sprite: hd(&shrunk, HouseColor::Deferred).unwrap(),
         };
         let pages = pack_picture_pages(vec![(id, frame)], 64);
         assert_eq!(pages[0].frames[0].1, [2, 2]);
@@ -1669,5 +1881,39 @@ mod tests {
             key.placement([7, 4], [2, 1]),
             ([2.0, -3.0], [0.0, -4.0, 7.0, 4.0])
         );
+    }
+
+    /// A 4x picture is kept at game pixels, one texel each, which is what
+    /// the atlas's pages hold; its frames at 4x come from streaming the file
+    /// again, each the same crop, frame after frame in order.
+    #[test]
+    fn a_4x_picture_keeps_game_pixels_and_streams_its_own_resolution() {
+        const RED: [u8; 4] = [200, 0, 0, 255];
+        const BLUE: [u8; 4] = [0, 0, 100, 255];
+        const NONE: [u8; 4] = [0; 4];
+        // 8x4 picture pixels on a 2x1 canvas: frame 0 the left game pixel,
+        // frame 1 the right one.
+        let frame =
+            |left: [u8; 4], right: [u8; 4]| [[left; 4], [right; 4]].concat().repeat(4).concat();
+        let shrunk = GamePictureFrames::shrink(
+            picture(8, 4, vec![frame(RED, NONE), frame(NONE, BLUE)]),
+            None,
+            Some([2, 1]),
+        )
+        .unwrap();
+        let resident = shrunk.page_sprite(0, HouseColor::Own).unwrap();
+        assert_eq!(
+            (resident.scale, resident.size, resident.texel_size),
+            (1, [1, 1], [1, 1])
+        );
+        assert_eq!(resident.rgba, RED);
+        assert!(shrunk.hd_source().is_some_and(|source| source.scale == 4));
+        let hd = shrunk.hd_page_sprites(HouseColor::Own);
+        let (first, second) = (hd[0].as_ref().unwrap(), hd[1].as_ref().unwrap());
+        assert_eq!((first.origin, first.size), (resident.origin, resident.size));
+        assert_eq!((first.scale, first.texel_size), (4, [4, 4]));
+        assert_eq!(first.rgba, RED.repeat(16));
+        assert_eq!((second.origin, second.texel_size), ([1, 0], [4, 4]));
+        assert_eq!(second.rgba, BLUE.repeat(16));
     }
 }

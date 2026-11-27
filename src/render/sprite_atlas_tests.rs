@@ -4323,3 +4323,61 @@ fn a_picture_factory_draws_its_door_art_from_pictures() {
         assert_eq!(placed, (0..count).collect(), "{name}");
     }
 }
+
+/// VERA-only, experimental (docs/zoom-one-pass.md, "picture streaming"): a
+/// 4x picture's frames reach the atlas's pages at game pixels, one texel
+/// each, and its file is handed on to stream at 4x while zoomed in.
+#[test]
+fn a_4x_picture_is_paged_at_game_pixels_and_streams_its_resolution() {
+    use crate::rules::ini_parser::IniFile;
+    let directory = StoredFrameTestDirectory::new();
+    // 8x8 picture pixels on a 2x2 canvas: each game pixel drawn.
+    let frames = vec![[200u8, 100, 50, 255].repeat(64); 2];
+    let bytes = crate::assets::picture_file::encode_frames(8, 8, &frames).unwrap();
+    std::fs::write(directory.0.join("PICBIG.png"), bytes).unwrap();
+    let art_ini = IniFile::from_str("[PICBIG]\nPicture=PICBIG.png\nPictureSize=2,2\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[BuildingTypes]\n0=PICBIG\n[PICBIG]\nStrength=100\n"),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(2))]);
+    let entities = crate::sim::entity_store::EntityStore::new();
+    let PreparedSpriteAtlas::Raster(_, upload) = prepare_sprite_atlas(
+        8192,
+        &entities,
+        &assets,
+        &Palette::from_rgb(|i| [i, i, i]),
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+        &colors,
+        &["PICBIG"],
+        &Default::default(),
+        &Default::default(),
+        &Default::default(),
+        None,
+        None,
+        None,
+    ) else {
+        panic!("the picture building's keys are prepared");
+    };
+
+    let pictures = &upload.pictures;
+    assert!(!pictures.frames.is_empty());
+    for (_, frame) in &pictures.frames {
+        assert_eq!(frame.canvas, [2, 2]);
+        assert_eq!(
+            (frame.sprite.scale, frame.sprite.texel_size),
+            (1, frame.sprite.size),
+            "one texel a game pixel"
+        );
+    }
+    assert_eq!(pictures.hd_sources.len(), 1, "one file streams");
+    let (file, source) = &pictures.hd_sources[0];
+    assert!(file.0.eq_ignore_ascii_case("PICBIG.png"));
+    assert_eq!((source.canvas, source.scale), ([2, 2], 4));
+}

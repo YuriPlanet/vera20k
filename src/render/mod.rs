@@ -66,6 +66,7 @@ pub mod overlay_atlas;
 pub mod palette_light;
 pub mod palette_textures;
 pub(crate) mod picture_atlas;
+pub(crate) mod picture_stream;
 pub(crate) mod picture_zoom;
 pub mod pixel_fx_sparkles;
 pub mod radar;

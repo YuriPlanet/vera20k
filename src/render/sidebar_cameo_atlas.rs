@@ -558,16 +558,14 @@ fn render_picture_cameo(
     asset_manager: &AssetManager,
 ) -> Option<RenderedCameo> {
     let shrunk = asset_manager
-        .get_ref(file)
+        .get_shared(file)
         .ok_or_else(|| "the file is not found".to_owned())
         .and_then(|bytes| {
-            crate::assets::picture_file::PictureFrames::decode(bytes)
-                .map_err(|error| error.to_string())
-        })
-        .and_then(|picture| {
-            crate::render::picture_atlas::GamePictureFrames::shrink(
-                picture,
-                None,
+            crate::render::picture_atlas::GamePictureFrames::stream(
+                crate::render::picture_atlas::PictureBytes {
+                    picture: bytes,
+                    mask: None,
+                },
                 Some(CAMEO_CANVAS),
             )
             .map_err(|error| error.to_string())

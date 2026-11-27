@@ -200,7 +200,7 @@ One owner reads and checks it for every file (`render::interface_picture`).
 When a picture fits, it replaces the SHP's pixels everywhere that SHP is
 drawn; frame numbers, offsets, hotspots, animation and size stay the SHP's.
 
-- **Placement** is the game pixels' (`GamePictureFrames::shrink`): a game
+- **Placement** is the game pixels' (`GamePictureFrames::stream`): a game
   pixel is drawn when half its picture pixels are. Each frame is cropped to
   those pixels and placed as the SHP's frames. What the CPU draws (the
   radar beacon) takes the game pixels' colour, their mean, with index 1 for
@@ -316,42 +316,72 @@ screen through the blitters every SHP and voxel image already uses, unchanged,
 so it sorts, shades and shadows by the same rules:
 
 - **Pictures** become RGBA pages of the sprite atlas, beside its
-  palette-index pages, each frame once on the GPU at the picture's own
-  resolution:
-  - **CPU metadata.** Each frame is shrunk to `PictureSize=` game pixels on
-    the CPU only (`GamePictureFrames::shrink`; a game pixel is drawn when
-    half its picture pixels are, its colour their mean, its class the
-    mask's majority). That gives everything the game reads and the CPU
-    draws: the drawn rectangle (cropped like a stored SHP frame, centred on
-    the canvas the same way), frame bounds, building render bounds, stored
-    frame offsets, and the game-pixel colour and index plane of overlay,
-    bridge, cameo and radar art. None of it is uploaded.
-  - **One page.** The frame's drawn rectangle at the picture's resolution
-    goes on a picture page (`picture_atlas::PicturePage`,
-    `render::picture_zoom`): premultiplied encoded colour (a picture pixel
-    is drawn when half covered), an index plane per texel (0 for holes, 1
+  palette-index pages. Each frame is on the GPU for good at game pixels;
+  art above 1x streams in at its own resolution only while the camera
+  zooms in, as a 3D game streams textures:
+  - **Read a frame at a time.** A picture file and its mask are read in
+    lockstep, one composited frame at a time
+    (`picture_atlas::PictureFrameStream` over `picture_file::FrameStream`),
+    so memory stays at a couple of canvases whatever the frame count and no
+    picture is too large to read. The atlas keeps a handle on the file's
+    bytes (`AssetManager::get_shared`, no copy) to read it again later.
+  - **CPU metadata.** Each frame is shrunk to `PictureSize=` game pixels as
+    it is read and then dropped (`GamePictureFrames::stream`; a game pixel
+    is drawn when half its picture pixels are, its colour their mean, its
+    class the mask's majority). That gives everything the game reads and
+    the CPU draws: the drawn rectangle (cropped like a stored SHP frame,
+    centred on the canvas the same way), frame bounds, building render
+    bounds, stored frame offsets, and the game-pixel colour and index plane
+    of overlay, bridge, cameo and radar art.
+  - **Resident pages.** The same shrink, the frame's drawn rectangle at one
+    texel per game pixel (`GamePictureFrames::page_sprite`), goes on a
+    picture page (`picture_atlas::PicturePage`, `render::picture_zoom`):
+    premultiplied encoded colour, an index plane per texel (0 for holes, 1
     lit, 240 for the mask's unlit pixels, so `PaletteLight` leaves those
-    alone), and mip levels, each the 2x2 mean of the one above, down to one
-    texel per game pixel and one level past it for the camera zoomed out.
-    Art of 3, 5, 6 or 7 is resampled once at load to the next power of two
-    (area-weighted, so each game pixel keeps its mean and coverage; the
-    index plane nearest), so a level is exactly one texel per game pixel;
-    1x art's page is its game pixels. Pages hold one page scale each, two
-    empty game pixels around every frame so no level's filtering reaches a
-    neighbour, and entries address them by UV in game pixels over the
-    page's game-pixel extent.
+    alone), and one mip level past it (the 2x2 mean) for the camera zoomed
+    out. Pages are packed at load with two empty game pixels around every
+    frame so no level's filtering reaches a neighbour, and entries address
+    them by UV in game pixels over the page's game-pixel extent. A 4x art
+    set costs at load what a 1x one does: each file decoded and shrunk
+    once.
+  - **HD on demand** (`render::picture_stream`). While the world camera's
+    zoom is above 1 (the resident page would be magnified),
+    `SpriteAtlas::get` records each frame of art above 1x it hands out as
+    wanted and returns its HD entry once the frame is on an HD page: the
+    game-pixel entry with only its page and UV changed. Once a frame,
+    `SpriteAtlas::stream_pictures` (called by `render_game` after
+    `bind_hd_twins`) groups the wanted frames by file and hands each file to
+    one of two decode threads, which read it a frame at a time up to its
+    last wanted frame and build each wanted frame's HD tile: the same crop at
+    the picture's resolution (`picture_atlas::hd_page_sprite`, the one
+    implementation of the crop, class and house rules; art of 3, 5, 6 or 7
+    resampled to the next power of two by area, the index plane nearest),
+    the house layer, the index plane and its mips down to the zoom-out
+    level, two empty game pixels around it. At most 16 MiB of tiles a frame
+    are uploaded (`write_texture` per mip level) onto HD pages of 2048
+    texels (512 game pixels for 4x art; a larger frame stays at game
+    pixels), shelf-packed, one page scale per page. The pages share a
+    budget (1 GiB, `VERA_PICTURE_HD_BUDGET_MB`); when it is full the page
+    drawn longest ago (not in this or the last frame) is emptied and reused,
+    its frames back on their game-pixel entries until drawn again. Zoomed
+    out or at zoom 1 nothing is asked for and the game-pixel entries are
+    drawn. The browser build has no threads to decode on: it draws the
+    game-pixel pages at every zoom. A capture (`VERA20K_HD_CAPTURE_ZOOM`)
+    waits for each frame's decodes.
   - **Sampled by lod.** A picture page's binding is its only one: the
     blitters (`sprite_source.wgsl`, an RGBA HD page by its house ramps at
     binding 5) sample it linearly at lod = log2(page texels per target
-    pixel) from the UV derivatives, at every zoom: at zoom 1 the
-    one-texel-per-game-pixel level, whose texel is the game pixel's mean,
-    so a game pixel draws where at least half its picture pixels do, as the
-    shrink says; zoomed in the art's own pixels; zoomed out the zoom-out
-    level. A pixel less than half covered at the level sampled, or whose
-    nearest level-0 index is 0, is a hole. Compared with the CPU shrink it
-    replaces on the GPU, edge pixels and colours can differ slightly (the
-    filtered mean and the index under the pixel's centre, not the majority
-    class); retail data has no pictures and draws as before.
+    pixel) from the UV derivatives: a resident page at zoom 1 at its level
+    0, whose texel is the CPU shrink's game pixel, zoomed out its zoom-out
+    level; an HD page at the level for `scale / zoom`. A pixel less than
+    half covered at the level sampled, or whose nearest level-0 index is 0,
+    is a hole. Until a frame's HD tile arrives, a zoomed-in camera
+    magnifies its game-pixel page bilinearly. Retail data has no pictures
+    and draws as before.
+  - **Interface strips** (selection overlay, beacons, the placement
+    preview) are small and stream every frame at its own resolution once
+    when built (`GamePictureFrames::hd_page_sprites`), onto one picture
+    page each.
   - **House colour.** A house-colour pixel takes the owner's ramp step for
     its brightness as it draws: its index is 16 plus the step, its colour
     black, a two-channel house layer (step, coverage, with the colour's

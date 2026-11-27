@@ -12,27 +12,29 @@
 
 use crate::assets::picture_file::PictureFrames;
 use crate::assets::shp_file::ShpFile;
-use crate::render::picture_atlas::{GamePictureFrames, PICTURE_SCALE_MAX};
+use crate::render::picture_atlas::{GamePictureFrames, PICTURE_SCALE_MAX, PictureBytes};
 
 /// A fitting picture for an interface SHP.
 pub(crate) struct InterfacePicture {
     pub picture: PictureFrames,
-    /// `NAME.mask.png`, when the caller takes one and it exists.
-    pub mask: Option<PictureFrames>,
     /// Picture pixels per SHP pixel.
     pub scale: u32,
+    /// The file `picture` was decoded from and `NAME.mask.png`, when the
+    /// caller takes one and it exists: what [`Self::game_frames`] streams.
+    bytes: PictureBytes,
 }
 
 impl InterfacePicture {
-    /// The picture on the SHP's canvas (`GamePictureFrames::shrink`): at the
-    /// SHP's own pixels for what the CPU reads and draws (the radar beacon),
-    /// and at its own resolution for the strip's picture page.
+    /// The picture on the SHP's canvas (`GamePictureFrames::stream`): at the
+    /// SHP's own pixels for what the CPU reads and draws (the radar beacon);
+    /// the strip's picture page streams its own resolution from it
+    /// (`GamePictureFrames::hd_page_sprites`).
     pub(crate) fn game_frames(&self) -> Option<GamePictureFrames> {
         let canvas = [
             self.picture.width / self.scale,
             self.picture.height / self.scale,
         ];
-        GamePictureFrames::shrink(self.picture.clone(), self.mask.as_ref(), Some(canvas)).ok()
+        GamePictureFrames::stream(self.bytes.clone(), Some(canvas)).ok()
     }
 }
 
@@ -55,27 +57,35 @@ pub(crate) fn find<'a>(
     let name = picture_name(shp_name);
     let bytes = lookup(&name)?;
     let mask_name = name.replace(".png", ".mask.png");
+    // An interface file is small: its bytes are copied once, so the strips
+    // can stream it again at its own resolution.
+    let shared = |bytes: &[u8]| {
+        crate::assets::mix_archive::SharedBytes::from(std::sync::Arc::<[u8]>::from(bytes))
+    };
     let read = || -> Result<InterfacePicture, String> {
         let picture = PictureFrames::decode(bytes)
             .map_err(|error| format!("it is not readable ({error})"))?;
         let scale = fit(&picture, shp)?;
         let mask = match masked.then(|| lookup(&mask_name)).flatten() {
             Some(bytes) => {
-                let mask = PictureFrames::decode(bytes)
+                let mask = crate::assets::picture_file::PictureHeader::read(bytes)
                     .map_err(|error| format!("{mask_name} is not readable ({error})"))?;
                 if [mask.width, mask.height] != [picture.width, picture.height]
-                    || mask.frames.len() != picture.frames.len()
+                    || usize::try_from(mask.frames).ok() != Some(picture.frames.len())
                 {
                     return Err(format!("{mask_name} is not the picture's size and frames"));
                 }
-                Some(mask)
+                Some(shared(bytes))
             }
             None => None,
         };
         Ok(InterfacePicture {
             picture,
-            mask,
             scale,
+            bytes: PictureBytes {
+                picture: shared(bytes),
+                mask,
+            },
         })
     };
     match read() {

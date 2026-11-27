@@ -1358,11 +1358,20 @@ pub fn compute_overlay_radar_colors(
             .picture_candidates(section, decl, theater_name)
             .iter()
             .find_map(|file| asset_manager.get_ref(file))
-            .and_then(|bytes| crate::assets::picture_file::PictureFrames::decode(bytes).ok())
-            .map(|picture| {
-                (0..picture.frames.len().min(usize::from(u8::MAX) + 1))
-                    .filter_map(|frame| Some((frame as u8, picture.mean_color(frame)?)))
-                    .collect::<Vec<_>>()
+            .and_then(|bytes| {
+                // Frame by frame as the file is read, so no picture is too
+                // large to colour the radar.
+                let mut stream = crate::assets::picture_file::FrameStream::new(bytes).ok()?;
+                let mut colors = Vec::new();
+                for frame in 0..=u8::MAX {
+                    let Some(Ok(rgba)) = stream.next_frame() else {
+                        break;
+                    };
+                    if let Some(rgb) = crate::assets::picture_file::mean_color(rgba) {
+                        colors.push((frame, rgb));
+                    }
+                }
+                Some(colors)
             })
     };
     for (&overlay_id, name) in overlay_names {

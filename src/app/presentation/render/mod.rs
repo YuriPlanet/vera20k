@@ -525,6 +525,11 @@ pub(crate) fn render_game(
         world_camera.zoom,
         hd_art_on,
     );
+    // VERA-only, experimental (docs/zoom-one-pass.md): picture frames of art
+    // above 1x stream in at their own resolution while the camera zooms in.
+    if let Some(sprites) = presentation.sprite_atlas.as_mut() {
+        sprites.stream_pictures(device, &state.renderer.gpu.queue, batch, world_camera.zoom);
+    }
     let mut world = build_instances::build_world_instances(
         &state.platform,
         &state.renderer,
