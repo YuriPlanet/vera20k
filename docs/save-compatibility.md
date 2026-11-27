@@ -85,6 +85,12 @@ On load, those computer houses resume ordinary AI with their saved money,
 units and production queues. Any saved Wasm control claims still apply.
 The next save clears the retired settings.
 
+Layout `0xC0BB86C8` saves each object's warp-out flag. A Chronosphere can clear
+it while a Chrono Legionnaire is still erasing the object. Earlier layouts,
+including `0xD5A96CCA`, recover the state those games used from the stored erase
+head, Teleport departure flag and Ares building chronoshift flag. A current save
+preserves which effect last wrote the flag.
+
 Run the menu and compatibility tests with this command.
 
 ```sh

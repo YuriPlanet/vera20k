@@ -143,6 +143,9 @@ pub(crate) fn wall_clock_ms() -> u64 {
 #[derive(Debug, Default)]
 pub(crate) struct LocalFramePacer {
     last_frame_start_ms: Option<u32>,
+    /// Draw interval of the last committed binary frame. A new tick can be
+    /// admitted on the worker while this frame is still on the screen.
+    motion_frame: Option<(u32, MotionInterval)>,
     last_presented: Option<crate::util::time::Instant>,
     /// Recent battlefield draw time, from the draw's start to its present,
     /// smoothed over a few draws.
@@ -170,6 +173,28 @@ pub(crate) struct LocalFramePacer {
     inline_frame_cost: Option<Duration>,
     lent_frame_cost: Option<Duration>,
     counts: LoopCounts,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MotionInterval {
+    start: Instant,
+    duration: Duration,
+}
+
+impl MotionInterval {
+    /// The confirmed pair reaches the latest pose at its scheduled deadline,
+    /// and stays there if the next tick is late.
+    pub(crate) fn fraction(self, now: Instant) -> f32 {
+        (now.saturating_duration_since(self.start).as_secs_f64() / self.duration.as_secs_f64())
+            .min(1.) as f32
+    }
+
+    /// The gate may admit a VSync draw 1/16 of a refresh early. That slack
+    /// alone cannot buy an extra picture. Leave the same work headroom as
+    /// the high-refresh setting.
+    pub(crate) fn repeat_fits(self, picture: Duration, work: Duration) -> bool {
+        self.duration - self.duration / 16 > picture && work <= picture / 2 && !picture.is_zero()
+    }
 }
 
 /// Running counts the performance panel reads once a second: the frames
@@ -626,6 +651,7 @@ impl LocalFramePacer {
     pub(crate) const fn new() -> Self {
         Self {
             last_frame_start_ms: None,
+            motion_frame: None,
             last_presented: None,
             draw_cost: None,
             draw_work: None,
@@ -1023,9 +1049,68 @@ impl LocalFramePacer {
         self.last_frame_start_ms = Some(frame_start_ms as u32);
     }
 
+    /// Give the newly committed picture its own interval. Local frames use
+    /// the timer Main_Tick armed before Logic; online frames use their
+    /// existing playout deadline, even if a whole turn arrived at once.
+    pub(crate) fn commit_motion_frame(
+        &mut self,
+        native_frame: u32,
+        game_speed: u8,
+        network_fps: Option<u16>,
+        sequenced: bool,
+        picture_interval: Duration,
+        now: Instant,
+        wall_ms: u64,
+    ) {
+        let interval = if sequenced {
+            self.online
+                .as_ref()
+                .filter(|p| !p.catching_up)
+                .map(|p| MotionInterval {
+                    start: p.deadline(native_frame),
+                    duration: p.span(1),
+                })
+        } else {
+            pacing_timer(game_speed, network_fps)
+                .zip(self.last_frame_start_ms)
+                .and_then(|(timer, start)| {
+                    let elapsed =
+                        Duration::from_millis(u64::from((wall_ms as u32).wrapping_sub(start)));
+                    let duration =
+                        Duration::from_millis(u64::from(timer.due_ms(start).wrapping_sub(start)));
+                    Some(MotionInterval {
+                        start: now.checked_sub(elapsed)?,
+                        duration,
+                    })
+                })
+        };
+        // Once sampled, consecutive ticks at this speed keep their visual
+        // timeline. Slow draws suppress repeats; a fluctuating cost mustn't
+        // alternate between this pose and one a full tick ahead. The 90 TPS
+        // preset alternates between intervals differing by one millisecond.
+        self.motion_frame = interval
+            .filter(|span| {
+                let continuous = self.motion_frame.is_some_and(|(previous, old)| {
+                    previous == native_frame
+                        && old.duration.abs_diff(span.duration) <= Duration::from_millis(1)
+                });
+                self.debug_speed == 1
+                    && !span.duration.is_zero()
+                    && (continuous || span.repeat_fits(picture_interval, self.draw_work()))
+            })
+            .map(|span| (native_frame.wrapping_add(1), span));
+    }
+
+    pub(crate) fn motion_interval(&self, frame: u32) -> Option<MotionInterval> {
+        self.motion_frame
+            .filter(|(id, _)| *id == frame)
+            .map(|(_, span)| span)
+    }
+
     /// Forget the prior pacing window so the next unpaused frame runs now.
     pub(crate) fn reset_for_immediate_frame(&mut self) {
         self.last_frame_start_ms = None;
+        self.motion_frame = None;
     }
 
     /// Suppress another automatic frame until one full pacing window passes.
@@ -1034,6 +1119,7 @@ impl LocalFramePacer {
     /// modal resume use `reset_for_immediate_frame`.
     pub(crate) fn reanchor(&mut self, now_ms: u64) {
         self.last_frame_start_ms = Some(now_ms as u32);
+        self.motion_frame = None;
     }
 
     /// How long from `now_ms` until [`Self::should_admit`] admits the next
@@ -1181,6 +1267,29 @@ mod tests {
         assert_eq!(pacer.debug_speed(), 10);
         pacer.reset_for_new_world();
         assert_eq!(pacer.debug_speed(), 1);
+    }
+
+    #[test]
+    fn admitting_the_next_tick_keeps_the_committed_motion_clock() {
+        let start = Instant::now();
+        let ms = Duration::from_millis;
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(1_600);
+        pacer.commit_motion_frame(14, 2, None, false, FRAME_BUCKET, start + ms(8), 1_608);
+        // The next tick is on the simulation thread. Its previous picture
+        // keeps its scheduled phase and stops at the known position.
+        pacer.record_admitted_frame(1_632);
+        let span = pacer.motion_interval(15).unwrap();
+        assert_eq!(span.fraction(start + ms(16)), 0.5);
+        assert_eq!(span.fraction(start + ms(80)), 1.);
+        assert!(pacer.motion_interval(16).is_none());
+        pacer.draw_work = Some(ms(12));
+        pacer.commit_motion_frame(15, 2, None, false, FRAME_BUCKET, start + ms(40), 1_640);
+        let loaded = pacer.motion_interval(16).unwrap();
+        assert!(!loaded.repeat_fits(FRAME_BUCKET, pacer.draw_work()));
+        assert_eq!(loaded.fraction(start + ms(48)), 0.5);
+        pacer.reset_for_new_world();
+        assert!(pacer.motion_interval(16).is_none());
     }
 
     #[test]

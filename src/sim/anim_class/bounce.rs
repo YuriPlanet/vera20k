@@ -216,19 +216,19 @@ impl Simulation {
                 coord,
             ));
         }
-        let Some(warhead_name) = config.warhead.as_deref() else {
-            return false;
-        };
         let damage = match X87Chop53::load_f64(config.damage).and_then(X87Chop53::ftol_i64) {
             Ok(damage) => damage as i32,
             Err(_) => return false,
         };
         // Ares 3.0 AnimClass_UpdateBounce_Damage (1005C410, hook 0x4239F0):
         // a negative DamageRadius or a Damage of zero damages nothing.
-        if rules.ares() && (config.damage_radius < 0 || damage == 0) {
+        if rules.ares() && (config.damage_radius < 0 || damage == 0 || config.warhead.is_none()) {
             return false;
         }
-        let warhead_ref = self.interner.intern(warhead_name);
+        let warhead_ref = config
+            .warhead
+            .as_deref()
+            .map(|name| self.interner.intern(name));
         self.apply_bounce_contact_damage(
             position,
             config.damage_radius,

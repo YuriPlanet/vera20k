@@ -2580,13 +2580,46 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     );
     sim.session.set_binary_frame_for_test(119);
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
-    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "control links", 0);
-    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
+    let terrain = crate::map::resolved_terrain::test_grid(
+        32,
+        32,
+        crate::map::resolved_terrain::test_clear_cell,
+    );
+    let mut file_world = sim.clone();
+    *file_world.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    file_world.install_resolved_terrain_for_new_map(terrain.clone());
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&file_world, 0, 0, "control links", 0);
+    let saved = crate::sim::snapshot::GameSnapshot::load(&bytes).unwrap();
     assert_eq!(
-        restored.capture_link_coordinates(controller, &rules),
+        saved.sim.capture_link_coordinates(controller, &rules),
         sim.capture_link_coordinates(controller, &rules)
+    );
+    // An exact checkpoint above preserves the visible line. An ordinary
+    // player load restores the node references and expires its display timer.
+    let (restored, _) = saved
+        .restore_player_world(
+            crate::sim::world::SnapshotProcessState::Live(&sim),
+            &rules,
+            terrain,
+            Default::default(),
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
+        )
+        .unwrap();
+    assert!(
+        restored
+            .capture_link_coordinates(controller, &rules)
+            .is_empty()
+    );
+    assert_eq!(
+        restored
+            .entities()
+            .get(first)
+            .unwrap()
+            .seldom
+            .mind_control
+            .controller(),
+        Some(controller),
     );
     sim.session.set_binary_frame_for_test(120);
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());

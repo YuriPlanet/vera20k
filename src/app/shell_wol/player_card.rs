@@ -10,10 +10,8 @@ use winit::keyboard::KeyCode;
 
 use super::service::WolServiceRequest;
 use crate::app::PlatformState;
-use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
-use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
@@ -305,8 +303,6 @@ pub(super) fn button(
     match_state: &mut MatchState,
     process_assets: &ProcessAssets,
     renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
     id: u16,
 ) {
     if let (Some(name), Some(action)) = (
@@ -319,8 +315,6 @@ pub(super) fn button(
             match_state,
             process_assets,
             renderer,
-            audio,
-            persistence,
             name,
             action,
         );
@@ -333,23 +327,19 @@ fn act(
     match_state: &mut MatchState,
     process_assets: &ProcessAssets,
     renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
     name: String,
     action: WolCardAction,
 ) {
     match action {
         WolCardAction::Message => {
             close(frontend, &platform.window);
-            super::page::open_page_dialog_to(
+            super::page::open_page_dialog(
                 frontend,
                 platform,
                 match_state,
                 process_assets,
                 renderer,
-                audio,
-                persistence,
-                &name,
+                Some(&name),
             );
         }
         WolCardAction::Country => open_countries(frontend, process_assets, &renderer.gpu),

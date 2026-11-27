@@ -425,6 +425,11 @@ pub struct GameEntity {
     /// TemporalTargetingMe), written only by `temporal`.
     #[serde(default)]
     pub temporal: crate::sim::temporal::TemporalState,
+    /// Techno+270, shared by Temporal, Teleport and Ares building chronoshift.
+    /// Historical saves lack this field. EntityStore restores their old value
+    /// before publishing an object; all live objects hold Some(false/true).
+    #[serde(default)]
+    being_warped_out: Option<bool>,
     /// The Crazy Ivan bomb it carries (`ObjectClass+0x38` and its
     /// `BombClass`), written only by `bomb`.
     #[serde(default)]
@@ -1133,9 +1138,8 @@ pub(crate) struct AresPart {
     /// [`AresPrismForwarding`]: crate::sim::world::AresPrismForwarding
     #[serde(default)]
     pub(crate) ares_prism: crate::sim::world::AresPrismForwarding,
-    /// An Ares chronoshifted building (BeingWarpedOut `+0x270` with
-    /// BuildingExt `AboutToChronoshift`), from the ChronoWarp's arm until
-    /// ChronoWarpStateMachine puts it back (`superweapon::chronosphere`).
+    /// BuildingExt `AboutToChronoshift`, from the Ares ChronoWarp's arm
+    /// until its state machine returns the building (`superweapon::chronosphere`).
     #[serde(default)]
     ares_chronoshifting: bool,
     /// The DropPod locomotor an Ares DropPod launch gives a Foot
@@ -1277,6 +1281,28 @@ impl GameEntity {
         self.seldom.nominal_survivor = true;
     }
 
+    /// TechnoClass::IsWarpedOut at 0x0070C5B0 reads the shared +270 byte.
+    pub fn is_warped_out(&self) -> bool {
+        self.being_warped_out.unwrap_or(false)
+    }
+
+    pub(super) fn set_warped_out(&mut self, value: bool) {
+        self.being_warped_out = Some(value);
+    }
+
+    /// A pre-+270 save played with the union of the erase head, Teleport's
+    /// saved warp-out and the Ares building flag. Recover it once on load.
+    pub(super) fn restore_legacy_warp_out(&mut self) {
+        if self.being_warped_out.is_none() {
+            let departed = self
+                .chrono_warp_mut()
+                .is_some_and(|warp| warp.take_legacy_warp_out());
+            self.set_warped_out(
+                departed || self.temporal.chain_head().is_some() || self.ares_chronoshifting(),
+            );
+        }
+    }
+
     /// Whether an Ares ChronoWarp holds this building warped out. Only Ares
     /// code writes it, so in a game Ares doesn't play in it stays false.
     pub(crate) fn ares_chronoshifting(&self) -> bool {
@@ -1285,11 +1311,13 @@ impl GameEntity {
 
     /// The ChronoWarp's Building arm (Ares 3.0 `1006F4D0`) warps it out.
     pub(crate) fn begin_ares_chronoshift(&mut self) {
+        self.set_warped_out(true); // Ares 3.0 1006FA8C, before BuildingExt+0D
         self.seldom.ares.ares_chronoshifting = true;
     }
 
     /// ChronoWarpStateMachine::Update (Ares 3.0 `10070230`) puts it back.
     pub(crate) fn end_ares_chronoshift(&mut self) {
+        self.set_warped_out(false); // Ares 3.0 10070625, before BuildingExt+0D
         self.seldom.ares.ares_chronoshifting = false;
     }
 
@@ -2535,6 +2563,7 @@ impl GameEntity {
             invulnerability: None,
             airstrike_tint: Default::default(),
             temporal: Default::default(),
+            being_warped_out: Some(false), // Techno constructor 0x006F2DB4
             bomb: None,
             berserk: Default::default(),
             pending_entry: Default::default(),

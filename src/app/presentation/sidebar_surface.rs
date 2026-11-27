@@ -583,7 +583,7 @@ impl ColumnText {
 /// each surface pixel shows as one window pixel. Otherwise (the Large size,
 /// or a zoom between whole steps) the column's copy would resample it, so
 /// it goes over the copy: in the window after the zoom, or in the frame
-/// without one or under the in-match page, where the battlefield's text
+/// without one or under the Surrender box, where the battlefield's text
 /// stays too. Over the copy, the build clock (`0x006A9E97`) no longer blends
 /// over the queue counts gamemd draws before it.
 pub(crate) fn column_text(
@@ -641,8 +641,8 @@ fn place_column_text(
 }
 
 /// The window copy for this frame, after the zoom pass scaled the match frame
-/// into `view` (`app::frame`). Not under the in-match dialogs: they draw over
-/// the frame without depth (`in_match_page_draw`).
+/// into `view` (`app::frame`). The Surrender box draws over the frame
+/// without depth, so the column stays beneath it.
 pub(crate) fn draw_window_copy(
     renderer: &RendererState,
     screen: &GameScreen,
@@ -657,10 +657,7 @@ pub(crate) fn draw_window_copy(
     ) else {
         return;
     };
-    if matches!(
-        presentation.in_game_menu,
-        InGameMenuState::Page | InGameMenuState::Surrender
-    ) {
+    if presentation.in_game_menu == InGameMenuState::Surrender {
         return;
     }
     // The frame pass's depth (`dispatch_draw_passes`): the wheel zoom's

@@ -1474,14 +1474,15 @@ pub(super) fn dispatch_draw_passes(
         [tac_x, tac_y, tac_w, tac_h],
         bar_under,
     );
-    let (page_draw, page_texts) = crate::app::frontend::skirmish_shell_render::in_match_page_draw(
-        &platform.ime,
-        renderer,
-        frontend,
-        match_state,
-        process_assets,
-    );
-    renderer.window_ui.set_page_texts(page_texts);
+    let (surrender_draw, surrender_texts) =
+        crate::app::frontend::skirmish_shell_render::surrender_draw(
+            &platform.ime,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+        );
+    renderer.window_ui.set_surrender_texts(surrender_texts);
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
 
     // --- Screen-fixed UI: sidebar, messages, tooltips, cursor — UI camera (zoom=1.0) ---
@@ -1646,9 +1647,9 @@ pub(super) fn dispatch_draw_passes(
             draw_pooled_ui(&mut pass, &renderer.batch_renderer, pool, texture, key);
         }
     }
-    // State 7's 0xCF window over the live battlefield (0x0077D840).
-    if let Some(page) = page_draw.as_ref() {
-        page.draw(&mut pass, renderer, frontend);
+    // Tournament surrender confirmation over the live battlefield.
+    if let Some(dialog) = surrender_draw.as_ref() {
+        dialog.draw(&mut pass, renderer, frontend);
     }
 
     // --- Step 10.7: build description ---

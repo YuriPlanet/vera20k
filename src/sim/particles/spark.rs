@@ -329,16 +329,20 @@ pub fn reflect_slope_vector(
     probe_velocity: [NativeF32Bits; 3],
     slope_matrix: [NativeF32Bits; 12],
 ) -> Result<[NativeF32Bits; 3], SparkKernelError> {
-    reflect_slope_vector_with_elasticity(probe_velocity, slope_matrix, NativeF32Bits::ONE)
+    Ok(reflect_slope_vector_with_elasticity(
+        probe_velocity,
+        slope_matrix,
+        NativeF32Bits::ONE,
+    )?)
 }
 
-/// Shared original matrix path: Spark uses scalar one; ordinary
-/// Bullet AI4676FE..46771C supplies its BulletType Elasticity narrowed to f32.
+/// Spark uses scalar one. Bullet AI4676FE..46771C and BounceClass::Update
+/// 439D91..439E89 narrow their Elasticity to f32 before the local reflection.
 pub(crate) fn reflect_slope_vector_with_elasticity(
     probe_velocity: [NativeF32Bits; 3],
     slope_matrix: [NativeF32Bits; 12],
     elasticity: NativeF32Bits,
-) -> Result<[NativeF32Bits; 3], SparkKernelError> {
+) -> Result<[NativeF32Bits; 3], NativeX87Error> {
     let axis_probe = [
         probe_velocity[0],
         negate_f32(probe_velocity[1])?,
@@ -359,7 +363,7 @@ pub(crate) fn reflect_slope_vector_with_elasticity(
 
 fn inverse_orthonormal_matrix(
     matrix: [NativeF32Bits; 12],
-) -> Result<[NativeF32Bits; 12], SparkKernelError> {
+) -> Result<[NativeF32Bits; 12], NativeX87Error> {
     let zero = NativeF32Bits::POSITIVE_ZERO;
     let mut inverse = [zero; 12];
     inverse[0] = matrix[0];
@@ -391,19 +395,18 @@ fn inverse_orthonormal_matrix(
 
 fn negative_ordered_product_sum(
     pairs: [(NativeF32Bits, NativeF32Bits); 3],
-) -> Result<NativeF32Bits, SparkKernelError> {
+) -> Result<NativeF32Bits, NativeX87Error> {
     let first = multiply_value(pairs[0].0, pairs[0].1)?;
     let second = multiply_value(pairs[1].0, pairs[1].1)?;
     let third = multiply_value(pairs[2].0, pairs[2].1)?;
     let partial = X87Chop53::add(first, second);
     X87Chop53::store_f32(X87Chop53::neg(X87Chop53::add(partial, third)))
-        .map_err(SparkKernelError::from)
 }
 
 fn matrix_vector(
     matrix: [NativeF32Bits; 12],
     vector: [NativeF32Bits; 3],
-) -> Result<[NativeF32Bits; 3], SparkKernelError> {
+) -> Result<[NativeF32Bits; 3], NativeX87Error> {
     Ok([
         ordered_product_sum([
             (matrix[1], vector[1]),
@@ -425,15 +428,15 @@ fn matrix_vector(
 
 fn ordered_product_sum(
     pairs: [(NativeF32Bits, NativeF32Bits); 3],
-) -> Result<NativeF32Bits, SparkKernelError> {
+) -> Result<NativeF32Bits, NativeX87Error> {
     let first = multiply_value(pairs[0].0, pairs[0].1)?;
     let second = multiply_value(pairs[1].0, pairs[1].1)?;
     let third = multiply_value(pairs[2].0, pairs[2].1)?;
     let partial = X87Chop53::add(first, second);
-    X87Chop53::store_f32(X87Chop53::add(partial, third)).map_err(SparkKernelError::from)
+    X87Chop53::store_f32(X87Chop53::add(partial, third))
 }
 
-fn multiply_value(lhs: NativeF32Bits, rhs: NativeF32Bits) -> Result<X87Value, SparkKernelError> {
+fn multiply_value(lhs: NativeF32Bits, rhs: NativeF32Bits) -> Result<X87Value, NativeX87Error> {
     Ok(X87Chop53::mul(
         X87Chop53::load_f32(lhs)?,
         X87Chop53::load_f32(rhs)?,
@@ -443,13 +446,12 @@ fn multiply_value(lhs: NativeF32Bits, rhs: NativeF32Bits) -> Result<X87Value, Sp
 fn multiply_store_f32(
     lhs: NativeF32Bits,
     rhs: NativeF32Bits,
-) -> Result<NativeF32Bits, SparkKernelError> {
-    X87Chop53::store_f32(multiply_value(lhs, rhs)?).map_err(SparkKernelError::from)
+) -> Result<NativeF32Bits, NativeX87Error> {
+    X87Chop53::store_f32(multiply_value(lhs, rhs)?)
 }
 
-fn negate_f32(value: NativeF32Bits) -> Result<NativeF32Bits, SparkKernelError> {
+fn negate_f32(value: NativeF32Bits) -> Result<NativeF32Bits, NativeX87Error> {
     X87Chop53::store_f32(X87Chop53::neg(X87Chop53::load_f32(value)?))
-        .map_err(SparkKernelError::from)
 }
 
 /// The colour step Spark and Railgun particles share (Railgun's copy is

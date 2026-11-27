@@ -1553,6 +1553,7 @@ pub(crate) struct MapLoadInitial {
     retained_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
     /// Inactive current-bit defaults from the outgoing Scenario's owners.
     retained_campaign_special_flags: Option<crate::map::basic::SpecialFlagsSection>,
+    pub(super) supplied_tiberium: Option<crate::sim::scenario_session::TiberiumFlags>,
     /// ClearScene retains local values across fresh Scenario reads.
     retained_local_variables: Option<crate::sim::trigger_runtime::RetainedLocalVariables>,
     /// Ordered launch-generation Building constructor effects. Preview traces
@@ -1696,12 +1697,11 @@ impl MapLoadInitial {
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
     /// Full_Init/Fill); failures can discard this snapshot without losing it.
-    /// The same inactive transfer retains current SpecialFlags and offline local
-    /// values. ClearScene6851F0 clears globals, but ReadLocal689B20 retains
-    /// unassigned locals. VERA starts fresh LAN/WOL worlds from map assignments
-    /// only: peers cannot share prior-match locals. Replays and rejoins run in
-    /// a newly started process and never had any; a watch loads in the running
-    /// game and starts fresh too.
+    /// Offline campaigns keep omitted SpecialFlags (Read_SpecialFlags 0x006B8CA0)
+    /// and unassigned locals (ReadLocal 0x00689B20) from their resident world.
+    /// Fresh LAN/WOL campaigns use the map and the shared scenario defaults.
+    /// Each peer may have played a different match before entering the room.
+    /// Replays supply the ore flags recorded at frame zero.
     ///
     /// RESIDUAL (VERA network adaptation): a LAN/WOL co-op campaign's next
     /// mission and a retried mission are such starts too, so they drop the
@@ -1715,16 +1715,11 @@ impl MapLoadInitial {
         mut resident: Option<&mut crate::sim::world::Simulation>,
         topology: crate::sim::scenario_session::ExecutionTopology,
     ) {
-        self.retained_campaign_special_flags = resident
-            .as_deref()
-            .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = if topology.is_lockstep() {
-            None
-        } else {
-            resident
-                .as_deref()
-                .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load)
-        };
+        let offline_history = resident.as_deref().filter(|_| !topology.is_lockstep());
+        self.retained_campaign_special_flags =
+            offline_history.map(crate::sim::world::Simulation::retained_campaign_special_flags);
+        self.retained_local_variables = offline_history
+            .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load);
         if let Some(generated) = self.mapgen_rng_continuation.take() {
             retention.publish_mapgen_continuation(resident.as_deref_mut(), generated);
             self.mapgen_rng_continuation =
@@ -1786,6 +1781,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation: None,
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            supplied_tiberium: None,
             retained_local_variables: None,
             generated_construction_trace: None,
             generated_rules: None,
@@ -1973,6 +1969,46 @@ mod fresh_transport_tests {
         assert!(!after_history.trigger_runtime().local_variable_is_set(7));
         assert!(!after_history.trigger_runtime().local_variable_is_set(8));
         assert!(after_history.trigger_runtime().local_variable_is_set(9));
+    }
+
+    #[test]
+    fn fresh_campaign_ore_flags_use_local_history_only_in_offline_play() {
+        use crate::sim::scenario_session::{ExecutionTopology, ScenarioDescriptor};
+
+        let launch_flags = |topology, prior_growth, map_growth| {
+            let mut resident = Simulation::from_descriptor(&ScenarioDescriptor {
+                tiberium_grows_flag: prior_growth,
+                tiberium_spreads_flag: true,
+                ..Default::default()
+            });
+            let mut map = map_with_locals("");
+            map.special_flags.tiberium_grows = map_growth;
+            let mut load = MapLoadInitial::from_test_map_source(
+                map,
+                LoadedMapSource::Loose {
+                    cache_lease: Default::default(),
+                    path: PathBuf::from("CAMPAIGN.MAP"),
+                    payload_len: 1,
+                    source_sha256: crate::util::sha256::sha256_hex(b"campaign flags"),
+                },
+            );
+            load.retain_process_state(&mut Default::default(), Some(&mut resident), topology);
+            load.map_data
+                .special_flags
+                .resolve_campaign_defaults(load.retained_campaign_special_flags.as_ref());
+            load.map_data.special_flags.tiberium_grows
+        };
+        let lockstep = ExecutionTopology::LockstepNetwork;
+        assert_eq!(
+            launch_flags(lockstep, true, None),
+            launch_flags(lockstep, false, None)
+        );
+        assert_eq!(launch_flags(lockstep, true, None), Some(false));
+        assert_eq!(launch_flags(lockstep, false, Some(true)), Some(true));
+        assert_eq!(
+            launch_flags(ExecutionTopology::LocalOffline, true, None),
+            Some(true)
+        );
     }
 
     #[test]
@@ -2201,6 +2237,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation,
             retained_process_mapgen: _,
             retained_campaign_special_flags: _,
+            supplied_tiberium,
             retained_local_variables: _,
             generated_construction_trace,
             generated_rules,
@@ -2342,10 +2379,6 @@ impl MapLoadInitial {
                 .unwrap_or_default(),
             theater: map_data.header.theater.clone(),
             rule_policy,
-            no_damage: false,
-            // Same nonzero-mode replacement as the match load: the launch
-            // session's Harvester Truce byte, not the map's key.
-            harvester_immune: match_launch_descriptor.session().options.harvester_truce,
             free_radar: map_data.basic.free_radar.unwrap_or(false),
             ignore_global_ai_triggers: map_data.basic.ignore_global_ai_triggers.unwrap_or(false),
             timer_inherit: map_data.basic.timer_inherit.unwrap_or(false),
@@ -2355,10 +2388,6 @@ impl MapLoadInitial {
             truck_crate: map_data.basic.truck_crate.unwrap_or(false),
             ice_growth_enabled: map_data.basic.ice_growth_enabled,
             vein_growth_enabled: map_data.basic.vein_growth_enabled,
-            // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-            // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-            tiberium_grows_flag: rule_policy.uses_room_options(),
-            tiberium_spreads_flag: rule_policy.uses_room_options(),
             // Native Resize constructs a square cell-array extent of SizeW+SizeH.
             map_width: scenario_cell_extent,
             map_height: scenario_cell_extent,
@@ -2370,7 +2399,14 @@ impl MapLoadInitial {
             lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(
                 &lighting_profiles,
             ),
-        };
+            ..Default::default()
+        }
+        .with_authored_special_flags(
+            &map_data.special_flags,
+            match_launch_descriptor.session().options.harvester_truce,
+            crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+            supplied_tiberium,
+        );
         let (mut simulation, scenario_prefix_projection) = bootstrap_rng
             .into_stock_offline_staged_simulation(&scenario_descriptor, bound_scenario_prefix)
             .expect("matching stock-offline Scenario prefix");
@@ -2912,6 +2948,7 @@ pub(crate) fn load_map_initial_with_assets(
             mapgen_rng_continuation: Some(mapgen_rng_continuation),
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            supplied_tiberium: None,
             retained_local_variables: None,
             generated_construction_trace: Some(generated_construction_trace),
             generated_rules: Some(generated_rules),
@@ -2977,6 +3014,7 @@ pub(crate) fn load_map_initial_with_assets(
         mapgen_rng_continuation: None,
         retained_process_mapgen: None,
         retained_campaign_special_flags: None,
+        supplied_tiberium: None,
         retained_local_variables: None,
         generated_construction_trace: None,
         generated_rules: None,
@@ -3217,6 +3255,7 @@ fn load_map_first_step(
         mapgen_rng_continuation,
         retained_process_mapgen,
         retained_campaign_special_flags,
+        supplied_tiberium,
         retained_local_variables,
         generated_construction_trace,
         generated_rules,
@@ -3579,6 +3618,8 @@ fn load_map_first_step(
                         &map_data.special_flags,
                         skirmish_launch_session
                             .is_some_and(|launch| launch.options.harvester_truce),
+                        full_init_entry_mode,
+                        supplied_tiberium,
                     );
                             log::info!("Match seed: 0x{:08X}", scenario_descriptor.seed);
                             // Consume the paired RNG/native-ID prefix here: Fill and every later load

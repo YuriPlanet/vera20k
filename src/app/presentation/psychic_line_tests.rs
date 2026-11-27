@@ -11,6 +11,7 @@ fn view() -> TacticalViewport {
 
 fn lines(sim: &Simulation, rules: &RuleSet, planning: bool, time: u32) -> Vec<SurfaceStroke> {
     build_target_line_strokes(
+        None,
         &TargetLineState::default(),
         planning,
         Some(sim),

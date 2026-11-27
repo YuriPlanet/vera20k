@@ -7,6 +7,7 @@
 //! - Part of sim/ - depends on sim/zone_map, pathfinding passability, and rules movement zones.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, PoisonError};
 
@@ -838,6 +839,26 @@ impl std::fmt::Debug for PrecheckMemo {
     }
 }
 
+/// Threat-weighted level searches already answered under one Foot's threat:
+/// one coefficient over one House's threat, which the owner holds unchanged
+/// while the memo lives, on hierarchies it does not change. Approach_Target
+/// asks EstimateZoneCost about every candidate cell around its target, and
+/// those prechecks keep asking for the same corridors; a hard-to-reach
+/// target used to search the coarse levels afresh for each candidate. The
+/// first precheck fixes the coefficient; one under another searches without
+/// the memo. The answers are exact, as in [`PrecheckMemo`].
+#[derive(Default)]
+pub(crate) struct ThreatPrecheckMemo {
+    coefficient: OnceCell<NativeF64Bits>,
+    answers: PrecheckMemo,
+}
+
+impl ThreatPrecheckMemo {
+    fn holds(&self, coefficient: NativeF64Bits) -> bool {
+        *self.coefficient.get_or_init(|| coefficient) == coefficient
+    }
+}
+
 /// Original42C290: retained House threat is estimated before best-cost,
 /// parent/passability and exclusion gates, multiplied by Foot4DC760's
 /// coefficient, and converted by original7C5F00 before the binary32 cost spill.
@@ -849,6 +870,47 @@ pub fn zone_precheck_flat(
     movement_zone: MovementZone,
     exclusions: &ZonePrecheckExclusions,
     threat: Option<ZonePrecheckThreat<'_>>,
+) -> Result<ZonePrecheckOutcome, String> {
+    zone_precheck(
+        hierarchy,
+        start_level0,
+        goal_level0,
+        movement_zone,
+        exclusions,
+        threat,
+        None,
+    )
+}
+
+/// [`zone_precheck_flat`] without exclusions, whose threat-weighted level
+/// searches `memo` answers once per corridor.
+pub(crate) fn zone_precheck_flat_memoized(
+    hierarchy: &ZoneHierarchy,
+    start_level0: ZoneId,
+    goal_level0: ZoneId,
+    movement_zone: MovementZone,
+    threat: ZonePrecheckThreat<'_>,
+    memo: &ThreatPrecheckMemo,
+) -> Result<ZonePrecheckOutcome, String> {
+    zone_precheck(
+        hierarchy,
+        start_level0,
+        goal_level0,
+        movement_zone,
+        &ZonePrecheckExclusions::default(),
+        Some(threat),
+        Some(memo),
+    )
+}
+
+fn zone_precheck(
+    hierarchy: &ZoneHierarchy,
+    start_level0: ZoneId,
+    goal_level0: ZoneId,
+    movement_zone: MovementZone,
+    exclusions: &ZonePrecheckExclusions,
+    threat: Option<ZonePrecheckThreat<'_>>,
+    threat_memo: Option<&ThreatPrecheckMemo>,
 ) -> Result<ZonePrecheckOutcome, String> {
     let coefficient = threat
         .as_ref()
@@ -869,8 +931,18 @@ pub fn zone_precheck_flat(
         return Ok(ZonePrecheckOutcome::Failed);
     };
 
-    // Exclusions and threat costs are inputs the memo key does not hold.
-    let memo = (exclusions.is_empty() && active_threat.is_none()).then_some(&hierarchy.memo);
+    // Exclusions and threat costs are inputs the memo key does not hold; a
+    // threat memo holds one threat's costs.
+    let memo = if !exclusions.is_empty() {
+        None
+    } else if active_threat.is_none() {
+        Some(&hierarchy.memo)
+    } else {
+        threat_memo
+            .zip(threat.as_ref())
+            .filter(|(memo, context)| memo.holds(context.coefficient))
+            .map(|(memo, _)| &memo.answers)
+    };
     let mut levels: [Option<Arc<PrecheckLevelResult>>; ZONE_PRECHECK_LEVELS] = Default::default();
     #[cfg(any(test, feature = "test-support"))]
     let mut pops = Vec::new();

@@ -45,6 +45,7 @@ released_saves! {
     main_b268ba798: "main-b268ba798", 0xC66C_E753, Skirmish;
     main_0b918d053: "main-0b918d053", 0x9909_B4E7, Skirmish;
     main_c3609b58a: "main-c3609b58a", 0xD5A9_6CCA, Skirmish;
+    main_a17a144ca: "main-a17a144ca", 0xC0BB_86C8, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
@@ -207,6 +208,25 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
         assert_eq!(sim.session().game_mode(), mode, "{release}");
         let player = sim.session().current_house().expect("fixture has a player");
         assert_eq!(sim.interner().resolve(player), "Americans", "{release}");
+        if release == "main-a17a144ca" {
+            let (tank_id, tank) = sim
+                .entities()
+                .iter_sorted()
+                .find(|(_, entity)| sim.interner().resolve(entity.type_ref()) == "APC")
+                .unwrap();
+            let head = tank.temporal.chain_head().expect("the saved erase head");
+            let firer = sim.entities().get(head).expect("the saved shooter");
+            assert!(!tank.is_warped_out() && !tank.ai_frozen());
+            assert_eq!(firer.temporal.warp_target(), Some(tank_id));
+            assert_eq!(
+                firer.temporal.warp_remaining(),
+                Some(if sim.session().tick() == 91 {
+                    1000
+                } else {
+                    992
+                })
+            );
+        }
     };
     exercise(
         release,

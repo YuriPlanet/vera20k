@@ -21,15 +21,12 @@ use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
 use crate::audio::sfx::SfxPlayer;
-use crate::ui::game_screen::GameScreen;
 use crate::ui::lan_shell::{LanChatLine, append_wrapped};
-use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{
-    WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_layout_in,
-    wol_page_received_layout, wol_page_received_layout_in,
+    WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_received_layout,
 };
 use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_chat::{self, WolChatLine};
@@ -40,34 +37,14 @@ use winit::window::Window;
 /// `[0x7EEF2C]`: `0x11E`'s own echo.
 const REPLY_COLOR: u32 = 0xF0F0;
 
-/// In a match, the frame the battlefield draws into: the in-match `0xCF`
-/// centres over it, at its source size. Elsewhere the boxes centre like the
-/// shell's other menu boxes, over the window.
-fn match_frame(renderer: &RendererState, screen: &GameScreen) -> Result<RectPx, (i32, i32)> {
+pub(crate) fn page_layout(renderer: &RendererState) -> WolPageLayout {
     let config = &renderer.gpu.config;
-    match *screen == crate::app::GameScreen::InGame {
-        true => Ok(RectPx::new(
-            0,
-            0,
-            renderer.render_width(screen) as i32,
-            renderer.render_height(screen) as i32,
-        )),
-        false => Err((config.width as i32, config.height as i32)),
-    }
+    wol_page_layout(config.width as i32, config.height as i32)
 }
 
-pub(crate) fn page_layout(renderer: &RendererState, screen: &GameScreen) -> WolPageLayout {
-    match_frame(renderer, screen).map_or_else(|(w, h)| wol_page_layout(w, h), wol_page_layout_in)
-}
-
-pub(crate) fn received_layout(
-    renderer: &RendererState,
-    screen: &GameScreen,
-) -> WolPageReceivedLayout {
-    match_frame(renderer, screen).map_or_else(
-        |(w, h)| wol_page_received_layout(w, h),
-        wol_page_received_layout_in,
-    )
+pub(crate) fn received_layout(renderer: &RendererState) -> WolPageReceivedLayout {
+    let config = &renderer.gpu.config;
+    wol_page_received_layout(config.width as i32, config.height as i32)
 }
 
 pub(crate) fn page_dialog(wol: Option<&WolVisit>) -> Option<&WolPageDialog> {
@@ -101,18 +78,17 @@ fn top(wol: Option<&WolVisit>) -> Option<DialogResourceId> {
 /// `dialog`'s widgets, where they sit and its transcript's id.
 fn widgets(
     renderer: &RendererState,
-    screen: &GameScreen,
     dialog: DialogResourceId,
 ) -> (fn() -> vera20k_gui::NodeSpec, Rects, u16) {
     if dialog == PAGE_DIALOG {
-        let layout = page_layout(renderer, screen);
+        let layout = page_layout(renderer);
         (
             page_spec,
             Box::new(move |id| layout.rect_of(id)),
             PAGE_TRANSCRIPT,
         )
     } else {
-        let layout = received_layout(renderer, screen);
+        let layout = received_layout(renderer);
         (
             received_spec,
             Box::new(move |id| layout.rect_of(id)),
@@ -141,7 +117,7 @@ fn sync(
     renderer: &RendererState,
     dialog: DialogResourceId,
 ) -> Option<NodeId> {
-    let (spec, rect_of, list) = widgets(renderer, &frontend.screen, dialog);
+    let (spec, rect_of, list) = widgets(renderer, dialog);
     let root = leaf::place(
         &mut frontend.shell_controller,
         dialog,
@@ -186,29 +162,28 @@ pub(crate) fn close_stale(frontend: &mut FrontendState) {
     }
 }
 
-/// `0xCF` built over the stack and opened by `open` on its widgets with
-/// the page globals.
-fn begin(
+/// Open the lobby or room pager (0x0078BA3E, 0x00790C8D and 0x0079235F).
+/// The player card opens it already addressed to the selected player.
+pub(crate) fn open_page_dialog(
     frontend: &mut FrontendState,
     platform: &mut PlatformState,
-    match_state: &mut MatchState,
+    match_state: &MatchState,
     process_assets: &ProcessAssets,
     renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
-    open: impl FnOnce(
-        &mut DialogController,
-        &mut super::lobby::WolLobbyGlobals,
-    ) -> (WolPageDialog, Vec<WolPageAction>),
+    recipient: Option<&str>,
 ) {
     if frontend.wol.is_none() {
         return;
     }
     push_fresh(frontend, renderer, PAGE_DIALOG);
-    let (page, actions) = open(
-        &mut frontend.shell_controller,
-        &mut frontend.wol_lobby_globals,
-    );
+    let mut page = WolPageDialog::default();
+    let actions = recipient.map_or_else(Vec::new, |name| {
+        page.address(
+            &mut frontend.shell_controller,
+            name,
+            &mut frontend.wol_lobby_globals.page_last_control,
+        )
+    });
     if let Some(visit) = frontend.wol.as_mut() {
         visit.page_dialog = Some(Box::new(page));
     }
@@ -218,148 +193,18 @@ fn begin(
         match_state,
         process_assets,
         renderer,
-        audio,
-        persistence,
         actions,
     );
 }
 
-/// `0x0078BA3E`, `0x00790C8D`, `0x0079235F` and, in a match, `0x0077D840`:
-/// `UI__BeginDialog(0xCF)` and its modal loop. The input lock `[0xA8ED9C]`
-/// and the keyboard clears around it have nothing to hold here: the dialog
-/// takes every key while it exists.
-pub(crate) fn open_page_dialog(
-    frontend: &mut FrontendState,
-    platform: &mut PlatformState,
-    match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
-) {
-    let last_pager = frontend
-        .wol
-        .as_ref()
-        .and_then(|visit| visit.last_pager.clone());
-    let now = reply_window_now(crate::app::match_runtime::frame_pacer::wall_clock_ms());
-    begin(
-        frontend,
-        platform,
-        match_state,
-        process_assets,
-        renderer,
-        audio,
-        persistence,
-        |c, globals| {
-            WolPageDialog::open(
-                c,
-                &mut globals.page_reply_window,
-                now,
-                last_pager.as_deref(),
-                &mut globals.page_last_control,
-            )
-        },
-    );
-}
-
-/// VERA's player card's Message: `0xCF` opened on its player, addressed as
-/// `0x497` addresses the last pager. The reply window stays for a later open.
-pub(crate) fn open_page_dialog_to(
-    frontend: &mut FrontendState,
-    platform: &mut PlatformState,
-    match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
-    name: &str,
-) {
-    begin(
-        frontend,
-        platform,
-        match_state,
-        process_assets,
-        renderer,
-        audio,
-        persistence,
-        |c, globals| {
-            let mut page = WolPageDialog::default();
-            let actions = page.address(c, name, &mut globals.page_last_control);
-            (page, actions)
-        },
-    );
-}
-
-/// State 7 (`State_Machine 0x0048CC2C`): the PageUser event's dialog over
-/// the running match. The state machine's admission runs first; Cancel
-/// ends the state (`0x0048CC31`).
-pub(crate) fn open_in_match(
-    frontend: &mut FrontendState,
-    platform: &mut PlatformState,
-    match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
-) {
-    if frontend.wol.is_none() {
-        return;
-    }
-    App::enter_in_game_menu_state(
-        platform,
-        renderer,
-        frontend,
-        match_state,
-        process_assets,
-        audio,
-        persistence,
-        InGameMenuState::Page,
-    );
-    if match_state.match_presentation.in_game_menu == InGameMenuState::Page {
-        // KeyboardClear 0x0054F720 at 0x0077D861 (and 0x0077D895 on close).
-        match_state.input.clear_command_latches();
-        open_page_dialog(
-            frontend,
-            platform,
-            match_state,
-            process_assets,
-            renderer,
-            audio,
-            persistence,
-        );
-    }
-}
-
-/// `0xCF` closes; in a match its state ends with it.
-pub(crate) fn close_page_dialog(
-    frontend: &mut FrontendState,
-    platform: &mut PlatformState,
-    match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
-) {
+/// Close the shell pager before returning to the lobby or entering a match.
+pub(crate) fn close_page_dialog(frontend: &mut FrontendState) {
     if let Some(visit) = frontend.wol.as_mut() {
         visit.page_dialog = None;
     }
     close_stale(frontend);
-    if match_state.match_presentation.in_game_menu == InGameMenuState::Page {
-        match_state.input.clear_command_latches();
-        App::enter_in_game_menu_state(
-            platform,
-            renderer,
-            frontend,
-            match_state,
-            process_assets,
-            audio,
-            persistence,
-            InGameMenuState::Closed,
-        );
-    }
 }
 
-/// `0x11E` closes.
 pub(super) fn close_received(frontend: &mut FrontendState) {
     if let Some(visit) = frontend.wol.as_mut() {
         visit.page_received = None;
@@ -392,7 +237,7 @@ fn append_line(
     dialog: DialogResourceId,
     line: LanChatLine,
 ) -> bool {
-    let (_, rect_of, id) = widgets(renderer, &frontend.screen, dialog);
+    let (_, rect_of, id) = widgets(renderer, dialog);
     let rect = rect_of(id).unwrap_or_default();
     let font = &renderer.bit_font;
     let Some(lines) = frontend.wol.as_mut().and_then(|visit| lines(visit, dialog)) else {
@@ -459,7 +304,7 @@ pub(super) fn current_window_line(
     };
     if in_game {
         let text = String::from_utf16_lossy(&line.text);
-        crate::app::input::messages::post_wol_result_row(
+        crate::app::input::messages::post_wol_row(
             platform,
             renderer,
             diag,
@@ -627,11 +472,9 @@ fn send_page(
 fn apply(
     frontend: &mut FrontendState,
     platform: &mut PlatformState,
-    match_state: &mut MatchState,
+    match_state: &MatchState,
     process_assets: &ProcessAssets,
     renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
     actions: Vec<WolPageAction>,
 ) {
     for action in actions {
@@ -656,15 +499,7 @@ fn apply(
                 );
             }
             WolPageAction::Notice(key) => notice(frontend, renderer, process_assets, key),
-            WolPageAction::Close => close_page_dialog(
-                frontend,
-                platform,
-                match_state,
-                process_assets,
-                renderer,
-                audio,
-                persistence,
-            ),
+            WolPageAction::Close => close_page_dialog(frontend),
         }
     }
     platform.window.request_redraw();
@@ -764,7 +599,6 @@ pub(crate) fn mouse(
     process_assets: &ProcessAssets,
     renderer: &RendererState,
     audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
     pressed: bool,
 ) {
     let Some(dialog) = top(frontend.wol.as_ref()) else {
@@ -810,8 +644,6 @@ pub(crate) fn mouse(
             match_state,
             process_assets,
             renderer,
-            audio,
-            persistence,
             actions.unwrap_or_default(),
         );
         return;
@@ -844,8 +676,6 @@ pub(crate) fn key_press(
     match_state: &mut MatchState,
     process_assets: &ProcessAssets,
     renderer: &RendererState,
-    audio: &mut AppAudioRuntime,
-    persistence: &mut PersistenceState,
     code: Option<KeyCode>,
     text: Option<&str>,
 ) {
@@ -868,8 +698,6 @@ pub(crate) fn key_press(
         match_state,
         process_assets,
         renderer,
-        audio,
-        persistence,
         actions.unwrap_or_default(),
     );
     // 0xCF's focused NewEdit keeps its caret in view: 0x00623880 paints

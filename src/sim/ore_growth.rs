@@ -132,10 +132,9 @@ impl OreGrowthConfig {
 
     /// Resolve the native gates for this session.
     ///
-    /// `[Basic] TiberiumGrowthEnabled` is read in every game mode. The
-    /// The session owns the two admitted scenario flags. Stock skirmish and
-    /// multiplayer force both on in PregameSetup (0x005E74CD), and Full_Init
-    /// copies the staged word at 0x00687C23. The campaign reader (0x006B8CA0)
+    /// `[Basic] TiberiumGrowthEnabled` is read in every game mode. An offline
+    /// skirmish copies the process flags at 0x00687C23. Network PregameSetup
+    /// (0x005E74CD) sets both bits. The campaign reader (0x006B8CA0)
     /// takes the map overrides, with the retained bits as defaults.
     /// `[General] TiberiumGrows/TiberiumSpreads` have no gamemd reader (the
     /// only readers of those key strings are `[SpecialFlags]` I/O at
@@ -2650,10 +2649,10 @@ SpreadPercentage=.06
     }
 
     /// The driver fires on frame 0 (due timers), reloads to 659, and fires
-    /// again on frames 659 and 1318 in skirmish; the same `Growth=2200` type
+    /// again on frames 659 and 1318 with accelerated growth; the same `Growth=2200` type
     /// without the flag reloads to 2200 and does not refire inside 1400 frames.
     #[test]
-    fn gsi_09_04_growth_driver_fires_at_native_skirmish_cadence() {
+    fn gsi_09_04_growth_driver_uses_the_session_cadence() {
         let (_ini, overlay_registry, tiberium_types) = tiberium_rebuild_fixture();
         let riparius = TiberiumTypeId(0);
         assert_eq!(tiberium_types.get(riparius).unwrap().growth, 2200);
@@ -2700,8 +2699,8 @@ SpreadPercentage=.06
     }
 
     /// `OreGrowthConfig::resolve`: the flag bits are the session's in every
-    /// game mode (the startup session forces them on when GameMode != 0 and
-    /// reads the map `[SpecialFlags]` keys in GameMode 0, `0x006B8CA0`);
+    /// game mode. Nonzero GameMode copies the staged bits. Campaign reads
+    /// the map's `[SpecialFlags]` keys at `0x006B8CA0`.
     /// `[Basic] TiberiumGrowthEnabled` gates in every mode.
     #[test]
     fn gsi_09_04_config_resolves_flag_bits_from_the_session() {

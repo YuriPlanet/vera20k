@@ -79,13 +79,18 @@ fn retail_harrier_move_bobs_only_its_body_at_the_committed_draw_frame() {
         // Both stable and posed body paths consume this point before bounds
         // and depth; shadows continue to use the physical screen position.
         assert_eq!(
-            aircraft_body_anchor(
-                &sim,
-                &ObjectRecord::of_test_sim(&sim, &rules, plane),
-                Some(&rules),
-                cells.as_ref(),
-                anchor
-            ),
+            {
+                let geometry = VehicleGeometry::read(
+                    &ObjectRecord::of_test_sim(&sim, &rules, plane),
+                    EntityDrawBand::Air,
+                    sim.session().binary_frame(),
+                    Some(&rules),
+                    rules.object("ORCA"),
+                    None,
+                    || true,
+                );
+                geometry.body_point(anchor)
+            },
             [anchor[0], anchor[1] + expected as f32],
             "phase{phase}, height{height}"
         );
@@ -109,4 +114,127 @@ fn retail_harrier_move_bobs_only_its_body_at_the_committed_draw_frame() {
         }
     }
     panic!("ordinary Move must reach low-flight bob and the positive/negative native body phases");
+}
+
+#[test]
+fn climbing_black_hawk_and_harrier_share_height_and_facing_with_their_ground_shadow() {
+    use crate::sim::components::DriveCoord;
+    use crate::sim::world::Simulation;
+
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    for (name, band) in [("SHAD", EntityDrawBand::Air), ("ORCA", EntityDrawBand::Top)] {
+        let mut sim = Simulation::new();
+        let id = sim
+            .spawn_object(name, "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let mut motion = UnitMotion::default();
+        let start = DriveCoord::cell(10, 10, 160);
+        let end = DriveCoord {
+            x: start.x + 96,
+            y: start.y + 48,
+            z: start.z + 96,
+        };
+        let object = rules.object(name);
+        let record_at = |sim: &mut Simulation, coord: DriveCoord, turning: bool| {
+            use crate::sim::movement::FacingClass;
+            let object = sim.entity_mut_for_test(id).unwrap();
+            object.position.put_location(coord);
+            let facing = if turning { 0xf000 } else { 0x1000 };
+            object.body_facing.snap(facing, 0);
+            if object.category() == EntityCategory::Aircraft {
+                object
+                    .locomotor
+                    .as_mut()
+                    .unwrap()
+                    .set_current_fly_speed_for_test(crate::util::fixed_math::SimFixed::from_num(4));
+                let mut secondary = FacingClass::new(facing, 4);
+                if turning {
+                    secondary.set(0x2000, 0);
+                }
+                object.barrel_facing = Some(secondary);
+            }
+            ObjectRecord::of_test_in(object, Some(&terrain), &rules)
+        };
+        let shadow = |record: &ObjectRecord, draw: &VehicleGeometry, frame| {
+            if record.category() == EntityCategory::Aircraft {
+                let s = aircraft_draw_shadow(record, object, Some(&terrain), draw).unwrap();
+                (s.anchor, s.facing)
+            } else {
+                let s = lifted_unit_shadow_pose(record, &terrain, draw, frame).unwrap();
+                (s.anchor, s.facing)
+            }
+        };
+        let previous = record_at(&mut sim, start, true);
+        motion.begin_draw(2, Some(1.0), 1.5);
+        let from = VehicleGeometry::read(
+            &previous,
+            band,
+            2,
+            Some(&rules),
+            object,
+            Some(&motion),
+            || true,
+        );
+        motion.drawn(id, from.sample.unwrap());
+        motion.commit_presented();
+
+        let current = record_at(&mut sim, end, false);
+        let to = VehicleGeometry::read(&current, band, 3, Some(&rules), object, None, || true);
+        motion.begin_draw(3, Some(0.5), 1.5);
+        let mid = VehicleGeometry::read(
+            &current,
+            band,
+            3,
+            Some(&rules),
+            object,
+            Some(&motion),
+            || true,
+        );
+        let midpoint = |a: [f32; 2], b: [f32; 2]| [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
+        assert_eq!(
+            mid.xyz,
+            [start.x + 48, start.y + 24, start.z + 48],
+            "{name} XYZ"
+        );
+        assert_eq!(mid.depth_xyz, mid.xyz, "{name} Foot depth query");
+        assert_eq!(
+            mid.body_point(mid.pose.screen),
+            midpoint(
+                from.body_point(from.pose.screen),
+                to.body_point(to.pose.screen)
+            ),
+            "{name} body"
+        );
+        assert_eq!(
+            shadow(&current, &mid, 3).0,
+            midpoint(shadow(&previous, &from, 2).0, shadow(&current, &to, 3).0),
+            "{name} grounded stencil"
+        );
+        assert_eq!(
+            (mid.pose.body, shadow(&current, &mid, 3).1),
+            (0, 0),
+            "{name} body and shadow turn through north"
+        );
+        if current.category() == EntityCategory::Aircraft {
+            let Some(PoseTilt::FlyNormal { roll: banked, .. }) = from.tilt else {
+                panic!("the banking Harrier must use its native Fly pose");
+            };
+            let Some(PoseTilt::FlyNormal { roll, .. }) = mid.tilt else {
+                panic!("the straightening Harrier must retain its partial bank");
+            };
+            assert!(banked.abs() > 0.001 && (2.0 * roll - banked).abs() < 1e-6);
+            assert!(mid.transient_tilt);
+        }
+        let row = |record: &ObjectRecord, draw: &VehicleGeometry| {
+            ground_sort_row(record, draw.pose.screen[1]) + draw.lift_correction
+        };
+        assert_eq!(
+            row(&current, &mid),
+            (row(&previous, &from) + row(&current, &to)) * 0.5,
+            "{name} ground row"
+        );
+    }
 }

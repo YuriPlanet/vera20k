@@ -109,7 +109,7 @@ lang: zh-CN
 | **界面** | 侧边栏大小（标准/大/特大）【[VERA] Sidebar】、建造列表列数 2–5【[VERA] SidebarColumns】、高清雷达【[VERA] HdRadar】、平滑侧边栏【[VERA] SmoothSidebar】、生命条（原版/所有单位/所有未满血单位）【[VERA] HealthBars】、工具提示【[Options] ToolTips】、目标线【[Options] UnitActionLines】、显示隐藏物体【[Options] ShowHidden】、精简超级武器计时器【[VERA] CompactSuperTimers】、按队伍合并超级武器计时器【[VERA] GroupedSuperTimers】、详细 EVA 文字【[VERA] DetailedEvaText】、Convenience Help（便利提示）【[VERA] ConvenienceHelp】；按钮：编辑布局 *(只在对局中可用)* |
 | **音频** | 音乐音量【[Audio] ScoreVolume】、音效音量【[Audio] SoundVolume】、语音音量【[Audio] VoiceVolume】 |
 | **操作** | 滚动速度【[Options] ScrollRate】、右键下令【[VERA] RightClickOrders】、小地图信标【[VERA] MinimapBeacons】、鼠标滚轮缩放【[VERA] MouseWheelZoom】、鼠标锁定在窗口内【[VERA] LockCursor】 |
-| **常规** | 语言【[VERA] Language】、原版 YR 风格【[VERA] YROriginalStyle】、平滑在线菜单【[VERA] SmoothOnlineMenus】、高清地图预览【[VERA] HdMapPreviews】*(网页版没有)*、VERA 图标【[VERA] VeraIcon】、跳过片头【[VERA] SkipIntro】*(下次启动生效)*、显示字符串键【[VERA] ShowStringKeys】；按钮：检查更新 *(对局中锁定，网页版没有)* |
+| **常规** | 语言【[VERA] Language】、原版 YR 风格【[VERA] YROriginalStyle】、平滑单位移动【[VERA] RenderInterpolation】、平滑在线菜单【[VERA] SmoothOnlineMenus】、高清地图预览【[VERA] HdMapPreviews】*(网页版没有)*、VERA 图标【[VERA] VeraIcon】、跳过片头【[VERA] SkipIntro】*(下次启动生效)*、显示字符串键【[VERA] ShowStringKeys】；按钮：检查更新 *(对局中锁定，网页版没有)* |
 
 “战场高刷新率”默认关闭。可在显示页开启，也可在 `VERA.INI` 的 `[VERA]` 节中设置 `HighRefreshRateInBattle=yes`。无论垂直同步是否开启，只要绘制速度足够快，战场帧率就能达到显示器的刷新率。单位移动会更流畅，但显卡负载可能增加。
 

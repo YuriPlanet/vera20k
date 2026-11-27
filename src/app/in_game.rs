@@ -5,9 +5,11 @@ use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 
@@ -155,17 +157,6 @@ impl App {
         state.match_state.match_presentation.options_page_category = None;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
-        // A match's 0xCF ends with the game: its pump 0x00623120 stops the
-        // loop once Main_Tick reports the game over (0x0062314E..0x00623157).
-        crate::app::shell_wol::page::close_page_dialog(
-            &mut state.frontend,
-            &mut state.platform,
-            &mut state.match_state,
-            &state.process_assets,
-            &state.renderer,
-            &mut state.audio,
-            &mut state.persistence,
-        );
         state.match_state.match_presentation.dialog_ui = Default::default();
         state.match_state.match_presentation.diplomacy_page = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
@@ -325,16 +316,15 @@ impl App {
             return;
         }
         platform.window_active = active;
-        Self::sync_window_movies(platform, frontend);
+        Self::sync_window_movies(
+            platform,
+            frontend,
+            match_state.session_mode(),
+            &mut match_state.match_presentation,
+        );
         if active {
             platform.clear_attention();
         }
-        let movie_active =
-            crate::app::radar_movie::playback_active(platform, &match_state.match_presentation);
-        match_state
-            .match_presentation
-            .radar_movies
-            .set_active(movie_active);
         match_state.input.keys_held.clear();
         // VERA formation line: its held key's release may never arrive.
         match_state.input.formation_line.clear_key();
@@ -381,32 +371,36 @@ impl App {
         );
     }
 
-    /// Fullscreen Play_Movie (0x00432E40) pauses the Bink handle on deactivation
-    /// and resumes it on activation. A hidden shell can get both edges between
-    /// draws, so update its video and soundtrack here as well as on creation.
+    /// Apply each visibility or focus edge even when both arrive between draws.
     fn sync_window_movies(
-        platform: &crate::app::PlatformState,
-        frontend: &mut crate::app::frontend::state::FrontendState,
+        platform: &PlatformState,
+        frontend: &mut FrontendState,
+        session: SessionMode,
+        presentation: &mut MatchPresentationState,
     ) {
-        frontend.main_menu_movie_clock.pause();
-        let active = crate::app::frontend::fullscreen_movie::playback_active(platform);
-        if let Some(movie) = frontend.fullscreen_movie.as_mut() {
-            movie.set_active(active);
+        if !platform.movie_activity(None).runs() {
+            frontend.main_menu_movie_clock.pause();
         }
+        if let Some(movie) = frontend.fullscreen_movie.as_mut() {
+            movie.sync_window(platform, session);
+        }
+        crate::app::radar_movie::sync_activity(platform, session, presentation);
     }
 
     /// Apply one window-visibility edge. Waking on the un-hide edge is what
     /// gets the parked redraw loop turning again.
     pub(super) fn set_window_hidden(
-        platform: &mut crate::app::PlatformState,
-        frontend: &mut crate::app::frontend::state::FrontendState,
+        platform: &mut PlatformState,
+        frontend: &mut FrontendState,
+        session: SessionMode,
+        presentation: &mut MatchPresentationState,
         hidden: bool,
     ) {
         if platform.window_hidden == hidden {
             return;
         }
         platform.window_hidden = hidden;
-        Self::sync_window_movies(platform, frontend);
+        Self::sync_window_movies(platform, frontend, session, presentation);
         if !hidden {
             platform.window.request_redraw();
         }
@@ -557,12 +551,11 @@ impl App {
             }
         }
         match_state.match_presentation.in_game_menu = next;
-        let movie_active =
-            crate::app::radar_movie::playback_active(platform, &match_state.match_presentation);
-        match_state
-            .match_presentation
-            .radar_movies
-            .set_active(movie_active);
+        crate::app::radar_movie::sync_activity(
+            platform,
+            match_state.session_mode(),
+            &mut match_state.match_presentation,
+        );
         // The menus' dialogs go; the chrome under them (the sidebar's and
         // the command bar's nodes) stays.
         match_state.match_presentation.dialog_ui.close_all();

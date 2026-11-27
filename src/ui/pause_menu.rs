@@ -82,9 +82,6 @@ pub enum InGameMenuState {
     Sound,
     /// Shared Keyboard A3 (native state4).
     Keyboard,
-    /// The WOL page dialog 0xCF, opened by PageUser. (gamemd: 7) It is a
-    /// compact popup over the live battlefield, not a full-screen shell.
-    Page,
     /// The Diplomacy dialog 0x73. (gamemd: 8)
     Diplomacy,
     /// The mission restate briefing, dialog 0x10C. (gamemd: 9)
@@ -106,7 +103,7 @@ impl InGameMenuState {
     /// its copy flag while `g_WSDialogCount` is nonzero), and the popup
     /// window sits over it.
     pub fn draws_over_battlefield(self) -> bool {
-        matches!(self, Self::Page | Self::Surrender)
+        matches!(self, Self::Surrender)
     }
 
     /// Where Escape goes from here.
@@ -129,13 +126,7 @@ impl InGameMenuState {
             // (0x006581A7). IDCANCEL names no child window, so the id is 0:
             // neither Return 0x423 nor in its box tables. Escape is ignored.
             // The 0x10C proc keys Return the same way (0x0065F710).
-            // The 0xCF loop (0x007759E0 with 0x00623120) runs no
-            // IsDialogMessage, so Escape never reaches the proc.
-            Self::SavedGame(_)
-            | Self::Sound
-            | Self::Diplomacy
-            | Self::MissionBriefing
-            | Self::Page => self,
+            Self::SavedGame(_) | Self::Sound | Self::Diplomacy | Self::MissionBriefing => self,
             Self::Keyboard => Self::Menu,
             // ShellMessageBox's callback 0x005D36A0 answers IDCANCEL with
             // result 1: no surrender, state 0.
