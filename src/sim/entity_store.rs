@@ -2430,7 +2430,8 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
         let cols = &mut store.cols;
         cols.ids.reserve(entities.len());
         cols.entities.reserve(entities.len());
-        for (id, entity) in entities {
+        for (id, mut entity) in entities {
+            entity.restore_legacy_warp_out();
             cols.slot_of.insert(id, cols.ids.len() as u32);
             cols.ids.push(id);
             cols.owners.push(entity.owner());

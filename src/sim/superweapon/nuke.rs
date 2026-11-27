@@ -28,11 +28,6 @@
 //! the recharge restart is ClickFire's.
 //!
 //! RESIDUALS:
-//! - A charged launch that finds no silo type (`0x006CDCFA`, `0x006CDD30`)
-//!   or no silo (`0x006CDD44`) still runs the player's common tail at
-//!   `0x006CDE06`; the sim retains its `+0x1FC` request (`0x006CDE2F`),
-//!   but emits no launch event then, so the app's selection-clear tail is
-//!   absent. Trigger: a custom no-silo type or loss before the House tail.
 //! - The House dirty tail also refreshes local building construction options
 //!   (vt+0x4E0) and sidebar strips (`0x006A7D20`); those presentation
 //!   consumers are outside the simulation's revoke/grant migration.
@@ -50,6 +45,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::projectile::ProjectileNukeImpact;
@@ -211,11 +207,10 @@ pub(crate) fn nuke_ball_type(rules: &RuleSet) -> bool {
 /// owner's first building of it ([`find_building_of_type`]) queues and
 /// commences Missile, the owner's NukeTarget (`+0x5784`) becomes the cell
 /// and the silo's firing type (`+0x5F8`) the type's `Type=`
-/// (`0x006CDDA3..0x006CDDD7`). The app plays `DigSound=` at the cell's
-/// centre and ground height (no deck, `0x006CDD62..0x006CDDE9`) and
-/// `EVA_NuclearMissileLaunched` (`0x006CDDE9`, `0x006CDE01`) for the launch
-/// event. A charged call still requests the House tail without a silo
-/// (`0x006CDE06..0x006CDE2F`; executed `nuke_launch.recheck`).
+/// (`0x006CDDA3..0x006CDDD7`). DigSound plays over the ground at the
+/// target (6CDD62..6CDDE9). The one-time branch uses its strike coordinate
+/// (6CDA88..6CDAF5), which includes a structural bridge deck. Both reach
+/// the local targeting and Ready cleanup and request the House recheck.
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -227,35 +222,67 @@ pub(super) fn launch(
     if !super::is_charged(sim, owner, sw_type_id) {
         return false;
     }
-    if sim
+    let one_time = sim
         .super_weapons
         .get(&owner)
         .and_then(|weapons| weapons.get(&sw_type_id))
-        .is_some_and(|instance| instance.is_active && instance.one_time)
-    {
-        //6CDA72..6CDCB3: skip silo selection/mission/NukeTarget. Speed comes
-        //from NukePayload; the common projectile owner also creates PSIWARN.
-        let launched = sim.launch_nuke_payload_at_cell(
-            rules,
-            (cell.0 as i16, cell.1 as i16),
-            None,
-            Some(owner),
-        );
-        // The cue (`0x006CDCAE`) plays at the strike coordinate
-        // `0x006CDA88..0x006CDAF5` built.
-        if let Some(location) = launched {
-            sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
-                owner,
-                sw_type: sw_type_id,
-                world: location.into(),
-            });
-        }
-        sim.houses.request_house_tech_tree_recheck(owner); //common6CDE2F tail
-        return launched.is_some();
-    }
-    let Some(index) = rules.super_weapon_index(&sw.id) else {
-        return false;
+        .is_some_and(|instance| instance.is_active && instance.one_time);
+    let strike = if one_time {
+        // 6CDA72..6CDC85 drops NukePayload at the target, bypassing the silo.
+        sim.launch_nuke_payload_at_cell(rules, (cell.0 as i16, cell.1 as i16), None, Some(owner))
+    } else {
+        launch_from_silo(sim, rules, owner, sw_type_id, sw, cell)
     };
+    if let Some(coordinate) = strike {
+        let activation = Some(SimSoundEvent::SuperWeaponActivation {
+            sw_type: sw_type_id,
+            world: coordinate.into(),
+        });
+        let siren = rules
+            .general
+            .dig_sound
+            .as_deref()
+            .map(|sound_id| SimSoundEvent::VocAtCoord {
+                sound_id: rules.sound_name(sound_id),
+                coordinate,
+                flags: 0,
+            });
+        // 6CDC98/6CDCAE: one-time EVA then DigSound. 6CDDE9/6CDE01: silo DigSound then EVA.
+        let cues = if one_time {
+            [activation, siren]
+        } else {
+            [siren, activation]
+        };
+        sim.sound_events.emit_all(cues.into_iter().flatten());
+    }
+    // 6CDD44 jumps here even when the last silo is already in limbo. The
+    // PlayerPtr tails (6CDCB3, 6CDE06) clear targeting and remove Ready.
+    if strike.is_some() || !one_time {
+        sim.sound_events.emit(SimSoundEvent::NuclearLaunchFinished {
+            owner,
+            sw_type: sw_type_id,
+        });
+    }
+    if let Some(coordinate) = strike {
+        sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
+            owner,
+            sw_type: sw_type_id,
+            world: coordinate.into(),
+        });
+    }
+    sim.houses.request_house_tech_tree_recheck(owner); // 6CDCDC / 6CDE2F
+    strike.is_some()
+}
+
+fn launch_from_silo(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type_id: InternedId,
+    sw: &SuperWeaponType,
+    cell: (u16, u16),
+) -> Option<DriveCoord> {
+    let index = rules.super_weapon_index(&sw.id)?;
     let fires = |object: &ObjectType| {
         object.nuke_silo
             && [&object.super_weapon, &object.super_weapon2]
@@ -267,18 +294,14 @@ pub(super) fn launch(
                 })
     };
     let ids = rules.type_array_ids(ObjectCategory::Building);
-    let Some((silo_type, silo_object)) = (0..ids.len())
+    let (silo_type, silo_object) = (0..ids.len())
         .find_map(|slot| {
             rules
                 .building_type_at(slot as i32)
                 .filter(|object| fires(object))
                 .map(|object| (slot, object))
         })
-        .and_then(|(slot, object)| Some((sim.interner.get(&ids[slot])?, object)))
-    else {
-        sim.houses.request_house_tech_tree_recheck(owner);
-        return false;
-    };
+        .and_then(|(slot, object)| Some((sim.interner.get(&ids[slot])?, object)))?;
     // VERA's Superweapon Limit: each `SuperWeaponPerBuilding=` silo fires its
     // own shot, so a launch takes the silo whose charge the ready shot is and
     // gives it its own target; gamemd's first silo and NukeTarget otherwise.
@@ -289,11 +312,7 @@ pub(super) fn launch(
             .or_else(|| find_building_of_type(sim, owner, silo_type))
     } else {
         find_building_of_type(sim, owner, silo_type)
-    };
-    let Some(silo) = silo else {
-        sim.houses.request_house_tech_tree_recheck(owner);
-        return false;
-    };
+    }?;
     crate::sim::world::queue_and_commence(sim, silo, MissionType::Missile, rules);
     if let Some(house) = sim.houses.get_mut(&owner) {
         house.set_nuke_target(cell);
@@ -308,15 +327,15 @@ pub(super) fn launch(
     }
     // `0x006CDD62..0x006CDDE9`: the cell centre at Map578080's ground height,
     // no deck. At its centre that is the cell's own GetCoords (`0x00486840`).
-    let ground =
-        crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), cell.0, cell.1);
-    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
-        owner,
-        sw_type: sw_type_id,
-        world: ground.into(),
-    });
-    sim.houses.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
-    true
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    Some(crate::sim::movement::target_cell_coord(
+        cell.0,
+        cell.1,
+        cells.as_ref(),
+    ))
 }
 
 /// `HouseClass::Find_Building_Of_Type @ 0x004FD060` with no edge (`-1`):
@@ -550,6 +569,7 @@ fn drop_payload(
         .as_deref()
         .and_then(|name| rules.projectile(name))
     else {
+        // Ares.dll 1007315D/1007315F refuses a weapon without a projectile.
         return false;
     };
     let Some(warhead) = warhead else {

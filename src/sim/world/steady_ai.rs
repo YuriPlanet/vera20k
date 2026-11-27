@@ -216,9 +216,7 @@ fn ai_rests(entity: &GameEntity, object: &ObjectType, frame: u32, rules: &RuleSe
         && entity.drain.is_idle()
         // The Temporal prologue: no chain warping it, neither warped out nor
         // warping in.
-        && !entity.temporal.is_warped()
-        && !entity.is_warped_out()
-        && !entity.is_warping_in()
+        && !entity.needs_warp_ai()
         // A Unit's death count (`0x0073635B`) and firing counter
         // (Unit7363C9); the Hunt queue (`0x007363DE`) asks only a type that
         // deploys into a building.
