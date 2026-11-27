@@ -135,10 +135,8 @@ pub(crate) fn rests(
         && entity.lifecycle.object_alive()
         && !entity.lifecycle.in_limbo()
         && !entity.death.is_dying()
-        // The warp prologue (`Simulation::temporal_ai_prologue`) and the
-        // frozen tests after it: neither warped nor warping in.
-        && !entity.is_warped_out()
-        && !entity.is_warping_in()
+        // The prologue also advances an erase head when the tank can act.
+        && !entity.needs_warp_ai()
         // The tube tests (`UnitClass::AI @ 0x007360C0`) and the death count
         // (`0x0073635B`).
         && entity.active_tube().is_none()

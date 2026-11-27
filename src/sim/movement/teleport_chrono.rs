@@ -290,10 +290,13 @@ impl Simulation {
         }
         match warp.state() {
             0 => {
-                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_bytes(true, true, false);
-                    warp.start_timer(frame, CHRONO_WARP_OUT_FRAMES);
-                    warp.set_state(1);
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.set_warped_out(true); // 7197D0
+                    if let Some(warp) = entity.chrono_warp_mut() {
+                        warp.set_bytes(true, false);
+                        warp.start_timer(frame, CHRONO_WARP_OUT_FRAMES);
+                        warp.set_state(1);
+                    }
                 }
             }
             1 | 6 => {
@@ -312,14 +315,15 @@ impl Simulation {
                     rules,
                 );
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.set_warped_out(false); // 7198EE, even when an erase head remains
+                    if let Some(warp) = entity.chrono_warp_mut() {
+                        warp.set_bytes(false, true);
+                    }
                     // The warp-out's OnBridge clear (`0x007198FA`).
                     entity.on_bridge.store(false);
                     if let Some(locomotor) = entity.locomotor.as_mut() {
                         locomotor.store_ground_layer(false);
                     }
-                }
-                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_bytes(false, false, true);
                 }
                 let landed = self.chrono_update_position(
                     id,
@@ -1035,14 +1039,8 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    /// The warp of the Teleport running this Process, which the Unit
-    /// setter may have suspended under a Drive by now.
+    /// The warp on the active Teleport or one suspended by the Unit setter.
     fn chrono_warp_mut(&mut self, id: u64) -> Option<&mut ChronoWarp> {
-        self.entities
-            .get_mut(id)?
-            .locomotor
-            .as_mut()?
-            .warp_teleport_mut()?
-            .chrono_mut()
+        self.entities.get_mut(id)?.chrono_warp_mut()
     }
 }
