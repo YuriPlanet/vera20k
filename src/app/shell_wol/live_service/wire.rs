@@ -640,7 +640,6 @@ mod tests {
             ..Default::default()
         };
         let ai = SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: 28,
             country: LaunchCountry::Yuri,
             country_random: false,

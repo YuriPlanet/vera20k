@@ -1210,7 +1210,6 @@ fn cooperative_country_refresh_can_keep_the_ai_rows() {
     launch
         .opponents
         .push(crate::skirmish_launch::SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: 2,
             country: LaunchCountry::Yuri,
             country_random: false,
@@ -1335,7 +1334,6 @@ fn a_player_may_share_a_players_start_but_not_an_ais() {
     launch
         .opponents
         .push(crate::skirmish_launch::SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: 2,
             country: crate::skirmish_launch::LaunchCountry::America,
             country_random: false,

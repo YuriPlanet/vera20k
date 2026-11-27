@@ -84,7 +84,7 @@ pub(crate) fn update_strategy(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.command_driven() || !house.strategy_timer().expired(frame) {
+    if !house.strategy_timer().expired(frame) {
         return;
     }
     if house.is_controlled_by_human(sim.session.rule_policy()) {

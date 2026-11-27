@@ -79,9 +79,11 @@ saves convert with no message waiting and automation not allowed. The
 `0b918d053` writer predates the module visuals. Later writers retained module
 animations (`0xED16B100`), doors (`0x9593BB1E`) and image overrides
 (`0xAA201352`). Conversion keeps each saved collection and starts the
-missing ones empty. It preserves which houses an external driver controlled
-and gives them neutral economic support. The `c3609b58a` writer covers the
-new per-house policy layout `0xD5A96CCA`.
+missing ones empty. The `c3609b58a` writer covers layout `0xD5A96CCA`,
+which holds the former external AI controller flag and economy settings.
+On load, those computer houses resume ordinary AI with their saved money,
+units and production queues. Any saved Wasm control claims still apply.
+The next save clears the retired settings.
 
 Run the menu and compatibility tests with this command.
 

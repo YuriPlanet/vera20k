@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod migration;
 mod object_references;
+pub(super) mod retired_driver;
 mod saved_ids;
 #[path = "snapshot/saved_local_view.rs"]
 pub mod saved_local_view;

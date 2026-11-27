@@ -576,7 +576,6 @@ impl TacticalCaptureProfile {
                 .iter()
                 .enumerate()
                 .map(|(index, slot)| SkirmishAiSlot {
-                    driver_policy: None,
                     raw_slot_index: (index + 1) as u8,
                     country: slot.country.launch_country(),
                     country_random: slot.country_random,

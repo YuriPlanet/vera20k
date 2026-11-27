@@ -437,35 +437,6 @@ fn ares_trigger_side_tokens_admit_any_registered_side() {
     assert!(super::side_admits(3, 2, true));
 }
 
-#[test]
-fn a_command_driven_house_stands_down_from_team_creation() {
-    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    let mut sim = Simulation::new();
-    sim.session.set_game_mode(
-        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-    );
-    sim.session.set_binary_frame_for_test(100);
-    let owner = sim.interner.intern("H0");
-    let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-    // Expired timer, an ordinary computer house: without the stand-down the
-    // selector's first act is its `RandomRanged(1, 100)` roll.
-    house.team_creation_mut().timer = CdTimer::from_raw(0, 1);
-    house.make_command_driven(crate::sim::driver::DriverPolicy::neutral());
-    sim.houses.register(house);
-    let before = rng_digest(&sim.scenario_rng);
-    update_team_creation(
-        &mut sim,
-        &rules,
-        owner,
-        &mut crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(
-        rng_digest(&sim.scenario_rng),
-        before,
-        "the selector never draws for a command-driven house"
-    );
-}
-
 /// A non-finite running weight, which only a damaged save can hold, counts
 /// as weight 0 (FISTP's indefinite low dword) instead of stopping the draw.
 #[test]

@@ -1744,7 +1744,6 @@ mod tests {
                 // Its empty second contender must still exercise ordinary
                 // automatic defeat/victory, rather than globally disabling it.
                 session.opponents.push(SkirmishAiSlot {
-                    driver_policy: None,
                     raw_slot_index: 1,
                     country: LaunchCountry::Russia,
                     country_random: false,

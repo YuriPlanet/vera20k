@@ -791,9 +791,6 @@ map has seats; the host's game then drops the Superweapon Limit, the host rules 
 queue, then Teams, one at a time and saying so each time, after which the people past the
 seats watch. A rollback of the game seats no more players than the map has starts.
 
-External computer controllers are available in offline slot launches. A network room
-rejects a seat with a driver policy at setup, before publishing the ordinary AI rows.
-
 AI play in a VERA room while people watch, unlike in gamemd's room (`0x5EC9F0`'s
 TXT_NO_AI_WITH_OBSERVER, and WOL's TXT_NO_AI_OBSERVATION at Start Game): the host keeps
 the spectator seat open with AI in the room, and a guest may watch beside them. Nothing new
