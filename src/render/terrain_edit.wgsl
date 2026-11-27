@@ -90,6 +90,8 @@ struct ReplayedPixel { index: u32, texel: vec2i, candidate: i32 };
 // nothing. Only quads on whole pixels at zoom 1 with a texel per pixel are
 // replayed (`replays` in terrain_draw.rs): every centre lies half a texel and
 // half a row inside them, so these equal the edit's own interpolated values.
+// A zoomed world camera never replays (its overlapping edits draw a wave
+// each), so `position` here is always a world pixel.
 fn replayed_pixel(edit: EditRecord, position: vec2f) -> ReplayedPixel {
     var none: ReplayedPixel;
     let p = vec2u(position);

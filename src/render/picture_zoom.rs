@@ -58,6 +58,24 @@ impl PictureHdPage {
         }
     }
 
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): this twin as a
+    /// group-1 page binding of the world blitters, beside `low_page`, the 1x
+    /// page's colour (`BatchRenderer::create_picture_hd_binding`).
+    pub(crate) fn one_pass_binding(
+        &self,
+        device: &wgpu::Device,
+        batch: &BatchRenderer,
+        low_page: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        batch.create_picture_hd_binding(
+            device,
+            &self.color,
+            &self.indices,
+            self.house.as_ref(),
+            low_page,
+        )
+    }
+
     pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, page: &HdPage) -> Self {
         use wgpu::util::DeviceExt;
         let size = wgpu::Extent3d {

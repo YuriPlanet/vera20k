@@ -78,7 +78,14 @@ fn entry_sprite(
     size: [f32; 2],
     depth: f32,
 ) -> SpriteInstance {
-    quad([x, y], size, (entry.uv_origin, entry.uv_size), [1.0; 3], 1.0, depth)
+    quad(
+        [x, y],
+        size,
+        (entry.uv_origin, entry.uv_size),
+        [1.0; 3],
+        1.0,
+        depth,
+    )
 }
 
 /// One quad on the target: `size` pixels from `position`, sampling `uv`
@@ -151,8 +158,18 @@ pub fn push_tinted_entry(
     tint: [f32; 3],
     depth: f32,
 ) {
-    let (position, size) = ([rect.x as f32, rect.y as f32], [rect.w as f32, rect.h as f32]);
-    out.push(quad(position, size, (entry.uv_origin, entry.uv_size), tint, 1.0, depth));
+    let (position, size) = (
+        [rect.x as f32, rect.y as f32],
+        [rect.w as f32, rect.h as f32],
+    );
+    out.push(quad(
+        position,
+        size,
+        (entry.uv_origin, entry.uv_size),
+        tint,
+        1.0,
+        depth,
+    ));
 }
 
 /// One chrome atlas entry at its native size, top-left at `(x, y)`.
@@ -680,7 +697,8 @@ fn paint_scaled_warning_monitor(
         return paint_kind4_static(entry, monitor, scale);
     }
     let native_window = scale.base_rect(monitor);
-    let mut sprite = paint_kind4_static(entry, native_window, crate::ui::shell::geom::RETAIL_SCALE)?;
+    let mut sprite =
+        paint_kind4_static(entry, native_window, crate::ui::shell::geom::RETAIL_SCALE)?;
     let drawn = scale.scale_rect(RectPx::new(
         sprite.position[0] as i32,
         sprite.position[1] as i32,
@@ -981,7 +999,9 @@ mod tests {
         // zero, y half-gap is one (0x0061595E..0x0061597E).
         let window = RectPx::new(670, 47, 93, 55);
         let entry = fake_entry(92.0, 53.0);
-        let retail = paint_scaled_warning_monitor(entry, window, crate::ui::shell::geom::RETAIL_SCALE).unwrap();
+        let retail =
+            paint_scaled_warning_monitor(entry, window, crate::ui::shell::geom::RETAIL_SCALE)
+                .unwrap();
         assert_eq!(retail.position, [670.0, 48.0]);
         let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
         let scaled = paint_scaled_warning_monitor(entry, scale.scale_rect(window), scale).unwrap();
@@ -992,9 +1012,12 @@ mod tests {
     #[test]
     fn warning_monitor_preserves_retail_640_and_downscaled_placement() {
         let entry = fake_entry(92.0, 53.0);
-        let retail =
-            paint_scaled_warning_monitor(entry, RectPx::new(510, 47, 93, 55), crate::ui::shell::geom::RETAIL_SCALE)
-                .unwrap();
+        let retail = paint_scaled_warning_monitor(
+            entry,
+            RectPx::new(510, 47, 93, 55),
+            crate::ui::shell::geom::RETAIL_SCALE,
+        )
+        .unwrap();
         assert_eq!(retail.position, [510.0, 48.0]);
         let scale = crate::ui::shell::geom::shell_scale(400, 300);
         let window = scale.scale_rect(RectPx::new(670, 47, 93, 55));
@@ -1020,13 +1043,18 @@ mod tests {
     fn warning_monitor_shape_follows_the_layout_scale() {
         let entry = fake_entry(62.0, 44.0);
         let window = RectPx::new(640, 30, 200, 200);
-        let retail = paint_kind4_static(entry, window, crate::ui::shell::geom::RETAIL_SCALE).expect("shape");
+        let retail =
+            paint_kind4_static(entry, window, crate::ui::shell::geom::RETAIL_SCALE).expect("shape");
         assert_eq!(retail.size, [62.0, 44.0]);
         // Integer-halved gaps: (200-62)/2 right, (200-44)/2 down.
         assert_eq!(retail.position, [709.0, 108.0]);
 
-        let stretched =
-            paint_kind4_static(entry, window, crate::ui::shell::geom::shell_scale(1600, 1200)).expect("shape");
+        let stretched = paint_kind4_static(
+            entry,
+            window,
+            crate::ui::shell::geom::shell_scale(1600, 1200),
+        )
+        .expect("shape");
         // 2x on both axes, then re-centred in the same window.
         assert_eq!(stretched.size, [124.0, 88.0]);
         assert_eq!(stretched.position, [678.0, 86.0]);
@@ -1046,8 +1074,12 @@ mod tests {
         // 0x00608500 sizes the 0x72B window to the SCRA frame exactly, so the
         // kind-4 draw fills it without centering or clipping.
         assert_eq!(window, RectPx::new(104, 142, 424, 220));
-        let sprite = paint_kind4_static(fake_entry(424.0, 220.0), window, crate::ui::shell::geom::RETAIL_SCALE)
-            .expect("kind-4 SCRA frame");
+        let sprite = paint_kind4_static(
+            fake_entry(424.0, 220.0),
+            window,
+            crate::ui::shell::geom::RETAIL_SCALE,
+        )
+        .expect("kind-4 SCRA frame");
 
         assert_eq!(sprite.position, [104.0, 142.0]);
         assert_eq!(sprite.size, [424.0, 220.0]);
@@ -1092,7 +1124,8 @@ mod tests {
                 rgb: SHELL_TEXT_RGB_ENABLED,
                 path_a_reveal: None,
             };
-            let text = paint_labels_at_depth_scaled(&font, &[label], MODAL_DEPTHS.text, scale.factor());
+            let text =
+                paint_labels_at_depth_scaled(&font, &[label], MODAL_DEPTHS.text, scale.factor());
             ModalDraw { sprites, text }
         };
         let retail = draw(crate::ui::shell::geom::RETAIL_SCALE);

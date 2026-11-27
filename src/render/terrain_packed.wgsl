@@ -8,6 +8,10 @@ struct Params {
     // left (bit 0): see `warp_words`.
     warp: u32,
     reads_depth: u32,
+    // The camera's zoom. At zoom != 1 (`docs/zoom-one-pass.md`) a word is a
+    // world pixel, a `zoom`-sized block of target pixels: the warp's rows and
+    // offsets are world pixels (see `snapshot_word`).
+    zoom: f32,
 };
 @group(0) @binding(0) var old_words: texture_2d<u32>;
 @group(0) @binding(1) var old_depth: texture_2d<f32>;
@@ -50,7 +54,15 @@ fn warp_words(y: u32) -> u32 {
 // runs on into the next row; this one stops at the row's last word. Only the
 // ripple of a cloaking voxel at the right screen edge can differ, by 1-3 px.
 fn snapshot_word(p: vec2u) -> u32 {
-    let x = min(p.x + warp_words(p.y), textureDimensions(old_words).x - 1u);
+    var x = p.x + warp_words(p.y);
+    if params.warp != 0u && params.zoom != 1.0 {
+        // The target pixel at the same place in the block of the world pixel
+        // `warp` to the right, with the row parity of its world row.
+        let centre = vec2f(p) + vec2f(0.5);
+        let row = u32(floor(centre.y / params.zoom));
+        x = u32(floor(centre.x + f32(warp_words(row)) * params.zoom));
+    }
+    x = min(x, textureDimensions(old_words).x - 1u);
     let destination = textureLoad(old_words, vec2u(x, p.y), 0).r;
     return blend(textureLoad(source_words, vec2i(p), 0).r & 0xffffu, destination);
 }

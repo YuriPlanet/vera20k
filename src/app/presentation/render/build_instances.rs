@@ -1456,11 +1456,27 @@ pub(crate) fn tactical_world_view(
         &match_state.match_presentation,
         persistence,
     );
-    tactical_world_viewport(
-        [input.camera_x, input.camera_y],
-        [x, y, width, height],
-        renderer.world_zoom_pass.as_ref(),
-    )
+    let camera = [input.camera_x, input.camera_y];
+    let tactical = [x, y, width, height];
+    match renderer.world_zoom_pass.as_ref() {
+        Some(pass) => tactical_world_viewport(camera, tactical, Some(pass)),
+        // Without a world pass the world camera carries the wheel zoom
+        // (`docs/zoom-one-pass.md`), so the view is still in world pixels:
+        // the frame's battlefield divided by the zoom, as
+        // `WorldZoomPass::world_clip` divides it. At zoom 1 it is unchanged.
+        None => tactical_world_viewport(camera, world_pixels(tactical, input.zoom_level), None),
+    }
+}
+
+/// The frame rect `[x, y, width, height]` in the world pixels a world camera
+/// at `zoom` shows there: its edges floored and ceiled outwards, so it covers
+/// every world pixel part of it shows.
+fn world_pixels([x, y, width, height]: [u32; 4], zoom: f32) -> [u32; 4] {
+    let left = (x as f32 / zoom).floor() as u32;
+    let top = (y as f32 / zoom).floor() as u32;
+    let right = ((x + width) as f32 / zoom).ceil() as u32;
+    let bottom = ((y + height) as f32 / zoom).ceil() as u32;
+    [left, top, right - left, bottom - top]
 }
 
 /// [`tactical_world_view`] of a stored `camera` and `tactical` rect.

@@ -437,23 +437,30 @@ pub(crate) fn render_game(
     // one at 100% too; so does picture art the Options zoom magnifies
     // (VERA-only, experimental, docs/picture-model-art.md), which follows the
     // world's window copy.
-    if z == 1.0
-        && !hd_art_on
-        && !picture_zoom::needs_world_pass(
-            &state.renderer,
-            &state.match_state.match_presentation,
-            &state.frontend.screen,
-        )
+    //
+    // When the Options zoom scales the frame, the world also goes straight
+    // into the window (`draw_world_window_copy`). At 100% (the Original
+    // shape's bars) the frame's world is already the window's.
+    let window_copy = state
+        .renderer
+        .tactical_zoom(&state.frontend.screen)
+        .is_some_and(|zoom| zoom.percent > 100);
+    // VERA-only, experimental (docs/zoom-one-pass.md): a one-pass frame has
+    // no world pass either. The world camera keeps the frame's size and
+    // zoom `z` as `update_camera` wrote them, and the world draws straight
+    // into the frame-sized composition and depth.
+    let one_pass = crate::render::one_pass_zoom::active(z, window_copy, hd_art_on);
+    if one_pass
+        || (z == 1.0
+            && !hd_art_on
+            && !picture_zoom::needs_world_pass(
+                &state.renderer,
+                &state.match_state.match_presentation,
+                &state.frontend.screen,
+            ))
     {
         state.renderer.world_zoom_pass = None;
     } else {
-        // When the Options zoom scales the frame, the world also goes
-        // straight into the window (`draw_world_window_copy`). At 100% (the
-        // Original shape's bars) the frame's world is already the window's.
-        let window_copy = state
-            .renderer
-            .tactical_zoom(&state.frontend.screen)
-            .is_some_and(|zoom| zoom.percent > 100);
         let renderer = &mut state.renderer;
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
@@ -531,6 +538,16 @@ pub(crate) fn render_game(
     });
     // VERA-only, experimental: the page declared models draw on this frame.
     crate::app::presentation::instances::begin_model_frame(state);
+    // VERA-only, experimental (docs/zoom-one-pass.md, point 5): a one-pass
+    // frame's picture pages bind their HD twins, any other frame their own
+    // 1x pages, before anything binds them.
+    if let Some(atlas) = state.match_state.match_presentation.sprite_atlas.as_mut() {
+        atlas.bind_one_pass_hd(
+            &state.renderer.gpu.device,
+            &state.renderer.batch_renderer,
+            one_pass,
+        );
+    }
     let mut world = build_instances::build_world_instances(
         &state.platform,
         &state.renderer,
@@ -1223,6 +1240,12 @@ fn update_native_z_origin(
 /// line keeps its depth against the objects wherever a layout puts the
 /// battlefield. The original's clip starts at row 0. Its seed is the panned
 /// one (`native_z::ZSeed`).
+///
+/// The logical pixels are the world target's at zoom 1 (the world drawn at
+/// native pixels and magnified). When the battlefield is drawn once at the
+/// wheel zoom (`docs/zoom-one-pass.md`), the world camera keeps that zoom and
+/// its target is the frame: the same logical pixels, each a `zoom`-sized
+/// block, so the viewport takes the camera's zoom (the stores' zoom mode).
 pub(crate) fn tactical_surface_line_viewport(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -1247,7 +1270,9 @@ pub(crate) fn tactical_surface_line_viewport(
         ),
         clip,
         z_origin_y: (2 * clip[1]).wrapping_sub(renderer.native_z_seed.pan()),
-        zoom: 1.0,
+        // 1 unless the world camera draws zoomed: the magnified world pass
+        // forces it to 1 (`set_native_world_resolution`).
+        zoom: renderer.batch_renderer.camera_uniform().zoom,
     }
 }
 

@@ -769,6 +769,11 @@ pub struct SpriteAtlas {
     /// VERA-only, experimental: the HD twins of the picture pages of art
     /// above 1x, by page (`render::picture_zoom`). Empty without such art.
     picture_hd_pages: HashMap<usize, crate::render::picture_zoom::PictureHdPage>,
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): the pages among
+    /// `picture_hd_pages` whose `texture.bind_group` is now their HD binding
+    /// ([`Self::bind_one_pass_hd`]), each with the 1x binding it replaced.
+    /// Empty unless this frame draws the battlefield in one pass zoomed in.
+    one_pass_hd: HashMap<usize, wgpu::BindGroup>,
     /// VERA-only, experimental: where each picture frame the pages hold is,
     /// shared by every key drawn from it; None for one that draws nothing or
     /// found no page. A refresh draws only frames missing here.
@@ -854,6 +859,7 @@ impl SpriteAtlas {
             palettes,
             picture_pages: HashSet::new(),
             picture_hd_pages: HashMap::new(),
+            one_pass_hd: HashMap::new(),
             picture_frames: HashMap::new(),
             model_page: None,
         }
@@ -872,6 +878,13 @@ impl SpriteAtlas {
         page: usize,
         hd: Option<crate::render::picture_zoom::PictureHdPage>,
     ) {
+        // The HD binding names the old twin: the page takes its 1x binding
+        // back, and the next `bind_one_pass_hd` binds the new twin.
+        if let Some(low) = self.one_pass_hd.remove(&page)
+            && let Some(atlas_page) = self.pages.get_mut(page)
+        {
+            atlas_page.texture.bind_group = low;
+        }
         match hd {
             Some(hd) => {
                 self.picture_hd_pages.insert(page, hd);
@@ -879,6 +892,43 @@ impl SpriteAtlas {
             None => {
                 self.picture_hd_pages.remove(&page);
             }
+        }
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`, point 5): whether the
+    /// world blitters read each picture page that has an HD twin from the
+    /// twin this frame. With `on` (the battlefield drawn in one pass at a
+    /// wheel zoom above 1, `render::one_pass_zoom::active`), each such page's
+    /// `texture.bind_group` becomes its HD binding
+    /// (`PictureHdPage::one_pass_binding`), so every draw that binds the page
+    /// samples the twin at the level its zoom needs (`sprite_source.wgsl`);
+    /// without, every page has its own 1x binding back, exactly as before.
+    /// Called once per frame before the world draws, after the model page is
+    /// held for the frame (`instances::begin_model_frame`).
+    pub(crate) fn bind_one_pass_hd(
+        &mut self,
+        device: &wgpu::Device,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        if !on {
+            for (index, low) in self.one_pass_hd.drain() {
+                if let Some(page) = self.pages.get_mut(index) {
+                    page.texture.bind_group = low;
+                }
+            }
+            return;
+        }
+        for (&index, hd) in &self.picture_hd_pages {
+            if self.one_pass_hd.contains_key(&index) {
+                continue;
+            }
+            let Some(page) = self.pages.get_mut(index) else {
+                continue;
+            };
+            let binding = hd.one_pass_binding(device, batch, &page.texture.view);
+            let low = std::mem::replace(&mut page.texture.bind_group, binding);
+            self.one_pass_hd.insert(index, low);
         }
     }
 
@@ -1118,6 +1168,9 @@ impl SpriteAtlas {
     /// the one held before at the same index. None when no page index is left.
     pub(crate) fn install_model_page(&mut self, texture: BatchTexture) -> Option<usize> {
         if let Some(index) = self.model_page {
+            // The new page brings its own 1x binding; an HD binding made
+            // beside the old one is dropped with it.
+            self.one_pass_hd.remove(&index);
             self.pages[index].texture = texture;
             return Some(index);
         }

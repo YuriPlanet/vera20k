@@ -802,6 +802,10 @@ pub(super) fn dispatch_draw_passes(
         if layer == 2 && renderer.world_zoom_pass.is_none() {
             // Tactical6D9427 admits this BuildingClass::Array sweep only
             // after Ground2, before Air3/Top4 and the late Extras sweep.
+            // Its producer projects each anchor by the wheel zoom into frame
+            // pixels: at zoom 1 it draws through the surface camera, and in a
+            // one-pass zoomed frame (`docs/zoom-one-pass.md`), whose world
+            // camera would scale it again, through the UI camera.
             super::object_extras::draw_building_status_text(
                 encoder,
                 view,
@@ -813,7 +817,11 @@ pub(super) fn dispatch_draw_passes(
                 pool.get("building_status_text").map(|(buffer, _)| buffer),
                 Some(renderer.bit_font.atlas()),
                 &data.building_status_text.runs,
-                renderer.batch_renderer.surface_camera_bind_group(),
+                if renderer.batch_renderer.camera_uniform().zoom == 1.0 {
+                    renderer.batch_renderer.surface_camera_bind_group()
+                } else {
+                    renderer.batch_renderer.ui_camera_bind_group()
+                },
             );
         }
     }
@@ -1036,8 +1044,10 @@ pub(super) fn dispatch_draw_passes(
         draw_pooled_ui_passthrough(&mut pass, &renderer.batch_renderer, pool, texture, key);
     }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
-    // Wheel zoom defers its screen-pixel border until after resampling;
-    // native scale retains the original ordering between the rally passes.
+    // A world zoom pass defers its screen-pixel border until after
+    // resampling; without one (native scale, or a one-pass zoomed frame,
+    // `docs/zoom-one-pass.md`) it keeps the original ordering between the
+    // rally passes, in frame pixels through the UI camera.
     let drag_tex = match_state
         .match_presentation
         .selection_overlay
@@ -1634,13 +1644,7 @@ pub(super) fn dispatch_draw_passes(
     let font = Some(renderer.bit_font.atlas());
     if text_in_frame {
         for (texture, key) in [(solid, "message_fill"), (font, "message_text")] {
-            draw_pooled_ui(
-                &mut pass,
-                &renderer.batch_renderer,
-                pool,
-                texture,
-                key,
-            );
+            draw_pooled_ui(&mut pass, &renderer.batch_renderer, pool, texture, key);
         }
     }
     // VERA: the map's overlay (its module's nodes under `MapUI=overlay` and

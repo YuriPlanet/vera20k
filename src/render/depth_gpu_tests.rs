@@ -384,6 +384,25 @@ impl Gpu {
                     resource: wgpu::BindingResource::TextureView(index_source),
                 });
             }
+            // The SHP blitters' page also binds a picture HD binding's house
+            // layer and 1x page (`sprite_source.wgsl`): the placeholders an
+            // ordinary page binds.
+            let hd_placeholders = index_source.is_some().then(|| {
+                (
+                    self.texture(wgpu::TextureFormat::Rg8Unorm, &[0; 2], [1, 1]),
+                    self.texture(wgpu::TextureFormat::Rgba8Unorm, &[0; 4], [1, 1]),
+                )
+            });
+            if let Some((house, low_page)) = &hd_placeholders {
+                texture_entries.push(wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(house),
+                });
+                texture_entries.push(wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(low_page),
+                });
+            }
             let texture_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Depth test source group"),
                 layout: &pipeline.get_bind_group_layout(1),

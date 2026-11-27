@@ -1487,7 +1487,10 @@ mod provenance_tests {
             for theme in [SidebarTheme::Soviet, SidebarTheme::Yuri] {
                 let (radar, radar_palette) = names.radar(theme);
                 assert_eq!(radar.to_ascii_uppercase(), expected["radar"]);
-                assert_eq!(radar_palette.to_ascii_uppercase(), expected["radar_palette"]);
+                assert_eq!(
+                    radar_palette.to_ascii_uppercase(),
+                    expected["radar_palette"]
+                );
             }
             assert_eq!(
                 names.background_palette.to_ascii_uppercase(),

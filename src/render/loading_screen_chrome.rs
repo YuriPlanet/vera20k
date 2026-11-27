@@ -628,8 +628,7 @@ fn append_optional_composition_entries(
     let mut marker_labels = Vec::with_capacity(distinct_remaps.len());
     for (color_key, ramp) in distinct_remaps {
         let palette = remap_base_palette.with_house_colors(ramp);
-        let Some(mut marker_entry) = shp_piece(&marker, MMPB_ASSET_NAME, &palette, 0).ok()
-        else {
+        let Some(mut marker_entry) = shp_piece(&marker, MMPB_ASSET_NAME, &palette, 0).ok() else {
             log::warn!(
                 "Could not prepare optional standard Skirmish loading marker color {color_key}"
             );
@@ -721,8 +720,7 @@ mod tests {
         CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,
         CAMPAIGN_TITLE_LABEL, LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenWidth,
         MmpbRegionRect, PreparedLoadingPreviewRgba, mmpb_region_rect, prepared_preview_entry,
-        progress_palette_with_player_ramp, ra2_loading_background_palette,
-        render_campaign_entries,
+        progress_palette_with_player_ramp, ra2_loading_background_palette, render_campaign_entries,
     };
     use crate::assets::pal_file::{Color, Palette};
 
@@ -1147,13 +1145,12 @@ mod tests {
             // `-ra2` binds the single MPLS.PAL for every Country; Yuri, which
             // does not exist in RA2, is the only other observer-style case in
             // this table. Observer keeps MPLSOBS.PAL in both profiles.
-            let expected_palette = if crate::util::ra2_launch::enabled()
-                && variant != LoadingArtVariant::Observer
-            {
-                "MPLS.PAL"
-            } else {
-                expected_palette
-            };
+            let expected_palette =
+                if crate::util::ra2_launch::enabled() && variant != LoadingArtVariant::Observer {
+                    "MPLS.PAL"
+                } else {
+                    expected_palette
+                };
             assert_eq!(manifest.palette_name, expected_palette);
         }
     }

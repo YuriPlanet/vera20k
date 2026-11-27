@@ -18,13 +18,13 @@
 use super::draw_plan_lowering::{ObjectDrawRun, ObjectExtrasRun, ObjectLayerPass, ObjectTexture};
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::renderer_state::RendererState;
-use crate::ui::game_screen::GameScreen;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::picture_zoom::{
     HdDepth, HdMask, HdPlacement, HdRun, HdSource, HdTarget, PictureHdPage, PictureZoomPass,
 };
 use crate::render::selection_overlay::InterfaceStrip;
 use crate::render::tactical_draw_plan::RenderZPolicy;
+use crate::ui::game_screen::GameScreen;
 
 /// Whether any art this match draws has an HD twin.
 fn has_hd_pages(presentation: &MatchPresentationState) -> bool {

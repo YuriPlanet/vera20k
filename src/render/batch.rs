@@ -803,12 +803,19 @@ pub struct BatchRenderer {
     /// depth write OFF. Overlays draw unconditionally over terrain because
     /// tiles without Z-data skip Z-testing entirely.
     overlay_passthrough_pipeline: wgpu::RenderPipeline,
+    /// The same direct store with quads on the frame's own pixel lattice
+    /// (`vs_frame`), for the frame health strips a zoomed frame draws after
+    /// its world (`object_extras::defer_health_to_frame`).
+    frame_passthrough_pipeline: wgpu::RenderPipeline,
     /// The same direct store through VERA's smooth client (`fs_shell_smooth`).
     smooth_chrome_pipeline: wgpu::RenderPipeline,
     surface_store_pipeline: wgpu::RenderPipeline,
     /// [`SurfaceStroke`] points (`surface_strokes.wgsl`): depth compare
     /// Always, no write, the live A for gated strokes.
     stroke_pipeline: wgpu::RenderPipeline,
+    /// The same strokes as `zoom`-sized quads, one per walked pixel, for a
+    /// world camera whose zoom is not 1 (`docs/zoom-one-pass.md`).
+    stroke_block_pipeline: wgpu::RenderPipeline,
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
     /// pass can be clipped by it, without disturbing colour compositing order.
@@ -822,6 +829,12 @@ pub struct BatchRenderer {
     /// Layout for texture bind groups (group 1).
     texture_bind_group_layout: wgpu::BindGroupLayout,
     default_source_indices: wgpu::TextureView,
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): what a page's
+    /// bind group holds at bindings 4 and 5 unless it is a picture page's HD
+    /// binding (`sprite_source.wgsl`): no house layer, and a 1x1 "1x page",
+    /// which tells the shader the page is not an HD twin.
+    default_source_house: wgpu::TextureView,
+    default_source_low_page: wgpu::TextureView,
     /// Layout for zdepth texture bind groups (group 1): color + sampler + R8 depth.
     zdepth_texture_bind_group_layout: wgpu::BindGroupLayout,
     /// Layout for the unit-atlas R8Uint texture (binding 0). Used by the voxel
@@ -958,10 +971,50 @@ impl BatchRenderer {
                         },
                         count: None,
                     },
+                    // VERA-only, experimental (`docs/zoom-one-pass.md`): a
+                    // picture page's HD binding adds the twin's house layer
+                    // and the 1x page (its house ramps); every other page
+                    // binds 1x1 placeholders (`sprite_source.wgsl`).
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
         let default_source_indices = source_index_texture_on_device(device, queue, &[1], 1, 1);
+        let default_source_house = page_texture_on_device(
+            device,
+            queue,
+            &[0; 2],
+            [1, 1],
+            wgpu::TextureFormat::Rg8Unorm,
+        )
+        .create_view(&Default::default());
+        let default_source_low_page = page_texture_on_device(
+            device,
+            queue,
+            &[0; 4],
+            [1, 1],
+            wgpu::TextureFormat::Rgba8Unorm,
+        )
+        .create_view(&Default::default());
 
         // Camera uniform buffer (initialized with default values).
         let camera_uniform: CameraUniform = CameraUniform {
@@ -1074,13 +1127,13 @@ impl BatchRenderer {
         // Tiles without embedded Z-data (flag 0x02 at cell header byte 36) skip
         // Z-testing entirely. Ore, gems, and terrain objects have no Z-data, so
         // they paint unconditionally over terrain.
-        let passthrough = |label, fragment| {
+        let passthrough = |label, vertex, fragment| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_main"),
+                    entry_point: Some(vertex),
                     buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
@@ -1115,13 +1168,25 @@ impl BatchRenderer {
             })
         };
         let overlay_passthrough_pipeline =
-            passthrough("Batch Pipeline (Overlay Passthrough)", "fs_main");
-        let smooth_chrome_pipeline =
-            passthrough("Batch Pipeline (Smooth Chrome)", "fs_shell_smooth");
+            passthrough("Batch Pipeline (Overlay Passthrough)", "vs_main", "fs_main");
+        let frame_passthrough_pipeline =
+            passthrough("Batch Pipeline (Frame Passthrough)", "vs_frame", "fs_main");
+        let smooth_chrome_pipeline = passthrough(
+            "Batch Pipeline (Smooth Chrome)",
+            "vs_main",
+            "fs_shell_smooth",
+        );
         // Surface stores at neutral A (the ground marks).
-        let surface_store_pipeline =
-            passthrough("Batch Pipeline (Surface Stores)", "fs_surface_store");
-        let stroke_pipeline = stroke_pipeline(device, &camera_bind_group_layout, surface_format);
+        let surface_store_pipeline = passthrough(
+            "Batch Pipeline (Surface Stores)",
+            "vs_main",
+            "fs_surface_store",
+        );
+        // The block pipeline first: the point one's binding shadows the fn.
+        let stroke_block_pipeline =
+            stroke_pipeline(device, &camera_bind_group_layout, surface_format, true);
+        let stroke_pipeline =
+            stroke_pipeline(device, &camera_bind_group_layout, surface_format, false);
 
         // Building bodies stamp their silhouette here so the post-shroud
         // selection-bracket redraw can be clipped by the art it stands behind.
@@ -1613,14 +1678,18 @@ impl BatchRenderer {
             zshape_skips_view,
             zdepth_pipeline,
             overlay_passthrough_pipeline,
+            frame_passthrough_pipeline,
             smooth_chrome_pipeline,
             surface_store_pipeline,
             stroke_pipeline,
+            stroke_block_pipeline,
             #[cfg(test)]
             depth_stamp_pipeline,
             depth_test_pipeline,
             texture_bind_group_layout,
             default_source_indices,
+            default_source_house,
+            default_source_low_page,
             zdepth_texture_bind_group_layout,
             unit_atlas_bind_group_layout,
             voxel_palette_bind_group_layout,
@@ -1994,6 +2063,71 @@ impl BatchRenderer {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(source_indices),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&self.default_source_house),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&self.default_source_low_page),
+                },
+            ],
+        })
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): a picture page's HD
+    /// binding, which the world blitters read in place of the page's own
+    /// while the battlefield draws in one pass at a zoom above 1
+    /// (`SpriteAtlas::bind_one_pass_hd`): the HD twin's premultiplied encoded
+    /// `color` with its mipmaps, sampled linearly between levels; its level-0
+    /// `indices`; its house layer `house` (none: no house colour); and
+    /// `low_page`, the 1x page's colour, whose top-left strip holds the house
+    /// ramps (`picture_house.wgsl`) and whose presence tells
+    /// `sprite_source.wgsl` it reads a twin.
+    pub(crate) fn create_picture_hd_binding(
+        &self,
+        device: &wgpu::Device,
+        color: &wgpu::TextureView,
+        indices: &wgpu::TextureView,
+        house: Option<&wgpu::TextureView>,
+        low_page: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Picture HD binding sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Picture HD binding"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(color),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(indices),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(
+                        house.unwrap_or(&self.default_source_house),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(low_page),
+                },
             ],
         })
     }
@@ -2155,9 +2289,12 @@ impl BatchRenderer {
     }
 
     /// A frame-sized world projection for fixed-pixel status sprites after
-    /// wheel resampling. Separate bindings keep E00's live A lookup and 600's
-    /// neutral A; queue writes must not change the native-world camera used
-    /// by already encoded passes. Bind groups retain their uniform buffer.
+    /// wheel resampling, or after a one-pass zoomed world
+    /// (`docs/zoom-one-pass.md`), whose world camera it then equals; they
+    /// draw through `vs_frame`, unsnapped. Separate bindings keep E00's live A
+    /// lookup and 600's neutral A; queue writes must not change the
+    /// native-world camera used by already encoded passes. Bind groups retain
+    /// their uniform buffer.
     pub(crate) fn create_frame_world_cameras(
         &self,
         device: &wgpu::Device,
@@ -2357,6 +2494,14 @@ impl BatchRenderer {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(&self.default_source_indices),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&self.default_source_house),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&self.default_source_low_page),
+                },
             ],
         });
 
@@ -2548,10 +2693,17 @@ impl BatchRenderer {
         if pieces == 0 {
             return;
         }
-        render_pass.set_pipeline(&self.stroke_pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         render_pass.set_vertex_buffer(0, buffer.slice(..));
-        render_pass.draw(0..STROKE_PIECE_PIXELS, 0..pieces);
+        // A zoomed world camera (`docs/zoom-one-pass.md`) draws each walked
+        // pixel as its `zoom`-sized block; zoom 1 keeps the point draw.
+        if self.camera_uniform().zoom == 1.0 {
+            render_pass.set_pipeline(&self.stroke_pipeline);
+            render_pass.draw(0..STROKE_PIECE_PIXELS, 0..pieces);
+        } else {
+            render_pass.set_pipeline(&self.stroke_block_pipeline);
+            render_pass.draw(0..STROKE_PIECE_PIXELS * 6, 0..pieces);
+        }
     }
 
     /// Draw with depth bypassed AND the UI camera (zoom=1.0, screen-fixed).
@@ -2780,6 +2932,27 @@ impl BatchRenderer {
         );
     }
 
+    /// [`Self::draw_passthrough_range_bound`] for instances already placed
+    /// on the frame's pixel lattice: their quads go where `camera` projects
+    /// them, not snapped to whole world pixels first.
+    pub(crate) fn draw_frame_passthrough_range<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        texture: &'a BatchTexture,
+        buffer: &'a wgpu::Buffer,
+        camera: &'a wgpu::BindGroup,
+        instances: std::ops::Range<u32>,
+    ) {
+        if instances.is_empty() {
+            return;
+        }
+        render_pass.set_pipeline(&self.frame_passthrough_pipeline);
+        render_pass.set_bind_group(0, camera, &[]);
+        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, instances);
+    }
+
     pub(crate) fn draw_passthrough_range_bound<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
@@ -2827,12 +3000,14 @@ fn ui_camera(world: CameraUniform) -> CameraUniform {
     }
 }
 
-/// The stroke draw: one point per walked pixel, stored over what is there
-/// without reading or writing Z, as the batch's surface stores are.
+/// The stroke draw: one point per walked pixel (or, `blocks`, one
+/// `zoom`-sized quad per walked pixel), stored over what is there without
+/// reading or writing Z, as the batch's surface stores are.
 fn stroke_pipeline(
     device: &wgpu::Device,
     camera_layout: &wgpu::BindGroupLayout,
     format: wgpu::TextureFormat,
+    blocks: bool,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Surface strokes"),
@@ -2854,7 +3029,11 @@ fn stroke_pipeline(
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: Some("vs_stroke"),
+            entry_point: Some(if blocks {
+                "vs_stroke_block"
+            } else {
+                "vs_stroke"
+            }),
             buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<StrokePiece>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
@@ -2873,7 +3052,11 @@ fn stroke_pipeline(
             compilation_options: Default::default(),
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::PointList,
+            topology: if blocks {
+                wgpu::PrimitiveTopology::TriangleList
+            } else {
+                wgpu::PrimitiveTopology::PointList
+            },
             ..Default::default()
         },
         depth_stencil: Some(wgpu::DepthStencilState {

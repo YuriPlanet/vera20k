@@ -13,6 +13,9 @@ use crate::render::terrain_draw::{PackedCompositePiece, PackedSpriteKind, Terrai
 /// projected roof. Keep retained parent order and one upload;
 /// removing these ranges also suppresses the initial Building Extras visit.
 /// At native zoom the original interleaved Display replay stays authoritative.
+/// A one-pass zoomed frame (`docs/zoom-one-pass.md`) has no resampling, but
+/// defers them all the same: the strips are placed on the frame's lattice
+/// here, which the world blitters' whole-world-pixel snap would undo.
 pub(super) fn defer_health_to_frame(layer: &mut ObjectLayerPass, camera: [f32; 2], zoom: f32) {
     if zoom == 1.0 {
         return;
@@ -68,6 +71,7 @@ pub(super) fn defer_health_to_frame(layer: &mut ObjectLayerPass, camera: [f32; 2
 /// Final-frame health keeps the same PIPBRD/E00 and PIPS/600 material owner
 /// as native Extras. Zoomed health is UI above the completed battlefield,
 /// before timers/chrome; it never passes through the world filter twice.
+/// Its quads are not snapped to world pixels ([`draw_health_bar`]'s `on_frame`).
 pub(super) fn draw_frame_health<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -88,6 +92,7 @@ pub(super) fn draw_frame_health<'a>(
             [health.background, health.shield_background],
             health.fills.clone(),
             cameras,
+            true,
         );
     }
 }
@@ -400,6 +405,7 @@ fn draw_status_prefix<'a>(
         [*background, *shield_background],
         fills.clone(),
         [batch.camera_bind_group(), batch.surface_camera_bind_group()],
+        false,
     );
     if let Some(shape) = overlay.scale_pips() {
         //709A90 physical PIPS2 uses plain600 neutral-A/no-Z stores.
@@ -414,6 +420,9 @@ fn draw_status_prefix<'a>(
 }
 
 /// Native6F64A0: PIPBRD E00 reads A; PIPS600 bypasses it. Both bypass Z.
+/// `on_frame`: the strip was placed on the frame's pixel lattice
+/// ([`defer_health_to_frame`]), so its quads are not snapped to whole world
+/// pixels, which a zoomed world camera's blitters do.
 fn draw_health_bar<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -422,23 +431,34 @@ fn draw_health_bar<'a>(
     backgrounds: [Option<u32>; 2],
     fills: std::ops::Range<u32>,
     cameras: [&'a wgpu::BindGroup; 2],
+    on_frame: bool,
 ) {
+    let draw = |pass: &mut wgpu::RenderPass<'a>,
+                texture: &'a BatchTexture,
+                camera: &'a wgpu::BindGroup,
+                instances: std::ops::Range<u32>| {
+        if on_frame {
+            batch.draw_frame_passthrough_range(pass, texture, buffer, camera, instances);
+        } else {
+            batch.draw_passthrough_range_bound(
+                pass,
+                texture,
+                buffer,
+                camera,
+                instances.start,
+                instances.end - instances.start,
+            );
+        }
+    };
     if let Some(shape) = overlay.pipbrd() {
         // Both health and Phobos shield borders are PIPBRD/E00. Their UVs
         // belong to this texture, independently of the following PIPS fills.
         for index in backgrounds.into_iter().flatten() {
-            batch.draw_passthrough_range_bound(pass, shape.texture(), buffer, cameras[0], index, 1);
+            draw(&mut *pass, shape.texture(), cameras[0], index..index + 1);
         }
     }
     if let Some(shape) = overlay.pips() {
-        batch.draw_passthrough_range_bound(
-            pass,
-            shape.texture(),
-            buffer,
-            cameras[1],
-            fills.start,
-            fills.end - fills.start,
-        );
+        draw(&mut *pass, shape.texture(), cameras[1], fills);
     }
 }
 
