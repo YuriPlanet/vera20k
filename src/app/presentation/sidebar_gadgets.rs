@@ -56,7 +56,7 @@ pub(crate) fn exit_sell_mode_without_buildings(
 ///
 /// VERA keeps these UI clocks in step with the world: a deactivated window
 /// does not stop them (unlike gamemd's `A8ED80`-gated GScreen Input poll at
-/// 55D8AB, whose only credits caller is 6D099D). Only a configured focus
+/// 55D8AB). Only an offline focus
 /// freeze, a menu, a scenario pause or a Wait_For_Players dialog stops them,
 /// through `RuntimePassDecision::sidebar_action`. In g_GameMode 0 and 5
 /// Main_Tick polls Input once per frame (55D8AB) because ThrottleFrame skips

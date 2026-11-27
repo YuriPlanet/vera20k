@@ -464,10 +464,7 @@ pub(super) fn step_ra2ts_movie(
     frontend: &mut FrontendState,
     shown: bool,
 ) -> bool {
-    // The menu loop runs with the world: only a configured focus freeze parks
-    // it on deactivation, so the movie keeps stepping in a visible background
-    // window instead of freezing until focus returns.
-    let playing = shown && !platform.focus_freeze_configured() && !platform.window_hidden;
+    let playing = shown && platform.movie_activity(None).runs();
     let elapsed = frontend
         .main_menu_movie_clock
         .elapsed(Instant::now(), playing);

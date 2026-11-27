@@ -299,6 +299,7 @@ impl App {
                         header.fps_den,
                     )
                 });
+        let activity = return_to.activity(&state.platform, state.match_state.session_mode());
         let movie = FullscreenMovie::new(
             surface,
             // BinkMovie_Open 0x0043279F selects the shared sound device.
@@ -306,7 +307,7 @@ impl App {
             voice_volume,
             subtitles,
             return_to,
-            crate::app::frontend::fullscreen_movie::playback_active(&state.platform),
+            activity,
         );
         state.frontend.fullscreen_movie = Some(movie);
         if running_scenario {

@@ -2276,7 +2276,13 @@ impl ApplicationHandler for App {
                 let hidden = size.width == 0
                     || size.height == 0
                     || state.platform.window.is_minimized().unwrap_or(false);
-                Self::set_window_hidden(&mut state.platform, &mut state.frontend, hidden);
+                Self::set_window_hidden(
+                    &mut state.platform,
+                    &mut state.frontend,
+                    state.match_state.session_mode(),
+                    &mut state.match_state.match_presentation,
+                    hidden,
+                );
                 // A minimise carries no usable client size: the surface cannot
                 // be configured to 0x0 and the UI-scale heuristic would read a
                 // zero viewport. The restore edge delivers the real size.
@@ -2414,6 +2420,8 @@ impl ApplicationHandler for App {
                 Self::set_window_hidden(
                     &mut state.platform,
                     &mut state.frontend,
+                    state.match_state.session_mode(),
+                    &mut state.match_state.match_presentation,
                     occluded && !invisible_spawn,
                 );
             }
