@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "TypeScript (AssemblyScript) SDK for VERA20K simulation and client modules (rules.wasm, ui.wasm), RFC 0001 preview",
   "type": "module",
-  "private": true,
   "types": "index.ts",
   "bin": {
     "vera20k": "bin/vera20k.js"
