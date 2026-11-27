@@ -29,8 +29,11 @@ import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import com.google.androidgamesdk.GameActivity
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * The app's activity: [GameActivity] plus the one Android feature the NDK
@@ -149,6 +152,7 @@ class VeraActivity : GameActivity() {
 
         /** The Mods page's system file manager pickers. */
         const val REQUEST_EXPORT_MOD = 0x5654
+        const val REQUEST_EXPORT_MOD_ZIP = 0x5655
         const val REQUEST_MOD_ZIP = 0x5655
         const val REQUEST_MOD_FOLDER = 0x5656
 
@@ -174,6 +178,8 @@ class VeraActivity : GameActivity() {
 
     /** The folder an export picker is waiting for; empty when none is. */
     private var pendingExport = ""
+    /** The folder a ZIP destination picker is waiting for. */
+    private var pendingExportZip = ""
 
     /** The export's two toasts, in the player's language (`VERA:ModExported`). */
     private var exportDone = ""
@@ -259,6 +265,25 @@ class VeraActivity : GameActivity() {
             true
         } catch (error: Throwable) {
             android.util.Log.w("Vera20k", "no folder picker for export: $error")
+            false
+        }
+    }
+
+    /** Packs `folder` into a ZIP at the destination the player picks. */
+    fun exportModZip(folder: String, done: String, failed: String): Boolean {
+        pendingExportZip = folder
+        exportDone = done
+        exportFailed = failed
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/zip"
+            putExtra(Intent.EXTRA_TITLE, "$folder.zip")
+        }
+        return try {
+            startActivityForResult(intent, REQUEST_EXPORT_MOD_ZIP)
+            true
+        } catch (error: Throwable) {
+            android.util.Log.w("Vera20k", "no create-document picker for export: $error")
             false
         }
     }
@@ -481,6 +506,12 @@ class VeraActivity : GameActivity() {
                 pendingExport = ""
                 if (tree != null && folder.isNotEmpty()) exportModTree(tree, folder)
             }
+            REQUEST_EXPORT_MOD_ZIP -> {
+                val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+                val folder = pendingExportZip
+                pendingExportZip = ""
+                if (uri != null && folder.isNotEmpty()) exportModZipFile(uri, folder)
+            }
             REQUEST_MOD_ZIP -> {
                 val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
                 if (uri != null) pickModZipInto(uri)
@@ -612,6 +643,44 @@ class VeraActivity : GameActivity() {
             }
             runOnUiThread { toast(if (ok) exportDone else exportFailed) }
         }.start()
+    }
+
+    /** Writes `filesDir/Mods/<folder>` into the picked document, off the UI thread. */
+    private fun exportModZipFile(uri: Uri, folder: String) {
+        Thread {
+            val ok = try {
+                val source = File(File(filesDir, "Mods"), folder)
+                require(source.isDirectory) { "no such mod: $folder" }
+                contentResolver.openOutputStream(uri, "w")?.use { raw ->
+                    ZipOutputStream(BufferedOutputStream(raw)).use { zip ->
+                        zip.setLevel(1)
+                        addZipEntries(zip, source, "")
+                    }
+                    true
+                } ?: error("no output stream")
+            } catch (error: Throwable) {
+                android.util.Log.w("Vera20k", "mod zip export failed: $error")
+                runCatching { contentResolver.delete(uri, null, null) }
+                false
+            }
+            runOnUiThread { toast(if (ok) exportDone else exportFailed) }
+        }.start()
+    }
+
+    /** Adds `dir` under `prefix` with forward-slash entries, directories included. */
+    private fun addZipEntries(zip: ZipOutputStream, dir: File, prefix: String) {
+        for (child in dir.listFiles().orEmpty().sortedBy { it.name }) {
+            val name = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+            if (child.isDirectory) {
+                zip.putNextEntry(ZipEntry("$name/"))
+                zip.closeEntry()
+                addZipEntries(zip, child, name)
+            } else {
+                zip.putNextEntry(ZipEntry(name))
+                child.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+        }
     }
 
     private fun copyDirTo(source: File, tree: Uri, parentId: String) {

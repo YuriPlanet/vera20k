@@ -1851,6 +1851,21 @@ impl App {
                 ),
                 _ => {}
             },
+            #[cfg(target_os = "android")]
+            Purpose::ModExportChoice(folder) => match answer {
+                0 | 2 => Self::answer_mod_export(
+                    &state.platform.window,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.persistence.options_profile,
+                    &folder,
+                    answer == 0,
+                ),
+                _ => {}
+            },
+            #[cfg(not(target_os = "android"))]
+            Purpose::ModExportChoice(_) => {}
         }
     }
 
