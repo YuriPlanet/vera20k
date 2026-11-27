@@ -167,13 +167,17 @@ impl ShellSlideKind {
             },
             |page| page.stacked.len() as u32,
         );
-        crate::ui::shell::slide::SlideDialogSpec {
+        let mut column = crate::ui::shell::slide::SlideDialogSpec {
             top_buttons,
             // The online lobby keeps the warning monitor for its top panel.
             top_panel: spec.top_panel && page.is_none_or(crate::ui::wol_lobby::keeps_top_panel),
             ..spec
         }
-        .column(rows)
+        .column(rows);
+        if self == Self::MainMenu {
+            column.button_above_back = crate::ui::main_menu_shell::HAS_EDITION_SWITCH;
+        }
+        column
     }
 }
 
@@ -193,6 +197,8 @@ fn new_wave(
     let config = &gpu.config;
     let (width, height) = (config.width as i32, config.height as i32);
     let fitted = crate::app::frontend::shell_layout::fills_window(gpu)
+        || (kind == ShellSlideKind::MainMenu
+            && !crate::ui::main_menu_shell::retail_column_fits(width, height))
         || (kind == ShellSlideKind::Options
             && !crate::ui::main_menu_dialogs::options::shell::retail_column_fits(width, height));
     let (width, height) = if fitted {
@@ -876,6 +882,10 @@ mod tests {
             (column.top_buttons, column.bottom_button, column.map_button)
         };
         assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
+        assert_eq!(
+            ShellSlideKind::MainMenu.column(9, None).button_above_back,
+            crate::ui::main_menu_shell::HAS_EDITION_SWITCH
+        );
         assert_eq!(
             top_and_bottom(ShellSlideKind::Mods),
             (
