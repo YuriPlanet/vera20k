@@ -200,22 +200,18 @@ One owner reads and checks it for every file (`render::interface_picture`).
 When a picture fits, it replaces the SHP's pixels everywhere that SHP is
 drawn; frame numbers, offsets, hotspots, animation and size stay the SHP's.
 
-- **At game pixels** (the tactical view at 1x, the radar, the planning
-  badges) each frame is shrunk to the SHP canvas by the picture art's rule
-  (`GamePictureFrames::shrink`): a game pixel is drawn when half its picture
-  pixels are, its colour their mean. The strip is cropped and placed as the
-  SHP's frames, with index 1 for drawn pixels (240 for the mask's unlit
-  ones), so the draws' palette light, A plane and index masks work on it as
-  on any picture page.
-- **Zoomed** (wheel or Options zoom), a picture above 1x draws again from
-  its frames at their own resolution in the HD pass (chain 6,
-  `render::picture_zoom`), as the world's picture art does: each strip keeps
-  an HD twin at the same normalised coordinates, and the pass copies the
-  strip's opaque instances after the world's, in draw order, with the camera
-  the world draw bound (the tactical A plane, or the neutral one for draws
-  that bypass A). Translucent draws (a placement cell's fade) and the packed
-  self-heal pulse keep their magnified pixels. Health bars under the wheel
-  zoom are drawn after the magnification at window pixels and stay 1x.
+- **Placement** is the game pixels' (`GamePictureFrames::shrink`): a game
+  pixel is drawn when half its picture pixels are. Each frame is cropped to
+  those pixels and placed as the SHP's frames. What the CPU draws (the
+  radar beacon) takes the game pixels' colour, their mean, with index 1 for
+  drawn pixels (240 for the mask's unlit ones).
+- **On the GPU** a strip (`CenteredShapeStrip::from_picture_on_device`) is
+  one picture page at the picture's own resolution, as the world's picture
+  art is (below, `render::picture_zoom`), sampled at the level the camera
+  needs: the frame's mean at 1x, the art's own pixels zoomed in. The draws'
+  palette light, A plane and index masks work on it as on any picture
+  page. Health bars under the wheel zoom are drawn at window pixels and
+  stay 1x.
 - **The cursors** are not tactical sprites. The window system's image
   (`hardware_cursor`) is the frame resampled to the size the SHP's would take
   (canvas times menu or zoom scale, window pixels), by the area each window
@@ -319,24 +315,58 @@ The new art never reads an SHP, VXL, HVA, palette or VPL. It reaches the
 screen through the blitters every SHP and voxel image already uses, unchanged,
 so it sorts, shades and shadows by the same rules:
 
-- **Pictures** become RGBA source pages of the sprite atlas, beside its
-  palette-index pages: the blitters' existing RGBA source mode
-  (`sprite_source.wgsl`, `source_palette` 0) with an index plane. Each frame is
-  shrunk to `PictureSize=` game pixels (a game pixel is drawn when half its
-  picture pixels are; its colour is their mean), cropped to its drawn pixels
-  like a stored SHP frame, and centred on the canvas the same way. The index
-  plane holds 0 for holes, 1 for lit pixels and 240 for the mask's unlit
-  pixels, so `PaletteLight` leaves those alone. A house-colour pixel takes the
-  owner's ramp step for its brightness as it draws: its index is 16 plus the
-  step, the entry's `source_palette` carries `PICTURE_HOUSE` and the house
-  colour, and every picture page holds all house colours' ramps at its top
-  left (`picture_house.wgsl`, `RAMP_STRIP`). So one frame on a page serves
-  every owner, and every section that names the same file; at most a second
-  copy keeps its own colours for keys drawn without a remap. A new house
-  colour mid-match (relation colours) adds entries, not frames. At HD a
-  house-colour texel is black on the page and a two-channel house layer
-  (step, coverage, with the colour's mipmaps) adds the owner's colour by
-  coverage. The atlas entries are keyed and drawn as an SHP
+- **Pictures** become RGBA pages of the sprite atlas, beside its
+  palette-index pages, each frame once on the GPU at the picture's own
+  resolution:
+  - **CPU metadata.** Each frame is shrunk to `PictureSize=` game pixels on
+    the CPU only (`GamePictureFrames::shrink`; a game pixel is drawn when
+    half its picture pixels are, its colour their mean, its class the
+    mask's majority). That gives everything the game reads and the CPU
+    draws: the drawn rectangle (cropped like a stored SHP frame, centred on
+    the canvas the same way), frame bounds, building render bounds, stored
+    frame offsets, and the game-pixel colour and index plane of overlay,
+    bridge, cameo and radar art. None of it is uploaded.
+  - **One page.** The frame's drawn rectangle at the picture's resolution
+    goes on a picture page (`picture_atlas::PicturePage`,
+    `render::picture_zoom`): premultiplied encoded colour (a picture pixel
+    is drawn when half covered), an index plane per texel (0 for holes, 1
+    lit, 240 for the mask's unlit pixels, so `PaletteLight` leaves those
+    alone), and mip levels, each the 2x2 mean of the one above, down to one
+    texel per game pixel and one level past it for the camera zoomed out.
+    Art of 3, 5, 6 or 7 is resampled once at load to the next power of two
+    (area-weighted, so each game pixel keeps its mean and coverage; the
+    index plane nearest), so a level is exactly one texel per game pixel;
+    1x art's page is its game pixels. Pages hold one page scale each, two
+    empty game pixels around every frame so no level's filtering reaches a
+    neighbour, and entries address them by UV in game pixels over the
+    page's game-pixel extent.
+  - **Sampled by lod.** A picture page's binding is its only one: the
+    blitters (`sprite_source.wgsl`, an RGBA HD page by its house ramps at
+    binding 5) sample it linearly at lod = log2(page texels per target
+    pixel) from the UV derivatives, at every zoom: at zoom 1 the
+    one-texel-per-game-pixel level, whose texel is the game pixel's mean,
+    so a game pixel draws where at least half its picture pixels do, as the
+    shrink says; zoomed in the art's own pixels; zoomed out the zoom-out
+    level. A pixel less than half covered at the level sampled, or whose
+    nearest level-0 index is 0, is a hole. Compared with the CPU shrink it
+    replaces on the GPU, edge pixels and colours can differ slightly (the
+    filtered mean and the index under the pixel's centre, not the majority
+    class); retail data has no pictures and draws as before.
+  - **House colour.** A house-colour pixel takes the owner's ramp step for
+    its brightness as it draws: its index is 16 plus the step, its colour
+    black, a two-channel house layer (step, coverage, with the colour's
+    mipmaps) holds the step, and the entry's `source_palette` carries
+    `PICTURE_HOUSE` and the house colour. The renderer holds every house
+    colour's ramps in one 256x16 texture (`RAMP_STRIP`,
+    `BatchRenderer::write_picture_ramps`, written when the atlas adds
+    pictures) that every picture page binds at binding 5
+    (`picture_house.wgsl`); the owner's colour is added by coverage. So one
+    frame on a page serves every owner, and every section that names the
+    same file; at most a second copy keeps its own colours for keys drawn
+    without a remap. A new house colour mid-match (relation colours) adds
+    entries, not frames.
+
+  The atlas entries are keyed and drawn as an SHP
   frame's: native Z from the drawn rectangle, Display order, `Shadow=` frames,
   darkening counts and translucency all follow without new code.
 - **Models** are drawn by the GPU every frame from their meshes into transient
@@ -368,14 +398,35 @@ so it sorts, shades and shadows by the same rules:
   bottom 16 vertical, each seeded on its own (`native_z::voxel_depth_region`).
   Nothing of a pose is kept between
   frames; only each model's meshes and textures stay on the GPU. The page
-  starts at 1024 square and doubles after a frame whose images did not fit.
+  starts at 1024 game pixels square, doubles after a frame whose images did
+  not fit and halves after 600 frames in a row that filled under an eighth
+  of it.
+- **Model resolution follows the camera.** The page is drawn at the world
+  camera's zoom (wheel zoom times the Options scale, at least 1;
+  `model_draw::page_scale`): an image of `w x h` game pixels takes
+  `w * zoom x h * zoom` page texels, the meshes projected at that scale, so
+  the blitters, which give each game pixel `zoom` target pixels, read one
+  texel per target pixel (nearest), as a mesh under a 3D camera is drawn,
+  at any zoom, whole or not. The rectangle, anchor, Z, Display order,
+  shadow crop and bridge split stay in game pixels; the page's normalised
+  UVs address the scaled image. The texture is allocated for the zoom
+  rounded up to a quarter (one reallocation per step of an easing zoom),
+  at most 4096 texels across (or its game-pixel side, if larger) and the
+  device limit; a page past that draws at the scale that fits (2x for a
+  2048 game-pixel page), magnified nearest from there. At zoom 1 and below
+  it draws at game pixels, as before. There is one page and no HD twin:
+  every blitter binds the page's own binding (RGBA colour and index plane
+  at the same resolution, nearest sampler). The texels drawn are about the
+  target pixels the models cover, since the world the window shows shrinks
+  as the zoom grows.
 - **Model shadows.** The `shadow` node's meshes, else the body's, at frame
   0, flattened onto their lowest point and taken through the shadow key's
   facing and slope matrix, as `0x00753F90` projects a VXL section's
   bottom-face quad: camera z dropped, the viewer halved for
   `ConsideredAircraft=` (`0x00707319`), then 3 pixels right (the light,
   `0x00887420`). The GPU draws it as a mask on the model page, index 1 where
-  shadowed, in the rectangle `0x00754510`'s rule gives its extents. The
+  shadowed, in the rectangle `0x00754510`'s rule gives its extents, at the
+  page's scale like the bodies (sharp edges zoomed in). The
   unit's piece hands it to the SHP shadow edit
   (`SpriteAtlasEdit(page, Shadow)`), so darkening counts follow the native
   rule. It takes each voxel shadow path's admission (`NoShadow=`, cloak,
@@ -418,20 +469,10 @@ so it sorts, shades and shadows by the same rules:
   `Picture=`; it appends the picture pages and entries instead
   (`render::picture_atlas`). No shader, pipeline, bind group layout or draw
   pass changes.
-- **Zoomed.** At 1x a picture draws at `PictureSize`. With the view magnified
-  (wheel zoom or the Options zoom), chain 6 draws picture and model objects
-  again after the magnification at the art's own resolution, depth-tested
-  against the battlefield's depth in their shader. A model has no stored HD
-  art: while the view is magnified (wheel zoom times Options zoom above 1),
-  the model page is drawn a second time each frame at that magnification
-  rounded up, at most 4x, into its HD twin with the same layout
-  (`model_draw::HdTwin`), which the atlas holds as the page's HD page, so
-  the zoomed draw takes model instances as it takes picture instances.
-  Model shadows keep their 1x pixels. A sharp pixel replaces a magnified
-  one only where the completed world still holds the object's own 1x pixel
-  (the shader recomputes that pixel from the 1x page and compares it with
-  the world's colour), so units, SHP anims, smoke and explosions drawn over
-  the object later keep their magnified pixels instead of being covered.
+- **Zoomed.** Nothing is drawn twice: a picture page is sampled at the
+  level the camera needs (above) and the model page is drawn at the
+  camera's scale. The overlay, bridge and cameo atlases' pictures are their
+  game pixels only, on those atlases' single pages.
 - **Model textures** carry mipmaps (each level the alpha-weighted mean of
   the one above, in linear light for colour) and are sampled at the level
   the screen derivatives pick, so a texture shrunk to a few pixels averages

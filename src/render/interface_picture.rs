@@ -24,9 +24,9 @@ pub(crate) struct InterfacePicture {
 }
 
 impl InterfacePicture {
-    /// The picture at the SHP's own pixels, as the picture art draws at 1x
-    /// (`GamePictureFrames::shrink`), keeping its frames at their own
-    /// resolution for the zoomed draw.
+    /// The picture on the SHP's canvas (`GamePictureFrames::shrink`): at the
+    /// SHP's own pixels for what the CPU reads and draws (the radar beacon),
+    /// and at its own resolution for the strip's picture page.
     pub(crate) fn game_frames(&self) -> Option<GamePictureFrames> {
         let canvas = [
             self.picture.width / self.scale,

@@ -8,28 +8,29 @@
 @group(1) @binding(0) var t_sprite: texture_2d<f32>;
 @group(1) @binding(1) var s_sprite: sampler;
 @group(1) @binding(3) var source_indices: texture_2d<u32>;
-// VERA-only, experimental (docs/zoom-one-pass.md): an RGBA page's HD
-// binding (`picture_house.wgsl`; a picture page's twin, or the overlay
-// atlas's, `hd_terrain::RgbaTwin`) binds the HD twin at 0 (premultiplied
-// encoded colour with mipmaps, a linear sampler at 1), an index plane at 3
-// (the twin's level-0 indices, or the 1x page's own), its house layer at 4
-// and the 1x page at 5. An indexed SHP page's HD page (`hd_art::ShpHd`)
-// keeps the palette rows at 0 and its 1x indices at 3, and binds its 2x
-// twin at 4 (`shp_hd_color`) with a linear sampler at 1. Every other page
-// binds 1x1 placeholders at 4 and 5.
+// VERA-only, experimental (docs/zoom-one-pass.md): an RGBA HD page's
+// binding (a picture page, `picture_zoom::PictureHdPage`, the only binding
+// it has; or the overlay atlas's HD art twin, `hd_terrain::RgbaTwin`) binds
+// premultiplied encoded colour with mipmaps at 0 and a linear sampler at 1,
+// its level-0 index plane at 3, its house layer at 4 and the house ramps
+// (`picture_house.wgsl`) at 5. An indexed SHP page's HD page
+// (`hd_art::ShpHd`) keeps the palette rows at 0 and its 1x indices at 3,
+// and binds its 2x twin at 4 (`shp_hd_color`) with a linear sampler at 1.
+// Every other page, the model page among them, binds 1x1 placeholders at 4
+// and 5.
 @group(1) @binding(4) var source_house: texture_2d<f32>;
-@group(1) @binding(5) var source_low_page: texture_2d<f32>;
+@group(1) @binding(5) var source_ramps: texture_2d<f32>;
 
-// Whether the page bound is an RGBA page's HD twin: only such a binding
-// binds a 1x page bigger than the 1x1 placeholder.
+// Whether the page bound is an RGBA HD page: only such a binding binds
+// house ramps bigger than the 1x1 placeholder.
 fn source_hd() -> bool {
-    return textureDimensions(source_low_page).x > 1u;
+    return textureDimensions(source_ramps).x > 1u;
 }
 
 // Whether the page bound is an indexed SHP page with VERA's HD art twin at
-// binding 4: the 1x page placeholder beside a twin bigger than 1x1.
+// binding 4: the ramps placeholder beside a twin bigger than 1x1.
 fn source_shp_hd() -> bool {
-    return textureDimensions(source_low_page).x <= 1u && textureDimensions(source_house).x > 1u;
+    return textureDimensions(source_ramps).x <= 1u && textureDimensions(source_house).x > 1u;
 }
 
 // An SHP HD twin texel `twin` (premultiplied by its coverage) at a pixel
@@ -56,24 +57,25 @@ fn shp_hd_color(twin: vec4f, index: u32, source_palette: u32) -> vec4f {
     return vec4f(clamp(rgb, vec3f(0.0), vec3f(1.0)), own.a);
 }
 
-// The level of an HD twin of `size` texels to sample for UV derivatives
-// `uv_dx`, `uv_dy`: log2 of the twin texels a target pixel spans, which in
-// the one-pass zoomed draw is the twin's scale over the camera zoom. The
-// sampler clamps it to the twin's last mip; textureNumLevels has no GLSL ES
-// form.
+// The level of an HD page of `size` texels to sample for UV derivatives
+// `uv_dx`, `uv_dy`: log2 of the page texels a target pixel spans, which for
+// an unscaled quad is the page's scale over the camera zoom (a picture page
+// at zoom 1: its one-texel-per-game-pixel level; zoomed out: a zoom-out
+// level). The sampler clamps it to the page's last mip; textureNumLevels has
+// no GLSL ES form.
 fn twin_lod(size: vec2u, uv_dx: vec2f, uv_dy: vec2f) -> f32 {
     let dims = vec2f(size);
     let span = max(length(uv_dx * dims), length(uv_dy * dims));
     return max(log2(max(span, 1e-6)), 0.0);
 }
 
-// An HD twin's `premultiplied` colour and `house` layer at a pixel whose
+// An HD page's `premultiplied` colour and `house` layer at a pixel whose
 // nearest level-0 index is `index`, as `source_color` returns a 1x pixel:
-// encoded colour, opaque. A pixel less than half covered, or whose nearest
-// twin texel is a hole, is a hole (`picture_zoom.wgsl` draws the same
-// pixels). House-colour texels are black on the twin; their owner's ramp
-// colour, from the 1x page's strip, comes in by their coverage at the step
-// their filtered layer gives.
+// encoded colour, opaque. A pixel less than half covered at the level
+// sampled, or whose nearest level-0 texel is a hole, is a hole.
+// House-colour texels are black on the page; their owner's ramp colour,
+// from the house ramps, comes in by their coverage at the step their
+// filtered layer gives.
 fn hd_source_color(premultiplied: vec4f, house: vec4f, index: u32, source_palette: u32) -> vec4f {
     if premultiplied.a < 0.5 || index == 0u {
         return vec4f(0.0);
@@ -81,7 +83,7 @@ fn hd_source_color(premultiplied: vec4f, house: vec4f, index: u32, source_palett
     var colour = premultiplied.rgb;
     if picture_house(source_palette) && house.g > 0.0 {
         let step = u32(round(house.r / house.g * 15.0));
-        let ramp = textureLoad(source_low_page, picture_ramp_texel(source_palette, step), 0).rgb;
+        let ramp = textureLoad(source_ramps, picture_ramp_texel(source_palette, step), 0).rgb;
         colour = colour + srgb_encode(ramp) * house.g;
     }
     return vec4f(min(colour / premultiplied.a, vec3f(1.0)), 1.0);
@@ -141,21 +143,17 @@ fn loaded_source_color(texel: vec2i, twin_texel: vec2i, index: u32, source_palet
             source_palette,
         );
     }
-    return rgba_source_color(textureLoad(t_sprite, texel, 0), index, source_palette);
+    return rgba_source_color(textureLoad(t_sprite, texel, 0));
 }
 
-// An RGBA page's `color` at a pixel of index `index`, encoded: a picture
-// house-colour pixel's from its owner's ramp on the page.
-fn rgba_source_color(color: vec4f, index: u32, source_palette: u32) -> vec4f {
-    var rgb = color.rgb;
-    if picture_house_pixel(index, source_palette) {
-        rgb = textureLoad(t_sprite, picture_ramp_texel(source_palette, index - 16u), 0).rgb;
-    }
-    return vec4f(srgb_encode(rgb), color.a);
+// A plain RGBA page's `color`, encoded. Only HD pages hold picture house
+// colour.
+fn rgba_source_color(color: vec4f) -> vec4f {
+    return vec4f(srgb_encode(color.rgb), color.a);
 }
 
-// `source_color` for blitters that sample `uv`. Every page has one mip and one
-// filter, so level 0 is the texel an ordinary sample reads. An HD twin
+// `source_color` for blitters that sample `uv`. A plain page has one mip and
+// one filter, so level 0 is the texel an ordinary sample reads. An HD page
 // (`source_hd`, `source_shp_hd`) is sampled at the level whose texels match
 // the target's pixels (`twin_lod`). The UV's derivatives are taken first, in
 // uniform control flow; callers call this at the top of their fragment entry
@@ -179,6 +177,5 @@ fn sampled_source_color(uv: vec2f, index: u32, source_palette: u32) -> vec4f {
             source_palette,
         );
     }
-    let color = textureSampleLevel(t_sprite, s_sprite, uv, 0.0);
-    return rgba_source_color(color, index, source_palette);
+    return rgba_source_color(textureSampleLevel(t_sprite, s_sprite, uv, 0.0));
 }

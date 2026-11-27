@@ -127,31 +127,18 @@ pub(super) enum ShadowDepth {
     Ground,
 }
 
-/// Start the frame's model drawing: hold the model page in the sprite atlas
+/// Start the frame's model drawing: hold the model page in the sprite atlas,
+/// drawn at `camera_zoom`, the world camera's zoom (wheel zoom times the
+/// Options scale), so a model is as sharp as the camera draws it
 /// ([`crate::render::model_draw::ModelFrame::begin_frame`]). Nothing happens
 /// while no type declares a model, so retail data allocates and walks
 /// nothing here.
-pub(crate) fn begin_model_frame(state: &mut AppState) {
+pub(crate) fn begin_model_frame(state: &mut AppState, camera_zoom: f32) {
     if !crate::app::state::active_rules(&state.frontend, &state.match_state)
         .is_some_and(|rules| rules.declares_models())
     {
         return;
     }
-    // How much the view magnifies the world: the wheel zoom times the
-    // Options zoom. Above 1 the model page gets an HD twin at about that
-    // multiple, which the world blitters sample while the camera zooms in
-    // (`SpriteAtlas::bind_one_pass_hd`, `docs/zoom-one-pass.md`).
-    let options = state
-        .renderer
-        .tactical_zoom(&state.frontend.screen)
-        .filter(|zoom| zoom.percent > 100)
-        .map_or(1.0, |zoom| zoom.scale());
-    let magnified = state.match_state.input.zoom_level.max(1.0) * options;
-    let hd_scale = if magnified > 1.01 {
-        magnified.ceil() as u32
-    } else {
-        1
-    };
     let renderer = &mut state.renderer;
     let Some(atlas) = state.match_state.match_presentation.sprite_atlas.as_mut() else {
         return;
@@ -160,7 +147,7 @@ pub(crate) fn begin_model_frame(state: &mut AppState) {
         &renderer.gpu.device,
         &renderer.batch_renderer,
         atlas,
-        hd_scale,
+        camera_zoom,
     );
 }
 

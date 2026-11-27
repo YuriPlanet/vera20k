@@ -830,11 +830,17 @@ pub struct BatchRenderer {
     texture_bind_group_layout: wgpu::BindGroupLayout,
     default_source_indices: wgpu::TextureView,
     /// VERA-only, experimental (`docs/zoom-one-pass.md`): what a page's
-    /// bind group holds at bindings 4 and 5 unless it is a picture page's HD
-    /// binding (`sprite_source.wgsl`): no house layer, and a 1x1 "1x page",
-    /// which tells the shader the page is not an HD twin.
+    /// bind group holds at bindings 4 and 5 unless it is an RGBA HD page's
+    /// binding (`sprite_source.wgsl`): no house layer, and a 1x1 placeholder
+    /// for the house ramps, which tells the shader the page is not one.
     default_source_house: wgpu::TextureView,
-    default_source_low_page: wgpu::TextureView,
+    default_source_ramps: wgpu::TextureView,
+    /// VERA-only, experimental (`docs/picture-model-art.md`): the house ramps
+    /// every RGBA HD page binds at binding 5 (`picture_atlas::RAMP_STRIP`),
+    /// written by the sprite atlas when it adds pictures
+    /// ([`Self::write_picture_ramps`]); zero until then.
+    picture_ramps: wgpu::Texture,
+    picture_ramps_view: wgpu::TextureView,
     /// Layout for zdepth texture bind groups (group 1): color + sampler + R8 depth.
     zdepth_texture_bind_group_layout: wgpu::BindGroupLayout,
     /// Layout for the unit-atlas R8Uint texture (binding 0). Used by the voxel
@@ -971,10 +977,10 @@ impl BatchRenderer {
                         },
                         count: None,
                     },
-                    // VERA-only, experimental (`docs/zoom-one-pass.md`): a
-                    // picture page's HD binding adds the twin's house layer
-                    // and the 1x page (its house ramps); every other page
-                    // binds 1x1 placeholders (`sprite_source.wgsl`).
+                    // VERA-only, experimental (`docs/zoom-one-pass.md`): an
+                    // RGBA HD page's binding adds its house layer and the
+                    // house ramps; every other page binds 1x1 placeholders
+                    // (`sprite_source.wgsl`).
                     wgpu::BindGroupLayoutEntry {
                         binding: 4,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -1007,7 +1013,7 @@ impl BatchRenderer {
             wgpu::TextureFormat::Rg8Unorm,
         )
         .create_view(&Default::default());
-        let default_source_low_page = page_texture_on_device(
+        let default_source_ramps = page_texture_on_device(
             device,
             queue,
             &[0; 4],
@@ -1015,6 +1021,29 @@ impl BatchRenderer {
             wgpu::TextureFormat::Rgba8Unorm,
         )
         .create_view(&Default::default());
+        let [ramps_width, ramps_height] = crate::render::picture_atlas::RAMP_STRIP;
+        // sRGB, so the shader reads the ramp colours in light and encodes
+        // them as it does every RGBA page's colour.
+        let picture_ramps = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("Picture house ramps"),
+                size: wgpu::Extent3d {
+                    width: ramps_width,
+                    height: ramps_height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &vec![0; (ramps_width * ramps_height * 4) as usize],
+        );
+        let picture_ramps_view = picture_ramps.create_view(&Default::default());
 
         // Camera uniform buffer (initialized with default values).
         let camera_uniform: CameraUniform = CameraUniform {
@@ -1692,7 +1721,9 @@ impl BatchRenderer {
             texture_bind_group_layout,
             default_source_indices,
             default_source_house,
-            default_source_low_page,
+            default_source_ramps,
+            picture_ramps,
+            picture_ramps_view,
             zdepth_texture_bind_group_layout,
             unit_atlas_bind_group_layout,
             voxel_palette_bind_group_layout,
@@ -2100,28 +2131,26 @@ impl BatchRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&self.default_source_low_page),
+                    resource: wgpu::BindingResource::TextureView(&self.default_source_ramps),
                 },
             ],
         })
     }
 
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): a picture page's HD
-    /// binding, which the world blitters read in place of the page's own
-    /// while the battlefield draws in one pass at a zoom above 1
-    /// (`SpriteAtlas::bind_one_pass_hd`): the HD twin's premultiplied encoded
-    /// `color` with its mipmaps, sampled linearly between levels; its level-0
-    /// `indices`; its house layer `house` (none: no house colour); and
-    /// `low_page`, the 1x page's colour, whose top-left strip holds the house
-    /// ramps (`picture_house.wgsl`) and whose presence tells
-    /// `sprite_source.wgsl` it reads a twin.
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): an RGBA HD page's
+    /// binding: a picture page's (`picture_zoom::PictureHdPage`), its only
+    /// one, or the overlay atlas's HD art twin (`hd_terrain::RgbaTwin`). Its
+    /// premultiplied encoded `color` with its mipmaps, sampled linearly
+    /// between levels; its level-0 `indices`; its house layer `house` (none:
+    /// no house colour); and the house ramps ([`Self::write_picture_ramps`],
+    /// `picture_house.wgsl`), whose presence at binding 5 tells
+    /// `sprite_source.wgsl` it reads such a page.
     pub(crate) fn create_picture_hd_binding(
         &self,
         device: &wgpu::Device,
         color: &wgpu::TextureView,
         indices: &wgpu::TextureView,
         house: Option<&wgpu::TextureView>,
-        low_page: &wgpu::TextureView,
     ) -> wgpu::BindGroup {
         self.hd_binding(
             device,
@@ -2129,16 +2158,38 @@ impl BatchRenderer {
             color,
             indices,
             house.unwrap_or(&self.default_source_house),
-            low_page,
+            &self.picture_ramps_view,
         )
+    }
+
+    /// VERA-only, experimental (`docs/picture-model-art.md`): store `strip`,
+    /// every house colour's ramp ([`crate::render::picture_atlas::ramp_strip`]),
+    /// as the house ramps every picture page's binding reads.
+    pub(crate) fn write_picture_ramps(&self, queue: &wgpu::Queue, strip: &[u8]) {
+        let [width, height] = crate::render::picture_atlas::RAMP_STRIP;
+        queue.write_texture(
+            self.picture_ramps.as_image_copy(),
+            strip,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// VERA-only, experimental (`docs/zoom-one-pass.md`): an indexed SHP HD
     /// page's binding (`hd_art::ShpHd`): the atlas's `palette_rows` and the
     /// page's 1x `indices` as an ordinary indexed page binds them, and its
     /// premultiplied mipmapped 2x `twin` in the house layer's place, sampled
-    /// linearly between levels; the 1x page stays the 1x1 placeholder, which
-    /// tells `sprite_source.wgsl` (`source_shp_hd`) the twin is an SHP one.
+    /// linearly between levels; the house ramps stay the 1x1 placeholder,
+    /// which tells `sprite_source.wgsl` (`source_shp_hd`) the twin is an SHP
+    /// one.
     pub(crate) fn create_shp_hd_binding(
         &self,
         device: &wgpu::Device,
@@ -2152,7 +2203,7 @@ impl BatchRenderer {
             palette_rows,
             indices,
             twin,
-            &self.default_source_low_page,
+            &self.default_source_ramps,
         )
     }
 
@@ -2163,7 +2214,7 @@ impl BatchRenderer {
         color: &wgpu::TextureView,
         indices: &wgpu::TextureView,
         house: &wgpu::TextureView,
-        low_page: &wgpu::TextureView,
+        ramps: &wgpu::TextureView,
     ) -> wgpu::BindGroup {
         let sampler = hd_sampler(device);
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -2188,7 +2239,7 @@ impl BatchRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(low_page),
+                    resource: wgpu::BindingResource::TextureView(ramps),
                 },
             ],
         })
@@ -2421,6 +2472,9 @@ impl BatchRenderer {
         [world, neutral]
     }
 
+    /// Upload `uniform` as the world camera with a UI camera at zoom 1, for GPU
+    /// tests that draw one camera.
+    #[cfg(test)]
     pub(crate) fn write_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform) {
         self.write_cameras(queue, uniform, 1.0);
     }
@@ -2596,7 +2650,7 @@ impl BatchRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&self.default_source_low_page),
+                    resource: wgpu::BindingResource::TextureView(&self.default_source_ramps),
                 },
             ],
         });

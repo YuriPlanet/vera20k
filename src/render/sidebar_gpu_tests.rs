@@ -151,7 +151,7 @@ impl Gpu {
                 self.texture(&layer.rgba, layer.size, wgpu::TextureFormat::Rgba8UnormSrgb);
             let indices = self.texture(&[1], [1, 1], wgpu::TextureFormat::R8Uint);
             // An ordinary page's placeholders for a picture HD binding's house
-            // layer and 1x page (`sprite_source.wgsl`).
+            // layer and house ramps (`sprite_source.wgsl`).
             let no_house = self.texture(&[0; 2], [1, 1], wgpu::TextureFormat::Rg8Unorm);
             let no_low_page = self.texture(&[0; 4], [1, 1], wgpu::TextureFormat::Rgba8Unorm);
             let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {

@@ -2,21 +2,25 @@
 //! `docs/picture-model-art.md`): a declared picture's frames as the SHP
 //! blitters' RGBA source pages.
 //!
-//! Each frame is shrunk to game pixels (`PictureSize=`), cropped to its drawn
-//! pixels like a stored SHP frame, and given an index plane the blitters read
-//! as palette indices: 0 for a hole, [`LIT_INDEX`] for an ordinary pixel and
-//! [`UNLIT_INDEX`] for one light leaves alone (the mask's green). A house-colour
-//! pixel (the mask's red) takes the owner's ramp step for its brightness. In
-//! the sprite atlas it is drawn once for every owner: its index is
-//! [`HOUSE_INDEX`] plus the step, and the blitters look the colour up in the
-//! owner's row of the [`RAMP_STRIP`] every page holds at its top left
-//! (`sprite_source.wgsl`, [`PICTURE_HOUSE`]). Elsewhere it takes the ramp
-//! before upload. The SHP blitters, their shaders and their Z, shadow and
-//! light rules are the ones every SHP draws through.
+//! Each frame is shrunk to game pixels (`PictureSize=`) on the CPU, for what
+//! the game reads from it and what CPU consumers draw: its drawn rectangle
+//! (cropped like a stored SHP frame), frame bounds, building render bounds,
+//! stored-frame placement, and an index plane the blitters read as palette
+//! indices: 0 for a hole, [`LIT_INDEX`] for an ordinary pixel and
+//! [`UNLIT_INDEX`] for one light leaves alone (the mask's green). A
+//! house-colour pixel (the mask's red) takes the owner's ramp step for its
+//! brightness.
 //!
-//! Art above 1x also keeps each frame at its own resolution, for the zoomed
-//! draw (`render::picture_zoom`): the same crop, `scale` times larger, on HD
-//! twins of its pages laid out at the same normalised coordinates.
+//! The GPU holds each frame once, at the picture's own resolution (resampled
+//! to a power-of-two multiple of its game pixels, [`page_scale`]), on a
+//! [`PicturePage`] with mip levels down past one texel per game pixel, and
+//! the blitters sample the level the camera needs (`sprite_source.wgsl`). In
+//! the sprite atlas a frame is drawn once for every owner: a house-colour
+//! texel is black, its index is [`HOUSE_INDEX`] plus the step, a house layer
+//! holds the step, and the blitters add the owner's colour from the house
+//! ramps texture ([`RAMP_STRIP`], [`PICTURE_HOUSE`]). Elsewhere it takes the
+//! ramp before upload. The SHP blitters, their shaders and their Z, shadow
+//! and light rules are the ones every SHP draws through.
 
 use crate::assets::pal_file::Color;
 use crate::assets::picture_file::{PictureError, PictureFrames};
@@ -40,9 +44,24 @@ pub(crate) const HOUSE_INDEX: u8 = 16;
 /// The `ShpSpriteEntry::source_palette` bit of an RGBA picture entry whose
 /// house-colour pixels take the ramp of the house colour in its low byte.
 pub(crate) const PICTURE_HOUSE: u32 = 1 << 31;
-/// The house ramps at the top left of every picture page: house colour `h`'s
-/// step `n` at `((h % 16) * 16 + n, h / 16)`, for every house colour index.
+/// The house ramps texture every picture page reads its owners' colours
+/// from (`BatchRenderer::write_picture_ramps`): house colour `h`'s step `n` at
+/// `((h % 16) * 16 + n, h / 16)`, for every house colour index.
 pub(crate) const RAMP_STRIP: [u32; 2] = [256, 16];
+/// The mip levels a picture page has below one texel per game pixel, for a
+/// camera zoomed out (`camera::MIN_ZOOM` 0.5 is one level).
+pub(crate) const ZOOM_OUT_LEVELS: u32 = 1;
+/// Empty game pixels around every frame on a page: enough that no level's
+/// filtering, down to the last zoom-out level, reaches a neighbour.
+const PAGE_GAP: u32 = 1 << ZOOM_OUT_LEVELS;
+
+/// The texels per game pixel a page holds art of `scale` picture pixels per
+/// game pixel at: the next power of two, so that halving the page reaches
+/// exactly one texel per game pixel. Art of 3, 5, 6 or 7 is resampled up
+/// once at load (area-weighted, so each game pixel's mean is kept).
+pub(crate) fn page_scale(scale: u32) -> u32 {
+    scale.next_power_of_two()
+}
 
 /// How a sprite's house-colour pixels are coloured.
 #[derive(Debug, Clone, Copy)]
@@ -51,8 +70,9 @@ pub(crate) enum HouseColor<'a> {
     Own,
     /// The ramp's colour for their brightness, before upload.
     Baked(&'a [Color; RAMP_SIZE]),
-    /// Their own colour, with index [`HOUSE_INDEX`] plus their ramp step, for
-    /// the draw to colour (and, at HD, on the house layer instead).
+    /// Index [`HOUSE_INDEX`] plus their ramp step, for the draw to colour: on
+    /// a page black, with the step on the house layer; at game pixels their
+    /// own colour.
     Deferred,
 }
 
@@ -64,16 +84,18 @@ enum MaskClass {
     Unlit,
 }
 
-/// A picture's frames at game pixels: straight RGBA with binary alpha, the
-/// mask's class of each pixel, on the `PictureSize=` canvas.
+/// A picture's frames on the `PictureSize=` canvas: at game pixels
+/// (straight RGBA with binary alpha, the mask's class of each pixel), which
+/// is what the game reads and CPU consumers draw, and at the picture's own
+/// resolution, which pages hold ([`Self::page_sprite`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GamePictureFrames {
     pub canvas: [u32; 2],
     frames: Vec<GameFrame>,
     /// The picture's pixels per game pixel on each axis.
     scale: u32,
-    /// VERA-only, experimental: with `scale` above 1, each frame at the
-    /// picture's own resolution, its alpha as decoded; empty for 1x art.
+    /// With `scale` above 1, each frame at the picture's own resolution, its
+    /// alpha as decoded; empty for 1x art, whose game frames are its pixels.
     full: Vec<GameFrame>,
 }
 
@@ -83,8 +105,8 @@ struct GameFrame {
     classes: Vec<MaskClass>,
 }
 
-/// One frame ready for a page: the drawn rectangle of the canvas, its RGBA
-/// and its index plane.
+/// One frame at game pixels, for the CPU: the drawn rectangle of the
+/// canvas, its RGBA and its index plane.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PictureSprite {
     /// The drawn rectangle's place on the canvas, as a stored SHP frame's.
@@ -92,24 +114,27 @@ pub(crate) struct PictureSprite {
     pub size: [u32; 2],
     pub rgba: Vec<u8>,
     pub indices: Vec<u8>,
-    /// The same rectangle at the picture's own resolution, for art above 1x.
-    pub hd: Option<HdSprite>,
 }
 
-/// VERA-only, experimental: a sprite's rectangle at the picture's own
-/// resolution, `scale` picture pixels per game pixel. Its RGBA is
-/// premultiplied (holes are 0, so filtering never darkens an edge) and its
-/// index plane holds the sprite's index-plane values per picture pixel.
+/// One frame as a picture page holds it ([`GamePictureFrames::page_sprite`]):
+/// the drawn rectangle of [`PictureSprite`], in game pixels, and its texels,
+/// `scale` per game pixel. Its RGBA is premultiplied (holes are 0, so
+/// filtering never darkens an edge) and its index plane holds the
+/// index-plane value of each texel.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HdSprite {
-    pub scale: u32,
+pub(crate) struct PageSprite {
+    pub origin: [u32; 2],
     pub size: [u32; 2],
+    /// Texels per game pixel, [`page_scale`] of the picture's.
+    pub scale: u32,
+    /// `size` times `scale`.
+    pub texel_size: [u32; 2],
     pub rgba: Vec<u8>,
     pub indices: Vec<u8>,
-    /// For [`HouseColor::Deferred`], the house layer: per picture pixel, its
-    /// ramp step times [`HOUSE_LAYER_STEP`] and 255 for a house-colour pixel
-    /// (whose RGBA is black), 0 and 0 elsewhere; premultiplied, so the
-    /// zoomed draw adds the owner's colour by coverage.
+    /// For [`HouseColor::Deferred`], the house layer: per texel, its ramp
+    /// step times [`HOUSE_LAYER_STEP`] and 255 for a house-colour texel
+    /// (whose RGBA is black), 0 and 0 elsewhere; premultiplied, so the draw
+    /// adds the owner's colour by coverage.
     pub house: Option<Vec<u8>>,
 }
 
@@ -233,27 +258,27 @@ impl GamePictureFrames {
                 indices.push(index);
             }
         }
-        let hd = self.hd_sprite(frame, [left, top], size, house);
         Some(PictureSprite {
             origin: [left, top],
             size,
             rgba,
             indices,
-            hd,
         })
     }
 
-    /// Frame `frame`'s canvas rectangle at `origin`, `size` game pixels, at
-    /// the picture's own resolution; None for 1x art. A picture pixel is
-    /// drawn when at least half covered, as `shrink` counts it.
-    fn hd_sprite(
-        &self,
-        frame: usize,
-        origin: [u32; 2],
-        size: [u32; 2],
-        house: HouseColor<'_>,
-    ) -> Option<HdSprite> {
-        let source = self.full.get(frame)?;
+    /// Frame `frame` as a page holds it: its drawn rectangle (the game-pixel
+    /// crop of [`Self::sprite`]) at the picture's own resolution, resampled
+    /// to [`page_scale`], house-colour pixels as `house` says. A picture
+    /// pixel is drawn when at least half covered, as `shrink` counts it.
+    /// None when [`Self::sprite`] is.
+    pub(crate) fn page_sprite(&self, frame: usize, house: HouseColor<'_>) -> Option<PageSprite> {
+        let (origin, size) = self.drawn_rect(frame)?;
+        // 1x art's game frames are its own pixels.
+        let source = if self.scale > 1 {
+            self.full.get(frame)?
+        } else {
+            self.frames.get(frame)?
+        };
         let scale = self.scale;
         let width = self.canvas[0] * scale;
         let hd_size = size.map(|side| side * scale);
@@ -292,12 +317,22 @@ impl GamePictureFrames {
                 }
             }
         }
-        Some(HdSprite {
-            scale,
-            size: hd_size,
+        let page = page_scale(scale);
+        let texel_size = size.map(|side| side * page);
+        let mut layer = deferred.then_some(layer);
+        if page != scale {
+            rgba = resample(&rgba, hd_size, 4, scale, page);
+            indices = resample_nearest(&indices, hd_size, scale, page);
+            layer = layer.map(|layer| resample(&layer, hd_size, 2, scale, page));
+        }
+        Some(PageSprite {
+            origin,
+            size,
+            scale: page,
+            texel_size,
             rgba,
             indices,
-            house: deferred.then_some(layer),
+            house: layer,
         })
     }
 
@@ -495,11 +530,12 @@ pub(crate) struct PictureFrameId {
     pub deferred: bool,
 }
 
-/// A frame drawn for the sprite atlas: its picture's canvas and its sprite.
+/// A frame drawn for the sprite atlas: its picture's canvas and its page
+/// sprite.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PictureFrame {
     pub canvas: [u32; 2],
-    pub sprite: PictureSprite,
+    pub sprite: PageSprite,
 }
 
 /// One atlas key drawn from a picture frame, placed as `render_shp_frame`
@@ -545,7 +581,7 @@ impl PictureKey {
 
 /// What one sprite atlas build adds from pictures: the frames it drew, the
 /// keys drawn from them or from frames the atlas already holds, and the
-/// house ramps new pages hold ([`ramp_strip`]).
+/// house ramps their pages read ([`ramp_strip`]).
 #[derive(Default)]
 pub(crate) struct PreparedPictures {
     pub frames: Vec<(PictureFrameId, PictureFrame)>,
@@ -677,8 +713,8 @@ impl PictureSources {
         }
     }
 
-    /// Frame `frame` of `source`'s picture, house colour as `house` says;
-    /// None when it draws nothing, or when [`Self::frames`] or
+    /// Frame `frame` of `source`'s picture as a page holds it, house colour
+    /// as `house` says; None when it draws nothing, or when [`Self::frames`] or
     /// [`Self::prefetch`] has not decoded `source`. Reads only, so frames can
     /// be drawn side by side.
     pub(crate) fn frame(
@@ -690,7 +726,7 @@ impl PictureSources {
         let frames = self.decoded_frames(source)?;
         Some(PictureFrame {
             canvas: frames.canvas,
-            sprite: frames.sprite(frame, house)?,
+            sprite: frames.page_sprite(frame, house)?,
         })
     }
 
@@ -898,46 +934,136 @@ pub(crate) fn rubble_pictures(
         .collect()
 }
 
-/// One RGBA source page of picture sprites: its size, pixels, index plane
-/// and the frames on it with their top-left corners. Its top left holds the
-/// house ramps ([`RAMP_STRIP`]).
+/// `plane`, `size` texels of `channels` bytes at `from` texels per game
+/// pixel, at `to` texels per game pixel: each new texel is the area-weighted
+/// mean of the old texels it overlaps, so every game pixel keeps its mean
+/// (and its coverage, the plane being premultiplied). In units of
+/// `1 / (from * to)` game pixel, old texel `j` spans `[j * to, (j + 1) * to)`
+/// and new texel `i` spans `[i * from, (i + 1) * from)`.
+fn resample(plane: &[u8], size: [u32; 2], channels: usize, from: u32, to: u32) -> Vec<u8> {
+    let out_size = size.map(|side| side / from * to);
+    let taps = |count: u32| -> Vec<Vec<(usize, u32)>> {
+        (0..count)
+            .map(|i| {
+                let (start, end) = (i * from, (i + 1) * from);
+                (start / to..end.div_ceil(to))
+                    .map(|j| (j as usize, end.min((j + 1) * to) - start.max(j * to)))
+                    .collect()
+            })
+            .collect()
+    };
+    let (columns, rows) = (taps(out_size[0]), taps(out_size[1]));
+    let (width, out_width) = (size[0] as usize, out_size[0] as usize);
+    // Across first, each sum weighted by `from` in all; then down.
+    let mut across = vec![0u32; out_width * size[1] as usize * channels];
+    for y in 0..size[1] as usize {
+        for (x, taps) in columns.iter().enumerate() {
+            let out_at = (y * out_width + x) * channels;
+            for &(j, weight) in taps {
+                let at = (y * width + j) * channels;
+                for channel in 0..channels {
+                    across[out_at + channel] += u32::from(plane[at + channel]) * weight;
+                }
+            }
+        }
+    }
+    let area = from * from;
+    let mut out = Vec::with_capacity(out_width * out_size[1] as usize * channels);
+    for taps in &rows {
+        for x in 0..out_width {
+            for channel in 0..channels {
+                let sum: u32 = taps
+                    .iter()
+                    .map(|&(j, weight)| across[(j * out_width + x) * channels + channel] * weight)
+                    .sum();
+                out.push(((sum + area / 2) / area) as u8);
+            }
+        }
+    }
+    out
+}
+
+/// [`resample`] for an index plane: each new texel takes the old texel under
+/// its centre.
+fn resample_nearest(plane: &[u8], size: [u32; 2], from: u32, to: u32) -> Vec<u8> {
+    let out_size = size.map(|side| side / from * to);
+    let source = |i: u32| ((2 * i + 1) * from / (2 * to)) as usize;
+    let mut out = Vec::with_capacity((out_size[0] * out_size[1]) as usize);
+    for y in 0..out_size[1] {
+        let row = source(y) * size[0] as usize;
+        out.extend((0..out_size[0]).map(|x| plane[row + source(x)]));
+    }
+    out
+}
+
+/// One picture page as the GPU holds it: frames at `scale` texels per game
+/// pixel, premultiplied RGBA, the index plane at the same texels, and the
+/// house layer ([`PageSprite::house`]) when a frame on it has one. Its sides
+/// are whole multiples of its last mip level's texel.
 pub(crate) struct PicturePage {
-    pub size: [u32; 2],
-    pub rgba: Vec<u8>,
-    pub indices: Vec<u8>,
-    pub frames: Vec<(PagedFrame, [u32; 2])>,
-    /// VERA-only, experimental: for a page of art above 1x, its twin at the
-    /// art's own resolution (`render::picture_zoom`).
-    pub hd: Option<HdPage>,
-}
-
-/// A frame on a page: what an atlas entry drawn from it needs.
-pub(crate) struct PagedFrame {
-    pub id: PictureFrameId,
-    pub canvas: [u32; 2],
-    pub origin: [u32; 2],
-    pub size: [u32; 2],
-}
-
-/// A picture page `scale` times larger: each sprite's [`HdSprite`] at
-/// `scale` times its place on the 1x page, so a UV on one page addresses the
-/// same picture point on the other.
-pub(crate) struct HdPage {
     pub scale: u32,
+    /// In texels.
     pub size: [u32; 2],
     /// Premultiplied RGBA, level 0.
     pub rgba: Vec<u8>,
     pub indices: Vec<u8>,
-    /// The house layer ([`HdSprite::house`]), two bytes a texel, when a
-    /// frame on the page has one.
+    /// Two bytes a texel.
     pub house: Option<Vec<u8>>,
 }
 
-impl HdPage {
-    /// The mip levels the zoomed draw samples: down to one texel per game
-    /// pixel (`log2(scale)` halvings), each the 2x2 mean of the level above
-    /// (premultiplied, so holes do not darken edges). The RGBA levels one
-    /// after another, level 0 first, then the count.
+impl PicturePage {
+    /// A page `extent` game pixels large (at most `max_side` texels a side)
+    /// with each of `sprites` (all of one `scale`) at its game-pixel corner.
+    pub(crate) fn compose(
+        scale: u32,
+        extent: [u32; 2],
+        max_side: u32,
+        sprites: &[(&PageSprite, [u32; 2])],
+    ) -> Self {
+        let align = scale << ZOOM_OUT_LEVELS;
+        let size = extent.map(|side| (side * scale).next_multiple_of(align).clamp(1, max_side));
+        let texels = (size[0] * size[1]) as usize;
+        let mut rgba = vec![0; texels * 4];
+        let mut indices = vec![0; texels];
+        let mut house = sprites
+            .iter()
+            .any(|(sprite, _)| sprite.house.is_some())
+            .then(|| vec![0; texels * 2]);
+        for (sprite, at) in sprites {
+            let at = at.map(|side| side * scale);
+            blit_plane(&mut rgba, size[0], at, sprite.texel_size, &sprite.rgba, 4);
+            blit_plane(
+                &mut indices,
+                size[0],
+                at,
+                sprite.texel_size,
+                &sprite.indices,
+                1,
+            );
+            if let (Some(page), Some(layer)) = (house.as_mut(), &sprite.house) {
+                blit_plane(page, size[0], at, sprite.texel_size, layer, 2);
+            }
+        }
+        Self {
+            scale,
+            size,
+            rgba,
+            indices,
+            house,
+        }
+    }
+
+    /// The page's size in game pixels: a game point `p` on it is at UV
+    /// `p / uv_extent`.
+    pub(crate) fn uv_extent(&self) -> [f32; 2] {
+        self.size.map(|side| side as f32 / self.scale as f32)
+    }
+
+    /// The mip levels the blitters sample: down to one texel per game pixel
+    /// (`log2(scale)` halvings) and [`ZOOM_OUT_LEVELS`] past it, each the
+    /// 2x2 mean of the level above (premultiplied, so holes do not darken
+    /// edges). The RGBA levels one after another, level 0 first, then the
+    /// count.
     pub(crate) fn mip_chain(&self) -> (Vec<u8>, u32) {
         let levels = self.levels();
         (mip_chain(&self.rgba, self.size, 4, levels), levels)
@@ -950,8 +1076,23 @@ impl HdPage {
     }
 
     fn levels(&self) -> u32 {
-        (self.scale.ilog2() + 1).min(self.size[0].max(self.size[1]).ilog2() + 1)
+        (self.scale.ilog2() + 1 + ZOOM_OUT_LEVELS).min(self.size[0].max(self.size[1]).ilog2() + 1)
     }
+}
+
+/// A packed picture page and the frames on it, each at its game-pixel
+/// corner.
+pub(crate) struct PackedPicturePage {
+    pub page: PicturePage,
+    pub frames: Vec<(PagedFrame, [u32; 2])>,
+}
+
+/// A frame on a page: what an atlas entry drawn from it needs.
+pub(crate) struct PagedFrame {
+    pub id: PictureFrameId,
+    pub canvas: [u32; 2],
+    pub origin: [u32; 2],
+    pub size: [u32; 2],
 }
 
 /// `levels` mip levels of `level0`, `channels` bytes a texel: each the 2x2
@@ -982,146 +1123,85 @@ fn mip_chain(level0: &[u8], size: [u32; 2], channels: usize, levels: u32) -> Vec
     chain
 }
 
-/// Pack `frames` onto pages no wider or taller than `max_side`, tallest
-/// first in shelves, after the house ramps each page holds at its top left
-/// (`ramps`, [`RAMP_STRIP`]). A sprite larger than a page is left out,
-/// logged.
+/// Pack `frames` onto pages no wider or taller than `max_side` texels,
+/// tallest first in shelves, [`PAGE_GAP`] empty game pixels around each. A
+/// sprite larger than a page is left out, logged.
 ///
-/// Art of each scale above 1 packs onto pages of its own, a page side of at
-/// most `max_side / scale` so its HD twin fits too, with one empty game
-/// pixel between sprites so the twin's filtering stays inside each sprite.
+/// Art of each page scale packs onto pages of its own, a page side of at
+/// most `max_side / scale` game pixels.
 pub(crate) fn pack_picture_pages(
     frames: Vec<(PictureFrameId, PictureFrame)>,
-    ramps: &[u8],
     max_side: u32,
-) -> Vec<PicturePage> {
+) -> Vec<PackedPicturePage> {
     let mut by_scale: std::collections::BTreeMap<u32, Vec<(PictureFrameId, PictureFrame)>> =
         Default::default();
     for frame in frames {
-        let scale = frame.1.sprite.hd.as_ref().map_or(1, |hd| hd.scale);
-        by_scale.entry(scale).or_default().push(frame);
+        by_scale
+            .entry(frame.1.sprite.scale)
+            .or_default()
+            .push(frame);
     }
     by_scale
         .into_iter()
-        .flat_map(|(scale, group)| pack_scale(group, ramps, max_side / scale, scale))
+        .flat_map(|(scale, group)| pack_scale(group, max_side, scale))
         .collect()
 }
 
-/// [`pack_picture_pages`] for frames of one `scale`.
+/// [`pack_picture_pages`] for frames of one page `scale`.
 fn pack_scale(
     mut frames: Vec<(PictureFrameId, PictureFrame)>,
-    ramps: &[u8],
     max_side: u32,
     scale: u32,
-) -> Vec<PicturePage> {
-    let gap = u32::from(scale > 1);
+) -> Vec<PackedPicturePage> {
+    let page_side = max_side / scale;
     frames.sort_by_key(|(_, frame)| std::cmp::Reverse(frame.sprite.size[1]));
     let mut placed: Vec<Vec<((PictureFrameId, PictureFrame), [u32; 2])>> = Vec::new();
     let mut extents: Vec<[u32; 2]> = Vec::new();
-    let (mut x, mut y, mut shelf) = (0u32, 0u32, 0u32);
+    let (mut x, mut y, mut shelf) = (PAGE_GAP, PAGE_GAP, 0u32);
     for (id, frame) in frames {
         let [width, height] = frame.sprite.size;
-        // A fresh page fits it beside or below the ramps.
-        if width > max_side || height + RAMP_STRIP[1] + gap > max_side || max_side < RAMP_STRIP[0] {
+        if width + 2 * PAGE_GAP > page_side || height + 2 * PAGE_GAP > page_side {
             log::warn!(
-                "[{}] frame {} is {width}x{height}, larger than a {max_side} page",
+                "[{}] frame {} is {width}x{height}, larger than a {page_side} page",
                 id.file,
                 id.frame
             );
             crate::rules::art_problems::report(
                 &id.file,
                 "Picture=",
-                &format!("a frame is larger than a {max_side}x{max_side} page"),
+                &format!("a frame is larger than a {page_side}x{page_side} page"),
                 "such frames draw nothing",
             );
             continue;
         }
-        if !placed.is_empty() && x + width > max_side {
-            (x, y, shelf) = (0, y + shelf, 0);
+        if !placed.is_empty() && x + width + PAGE_GAP > page_side {
+            (x, y, shelf) = (PAGE_GAP, y + shelf, 0);
         }
-        if placed.is_empty() || y + height > max_side {
+        if placed.is_empty() || y + height + PAGE_GAP > page_side {
             placed.push(Vec::new());
-            // The ramps open the page's first shelf.
-            extents.push(RAMP_STRIP);
-            (x, y, shelf) = (RAMP_STRIP[0] + gap, 0, RAMP_STRIP[1] + gap);
-            if x + width > max_side {
-                (x, y, shelf) = (0, shelf, 0);
-            }
+            extents.push([0, 0]);
+            (x, y, shelf) = (PAGE_GAP, PAGE_GAP, 0);
         }
         let extent = extents.last_mut().unwrap();
-        *extent = [extent[0].max(x + width), extent[1].max(y + height)];
+        *extent = [
+            extent[0].max(x + width + PAGE_GAP),
+            extent[1].max(y + height + PAGE_GAP),
+        ];
         placed.last_mut().unwrap().push(((id, frame), [x, y]));
-        x += width + gap;
-        shelf = shelf.max(height + gap);
+        x += width + PAGE_GAP;
+        shelf = shelf.max(height + PAGE_GAP);
     }
     placed
         .into_iter()
         .zip(extents)
-        .map(|(frames, size)| {
-            let mut rgba = vec![0; (size[0] * size[1] * 4) as usize];
-            let mut indices = vec![0; (size[0] * size[1]) as usize];
-            let [strip_width, strip_height] = RAMP_STRIP;
-            for row in 0..strip_height as usize {
-                let width = strip_width as usize * 4;
-                let to = row * size[0] as usize * 4;
-                rgba[to..to + width].copy_from_slice(&ramps[row * width..(row + 1) * width]);
-            }
-            for ((_, frame), at) in &frames {
-                let sprite = &frame.sprite;
-                blit(
-                    &mut rgba,
-                    &mut indices,
-                    size[0],
-                    *at,
-                    sprite.size,
-                    &sprite.rgba,
-                    &sprite.indices,
-                );
-            }
-            let hd = (scale > 1).then(|| {
-                let hd_size = size.map(|side| side * scale);
-                let texels = (hd_size[0] * hd_size[1]) as usize;
-                let mut rgba = vec![0; texels * 4];
-                let mut indices = vec![0; texels];
-                let mut house = frames
-                    .iter()
-                    .any(|((_, frame), _)| {
-                        frame
-                            .sprite
-                            .hd
-                            .as_ref()
-                            .is_some_and(|hd| hd.house.is_some())
-                    })
-                    .then(|| vec![0; texels * 2]);
-                for ((_, frame), at) in &frames {
-                    if let Some(hd) = &frame.sprite.hd {
-                        let at = at.map(|side| side * scale);
-                        blit(
-                            &mut rgba,
-                            &mut indices,
-                            hd_size[0],
-                            at,
-                            hd.size,
-                            &hd.rgba,
-                            &hd.indices,
-                        );
-                        if let (Some(page), Some(layer)) = (house.as_mut(), &hd.house) {
-                            blit_plane(page, hd_size[0], at, hd.size, layer, 2);
-                        }
-                    }
-                }
-                HdPage {
-                    scale,
-                    size: hd_size,
-                    rgba,
-                    indices,
-                    house,
-                }
-            });
-            PicturePage {
-                size,
-                rgba,
-                indices,
+        .map(|(frames, extent)| {
+            let sprites: Vec<(&PageSprite, [u32; 2])> = frames
+                .iter()
+                .map(|((_, frame), at)| (&frame.sprite, *at))
+                .collect();
+            let page = PicturePage::compose(scale, extent, max_side, &sprites);
+            PackedPicturePage {
+                page,
                 frames: frames
                     .into_iter()
                     .map(|((id, frame), at)| {
@@ -1136,25 +1216,9 @@ fn pack_scale(
                         )
                     })
                     .collect(),
-                hd,
             }
         })
         .collect()
-}
-
-/// Copy a `size` sprite's RGBA and index plane to `at` on a page
-/// `page_width` wide.
-fn blit(
-    page_rgba: &mut [u8],
-    page_indices: &mut [u8],
-    page_width: u32,
-    at: [u32; 2],
-    size: [u32; 2],
-    rgba: &[u8],
-    indices: &[u8],
-) {
-    blit_plane(page_rgba, page_width, at, size, rgba, 4);
-    blit_plane(page_indices, page_width, at, size, indices, 1);
 }
 
 /// Copy a `size` plane of `channels` bytes a texel to `at` on a page plane
@@ -1186,24 +1250,6 @@ mod tests {
         }
     }
 
-    /// A [`RAMP_STRIP`] whose bytes on row `y` are all `y + 1`, so a page's
-    /// copy shows each row landed where it belongs.
-    fn row_marked_ramps() -> Vec<u8> {
-        let [width, height] = RAMP_STRIP;
-        (0..height)
-            .flat_map(|row| std::iter::repeat_n(row as u8 + 1, (width * 4) as usize))
-            .collect()
-    }
-
-    /// Whether `page` (`width` texels wide) holds `ramps` at its top left.
-    fn holds_ramps(page: &[u8], width: u32, ramps: &[u8]) -> bool {
-        let row_bytes = (RAMP_STRIP[0] * 4) as usize;
-        (0..RAMP_STRIP[1] as usize).all(|row| {
-            let at = row * width as usize * 4;
-            page[at..at + row_bytes] == ramps[row * row_bytes..(row + 1) * row_bytes]
-        })
-    }
-
     fn frame_id(frame: usize) -> PictureFrameId {
         PictureFrameId {
             file: "BOOM.png".into(),
@@ -1213,25 +1259,27 @@ mod tests {
         }
     }
 
-    /// A 1x frame `size` large, every pixel `value`, at canvas origin 0.
+    /// A 1x frame `size` large, every texel `value`, at canvas origin 0.
     fn plain_frame(frame: usize, size: [u32; 2], value: u8) -> (PictureFrameId, PictureFrame) {
         (
             frame_id(frame),
             PictureFrame {
                 canvas: size,
-                sprite: PictureSprite {
+                sprite: PageSprite {
                     origin: [0, 0],
                     size,
+                    scale: 1,
+                    texel_size: size,
                     rgba: vec![value; (size[0] * size[1] * 4) as usize],
                     indices: vec![LIT_INDEX; (size[0] * size[1]) as usize],
-                    hd: None,
+                    house: None,
                 },
             },
         )
     }
 
-    /// Each page's frames, by frame number, with their places.
-    fn placements(pages: &[PicturePage]) -> Vec<Vec<(usize, [u32; 2])>> {
+    /// Each page's frames, by frame number, with their game-pixel corners.
+    fn placements(pages: &[PackedPicturePage]) -> Vec<Vec<(usize, [u32; 2])>> {
         pages
             .iter()
             .map(|page| {
@@ -1295,17 +1343,18 @@ mod tests {
         assert!(GamePictureFrames::shrink(picture(2, 1, vec![frame]), None, Some([3, 1])).is_err());
     }
 
-    /// A deferred house-colour pixel keeps its own colour at 1x and carries
-    /// its ramp step in its index, [`HOUSE_INDEX`] plus the step, for the
-    /// draw to colour. At HD it is black with the same index, and the house
-    /// layer holds its step for the zoomed draw; other texels, holes
-    /// included, are 0 on that layer. Its own colours draw no house layer.
+    /// A deferred house-colour pixel keeps its own colour at game pixels and
+    /// carries its ramp step in its index, [`HOUSE_INDEX`] plus the step. On
+    /// a page it is black with the same index, and the house layer holds its
+    /// step; other texels, holes included, are 0 on that layer. 1x art's page
+    /// sprite is its game frame. Its own colours draw no house layer.
     #[test]
     fn deferred_house_pixels_carry_their_ramp_step_in_the_index_and_house_layer() {
         const H: [u8; 4] = [100, 0, 0, 255];
         const P: [u8; 4] = [50, 50, 50, 255];
         const NONE: [u8; 4] = [0; 4];
         const RED: [u8; 4] = [255, 0, 0, 255];
+        const BLACK: [u8; 4] = [0, 0, 0, 255];
         // A 1x picture: a house pixel at step 0, one at step 9, a plain one.
         let shrunk = GamePictureFrames::shrink(
             picture(3, 1, vec![[RED, H, P].concat()]),
@@ -1316,7 +1365,12 @@ mod tests {
         let sprite = shrunk.sprite(0, HouseColor::Deferred).unwrap();
         assert_eq!(sprite.rgba, [RED, H, P].concat(), "colours untouched");
         assert_eq!(sprite.indices, [HOUSE_INDEX, HOUSE_INDEX + 9, LIT_INDEX]);
-        assert!(sprite.hd.is_none());
+        let page = shrunk.page_sprite(0, HouseColor::Deferred).unwrap();
+        assert_eq!((page.scale, page.texel_size), (1, [3, 1]));
+        assert_eq!(page.rgba, [BLACK, BLACK, P].concat());
+        assert_eq!(page.indices, sprite.indices);
+        let on = |step: u8| [step * HOUSE_LAYER_STEP, 255];
+        assert_eq!(page.house.unwrap(), [on(0), on(9), [0; 2]].concat());
 
         // A 2x picture on a 2x1 canvas: the left game pixel is three house
         // pixels at step 9 and a hole, the right one plain.
@@ -1331,29 +1385,32 @@ mod tests {
         let sprite = shrunk.sprite(0, HouseColor::Deferred).unwrap();
         assert_eq!(sprite.rgba, [H, P].concat());
         assert_eq!(sprite.indices, [HOUSE_INDEX + 9, LIT_INDEX]);
-        let hd = sprite.hd.unwrap();
-        const BLACK: [u8; 4] = [0, 0, 0, 255];
+        let page = shrunk.page_sprite(0, HouseColor::Deferred).unwrap();
+        assert_eq!((page.origin, page.size), (sprite.origin, sprite.size));
+        assert_eq!((page.scale, page.texel_size), (2, [4, 2]));
         assert_eq!(
-            hd.rgba,
+            page.rgba,
             [[BLACK, BLACK, P, P], [NONE, BLACK, P, P]]
                 .concat()
                 .concat()
         );
         let house = HOUSE_INDEX + 9;
         assert_eq!(
-            hd.indices,
+            page.indices,
             [
                 house, house, LIT_INDEX, LIT_INDEX, 0, house, LIT_INDEX, LIT_INDEX
             ]
         );
-        let on = [9 * HOUSE_LAYER_STEP, 255];
         assert_eq!(
-            hd.house.unwrap(),
-            [[on, on, [0; 2], [0; 2]], [[0; 2], on, [0; 2], [0; 2]]]
-                .concat()
-                .concat()
+            page.house.unwrap(),
+            [
+                [on(9), on(9), [0; 2], [0; 2]],
+                [[0; 2], on(9), [0; 2], [0; 2]]
+            ]
+            .concat()
+            .concat()
         );
-        let own = shrunk.sprite(0, HouseColor::Own).unwrap().hd.unwrap();
+        let own = shrunk.page_sprite(0, HouseColor::Own).unwrap();
         assert!(own.house.is_none());
         assert_eq!(own.rgba[..4], H, "its own colour");
     }
@@ -1390,84 +1447,57 @@ mod tests {
         }
     }
 
-    /// Frames pack in shelves, tallest first, onto as few pages as fit, after
-    /// the ramp strip each page holds at its top left: beside it on the first
-    /// shelf when they fit there, else below it. Each page holds their
-    /// pixels and index planes where they were placed, and a frame no fresh
-    /// page fits beside the strip is left out.
+    /// Frames pack in shelves, tallest first, onto as few pages as fit, two
+    /// empty game pixels around each; each page holds their texels where
+    /// they were placed, its sides a whole number of last-level texels. A
+    /// frame no page fits is left out.
     #[test]
-    fn pictures_pack_in_shelves_after_the_ramp_strip_and_keep_their_pixels() {
-        let ramps = row_marked_ramps();
+    fn pictures_pack_in_shelves_with_a_gap_around_each_and_keep_their_texels() {
         let pages = pack_picture_pages(
             vec![
                 plain_frame(0, [3, 1], 10),
                 plain_frame(1, [2, 2], 20),
-                plain_frame(2, [40, 4], 30),
-                plain_frame(3, [30, 280], 40),
-                // 290 + the strip's 16 is past a 300 page.
-                plain_frame(4, [1, 290], 50),
-                plain_frame(5, [30, 280], 60),
+                plain_frame(2, [20, 4], 30),
+                plain_frame(3, [10, 30], 40),
+                // 37 and a gap each side is past a 40 page.
+                plain_frame(4, [1, 37], 50),
             ],
-            &ramps,
-            300,
+            40,
         );
         assert_eq!(
             placements(&pages),
-            [
-                vec![(3, [256, 0])],
-                vec![(5, [256, 0]), (2, [0, 280]), (1, [40, 280]), (0, [42, 280])],
-            ]
+            [vec![(3, [2, 2]), (2, [14, 2]), (1, [36, 2]), (0, [2, 34])]]
         );
-        assert_eq!((pages[0].size, pages[1].size), ([286, 280], [286, 284]));
-        for page in &pages {
-            assert!(holds_ramps(&page.rgba, page.size[0], &ramps));
-            assert_eq!(page.indices[0], 0, "the strip is no sprite");
-        }
-        let width = pages[1].size[0] as usize;
-        let page = &pages[1];
-        // Frame 5 beside the strip, frame 1 on row 281, frame 0 on row 280
-        // and nothing after it.
-        assert_eq!(page.rgba[256 * 4], 60);
-        assert_eq!(page.rgba[(281 * width + 41) * 4], 20);
-        assert_eq!(page.rgba[(280 * width + 42) * 4], 10);
-        assert_eq!(page.indices[280 * width + 45], 0);
-        assert_eq!(page.indices[281 * width + 42], 0, "nothing below frame 0");
-    }
+        let page = &pages[0].page;
+        assert_eq!((page.scale, page.size), (1, [40, 38]));
+        assert_eq!(pages[0].page.uv_extent(), [40.0, 38.0]);
+        let width = page.size[0] as usize;
+        assert_eq!(page.rgba[(2 * width + 14) * 4], 30);
+        assert_eq!(page.rgba[(3 * width + 37) * 4], 20);
+        assert_eq!(page.rgba[(34 * width + 4) * 4], 10);
+        assert_eq!(page.indices[2 * width + 13], 0, "the gap stays empty");
+        assert_eq!(page.indices[width + 2], 0, "the gap above the shelf");
+        assert!(page.house.is_none());
 
-    /// A frame too wide to sit beside the ramp strip opens the page below it,
-    /// a lone small frame still makes a page the strip fits on, and a page
-    /// narrower than the strip takes no frame.
-    #[test]
-    fn a_frame_too_wide_for_the_strips_shelf_goes_below_it() {
-        let ramps = row_marked_ramps();
+        // Two frames that do not share a 20 page.
         let pages = pack_picture_pages(
-            vec![plain_frame(0, [50, 3], 10), plain_frame(1, [3, 2], 20)],
-            &ramps,
-            300,
+            vec![plain_frame(0, [10, 10], 1), plain_frame(1, [10, 10], 2)],
+            20,
         );
-        assert_eq!(placements(&pages), [vec![(0, [0, 16]), (1, [50, 16])]]);
-        assert_eq!(pages[0].size, [256, 19]);
-        assert!(holds_ramps(&pages[0].rgba, 256, &ramps));
-        assert_eq!(pages[0].rgba[(16 * 256 + 50) * 4], 20);
-
-        let lone = pack_picture_pages(vec![plain_frame(0, [1, 1], 10)], &ramps, 300);
-        assert_eq!(placements(&lone), [vec![(0, [256, 0])]]);
-        assert_eq!(lone[0].size, [257, 16]);
-
-        assert!(pack_picture_pages(vec![plain_frame(0, [1, 1], 10)], &ramps, 200).is_empty());
+        assert_eq!(placements(&pages), [vec![(0, [2, 2])], vec![(1, [2, 2])]]);
+        assert_eq!(pages[1].page.size, [14, 14]);
     }
 
-    /// A 2x picture's sprite keeps its 1x crop at picture resolution
-    /// (premultiplied holes, unlit indices), and 2x sprites pack onto a page
-    /// of their own, one empty game pixel after the ramp strip and between
-    /// sprites, whose HD twin holds each at twice its 1x place, so the 1x
-    /// entry's UV addresses its HD rectangle unchanged.
+    /// A 2x picture's page sprite keeps its game-pixel crop at the picture's
+    /// resolution (premultiplied holes, unlit indices), and packs onto a page
+    /// of its own whose texels sit at twice the frame's game-pixel corner,
+    /// its UV extent in game pixels.
     #[test]
-    fn hd_sprites_keep_the_crop_and_sit_at_the_same_uv_on_the_twin_page() {
+    fn a_2x_frame_packs_apart_at_twice_its_game_corner() {
         const RED: [u8; 4] = [200, 0, 0, 255];
         const NONE: [u8; 4] = [0; 4];
         // Canvas 2x1 of a 4x2 picture: the left game pixel has three of four
-        // pixels drawn (drawn), the right one has one (a hole at 1x).
+        // pixels drawn (drawn), the right one has one (not drawn).
         let rows = [[RED, NONE, RED, NONE], [RED, RED, NONE, NONE]];
         let unlit = [0, 255, 0, 255];
         let mask_rows = [[[0; 4]; 4], [[0; 4], unlit, [0; 4], [0; 4]]];
@@ -1477,58 +1507,66 @@ mod tests {
             Some([2, 1]),
         )
         .unwrap();
-        let sprite = shrunk.sprite(0, HouseColor::Own).unwrap();
+        let sprite = shrunk.page_sprite(0, HouseColor::Own).unwrap();
         assert_eq!((sprite.origin, sprite.size), ([0, 0], [1, 1]));
-        let hd = sprite.hd.clone().unwrap();
-        assert_eq!((hd.scale, hd.size), (2, [2, 2]));
-        assert_eq!(hd.rgba, [RED, NONE, RED, RED].concat());
-        assert_eq!(hd.indices, [LIT_INDEX, 0, LIT_INDEX, UNLIT_INDEX]);
-        assert!(hd.house.is_none());
+        assert_eq!((sprite.scale, sprite.texel_size), (2, [2, 2]));
+        assert_eq!(sprite.rgba, [RED, NONE, RED, RED].concat());
+        assert_eq!(sprite.indices, [LIT_INDEX, 0, LIT_INDEX, UNLIT_INDEX]);
+        assert!(sprite.house.is_none());
 
-        let placed = |frame: usize| {
-            (
-                frame_id(frame),
-                PictureFrame {
-                    canvas: shrunk.canvas,
-                    sprite: sprite.clone(),
-                },
-            )
-        };
-        let mut plain = placed(9);
-        plain.1.sprite.hd = None;
-        let ramps = row_marked_ramps();
-        // Half of 600 holds the strip and a 2x sprite at its right.
-        let pages = pack_picture_pages(vec![placed(0), plain, placed(1)], &ramps, 600);
+        let placed = (
+            frame_id(0),
+            PictureFrame {
+                canvas: shrunk.canvas,
+                sprite,
+            },
+        );
+        let pages = pack_picture_pages(vec![placed, plain_frame(9, [1, 1], 7)], 64);
         assert_eq!(pages.len(), 2, "1x and 2x art pack apart");
-        assert!(pages[0].hd.is_none());
-        let page = &pages[1];
-        let places: Vec<[u32; 2]> = page.frames.iter().map(|(_, at)| *at).collect();
-        assert_eq!((places, page.size), (vec![[257, 0], [259, 0]], [260, 16]));
-        assert!(holds_ramps(&page.rgba, page.size[0], &ramps));
-        assert_eq!(page.indices[256], 0, "the gap after the strip stays empty");
-        let twin = page.hd.as_ref().unwrap();
-        assert_eq!((twin.scale, twin.size), (2, [520, 32]));
-        assert!(twin.house.is_none(), "no frame has a house layer");
-        // The second sprite's u is 259/260 on both pages: HD column 518.
-        let row = |y: usize, x: usize| &twin.rgba[(y * 520 + x) * 4..(y * 520 + x + 1) * 4];
+        assert_eq!(pages[0].page.scale, 1);
+        let page = &pages[1].page;
+        assert_eq!(placements(&pages[1..]), [vec![(0, [2, 2])]]);
+        // 5 game pixels, 10 texels, rounded up to the last level's 4.
+        assert_eq!((page.scale, page.size), (2, [12, 12]));
+        assert_eq!(page.uv_extent(), [6.0, 6.0]);
+        let texel = |x: usize, y: usize| &page.rgba[(y * 12 + x) * 4..(y * 12 + x + 1) * 4];
         assert_eq!(
-            (row(0, 518), row(0, 519), row(1, 519)),
-            (&RED[..], &NONE[..], &RED[..])
+            (texel(4, 4), texel(5, 4), texel(5, 5), texel(3, 4)),
+            (&RED[..], &NONE[..], &RED[..], &NONE[..])
         );
-        assert_eq!(twin.indices[520 + 519], UNLIT_INDEX);
-        // The first sprite at HD column 514 (1x column 257).
-        assert_eq!((row(0, 514), row(1, 515)), (&RED[..], &RED[..]));
-        assert_eq!(
-            (row(0, 512), row(1, 513), row(0, 516), row(1, 517)),
-            (&NONE[..], &NONE[..], &NONE[..], &NONE[..]),
-            "the gaps after the strip and between sprites stay empty"
-        );
+        assert_eq!(page.indices[5 * 12 + 5], UNLIT_INDEX);
     }
 
-    /// An HD page holds the house layer of the deferred frames on it at
-    /// their HD places, zero elsewhere.
+    /// Art of 3x is resampled to 4x by area, so a game pixel keeps its mean
+    /// colour and coverage; its index plane takes the texel under each new
+    /// texel's centre.
     #[test]
-    fn hd_pages_hold_the_house_layer_of_deferred_frames() {
+    fn a_3x_picture_is_resampled_to_4x_by_area() {
+        const RED: [u8; 4] = [255, 0, 0, 255];
+        const NONE: [u8; 4] = [0; 4];
+        // One game pixel of 3x3, its two left columns drawn.
+        let row = [RED, RED, NONE];
+        let shrunk = GamePictureFrames::shrink(
+            picture(3, 3, vec![[row; 3].concat().concat()]),
+            None,
+            Some([1, 1]),
+        )
+        .unwrap();
+        let sprite = shrunk.page_sprite(0, HouseColor::Own).unwrap();
+        assert_eq!((sprite.scale, sprite.texel_size), (4, [4, 4]));
+        let row = [RED, RED, [170, 0, 0, 170], NONE].concat();
+        assert_eq!(
+            sprite.rgba,
+            [row.clone(), row.clone(), row.clone(), row].concat()
+        );
+        let row = [LIT_INDEX, LIT_INDEX, LIT_INDEX, 0];
+        assert_eq!(sprite.indices, [row; 4].concat());
+    }
+
+    /// A page holds the house layer of the deferred frames on it at their
+    /// texels, zero elsewhere.
+    #[test]
+    fn pages_hold_the_house_layer_of_deferred_frames() {
         const RED: [u8; 4] = [255, 0, 0, 255];
         let shrunk = GamePictureFrames::shrink(
             picture(2, 2, vec![[RED; 4].concat()]),
@@ -1540,25 +1578,26 @@ mod tests {
         id.deferred = true;
         let frame = PictureFrame {
             canvas: shrunk.canvas,
-            sprite: shrunk.sprite(0, HouseColor::Deferred).unwrap(),
+            sprite: shrunk.page_sprite(0, HouseColor::Deferred).unwrap(),
         };
-        let pages = pack_picture_pages(vec![(id, frame)], &row_marked_ramps(), 600);
-        assert_eq!(pages[0].frames[0].1, [257, 0]);
-        let twin = pages[0].hd.as_ref().unwrap();
-        let house = twin.house.as_ref().unwrap();
-        let width = twin.size[0] as usize;
-        assert_eq!(house.len(), width * twin.size[1] as usize * 2);
+        let pages = pack_picture_pages(vec![(id, frame)], 64);
+        assert_eq!(pages[0].frames[0].1, [2, 2]);
+        let page = &pages[0].page;
+        let house = page.house.as_ref().unwrap();
+        let width = page.size[0] as usize;
+        assert_eq!(house.len(), width * page.size[1] as usize * 2);
         let at = |y: usize, x: usize| &house[(y * width + x) * 2..(y * width + x + 1) * 2];
-        assert_eq!((at(0, 514), at(1, 515)), (&[0, 255][..], &[0, 255][..]));
-        assert_eq!((at(0, 513), at(0, 0)), (&[0, 0][..], &[0, 0][..]));
-        assert_eq!(twin.indices[514], HOUSE_INDEX);
+        assert_eq!((at(4, 4), at(5, 5)), (&[0, 255][..], &[0, 255][..]));
+        assert_eq!((at(4, 3), at(0, 0)), (&[0, 0][..], &[0, 0][..]));
+        assert_eq!(page.indices[4 * width + 4], HOUSE_INDEX);
     }
 
-    /// An HD page's mips stop at one texel per game pixel and average
-    /// premultiplied texels, so a hole does not darken its drawn neighbour.
+    /// A page's mips go one level past one texel per game pixel and average
+    /// premultiplied texels, so a hole does not darken its drawn neighbour;
+    /// a page too small stops at one texel.
     #[test]
-    fn hd_mips_average_premultiplied_texels_down_to_game_pixels() {
-        let page = HdPage {
+    fn page_mips_average_premultiplied_texels_past_game_pixels() {
+        let mut page = PicturePage {
             scale: 2,
             size: [2, 2],
             rgba: [[200, 0, 0, 255], [0; 4], [0; 4], [200, 0, 0, 255]].concat(),
@@ -1566,19 +1605,25 @@ mod tests {
             house: None,
         };
         let (chain, levels) = page.mip_chain();
-        assert_eq!(levels, 2);
+        assert_eq!(levels, 2, "a 2x2 page has two levels");
         assert_eq!(chain[..16], page.rgba[..]);
         // Premultiplied mean: colour 100 at alpha 128 is 200 once divided.
         assert_eq!(chain[16..], [100, 0, 0, 128]);
         assert!(page.house_mip_chain().is_none());
+        page.scale = 1;
+        assert_eq!(page.mip_chain().1, 2, "1x art keeps a zoom-out level");
+        page.size = [4, 4];
+        page.rgba = vec![0; 64];
+        page.scale = 2;
+        assert_eq!(page.mip_chain().1, 3, "2x, 1x and the zoom-out level");
     }
 
     /// The house layer's mips are the 2x2 means of its two channels, as the
     /// colour mips are, down to the same level: partly covered game pixels
     /// keep their step once divided by the coverage.
     #[test]
-    fn hd_house_mips_average_the_two_channel_layer_like_the_colour() {
-        let page = HdPage {
+    fn page_house_mips_average_the_two_channel_layer_like_the_colour() {
+        let page = PicturePage {
             scale: 2,
             size: [2, 2],
             rgba: vec![0; 16],

@@ -758,17 +758,10 @@ pub struct SpriteAtlas {
     growth_indices: HashMap<usize, wgpu::Texture>,
     /// The palettes every page's indices resolve through.
     palettes: ShpPalettes,
-    /// VERA-only, experimental: the RGBA picture pages among `pages`
-    /// (`render::picture_atlas`), which bind no palette rows.
+    /// VERA-only, experimental: the RGBA pages among `pages` that bind no
+    /// palette rows: the picture pages (`render::picture_atlas`, each bound
+    /// once as an HD page, `render::picture_zoom`) and the model page.
     picture_pages: HashSet<usize>,
-    /// VERA-only, experimental: the HD twins of the picture pages of art
-    /// above 1x, by page (`render::picture_zoom`). Empty without such art.
-    picture_hd_pages: HashMap<usize, crate::render::picture_zoom::PictureHdPage>,
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): the pages among
-    /// `picture_hd_pages` whose `texture.bind_group` is now their HD binding
-    /// ([`Self::bind_one_pass_hd`]), each with the 1x binding it replaced.
-    /// Empty unless this frame draws the battlefield in one pass zoomed in.
-    one_pass_hd: HashMap<usize, wgpu::BindGroup>,
     /// VERA-only, experimental (`docs/zoom-one-pass.md`): VERA's HD art
     /// pages of SHP frames ([`Self::bind_hd_art`]); `Some(None)` once a look
     /// found no pack. Their pages are among `pages`.
@@ -856,92 +849,18 @@ impl SpriteAtlas {
             growth_indices: HashMap::new(),
             palettes,
             picture_pages: HashSet::new(),
-            picture_hd_pages: HashMap::new(),
-            one_pass_hd: HashMap::new(),
             hd: None,
             picture_frames: HashMap::new(),
             model_page: None,
         }
     }
 
-    /// VERA-only, experimental (`docs/picture-model-art.md`): whether any
-    /// picture page has an HD twin, which the zoomed draw needs.
-    pub(crate) fn has_picture_hd_pages(&self) -> bool {
-        !self.picture_hd_pages.is_empty()
-    }
-
-    /// VERA-only, experimental: install or remove page `page`'s HD twin
-    /// drawn on the GPU (the model page's, `render::model_draw`).
-    pub(crate) fn set_picture_hd_page(
-        &mut self,
-        page: usize,
-        hd: Option<crate::render::picture_zoom::PictureHdPage>,
-    ) {
-        // The HD binding names the old twin: the page takes its 1x binding
-        // back, and the next `bind_one_pass_hd` binds the new twin.
-        if let Some(low) = self.one_pass_hd.remove(&page)
-            && let Some(atlas_page) = self.pages.get_mut(page)
-        {
-            atlas_page.texture.bind_group = low;
-        }
-        match hd {
-            Some(hd) => {
-                self.picture_hd_pages.insert(page, hd);
-            }
-            None => {
-                self.picture_hd_pages.remove(&page);
-            }
-        }
-    }
-
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`, point 5): whether the
-    /// world blitters read each picture page that has an HD twin from the
-    /// twin this frame. With `on` (the battlefield drawn in one pass at a
-    /// wheel zoom above 1, `render::one_pass_zoom::active`), each such page's
-    /// `texture.bind_group` becomes its HD binding
-    /// (`PictureHdPage::one_pass_binding`), so every draw that binds the page
-    /// samples the twin at the level its zoom needs (`sprite_source.wgsl`);
-    /// without, every page has its own 1x binding back, exactly as before.
-    /// Called once per frame before the world draws, after the model page is
-    /// held for the frame (`instances::begin_model_frame`).
-    pub(crate) fn bind_one_pass_hd(
-        &mut self,
-        device: &wgpu::Device,
-        batch: &BatchRenderer,
-        on: bool,
-    ) {
-        if !on {
-            for (index, low) in self.one_pass_hd.drain() {
-                if let Some(page) = self.pages.get_mut(index) {
-                    page.texture.bind_group = low;
-                }
-            }
-            return;
-        }
-        for (&index, hd) in &self.picture_hd_pages {
-            if self.one_pass_hd.contains_key(&index) {
-                continue;
-            }
-            let Some(page) = self.pages.get_mut(index) else {
-                continue;
-            };
-            let binding = hd.one_pass_binding(device, batch, &page.texture.view);
-            let low = std::mem::replace(&mut page.texture.bind_group, binding);
-            self.one_pass_hd.insert(index, low);
-        }
-    }
-
-    /// VERA-only, experimental: page `page`'s HD twin, if it has one.
-    pub(crate) fn picture_hd_page(
-        &self,
-        page: usize,
-    ) -> Option<&crate::render::picture_zoom::PictureHdPage> {
-        self.picture_hd_pages.get(&page)
-    }
-
     /// VERA-only, experimental (`docs/picture-model-art.md`): add the new
-    /// frames of `pictures` on RGBA source pages of their own, and its keys,
-    /// placed as SHP frames, from those frames or the ones the pages hold.
+    /// frames of `pictures` on picture pages of their own, each frame once at
+    /// its picture's resolution with its mip levels (`render::picture_zoom`),
+    /// and its keys, placed as SHP frames, from those frames or the ones the
+    /// pages hold. The pages read their owners' colours from the renderer's
+    /// house ramps, which `pictures` brings.
     pub(crate) fn append_pictures(
         &mut self,
         device: &wgpu::Device,
@@ -958,10 +877,13 @@ impl SpriteAtlas {
         for frame in empty {
             self.picture_frames.insert(frame, None);
         }
+        if !ramps.is_empty() {
+            batch.write_picture_ramps(queue, &ramps);
+        }
         let max_side = device.limits().max_texture_dimension_2d;
         let new: Vec<_> = frames.iter().map(|(id, _)| id.clone()).collect();
         let mut pages =
-            crate::render::picture_atlas::pack_picture_pages(frames, &ramps, max_side).into_iter();
+            crate::render::picture_atlas::pack_picture_pages(frames, max_side).into_iter();
         while let Some(page) = pages.next() {
             let index = self.pages.len();
             let Ok(page_byte) = u8::try_from(index) else {
@@ -985,26 +907,12 @@ impl SpriteAtlas {
                 }
                 break;
             };
-            let texture = batch.create_texture_on_device(
-                device,
-                queue,
-                &page.rgba,
-                page.size[0],
-                page.size[1],
-                Some(&page.indices),
-            );
+            let texture =
+                crate::render::picture_zoom::page_texture(device, queue, batch, &page.page);
             self.pages.push(SpriteAtlasPage { texture });
             self.picture_pages.insert(index);
-            // The zoomed draw reads depth, which the WebGL2 fallback cannot.
-            if let Some(hd) = &page.hd
-                && !crate::render::gpu::webgl_fallback(device)
-            {
-                self.picture_hd_pages.insert(
-                    index,
-                    crate::render::picture_zoom::PictureHdPage::new(device, queue, hd),
-                );
-            }
-            let [width, height] = page.size.map(|side| side as f32);
+            // UVs in game pixels over the page's extent in game pixels.
+            let [width, height] = page.page.uv_extent();
             for (frame, [x, y]) in page.frames {
                 let [w, h] = frame.size.map(|side| side as f32);
                 self.picture_frames.insert(
@@ -1020,9 +928,10 @@ impl SpriteAtlas {
                 );
             }
             log::info!(
-                "Sprite atlas picture page {index} ({}x{})",
-                page.size[0],
-                page.size[1]
+                "Sprite atlas picture page {index} ({}x{} texels, {} a game pixel)",
+                page.page.size[0],
+                page.page.size[1],
+                page.page.scale
             );
         }
         // A new frame no page took (too large, or no page left) draws nothing.
@@ -1195,9 +1104,6 @@ impl SpriteAtlas {
     /// the one held before at the same index. None when no page index is left.
     pub(crate) fn install_model_page(&mut self, texture: BatchTexture) -> Option<usize> {
         if let Some(index) = self.model_page {
-            // The new page brings its own 1x binding; an HD binding made
-            // beside the old one is dropped with it.
-            self.one_pass_hd.remove(&index);
             self.pages[index].texture = texture;
             return Some(index);
         }

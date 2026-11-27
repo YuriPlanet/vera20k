@@ -432,8 +432,8 @@ impl OverlayAtlas {
     /// frame (`on`: the camera zooms in with HD art on,
     /// `render::hd_art::bind_hd_twins`). The page's `texture.bind_group` then
     /// is the twin's RGBA HD binding (`BatchRenderer::create_picture_hd_binding`
-    /// with this page's index plane and the page itself), which
-    /// `sprite_source.wgsl` samples as it samples a picture page's twin.
+    /// with this page's index plane), which `sprite_source.wgsl` samples as
+    /// it samples a picture page.
     pub(crate) fn bind_hd_twin(
         &mut self,
         device: &wgpu::Device,
@@ -444,9 +444,9 @@ impl OverlayAtlas {
         let Some(twin) = self.hd.as_mut() else {
             return;
         };
-        let (page, indices) = (&self.texture.view, &self.texture.source_indices);
+        let indices = &self.texture.source_indices;
         twin.bind(device, queue, &mut self.texture.bind_group, on, |hd| {
-            batch.create_picture_hd_binding(device, hd, indices, None, page)
+            batch.create_picture_hd_binding(device, hd, indices, None)
         });
     }
 

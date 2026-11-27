@@ -159,21 +159,6 @@ impl BeaconArt {
         }
     }
 
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): every row's
-    /// strip binds its HD twin while `on` (a camera zoomed in), its own 1x
-    /// page otherwise (`CenteredShapeStrip::bind_one_pass_hd`). Once per
-    /// frame before the world draws.
-    pub(crate) fn bind_one_pass_hd(
-        &mut self,
-        device: &wgpu::Device,
-        batch: &BatchRenderer,
-        on: bool,
-    ) {
-        for strip in self.tactical.iter_mut().flatten() {
-            strip.bind_one_pass_hd(device, batch, on);
-        }
-    }
-
     /// The row's PBEACON strip, the texture of [`Self::tactical_instance`].
     pub fn tactical_strip(&self, house: usize) -> Option<&CenteredShapeStrip> {
         self.tactical.get(house)?.as_ref()

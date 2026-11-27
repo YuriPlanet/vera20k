@@ -1,59 +1,28 @@
-//! VERA-only, experimental (`docs/picture-model-art.md`, chain 6): the HD
-//! twins of picture pages on the GPU.
+//! VERA-only, experimental (`docs/picture-model-art.md`, `docs/zoom-one-pass.md`):
+//! picture pages on the GPU.
 //!
-//! Art above 1x keeps an HD twin of each of its atlas pages
-//! (`picture_atlas::HdPage`) at the same normalised coordinates, so a world
-//! instance's UV addresses its HD rectangle unchanged. A frame whose camera
-//! zooms in binds the twin in place of the 1x page
-//! (`SpriteAtlas::bind_one_pass_hd`, `SelectionOverlay::bind_one_pass_hd`,
-//! `BeaconArt::bind_one_pass_hd`), and the ordinary blitters sample it at
-//! the level the zoom needs (`sprite_source.wgsl`, `docs/zoom-one-pass.md`).
-//! The WebGL2 fallback builds no HD pages.
+//! A picture frame exists once on the GPU, on a page at the picture's own
+//! resolution (`picture_atlas::PicturePage`) with mip levels down past one
+//! texel per game pixel. Its page binding is the only one it has: the
+//! ordinary blitters sample it at the level the camera needs at every zoom
+//! (`sprite_source.wgsl`), and read the owner's house colour from the
+//! renderer's house ramps texture (`BatchRenderer::write_picture_ramps`).
 
-use crate::render::batch::BatchRenderer;
-use crate::render::picture_atlas::HdPage;
+use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::picture_atlas::PicturePage;
 
-/// One HD page on the GPU: premultiplied encoded colour with mipmaps down to
-/// one texel per game pixel, its level-0 index plane, and its house layer
-/// with the colour's mipmaps when a frame on it has one
-/// (`picture_atlas::HdSprite::house`).
+/// One picture page on the GPU: premultiplied encoded colour with its mip
+/// levels, its level-0 index plane, and its house layer with the colour's
+/// levels when a frame on it has one (`picture_atlas::PageSprite::house`).
 pub(crate) struct PictureHdPage {
     color: wgpu::TextureView,
     indices: wgpu::TextureView,
     house: Option<wgpu::TextureView>,
+    size: [u32; 2],
 }
 
 impl PictureHdPage {
-    /// A page drawn on the GPU (a model page's HD twin,
-    /// `render::model_draw`): encoded colour that is opaque or empty, so
-    /// already premultiplied, with one level, and its index plane.
-    pub(crate) fn from_views(color: wgpu::TextureView, indices: wgpu::TextureView) -> Self {
-        Self {
-            color,
-            indices,
-            house: None,
-        }
-    }
-
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): this twin as a
-    /// group-1 page binding of the world blitters, beside `low_page`, the 1x
-    /// page's colour (`BatchRenderer::create_picture_hd_binding`).
-    pub(crate) fn one_pass_binding(
-        &self,
-        device: &wgpu::Device,
-        batch: &BatchRenderer,
-        low_page: &wgpu::TextureView,
-    ) -> wgpu::BindGroup {
-        batch.create_picture_hd_binding(
-            device,
-            &self.color,
-            &self.indices,
-            self.house.as_ref(),
-            low_page,
-        )
-    }
-
-    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, page: &HdPage) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, page: &PicturePage) -> Self {
         use wgpu::util::DeviceExt;
         let size = wgpu::Extent3d {
             width: page.size[0],
@@ -84,25 +53,55 @@ impl PictureHdPage {
             // Encoded bytes, as the palette rows: the shader divides by alpha
             // and hands the result to the palette light unchanged.
             color: texture(
-                "Picture HD page",
+                "Picture page",
                 wgpu::TextureFormat::Rgba8Unorm,
                 levels,
                 &chain,
             ),
             indices: texture(
-                "Picture HD page indices",
+                "Picture page indices",
                 wgpu::TextureFormat::R8Uint,
                 1,
                 &page.indices,
             ),
             house: page.house_mip_chain().map(|chain| {
                 texture(
-                    "Picture HD page house layer",
+                    "Picture page house layer",
                     wgpu::TextureFormat::Rg8Unorm,
                     levels,
                     &chain,
                 )
             }),
+            size: page.size,
         }
     }
+
+    /// This page as the group-1 page binding every source blitter reads
+    /// (`BatchRenderer::create_picture_hd_binding`), with its views and
+    /// size: the page's only binding.
+    pub(crate) fn texture(&self, device: &wgpu::Device, batch: &BatchRenderer) -> BatchTexture {
+        BatchTexture {
+            bind_group: batch.create_picture_hd_binding(
+                device,
+                &self.color,
+                &self.indices,
+                self.house.as_ref(),
+            ),
+            view: self.color.clone(),
+            source_indices: self.indices.clone(),
+            width: self.size[0],
+            height: self.size[1],
+        }
+    }
+}
+
+/// `page` uploaded and bound: [`PictureHdPage::new`] then
+/// [`PictureHdPage::texture`]. The bind group keeps the textures alive.
+pub(crate) fn page_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    batch: &BatchRenderer,
+    page: &PicturePage,
+) -> BatchTexture {
+    PictureHdPage::new(device, queue, page).texture(device, batch)
 }

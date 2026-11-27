@@ -4215,6 +4215,11 @@ fn a_picture_building_draws_body_buildup_and_bib_from_pictures() {
         .iter()
         .find(|(id, _)| *id == body.frame)
         .expect("the body's frame is drawn");
+    assert_eq!(
+        (frame.sprite.scale, frame.sprite.texel_size),
+        (1, frame.sprite.size),
+        "the page holds 1x art at its game pixels, once"
+    );
     let (offset, canvas_rect) = body.placement(frame.canvas, frame.sprite.origin);
     assert_eq!(offset, [-1.0, -1.0], "canvas centred, frame origin added");
     assert_eq!(canvas_rect, [-2.0, -2.0, 4.0, 4.0]);

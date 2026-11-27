@@ -154,8 +154,7 @@ pub(crate) fn debug_tint(rgb: [u8; 3], colour: [u8; 3]) -> [u8; 3] {
 const SHP_DEBUG: [u8; 3] = [0, 255, 0];
 
 /// Whether this frame's world reads HD twins: the camera zooms in and HD
-/// art is on. Not on the WebGL2 fallback, which also leaves picture pages'
-/// twins out (`SpriteAtlas::append_pictures`).
+/// art is on. Not on the WebGL2 fallback.
 pub(crate) fn twins_on(device: &wgpu::Device, camera_zoom: f32, hd_art_on: bool) -> bool {
     camera_zoom > 1.0 && hd_art_on && !super::gpu::webgl_fallback(device)
 }

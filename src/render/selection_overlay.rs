@@ -97,13 +97,6 @@ pub struct CenteredShapeStrip {
     /// `SHPStruct::Height`.
     shape_h: u32,
     frames: Vec<CenteredShapeFrame>,
-    /// VERA-only, experimental (`docs/picture-model-art.md`): for a strip
-    /// drawn from a picture above 1x, its twin at the picture's own
-    /// resolution, at the same normalised coordinates (`render::picture_zoom`).
-    hd: Option<crate::render::picture_zoom::PictureHdPage>,
-    /// The strip's own 1x binding while `texture` binds the twin
-    /// ([`Self::bind_one_pass_hd`]).
-    low_binding: Option<wgpu::BindGroup>,
 }
 
 struct CenteredShapeFrame {
@@ -119,34 +112,6 @@ struct CenteredShapeFrame {
 impl CenteredShapeStrip {
     pub fn texture(&self) -> &BatchTexture {
         &self.texture
-    }
-
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): whether the draws
-    /// that bind this strip's texture read its HD twin this frame. With `on`
-    /// (a camera zoomed in) `texture.bind_group` becomes the twin's binding
-    /// (`PictureHdPage::one_pass_binding`), as the sprite atlas's picture
-    /// pages do (`SpriteAtlas::bind_one_pass_hd`); without, the strip has its
-    /// own 1x binding back. A strip without a twin keeps its binding.
-    pub(crate) fn bind_one_pass_hd(
-        &mut self,
-        device: &wgpu::Device,
-        batch: &BatchRenderer,
-        on: bool,
-    ) {
-        if !on {
-            if let Some(low) = self.low_binding.take() {
-                self.texture.bind_group = low;
-            }
-            return;
-        }
-        if self.low_binding.is_some() {
-            return;
-        }
-        let Some(hd) = &self.hd else {
-            return;
-        };
-        let binding = hd.one_pass_binding(device, batch, &self.texture.view);
-        self.low_binding = Some(std::mem::replace(&mut self.texture.bind_group, binding));
     }
 
     /// Number of frames the source SHP carries.
@@ -348,19 +313,19 @@ impl CenteredShapeStrip {
             shape_w: u32::from(shp.width),
             shape_h: u32::from(shp.height),
             frames,
-            hd: None,
-            low_binding: None,
         })
     }
 
     /// VERA-only, experimental (docs/picture-model-art.md):
-    /// [`Self::from_shp_on_device`] for a declared picture's frames at game
-    /// pixels, house-colour pixels in `ramp`. Each frame is its drawn
-    /// rectangle at the origin a stored SHP frame has, centred by the
-    /// `PictureSize=` canvas; an empty frame draws nothing, as an SHP's.
-    /// Art above 1x also gets its HD twin, with one empty pixel between
-    /// frames so the twin's filtering stays inside each frame. The Phobos
-    /// placement preview and the interface pictures call it.
+    /// [`Self::from_shp_on_device`] for a declared picture's frames,
+    /// house-colour pixels in `ramp`. Each frame is its drawn rectangle at the
+    /// origin a stored SHP frame has, centred by the `PictureSize=` canvas; an
+    /// empty frame draws nothing, as an SHP's. The strip is one picture page
+    /// (`picture_atlas::PicturePage`) at the picture's own resolution with its
+    /// mip levels, sampled at the level the camera needs, frames side by side
+    /// with empty game pixels between them so no level's filtering crosses
+    /// from one to the next. The Phobos placement preview and the interface
+    /// pictures call it.
     pub(crate) fn from_picture_on_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -368,49 +333,24 @@ impl CenteredShapeStrip {
         picture: &crate::render::picture_atlas::GamePictureFrames,
         ramp: Option<&[crate::assets::pal_file::Color; crate::render::picture_atlas::RAMP_SIZE]>,
     ) -> Option<Self> {
-        let sprites: Vec<_> = (0..picture.frame_count())
-            .map(|frame| {
-                picture.sprite(
-                    frame,
-                    ramp.map_or(
-                        crate::render::picture_atlas::HouseColor::Own,
-                        crate::render::picture_atlas::HouseColor::Baked,
-                    ),
-                )
-            })
+        use crate::render::picture_atlas::{HouseColor, PageSprite, PicturePage};
+        let house = ramp.map_or(HouseColor::Own, HouseColor::Baked);
+        let sprites: Vec<Option<PageSprite>> = (0..picture.frame_count())
+            .map(|frame| picture.page_sprite(frame, house))
             .collect();
+        // Every frame of one picture has its page scale.
         let scale = sprites
             .iter()
             .flatten()
-            .find_map(|sprite| sprite.hd.as_ref().map(|hd| hd.scale))
+            .map(|sprite| sprite.scale)
+            .next()
             .unwrap_or(1);
-        let gap = u32::from(scale > 1);
-        let atlas_w: u32 = sprites
-            .iter()
-            .flatten()
-            .map(|sprite| sprite.size[0] + gap)
-            .sum::<u32>()
-            .max(1);
-        let atlas_h: u32 = sprites
-            .iter()
-            .flatten()
-            .map(|sprite| sprite.size[1])
-            .max()
-            .unwrap_or(0)
-            .max(1);
-        let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-        let mut indices = vec![0u8; (atlas_w * atlas_h) as usize];
+        let gap = 1 << crate::render::picture_atlas::ZOOM_OUT_LEVELS;
         let word = |value: u32| i32::try_from(value).unwrap_or(i32::MAX);
         let [canvas_w, canvas_h] = picture.canvas;
-        let hd_size = [atlas_w * scale, atlas_h * scale];
-        let hd_pixels = if scale > 1 {
-            (hd_size[0] * hd_size[1]) as usize
-        } else {
-            0
-        };
-        let (mut hd_rgba, mut hd_indices) = (vec![0u8; hd_pixels * 4], vec![0u8; hd_pixels]);
         let mut frames = Vec::with_capacity(sprites.len());
-        let mut x = 0;
+        let mut placed: Vec<(&PageSprite, [u32; 2])> = Vec::new();
+        let mut x = gap;
         for sprite in &sprites {
             let Some(sprite) = sprite else {
                 frames.push(CenteredShapeFrame {
@@ -423,24 +363,7 @@ impl CenteredShapeStrip {
                 continue;
             };
             let [w, h] = sprite.size;
-            let row = w as usize;
-            for py in 0..h {
-                let src = (py * w) as usize;
-                let dst = (py * atlas_w + x) as usize;
-                indices[dst..dst + row].copy_from_slice(&sprite.indices[src..src + row]);
-                rgba[dst * 4..(dst + row) * 4]
-                    .copy_from_slice(&sprite.rgba[src * 4..(src + row) * 4]);
-            }
-            if let Some(hd) = &sprite.hd {
-                let row = hd.size[0] as usize;
-                for py in 0..hd.size[1] {
-                    let src = (py * hd.size[0]) as usize;
-                    let dst = (py * hd_size[0] + x * scale) as usize;
-                    hd_indices[dst..dst + row].copy_from_slice(&hd.indices[src..src + row]);
-                    hd_rgba[dst * 4..(dst + row) * 4]
-                        .copy_from_slice(&hd.rgba[src * 4..(src + row) * 4]);
-                }
-            }
+            placed.push((sprite, [x, 0]));
             let [left, top] = sprite.origin.map(word);
             frames.push(CenteredShapeFrame {
                 x,
@@ -451,33 +374,23 @@ impl CenteredShapeStrip {
             });
             x += w + gap;
         }
-        // The WebGL2 fallback builds no HD pages (`render::picture_zoom`).
-        let hd = (scale > 1 && !crate::render::gpu::webgl_fallback(device)).then(|| {
-            let page = crate::render::picture_atlas::HdPage {
-                scale,
-                size: hd_size,
-                rgba: hd_rgba,
-                indices: hd_indices,
-                house: None,
-            };
-            crate::render::picture_zoom::PictureHdPage::new(device, queue, &page)
-        });
+        // Frames sit on the page's top row: below them, the gap.
+        let height = sprites
+            .iter()
+            .flatten()
+            .map(|sprite| sprite.size[1])
+            .max()
+            .unwrap_or(0);
+        let max_side = device.limits().max_texture_dimension_2d;
+        let page = PicturePage::compose(scale, [x, height + gap], max_side, &placed);
+        let [atlas_w, atlas_h] = page.uv_extent();
         Some(Self {
-            texture: batch.create_texture_on_device(
-                device,
-                queue,
-                &rgba,
-                atlas_w,
-                atlas_h,
-                Some(&indices),
-            ),
-            atlas_w: atlas_w as f32,
-            atlas_h: atlas_h as f32,
+            texture: crate::render::picture_zoom::page_texture(device, queue, batch, &page),
+            atlas_w,
+            atlas_h,
             shape_w: canvas_w,
             shape_h: canvas_h,
             frames,
-            hd,
-            low_binding: None,
         })
     }
 
@@ -880,37 +793,6 @@ impl SelectionOverlay {
     /// One custom insignia SHP by normalized file name, when loaded.
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.insignia_shapes.get(name)
-    }
-
-    /// VERA-only, experimental (`docs/zoom-one-pass.md`): every strip's
-    /// [`CenteredShapeStrip::bind_one_pass_hd`], once per frame before the
-    /// world draws. A beacon's strip is `BeaconArt`'s.
-    pub(crate) fn bind_one_pass_hd(
-        &mut self,
-        device: &wgpu::Device,
-        batch: &BatchRenderer,
-        on: bool,
-    ) {
-        let strips = [
-            &mut self.placement_shape,
-            &mut self.pipbrd,
-            &mut self.pips,
-            &mut self.scale_pips,
-            &mut self.bomb_clock,
-            &mut self.talk_bubble,
-            &mut self.repair_wrench,
-            &mut self.power_off,
-        ]
-        .into_iter()
-        .flatten();
-        #[cfg(feature = "phobos")]
-        let strips = strips.chain(self.digital_shapes.iter_mut().flatten());
-        for strip in strips
-            .chain(self.insignia_shapes.values_mut())
-            .chain(self.ares_bomb_images.values_mut())
-        {
-            strip.bind_one_pass_hd(device, batch, on);
-        }
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.

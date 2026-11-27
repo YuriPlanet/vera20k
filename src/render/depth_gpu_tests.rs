@@ -393,7 +393,7 @@ impl Gpu {
                 });
             }
             // The SHP blitters' page also binds a picture HD binding's house
-            // layer and 1x page (`sprite_source.wgsl`): the placeholders an
+            // layer and house ramps (`sprite_source.wgsl`): the placeholders an
             // ordinary page binds.
             let hd_placeholders = index_source.is_some().then(|| {
                 (

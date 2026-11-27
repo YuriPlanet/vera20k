@@ -508,24 +508,11 @@ pub(crate) fn render_game(
             )
         })
     });
-    // VERA-only, experimental: the page declared models draw on this frame.
-    crate::app::presentation::instances::begin_model_frame(state);
-    // VERA-only, experimental (docs/zoom-one-pass.md, point 5): a frame
-    // whose camera zooms in binds the picture pages' and the interface
-    // strips' HD twins, any other frame their own 1x pages, before anything
-    // binds them.
-    let hd_twins = world_camera.zoom > 1.0;
+    // VERA-only, experimental: the page declared models draw on this frame,
+    // at the camera's scale.
+    crate::app::presentation::instances::begin_model_frame(state, world_camera.zoom);
     let presentation = &mut state.match_state.match_presentation;
     let (device, batch) = (&state.renderer.gpu.device, &state.renderer.batch_renderer);
-    if let Some(atlas) = presentation.sprite_atlas.as_mut() {
-        atlas.bind_one_pass_hd(device, batch, hd_twins);
-    }
-    if let Some(overlay) = presentation.selection_overlay.as_mut() {
-        overlay.bind_one_pass_hd(device, batch, hd_twins);
-    }
-    if let Some(beacons) = presentation.beacon_art.as_mut() {
-        beacons.bind_one_pass_hd(device, batch, hd_twins);
-    }
     // VERA's HD art (`render::hd_switch`) is sampled inside the ordinary
     // blitters while the camera zooms in with it on.
     crate::render::hd_art::bind_hd_twins(

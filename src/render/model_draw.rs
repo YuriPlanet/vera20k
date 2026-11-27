@@ -37,6 +37,15 @@
 //! each frame that asks for one, and a frame that asks for none draws
 //! nothing. Only the meshes and textures of each model stay on the GPU.
 //!
+//! The page is drawn at the camera's scale ([`page_scale`]): each image is
+//! its game-pixel rectangle times the camera zoom (wheel zoom times the
+//! Options scale, at least 1), so the blitters, which give each game pixel
+//! `zoom` target pixels, read one page texel per target pixel, as a mesh
+//! under a 3D camera is drawn (`docs/zoom-one-pass.md`). The rectangle, its
+//! anchor and everything native rules take from it (Z, Display order,
+//! shadow crop) stay in game pixels; only the page's resolution follows the
+//! camera. At zoom 1 or below the page is drawn at game pixels.
+//!
 //! Model space: glTF +Y is up, +Z forward and +X left. A model draws with
 //! +Z along the voxel hull's X (forward), X along its Y and +Y along its Z,
 //! scaled so the `body` node's rest length along +Z is `ModelSize=` leptons
@@ -63,9 +72,25 @@ use crate::render::shroud_buffer::{layout_entry, texture_entry};
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::rules::voxel_asset_catalog::DeclaredModel;
 
-/// The first model page's side; a frame whose images do not fit doubles it
-/// for the next frame, up to the device's texture limit.
+/// The first model page's side in game pixels; a frame whose images do not
+/// fit doubles it for the next frame, up to the device's texture limit.
 const PAGE_START: u32 = 1024;
+
+/// The largest side, in texels, a page drawn above game pixels takes
+/// (144 MiB with its index plane and depth). A page whose game-pixel side
+/// times the camera zoom is larger is drawn at the scale that fits; one
+/// already this big in game pixels is drawn at game pixels.
+const MAX_SCALED_SIDE: u32 = 4096;
+
+/// The page is allocated for the camera scale rounded up to this fraction
+/// of a game pixel, so an easing zoom reallocates it once a step, not once a
+/// frame; the images are still drawn at the exact scale.
+const SCALE_STEPS: f32 = 4.0;
+
+/// Consecutive frames whose images fill less than an eighth of the page
+/// before its game-pixel side halves (not below [`PAGE_START`]), so a big
+/// battle seen once does not keep the scale capped for the rest of a match.
+const SHRINK_FRAMES: u32 = 600;
 
 /// Voxel units of depth the page's depth range spans, centred on the anchor.
 const DEPTH_SPAN: f32 = 4096.0;
@@ -164,10 +189,11 @@ pub(crate) enum ModelNodes {
 pub(crate) struct ModelImage {
     /// The sprite atlas page ([`SpriteAtlas::model_page`]).
     pub page: usize,
+    /// The image's place on the page, which holds it at the frame's scale.
     pub uv_origin: [f32; 2],
     pub uv_size: [f32; 2],
-    /// x, y, width and height relative to the draw anchor, as a voxel draw's
-    /// destination rectangle (`native_vxl_draw_bounds`).
+    /// x, y, width and height relative to the draw anchor in game pixels,
+    /// as a voxel draw's destination rectangle (`native_vxl_draw_bounds`).
     pub rect: [i32; 4],
 }
 
@@ -496,7 +522,9 @@ fn node_mesh_bounds(model: &Model, node: usize, world: Mat4) -> Option<ModelBoun
 /// A request placed on this frame's page.
 struct Placed {
     model: Arc<DeclaredModel>,
+    /// The image's top-left texel on the page.
     corner: [u32; 2],
+    /// The anchor-relative rectangle in game pixels ([`ModelImage::rect`]).
     rect: [i32; 4],
     /// Each mesh node drawn, with its model-to-camera matrix (anchor-relative
     /// voxel camera space; a shadow's flattened, [`shadow_camera`]) and the
@@ -512,90 +540,28 @@ struct Placed {
 /// The frame's page: the atlas page index and its render targets.
 struct Page {
     index: usize,
+    /// In texels.
     size: [u32; 2],
-    color: wgpu::TextureView,
-    indices: wgpu::TextureView,
-    depth: wgpu::TextureView,
-    /// While the view is magnified, the page again at a whole multiple of
-    /// its resolution ([`HdTwin`]).
-    hd: Option<HdTwin>,
-}
-
-/// The model page drawn again at `scale` times its resolution, with the same
-/// layout, for the zoomed draw (`render::picture_zoom`): the sprite atlas
-/// holds it as the page's HD twin, so a model instance's UV addresses its
-/// sharp rectangle there. It is drawn every frame the view is magnified, in
-/// the format picture HD pages take: encoded colour (opaque or empty, so
-/// premultiplied) and the index plane at the same resolution.
-struct HdTwin {
-    scale: u32,
-    /// The colour's sRGB view, which the model pipeline draws into; the
-    /// atlas samples its plain view.
+    /// Page texels per game pixel this frame ([`page_scale`]).
+    scale: f32,
     color: wgpu::TextureView,
     indices: wgpu::TextureView,
     depth: wgpu::TextureView,
 }
 
-impl HdTwin {
-    /// A twin of a page `side` pixels square, and the HD page the atlas
-    /// samples.
-    fn new(
-        device: &wgpu::Device,
-        side: u32,
-        scale: u32,
-    ) -> (Self, crate::render::picture_zoom::PictureHdPage) {
-        let size = wgpu::Extent3d {
-            width: side * scale,
-            height: side * scale,
-            depth_or_array_layers: 1,
-        };
-        let texture = |label, format, view_formats: &'static [wgpu::TextureFormat], usage| {
-            device.create_texture(&wgpu::TextureDescriptor {
-                label: Some(label),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage,
-                view_formats,
-            })
-        };
-        let drawn = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
-        let color = texture(
-            "Model page HD twin",
-            wgpu::TextureFormat::Rgba8Unorm,
-            &[wgpu::TextureFormat::Rgba8UnormSrgb],
-            drawn,
-        );
-        let indices = texture(
-            "Model page HD twin indices",
-            wgpu::TextureFormat::R8Uint,
-            &[],
-            drawn,
-        );
-        let depth = texture(
-            "Model page HD twin depth",
-            wgpu::TextureFormat::Depth32Float,
-            &[],
-            wgpu::TextureUsages::RENDER_ATTACHMENT,
-        );
-        let indices_view = indices.create_view(&Default::default());
-        let sampled = crate::render::picture_zoom::PictureHdPage::from_views(
-            color.create_view(&Default::default()),
-            indices_view.clone(),
-        );
-        let twin = Self {
-            scale,
-            color: color.create_view(&wgpu::TextureViewDescriptor {
-                format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
-                ..Default::default()
-            }),
-            indices: indices_view,
-            depth: depth.create_view(&Default::default()),
-        };
-        (twin, sampled)
-    }
+/// The page's side in texels and the scale its images are drawn at for a
+/// page of `side` game pixels under a camera zoom of `zoom`, on a device
+/// whose textures are at most `limit` texels across. The scale is the zoom,
+/// at least 1; the texture is allocated for it rounded up to a
+/// [`SCALE_STEPS`] step, at most [`MAX_SCALED_SIDE`] (or `side`, if larger)
+/// and `limit`, and the scale drops to what that side holds.
+fn page_scale(side: u32, zoom: f32, limit: u32) -> (u32, f32) {
+    let side = side.clamp(1, limit.max(1));
+    let wanted = if zoom.is_finite() { zoom.max(1.0) } else { 1.0 };
+    let step = (wanted * SCALE_STEPS).ceil() / SCALE_STEPS;
+    let cap = MAX_SCALED_SIDE.max(side).min(limit);
+    let texels = ((side as f32 * step).ceil() as u32).clamp(side, cap.max(side));
+    (texels, wanted.min(texels as f32 / side as f32))
 }
 
 /// The models drawn this frame and the GPU state that draws them. Empty, and
@@ -603,8 +569,14 @@ impl HdTwin {
 #[derive(Default)]
 pub struct ModelFrame {
     page: Option<Page>,
-    /// The side the next page takes; doubled after a frame overflowed.
+    /// The game-pixel side the next page takes; doubled after a frame
+    /// overflowed, halved after [`SHRINK_FRAMES`] sparse ones.
     wanted: u32,
+    /// The game-pixel area, padding included, of the images this frame
+    /// asked for, placed or not.
+    demand: u64,
+    /// How many frames in a row have filled less than an eighth of the page.
+    sparse_frames: u32,
     shelf: Option<ShelfCursor>,
     placed: Vec<Placed>,
     keys: HashMap<PoseKey, ModelImage>,
@@ -624,38 +596,34 @@ pub struct ModelFrame {
 
 impl ModelFrame {
     /// Start a frame that may draw declared models: forget the last frame's
-    /// images, and hold a page in `atlas` big enough for the frame before.
-    /// With `hd_scale` above 1 (the view is magnified about that much), the
-    /// page also gets an HD twin at that multiple, at most 4, which the
-    /// zoomed draw samples.
+    /// images, and hold a page in `atlas` big enough for the frame before,
+    /// drawn at the scale `camera_zoom` (the world camera's zoom: wheel zoom
+    /// times the Options scale) asks for ([`page_scale`]).
     pub(crate) fn begin_frame(
         &mut self,
         device: &wgpu::Device,
         batch: &BatchRenderer,
         atlas: &mut SpriteAtlas,
-        hd_scale: u32,
+        camera_zoom: f32,
     ) {
         self.placed.clear();
         self.keys.clear();
         self.release_unheld_models();
         let limit = device.limits().max_texture_dimension_2d;
-        let mut side = self.wanted.max(PAGE_START).min(limit);
-        if std::mem::take(&mut self.overflowed) {
-            side = side.saturating_mul(2).min(limit);
-        }
-        self.wanted = side;
+        let side = self.next_page_side(limit);
+        let (texels, scale) = page_scale(side, camera_zoom, limit);
         let current = self
             .page
             .as_ref()
-            .filter(|page| atlas.model_page() == Some(page.index) && page.size == [side; 2]);
-        if current.is_none() {
-            let (texture, color, indices) = batch.create_render_target_page(device, side, side);
+            .is_some_and(|page| atlas.model_page() == Some(page.index) && page.size == [texels; 2]);
+        if !current {
+            let (texture, color, indices) = batch.create_render_target_page(device, texels, texels);
             let depth = device
                 .create_texture(&wgpu::TextureDescriptor {
                     label: Some("Model page depth"),
                     size: wgpu::Extent3d {
-                        width: side,
-                        height: side,
+                        width: texels,
+                        height: texels,
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: 1,
@@ -666,41 +634,45 @@ impl ModelFrame {
                     view_formats: &[],
                 })
                 .create_view(&Default::default());
-            if let Some(old) = self.page.take() {
-                atlas.set_picture_hd_page(old.index, None);
-            }
             self.page = atlas.install_model_page(texture).map(|index| Page {
                 index,
-                size: [side; 2],
+                size: [texels; 2],
+                scale,
                 color: color.create_view(&Default::default()),
                 indices: indices.create_view(&Default::default()),
                 depth,
-                hd: None,
             });
         }
         if let Some(page) = self.page.as_mut() {
-            // The twin's side stays within the device's texture limit; the
-            // WebGL2 fallback has no zoomed draw (`render::picture_zoom`).
-            let scale = hd_scale.min(4).min(limit / page.size[0].max(1));
-            let scale = if crate::render::gpu::webgl_fallback(device) {
-                1
-            } else {
-                scale
-            };
-            if scale <= 1 {
-                if page.hd.take().is_some() {
-                    atlas.set_picture_hd_page(page.index, None);
-                }
-            } else if page.hd.as_ref().is_none_or(|hd| hd.scale != scale) {
-                let (twin, sampled) = HdTwin::new(device, page.size[0], scale);
-                atlas.set_picture_hd_page(page.index, Some(sampled));
-                page.hd = Some(twin);
-            }
+            page.scale = scale;
         }
         self.shelf = self
             .page
             .as_ref()
             .map(|page| ShelfCursor::new(page.size[0], page.size[1]));
+    }
+
+    /// The game-pixel side of this frame's page, from the frame before:
+    /// doubled after it overflowed, up to `limit`; halved, not below
+    /// [`PAGE_START`], once [`SHRINK_FRAMES`] frames in a row asked for
+    /// less than an eighth of it.
+    fn next_page_side(&mut self, limit: u32) -> u32 {
+        let demand = std::mem::take(&mut self.demand);
+        let mut side = self.wanted.max(PAGE_START).min(limit);
+        if std::mem::take(&mut self.overflowed) {
+            side = side.saturating_mul(2).min(limit);
+            self.sparse_frames = 0;
+        } else if side > PAGE_START && demand.saturating_mul(8) < u64::from(side).pow(2) {
+            self.sparse_frames += 1;
+            if self.sparse_frames >= SHRINK_FRAMES {
+                side = (side / 2).max(PAGE_START);
+                self.sparse_frames = 0;
+            }
+        } else {
+            self.sparse_frames = 0;
+        }
+        self.wanted = side;
+        side
     }
 
     /// Forget the layouts and GPU buffers of models only this frame holds.
@@ -862,7 +834,7 @@ impl ModelFrame {
     }
 
     /// Place `placed`, whose rectangle is set, on this frame's page under
-    /// `key`.
+    /// `key`, at the page's scale.
     fn place(&mut self, key: PoseKey, mut placed: Placed) -> Option<ModelImage> {
         let page = self.page.as_ref()?;
         let rect = placed.rect;
@@ -870,7 +842,12 @@ impl ModelFrame {
         if size.contains(&0) {
             return None;
         }
-        let Some(corner) = self.shelf.as_mut()?.place(size[0], size[1]) else {
+        let padding = u64::from(crate::render::atlas_growth::SPRITE_PADDING);
+        self.demand = self.demand.saturating_add(
+            (u64::from(size[0]) + padding).saturating_mul(u64::from(size[1]) + padding),
+        );
+        let slot = scaled_slot(size, page.scale);
+        let Some(corner) = self.shelf.as_mut()?.place(slot[0], slot[1]) else {
             if !self.overflowed {
                 log::warn!(
                     "Model page {}x{} is full this frame; the next frame's is bigger",
@@ -885,7 +862,10 @@ impl ModelFrame {
         let image = ModelImage {
             page: page.index,
             uv_origin: [corner[0] as f32 / width, corner[1] as f32 / height],
-            uv_size: [size[0] as f32 / width, size[1] as f32 / height],
+            uv_size: [
+                size[0] as f32 * page.scale / width,
+                size[1] as f32 * page.scale / height,
+            ],
             rect,
         };
         self.keys.insert(key, image);
@@ -920,90 +900,65 @@ impl ModelFrame {
         let vpl_curve = *self
             .vpl_curve
             .get_or_insert_with(|| vpl_page_brightness(assets));
-        // One uniform block per primitive drawn: the page's, then its HD
-        // twin's (no shadows there: the zoomed draw takes none).
+        // One uniform block per primitive drawn.
         let mut blocks: Vec<u8> = Vec::new();
-        let lighting = (light, &vpl_curve);
         let draws = page_draws(
             &self.placed,
             &self.models,
-            (page.size, 1),
+            (page.size, page.scale),
             gpu.stride,
-            lighting,
-            true,
+            (light, &vpl_curve),
             &mut blocks,
         );
-        let hd_draws = page.hd.as_ref().map(|hd| {
-            page_draws(
-                &self.placed,
-                &self.models,
-                (page.size, hd.scale),
-                gpu.stride,
-                lighting,
-                false,
-                &mut blocks,
-            )
-        });
         if draws.is_empty() {
             return;
         }
         gpu.reserve(device, blocks.len() as u64);
         queue.write_buffer(&gpu.uniforms, 0, &blocks);
-        let gpu = &*gpu;
         record_page_pass(
             encoder,
             gpu,
             &self.models,
             [&page.color, &page.indices, &page.depth],
             draws,
-            "Model page",
         );
-        if let (Some(hd), Some(hd_draws)) = (&page.hd, hd_draws) {
-            record_page_pass(
-                encoder,
-                gpu,
-                &self.models,
-                [&hd.color, &hd.indices, &hd.depth],
-                hd_draws,
-                "Model page HD twin",
-            );
-        }
     }
+}
+
+/// The texels an image of `size` game pixels takes on a page drawn at
+/// `scale`.
+fn scaled_slot(size: [u32; 2], scale: f32) -> [u32; 2] {
+    size.map(|side| (side as f32 * scale).ceil() as u32)
 }
 
 /// One primitive's draw on a page: its uniform block's offset, the model,
 /// the primitive, its scissor, and whether it is a shadow mask.
 type PageDraw = (usize, usize, usize, [u32; 4], bool);
 
-/// Append one uniform block per primitive `placed` draws to `blocks`, for a
-/// page laid out as the model page of `size` at `scale` times its resolution
-/// (the page itself at 1, its [`HdTwin`] above), and list the draws.
+/// Append one uniform block per primitive `placed` draws to `blocks`, for
+/// the model page of `size` texels drawn at `scale` texels per game pixel,
+/// and list the draws.
 fn page_draws(
     placed: &[Placed],
     models: &HashMap<usize, GpuModel>,
-    (size, scale): ([u32; 2], u32),
+    (size, scale): ([u32; 2], f32),
     stride: u64,
     (light, vpl_curve): (Vec3, &[f32; 32]),
-    with_shadows: bool,
     blocks: &mut Vec<u8>,
 ) -> Vec<PageDraw> {
-    let factor = scale as f32;
-    let target = size.map(|side| side * scale);
     let mut draws = Vec::new();
     for placed in placed {
-        if placed.shadow && !with_shadows {
-            continue;
-        }
         let key = Arc::as_ptr(&placed.model) as usize;
         let Some(model) = models.get(&key) else {
             continue;
         };
-        let corner = placed.corner.map(|side| side * scale);
-        let rect = placed.rect.map(|value| value * scale as i32);
-        // Camera space magnified, then onto the scaled slot.
-        let clip =
-            page_clip(target, corner, rect) * Mat4::from_scale(Vec3::new(factor, factor, 1.0));
-        let scissor = [corner[0], corner[1], rect[2] as u32, rect[3] as u32];
+        let corner = placed.corner;
+        let clip = page_clip(size, corner, placed.rect, scale);
+        let [width, height] = scaled_slot(
+            [placed.rect[2], placed.rect[3]].map(|side| side.max(0) as u32),
+            scale,
+        );
+        let scissor = [corner[0], corner[1], width, height];
         let ramp = placed
             .ramp
             .map(|ramp| ramp.map(|color| color.map(srgb_to_linear)));
@@ -1056,10 +1011,9 @@ fn record_page_pass(
     models: &HashMap<usize, GpuModel>,
     [color, indices, depth]: [&wgpu::TextureView; 3],
     draws: Vec<PageDraw>,
-    label: &str,
 ) {
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some(label),
+        label: Some("Model page"),
         color_attachments: &[
             Some(wgpu::RenderPassColorAttachment {
                 view: color,
@@ -1118,16 +1072,17 @@ fn record_page_pass(
 }
 
 /// Voxel camera space to the page's clip space for an image whose rectangle
-/// relative to its anchor is `rect`, placed at `corner` of a page of `size`:
-/// screen x is the camera's x, screen y its -y (`native_vxl_draw_bounds`),
-/// and depth falls as the camera's z, toward the viewer, rises.
-fn page_clip(size: [u32; 2], corner: [u32; 2], rect: [i32; 4]) -> Mat4 {
+/// relative to its anchor is `rect` (game pixels), drawn at `scale` texels
+/// per game pixel from texel `corner` of a page of `size` texels: screen x
+/// is the camera's x, screen y its -y (`native_vxl_draw_bounds`), and depth
+/// falls as the camera's z, toward the viewer, rises (not scaled).
+fn page_clip(size: [u32; 2], corner: [u32; 2], rect: [i32; 4], scale: f32) -> Mat4 {
     let [width, height] = size.map(|side| side as f32);
-    let x = corner[0] as f32 - rect[0] as f32;
-    let y = corner[1] as f32 - rect[1] as f32;
+    let x = corner[0] as f32 - rect[0] as f32 * scale;
+    let y = corner[1] as f32 - rect[1] as f32 * scale;
     Mat4::from_cols(
-        Vec4::new(2.0 / width, 0.0, 0.0, 0.0),
-        Vec4::new(0.0, 2.0 / height, 0.0, 0.0),
+        Vec4::new(2.0 * scale / width, 0.0, 0.0, 0.0),
+        Vec4::new(0.0, 2.0 * scale / height, 0.0, 0.0),
         Vec4::new(0.0, 0.0, -1.0 / DEPTH_SPAN, 0.0),
         Vec4::new(2.0 * x / width - 1.0, 1.0 - 2.0 * y / height, 0.5, 1.0),
     )
@@ -1971,19 +1926,60 @@ mod tests {
 
     /// The page clip puts an image's rectangle exactly over its slot: the
     /// rectangle's top-left anchor-relative corner lands on the slot's corner
-    /// and its far corner on the slot's, in clip space.
+    /// and its far corner on the slot's, in clip space. At scale 2 the same
+    /// rectangle covers twice the texels from its corner, on a page twice
+    /// the size: the same clip coordinates.
     #[test]
     fn page_clip_maps_the_rectangle_onto_its_slot() {
-        let clip = page_clip([100, 50], [10, 20], [-5, -8, 30, 16]);
-        // Screen (-5, -8) is camera (-5, 8).
-        let near = clip * Vec4::new(-5.0, 8.0, 0.0, 1.0);
-        assert!((near.x - -0.8).abs() < 1e-6 && (near.y - 0.2).abs() < 1e-6);
-        assert_eq!(near.z, 0.5);
-        // Screen (25, 8) is camera (25, -8): pixel (40, 36).
-        let far = clip * Vec4::new(25.0, -8.0, 0.0, 1.0);
-        assert!((far.x - -0.2).abs() < 1e-6 && (far.y - -0.44).abs() < 1e-6);
-        // Nearer the viewer is lower depth.
-        assert!((clip * Vec4::new(0.0, 0.0, 10.0, 1.0)).z < 0.5);
+        for (size, corner, scale) in [([100, 50], [10, 20], 1.0), ([200, 100], [20, 40], 2.0)] {
+            let clip = page_clip(size, corner, [-5, -8, 30, 16], scale);
+            // Screen (-5, -8) is camera (-5, 8).
+            let near = clip * Vec4::new(-5.0, 8.0, 0.0, 1.0);
+            assert!((near.x - -0.8).abs() < 1e-6 && (near.y - 0.2).abs() < 1e-6);
+            assert_eq!(near.z, 0.5);
+            // Screen (25, 8) is camera (25, -8): game pixel (40, 36) at 1x.
+            let far = clip * Vec4::new(25.0, -8.0, 0.0, 1.0);
+            assert!((far.x - -0.2).abs() < 1e-6 && (far.y - -0.44).abs() < 1e-6);
+            // Nearer the viewer is lower depth, whatever the scale.
+            assert!((clip * Vec4::new(0.0, 0.0, 10.0, 1.0)).z < 0.5);
+        }
+    }
+
+    /// The page is drawn at the camera's zoom, never below game pixels; the
+    /// texture takes the zoom rounded up to a quarter, and a page that would
+    /// pass `MAX_SCALED_SIDE` (or the device limit) draws at the scale that
+    /// fits, game pixels once its game-pixel side is that big.
+    #[test]
+    fn the_page_is_drawn_at_the_camera_zoom_within_its_cap() {
+        assert_eq!(page_scale(1024, 1.0, 16384), (1024, 1.0));
+        assert_eq!(page_scale(1024, 0.5, 16384), (1024, 1.0));
+        assert_eq!(page_scale(1024, 2.3, 16384), (2560, 2.3));
+        assert_eq!(page_scale(1024, 4.0, 16384), (4096, 4.0));
+        assert_eq!(page_scale(1024, 6.0, 16384), (4096, 4.0));
+        assert_eq!(page_scale(2048, 3.0, 16384), (4096, 2.0));
+        assert_eq!(page_scale(8192, 2.0, 16384), (8192, 1.0));
+        assert_eq!(page_scale(1024, 3.0, 2048), (2048, 2.0));
+        assert_eq!(scaled_slot([30, 16], 2.3), [69, 37]);
+    }
+
+    /// The page doubles after a frame overflowed and halves back after
+    /// `SHRINK_FRAMES` frames in a row asked for under an eighth of it.
+    #[test]
+    fn the_page_grows_on_overflow_and_shrinks_when_sparse() {
+        let mut frame = ModelFrame::default();
+        assert_eq!(frame.next_page_side(16384), PAGE_START);
+        frame.overflowed = true;
+        assert_eq!(frame.next_page_side(16384), 2 * PAGE_START);
+        for _ in 1..SHRINK_FRAMES {
+            assert_eq!(frame.next_page_side(16384), 2 * PAGE_START);
+        }
+        // A full frame resets the count.
+        frame.demand = u64::from(PAGE_START).pow(2);
+        assert_eq!(frame.next_page_side(16384), 2 * PAGE_START);
+        for _ in 1..SHRINK_FRAMES {
+            frame.next_page_side(16384);
+        }
+        assert_eq!(frame.next_page_side(16384), PAGE_START);
     }
 
     /// The model's body length along glTF +Z is `ModelSize=` leptons in voxel
