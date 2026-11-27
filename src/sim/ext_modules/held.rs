@@ -1,6 +1,7 @@
 //! What module actions leave held between frames, beside the modifiers:
-//! the timed conversions `Convert` will undo and the house type list
-//! `AllowType` writes (RFC 0001 appendix 5.3). [`ActionHeld`] is the one
+//! the timed conversions `Convert` will undo, the house type list
+//! `AllowType` writes (RFC 0001 appendix 5.3) and the doors `DoorOpen`
+//! holds drawn (appendix 7.1). [`ActionHeld`] is the one
 //! owner; it is saved with the modules and hashed when it holds anything.
 //!
 //! - A timed `Convert` (`value2` frames) remembers the object's type before
@@ -14,6 +15,11 @@
 //!   for the sidebar, the production event and the computer's choosers
 //!   alike. 1 lifts the module's forbid; it does not grant a type the
 //!   house's prerequisites, tech level or build limit refuse.
+//! - A `DoorOpen` write holds how a war factory's or gate's door is drawn,
+//!   open (1) or shut (0), until -1 lets the door show its own state again.
+//!   Only the picture follows it ([`Simulation::ext_module_door`]): the door
+//!   itself, production, the exit and a gate's passage keep running as they
+//!   would.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,11 +44,24 @@ pub(crate) struct ActionHeld {
     conversions: BTreeMap<u64, Reversion>,
     /// (house array index, TechnoType ID) pairs a module forbade.
     forbidden: BTreeSet<(u32, u32)>,
+    /// `DoorOpen` writes: how each building's door is drawn, by creation
+    /// serial.
+    #[serde(default)]
+    doors: BTreeMap<u64, bool>,
 }
 
 impl ActionHeld {
     pub(super) fn is_empty(&self) -> bool {
-        self.conversions.is_empty() && self.forbidden.is_empty()
+        self.conversions.is_empty() && self.forbidden.is_empty() && self.doors.is_empty()
+    }
+
+    /// A `DoorOpen` write: draw `object`'s door open or shut, or (`None`)
+    /// as it is.
+    pub(super) fn hold_door(&mut self, object: u64, open: Option<bool>) {
+        match open {
+            Some(open) => self.doors.insert(object, open),
+            None => self.doors.remove(&object),
+        };
     }
 
     /// After `Convert` turned `object` from `original`: a timed conversion
@@ -77,6 +96,7 @@ impl ActionHeld {
 
     pub(super) fn forget_object(&mut self, object: u64) {
         self.conversions.remove(&object);
+        self.doors.remove(&object);
     }
 
     /// The reversions due at `frame`, taken out, in object order.
@@ -97,6 +117,11 @@ impl ActionHeld {
 }
 
 impl Simulation {
+    /// How a module's `DoorOpen` write has object `id`'s door drawn.
+    pub fn ext_module_door(&self, id: u64) -> Option<bool> {
+        self.ext_modules.held.doors.get(&id).copied()
+    }
+
     /// Whether a module's `AllowType` forbade `obj` to `owner`.
     pub(crate) fn ext_module_forbids(
         &self,

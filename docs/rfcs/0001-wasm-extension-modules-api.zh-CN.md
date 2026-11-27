@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.1.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.2.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -1159,7 +1159,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `NearbyEnemyCount` | int | R（派生，高） | own | v1 | 视野（`Sight`）内的敌方对象数 |
 | `TargetInRange` | bool | R（派生，高） | own | v1 | 当前目标在对象对它选用的武器射程内（一般为主武器，目标需要时为副武器） |
 | `CanFireAtTarget` | bool | R（派生，高） | own | v1 | 现在能向当前目标开火 |
-| `DoorOpen` | bool | W | seen | v1（写入为 later） | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `DoorOpen` | bool | W | seen | v1（写入 preview） | 工厂出口门是否打开。没有出口门的建筑和其他对象为 `Unsupported`。写 1 或 0 让战车工厂或大门的门一直画成开着或关着，写 −1 恢复显示门自己的状态；门本身、生产、出厂和大门的通行照常进行，读取仍返回门自己的状态。车辆的门没有画面：`Unsupported` |
 | `Animating` | bool | W | seen | v1（写入为 later） | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 

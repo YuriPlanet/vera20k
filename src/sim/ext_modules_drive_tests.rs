@@ -569,6 +569,23 @@ fn a_war_factory_reads_its_door() {
         .expect("factory")
         .open_door(10, frame);
     assert_eq!(host_read(&mut scene, factory as i64, "DoorOpen"), ok(1));
+    // A write holds how the door is drawn and leaves the door alone; -1
+    // lets it go. A power plant has no door to hold.
+    let write = |scene: &mut HeadlessScenario, reference: u64, value: i64| {
+        let runtime = &mut scene.runtime;
+        runtime
+            .simulation
+            .with_module_host(&runtime.resources.rules, ModuleSource::Map, |host| {
+                vera20k_wasm_ext::SimHost::set(host, reference as i64, prop("DoorOpen"), value)
+            })
+            .expect("a valid write")
+    };
+    assert_eq!(write(&mut scene, factory, 0), Status::Ok);
+    assert_eq!(scene.sim().ext_module_door(factory), Some(false));
+    assert_eq!(host_read(&mut scene, factory as i64, "DoorOpen"), ok(1), "the door runs on");
+    assert_eq!(write(&mut scene, plant, 1), Status::Unsupported);
+    assert_eq!(write(&mut scene, factory, -1), Status::Ok);
+    assert_eq!(scene.sim().ext_module_door(factory), None);
 }
 
 /// A type's `Name` is a string ID of its rules ID, which `get` adds and

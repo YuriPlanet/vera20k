@@ -1272,6 +1272,7 @@ impl SimHost for Host<'_, '_> {
                 "Mission" => return self.order_mission(id, value, None),
                 "Ammo" => return Ok(self.write_ammo(id, value)),
                 "Online" => return Ok(self.write_online(id, value)),
+                "DoorOpen" => return self.write_door(id, value),
                 _ => {}
             }
         }
@@ -2101,6 +2102,32 @@ impl Host<'_, '_> {
 
     /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
     /// AI_Update sample announces a promotion as for a crate.
+    /// `DoorOpen` (appendix 7.1): 1 draws a war factory's or gate's door
+    /// open and 0 shut until -1 lets it show its own state; the door and
+    /// what it lets through run on (`held::ActionHeld`). Other objects
+    /// answer `Unsupported`.
+    fn write_door(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let drawn = entity.category() == crate::map::entities::EntityCategory::Structure
+            && self
+                .sim
+                .entity_object_type(entity, self.rules)
+                .is_some_and(|object| object.weapons_factory || object.gate);
+        if !drawn {
+            return Ok(Status::Unsupported);
+        }
+        let open = match value {
+            -1 => None,
+            0 => Some(false),
+            1 => Some(true),
+            _ => return Err(Invalid(format!("DoorOpen {value}"))),
+        };
+        self.sim.ext_modules.held.hold_door(id, open);
+        Ok(Status::Ok)
+    }
+
     fn write_rank(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
         let Some(entity) = self.sim.substrate.entities.get_mut(id) else {
             return Ok(Status::Gone);

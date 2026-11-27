@@ -713,6 +713,14 @@ render frame while a lent tick holds the world (its published frame has no objec
 read; a map whose file changed since a save loses its `[VeraUI]` parts on restore
 (logged only).
 
+## Done (battlefield visuals, RFC 0.2.0)
+
+- `DoorOpen` write (preview): `ext_modules/held.rs` holds the drawn door
+  (`ext_module_door`); a war factory draws its `DeployingAnim=` door open at its
+  last opening frame or not at all (`instances::shp::factory_unload_art`), a gate
+  its open stage (`building_art::gate_held_body_frame`). The door's own state,
+  read and run, is untouched. Test `a_war_factory_reads_its_door`.
+
 ## Residuals
 
 - `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building
@@ -769,8 +777,8 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   would desync the simulation), `DisguiseType` of a Mirage disguised as terrain
   (no name kind for terrain types), the house's `IsCivilian` (answers `Unsupported`,
   so a clause on it matches nothing; found by `sdk/examples/veteran-fury`);
-  `DoorOpen` and `Animating` are not writable, and `Animating` reads 1 only for the
-  missile silo's launch (art `AnimActive=` is not bound); `lookup(Armor)`,
+  `Animating` is not writable and reads 1 only for the missile silo's launch (art
+  `AnimActive=` is not bound); a `DoorOpen` write holds only the drawn door; `lookup(Armor)`,
   `lookup(Sound)`; `Passable` ignores objects and overlays; `PropertyPoll` reads
   without a viewpoint.
 - `Health` writes of 0 or less answer `Refused`; an `Ammo` write restarts a running
