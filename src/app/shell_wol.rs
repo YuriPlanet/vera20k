@@ -474,6 +474,14 @@ pub(crate) fn spawned_visit(wol: Option<&WolVisit>) -> bool {
     wol.is_some_and(|visit| visit.spawned.is_some())
 }
 
+/// VERA: whether PageUser can page anyone here: in a visit the Internet
+/// button opened. A launcher's relay match (`spawned`) runs as a WOL match
+/// but has no WOL users or page service, so `0xCF` would open on nothing
+/// and hold the player's input.
+pub(crate) fn pages_users(wol: Option<&WolVisit>) -> bool {
+    wol.is_some_and(|visit| visit.spawned.is_none())
+}
+
 /// `[0xB77DC1]`: a WOL match runs.
 pub(crate) fn in_match(wol: Option<&WolVisit>) -> bool {
     wol.is_some_and(|visit| visit.in_game)

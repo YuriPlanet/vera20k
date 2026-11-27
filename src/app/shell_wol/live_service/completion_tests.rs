@@ -463,6 +463,17 @@ fn a_page_or_reply_without_a_listed_target_fails_unsent() {
     }
 }
 
+/// PageUser pages from a visit the Internet button opened, never from a
+/// launcher's relay match, which has no one to page.
+#[test]
+fn only_an_opened_visit_pages_users() {
+    let mut visit = super::super::WolVisit::open(false);
+    assert!(crate::app::shell_wol::pages_users(Some(&visit)));
+    visit.spawned = Some(SpawnedVisit::default());
+    assert!(!crate::app::shell_wol::pages_users(Some(&visit)));
+    assert!(!crate::app::shell_wol::pages_users(None));
+}
+
 /// Only the matchbot's ANSI `Start` gives its host the pairing.
 #[test]
 fn a_chat_start_gives_its_host_the_pairing() {

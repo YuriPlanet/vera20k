@@ -36,7 +36,11 @@ pub(crate) fn execute(
     audio: &mut AppAudioRuntime,
     persistence: &mut PersistenceState,
 ) {
-    if match_state.session_mode() != SessionMode::Wol {
+    // VERA: a launcher's relay match plays as a WOL match too, with no one
+    // to page (`shell_wol::pages_users`).
+    if match_state.session_mode() != SessionMode::Wol
+        || !crate::app::shell_wol::pages_users(frontend.wol.as_ref())
+    {
         return;
     }
     let Some(runtime) = match_state.sim_runtime.runtime() else {
