@@ -66,6 +66,11 @@ the original game's local variable carryover. This changes no packets: mixed bui
 are refused by the existing build check, and a rollback restores the earlier
 carryover behavior.
 
+Authored LAN and online campaign stages take omitted `[SpecialFlags]` keys from
+shared scenario defaults. A player's previous match can supply those defaults in
+an offline campaign. Replays initialize ore queues with the flags recorded at
+match start. The existing [build check](#build-check) covers mixed versions.
+
 Each new LAN or online match also rebuilds mutable Rules from the frozen startup
 sources and the room's current options. This includes the country/color choices
 shown before loading and the Rules used for random-map agreement and generation.

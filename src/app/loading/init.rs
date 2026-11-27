@@ -1697,12 +1697,11 @@ impl MapLoadInitial {
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
     /// Full_Init/Fill); failures can discard this snapshot without losing it.
-    /// The same inactive transfer retains current SpecialFlags and offline local
-    /// values. ClearScene6851F0 clears globals, but ReadLocal689B20 retains
-    /// unassigned locals. VERA starts fresh LAN/WOL worlds from map assignments
-    /// only: peers cannot share prior-match locals. Replays and rejoins run in
-    /// a newly started process and never had any; a watch loads in the running
-    /// game and starts fresh too.
+    /// Offline campaigns keep omitted SpecialFlags (Read_SpecialFlags 0x006B8CA0)
+    /// and unassigned locals (ReadLocal 0x00689B20) from their resident world.
+    /// Fresh LAN/WOL campaigns use the map and the shared scenario defaults.
+    /// Each peer may have played a different match before entering the room.
+    /// Replays supply the ore flags recorded at frame zero.
     ///
     /// RESIDUAL (VERA network adaptation): a LAN/WOL co-op campaign's next
     /// mission and a retried mission are such starts too, so they drop the
@@ -1716,16 +1715,11 @@ impl MapLoadInitial {
         mut resident: Option<&mut crate::sim::world::Simulation>,
         topology: crate::sim::scenario_session::ExecutionTopology,
     ) {
-        self.retained_campaign_special_flags = resident
-            .as_deref()
-            .map(crate::sim::world::Simulation::retained_campaign_special_flags);
-        self.retained_local_variables = if topology.is_lockstep() {
-            None
-        } else {
-            resident
-                .as_deref()
-                .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load)
-        };
+        let offline_history = resident.as_deref().filter(|_| !topology.is_lockstep());
+        self.retained_campaign_special_flags =
+            offline_history.map(crate::sim::world::Simulation::retained_campaign_special_flags);
+        self.retained_local_variables = offline_history
+            .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load);
         if let Some(generated) = self.mapgen_rng_continuation.take() {
             retention.publish_mapgen_continuation(resident.as_deref_mut(), generated);
             self.mapgen_rng_continuation =
@@ -1975,6 +1969,46 @@ mod fresh_transport_tests {
         assert!(!after_history.trigger_runtime().local_variable_is_set(7));
         assert!(!after_history.trigger_runtime().local_variable_is_set(8));
         assert!(after_history.trigger_runtime().local_variable_is_set(9));
+    }
+
+    #[test]
+    fn fresh_campaign_ore_flags_use_local_history_only_in_offline_play() {
+        use crate::sim::scenario_session::{ExecutionTopology, ScenarioDescriptor};
+
+        let launch_flags = |topology, prior_growth, map_growth| {
+            let mut resident = Simulation::from_descriptor(&ScenarioDescriptor {
+                tiberium_grows_flag: prior_growth,
+                tiberium_spreads_flag: true,
+                ..Default::default()
+            });
+            let mut map = map_with_locals("");
+            map.special_flags.tiberium_grows = map_growth;
+            let mut load = MapLoadInitial::from_test_map_source(
+                map,
+                LoadedMapSource::Loose {
+                    cache_lease: Default::default(),
+                    path: PathBuf::from("CAMPAIGN.MAP"),
+                    payload_len: 1,
+                    source_sha256: crate::util::sha256::sha256_hex(b"campaign flags"),
+                },
+            );
+            load.retain_process_state(&mut Default::default(), Some(&mut resident), topology);
+            load.map_data
+                .special_flags
+                .resolve_campaign_defaults(load.retained_campaign_special_flags.as_ref());
+            load.map_data.special_flags.tiberium_grows
+        };
+        let lockstep = ExecutionTopology::LockstepNetwork;
+        assert_eq!(
+            launch_flags(lockstep, true, None),
+            launch_flags(lockstep, false, None)
+        );
+        assert_eq!(launch_flags(lockstep, true, None), Some(false));
+        assert_eq!(launch_flags(lockstep, false, Some(true)), Some(true));
+        assert_eq!(
+            launch_flags(ExecutionTopology::LocalOffline, true, None),
+            Some(true)
+        );
     }
 
     #[test]
