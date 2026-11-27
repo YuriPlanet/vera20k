@@ -1844,14 +1844,6 @@ impl ApplicationHandler for App {
                 && !hidden_run_active
                 && let WindowEvent::Touch(touch) = &event
             {
-                #[cfg(target_os = "android")]
-                log::info!(
-                    "Android TOUCH dev={:?} phase={:?} at {},{}",
-                    touch.device_id,
-                    touch.phase,
-                    touch.location.x,
-                    touch.location.y
-                );
                 let Some(state) = self.state.as_mut() else {
                     return;
                 };
