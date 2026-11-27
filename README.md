@@ -38,9 +38,14 @@ Stuck? See the [help page](https://vera20k.org/help).
 3. Incorporate known RTS features and some never seen before.
 4. Integrated multiplayer client
 
-Our [development priorities](docs/roadmap.md) are **1. Performance**, **2. Pathfinding** and **3. UI/UX**.
-
 ## Contributing
+
+**PRs we welcome**
+
+- Refactoring
+- Performance
+- Pathfinding
+- UI/UX
 
 Contributors can take responsibility for engine areas, with broad freedom to make changes that
 move VERA20K forward.
