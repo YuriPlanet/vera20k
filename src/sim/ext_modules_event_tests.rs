@@ -176,6 +176,33 @@ fn a_stock_credits_event_fires_from_the_house_poll() {
     assert_eq!(received(&scene), 1, "a one-time trigger");
 }
 
+#[test]
+fn a_charged_nuclear_order_without_a_silo_does_not_raise_super_weapon_launched() {
+    use vera20k_wasm_ext::triggers::EVENT_SUPER_WEAPON_LAUNCHED;
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let Some(scene) = scenario() else { return };
+    let listener = def(0, 2, &[Ev::on(EVENT_SUPER_WEAPON_LAUNCHED)], &[]);
+    let mut scene = installed(scene, &module(&listener, 0, ""));
+    for (name, expected) in [("NukeSpecial", 0), ("PsychicRevealSpecial", 1)] {
+        let runtime = &mut scene.runtime;
+        let sim = &mut runtime.simulation;
+        let rules = &runtime.resources.rules;
+        let owner = sim.houses.order()[0];
+        let sw = crate::sim::superweapon::chronosphere_tests::charge_super(sim, owner, name);
+        assert!(sim.fire_super_weapon(
+            rules,
+            owner,
+            sw,
+            (40, 40),
+            None,
+            &mut FrameEffects::default(),
+            false
+        ));
+        scene.tick();
+        assert_eq!(received(&scene), expected, "{name}");
+    }
+}
+
 /// `HouseTransferred` on a bound object after ChangeOwner, carrying the
 /// old house; `value` 0, as this is no mind control.
 #[test]

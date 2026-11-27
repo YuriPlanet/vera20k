@@ -785,7 +785,10 @@ fn launch(
             return activated;
         }
         SuperWeaponKind::MultiMissile => {
-            super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+            // 6CDD44 reaches local cleanup without launching a missile.
+            if !super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry)) {
+                return false;
+            }
         }
         SuperWeaponKind::LightningStorm => {
             super::lightning_storm::launch(sim, rules, owner, sw_type_id, (rx, ry));

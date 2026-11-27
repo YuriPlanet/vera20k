@@ -528,6 +528,8 @@ pub enum SimSoundEvent {
     /// what lets the app read both the case index and `StartSound=` off one
     /// object, as `param_1[10]` does. ForceShield carries its activation
     /// through SuperWeaponActivation at the original earlier call site.
+    /// The stock nuclear launch carries its DigSound separately through
+    /// VocAtCoord, on the side of its EVA selected by the launch branch.
     SuperWeaponLaunched {
         owner: InternedId,
         sw_type: InternedId,
@@ -535,6 +537,12 @@ pub enum SimSoundEvent {
         /// launch case names its own coordinate. Cases with no positional
         /// cue carry the target cell's centre at Z 0, which nothing reads.
         world: crate::sim::anim_class::AnimWorldCoord,
+    },
+    /// Stock nuclear Launch reached the PlayerPtr tail (6CDCB3 / 6CDE06).
+    /// Its local targeting and Ready cleanup also runs when no silo was found.
+    NuclearLaunchFinished {
+        owner: InternedId,
+        sw_type: InternedId,
     },
     /// A `CreateRadarEvent` with no local-player test and no sound, on every
     /// client: each admits it on its own radar. Type 13 from
