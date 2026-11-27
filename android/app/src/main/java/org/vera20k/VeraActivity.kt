@@ -275,7 +275,7 @@ class VeraActivity : GameActivity() {
     }
 
     /** Packs `folder` into a cache ZIP, shows progress, then opens the share panel. */
-    fun exportModZip(folder: String, done: String, failed: String, progress: String): Boolean {
+    fun exportModZip(folder: String, done: String, failed: String, progressMessage: String): Boolean {
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             if (zipDialog != null) {
@@ -286,7 +286,7 @@ class VeraActivity : GameActivity() {
             val dialog = ProgressDialog(this).apply {
                 setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
                 max = 1000
-                setMessage(progress)
+                setMessage(progressMessage)
                 setCancelable(true)
                 setCanceledOnTouchOutside(false)
                 setOnCancelListener { cancelled.set(true) }
