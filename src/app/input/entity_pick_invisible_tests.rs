@@ -21,6 +21,7 @@ fn view<'a>(sim: &'a Simulation, rules: &'a RuleSet) -> PresentedWorld<'a> {
     PresentedWorld {
         sim,
         rules: Some(rules),
+        vehicle_motion: None,
         translucent_viewer: None,
     }
 }

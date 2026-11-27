@@ -212,6 +212,7 @@ fn emit(
     let mut parents = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
+            vehicle_motion: None,
             sim,
             frame: &frame,
             rules,

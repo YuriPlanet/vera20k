@@ -3620,6 +3620,23 @@ fn finish_simulation_frame(
         }
     }
 
+    if frame_committed && state.persistence.options_profile.render_interpolation {
+        let (speed, network_fps) = local_pacing_inputs(&state.match_state);
+        let sequenced = state
+            .match_state
+            .live_network
+            .as_ref()
+            .is_some_and(|live| live.uses_sequenced_lockstep());
+        state.platform.frame_pacer.commit_motion_frame(
+            native_frame,
+            speed,
+            network_fps,
+            sequenced,
+            state.platform.redraw_gate.picture_interval(),
+            crate::util::time::Instant::now(),
+            super::frame_pacer::wall_clock_ms(),
+        );
+    }
     // VERA relation colours follow the frame's alliances: an alliance made or
     // broken recolours that house before the atlas check below. Team colours
     // are fixed for the match, but sharing this refresh keeps one path.
