@@ -676,6 +676,7 @@ impl MatchSession {
             room_return,
             campaign_abort_pending: false,
         };
+        self.staged_tiberium = crate::sim::scenario_session::TiberiumFlags::NETWORK_PREGAME;
         self.latency_fudge = latency_fudge;
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
             startup,

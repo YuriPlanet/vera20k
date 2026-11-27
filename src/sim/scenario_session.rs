@@ -811,18 +811,13 @@ pub struct ScenarioDescriptor {
     pub ice_growth_enabled: Option<bool>,
     /// Basic.VeinGrowthEnabled, constructor68384F true.
     pub vein_growth_enabled: Option<bool>,
-    /// Native `ScenarioClass` flags bit `0x40` (`[SpecialFlags] TiberiumGrows`,
-    /// bit layout from the writer `0x006B8B30`). Every skirmish/multiplayer
-    /// start forces it on (`OR 0xC0` at `0x005E74CD` on the ordinary skirmish
-    /// path, `0x005B6ACF`/`0x005B7326`/`0x005BB209` on the network/modem
-    /// paths; `Full_Init @ 0x00687C23` copies the session dword into the
-    /// scenario when GameMode != 0). Its only reader is the growth driver's
-    /// timer reload (`0x00722CA4`: `Growth * 0.3` when set, `* 1.0` when not).
-    /// Campaign (GameMode 0) stores the map key here instead (`0x006B8CA0`).
+    /// Native TiberiumGrows bit 0x40. GrowthDriver 0x00722CA4 reloads
+    /// Growth * 0.3 when set and Growth when clear. Ordinary offline mode 5
+    /// takes the staged word at 0x00687C29 without passing through the
+    /// network PregameSetup 0x005E74CD. Campaign reads its map's flag.
     pub tiberium_grows_flag: bool,
-    /// Native `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`), forced on
-    /// by the same skirmish/multiplayer sites. Gates
-    /// `CellClass::CanSpreadTiberium @ 0x00483690`.
+    /// TiberiumSpreads bit 0x80, set in both cold and network staging.
+    /// CellClass::CanSpreadTiberium 0x00483690 tests it.
     pub tiberium_spreads_flag: bool,
     /// Native `ScenarioClass` flags bit `0x800`. Campaign reads the map's
     /// `[SpecialFlags] HarvesterImmune=` (`0x006B8EBF..0x006B8ED7`); a
@@ -854,6 +849,26 @@ pub struct ScenarioDescriptor {
     pub mp_start_waypoints: BTreeMap<u32, (u16, u16)>,
 }
 
+/// The two ore bits in the Scenario word copied by Full_Init 0x00687C29.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TiberiumFlags {
+    pub accelerated_growth: bool,
+    pub spreads: bool,
+}
+
+impl TiberiumFlags {
+    /// Parse_Command_Line 0x0052F634 initializes staging to 0x8088.
+    pub const COLD: Self = Self {
+        accelerated_growth: false,
+        spreads: true,
+    };
+    /// PregameSetup 0x005E74CD sets both bits on a network start or co-op continuation.
+    pub const NETWORK_PREGAME: Self = Self {
+        accelerated_growth: true,
+        spreads: true,
+    };
+}
+
 impl ScenarioDescriptor {
     /// Resolve the scenario bits copied from the room staging word at
     /// Full_Init 0x00687C16 or read from the map at 0x006B8CA0.
@@ -861,19 +876,29 @@ impl ScenarioDescriptor {
         mut self,
         flags: &crate::map::basic::SpecialFlagsSection,
         harvester_truce: bool,
+        mode: ScenarioGameMode,
+        supplied_tiberium: Option<TiberiumFlags>,
     ) -> Self {
-        if self.rule_policy.uses_room_options() {
+        let tiberium = if self.rule_policy.uses_room_options() {
             self.no_damage = false;
             self.harvester_immune = harvester_truce;
-            // PregameSetup sets TiberiumGrows|TiberiumSpreads at 0x005E74CD.
-            self.tiberium_grows_flag = true;
-            self.tiberium_spreads_flag = true;
+            if mode.is_single_player() {
+                TiberiumFlags::COLD
+            } else {
+                // The modem setup also sets both bits (0x005B7326/0x005BB209).
+                TiberiumFlags::NETWORK_PREGAME
+            }
         } else {
             self.no_damage = flags.inert.unwrap_or(false);
             self.harvester_immune = flags.harvester_immune.unwrap_or(false);
-            self.tiberium_grows_flag = flags.tiberium_grows.unwrap_or(false);
-            self.tiberium_spreads_flag = flags.tiberium_spreads.unwrap_or(true);
-        }
+            TiberiumFlags {
+                accelerated_growth: flags.tiberium_grows.unwrap_or(false),
+                spreads: flags.tiberium_spreads.unwrap_or(true),
+            }
+        };
+        let tiberium = supplied_tiberium.unwrap_or(tiberium);
+        self.tiberium_grows_flag = tiberium.accelerated_growth;
+        self.tiberium_spreads_flag = tiberium.spreads;
         self
     }
 
