@@ -585,7 +585,7 @@ fn render_picture_cameo(
             return None;
         }
     };
-    let sprite = frames.sprite(0, None);
+    let sprite = frames.sprite(0, crate::render::picture_atlas::HouseColor::Own);
     log::info!("Sidebar picture cameo {key} loaded from {file}");
     Some(match sprite {
         Some(sprite) => RenderedCameo {
@@ -1756,14 +1756,25 @@ mod tests {
             }
         }
         directory.write("icon.png", &encode_frames(120, 96, &[rgba]).unwrap());
-        directory.write("odd.png", &encode_frames(61, 48, &[vec![255; 61 * 48 * 4]]).unwrap());
+        directory.write(
+            "odd.png",
+            &encode_frames(61, 48, &[vec![255; 61 * 48 * 4]]).unwrap(),
+        );
         let assets =
             crate::assets::asset_manager::AssetManager::from_loose_root_for_test(directory.path());
 
         let cameo = super::render_picture_cameo("GI", "icon.png", &assets).unwrap();
         assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
-        assert_eq!([cameo.crop_x, cameo.crop_y, cameo.width, cameo.height], [2, 5, 10, 5]);
-        assert!(cameo.rgba.chunks_exact(4).all(|pixel| pixel == [90, 80, 70, 255]));
+        assert_eq!(
+            [cameo.crop_x, cameo.crop_y, cameo.width, cameo.height],
+            [2, 5, 10, 5]
+        );
+        assert!(
+            cameo
+                .rgba
+                .chunks_exact(4)
+                .all(|pixel| pixel == [90, 80, 70, 255])
+        );
         assert!(super::render_picture_cameo("GI", "odd.png", &assets).is_none());
     }
 }

@@ -3,7 +3,8 @@
 // binding 3 (a 1x1 placeholder otherwise). A palette-indexed SHP atlas page
 // stores only the index plane: binding 0 then holds the atlas's palette rows,
 // and the instance's `source_palette` names the row, plus one, that its
-// indices resolve through. RGBA instances carry `source_palette` 0.
+// indices resolve through. RGBA instances carry `source_palette` 0, or a
+// picture's house colour (`picture_house.wgsl`).
 @group(1) @binding(0) var t_sprite: texture_2d<f32>;
 @group(1) @binding(1) var s_sprite: sampler;
 @group(1) @binding(3) var source_indices: texture_2d<u32>;
@@ -24,15 +25,28 @@ fn indexed_color(index: u32, source_palette: u32) -> vec4f {
 // The encoded colour of the source texel at `texel`, whose palette index is
 // `index`, for blitters that load texels instead of sampling them.
 fn source_color(texel: vec2i, index: u32, source_palette: u32) -> vec4f {
-    if source_palette != 0u { return indexed_color(index, source_palette); }
-    let color = textureLoad(t_sprite, texel, 0);
-    return vec4f(srgb_encode(color.rgb), color.a);
+    if source_palette != 0u && !picture_house(source_palette) {
+        return indexed_color(index, source_palette);
+    }
+    return rgba_source_color(textureLoad(t_sprite, texel, 0), index, source_palette);
+}
+
+// An RGBA page's `color` at a pixel of index `index`, encoded: a picture
+// house-colour pixel's from its owner's ramp on the page.
+fn rgba_source_color(color: vec4f, index: u32, source_palette: u32) -> vec4f {
+    var rgb = color.rgb;
+    if picture_house_pixel(index, source_palette) {
+        rgb = textureLoad(t_sprite, picture_ramp_texel(source_palette, index - 16u), 0).rgb;
+    }
+    return vec4f(srgb_encode(rgb), color.a);
 }
 
 // `source_color` for blitters that sample `uv`. Every page has one mip and one
 // filter, so level 0 is the texel an ordinary sample reads.
 fn sampled_source_color(uv: vec2f, index: u32, source_palette: u32) -> vec4f {
-    if source_palette != 0u { return indexed_color(index, source_palette); }
+    if source_palette != 0u && !picture_house(source_palette) {
+        return indexed_color(index, source_palette);
+    }
     let color = textureSampleLevel(t_sprite, s_sprite, uv, 0.0);
-    return vec4f(srgb_encode(color.rgb), color.a);
+    return rgba_source_color(color, index, source_palette);
 }

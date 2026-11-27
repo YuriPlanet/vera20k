@@ -359,7 +359,15 @@ impl CenteredShapeStrip {
         ramp: Option<&[crate::assets::pal_file::Color; crate::render::picture_atlas::RAMP_SIZE]>,
     ) -> Option<Self> {
         let sprites: Vec<_> = (0..picture.frame_count())
-            .map(|frame| picture.sprite(frame, ramp))
+            .map(|frame| {
+                picture.sprite(
+                    frame,
+                    ramp.map_or(
+                        crate::render::picture_atlas::HouseColor::Own,
+                        crate::render::picture_atlas::HouseColor::Baked,
+                    ),
+                )
+            })
             .collect();
         let scale = sprites
             .iter()
@@ -440,6 +448,7 @@ impl CenteredShapeStrip {
                 size: hd_size,
                 rgba: hd_rgba,
                 indices: hd_indices,
+                house: None,
             };
             crate::render::picture_zoom::PictureHdPage::new(device, queue, &page)
         });

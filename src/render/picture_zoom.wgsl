@@ -36,6 +36,10 @@ struct Camera {
 // The page itself, as the world drew from it: sRGB colour and index plane.
 @group(1) @binding(3) var t_low: texture_2d<f32>;
 @group(1) @binding(4) var low_indices: texture_2d<u32>;
+// The HD page's house layer, with its mipmaps: per texel the ramp step / 15
+// and the house-colour coverage, premultiplied (`picture_atlas::HdSprite`).
+// The owner's ramp is on the page itself (`picture_house.wgsl`).
+@group(1) @binding(5) var t_house: texture_2d<f32>;
 
 // Where the world lands in the target, and how the instance's run tests Z.
 struct Params {
@@ -76,6 +80,7 @@ struct Instance {
     @location(12) z_gradient: u32,
     @location(13) zshape_origin: vec2f,
     @location(14) palette_light: vec4u,
+    @location(15) source_palette: u32,
 };
 
 struct VertexOutput {
@@ -94,6 +99,7 @@ struct VertexOutput {
     // right; and the instance's UV origin and size.
     @location(10) @interpolate(flat) quad: vec4f,
     @location(11) @interpolate(flat) uv_frame: vec4f,
+    @location(12) @interpolate(flat) source_palette: u32,
 };
 
 @vertex
@@ -131,6 +137,7 @@ fn vs_main(@builtin(vertex_index) idx: u32, instance: Instance) -> VertexOutput 
     output.z_gradient = instance.z_gradient;
     output.zshape_origin = instance.zshape_origin;
     output.palette_light = instance.palette_light;
+    output.source_palette = instance.source_palette;
     return output;
 }
 
@@ -142,6 +149,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     let half_texel = 0.5 / vec2f(textureDimensions(t_hd));
     let uv = clamp(input.uv, input.uv_rect.xy + half_texel, input.uv_rect.zw - half_texel);
     let premultiplied = textureSample(t_hd, s_hd, uv);
+    let house = textureSample(t_house, s_hd, uv);
 
     // The window pixel's world-target pixel: floor((window - origin) / scale).
     let world_target = (input.position.xy - params.origin) / params.scale;
@@ -212,7 +220,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     let index_texel = vec2i(clamp(uv * index_dims, vec2f(0.0), index_dims - 1.0));
     // A filtered edge texel whose nearest texel is a hole is lit.
     let index = max(textureLoad(hd_indices, index_texel, 0).r, 1u);
-    let encoded = premultiplied.rgb / premultiplied.a;
+    // House-colour texels are black on the page; their owner's colour comes
+    // in by their coverage, at the step their filtered layer gives.
+    var colour = premultiplied.rgb;
+    if picture_house(input.source_palette) && house.g > 0.0 {
+        let step = u32(round(house.r / house.g * 15.0));
+        let ramp = textureLoad(t_low, picture_ramp_texel(input.source_palette, step), 0).rgb;
+        colour = colour + srgb_encode(ramp) * house.g;
+    }
+    let encoded = colour / premultiplied.a;
     let light = opaque_palette(input.palette_light, input.alpha, input.fx_flags);
     let rgb = resolve_palette(encoded, input.tint, light, index, tactical_a_at(world_target));
     return vec4f(rgb, 1.0);
@@ -236,8 +252,12 @@ fn own_world_pixel(input: VertexOutput, texel: vec2i) -> bool {
     let index_dims = vec2f(textureDimensions(low_indices));
     let index_texel = vec2i(clamp(floor(uv * index_dims), vec2f(0.0), index_dims - 1.0));
     let index = textureLoad(low_indices, index_texel, 0).r;
+    var rgb = sampled.rgb;
+    if picture_house_pixel(index, input.source_palette) {
+        rgb = textureLoad(t_low, picture_ramp_texel(input.source_palette, index - 16u), 0).rgb;
+    }
     let light = opaque_palette(input.palette_light, sampled.a * input.alpha, input.fx_flags);
-    let own = resolve_palette(srgb_encode(sampled.rgb), input.tint, light, index, tactical_a_at(centre));
+    let own = resolve_palette(srgb_encode(rgb), input.tint, light, index, tactical_a_at(centre));
     let world_last = vec2i(textureDimensions(world_color)) - 1;
     let stored = textureLoad(world_color, clamp(texel, vec2i(0), world_last), 0).rgb;
     // The target stores the encoding in 8 bits, encoded by the GPU; allow its

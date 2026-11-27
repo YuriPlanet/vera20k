@@ -37,10 +37,13 @@ use crate::render::batch::{
 use crate::render::picture_atlas::HdPage;
 
 /// One HD page on the GPU: premultiplied encoded colour with mipmaps down to
-/// one texel per game pixel, and its level-0 index plane.
+/// one texel per game pixel, its level-0 index plane, and its house layer
+/// with the colour's mipmaps when a frame on it has one
+/// (`picture_atlas::HdSprite::house`).
 pub(crate) struct PictureHdPage {
     color: wgpu::TextureView,
     indices: wgpu::TextureView,
+    house: Option<wgpu::TextureView>,
 }
 
 impl PictureHdPage {
@@ -48,7 +51,11 @@ impl PictureHdPage {
     /// `render::model_draw`): encoded colour that is opaque or empty, so
     /// already premultiplied, with one level, and its index plane.
     pub(crate) fn from_views(color: wgpu::TextureView, indices: wgpu::TextureView) -> Self {
-        Self { color, indices }
+        Self {
+            color,
+            indices,
+            house: None,
+        }
     }
 
     pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, page: &HdPage) -> Self {
@@ -93,6 +100,14 @@ impl PictureHdPage {
                 1,
                 &page.indices,
             ),
+            house: page.house_mip_chain().map(|chain| {
+                texture(
+                    "Picture HD page house layer",
+                    wgpu::TextureFormat::Rg8Unorm,
+                    levels,
+                    &chain,
+                )
+            }),
         }
     }
 }
@@ -189,6 +204,8 @@ pub(crate) struct PictureZoomPass {
     params_stride: u64,
     /// Bound as both mask textures where there is no mask.
     no_mask: wgpu::TextureView,
+    /// Bound as the house layer of a page without one.
+    no_house: wgpu::TextureView,
     instances: Option<wgpu::Buffer>,
     runs: Vec<HdRun>,
     target: HdTarget,
@@ -226,6 +243,7 @@ impl PictureZoomPass {
                 // The page as the world drew from it (`own_world_pixel`).
                 texture_entry(3, wgpu::TextureSampleType::Float { filterable: false }),
                 texture_entry(4, wgpu::TextureSampleType::Uint),
+                texture_entry(5, wgpu::TextureSampleType::Float { filterable: true }),
             ],
         });
         let frame = wgpu::TextureSampleType::Float { filterable: false };
@@ -251,8 +269,12 @@ impl PictureZoomPass {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Picture HD shader"),
             source: wgpu::ShaderSource::Wgsl(
-                crate::render::tactical_shader::world_source(include_str!("picture_zoom.wgsl"))
-                    .into(),
+                crate::render::tactical_shader::world_source(&format!(
+                    "{}\n{}",
+                    crate::render::tactical_shader::PICTURE_HOUSE,
+                    include_str!("picture_zoom.wgsl")
+                ))
+                .into(),
             ),
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -338,6 +360,27 @@ impl PictureZoomPass {
                 &[0; 4],
             )
             .create_view(&Default::default());
+        let no_house = device
+            .create_texture_with_data(
+                queue,
+                &wgpu::TextureDescriptor {
+                    label: Some("Picture HD no house layer"),
+                    size: wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rg8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                },
+                wgpu::util::TextureDataOrder::LayerMajor,
+                &[0; 2],
+            )
+            .create_view(&Default::default());
         Self {
             pipeline,
             page_layout,
@@ -346,6 +389,7 @@ impl PictureZoomPass {
             params,
             params_stride,
             no_mask,
+            no_house,
             instances: None,
             runs: Vec::new(),
             target: HdTarget::Frame,
@@ -518,6 +562,12 @@ impl PictureZoomPass {
                     wgpu::BindGroupEntry {
                         binding: 4,
                         resource: wgpu::BindingResource::TextureView(&low.source_indices),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(
+                            page.house.as_ref().unwrap_or(&self.no_house),
+                        ),
                     },
                 ],
             });

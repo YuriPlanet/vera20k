@@ -623,12 +623,10 @@ impl HdArt {
     /// The HD draw for `piece`, or `None` when its frame has no resident art.
     pub(crate) fn placement(&self, piece: &HdArtPiece) -> Option<HdArtDraw> {
         let key = Self::key(u8::try_from(piece.page).ok()?, piece.uv_origin);
-        let hash = (*self.entries.get(&key)?)?;
-        let Art::Ready { rect, .. } = self.frames.get(&hash)? else {
-            return None;
-        };
-        let rect = *rect;
-        if piece.source_palette == 0 || piece.size != [rect[2] as f32, rect[3] as f32] {
+        let rect = (*self.entries.get(&key)?)?;
+        if !crate::render::sprite_atlas::source_palette_indexed(piece.source_palette)
+            || piece.size != [rect[2] as f32, rect[3] as f32]
+        {
             return None;
         }
         Some(HdArtDraw {

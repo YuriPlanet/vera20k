@@ -2461,7 +2461,9 @@ fn emit_building_anims(
         // cloak/effect composition is a separate, unresolved owner.
         // The shared pass builder replaces this material for the shadow.
         let (alpha, draw_state) = if flags & 6 != 0
-            && anim_entry.is_some_and(|entry| entry.source_palette != 0)
+            && anim_entry.is_some_and(|entry| {
+                crate::render::sprite_atlas::source_palette_indexed(entry.source_palette)
+            })
             && palette_light.rows() != 0
             && draw_state
                 == (DrawState {

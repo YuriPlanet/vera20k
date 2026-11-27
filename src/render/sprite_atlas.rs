@@ -540,6 +540,25 @@ pub struct ShpSpriteEntry {
     pub source_palette: u32,
 }
 
+/// VERA-only, experimental: where a picture frame is on its page
+/// ([`SpriteAtlas::append_pictures`]).
+#[derive(Debug, Clone, Copy)]
+struct PictureFramePlace {
+    page: u8,
+    uv_origin: [f32; 2],
+    uv_size: [f32; 2],
+    canvas: [u32; 2],
+    origin: [u32; 2],
+    size: [u32; 2],
+}
+
+/// Whether an instance's `source_palette` names a palette row of an indexed
+/// page, not the RGBA source mode of a picture or model page
+/// ([`crate::render::picture_atlas::PICTURE_HOUSE`]).
+pub(crate) fn source_palette_indexed(source_palette: u32) -> bool {
+    source_palette != 0 && source_palette & crate::render::picture_atlas::PICTURE_HOUSE == 0
+}
+
 /// A single page of the multi-page sprite atlas.
 /// Each page is a separate GPU texture with its own bind group.
 pub struct SpriteAtlasPage {
@@ -750,6 +769,11 @@ pub struct SpriteAtlas {
     /// VERA-only, experimental: the HD twins of the picture pages of art
     /// above 1x, by page (`render::picture_zoom`). Empty without such art.
     picture_hd_pages: HashMap<usize, crate::render::picture_zoom::PictureHdPage>,
+    /// VERA-only, experimental: where each picture frame the pages hold is,
+    /// shared by every key drawn from it; None for one that draws nothing or
+    /// found no page. A refresh draws only frames missing here.
+    picture_frames:
+        HashMap<crate::render::picture_atlas::PictureFrameId, Option<PictureFramePlace>>,
     /// VERA-only, experimental: the RGBA page among `pages` that declared
     /// models are drawn on each frame (`render::model_draw`), once one is.
     model_page: Option<usize>,
@@ -830,6 +854,7 @@ impl SpriteAtlas {
             palettes,
             picture_pages: HashSet::new(),
             picture_hd_pages: HashMap::new(),
+            picture_frames: HashMap::new(),
             model_page: None,
         }
     }
@@ -865,43 +890,51 @@ impl SpriteAtlas {
         self.picture_hd_pages.get(&page)
     }
 
-    /// VERA-only, experimental (`docs/picture-model-art.md`): add `pictures`
-    /// on RGBA source pages of their own, keyed and placed as SHP frames.
+    /// VERA-only, experimental (`docs/picture-model-art.md`): add the new
+    /// frames of `pictures` on RGBA source pages of their own, and its keys,
+    /// placed as SHP frames, from those frames or the ones the pages hold.
     pub(crate) fn append_pictures(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-        pictures: Vec<crate::render::picture_atlas::PlacedPicture>,
+        pictures: crate::render::picture_atlas::PreparedPictures,
     ) {
-        if pictures.is_empty() {
-            return;
+        let crate::render::picture_atlas::PreparedPictures {
+            frames,
+            empty,
+            keys,
+            ramps,
+        } = pictures;
+        for frame in empty {
+            self.picture_frames.insert(frame, None);
         }
         let max_side = device.limits().max_texture_dimension_2d;
+        let new: Vec<_> = frames.iter().map(|(id, _)| id.clone()).collect();
         let mut pages =
-            crate::render::picture_atlas::pack_picture_pages(pictures, max_side).into_iter();
+            crate::render::picture_atlas::pack_picture_pages(frames, &ramps, max_side).into_iter();
         while let Some(page) = pages.next() {
             let index = self.pages.len();
             let Ok(page_byte) = u8::try_from(index) else {
                 log::warn!(
-                    "Sprite atlas: no page left for {} picture sprites",
-                    page.sprites.len()
+                    "Sprite atlas: no page left for {} picture frames",
+                    page.frames.len()
                 );
-                // Every section left out, this page's and the later ones'.
-                let sections: std::collections::BTreeSet<&str> = std::iter::once(&page)
+                // Every file left out, this page's and the later ones'.
+                let files: std::collections::BTreeSet<&str> = std::iter::once(&page)
                     .chain(pages.as_slice())
-                    .flat_map(|page| &page.sprites)
-                    .map(|(picture, _)| picture.key.type_id.as_str())
+                    .flat_map(|page| &page.frames)
+                    .map(|(frame, _)| frame.id.file.as_str())
                     .collect();
-                for section in sections {
+                for file in files {
                     crate::rules::art_problems::report(
-                        section,
+                        file,
                         "Picture=",
                         "the sprite atlas has no page left for it",
                         "it draws nothing",
                     );
                 }
-                return;
+                break;
             };
             let texture = batch.create_texture_on_device(
                 device,
@@ -923,28 +956,50 @@ impl SpriteAtlas {
                 );
             }
             let [width, height] = page.size.map(|side| side as f32);
-            for (picture, [x, y]) in page.sprites {
-                let [w, h] = picture.sprite.size.map(|side| side as f32);
-                self.entries.insert(
-                    picture.key,
-                    ShpSpriteEntry {
+            for (frame, [x, y]) in page.frames {
+                let [w, h] = frame.size.map(|side| side as f32);
+                self.picture_frames.insert(
+                    frame.id,
+                    Some(PictureFramePlace {
+                        page: page_byte,
                         uv_origin: [x as f32 / width, y as f32 / height],
                         uv_size: [w / width, h / height],
-                        pixel_size: [w, h],
-                        offset_x: picture.offset[0],
-                        offset_y: picture.offset[1],
-                        canvas_rect: picture.canvas_rect,
-                        extended: picture.extended,
-                        page: page_byte,
-                        // The blitters' RGBA source mode (`sprite_source.wgsl`).
-                        source_palette: 0,
-                    },
+                        canvas: frame.canvas,
+                        origin: frame.origin,
+                        size: frame.size,
+                    }),
                 );
             }
             log::info!(
                 "Sprite atlas picture page {index} ({}x{})",
                 page.size[0],
                 page.size[1]
+            );
+        }
+        // A new frame no page took (too large, or no page left) draws nothing.
+        for id in new {
+            self.picture_frames.entry(id).or_insert(None);
+        }
+        for key in keys {
+            let Some(Some(place)) = self.picture_frames.get(&key.frame) else {
+                continue;
+            };
+            let (offset, canvas_rect) = key.placement(place.canvas, place.origin);
+            self.entries.insert(
+                key.key.clone(),
+                ShpSpriteEntry {
+                    uv_origin: place.uv_origin,
+                    uv_size: place.uv_size,
+                    pixel_size: place.size.map(|side| side as f32),
+                    offset_x: offset[0],
+                    offset_y: offset[1],
+                    canvas_rect,
+                    extended: key.extended,
+                    page: place.page,
+                    // The blitters' RGBA source mode (`sprite_source.wgsl`),
+                    // with the key's house colour when it takes one.
+                    source_palette: key.source_palette(),
+                },
             );
         }
     }
@@ -3577,11 +3632,6 @@ pub(crate) fn prepare_sprite_atlas(
             new_keys.iter().map(|key| routes.key(key)).collect()
         });
     let picture_of = |index: usize| key_pictures.get(index).and_then(Option::as_ref);
-    // The pictures the keys draw from, decoded side by side before the keys
-    // are placed one by one below.
-    if let Some(art) = art {
-        pictures.prefetch(key_pictures.iter().flatten(), art, asset_manager, theater_name);
-    }
     log::info!(
         "Sprite atlas: {} already resolved, {} new to render, {} total needed",
         needed.len() - new_keys.len(),
@@ -3723,48 +3773,120 @@ pub(crate) fn prepare_sprite_atlas(
         (SpritePaletteChoice, &str, Option<HouseColorIndex>),
         usize,
     > = HashMap::new();
-    let mut placed_pictures = Vec::new();
+    let mut prepared_pictures = crate::render::picture_atlas::PreparedPictures::default();
     let mut picture_unrenderable = Vec::new();
-    let default_ramps = HouseColorRamps::default();
     // VERA-only, experimental (docs/picture-model-art.md): each picture key's
-    // frame, cropped and house-coloured, placed side by side from the
-    // pictures decoded above, as render_shp_frame places an SHP frame.
-    let picture_keys: Vec<usize> = (0..new_keys.len())
-        .filter(|&index| art.is_some() && picture_of(index).is_some())
-        .collect();
-    let mut picture_placements = crate::sim::parallel::map(&picture_keys, |&index| {
-        let (key, palette_choice) = (&new_keys[index], palette_choices[index]);
-        let (Some(source), Some(art)) = (picture_of(index), art) else {
-            return None;
-        };
-        let ramp = (key_house_remap(key, palette_choice)
-            && key.house_color != crate::rules::house_colors::NO_REMAP)
-            .then(|| {
-                rules
-                    .map_or(&default_ramps, |rules| &rules.house_color_ramps)
-                    .ramp(key.house_color)
+    // frame, one the atlas holds or one drawn here, once for every key that
+    // draws it; the key's own house colour, offsets and Z shape are its
+    // entry's. Its frame is chosen from its picture's frame count as
+    // render_shp_frame chooses an SHP's.
+    if let (Some(art), Some(routes)) = (art, picture_routes.as_mut()) {
+        use crate::render::picture_atlas::{HouseColor, PictureFrameId, PictureKey};
+        let mut new_frames: Vec<(PictureFrameId, &PictureSource)> = Vec::new();
+        let mut new_frame_ids = HashSet::new();
+        for (index, key) in new_keys.iter().enumerate() {
+            let Some(source) = picture_of(index) else {
+                continue;
+            };
+            let house = (key_house_remap(key, palette_choices[index])
+                && key.house_color != crate::rules::house_colors::NO_REMAP)
+                .then_some(key.house_color);
+            let infantry = shp_key_is_infantry(key, rules);
+            let frame = crate::render::picture_atlas::picture_file(
+                source,
+                art,
+                asset_manager,
+                theater_name,
+            )
+            .and_then(|file| {
+                let count = routes.frame_count(source)?;
+                Some(PictureFrameId {
+                    file,
+                    size: source.decl.size,
+                    frame: shp_frame_index(key, usize::from(count), infantry)?,
+                    deferred: house.is_some(),
+                })
             });
-        let kind = key.palette_context.image_kind();
-        let draw_offsets = if kind == ShpImageKind::Projectile
-            || key.palette_context == ShpPaletteContext::Harvest
-        {
-            (0, 0)
-        } else {
-            art_draw_offsets(Some(art), &key.type_id, kind)
-        };
-        let infantry = shp_key_is_infantry(key, rules);
-        pictures.place_decoded(
-            key,
-            source,
-            draw_offsets,
-            |count| shp_frame_index(key, count, infantry),
-            ramp,
-        )
-    })
-    .into_iter();
+            let Some(frame) = frame else {
+                picture_unrenderable.push(key.clone());
+                continue;
+            };
+            match previous_atlas.and_then(|atlas| atlas.picture_frames.get(&frame)) {
+                Some(None) => {
+                    picture_unrenderable.push(key.clone());
+                    continue;
+                }
+                Some(Some(_)) => {}
+                None => {
+                    if new_frame_ids.insert(frame.clone()) {
+                        new_frames.push((frame.clone(), source));
+                    }
+                }
+            }
+            let kind = key.palette_context.image_kind();
+            let draw_offsets = if kind == ShpImageKind::Projectile
+                || key.palette_context == ShpPaletteContext::Harvest
+            {
+                (0, 0)
+            } else {
+                art_draw_offsets(Some(art), &key.type_id, kind)
+            };
+            prepared_pictures.keys.push(PictureKey {
+                key: key.clone(),
+                frame,
+                draw_offsets,
+                // Retail building bodies and Buildup frames are stored with
+                // the extended format bit, so BUILDNGZ shapes their Z
+                // (`0x00490B90`, `0x0043D290`); a building's pictures keep
+                // that Z shape (docs/picture-model-art.md).
+                extended: shp_key_is_building_body(key, rules),
+                house,
+            });
+        }
+        // The new frames' pictures, decoded side by side, then the frames
+        // drawn side by side.
+        pictures.prefetch(
+            new_frames.iter().map(|(_, source)| *source),
+            art,
+            asset_manager,
+            theater_name,
+        );
+        let drawn = crate::sim::parallel::map(&new_frames, |(frame, source)| {
+            let house = if frame.deferred {
+                HouseColor::Deferred
+            } else {
+                HouseColor::Own
+            };
+            pictures.frame(source, frame.frame, house)
+        });
+        let mut empty = HashSet::new();
+        for ((id, _), drawn) in new_frames.into_iter().zip(drawn) {
+            match drawn {
+                Some(drawn) => prepared_pictures.frames.push((id, drawn)),
+                None => {
+                    empty.insert(id);
+                }
+            }
+        }
+        prepared_pictures.keys.retain(|key| {
+            let drawn = !empty.contains(&key.frame);
+            if !drawn {
+                picture_unrenderable.push(key.key.clone());
+            }
+            drawn
+        });
+        prepared_pictures.empty = empty.into_iter().collect();
+        if !prepared_pictures.frames.is_empty() {
+            prepared_pictures.ramps = crate::render::picture_atlas::ramp_strip(
+                rules.map_or(&HouseColorRamps::default(), |rules| {
+                    &rules.house_color_ramps
+                }),
+            );
+        }
+    }
     // The decoded pictures are done with; freeing a map's worth of them takes
     // a while, so a worker does it.
-    if picture_keys.is_empty() {
+    if prepared_pictures.frames.is_empty() {
         drop(pictures);
     } else {
         crate::sim::parallel::drop_on_pool(pictures);
@@ -3773,18 +3895,6 @@ pub(crate) fn prepare_sprite_atlas(
         // VERA-only, experimental (docs/picture-model-art.md): a key whose
         // art declares Picture= draws from its picture, never from an SHP.
         if art.is_some() && picture_of(index).is_some() {
-            let placed = picture_placements.next().flatten();
-            match placed {
-                Some(mut placed) => {
-                    // Retail building bodies and Buildup frames are stored
-                    // with the extended format bit, so BUILDNGZ shapes their
-                    // Z (`0x00490B90`, `0x0043D290`); a building's pictures
-                    // keep that Z shape (docs/picture-model-art.md).
-                    placed.extended = shp_key_is_building_body(&placed.key, rules);
-                    placed_pictures.push(placed);
-                }
-                None => picture_unrenderable.push(key),
-            }
             continue;
         }
         let projectile = key.palette_context.is_projectile();
@@ -3902,7 +4012,7 @@ pub(crate) fn prepare_sprite_atlas(
             new_objects,
             new_remaps,
             load_harvest_overlay,
-            pictures: placed_pictures,
+            pictures: prepared_pictures,
             picture_unrenderable,
         },
     )
@@ -4147,7 +4257,7 @@ pub(crate) struct ShpAtlasUpload {
     load_harvest_overlay: bool,
     /// VERA-only, experimental: the frames drawn from declared pictures
     /// ([`SpriteAtlas::append_pictures`]), and their keys with nothing to draw.
-    pictures: Vec<crate::render::picture_atlas::PlacedPicture>,
+    pictures: crate::render::picture_atlas::PreparedPictures,
     picture_unrenderable: Vec<ShpSpriteKey>,
 }
 
@@ -4185,7 +4295,7 @@ impl ShpAtlasUpload {
     ) -> bool {
         let mut upload = self;
         let pictures = upload.take_pictures();
-        let added = rendered.len() + pictures.len();
+        let added = rendered.len() + pictures.keys.len();
         let atlas = match atlas {
             Some(atlas) => {
                 atlas.append_sprites(device, queue, batch, rendered, rows);
@@ -4204,7 +4314,7 @@ impl ShpAtlasUpload {
 
     /// The frames drawn from declared pictures, for
     /// [`SpriteAtlas::append_pictures`].
-    pub(crate) fn take_pictures(&mut self) -> Vec<crate::render::picture_atlas::PlacedPicture> {
+    pub(crate) fn take_pictures(&mut self) -> crate::render::picture_atlas::PreparedPictures {
         std::mem::take(&mut self.pictures)
     }
 

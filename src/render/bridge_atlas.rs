@@ -345,7 +345,8 @@ fn render_bridge_picture(
     let mut sprites = Vec::new();
     if body {
         for frame in 0..count {
-            let Some(sprite) = frames.sprite(frame, None) else {
+            let Some(sprite) = frames.sprite(frame, crate::render::picture_atlas::HouseColor::Own)
+            else {
                 continue;
             };
             let mut rgba = vec![0u8; (full_w * full_h * 4) as usize];

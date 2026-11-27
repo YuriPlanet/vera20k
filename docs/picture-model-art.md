@@ -326,9 +326,17 @@ so it sorts, shades and shadows by the same rules:
   picture pixels are; its colour is their mean), cropped to its drawn pixels
   like a stored SHP frame, and centred on the canvas the same way. The index
   plane holds 0 for holes, 1 for lit pixels and 240 for the mask's unlit
-  pixels, so `PaletteLight` leaves those alone. House-colour pixels take the
-  owner's ramp by brightness before upload, one copy per house only for frames
-  that have such pixels. The atlas entries are keyed and drawn as an SHP
+  pixels, so `PaletteLight` leaves those alone. A house-colour pixel takes the
+  owner's ramp step for its brightness as it draws: its index is 16 plus the
+  step, the entry's `source_palette` carries `PICTURE_HOUSE` and the house
+  colour, and every picture page holds all house colours' ramps at its top
+  left (`picture_house.wgsl`, `RAMP_STRIP`). So one frame on a page serves
+  every owner, and every section that names the same file; at most a second
+  copy keeps its own colours for keys drawn without a remap. A new house
+  colour mid-match (relation colours) adds entries, not frames. At HD a
+  house-colour texel is black on the page and a two-channel house layer
+  (step, coverage, with the colour's mipmaps) adds the owner's colour by
+  coverage. The atlas entries are keyed and drawn as an SHP
   frame's: native Z from the drawn rectangle, Display order, `Shadow=` frames,
   darkening counts and translucency all follow without new code.
 - **Models** are drawn by the GPU every frame from their meshes into transient
@@ -735,11 +743,24 @@ current: say what was done, what was not, and what comes next.
   loading thread, and the overlay and bridge atlases decoded each rubble
   body picture again. They are now decoded side by side on the worker pool
   (`PictureSources::prefetch`, `rubble_pictures`), each key's frame is
-  placed side by side from them (`place_decoded`), a worker frees them, and
+  drawn side by side from them, a worker frees them, and
   an APNG frame composites row by row. A full art set (XMP03T4, about 290
   `Picture=` and 60 `Model=` sections) loaded in 45-50 s and now in 15 s,
   with the same frames and state hash; retail data takes the same 2.3 s
   as upstream main, the same pixels and hashes.
+- Load time, second pass: the same file was decoded once per art section
+  that names it (1056 decodes of 616 files on XMP03T4), and every key had
+  its own copy of its frame, house colour baked in (211 files became 20,378
+  sprites, placed, packed and uploaded one by one, HD twins included). Each
+  file is now decoded once (`PictureSources::files`), each frame drawn once
+  (`PictureFrameId`, the house colour looked up as it draws, above), a
+  picture's frames shrink side by side, and a frame shrinks row by row.
+  On the same set, now about 1060 `Picture=` files, the sprite atlas
+  build fell from 17-23 s to 9-11 s and its picture pages from 145 to
+  95 MiB, with the same state hash and an identical 1x frame; a 0.8 wheel
+  view differs in 64 pixels by one RGB565 step, where house-colour and
+  plain texels are filtered together. Retail data: identical frames at
+  1x and zoomed.
 - Zoomed units in front (fix): the zoomed HD copy of a picture building
   covered infantry standing in front of it, and its own SHP `ActiveAnim`,
   because those draw after it without writing Z. Production check,

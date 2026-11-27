@@ -63,7 +63,7 @@ impl PreparedSpriteAtlas {
         let (rendered, unrenderable, palettes) = completion
             .drawn(work.render())
             .map_err(sprite_atlas_load_error)?;
-        let added = rendered.len() + pictures.len();
+        let added = rendered.len() + pictures.keys.len();
         if rendered.is_empty() {
             log::warn!("No SHP sprites rendered");
             return Ok(SpriteAtlasLoadingJob::ready(None));

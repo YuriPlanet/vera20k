@@ -889,8 +889,7 @@ pub(crate) fn build_overlay_atlas_on_device(
         // Picture= draws its rubble frame from the picture; its SHP is never
         // opened.
         if art.picture.is_some() {
-            if let Some(sprite) = picture.and_then(|frames| render_rubble_picture(&frames, art))
-            {
+            if let Some(sprite) = picture.and_then(|frames| render_rubble_picture(&frames, art)) {
                 rendered.push(sprite);
                 rubble_loaded.insert(key);
             }
@@ -1230,7 +1229,7 @@ fn render_smudge_picture(
     frames: &crate::render::picture_atlas::GamePictureFrames,
     name: &str,
 ) -> Option<RenderedOverlay> {
-    let sprite = frames.sprite(0, None)?;
+    let sprite = frames.sprite(0, crate::render::picture_atlas::HouseColor::Own)?;
     let [full_w, full_h] = frames.canvas;
     let mut rgba = vec![0u8; (full_w * full_h * 4) as usize];
     let mut indices = vec![0u8; (full_w * full_h) as usize];

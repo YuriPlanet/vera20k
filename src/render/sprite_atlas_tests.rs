@@ -106,7 +106,7 @@ fn empty_upload(initial: bool) -> ShpAtlasUpload {
         new_objects: HashSet::new(),
         new_remaps: HashSet::new(),
         load_harvest_overlay: false,
-        pictures: Vec::new(),
+        pictures: Default::default(),
         picture_unrenderable: Vec::new(),
     }
 }
@@ -4176,6 +4176,7 @@ fn a_picture_building_draws_body_buildup_and_bib_from_pictures() {
     );
     let placed: HashSet<(&str, u16)> = upload
         .pictures
+        .keys
         .iter()
         .map(|picture| (picture.key.type_id.as_str(), picture.key.frame))
         .collect();
@@ -4200,15 +4201,24 @@ fn a_picture_building_draws_body_buildup_and_bib_from_pictures() {
     );
     let body = upload
         .pictures
+        .keys
         .iter()
         .find(|picture| picture.key.type_id == "PICBLD" && picture.key.frame == 0)
         .unwrap();
     assert_eq!(
-        body.offset,
-        [-1.0, -1.0],
-        "canvas centred, frame origin added"
+        body.frame.deferred,
+        body.house.is_some(),
+        "a key that takes a house colour draws the deferred frame"
     );
-    assert_eq!(body.canvas_rect, [-2.0, -2.0, 4.0, 4.0]);
+    let (_, frame) = upload
+        .pictures
+        .frames
+        .iter()
+        .find(|(id, _)| *id == body.frame)
+        .expect("the body's frame is drawn");
+    let (offset, canvas_rect) = body.placement(frame.canvas, frame.sprite.origin);
+    assert_eq!(offset, [-1.0, -1.0], "canvas centred, frame origin added");
+    assert_eq!(canvas_rect, [-2.0, -2.0, 4.0, 4.0]);
     for (name, count) in [("PICBLD", 4), ("PICBLD_MAKE", 2), ("PICBIB", 1)] {
         assert_eq!(
             upload.object_shp_frame_counts.get(name),
@@ -4301,6 +4311,7 @@ fn a_picture_factory_draws_its_door_art_from_pictures() {
         );
         let placed: HashSet<u16> = upload
             .pictures
+            .keys
             .iter()
             .filter(|picture| picture.key.type_id == name)
             .map(|picture| picture.key.frame)
