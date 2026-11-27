@@ -40,7 +40,7 @@ Stuck? See the [help page](https://vera20k.org/help).
 
 ## Contributing
 
-**PRs we welcome**
+**PRs we need most right now**
 
 - Refactoring
 - Performance

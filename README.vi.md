@@ -40,7 +40,7 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 
 ## Đóng góp
 
-**Các loại PR được hoan nghênh**
+**Những loại PR dự án đang cần nhất**
 
 - Tái cấu trúc mã
 - Hiệu năng

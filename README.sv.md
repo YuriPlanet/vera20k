@@ -40,7 +40,7 @@ Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 
 ## Bidra
 
-**PR:er vi välkomnar**
+**De PR:er vi behöver mest just nu**
 
 - Refaktorering
 - Prestanda

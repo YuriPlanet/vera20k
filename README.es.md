@@ -41,7 +41,7 @@ palabra sobre su rumbo.
 
 ## Contribuir
 
-**Tipos de PR que buscamos**
+**Los PR que más necesitamos ahora**
 
 - Refactorización
 - Rendimiento

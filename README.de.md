@@ -41,7 +41,7 @@ Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) 
 
 ## Mitmachen
 
-**Willkommene Pull Requests**
+**Welche Pull Requests wir gerade am meisten brauchen**
 
 - Refactoring
 - Performance

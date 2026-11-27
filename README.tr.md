@@ -40,7 +40,7 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
 ## Katkıda bulunma
 
-**Beklediğimiz PR türleri**
+**Şu anda en çok ihtiyaç duyduğumuz PR’lar**
 
 - Kodun yeniden düzenlenmesi
 - Performans
