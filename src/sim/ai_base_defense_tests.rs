@@ -2,7 +2,6 @@
 //! (`tools/ai_base_defense_oracle.py`, `--check` regenerates the vectors).
 
 use super::*;
-use crate::rules::ini_parser::IniFile;
 use crate::sim::ai_buildable::country_bit;
 use crate::sim::base_plan::BasePlanNode;
 use crate::sim::house_state::{HouseDifficulty, HouseState};
@@ -153,7 +152,7 @@ type DefenseTypeRow = (
 /// The oracle's BuildingTypes in its array order: values (air, armor,
 /// infantry), `IsBaseDefense=`, owner, `TechLevel=`, prerequisites. Owners
 /// are countries: the house is the fourth, `C3`.
-const DEFENSE_TYPES: [DefenseTypeRow; 14] = [
+const DEFENSE_TYPES: [DefenseTypeRow; 15] = [
     ("YARD", [0, 0, 0], false, "C3", 1, ""),
     ("POWR", [0, 0, 0], false, "C3", 1, ""),
     ("TECH", [0, 0, 0], false, "C3", 1, ""),
@@ -168,11 +167,13 @@ const DEFENSE_TYPES: [DefenseTypeRow; 14] = [
     ("NEGA", [-5, 30, 0], true, "C3", 1, ""),
     ("WALLD", [40, 40, 40], false, "C3", 1, ""),
     ("TECHD", [0, 0, 0], true, "C3", 1, ""),
+    ("CWAL", [0, 0, 0], false, "C3", 1, ""),
 ];
 
 /// The oracle's `[AI]` lists and countries.
 const DEFENSE_AI: &str = "AlliedBaseDefenses=PILL,SAM,TESL,GGUN,FORN,HITK,BUNK,NEGA\n\
     SovietBaseDefenses=BUNK,PILL,SAM,PILL\nThirdBaseDefenses=GGUN\n\
+    ConcreteWalls=CWAL\n\
     BuildPower=POWR\nBuildRefinery=YARD\nBuildBarracks=YARD\nBuildWeapons=YARD\n\
     BuildRadar=TECH\nBuildTech=TECH\n";
 // The native choice fixture supplies the current country as its parent. A
@@ -217,7 +218,8 @@ fn defense_rules(wall_tower: Option<&str>) -> RuleSet {
         "[AI]\n{DEFENSE_AI}{DEFENSE_COUNTRIES}[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n{}",
         defense_building_types()
     );
-    RuleSet::from_ini(&IniFile::from_str(&text)).unwrap()
+    // The arena's ground, so a building can be placed on it.
+    RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&text)).unwrap()
 }
 
 fn node(value: &Value) -> BasePlanNode {
@@ -305,6 +307,18 @@ fn row_nodes(row: &Value) -> Vec<BasePlanNode> {
     row["nodes"].as_array().unwrap().iter().map(node).collect()
 }
 
+/// The packed cells of one oracle row.
+fn row_cells(row: &Value, field: &str) -> Vec<u32> {
+    row[field]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|cell| {
+            pack_base_plan_cell(int(&cell[0]) as i32, int(&cell[1]) as i32)
+        })
+        .collect()
+}
+
 /// Whole choices from the oracle's inputs.
 #[test]
 fn whole_choices_match_native() {
@@ -344,6 +358,7 @@ fn whole_choices_match_native() {
             enemy: (int(&row["enemy"]) != -1).then(|| force_values(&row["values"])),
             fudge: ints(&row["fudge"])[int(&row["difficulty"]) as usize],
             node_type: nodes[int(&row["index"]) as usize].type_or_control,
+            defense_cells: Vec::new(),
         };
         placed += usize::from(check_choice(row, &choice, nodes));
     }
@@ -351,6 +366,182 @@ fn whole_choices_match_native() {
         choices.len() >= 50 && placed >= 30,
         "{} choices, {placed} placed",
         choices.len()
+    );
+}
+
+/// Whole choices with the base plan's defense cells supplied: the plan's
+/// cell replaces the site search, the cell leaves the vector, and the wall
+/// node at that cell leaves the plan.
+#[test]
+fn supplied_cells_match_native() {
+    let oracle = oracle();
+    let choices = rows(&oracle, "supplied");
+    let mut placed = 0;
+    for row in choices {
+        let label = row["label"].as_str().unwrap();
+        let rules = defense_rules(row["wall_tower"].as_str());
+        let country = rules.trigger_house_type_index("C3").unwrap();
+        let buildings = row["buildings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|building| {
+                let ty = rules.object(building[0].as_str().unwrap()).unwrap();
+                (cell(&building[1]), ty)
+            })
+            .collect();
+        let nodes = row_nodes(row);
+        let defense_cells = row_cells(row, "defense_cells");
+        let choice = DefenseChoice {
+            rules: &rules,
+            center: cell(&row["center"]),
+            bounds: rect(&row["rect"]),
+            buildings,
+            side_index: int(&row["side"]) as i32,
+            country_bit: country_bit(country),
+            tech_level: int(&row["tech"]) as i32,
+            candidate_tech_levels: rules
+                .base_defense_types(int(&row["side"]) as i32)
+                .iter()
+                .map(|id| {
+                    rules
+                        .object_in_category(ObjectCategory::Building, id)
+                        .map(|object| object.tech_level)
+                })
+                .collect(),
+            enemy: (int(&row["enemy"]) != -1).then(|| force_values(&row["values"])),
+            fudge: ints(&row["fudge"])[int(&row["difficulty"]) as usize],
+            node_type: nodes[int(&row["index"]) as usize].type_or_control,
+            defense_cells: defense_cells.clone(),
+        };
+        let events = row["events"].as_array().unwrap();
+        let draw_events = events
+            .iter()
+            .filter(|event| event[0] == "draw")
+            .map(|event| {
+                event.as_array().unwrap()[1..]
+                    .iter()
+                    .map(|v| int(v) as i32)
+                    .collect()
+            })
+            .collect();
+        let mut draws = Draws::new(label, draw_events);
+        let pick = choice.pick(|low, high| draws.draw(low, high));
+        draws.finish();
+        // The native searched no site: the plan's cell is the site.
+        assert!(
+            events.iter().all(|event| event[0] != "site"),
+            "{label}: native searched a site"
+        );
+        let mut plan = crate::sim::base_plan::BasePlanState::default();
+        plan.set_nodes_for_test(nodes);
+        plan.set_defense_cells_for_test(defense_cells);
+        // The wall type is the production lookup's answer, checked against
+        // the type index native compared the node against.
+        let wall_type = crate::sim::base_plan_generation::house_concrete_wall_type(
+            &rules,
+            "C3",
+            int(&row["side"]) as i32,
+            true,
+        );
+        if let Some(expected) = row.get("wall_type").and_then(Value::as_i64) {
+            assert_eq!(
+                i64::from(wall_type.unwrap_or(-1)),
+                expected,
+                "{label}: the wall type native used"
+            );
+        }
+        match pick {
+            None => assert_eq!(int(&row["result"]), 0, "{label}"),
+            Some(pick) => {
+                let cell = cell(&row["cell"]);
+                assert_eq!(
+                    pick.supplied_cell,
+                    Some(pack_base_plan_cell(i32::from(cell.0), i32::from(cell.1))),
+                    "{label}: the supplied cell"
+                );
+                let written = place_choice(
+                    &mut plan,
+                    int(&row["index"]) as usize,
+                    &pick,
+                    cell,
+                    wall_type,
+                );
+                assert_eq!(
+                    written,
+                    int(&row["result"]) == 1,
+                    "{label}: the choice's outcome"
+                );
+                placed += usize::from(written);
+            }
+        }
+        let after: Vec<BasePlanNode> = row["nodes_after"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(node)
+            .collect();
+        assert_eq!(plan.nodes(), after.as_slice(), "{label}");
+        assert_eq!(
+            plan.defense_cells(),
+            row_cells(row, "cells_after").as_slice(),
+            "{label}: the cells that stay"
+        );
+    }
+    assert!(
+        choices.len() >= 13 && placed >= 12,
+        "{} choices, {placed} placed",
+        choices.len()
+    );
+}
+
+/// The production path takes the plan's supplied cell: the site search does
+/// not run, the cell leaves the vector, and the node takes the defense at
+/// that cell. The cell lies outside the house's reservation, so no searched
+/// site could be it.
+#[test]
+fn production_takes_the_supplied_cell() {
+    let rules = defense_rules(Some("WALLT"));
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let owner = sim.interner.intern("Computer");
+    let country = sim.interner.intern("C3");
+    let mut house = HouseState::new(owner, 0, Some(country), false, 0, 10);
+    house.set_base_plan_center_for_test((20, 20));
+    house.base_plan_mut().set_nodes_for_test(vec![BasePlanNode {
+        type_or_control: -1,
+        packed_cell: 0,
+        filled: false,
+        retry_count: 0,
+    }]);
+    house.base_plan_mut().set_defense_cells_for_test(vec![
+        pack_base_plan_cell(30, 28),
+        pack_base_plan_cell(31, 28),
+    ]);
+    house.project_country_mults(&rules, &sim.interner);
+    sim.houses.register(house);
+    sim.spawn_object("YARD", "Computer", 20, 20, 0, &rules)
+        .expect("the yard");
+
+    assert!(
+        choose_next_production(&mut sim, &rules, owner, 0),
+        "the choice took the supplied cell"
+    );
+
+    let plan = sim.houses.get(&owner).unwrap().base_plan();
+    assert_eq!(
+        plan.defense_cells(),
+        &[pack_base_plan_cell(31, 28)],
+        "the cell that stays"
+    );
+    assert_eq!(
+        plan.nodes()[0].packed_cell,
+        pack_base_plan_cell(30, 28),
+        "the defense's cell"
+    );
+    assert!(
+        plan.nodes()[0].type_or_control >= 0,
+        "the node holds the defense"
     );
 }
 

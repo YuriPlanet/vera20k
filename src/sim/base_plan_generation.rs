@@ -15,6 +15,46 @@ use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
 use crate::sim::world::TypeTechLevels;
 
+/// The house's first buildable in one of the rules' AI type lists, as its
+/// base-plan type index.
+///
+/// `HouseClass__FirstBuildableFromArray @ 0x005051E0` reads the list's items
+/// and count, keeps the first type the house may own (the country, side and
+/// super-weapon predicate of `ai_buildable::candidate_allowed`) and returns
+/// its type index.
+pub(crate) fn house_first_buildable_type(
+    rules: &RuleSet,
+    type_ids: &[String],
+    country_name: &str,
+    side_index: i32,
+    super_weapons: bool,
+) -> Option<i32> {
+    first_buildable_from_array(rules, type_ids, country_name, side_index, super_weapons)
+        .and_then(|ty| rules.building_type_index(&ty.id))
+}
+
+/// The house's concrete wall type: the first `[AI] ConcreteWalls=` type
+/// (`Rules+0xA50`) it may own.
+///
+/// The plan's wall nodes are made from the side-only lookup
+/// (`AI_BuildWalls @ 0x0050C340`), a different native lookup; the
+/// supplied-cell path compares the node's type against this one
+/// (`0x00507AA4..0x00507AB1`).
+pub(crate) fn house_concrete_wall_type(
+    rules: &RuleSet,
+    country_name: &str,
+    side_index: i32,
+    super_weapons: bool,
+) -> Option<i32> {
+    house_first_buildable_type(
+        rules,
+        &rules.concrete_wall_types,
+        country_name,
+        side_index,
+        super_weapons,
+    )
+}
+
 /// VERA's bound on the nodes one count inserts into a base plan: the extra
 /// refineries (`AIExtraRefineries=`/`AISlaveMinerNumber=`), Ares'
 /// `AIBuildCounts=`/`AIExtraCounts=` copies and the base defenses

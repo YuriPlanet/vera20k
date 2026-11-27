@@ -28,6 +28,12 @@ pub struct BasePlanNode {
 pub struct BasePlanState {
     percent_built: i32,
     nodes: Vec<BasePlanNode>,
+    /// `HouseClass+0x5738` (`BaseClass+0x38`): the defense cells the plan
+    /// supplies. Native fills this vector only when a saved base is loaded
+    /// (`BaseClass::Load @ 0x0042EE30`, `0x0042EFFC..0x0042F038`), so a
+    /// fresh game and every retail scenario leave it empty.
+    #[serde(default)]
+    defense_cells: Vec<u32>,
 }
 
 /// Pack the native `CellStruct` words after signed-16 narrowing.
@@ -49,6 +55,40 @@ impl BasePlanState {
     /// The nodes in plan order.
     pub fn nodes(&self) -> &[BasePlanNode] {
         &self.nodes
+    }
+
+    /// `HouseClass+0x5738`: the defense cells the plan supplies, in the
+    /// order the base's Load read them.
+    pub fn defense_cells(&self) -> &[u32] {
+        &self.defense_cells
+    }
+
+    /// `DynamicVector::FindIndex @ 0x0042F7F0` over the supplied cells, then
+    /// the ordered shift-left removal (`0x005079B4..0x005079CC`): the first
+    /// cell that equals `packed_cell` leaves the vector.
+    pub(crate) fn remove_defense_cell(&mut self, packed_cell: u32) {
+        if let Some(index) = self
+            .defense_cells
+            .iter()
+            .position(|candidate| *candidate == packed_cell)
+        {
+            self.defense_cells.remove(index);
+        }
+    }
+
+    /// The supplied-cell path's cleanup (`0x00507AB6..0x00507B51`): the node
+    /// whose cell words equal `packed_cell` and whose type is
+    /// `type_or_control` leaves the plan.
+    ///
+    /// Native scans the nodes from the last one down
+    /// (`0x00507AC3..0x00507AFA`) and stops at the first match, so the last
+    /// matching node is the one that leaves.
+    pub(crate) fn remove_node_at_cell(&mut self, packed_cell: u32, type_or_control: i32) {
+        if let Some(index) = self.nodes.iter().rposition(|node| {
+            node.type_or_control == type_or_control && node.packed_cell == packed_cell
+        }) {
+            self.nodes.remove(index);
+        }
     }
 
     /// `BaseClass::Read_INI` from `HouseClass::Read_Scenario_INI`: the House
@@ -105,14 +145,22 @@ impl BasePlanState {
     /// (`0x00507A4C..0x00507B7B`): a placeholder node (negative) becomes the
     /// defense at the cell; a WallTower node takes the cell, and hands the
     /// defense and the cell to the next node when that is `-1`.
-    pub(crate) fn place_defense(&mut self, index: usize, defense_type: i32, packed_cell: u32) {
+    ///
+    /// Whether the defense went to the node after `index`: that branch
+    /// (`0x00507A7D..0x00507A9E`) also drops the wall node at the cell.
+    pub(crate) fn place_defense(
+        &mut self,
+        index: usize,
+        defense_type: i32,
+        packed_cell: u32,
+    ) -> bool {
         let Some(node) = self.nodes.get_mut(index) else {
-            return;
+            return false;
         };
         if node.type_or_control < 0 {
             node.type_or_control = defense_type;
             node.packed_cell = packed_cell;
-            return;
+            return false;
         }
         node.packed_cell = packed_cell;
         if let Some(next) = self.nodes.get_mut(index + 1)
@@ -120,7 +168,9 @@ impl BasePlanState {
         {
             next.type_or_control = defense_type;
             next.packed_cell = packed_cell;
+            return true;
         }
+        false
     }
 
     /// Manage_Build_Queue's rebuild node (`0x004FE1D6..0x004FE2BD`): `node`
@@ -158,6 +208,11 @@ impl BasePlanState {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_nodes_for_test(&mut self, nodes: Vec<BasePlanNode>) {
         self.nodes = nodes;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_defense_cells_for_test(&mut self, cells: Vec<u32>) {
+        self.defense_cells = cells;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -325,6 +380,7 @@ mod tests {
         let mut plan = BasePlanState {
             percent_built: 73,
             nodes: vec![node(8, -2, 32_769, false, -10)],
+            defense_cells: Vec::new(),
         };
         let expected = native_checksum(&plan);
         plan.percent_built = -9;
@@ -345,6 +401,7 @@ mod tests {
         let mut exact = BasePlanState {
             percent_built: 0,
             nodes: vec![node(4, 1, 1, false, 11), node(4, 20, 30, true, -7)],
+            defense_cells: Vec::new(),
         };
         assert_eq!(exact.fill_successful_building(4, exact_cell, true), Some(1));
         assert_eq!(exact.nodes[0].retry_count, 11);
@@ -358,6 +415,7 @@ mod tests {
                 node(4, 88, 99, false, 6),
                 node(4, 21, 31, false, 5),
             ],
+            defense_cells: Vec::new(),
         };
         assert_eq!(
             fallback.fill_successful_building(4, exact_cell, true),
@@ -385,6 +443,7 @@ mod tests {
                 node(9, 5, 6, true, -8),
                 node(7, 5, 6, false, 2),
             ],
+            defense_cells: Vec::new(),
         };
 
         let replacement = AiBasePolicy::ReplaceUnavailableNodes;
@@ -423,6 +482,7 @@ mod tests {
                 node(5, 8, 8, false, 2),
                 node(7, -9, 14, false, 11),
             ],
+            defense_cells: Vec::new(),
         };
         plan.clear_failed_site(target);
         assert_eq!(plan.nodes[0], node(-3, 0, 0, true, -6));
@@ -439,6 +499,7 @@ mod tests {
                 node(2, 2, 2, true, 2),
                 node(3, 3, 3, false, 7),
             ],
+            defense_cells: Vec::new(),
         };
 
         let replacement = AiBasePolicy::ReplaceUnavailableNodes;
