@@ -97,6 +97,14 @@ class VeraActivity : GameActivity() {
             insets
         }
         window.decorView.requestApplyInsets()
+        window.decorView.setOnHoverListener { _, event ->
+            if (isHardwarePointer(event)) {
+                forwardPointer(event)
+                true
+            } else {
+                false
+            }
+        }
         // The engine draws its own pointer; the system one would trail it.
         window.decorView.pointerIcon = PointerIcon.create(
             Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888),
