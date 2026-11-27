@@ -1,5 +1,5 @@
-//! An object's draw transform at a committed simulation frame. Visible Drive
-//! vehicles can sample its position and facings between ticks in `tank_motion`.
+//! An object's draw transform at a committed simulation frame. Visible ground and air
+//! vehicles can sample its position and facings between ticks in `vehicle_motion`.
 
 use crate::sim::game_entity::GameEntity;
 

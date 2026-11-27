@@ -43,7 +43,12 @@ fn unit_z_adjust_in_runtime(
     world_z: Option<i32>,
 ) -> i32 {
     with_record(runtime, entity, |world, record| {
-        super::unit_z_adjust_in(world, record, unloading_body, world_z)
+        super::unit_z_adjust_in(
+            world,
+            record,
+            unloading_body,
+            world_z.map(|z| [record.hud.location.x, record.hud.location.y, z]),
+        )
     })
 }
 

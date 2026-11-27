@@ -34,6 +34,8 @@ pub(crate) struct FrameCost {
     last_present: Option<Instant>,
     present_intervals: Vec<Duration>,
     intermediate_pictures: usize,
+    jumpjet_pictures: usize,
+    fly_pictures: usize,
     last_population_bucket: Option<u32>,
     fewest_mobile: Option<usize>,
     /// The service passes' main-thread time, inline ticks included.
@@ -97,7 +99,7 @@ impl FrameCost {
     pub(crate) fn battlefield_presented(
         &mut self,
         at: Instant,
-        intermediate_tanks: usize,
+        motion: &crate::app::presentation::vehicle_motion::VehicleMotion,
         population: impl FnOnce() -> Option<usize>,
     ) {
         let Some((_, frame)) = self.frames else {
@@ -107,7 +109,12 @@ impl FrameCost {
             self.present_intervals
                 .push(at.saturating_duration_since(last));
         }
-        self.intermediate_pictures += usize::from(intermediate_tanks > 0);
+        if motion.intermediate_vehicles() > 0 {
+            self.intermediate_pictures += 1;
+            let (jumpjet, fly) = motion.intermediate_aircraft();
+            self.jumpjet_pictures += usize::from(jumpjet);
+            self.fly_pictures += usize::from(fly);
+        }
         let bucket = frame / 100;
         if self.last_population_bucket != Some(bucket)
             && let Some(n) = population()
@@ -155,6 +162,8 @@ impl FrameCost {
             pictures: pictures.len(),
             present_p99_ms: (!present_intervals.is_empty()).then(|| at(&present_intervals, 0.99)),
             intermediate_pictures: self.intermediate_pictures,
+            jumpjet_pictures: self.jumpjet_pictures,
+            fly_pictures: self.fly_pictures,
             fewest_mobile: self.fewest_mobile,
             tick_ms: mean(&ticks),
             tick_p99_ms: at(&ticks, 0.99),
@@ -182,8 +191,11 @@ pub(crate) struct FrameCostReport {
     pub(crate) pictures: usize,
     /// Wall time between battlefield hand-offs. This ends before display scanout.
     pub(crate) present_p99_ms: Option<f64>,
-    /// Battlefield pictures with a moving tank sampled between adjacent ticks.
+    /// Battlefield pictures with a moving vehicle sampled between adjacent ticks.
     pub(crate) intermediate_pictures: usize,
+    /// Intermediate pictures containing motion from each flight locomotor.
+    pub(crate) jumpjet_pictures: usize,
+    pub(crate) fly_pictures: usize,
     /// Lowest live, on-map mobile population among the sampled pictures.
     pub(crate) fewest_mobile: Option<usize>,
     /// The mean simulation frame's own wall time and its 99th percentile.

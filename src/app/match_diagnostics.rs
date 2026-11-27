@@ -274,12 +274,13 @@ impl MatchDiagnosticsState {
         entity: &crate::app::presentation::frame::ObjectRecord,
         frame: u32,
         screen: [f32; 2],
+        committed_screen: [f32; 2],
         body: u16,
     ) {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
             && probe.actor == entity.stable_id()
         {
-            probe.committed_screen = entity.pose.screen;
+            probe.committed_screen = committed_screen;
             probe.pending = Some((
                 frame,
                 screen,

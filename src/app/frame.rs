@@ -61,7 +61,7 @@ pub(super) enum FramePass {
 /// The picture still visible while a worker owns the next tick uses its own
 /// committed interval. Exact captures and frozen or partial worlds draw the
 /// captured pose straight away.
-fn tank_draw_clock(
+fn vehicle_draw_clock(
     platform: &PlatformState,
     match_state: &MatchState,
     enabled: bool,
@@ -1396,15 +1396,15 @@ impl App {
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
         let picture_clock = crate::app::match_runtime::redraw_gate::PictureClock::now();
-        let (tank_frame, tank_clock) = tank_draw_clock(
+        let (motion_frame, motion_clock) = vehicle_draw_clock(
             &state.platform,
             &state.match_state,
             state.persistence.options_profile.render_interpolation,
             focus_frozen || shell_capture.is_some() || hidden_run.is_some(),
         );
         let verdict = (pass == FramePass::Probe).then(|| {
-            let phase = tank_clock.map(|span| span.fraction(picture_clock.at));
-            let repeat_fits = tank_clock.is_some_and(|span| {
+            let phase = motion_clock.map(|span| span.fraction(picture_clock.at));
+            let repeat_fits = motion_clock.is_some_and(|span| {
                 span.repeat_fits(
                     state.platform.redraw_gate.picture_interval(),
                     state.platform.frame_pacer.draw_work(),
@@ -1429,8 +1429,8 @@ impl App {
                     && state
                         .match_state
                         .match_presentation
-                        .tank_motion
-                        .needs_redraw(tank_frame, phase),
+                        .vehicle_motion
+                        .needs_redraw(motion_frame, phase),
             )
         });
         let unchanged = verdict == Some(ProbeVerdict::Stands);
@@ -1981,9 +1981,9 @@ impl App {
             GameScreen::InGame => {
                 // Sample after acquiring the surface: VSync may have waited
                 // nearly a refresh since the probe judged the picture.
-                state.match_state.match_presentation.tank_motion.begin_draw(
-                    tank_frame,
-                    tank_clock.map(|span| span.fraction(Instant::now())),
+                state.match_state.match_presentation.vehicle_motion.begin_draw(
+                    motion_frame,
+                    motion_clock.map(|span| span.fraction(Instant::now())),
                     state.match_state.input.zoom_level,
                 );
                 //53B460 copies the already-composed surface, before this
@@ -2408,16 +2408,12 @@ impl App {
             state
                 .match_state
                 .match_presentation
-                .tank_motion
+                .vehicle_motion
                 .commit_presented();
             if let Some(cost) = &mut state.frontend.external_progress.frame_cost {
                 cost.battlefield_presented(
                     presented_at,
-                    state
-                        .match_state
-                        .match_presentation
-                        .tank_motion
-                        .intermediate_tanks(),
+                    &state.match_state.match_presentation.vehicle_motion,
                     || {
                         let frame = state.match_state.sim_runtime.frame()?;
                         Some(

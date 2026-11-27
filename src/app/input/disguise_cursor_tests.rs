@@ -86,7 +86,7 @@ fn cursor(
     let source = PresentedWorld {
         sim,
         rules: Some(rules),
-        tank_motion: None,
+        vehicle_motion: None,
         translucent_viewer: None,
     };
     let (x, y) = source.screen_position(sim.entities().get(target).unwrap());

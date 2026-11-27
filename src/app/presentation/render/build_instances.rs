@@ -484,7 +484,7 @@ pub(super) fn build_world_instances(
             let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state)
                 .and_then(|name| runtime.simulation.interner().get(&name));
             instances::DisplayEffectInputs {
-                tank_motion: Some(&presentation.tank_motion),
+                vehicle_motion: Some(&presentation.vehicle_motion),
                 sim: &runtime.simulation,
                 frame,
                 rules: &runtime.resources.rules,
@@ -741,7 +741,7 @@ pub(super) fn build_world_instances(
                 status.shift_owner(
                     match_state
                         .match_presentation
-                        .tank_motion
+                        .vehicle_motion
                         .offset(entity.stable_id()),
                 );
                 status
@@ -772,7 +772,7 @@ pub(super) fn build_world_instances(
                 let id = parent.parent.id;
                 if let Some(entity) = frame.object(id) {
                     if concealed(entity) {
-                        match_state.match_presentation.tank_motion.conceal(id);
+                        match_state.match_presentation.vehicle_motion.conceal(id);
                         return false;
                     }
                     return true;
@@ -838,9 +838,9 @@ pub(super) fn build_world_instances(
         &building_body_opportunities,
     );
     if let Some(rt) = match_state.sim_runtime.presentation() {
-        display_order.apply_tank_motion(
+        display_order.apply_vehicle_motion(
             &mut planned_objects,
-            &match_state.match_presentation.tank_motion,
+            &match_state.match_presentation.vehicle_motion,
             &rt.simulation,
         );
     }
@@ -909,7 +909,7 @@ pub(super) fn build_world_instances(
             let sim = &runtime.simulation;
             let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
             let view = crate::app::ui_modules::field::FieldView {
-                tank_motion: &match_state.match_presentation.tank_motion,
+                vehicle_motion: &match_state.match_presentation.vehicle_motion,
                 sim,
                 frame,
                 rules: crate::app::state::active_rules(frontend, match_state),
@@ -1405,7 +1405,7 @@ pub(super) fn build_ui_instances(
     );
     target_line.extend(ferry_lines::build_paths(match_state, view, wall_ms));
     let action_lines = crate::app::presentation::target_lines::build_target_line_strokes(
-        Some(&match_state.match_presentation.tank_motion),
+        Some(&match_state.match_presentation.vehicle_motion),
         &match_state.match_presentation.target_lines,
         match_state.input.planning.active(),
         match_state

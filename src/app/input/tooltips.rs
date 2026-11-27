@@ -265,7 +265,7 @@ fn tactical_world_tip_text(
         sim: view.simulation(),
         rules: Some(rules),
         translucent_viewer: None,
-        tank_motion: None,
+        vehicle_motion: None,
     };
     tactical_world_tip_text_for_viewer(view, source, csf, world, cursor_coordinates, None)
 }

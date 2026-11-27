@@ -267,7 +267,7 @@ impl Scene {
         let detail = RefCell::new(detail);
         let hidden = Default::default();
         let input = DisplayEffectInputs {
-            tank_motion: None,
+            vehicle_motion: None,
             sim,
             frame: &presented,
             rules: &self.runtime.resources.rules,

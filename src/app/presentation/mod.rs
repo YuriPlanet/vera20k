@@ -54,7 +54,7 @@ pub(crate) mod super_timer_groups;
 pub(crate) mod super_timers;
 pub(crate) mod tactical_composite;
 pub(crate) mod talk_bubble;
-pub(crate) mod tank_motion;
+pub(crate) mod vehicle_motion;
 pub(crate) mod target_lines;
 pub(crate) mod ui_overlays;
 pub(crate) mod window_ui;

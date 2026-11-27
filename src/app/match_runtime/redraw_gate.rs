@@ -432,7 +432,7 @@ pub(crate) enum NextPass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProbeVerdict {
     Draw,
-    /// Only a visible tank's position or facing changed between ticks. Show
+    /// Only a visible vehicle's position or facing changed between ticks. Show
     /// it with the same tactical effects the previous picture showed.
     DrawMotion,
     /// The presented picture is still right.
@@ -625,15 +625,15 @@ impl RedrawGate {
         &self,
         current: Option<StillFrame>,
         now: Instant,
-        tank_moved: bool,
+        vehicle_moved: bool,
     ) -> ProbeVerdict {
         if self.input_draw_due(now) {
             return ProbeVerdict::Draw;
         }
         let stands = !self.redraw_held && current.is_some() && current == self.presented;
         match (stands, self.pointer_since_present) {
-            (true, _) if tank_moved && self.inside_picture_limit(now) => ProbeVerdict::DrawWaits,
-            (true, _) if tank_moved => ProbeVerdict::DrawMotion,
+            (true, _) if vehicle_moved && self.inside_picture_limit(now) => ProbeVerdict::DrawWaits,
+            (true, _) if vehicle_moved => ProbeVerdict::DrawMotion,
             (true, false) => ProbeVerdict::Stands,
             (true, true) => ProbeVerdict::PointerWaits,
             (false, _) if self.inside_picture_limit(now) => ProbeVerdict::DrawWaits,

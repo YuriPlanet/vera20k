@@ -52,6 +52,16 @@ fn on(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> ObjectRecord {
     )
 }
 
+fn committed_unit_shadow(
+    terrain: &ResolvedTerrainGrid,
+    entity: &GameEntity,
+) -> Option<crate::render::unit_shadow::UnitShadowPose> {
+    let record = on(terrain, entity);
+    let geometry =
+        VehicleGeometry::read(&record, EntityDrawBand::Air, 0, None, None, None, || true);
+    lifted_unit_shadow_pose(&record, terrain, &geometry, 0)
+}
+
 fn body_slope(
     terrain: &ResolvedTerrainGrid,
     entity: &GameEntity,
@@ -69,9 +79,7 @@ fn body_slope(
 
 /// The slope [`lifted_unit_shadow_pose`] lays a Hover's shadow on.
 fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
-    lifted_unit_shadow_pose(&on(terrain, entity), terrain, 0)
-        .unwrap()
-        .slope
+    committed_unit_shadow(terrain, entity).unwrap().slope
 }
 
 /// Teleport keeps the base Draw_Matrix (`0x0055A730`, vtable slot
@@ -152,7 +160,7 @@ fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
     let hover = hover_on_ramp(&terrain, "LCRF", 80);
     assert!(has_lifted_unit_shadow(&ObjectRecord::of_test(&hover)));
-    let pose = lifted_unit_shadow_pose(&on(&terrain, &hover), &terrain, 0).unwrap();
+    let pose = committed_unit_shadow(&terrain, &hover).unwrap();
     let (x, y) = crate::render::locomotor_visual::screen_position(&hover);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert!(drop > 0);
@@ -171,7 +179,7 @@ fn a_falling_vehicle_draws_its_shadow_on_the_ground_below_its_body() {
     assert!(!has_lifted_unit_shadow(&ObjectRecord::of_test(&tank)));
     tank.set_falling_down_for_test(true);
     assert!(has_lifted_unit_shadow(&ObjectRecord::of_test(&tank)));
-    let pose = lifted_unit_shadow_pose(&on(&terrain, &tank), &terrain, 0).unwrap();
+    let pose = committed_unit_shadow(&terrain, &tank).unwrap();
     let (x, y) = crate::render::locomotor_visual::screen_position(&tank);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert_eq!(pose.anchor, [x, y + drop as f32]);

@@ -253,7 +253,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 let mut parents = PlannedObjects::default();
                 build_display_effect_instances(
                     &DisplayEffectInputs {
-                        tank_motion: None,
+                        vehicle_motion: None,
                         sim: &sim,
                         frame: &crate::app::presentation::frame::PresentationFrame::of_test(
                             &sim, &rules,

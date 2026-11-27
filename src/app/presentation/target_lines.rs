@@ -49,7 +49,7 @@ pub(crate) struct SelectedActionLine {
 }
 
 impl SelectedActionLine {
-    fn at_draw(mut self, source: u64, motion: Option<&super::tank_motion::TankMotion>) -> Self {
+    fn at_draw(mut self, source: u64, motion: Option<&super::vehicle_motion::VehicleMotion>) -> Self {
         if let Some(motion) = motion {
             let [dx, dy] = motion.offset(source);
             self.start.x += dx;
@@ -131,7 +131,7 @@ impl TargetLineState {
 /// Build selected unit action-line strokes from live simulation state.
 /// The psychic detection line's dashed stroke carries its A gate for the GPU.
 pub(crate) fn build_target_line_strokes(
-    motion: Option<&super::tank_motion::TankMotion>,
+    motion: Option<&super::vehicle_motion::VehicleMotion>,
     line_state: &TargetLineState,
     planning_active: bool,
     sim: Option<&Simulation>,
@@ -537,7 +537,7 @@ const TARGET_LASER_PATTERN: [u8; 16] = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0
 /// Residual: IsHumanPlayer is read now, not at the shot, so an owner change
 /// within the 15 frames after a shot shows or hides the rest of that laser.
 pub(crate) fn target_laser_draws<'a>(
-    motion: Option<&super::tank_motion::TankMotion>,
+    motion: Option<&super::vehicle_motion::VehicleMotion>,
     entity: &ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,
@@ -550,7 +550,7 @@ pub(crate) fn target_laser_draws<'a>(
 
 /// [`target_laser_draws`] at native frame `frame`.
 fn target_laser_draws_at<'a>(
-    motion: Option<&super::tank_motion::TankMotion>,
+    motion: Option<&super::vehicle_motion::VehicleMotion>,
     entity: &ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,

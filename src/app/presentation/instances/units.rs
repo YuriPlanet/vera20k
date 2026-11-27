@@ -10,13 +10,15 @@ use super::helpers::{
     tactical_entity_admission,
 };
 use crate::app::frontend::state::FrontendState;
-use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjects,
 };
+use crate::app::presentation::render_pose::RenderPose;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::presentation::vehicle_motion::{AirPose, VehicleMotion, VehicleSample};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::state::PlatformState;
@@ -30,11 +32,13 @@ use crate::render::native_z::{
 };
 use crate::render::sprite_atlas::{HARVEST_OVERLAY_IMAGE, ShpPaletteContext, ShpSpriteKey};
 use crate::render::tactical_draw_plan::RenderZPolicy;
+use crate::render::unit_atlas::PoseTilt;
 use crate::render::unit_atlas::{
     UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing, canonical_unit_facing,
 };
 use crate::render::unit_pose_cache::VxlPoseFrameCache;
 use crate::rules::house_colors::{self, HouseColorIndex};
+use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::voxel_frame_catalog::{
     NO_SPAWN_ALT_SUFFIX, object_draws_turret_parts, object_voxel_turret_index,
 };
@@ -434,30 +438,28 @@ const fn display_binary_frame_for_committed_session(committed_binary_frame: u32)
 
 /// Aircraft4145FD and Foot4DAF5E each add the locomotor's Draw_Point.
 /// Keep this body point separate from the physical entity anchor.
-fn aircraft_body_anchor(
-    sim: &crate::sim::world::Simulation,
-    entity: &crate::app::presentation::frame::ObjectRecord,
+fn aircraft_body_offset_y(
+    frame: u32,
+    entity: &ObjectRecord,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
-    anchor: [f32; 2],
-) -> [f32; 2] {
+    object: Option<&crate::rules::object_type::ObjectType>,
+) -> f32 {
     if entity.category() != EntityCategory::Aircraft {
-        return anchor;
+        return 0.0;
     }
     let Some((taking_off, landing)) = entity
         .locomotor
         .as_ref()
-        .and_then(|locomotor| locomotor.fly_phase_callbacks())
+        .and_then(|l| l.fly_phase_callbacks())
     else {
-        return anchor;
+        return 0.0;
     };
-    let Some(object) = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
-    else {
-        return anchor;
+    let Some(object) = object else {
+        return 0.0;
     };
-    let _ = cells;
     let height = entity.place.flight_height;
     let base = entity.place.landing_base;
+    let _ = rules;
     // MainTick renders before Logic55DC9E, then increments at55DE7E/81.
     // The next Draw_Point4CF8D8 reads that committed global frame directly.
     // Original4CF8B1 tests TechnoType+0xC95; a Phobos build resolves
@@ -470,14 +472,130 @@ fn aircraft_body_anchor(
     #[cfg(not(feature = "phobos"))]
     let no_wobbles = object.is_dropship();
     let delta = crate::render::locomotor_visual::fly_draw_point_y(
-        sim.session().binary_frame(),
-        no_wobbles,
-        taking_off,
-        landing,
-        height,
-        base,
+        frame, no_wobbles, taking_off, landing, height, base,
     ) as f32;
-    [anchor[0], anchor[1] + delta + delta]
+    delta + delta
+}
+
+/// The physical anchor carries altitude. Fly's Draw_Point moves only the
+/// body; its ground shadow queries terrain at the displayed world XY.
+struct VehicleGeometry {
+    pose: RenderPose,
+    sample: Option<VehicleSample>,
+    tilt: Option<PoseTilt>,
+    transient_tilt: bool,
+    body_offset_y: f32,
+    committed_body_offset_y: f32,
+    xyz: [i32; 3],
+    depth_xyz: [i32; 3],
+    shadow_offset: [f32; 2],
+    lift_correction: f32,
+}
+
+impl VehicleGeometry {
+    fn read(
+        entity: &ObjectRecord,
+        band: EntityDrawBand,
+        frame: u32,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        object: Option<&crate::rules::object_type::ObjectType>,
+        motion: Option<&VehicleMotion>,
+        revealed: impl FnOnce() -> bool,
+    ) -> Self {
+        let motion = motion.filter(|motion| motion.sampling());
+        let kind = entity.locomotor.as_ref().map(|l| l.active_kind());
+        let native = entity.pose;
+        let native_tilt = body_pose_with_angles(
+            entity,
+            band,
+            object.is_some_and(|o| o.tilt_crash_jumpjet),
+            native.angles,
+            native.rocket_pitch,
+            object,
+            native.fly_bank_direction,
+        );
+        let location = entity.hud.location;
+        let xyz = [location.x, location.y, location.z];
+        let air = matches!(
+            (entity.category(), kind),
+            (EntityCategory::Aircraft, Some(LocomotorKind::Fly))
+                | (EntityCategory::Unit, Some(LocomotorKind::Jumpjet))
+        );
+        let native_air = AirPose {
+            body_offset_y: aircraft_body_offset_y(frame, entity, rules, object),
+            ground_y: if air && motion.is_some() {
+                crate::util::lepton::absolute_leptons_to_screen(xyz[0], xyz[1], 0).1
+            } else {
+                0.0
+            },
+            tilt: match native_tilt {
+                Some(PoseTilt::FlyNormal { pitch, roll }) => [pitch, roll],
+                Some(PoseTilt::Jumpjet(angles)) => angles,
+                _ => [0.0; 2],
+            },
+        };
+        let mut result = Self {
+            pose: native,
+            sample: None,
+            tilt: native_tilt,
+            transient_tilt: false,
+            body_offset_y: native_air.body_offset_y,
+            committed_body_offset_y: native_air.body_offset_y,
+            xyz,
+            depth_xyz: [xyz[0], xyz[1], entity.place.world_z_leptons_off_map],
+            shadow_offset: [0.0; 2],
+            lift_correction: 0.0,
+        };
+        let Some((motion, sample)) = motion
+            .and_then(|motion| motion.sample(entity, band, native_air).map(|s| (motion, s)))
+            .filter(|_| revealed())
+        else {
+            return result;
+        };
+        result.sample = Some(sample);
+        result.pose = motion.pose(sample, native);
+        result.depth_xyz[2] = motion.depth_height(sample, result.depth_xyz[2]);
+        if air {
+            let drawn = motion.air_pose(sample);
+            result.xyz = motion.world_coord(sample, xyz);
+            result.depth_xyz[..2].copy_from_slice(&result.xyz[..2]);
+            result.body_offset_y = drawn.body_offset_y;
+            let (projected_x, projected_y) =
+                crate::util::lepton::absolute_leptons_to_screen(result.xyz[0], result.xyz[1], 0);
+            // The terrain queries use integer leptons. Carry the display's
+            // subpixel planar motion through their projection; a plane that
+            // only climbs never drags its shadow up with it.
+            result.shadow_offset = [
+                result.pose.screen[0] - projected_x,
+                drawn.ground_y - projected_y,
+            ];
+            result.lift_correction =
+                (drawn.ground_y - native_air.ground_y) - (result.pose.screen[1] - native.screen[1]);
+            if drawn.tilt != native_air.tilt {
+                let [pitch, roll] = drawn.tilt;
+                result.tilt = if pitch == 0.0 && roll == 0.0 {
+                    None
+                } else if kind == Some(LocomotorKind::Fly) {
+                    Some(PoseTilt::FlyNormal { pitch, roll })
+                } else {
+                    Some(PoseTilt::Jumpjet(drawn.tilt))
+                };
+                // A fractional bank is a frame-local pose. It cannot fill
+                // the native voxel image keyed by the endpoint's roll sign.
+                result.transient_tilt = true;
+            }
+        }
+        result
+    }
+
+    fn body_point(&self, physical: [f32; 2]) -> [f32; 2] {
+        [physical[0], physical[1] + self.body_offset_y]
+    }
+
+    fn align_shadow(&self, ground: &mut [f32; 2]) {
+        ground[0] += self.shadow_offset[0];
+        ground[1] += self.shadow_offset[1];
+    }
 }
 
 /// Depth key for one voxel body, from the screen row it was drawn at.
@@ -489,8 +607,13 @@ fn body_sort_depth(
     entity: &crate::app::presentation::frame::ObjectRecord,
     drawn_row_y: f32,
     z: u8,
+    lift_correction: f32,
 ) -> f32 {
-    compute_sprite_depth(presentation, ground_sort_row(entity, drawn_row_y), z)
+    compute_sprite_depth(
+        presentation,
+        ground_sort_row(entity, drawn_row_y) + lift_correction,
+        z,
+    )
 }
 
 /// Iterate visible voxel units from EntityStore and build SpriteInstances.
@@ -642,14 +765,49 @@ pub(crate) fn unit_visitor<'a>(
                 // The screen cull reads only the position, and nothing between here
                 // and the waterline capture writes, so an object off the screen
                 // skips the admission work below.
-                let (aircraft_shadow, shadow_render_pose) =
-                    aircraft_draw_sample(&match_state.sim_runtime, entity)
-                        .map_or((None, None), |sample| (sample.shadow, Some(sample.pose)));
-                let motion = &match_state.match_presentation.tank_motion;
-                let sample = (carried.is_none() && band == EntityDrawBand::Ground)
-                    .then(|| motion.sample(entity))
-                    .flatten()
-                    .filter(|_| {
+                let motion = &match_state.match_presentation.vehicle_motion;
+                // Most records in a big battle miss the viewport. A Unit's
+                // current and formerly visible points bound its step. The
+                // aircraft span also contains its ground shadow; the slack
+                // covers a complete compatible step even on a descending turn.
+                if carried.is_none() {
+                    let distant = if entity.category() == EntityCategory::Unit {
+                        !projection_admitted(entity.pose.screen, admission)
+                            && !motion
+                                .painted_anchor(entity.stable_id())
+                                .is_some_and(|p| projection_admitted(p, admission))
+                    } else {
+                        frame
+                            .slot_and_span(entity.stable_id())
+                            .is_some_and(|(_, span)| {
+                                !in_view(
+                                    span.x,
+                                    span.top,
+                                    TILE_WIDTH,
+                                    span.bottom - span.top + TILE_HEIGHT,
+                                    cam_x,
+                                    cam_y,
+                                    sw,
+                                    sh,
+                                    480.0,
+                                )
+                            })
+                    };
+                    if distant {
+                        return None;
+                    }
+                }
+                let rules = crate::app::state::active_rules(frontend, match_state);
+                let object_type =
+                    rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
+                let geometry = VehicleGeometry::read(
+                    entity,
+                    band,
+                    sim.session().binary_frame(),
+                    rules,
+                    object_type,
+                    carried.is_none().then_some(motion),
+                    || {
                         super::helpers::cell_visibility_for_local_owner(
                             local_owner_id,
                             Some(sim.fog()),
@@ -658,11 +816,10 @@ pub(crate) fn unit_visitor<'a>(
                             ignore_visibility,
                             terrain,
                         ) == super::helpers::CellVisibilityState::Visible
-                    });
-                let render_pose = sample.map_or_else(
-                    || shadow_render_pose.unwrap_or(entity.pose),
-                    |sample| motion.pose(sample, entity.pose),
+                    },
                 );
+                let aircraft_shadow = aircraft_draw_shadow(entity, object_type, terrain, &geometry);
+                let render_pose = geometry.pose;
                 // A carried cargo is drawn at its Carryall's point, not culled by
                 // its own.
                 let anchor = unit_draw_anchor(
@@ -678,8 +835,6 @@ pub(crate) fn unit_visitor<'a>(
                     (None, None) => return None,
                 };
                 let sy = render_pose.screen[1] - render_pose.visual_lift;
-                let depth_height =
-                    sample.map(|s| motion.depth_height(s, entity.place.world_z_leptons_off_map));
                 // Common visibility, passenger, limbo, and DrawState admission is shared below.
                 let pos = &entity.position;
                 let mut observer = entity.seen.observer;
@@ -695,18 +850,7 @@ pub(crate) fn unit_visitor<'a>(
                     return None;
                 };
                 // The actual object still owns locomotor pose and shadow admission.
-                let object_type = crate::app::state::active_rules(frontend, match_state)
-                    .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
-                let tilt_crash = object_type.is_some_and(|object| object.tilt_crash_jumpjet);
-                if let Some(tilt) = body_pose_with_angles(
-                    entity,
-                    band,
-                    tilt_crash,
-                    render_pose.angles,
-                    render_pose.rocket_pitch,
-                    object_type,
-                    render_pose.fly_bank_direction,
-                ) {
+                if let Some(tilt) = geometry.tilt {
                     body = BodyDraw::Pose(tilt);
                 } else if matches!(body, BodyDraw::Pose(_)) {
                     body = BodyDraw::Composite;
@@ -835,6 +979,8 @@ pub(crate) fn unit_visitor<'a>(
                     None => [sx, sy],
                 };
 
+                let body_point = geometry.body_point([center_x, center_y]);
+
                 // Docked miners render in front of the refinery building they're on.
                 // The pad cell is inside the building footprint (north of the south edge),
                 // so without adjustment the miner's depth_y is above the building's
@@ -907,6 +1053,7 @@ pub(crate) fn unit_visitor<'a>(
                         type_str,
                         anim_frame,
                         pose,
+                        geometry.xyz,
                         draw_state,
                         pieces,
                     );
@@ -938,6 +1085,7 @@ pub(crate) fn unit_visitor<'a>(
                     // (1, 2) bits to the facing (`0x004CF610`); the Rocket arm its
                     // PitchInitial (0x20) or PitchFinal (0x40) bit (`0x00663470`).
                     let extra = match tilt {
+                        PoseTilt::FlyNormal { .. } if geometry.transient_tilt => None,
                         crate::render::unit_atlas::PoseTilt::FlyNormal { pitch, .. } => {
                             use crate::sim::movement::facing_class::RotationDirection;
                             let roll = match render_pose.fly_bank_direction {
@@ -965,15 +1113,14 @@ pub(crate) fn unit_visitor<'a>(
                         match_state,
                         process_assets,
                         persistence,
-                        sim,
-                        cells.as_ref(),
+                        &geometry,
                         pieces,
                         entity,
                         drawer,
                         image,
                         &key,
                         tilt,
-                        [center_x, center_y],
+                        body_point,
                         interp_z,
                         body_tint,
                         body_light,
@@ -990,7 +1137,7 @@ pub(crate) fn unit_visitor<'a>(
                     // Turret unit: emit body, turret, and barrel as separate sprites.
                     emit_turret_unit_sprites(
                         no_shadow,
-                        depth_height,
+                        &geometry,
                         atlas,
                         drawer,
                         model.turret_offset,
@@ -1061,12 +1208,13 @@ pub(crate) fn unit_visitor<'a>(
                             entity,
                             depth_y,
                             interp_z,
+                            geometry.lift_correction,
                         );
                         let voxel_adjust = super::foot_depth::unit_z_adjust(
                             &match_state.sim_runtime,
                             entity,
                             true,
-                            depth_height,
+                            Some(geometry.depth_xyz),
                         ) as f32;
                         let native_shadow = !matches!(texture_source, UnitTextureSource::Pose(_))
                             && prepare_unit_shadow(
@@ -1102,13 +1250,7 @@ pub(crate) fn unit_visitor<'a>(
                                 pieces,
                             );
                         }
-                        let body_center = aircraft_body_anchor(
-                            sim,
-                            entity,
-                            crate::app::state::active_rules(frontend, match_state),
-                            cells.as_ref(),
-                            [center_x, center_y],
-                        );
+                        let body_center = body_point;
                         let body_depth = body_sort_depth(
                             &match_state.match_presentation,
                             entity,
@@ -1117,6 +1259,7 @@ pub(crate) fn unit_visitor<'a>(
                                 + entry.pixel_size[1]
                                 + dock_depth_y_offset,
                             interp_z,
+                            geometry.lift_correction,
                         );
                         let bounds = composite_draw_bounds([(entry, body_center)]);
                         let (composite_rect, split) =
@@ -1187,6 +1330,7 @@ pub(crate) fn unit_visitor<'a>(
                     entity,
                     type_str,
                     [center_x, center_y],
+                    &geometry,
                     no_shadow,
                     draw_state,
                     band,
@@ -1229,14 +1373,13 @@ pub(crate) fn unit_visitor<'a>(
 
                 Some(DrawnBody {
                     render_pose,
-                    sample,
-                    body_point: aircraft_body_anchor(
-                        sim,
-                        entity,
-                        crate::app::state::active_rules(frontend, match_state),
-                        cells.as_ref(),
-                        [center_x, center_y],
-                    ),
+                    sample: geometry.sample,
+                    body_point,
+                    committed_body_point: [
+                        entity.pose.screen[0],
+                        entity.pose.screen[1] - entity.pose.visual_lift
+                            + geometry.committed_body_offset_y,
+                    ],
                     band,
                 })
             };
@@ -1294,7 +1437,7 @@ pub(crate) fn unit_visitor<'a>(
                     {
                         match_state
                             .match_presentation
-                            .tank_motion
+                            .vehicle_motion
                             .drawn(entity.stable_id(), sample);
                     }
                     // Opt-in app measurement of an actually admitted draw-plan object.
@@ -1302,7 +1445,8 @@ pub(crate) fn unit_visitor<'a>(
                         sim,
                         entity,
                         sim.session().binary_frame(),
-                        render_pose.screen,
+                        drawn.body_point,
+                        drawn.committed_body_point,
                         render_pose.body,
                     );
                     let planned =
@@ -1310,7 +1454,7 @@ pub(crate) fn unit_visitor<'a>(
                     if let Some(rules) = crate::app::state::active_rules(frontend, match_state) {
                         planned.tail_draws =
                             crate::app::presentation::target_lines::target_laser_draws(
-                                Some(&match_state.match_presentation.tank_motion),
+                                Some(&match_state.match_presentation.vehicle_motion),
                                 entity,
                                 sim,
                                 rules,
@@ -1386,9 +1530,10 @@ struct CarriedDraw {
 /// cargo it carries.
 struct DrawnBody {
     render_pose: crate::app::presentation::render_pose::RenderPose,
-    sample: Option<crate::app::presentation::tank_motion::TankSample>,
-    /// The body point after the Fly Draw_Point ([`aircraft_body_anchor`]).
+    sample: Option<VehicleSample>,
+    /// The body point after the Fly Draw_Point ([`aircraft_body_offset_y`]).
     body_point: [f32; 2],
+    committed_body_point: [f32; 2],
     band: EntityDrawBand,
 }
 
@@ -1835,8 +1980,7 @@ fn emit_pose_sprite(
     match_state: &MatchState,
     process_assets: &ProcessAssets,
     persistence: &PersistenceState,
-    sim: &crate::sim::world::Simulation,
-    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    geometry: &VehicleGeometry,
     pieces: &mut Vec<ObjectPieceInstance>,
     entity: &crate::app::presentation::frame::ObjectRecord,
     drawer: VoxelDrawer,
@@ -1907,17 +2051,20 @@ fn emit_pose_sprite(
     };
     drop(images);
     let entry = stale.unwrap_or(clean);
-    let [center_x, center_y] = aircraft_body_anchor(
-        sim,
-        entity,
-        crate::app::state::active_rules(frontend, match_state),
-        cells,
-        [center_x, center_y],
-    );
     let depth_y = center_y + entry.offset_y + entry.pixel_size[1];
-    let depth = body_sort_depth(&match_state.match_presentation, entity, depth_y, z);
-    let voxel_adjust =
-        super::foot_depth::unit_z_adjust(&match_state.sim_runtime, entity, true, None) as f32;
+    let depth = body_sort_depth(
+        &match_state.match_presentation,
+        entity,
+        depth_y,
+        z,
+        geometry.lift_correction,
+    );
+    let voxel_adjust = super::foot_depth::unit_z_adjust(
+        &match_state.sim_runtime,
+        entity,
+        true,
+        Some(geometry.depth_xyz),
+    ) as f32;
     let bounds = composite_draw_bounds([(entry, [center_x, center_y])]);
     let (composite_rect, split) = bounds.depth_rect(false);
     pieces.push(ObjectPieceInstance {
@@ -2407,20 +2554,27 @@ fn emit_shadow_stencil(
 /// live map cell (base Shadow_Matrix `0x0055A801..0x0055A80C` reads the
 /// current Map cell, including replacements made by cliff collapse).
 fn lifted_unit_shadow_pose(
-    entity: &crate::app::presentation::frame::ObjectRecord,
+    entity: &ObjectRecord,
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    geometry: &VehicleGeometry,
     binary_frame: u32,
 ) -> Option<crate::render::unit_shadow::UnitShadowPose> {
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    crate::render::unit_shadow::pose(
+    let primary_facing = geometry.sample.map_or_else(
+        || entity.body_facing_current(binary_frame),
+        |_| geometry.pose.body,
+    );
+    let mut shadow = crate::render::unit_shadow::pose(
         crate::render::unit_shadow::UnitShadowContext {
-            xyz: [xy[0], xy[1], entity.place.world_z_leptons],
+            xyz: geometry.xyz,
             on_bridge: entity.on_bridge(),
             marked: entity.lifecycle.cell_marked(),
-            primary_facing: entity.body_facing_current(binary_frame),
+            primary_facing,
         },
         |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
-    )
+    )?;
+    geometry.align_shadow(&mut shadow.anchor);
+    shadow.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
+    Some(shadow)
 }
 
 /// The original Unit suffix follows stable, split-gun and posed bodies alike.
@@ -2435,6 +2589,7 @@ fn emit_lifted_unit_shadow(
     entity: &crate::app::presentation::frame::ObjectRecord,
     type_id: &str,
     body_anchor: [f32; 2],
+    geometry: &VehicleGeometry,
     no_shadow: bool,
     draw_state: DrawState,
     band: EntityDrawBand,
@@ -2454,11 +2609,11 @@ fn emit_lifted_unit_shadow(
     let Some(terrain) = view.resolved_terrain() else {
         return;
     };
-    let Some(mut pose) = lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame())
+    let Some(pose) =
+        lifted_unit_shadow_pose(entity, terrain, geometry, view.session().binary_frame())
     else {
         return;
     };
-    pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
     let key = pose.key(type_id);
     // `0x0073C21E..0x0073C287`, `0x0073C43F..0x0073C472`: a BalloonHover or
     // Track/Wheel type keys its grounded mask apart and its low flight -1;
@@ -2553,8 +2708,14 @@ fn emit_lifted_unit_shadow(
         entity,
         pose.anchor[1] + entry.offset_y + entry.pixel_size[1],
         entity.position.z(),
+        geometry.lift_correction,
     );
-    let z_adjust = super::foot_depth::unit_z_adjust(&match_state.sim_runtime, entity, true, None);
+    let z_adjust = super::foot_depth::unit_z_adjust(
+        &match_state.sim_runtime,
+        entity,
+        true,
+        Some(geometry.depth_xyz),
+    );
     emit_shadow_stencil(
         entry,
         source,
@@ -2566,46 +2727,36 @@ fn emit_lifted_unit_shadow(
     );
 }
 
-struct AircraftDrawSample {
-    shadow: Option<crate::render::aircraft_shadow::AircraftShadowPose>,
-    pose: crate::app::presentation::render_pose::RenderPose,
-}
-
-fn aircraft_draw_sample(
-    sim_runtime: &SimHost,
-    entity: &crate::app::presentation::frame::ObjectRecord,
-) -> Option<AircraftDrawSample> {
+/// AircraftClass projects the ground independently of its body. A Fly uses
+/// SecondaryFacing for the shadow, including during its turn; the same
+/// sampled world point drives the floor, bridge-deck and depth queries.
+fn aircraft_draw_shadow(
+    entity: &ObjectRecord,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    geometry: &VehicleGeometry,
+) -> Option<crate::render::aircraft_shadow::AircraftShadowPose> {
     if entity.category() != EntityCategory::Aircraft || entity.sinking.is_active() {
         return None;
     }
-    let runtime = sim_runtime.presentation()?;
-    let view = runtime.view();
-    let object = view
-        .interner()
-        .object_type(entity.type_ref(), &runtime.resources.rules)?;
+    let object = object?;
     if !techno_shadow_admitted(entity, object.no_shadow) {
         return None;
     }
-    let terrain = view.resolved_terrain()?;
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    let pose = entity.pose;
-    let xyz = [xy[0], xy[1], entity.place.world_z_leptons];
-    // Keep the pose even if this locomotor has no shadow. The old path had
-    // already read it here; a later admitted body need not request it again.
-    let shadow = entity.locomotor.as_ref().and_then(|locomotor| {
-        crate::render::aircraft_shadow::pose(
-            crate::render::aircraft_shadow::AircraftShadowContext {
-                xyz,
-                on_bridge: entity.on_bridge(),
-                locomotor: locomotor.active_kind(),
-                is_dropship: object.is_dropship(),
-                primary_facing: pose.body,
-                secondary_facing: pose.turret,
-            },
-            |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
-        )
-    });
-    Some(AircraftDrawSample { shadow, pose })
+    let terrain = terrain?;
+    let mut shadow = crate::render::aircraft_shadow::pose(
+        crate::render::aircraft_shadow::AircraftShadowContext {
+            xyz: geometry.xyz,
+            on_bridge: entity.on_bridge(),
+            locomotor: entity.locomotor.as_ref()?.active_kind(),
+            is_dropship: object.is_dropship(),
+            primary_facing: geometry.pose.body,
+            secondary_facing: geometry.pose.turret,
+        },
+        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
+    )?;
+    geometry.align_shadow(&mut shadow.anchor);
+    Some(shadow)
 }
 
 fn emit_aircraft_shadow_sprite(
@@ -2616,6 +2767,7 @@ fn emit_aircraft_shadow_sprite(
     type_id: &str,
     frame: u32,
     pose: crate::render::aircraft_shadow::AircraftShadowPose,
+    xyz: [i32; 3],
     draw_state: DrawState,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
@@ -2654,7 +2806,7 @@ fn emit_aircraft_shadow_sprite(
         &match_state.sim_runtime,
         entity,
         false,
-        Some(pose.world_z),
+        Some([xyz[0], xyz[1], pose.world_z]),
     );
     emit_shadow_stencil(
         entry,
@@ -2838,7 +2990,7 @@ fn composite_draw_state(
 /// sits on its correct pivot point on the hull.
 fn emit_turret_unit_sprites(
     no_shadow: bool,
-    depth_height: Option<i32>,
+    geometry: &VehicleGeometry,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     drawer: VoxelDrawer,
     art_offset: i32,
@@ -2872,9 +3024,12 @@ fn emit_turret_unit_sprites(
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     let slope_type = stable_slope_for_key(slope_state);
-    let voxel_adjust =
-        super::foot_depth::unit_z_adjust(&match_state.sim_runtime, entity, true, depth_height)
-            as f32;
+    let voxel_adjust = super::foot_depth::unit_z_adjust(
+        &match_state.sim_runtime,
+        entity,
+        true,
+        Some(geometry.depth_xyz),
+    ) as f32;
     let body_key = UnitSpriteKey {
         type_id: type_id.into(),
         turret_index: 0,
@@ -2983,8 +3138,13 @@ fn emit_turret_unit_sprites(
         Some((e, _)) => center_y + e.offset_y + e.pixel_size[1] + dock_depth_y_offset,
         None => center_y + dock_depth_y_offset,
     };
-    let entity_depth: f32 =
-        body_sort_depth(&match_state.match_presentation, entity, entity_depth_y, z);
+    let entity_depth: f32 = body_sort_depth(
+        &match_state.match_presentation,
+        entity,
+        entity_depth_y,
+        z,
+        geometry.lift_correction,
+    );
 
     // Emit body first (always). Uses frame fallback for mismatched HVA counts.
     // Natively hull, turret and barrel are composited off-screen and blitted
