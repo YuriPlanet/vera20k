@@ -1395,6 +1395,28 @@ pub(super) fn dispatch_draw_passes(
         );
     }
 
+    // VERA: the mod's and the map's status templates over the battlefield
+    // (`ui_modules::field`), after its objects and timers, clipped to the
+    // view and zoomed with it.
+    if match_state.ui_modules.is_some() {
+        let white = match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture());
+        let pictures = match_state
+            .ui_modules
+            .as_ref()
+            .and_then(|ui| ui.picture_texture());
+        for (texture, key) in [
+            (white, "module_field_fill"),
+            (pictures, "module_field_art"),
+            (Some(renderer.bit_font.atlas()), "module_field_text"),
+        ] {
+            draw_pooled_ui_passthrough(&mut pass, &renderer.batch_renderer, pool, texture, key);
+        }
+    }
+
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
     // GRFXTXT frame, or white text if the shape/converter is unavailable.
     // Keep the tactical clip and draw before sidebar copy/Chrono capture.
@@ -2317,9 +2339,10 @@ mod tests {
         let timer_tail = &PRODUCTION[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
-            3,
-            "PixelFX and the two timer submissions precede the native result draw; \
-             the Phobos build description now draws at the RenderFrame_main tail"
+            4,
+            "PixelFX, the two timer submissions and VERA's module battlefield layer \
+             precede the native result draw; the Phobos build description now draws \
+             at the RenderFrame_main tail"
         );
         // Exhaustiveness: the description draws exactly once in the span from
         // tooltips to cursor, pinning it out of the tactical tail.

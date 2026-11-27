@@ -101,7 +101,7 @@ mod props;
 mod rules;
 mod supers;
 mod unit_ai;
-pub(crate) mod vars;
+pub mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
@@ -565,9 +565,16 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
 }
 
 /// The presentation copy excludes module state (RFC 15.1, item 8).
+/// A copy holds no module, only the variable declarations: the world copy
+/// drawing reads while the simulation ticks elsewhere
+/// (`Simulation::presentation_copy`) names variables for the status
+/// templates and client reads. The values stay the simulation's.
 impl Clone for ExtModules {
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            vars: self.vars.declarations_only(),
+            ..Self::default()
+        }
     }
 }
 
@@ -636,7 +643,7 @@ impl ExtModules {
     }
 
     /// The declared variables (RFC 6e), for client reads.
-    pub(crate) fn vars(&self) -> &VarStore {
+    pub fn vars(&self) -> &VarStore {
         &self.vars
     }
 
@@ -1272,6 +1279,8 @@ impl SimHost for Host<'_, '_> {
                 "Mission" => return self.order_mission(id, value, None),
                 "Ammo" => return Ok(self.write_ammo(id, value)),
                 "Online" => return Ok(self.write_online(id, value)),
+                "DoorOpen" => return self.write_door(id, value),
+                "ImageOverride" => return self.write_image_override(id, value),
                 _ => {}
             }
         }
@@ -1545,6 +1554,7 @@ const READABLE: &[&str] = &[
     "CanFireAtTarget",
     "DoorOpen",
     "Animating",
+    "ImageOverride",
     // Projectiles (projectiles.rs, appendix 7.4).
     "VX",
     "VY",
@@ -2099,6 +2109,73 @@ impl Host<'_, '_> {
         Ok(Status::Ok)
     }
 
+    /// `DoorOpen` (appendix 7.1): 1 draws a war factory's or gate's door
+    /// open and 0 shut until -1 lets it show its own state; the door and
+    /// what it lets through run on (`held::ActionHeld`). Other objects
+    /// answer `Unsupported`.
+    fn write_door(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let drawn = entity.category() == crate::map::entities::EntityCategory::Structure
+            && self
+                .sim
+                .entity_object_type(entity, self.rules)
+                .is_some_and(|object| object.weapons_factory || object.gate);
+        if !drawn {
+            return Ok(Status::Unsupported);
+        }
+        let open = match value {
+            -1 => None,
+            0 => Some(false),
+            1 => Some(true),
+            _ => return Err(Invalid(format!("DoorOpen {value}"))),
+        };
+        self.sim.ext_modules.held.hold_door(id, open);
+        Ok(Status::Ok)
+    }
+
+    /// `ImageOverride` (appendix 7.1): 0 draws the object as itself; a
+    /// TechnoType of its own category draws it as that type. A building,
+    /// another category or a non-TechnoType answers `Refused`.
+    fn write_image_override(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let image = match decode_ref(value)? {
+            None => None,
+            Some(Ref::Type { kind, id: type_id }) if kind == NAME_TECHNO_TYPE => {
+                let Some(image) = i32::try_from(type_id)
+                    .ok()
+                    .and_then(|type_id| techno_type(self.rules, type_id))
+                else {
+                    return Ok(Status::NotFound);
+                };
+                Some(image)
+            }
+            Some(_) => return Ok(Status::Refused),
+        };
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let own = self.sim.entity_object_type(entity, self.rules);
+        let fits = image.is_none_or(|image| {
+            own.is_some_and(|own| {
+                own.category == image.category
+                    && own.category != crate::rules::object_type::ObjectCategory::Building
+            })
+        });
+        if !fits {
+            return Ok(Status::Refused);
+        }
+        let image = image.map(|image| image.id.clone());
+        // The draw finds the type by its interned name.
+        if let Some(image) = image.as_deref() {
+            self.sim.interner.intern(image);
+        }
+        self.sim.ext_modules.held.set_image(id, image);
+        // The atlas checks the objects whose look changed.
+        self.sim.substrate.entities.note_look(id);
+        Ok(Status::Ok)
+    }
+
     /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
     /// AI_Update sample announces a promotion as for a crate.
     fn write_rank(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
@@ -2445,7 +2522,8 @@ impl Simulation {
     }
 
     /// The module phase: modifiers whose time is up expire, timed
-    /// conversions whose time is up revert and `Timer` triggers whose
+    /// conversions whose time is up revert, kept animations whose time is
+    /// up or whose object went are destroyed, and `Timer` triggers whose
     /// period ends fire, then each enabled module in order
     /// gets its `on_scenario_start` once, its client messages
     /// (`on_message`, [`messages`]), its queued event records
@@ -2475,6 +2553,7 @@ impl Simulation {
         // runs (`decide`).
         self.decide_production_allowed(rules);
         self.revert_ext_module_conversions(rules, frame_effects);
+        self.maintain_ext_module_anims(rules);
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);

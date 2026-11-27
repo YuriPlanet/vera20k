@@ -66,7 +66,7 @@ simulation, session and network command owners.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
-- [RA2 Mode](ra2-mode.md): tick it in Options to play original Red Alert 2 from the next start.
+- [RA2 Mode](ra2-mode.md): switch between original Red Alert 2 and Yuri’s Revenge.
 - [Lobby player colours](skirmish-colors.md): the thirty colours a lobby lists, and `[SkirmishColors]` for a mod's own.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
 - [Computer players pick the nearest enemy](ai-nearest-enemy.md): the `[General] AINearestEnemy=` rules key that stops every computer player in a free-for-all from choosing the human as its enemy.
@@ -79,7 +79,7 @@ simulation, session and network command owners.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.
 - [External launches](spawn.md): `vera20k --probe` and `--generate-map`, which a launcher runs before a `-SPAWN` match, and the browser's `probe()` and `generate_map()`.
-- [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red.
+- [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red, or Alt+T to give each enemy team a colour of its own.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Sidebar build-list columns](sidebar-columns.md): the Options list that lays three to five build pictures a row inside the sidebar's own width.
 - [Skirmish cheat codes](skirmish-cheats.md) let you grant credits, reveal the map and spawn vehicles in an offline match.

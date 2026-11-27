@@ -590,6 +590,9 @@ pub(crate) fn update_super_timers(
     // red. Same-team is decided by the launch team (stable all match); the
     // green check uses the live alliance graph, which is the right source for
     // "are we allies right now" even though it must never decide grouping.
+    // Under the team-colours toggle an enemy team takes the colour the map
+    // gives it, so the timers agree with the units and the radar.
+    let team_colours = match_state.match_presentation.team_colors;
     let alliances = sim.house_alliances();
     let local_name = local.map(|house| sim.interner().resolve(house));
     let team_rgb = |row: &TeamSuperRow| {
@@ -598,20 +601,25 @@ pub(crate) fn update_super_timers(
             (TeamKey::Unteamed, None) => true,
             _ => false,
         };
-        let relation = if same_team {
-            RELATION_SELF
-        } else if local_name.is_some_and(|name| {
+        if team_colours && row.team == TeamKey::Unteamed {
+            return house_text_rgb(schemes, RELATION_ENEMY);
+        }
+        if same_team {
+            return house_text_rgb(schemes, RELATION_SELF);
+        }
+        if local_name.is_some_and(|name| {
             is_allied_with(
                 alliances.as_map(),
                 name,
                 sim.interner().resolve(row.representative),
             )
         }) {
-            RELATION_ALLY
-        } else {
-            RELATION_ENEMY
-        };
-        house_text_rgb(schemes, relation)
+            return house_text_rgb(schemes, RELATION_ALLY);
+        }
+        if team_colours && matches!(row.team, TeamKey::Named(_)) {
+            return house_rgb(Some(row.representative));
+        }
+        house_text_rgb(schemes, RELATION_ENEMY)
     };
     let lines: Vec<(TimerLine, String, [u8; 3])> = lines
         .into_iter()

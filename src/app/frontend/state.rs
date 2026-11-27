@@ -378,6 +378,8 @@ pub(crate) enum ShellMessageBoxPurpose {
     ShellMenu(Box<crate::ui::main_menu_dialogs::OptionsDialogState>),
     /// Main_Game state 6: OK quits, Cancel rebuilds `0xE2`.
     ExitGame,
+    /// Exit-style confirmation before restarting into the other edition.
+    SwitchEdition { ra2: bool },
     /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
     /// rebuild one; No returns to the shell.
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),

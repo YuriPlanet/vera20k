@@ -292,14 +292,19 @@ fn ime_state() -> vera20k::util::android_ime::TextState {
 }
 
 /// Replace the input method's buffer, with the caret at `cursor` characters.
+///
+/// The platform counts selection offsets in UTF-16 units while the game counts
+/// characters, so a caret after an emoji must be converted before it reaches
+/// the platform: `abc👿` is 4 characters but 5 units.
 fn ime_set_state(text: &str, cursor: usize) {
     use android_activity::input::{TextInputState, TextSpan};
     if let Some(app) = ACTIVITY.get() {
+        let state = vera20k::util::android_ime::TextState::from_edit(text, cursor);
         app.set_text_input_state(TextInputState {
-            text: text.to_owned(),
+            text: state.text,
             selection: TextSpan {
-                start: cursor,
-                end: cursor,
+                start: state.cursor,
+                end: state.cursor,
             },
             compose_region: None,
         });
@@ -758,7 +763,24 @@ pub unsafe extern "C" fn __wrap_pthread_create(
             libc::pthread_attr_init(attr_copy.as_mut_ptr());
         }
         attr_ptr = attr_copy.as_ptr() as *const c_void;
-        libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), 8 * 1024 * 1024);
+        // Keep larger requests and leave caller-provided stacks alone.
+        // Bionic can change the recorded size of a caller's stack even
+        // though the caller's allocation stays the same size.
+        let mut caller_stack: *mut c_void = std::ptr::null_mut();
+        let mut caller_len: usize = 0;
+        let caller_owns = libc::pthread_attr_getstack(
+            attr_copy.as_ptr(),
+            &mut caller_stack,
+            &mut caller_len,
+        ) == 0
+            && !caller_stack.is_null();
+        let mut size: usize = 0;
+        let read = libc::pthread_attr_getstacksize(attr_copy.as_ptr(), &mut size) == 0;
+        let requested = if read { size } else { 0 };
+        if let Some(wanted) = vera20k::util::thread_stack::android_stack(requested, caller_owns) {
+            libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), wanted);
+            log::info!("android: thread stack {requested} -> {wanted} bytes");
+        }
         __real_pthread_create(thread, attr_ptr, start_routine, arg)
     }
 }

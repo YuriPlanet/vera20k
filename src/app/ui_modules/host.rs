@@ -113,6 +113,7 @@ pub(crate) struct FrameHost<'a, 'v> {
     pub inputs: &'a LocalInputs,
     pub gui: &'a mut Gui,
     pub tree: &'a mut UiTree,
+    pub status: &'a mut super::status::ModuleStatus,
     pub local: &'a mut LocalState,
     pub storage: &'a mut Storage,
     pub effects: &'a mut LocalEffects,
@@ -269,6 +270,23 @@ impl ClientHost for FrameHost<'_, '_> {
 
     fn storage_write(&mut self, key: &str, data: &[u8]) -> Result<Status, Invalid> {
         self.storage.write(key, data)
+    }
+
+    fn status_template(&mut self, text: &str) -> Result<Status, Invalid> {
+        let sim = &self.view.runtime.simulation;
+        let type_id = |name: &str| sim.interner().get(name).map(|id| id.index());
+        let names = super::status::Names {
+            type_id: &type_id,
+            vars: sim.ext_modules().vars(),
+        };
+        let origin = super::status::StatusOrigin::of_module(self.source);
+        Ok(match self.status.add_text(origin, text, self.map_ui, &names) {
+            Ok(()) => Status::Ok,
+            Err(problem) => {
+                ClientHost::log(self, &format!("client_status: {problem}"));
+                Status::Refused
+            }
+        })
     }
 }
 

@@ -63,7 +63,8 @@ pub(crate) fn render_multiplayer_setup(
         frontend,
         match_state,
         &view,
-    );
+    )
+    .with_touch_send(platform.touch_send);
     let scale = layout.page.scale;
     let (width, height) = (
         renderer.render_width(&frontend.screen),
@@ -793,17 +794,11 @@ pub(crate) fn render_multiplayer_setup(
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);
     }
-    // Android: VERA's send key beside the chat box. Only the LAN room needs
-    // it: the online room already has its native emote button in the chat row
+    // VERA's send key beside the chat box. Only the LAN room needs it: the
+    // online room already has its native emote button in the chat row
     // (`0x3ED`, WOL rooms only). It goes with the page's slide, like the LAN
     // lobby's.
-    #[cfg(target_os = "android")]
-    if !leaving && !view.dialog.wol() {
-        let rect = crate::ui::shell::geom::room_chat_send_rect(
-            layout.chat,
-            layout.chat_log,
-            layout.page.scale,
-        );
+    if !leaving && let Some(rect) = layout.chat_send(view.dialog) {
         super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(

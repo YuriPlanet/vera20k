@@ -1318,6 +1318,9 @@ const OPTION_LABELS: [(u16, &str); 3] = [
 #[derive(Debug, Clone)]
 pub(crate) struct MultiplayerSetupLayout {
     pub(crate) page: MenuPageLayout,
+    /// Whether VERA's send key sits beside the room's chat edit, narrowing
+    /// that edit. Off keeps the native room layout.
+    touch_send: bool,
     /// VERA's roster ([`SetupDialog::modern`]): plain rows in one column,
     /// placed by [`Self::arrange_roster`].
     pub(crate) roster: bool,
@@ -1427,6 +1430,7 @@ impl MultiplayerSetupLayout {
         let icon_y = |row: usize| 36 + row as i32 * 26;
         let mut layout = Self {
             page,
+            touch_send: true,
             roster: false,
             combos,
             header_controls: [Default::default(); MODERN_SETUP_ROWS],
@@ -1487,6 +1491,34 @@ impl MultiplayerSetupLayout {
         }
         layout
     }
+
+    /// The layout with VERA's send key beside the room's chat edit.
+    pub(crate) fn with_touch_send(mut self, on: bool) -> Self {
+        self.touch_send = on;
+        self
+    }
+
+    /// The online room already has an emote button beside its chat edit.
+    fn shows_chat_send(&self, dialog: SetupDialog) -> bool {
+        self.touch_send && !dialog.wol()
+    }
+
+    /// The chat edit leaves room for the LAN send button when it is shown.
+    pub(crate) fn chat_text(&self, dialog: SetupDialog) -> RectPx {
+        if self.shows_chat_send(dialog) {
+            crate::ui::shell::geom::room_chat_text_rect(self.chat, self.chat_log, self.page.scale)
+        } else {
+            self.chat
+        }
+    }
+
+    /// VERA's send key beside the chat edit, when this platform shows it.
+    pub(crate) fn chat_send(&self, dialog: SetupDialog) -> Option<RectPx> {
+        self.shows_chat_send(dialog).then(|| {
+            crate::ui::shell::geom::room_chat_send_rect(self.chat, self.chat_log, self.page.scale)
+        })
+    }
+
     /// VERA's room: the roster's column and the chat's side by side across
     /// the window, the team bar under the roster, and the options in Game
     /// Options, centred over the columns.
@@ -2370,14 +2402,10 @@ pub(crate) fn sync(
         page_nodes::sync_rects(gui, root, |id| {
             let rect = control_rect(view, layout, id)
                 .filter(|_| box_page.is_none_or(|page| on_game_options_page(view, page, id)))?;
-            // Android: the chat edit leaves room for VERA's send key.
-            #[cfg(target_os = "android")]
+            // VERA's chat edit answers with its own rect: narrowed beside a
+            // touch platform's send key, the native place otherwise.
             if dialog == page && id == CHAT {
-                return Some(crate::ui::shell::geom::room_chat_text_rect(
-                    rect,
-                    layout.chat_log,
-                    scale,
-                ));
+                return Some(layout.chat_text(view.dialog));
             }
             Some(rect)
         });
@@ -2793,6 +2821,34 @@ mod tests {
             flavor,
             modern,
         }
+    }
+
+    /// A touch room takes the send key's width out of its chat edit; the
+    /// native room keeps the edit and shows no key.
+    #[test]
+    fn touch_send_narrows_the_room_chat_edit_for_its_key() {
+        let lan = dialog(true, SetupFlavor::Lan, false);
+        let native = MultiplayerSetupLayout::new(lan, 800, 600, false).with_touch_send(false);
+        let touch = native.clone().with_touch_send(true);
+        let native_chat = native.chat_text(lan);
+        let touch_chat = touch.chat_text(lan);
+        let send = touch.chat_send(lan).unwrap();
+        assert!(native.chat_send(lan).is_none());
+        assert_eq!(native_chat, native.chat);
+        assert!(touch_chat.w < native_chat.w, "the edit leaves the key room");
+        assert!(
+            send.x >= touch_chat.x + touch_chat.w,
+            "the key follows the edit"
+        );
+    }
+
+    #[test]
+    fn online_room_keeps_the_emote_button_beside_its_chat_edit() {
+        let online = dialog(false, SetupFlavor::Wol, true);
+        let layout = MultiplayerSetupLayout::new(online, 800, 600, false).with_touch_send(true);
+        assert!(layout.emote.is_some());
+        assert!(layout.chat_send(online).is_none());
+        assert_eq!(layout.chat_text(online), layout.chat);
     }
 
     /// The room's widgets in a fresh shell controller.

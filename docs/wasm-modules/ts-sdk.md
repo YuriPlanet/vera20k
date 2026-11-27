@@ -411,7 +411,7 @@ Invalid parameters stop the module; a game refusal is `Refused`.
 | `fireWeapon(shooter, slot, at = NO_HANDLE, cell = 0)` | Fires weapon slot 0 or 1 now at its target, object `at` or cell `cell`; `Refused` when it cannot fire | v1 |
 | `launchSuperWeapon(house, kind: TypeRef, at: Ref)` | Launches the house's superweapon | v1 |
 | `spawnAnim(at, anim: i32)` | Plays an animation (`Rules.anim`) | v1 |
-| `attachAnim(target, anim: i32)` | Plays an animation once, attached to the object | later in the RFC; implemented here |
+| `attachAnim(target, anim: i32, frames: i64 = 0)`, `detachAnim(target, anim: i32 = -1)` | Plays an animation once attached to the object, or keeps it looping for `frames` frames (negative: until `detachAnim`) | preview |
 | `endFor(house, outcome: Outcome)` | Ends the match for a house (`Outcome.Win`, `Outcome.Lose`) | v1 |
 | `setScore(house, n)`, `addScore(house, n)` | Score | v1 |
 | `log(line)` | The action form of `log` | v1 |

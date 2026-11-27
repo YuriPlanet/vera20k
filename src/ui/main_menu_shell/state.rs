@@ -11,6 +11,15 @@ use crate::ui::shell::menu_page;
 /// The main-menu dialog resource.
 pub const MAIN_MENU_DIALOG: DialogResourceId = DialogResourceId(0x00E2);
 
+/// Browser launchers select the edition outside the engine, and Android
+/// cannot restart itself through the desktop restart path.
+pub(crate) const HAS_EDITION_SWITCH: bool = !cfg!(any(
+    target_os = "android",
+    all(target_arch = "wasm32", target_os = "unknown")
+));
+/// VERA-only id, outside the retail controls on this dialog.
+pub(super) const SWITCH_EDITION: u16 = 0x7FA0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainMenuControlId {
     SinglePlayer0x683,
@@ -18,6 +27,7 @@ pub enum MainMenuControlId {
     Network0x578,
     MoviesAndCredits0x686,
     Options0x55c,
+    SwitchEdition,
     ExitGame0x3ee,
 }
 
@@ -31,6 +41,7 @@ impl MainMenuControlId {
             Self::Network0x578 => 0x0578,
             Self::MoviesAndCredits0x686 => 0x0686,
             Self::Options0x55c => 0x055C,
+            Self::SwitchEdition => SWITCH_EDITION,
             Self::ExitGame0x3ee => 0x03EE,
         }
     }
@@ -43,6 +54,7 @@ impl MainMenuControlId {
             0x0578 => Self::Network0x578,
             0x0686 => Self::MoviesAndCredits0x686,
             0x055C => Self::Options0x55c,
+            SWITCH_EDITION if HAS_EDITION_SWITCH => Self::SwitchEdition,
             0x03EE => Self::ExitGame0x3ee,
             _ => return None,
         })
@@ -57,6 +69,7 @@ pub enum MainMenuShellAction {
     Network,
     MoviesAndCredits,
     Options,
+    SwitchEdition,
     ExitGame,
 }
 
@@ -90,13 +103,14 @@ pub fn action_for_control(id: MainMenuControlId) -> MainMenuShellAction {
         MainMenuControlId::Network0x578 => MainMenuShellAction::Network,
         MainMenuControlId::MoviesAndCredits0x686 => MainMenuShellAction::MoviesAndCredits,
         MainMenuControlId::Options0x55c => MainMenuShellAction::Options,
+        MainMenuControlId::SwitchEdition => MainMenuShellAction::SwitchEdition,
         MainMenuControlId::ExitGame0x3ee => MainMenuShellAction::ExitGame,
     }
 }
 
 pub fn return_code_for_action(action: MainMenuShellAction) -> Option<i32> {
     match action {
-        MainMenuShellAction::None => None,
+        MainMenuShellAction::None | MainMenuShellAction::SwitchEdition => None,
         MainMenuShellAction::SinglePlayer => Some(1),
         MainMenuShellAction::WwOnline => Some(2),
         MainMenuShellAction::Network => Some(3),
@@ -109,7 +123,7 @@ pub fn return_code_for_action(action: MainMenuShellAction) -> Option<i32> {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::main_menu_shell::{MAIN_MENU_PAGE, compute_layout};
+    use crate::ui::main_menu_shell::compute_layout;
     use vera20k_gui::{InputEvent, MouseButton};
 
     /// 0xE2's live instance with its button nodes on the 800x600 layout.
@@ -120,7 +134,7 @@ mod tests {
         menu_page::sync_nodes(
             &mut c,
             MAIN_MENU_DIALOG,
-            || MAIN_MENU_PAGE.nodes(),
+            || super::super::layout::nodes(false),
             |id| page.button_rect(id),
             &[],
         );
@@ -179,6 +193,14 @@ mod tests {
             pressed(&c),
             Some(MainMenuControlId::SinglePlayer0x683.resource_id())
         );
+        if HAS_EDITION_SWITCH {
+            down(&mut c, 700, 493);
+            assert_eq!(pressed(&c), Some(SWITCH_EDITION));
+            assert_eq!(
+                action_for_control(MainMenuControlId::from_resource_id(SWITCH_EDITION).unwrap()),
+                MainMenuShellAction::SwitchEdition
+            );
+        }
         down(&mut c, 700, 535);
         assert_eq!(
             pressed(&c),

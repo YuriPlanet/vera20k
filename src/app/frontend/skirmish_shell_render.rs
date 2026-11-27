@@ -2031,9 +2031,8 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
-/// Android: VERA's send key in `rect`, drawn with the online room's emote
-/// button art (`0x3ED`'s released image, as `Picture::Emote` draws it).
-#[cfg(target_os = "android")]
+/// VERA's send key in `rect`, drawn with the online room's emote button art
+/// (`0x3ED`'s released image, as `Picture::Emote` draws it).
 fn push_chat_send_key(
     controls: &mut Vec<crate::render::batch::SpriteInstance>,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
