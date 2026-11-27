@@ -135,6 +135,71 @@ fn location(sim: &Simulation, id: u64) -> crate::sim::components::DriveCoord {
     )
 }
 
+#[test]
+fn configured_emp_distinguishes_held_and_released_magnetron_aircraft() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::locomotor_lift::LocomotorShotTarget;
+    use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::world::FrameEffects;
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let Some(rules) = rules() else {
+        return;
+    };
+    for released_before_emp in [false, true] {
+        let (mut sim, grid) = scene(&rules, false);
+        let aircraft = spawn(&mut sim, &rules, "ORCA", "Americans", 12, 12);
+        let magnetron = spawn(&mut sim, &rules, "TELE", "Russians", 16, 12);
+        let mut effects = FrameEffects::empty();
+        let registry = Some(rules.overlay_registry());
+        sim.locomotor_detonation(
+            magnetron,
+            LocomotorShotTarget::Object(aircraft),
+            50,
+            LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
+            &rules,
+            registry,
+            &mut effects,
+        );
+        assert_eq!(
+            sim.entities().get(aircraft).unwrap().lift.source(),
+            Some(magnetron)
+        );
+        sim.set_object_height(aircraft, 200, &rules, &mut effects);
+        if released_before_emp {
+            sim.release_locomotor(magnetron, true, &rules, registry, &mut effects);
+        }
+        let at = location(&sim, aircraft);
+        sim.apply_ares_emp_detonation(
+            ProjectileCoord::new(at.x, at.y, at.z),
+            Some(magnetron),
+            rules.warhead("EMPWH").unwrap(),
+            &rules,
+            &mut effects,
+        );
+        let victim = sim.entities().get(aircraft).unwrap();
+        assert!(victim.is_under_emp());
+        assert!(victim.health.current() > 0);
+        assert_eq!(victim.lift.source(), None);
+        assert_eq!(sim.entities().get(magnetron).unwrap().lift.target(), None);
+        assert_eq!(victim.lift.may_end(), !released_before_emp);
+        assert_eq!(victim.crash.is_crashing(), released_before_emp);
+        assert_eq!(
+            victim.seldom.drop_credit.manipulated_by(),
+            released_before_emp.then_some(magnetron),
+        );
+        assert_eq!(
+            victim.locomotor.as_ref().unwrap().active_kind(),
+            LocomotorKind::Jumpjet
+        );
+        if released_before_emp {
+            step(&mut sim, &rules, &grid);
+            assert!(location(&sim, aircraft).z < at.z);
+        }
+    }
+}
+
 pub(super) fn missions(sim: &Simulation, id: u64) -> (Option<MissionType>, Option<MissionType>) {
     let entity = sim.entities().get(id).unwrap();
     (

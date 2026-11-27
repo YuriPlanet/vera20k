@@ -371,6 +371,10 @@ pub(super) fn hash_entity_owed(
         b"building-storage-v1".hash(hasher);
         entity.building_art.storage().hash(hasher);
     }
+    if entity.laser_fence_frame() != 0 {
+        0x618_u16.hash(hasher);
+        entity.laser_fence_frame().hash(hasher);
+    }
     if entity.building.building_last_operational.is_operational() {
         b"building-operational-v1".hash(hasher);
     }

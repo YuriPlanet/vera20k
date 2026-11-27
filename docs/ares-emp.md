@@ -68,9 +68,18 @@ its tech tree and power. VERA reaches those owners:
   (10062F70), and the unit deactivates at its next AI visit.
 - Prism towers: a tower in a forwarding network leaves it at its next
   operational sample (Ares10016950, hook454B3D), as one that goes offline.
-- LaserFencePost: DisableEMPEffect100627F0 also enables its Stuff without
-  power. The fence recalc4533A0 both Stuff bodies call has no VERA port, since
-  VERA builds no fence sections.
+- LaserFencePost: Ares 3.0p1 relays the operational edge at `0x43FB6D` to
+  the original fence update `0x4533A0`. The placement path `0x452DC0`
+  creates ordinary Building sections between same-owner posts. DisableStuff
+  (`0x452503`) opens the linked sections synchronously. EnableStuff
+  (`0x452441`) samples both posts, so EMP expiry restores the fence when
+  both posts can supply it. Passable sections use native frames 8 and 12.
+  Energizing them runs the original C4 receiver for ground occupants
+  (`0x4536F7..0x45375C`). Selling recalculates the fence at
+  `0x44AB82`. Destruction flashes and damages linked sections before
+  arming the post's death fuse (`0x4416FD` → `0x452A40` → `0x453060`).
+  The endpoint lookup `0x452BB0` crosses gaps while `0x4537A6` updates
+  only the contiguous sections adjacent to the post.
 
 UpdateSparkleAnim10062FD0 draws a building's sparkle with ZAdjust -1024.
 
@@ -186,6 +195,17 @@ and `ares_emp_spawner_loses_flying_rockets_and_holds_timers_until_expiry`
 cover both paths. The ground recovery of a landed AI Aircraft or Jumpjet is
 the same queued EMPAIRecoverMission/Hunt as AI Drive.
 
+Ares 3.0p1 `0x10063A18..0x10063A2C` bypasses the instant kill while
+either lift flag is set. ResetOrdersToGuard's null destination detaches a
+still-held victim and sets its end latch (`0x4D9518..0x4D9538`). An airborne
+release by the Magnetron takes the existing Jumpjet crash/drop-credit path
+(`0x70FF25..0x70FF71`). Jumpjet keeps its existing Stop, Process and
+End_Piggyback gates. If Fly is the active locomotor while unpowered and
+airborne, `0x4CD6BE` adds three to its fall counter each visit. Impact first
+removes it from the AircraftTracker and sets height zero. The living Fly
+then takes C4 damage for its own Health, followed by the impact animation,
+flash and C4 area damage (`0x4CD8A9..0x4CD9C0`).
+
 ## Every mover, miners, falling and controlled victims
 
 P1 delivery `0x10063070` uses the same immunity check for Tunnel movers.
@@ -204,6 +224,12 @@ roll, calls Stop_Moving while still powered and clears the fall counter. The
 offline facing steps at `0x004CE5A0` slow to a stop. Base Power_On `0x0055A8F0`
 clears the spin on the next Fly process visit. A stationary Fly takes no spin
 draws. The Techno visit advances EMP in either game mode.
+Power loss rotates the primary facing. Fly Draw_Matrix (`0x4CF610`) and
+Shadow_Matrix (`0x4CFB00`) both read the unchanged secondary facing.
+Original execution with a moving grounded aircraft confirmed that both
+matrices and their cache keys stay fixed across three powered-off Process
+visits, while the primary turned from `0x4000` through `0x2900`,
+`0x1300` and `0xFE00`.
 Each admitted mover reaches shared owners: Deactivate's Power_Off (Hover's
 override516BF0 spins it down and settles it), the Ares deactivated-Unit stop of
 TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
@@ -484,12 +510,11 @@ Delivery's bunker test (10062357..10062376) spares a victim whose
 BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
 PenetratesBunker; the bunker itself is an ordinary building victim.
 
-The held or recently dropped Magnetron Aircraft exception still has its own
-unpowered-airborne fall path. The grounded Fly spin does not model dormant
-ActivateVeins at `0x004CE636`. A LaserFencePost's fence sections are neither dropped by
-DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
-(trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
-mods with LaserFencePost types). The Super pass still reads only a provider's
+On Fly power restoration, `0x004CE636` also calls the legacy
+ActivateVeins path (`0x486920`). It requires overlay 126 with density 48
+or higher and an eligible occupant. Retail Yuri's Revenge uses an inert
+`DUMMYOLD` slot there. This is outside the ordinary EMP path.
+The Super pass still reads only a provider's
 own type, not its upgrades' SuperWeapon keys (the existing residual of
 `superweapon::provided_supers`). Native TypeImmune scanner indices18/19 have synthetic getter evidence,
 but their production configuration meaning is not established; the shared 18-slot

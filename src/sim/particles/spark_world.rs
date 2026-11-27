@@ -35,8 +35,6 @@ pub enum SparkWorldError {
     MissingOccupantEntity(u64),
     #[error("building entity {0} has no resolved ObjectType")]
     MissingObjectType(u64),
-    #[error("building entity {0} needs unmodelled LaserFence connectivity state")]
-    UnsupportedLaserFence(u64),
     #[error(transparent)]
     Kernel(#[from] SparkKernelError),
 }
@@ -304,15 +302,12 @@ impl<'a> SparkCollisionWorld<'a> {
         let Some(building) = self.first_building(rx, ry)? else {
             return Ok(None);
         };
-        if building.laser_fence {
-            return Err(SparkWorldError::UnsupportedLaserFence(building.id));
-        }
-        Ok(Some(!building.strange))
+        Ok(Some(!building.strange && !building.open_laser_fence))
     }
 
     /// The cell's first Building (`CellClass::GetBuilding @ 0x0047C520`):
-    /// its id, `LaserFence=` and its IsStrange answer (vt+0x80: a 1x1 type
-    /// that undeploys into a known type).
+    /// Its open fence state (0x62C8B3) and IsStrange answer (vt+0x80:
+    /// a 1x1 type that undeploys into a known type).
     fn first_building(&self, rx: u16, ry: u16) -> Result<Option<CellBuilding>, SparkWorldError> {
         let Some(sid) = self
             .sim
@@ -339,16 +334,14 @@ impl<'a> SparkCollisionWorld<'a> {
             .is_some()
             && object.foundation.dimensions() == (1, 1);
         Ok(Some(CellBuilding {
-            id: entity.stable_id(),
-            laser_fence: object.laser_fence,
+            open_laser_fence: object.laser_fence && entity.laser_fence_frame() >= 8,
             strange: undeploys_from_one_by_one,
         }))
     }
 }
 
 struct CellBuilding {
-    id: u64,
-    laser_fence: bool,
+    open_laser_fence: bool,
     strange: bool,
 }
 
@@ -365,8 +358,6 @@ struct CellBuilding {
 /// Without resolved terrain (fixtures) a spark meets nothing, the policy of
 /// [`constructor_ground_height`].
 ///
-/// RESIDUAL: VERA keeps no LaserFenceFrame (`+0x618`), so a `LaserFence=yes`
-/// building counts as an online section. VERA builds no fence sections.
 pub(super) fn ares_spark_dies(
     sim: &Simulation,
     rules: &RuleSet,
@@ -409,7 +400,8 @@ pub(super) fn ares_spark_dies(
     };
     let world = SparkCollisionWorld { sim, rules };
     if let Some(building) = world.first_building(real.rx, real.ry)? {
-        return Ok(!building.strange);
+        // Ares 3.0p1 0x100295F5..0x10029605 takes this same escape.
+        return Ok(!building.strange && !building.open_laser_fence);
     }
     let overlay = world.wall_overlay_for_selection(&cell)?;
     Ok(matches!(
@@ -951,9 +943,6 @@ pub(super) mod tests {
         let mut fence = one_cell_sim(terrain_cell(0, 0));
         add_building(&mut fence, 3, "Fence");
         let world = SparkCollisionWorld::new(&fence, &rules).unwrap();
-        assert_eq!(
-            world.building_collision(0, 0),
-            Err(SparkWorldError::UnsupportedLaserFence(3))
-        );
+        assert_eq!(world.building_collision(0, 0), Ok(Some(true)));
     }
 }

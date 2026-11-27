@@ -43,8 +43,8 @@
 //! - A malformed upgrade stack whose last type is absent would be
 //!   dereferenced at `0x0044AAD4`. VERA safely leaves its count/types and
 //!   stage unchanged, with no refund; it does not compact sparse slots.
-//! - Dormant in retail data: stage 0's Artillary/TickTank arm, the LaserFencePost
-//!   recalc (`0x004533A0`), the sale's CloakGenerator arm (`Type+0x16C7`,
+//! - Dormant in retail data: stage 0's Artillary/TickTank arm, the
+//!   sale's CloakGenerator arm (`Type+0x16C7`,
 //!   `0x0044A292`) and `BuildingClass::SetTarget`'s computer sale of a
 //!   `TickTank=`/`Artillary=` building (`Type+0x16C4`/`+0x16CA`, which
 //!   queues and commences Selling itself at `0x00443C42`; no retail
@@ -777,6 +777,8 @@ pub fn sell_stage_zero(
         rules,
         frame_effects,
     );
+    // Selling's 0x44AB82 updates a LaserFencePost immediately after RunAway.
+    sim.recalculate_laser_fence(id, false, rules, frame_effects);
     sim.clear_building_damage_fire_slots(id, rules);
 }
 

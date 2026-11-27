@@ -76,6 +76,29 @@ fn a_gate_sells_its_owners_walls_under_its_foundation() {
 }
 
 #[test]
+fn a_gate_replacing_an_owned_laser_fence_section_removes_the_span() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, _) =
+        arena(&RULES.replace("LaserFencePost=yes\n", "LaserFencePost=yes\nGuardRange=5\n"));
+    sim.spawn_object("POST", "Americans", 8, 6, 0, &rules)
+        .expect("first post");
+    sim.spawn_object("POST", "Americans", 12, 6, 0, &rules)
+        .expect("far post");
+    let at = |sim: &Simulation, x| {
+        sim.occupancy()
+            .first_building_on_layer(x, 6, MovementLayer::Ground)
+    };
+    assert!(at(&sim, 9).is_some());
+    assert!(at(&sim, 11).is_some());
+    let gate = sim
+        .spawn_object("GATE", "Americans", 10, 6, 0, &rules)
+        .expect("gate replaces the middle of its house's span");
+    assert_eq!(at(&sim, 10), Some(gate));
+    assert_eq!(at(&sim, 9), None);
+    assert_eq!(at(&sim, 11), None);
+}
+
+#[test]
 fn an_ares_gate_sells_its_owners_mod_wall_under_it() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules_ini = RULES.replace("[General]\n", "[General]\nDegrade.Enabled=no\n");

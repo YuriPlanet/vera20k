@@ -14,6 +14,7 @@ use crate::sim::houses::Houses;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::util::native_x87::NativeF32Bits;
+use std::collections::BTreeMap;
 
 type CostFactors = [NativeF32Bits; 5];
 const UNIT_FACTORS: CostFactors = [NativeF32Bits::ONE; 5];
@@ -31,6 +32,12 @@ struct RegisteredBuilding {
     secret_lab: bool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct BuildingSlotWalks {
+    depth: usize,
+    retired: BTreeMap<usize, u64>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct HouseBaseState {
     registrations: Vec<RegisteredBuilding>,
@@ -40,6 +47,11 @@ pub(crate) struct HouseBaseState {
     /// ChangeOwner appends to the new House's tail (`0x00449197..0x004491D2`).
     /// The Prism walk reads it in this order ([`Self::buildings`]).
     buildings: Vec<u64>,
+    /// Ares EMPulse carries a pointer to the original list end across its
+    /// synchronous detonations. Slots past the current count only matter
+    /// during this walk and are absent at simulation frame boundaries.
+    #[serde(skip)]
+    building_slot_walks: Option<BuildingSlotWalks>,
     /// Native House+140, whose order determines each f32 multiplication/store.
     plants: Vec<u64>,
     /// House+110, appended441443/44908B, stable-removed448983/4FBB8E.
@@ -215,6 +227,34 @@ impl HouseBaseState {
         &self.buildings
     }
 
+    /// SW_EMPulse::Activate (Ares 3.0p1 0x10072231..0x1007224A) captures
+    /// House+68's end before calling any of the buildings.
+    pub(crate) fn begin_building_slot_walk(&mut self) -> usize {
+        self.building_slot_walks
+            .get_or_insert_with(Default::default)
+            .depth += 1;
+        self.buildings.len()
+    }
+
+    pub(crate) fn building_slot(&self, index: usize) -> Option<u64> {
+        self.buildings.get(index).copied().or_else(|| {
+            self.building_slot_walks
+                .as_ref()?
+                .retired
+                .get(&index)
+                .copied()
+        })
+    }
+
+    pub(crate) fn finish_building_slot_walk(&mut self) {
+        if let Some(walks) = self.building_slot_walks.as_mut() {
+            walks.depth -= 1;
+            if walks.depth == 0 {
+                self.building_slot_walks = None;
+            }
+        }
+    }
+
     /// An oracle row's House+68, in its order; an id no object holds stands
     /// for a null entry.
     #[cfg(any(test, feature = "test-support"))]
@@ -251,7 +291,15 @@ impl HouseBaseState {
         //4FB9B0 stable-removes one matching pointer, then50BF60 recomputes.
         remove_first(&mut self.secret_labs, id);
         remove_first(&mut self.plants, id);
-        remove_first(&mut self.buildings, id);
+        if let Some(index) = self.buildings.iter().position(|&candidate| candidate == id) {
+            // Pointer expiry 0x4FBC35..0x4FBC54 and owner change
+            // 0x448A91..0x448AAE leave the old last slot untouched.
+            let old_last = self.buildings.last().copied();
+            self.buildings.remove(index);
+            if let (Some(walks), Some(old_last)) = (self.building_slot_walks.as_mut(), old_last) {
+                walks.retired.insert(self.buildings.len(), old_last);
+            }
+        }
     }
 
     /// The appends Unlimbo (`0x004414F1..0x00441594`) and ChangeOwner's new

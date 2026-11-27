@@ -381,7 +381,7 @@ impl Simulation {
                     house.request_tech_recheck();
                 }
                 Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
-                self.set_building_stuff_enabled(id, false, rules);
+                self.set_building_stuff_enabled(id, false, rules, effects);
                 if radar_provider {
                     self.power_states.house_mut(owner).recheck_radar();
                 }
@@ -481,7 +481,7 @@ impl Simulation {
             }
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
             if has_power {
-                self.set_building_stuff_enabled(id, true, rules);
+                self.set_building_stuff_enabled(id, true, rules, effects);
             }
             if radar_provider {
                 self.power_states.house_mut(owner).recheck_radar();

@@ -89,12 +89,16 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
         {
             // 439CAD selects a Building before its virtual80 exclusion. A
             // nonnull excluded Building suppresses the wall query as well.
-            return self
-                .sim
-                .entities()
-                .get(sid)
-                .and_then(|entity| self.sim.object_type(entity.type_ref(), self.rules))
-                .is_some_and(|kind| !kind.is_1x1_with_undeploy());
+            return self.sim.entities().get(sid).is_some_and(|entity| {
+                self.sim
+                    .object_type(entity.type_ref(), self.rules)
+                    .is_some_and(|kind| {
+                        // 0x439CEC clears the collision bit for open sections,
+                        // before the separate virtual IsStrange check.
+                        !(kind.laser_fence && entity.laser_fence_frame() >= 8)
+                            && !kind.is_1x1_with_undeploy()
+                    })
+            });
         }
         // 480510(-1,-1) accepts these three raw overlay IDs only (any
         // `Wall=yes` overlay under Ares, hook 0x480534).

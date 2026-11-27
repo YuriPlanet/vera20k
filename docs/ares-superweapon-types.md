@@ -364,6 +364,17 @@ positions use the current firing port (`0x453A70`, `0x453840`).
 The shell and the self-target detonation deal the configured warhead's EMP
 through the ordinary detonation receiver (`0x46920B` → `0x10054390`),
 including with Ares off.
+For `EMPulse.TargetSelf`, Ares 3.0p1 captures the original end of the
+House building list (`0x10072231..0x1007224A`) and reads each slot just
+before firing (`0x10072260`). A detonation can remove a building and shift
+its successor into a visited slot. The vacated tail holds its previous ID
+and a surviving cannon in it can fire again within `SW.MaxCount`.
+
+The native barrel constructor sets `0x43BA5E` and `0x43BACB` precede the
+placed cannon's barrel setup (`0x6F6DC3`, `0x6F6DF5`), which starts it
+level and applies the configured FireAngle. The palette selector
+(`0x555E50` → `0x10037520` → `0x10033100`) reads the lightning, nuke
+and dominator globals. EMPulse activation writes none of them.
 
 **Type=DropPod** has its readers here; part 5 adds its launch.
 `DropPod.Minimum`, `.Maximum`, `.Veterancy` (2.0) and `.Types` are read per
@@ -380,13 +391,6 @@ mode.
   parks it. A stock `PULSBALL` that does not exist is read out of bounds;
   VERA shows nothing. A stock weapon with no `Report=` divides by zero;
   VERA plays nothing (as Ares's hook 44D4CA does).
-- The building constructor's barrel sets (`0x0043BA5E`, `0x0043BACB`) are
-  not ported; the barrel starts where Unlimbo leaves it.
-- A TargetSelf detonation that removes one of the House's buildings during
-  the walk skips the next building in native (the vector shifts); VERA
-  does not skip it.
-- The palette `Light.*` (hook `0x555E50`) is still not applied (see part
-  3).
 
 ## Part 5: the DropPod launch
 

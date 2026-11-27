@@ -276,6 +276,7 @@ impl Simulation {
             return RevealOutcome::Failed(RevealFailure::RejectedEarly);
         }
 
+        self.initialize_laser_fence_frame(stable_id, context.requested_facing, context.rules());
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.in_limbo = false;
         }
@@ -725,12 +726,7 @@ impl Simulation {
         // 0x00440D07..0x00440D2D above; only House AI reads the marks.
         self.mark_building_base_reservation_with_arg(stable_id, false, context.reborrow());
         self.light_building_at_unlimbo(stable_id, context.reborrow());
-        // Residual: 0x00440E02..0x00440E57. A LaserFencePost= building, in
-        // the world and not in limbo outside the placement scope
-        // (0x00A8E7AC), extends fence sections toward the posts in its four
-        // directions (0x00452DC0 with 0, 2, 4, 6) and reconnects
-        // (0x004533A0(1)). VERA has no fence sections: a mod's posts stand
-        // without a fence between them. No retail type is LaserFencePost=.
+        self.place_laser_fence_at_post(stable_id, context.rules(), context.effects());
         self.discover_building_owner_after_unlimbo(stable_id, context.reborrow());
         // 0x00440E99..0x00440EB5: a type with NaturalParticleSystem=
         // (Type+0x764) and no system yet (+0x30C) builds one. No retail

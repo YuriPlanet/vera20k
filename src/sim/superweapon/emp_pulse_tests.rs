@@ -427,6 +427,42 @@ fn ares_emp_pulse_listed_cannons_fire_at_the_cell_or_at_themselves() {
     );
 }
 
+#[test]
+fn builtin_emp_self_detonation_reads_the_shifted_house_slots() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules(
+        "[Volley]\nEMPulse.TargetSelf=yes\nEMPulse.Cannons=CANNON,GUN\nSW.MaxCount=-1\n\
+         [CANNON]\nDamageSelf=yes\nStrength=40\n",
+    );
+    assert!(!rules.ares());
+    let (mut sim, owner) = scene(&rules);
+    let first = building(&mut sim, &rules, "CANNON", (10, 10));
+    let shifted = building(&mut sim, &rules, "GUN", (17, 17));
+    let last = building(&mut sim, &rules, "GUN", (25, 25));
+    let next_to_shifted = sim
+        .spawn_object_at_height("DEPOT", "Americans", 18, 17, 0, 0, &rules)
+        .unwrap();
+    let next_to_last = sim
+        .spawn_object_at_height("DEPOT", "Americans", 26, 25, 0, 0, &rules)
+        .unwrap();
+
+    assert_eq!(
+        sim.houses[&owner].base_projection().buildings(),
+        [first, shifted, last]
+    );
+    assert!(launch(&mut sim, &rules, "Volley", (0, 0)));
+    assert_eq!(
+        sim.houses[&owner].base_projection().buildings(),
+        [shifted, last]
+    );
+
+    let health = |id| sim.entities().get(id).unwrap().health.current();
+    // The first shot expires slot 0. Its shifted successor misses this
+    // launch. The original end includes both copies of the last live slot.
+    assert_eq!(health(next_to_shifted), 500);
+    assert_eq!(health(next_to_last), 400);
+}
+
 /// SW_DropPod's Initialize (100710F0) and LoadFromINI (10071140) over two
 /// passes: Nullable counts, Veterancy 2.0 until read, and Find-only types
 /// (an unknown name is skipped, a later list replaces).

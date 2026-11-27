@@ -56,7 +56,7 @@
 //!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
 //!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
-//!   3 and 4 (CloakGenerator, LaserFencePost), 10
+//!   3 (CloakGenerator), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
 //!   bare `RET`). Step 14 (`DestroyParticleSystems=` smoke) has no stock user.
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
@@ -602,6 +602,12 @@ impl Simulation {
         let owner = entity.owner();
         let selling =
             entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Selling);
+
+        // 4. Building destruction 0x4416FD sends the damaging teardown
+        // mode before this building's own death fuse starts.
+        if object.laser_fence_post {
+            self.remove_laser_fence_at_post(building_id, true, rules, effects);
+        }
 
         // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
         // building releases its sight for the current house

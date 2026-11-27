@@ -1379,6 +1379,11 @@ fn full_foot_entry<'a>(
             if infantry && bt.invisible_in_game {
                 continue;
             }
+            // Infantry 0x51C4A6 and Unit 0x73F78E skip a laser fence in
+            // either of the two open +618 frames.
+            if bt.laser_fence && b.open_laser_fence {
+                continue;
+            }
             // Ares 3.0 10014D70 (hook 0x51C4C8): an `IsPassable` building
             // is ignored; a `Firestorm.Wall` one takes the stock
             // FirestormWall branch (0x51C4D2): its owner's firestorm refuses

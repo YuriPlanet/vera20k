@@ -22,9 +22,15 @@ impl Simulation {
     /// Building452480 / ChangeOwner4484C6: this differs from Type.Powered
     /// constructor policy. Light614 and powered-slot pause share this owner;
     /// DisableStuff also removes an active gap immediately, before the later
-    /// operational visit. Dormant LaserFencePost/CloakGenerator tails still
-    /// require their separate, currently unported mechanisms.
-    pub(crate) fn set_building_stuff_enabled(&mut self, id: u64, enabled: bool, rules: &RuleSet) {
+    /// operational visit. EnableStuff/DisableStuff also recalculate a post's
+    /// fence sections before visiting the powered animation slots.
+    pub(crate) fn set_building_stuff_enabled(
+        &mut self,
+        id: u64,
+        enabled: bool,
+        rules: &RuleSet,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
+    ) {
         // Ares BuildingClass_DisableThings10016D00 (hook4524A3) updates a
         // sensor array at DisableStuff452480's head.
         if rules.ares_form() && !enabled {
@@ -51,6 +57,7 @@ impl Simulation {
                 id,
             );
         }
+        self.recalculate_laser_fence(id, false, rules, effects);
         for (slot, anim_id) in slots.into_iter().enumerate() {
             if self
                 .building_anim_power_flags(id, slot as u8, rules)
@@ -78,24 +85,39 @@ impl Simulation {
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|o| o.needs_engineer)
         {
-            self.set_building_stuff_enabled(id, false, rules);
+            self.set_building_stuff_enabled(
+                id,
+                false,
+                rules,
+                &mut crate::sim::world::FrameEffects::empty(),
+            );
         }
     }
 
     /// Ares 3.0 `10024150` after a structure's return to its first owner: a
     /// `NeedsEngineer=` one loses HasEngineer and is disabled again
     /// (`DisableStuff @ 0x00452480`), as an unengineered tech building is.
-    pub(crate) fn disable_returned_tech_building(&mut self, id: u64, rules: &RuleSet) {
+    pub(crate) fn disable_returned_tech_building(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
         entity.building.building_has_engineer.set = false;
-        self.set_building_stuff_enabled(id, false, rules);
+        self.set_building_stuff_enabled(id, false, rules, effects);
     }
 
     /// Every changed-owner Building path writes HasEngineer (4484AF), including
     /// non-engineer transfers. Same-owner calls return before this entry.
-    pub(crate) fn enable_building_after_owner_change(&mut self, id: u64, rules: &RuleSet) {
+    pub(crate) fn enable_building_after_owner_change(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -108,7 +130,7 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .is_some_and(|o| o.needs_engineer)
         {
-            self.set_building_stuff_enabled(id, true, rules);
+            self.set_building_stuff_enabled(id, true, rules, effects);
         }
     }
 

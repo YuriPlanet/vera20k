@@ -181,21 +181,20 @@ impl Simulation {
         if rules.ares() && object.building_type_ext().is_passable {
             return Ok(false);
         }
-        if object.building_type_ext().firestorm_wall {
+        if object.laser_fence {
+            // Original 0x51BD3A checks the two open section frames before
+            // the FirestormWall hook.
+            if building.laser_fence_open() {
+                return Ok(false);
+            }
+        } else if object.building_type_ext().firestorm_wall {
             if !self.ares_firestorm.is_active(building.owner()) {
                 return Ok(false);
             }
-        } else if rules.ares() && object.laser_fence {
-            return Ok(false);
         }
-        // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
-        // with8/12 and reads its owner's Firestorm+1FA. Their runtime
-        // owners are absent. Such types retain the prior no-Scatter behavior
-        // until those separate mechanisms establish the required state.
-        // Stock GAPILE and all ordinary barracks have both type flags false.
         // (While Ares plays, its firestorm arm above takes this place; the
         // hook leaves the stock `FirestormWall=` flag unread.)
-        if !rules.ares() && (object.laser_fence || object.firestorm_wall) {
+        if !rules.ares() && object.firestorm_wall && !object.laser_fence {
             return Ok(false);
         }
         let slaves = crate::sim::slave_deposit::SlaveDepositQuery {

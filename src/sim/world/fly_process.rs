@@ -162,7 +162,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> AirMovementTickStats {
-        let mut stats = AirMovementTickStats::default();
+        let stats = AirMovementTickStats::default();
         let flight_level = self.fly_type_flight_level(id, rules);
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return stats;
@@ -212,9 +212,8 @@ impl Simulation {
                 entity.body_facing.snap(facing, frame);
             }
         }
-        if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
-            stats.impact = true;
-            return stats;
+        if let Some(impact) = self.fly_update_flight_motion(id, rules, registry, frame_effects) {
+            return impact;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return stats;
@@ -255,8 +254,8 @@ impl Simulation {
     ///   not zero (`0x004CD60E..0x004CD65F`: vt+0x1B8 against `+0x560`,
     ///   Is_Moving_Now, `0x004138C0`);
     /// - Enter drops cruise mode (`0x004CD664..0x004CD67B`);
-    /// - a dead Fly above the ground falls ([`Self::fly_crash_fall`]); its
-    ///   impact returns true;
+    /// - a dead or unpowered Fly above the ground falls
+    ///   ([`Self::fly_crash_fall`]); the fall can return an impact;
     /// - a living one guarding with a NavCom and nothing queued, not
     ///   AirportBound (Fly `+0x18`), queues Move (`0x004CD9C8..0x004CDA02`);
     /// - past Is_Moving (`0x004CDA08`, `0x004CCA90`) the step
@@ -267,10 +266,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
-    ) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
+    ) -> Option<AirMovementTickStats> {
+        let entity = self.substrate.entities.get(id)?;
         let cell = coord_cell(ground_pose::object_location(
             entity,
             self.resolved_terrain.as_ref(),
@@ -292,21 +289,19 @@ impl Simulation {
         {
             state.prepare_process(mission);
         }
-        if self.fly_crash_fall(id, rules, frame_effects) {
-            return true;
+        if let Some(impact) = self.fly_crash_fall(id, rules, registry, frame_effects) {
+            return Some(impact);
         }
         // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
         // (P1 0x1004E700, hook 0x4CD9C8).
         self.ares_hunter_seeker_update_target(id, rules);
         self.substrate.fly_guard_to_move(id);
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
+        let entity = self.substrate.entities.get(id)?;
         if crate::sim::movement::motion_query::is_moving(entity) != Some(true) {
-            return false;
+            return None;
         }
         self.fly_flight_step(id, rules, registry, frame_effects);
-        false
+        None
     }
 
     /// UpdateFlightMotion past its Is_Moving gate (`0x004CDA16..0x004CE4A2`),

@@ -232,6 +232,11 @@ fn rules_for(input: &serde_json::Value) -> RuleSet {
     } else {
         ""
     };
+    let c4 = if flag(input, "fall_c4", false) {
+        "[CombatDamage]\nC4Warhead=CrashWH\n[Warheads]\n0=CrashWH\n[CrashWH]\nVerses=100%\n"
+    } else {
+        ""
+    };
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nFlightLevel=1500\n[AudioVisual]\nPoseDir={}\n\
          [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n\
@@ -243,7 +248,7 @@ fn rules_for(input: &serde_json::Value) -> RuleSet {
          [TestGun]\nDamage=10\nRange=5\nROF=10\nProjectile=TestShot\nWarhead=TestWH\n\
          [TestShot]\nROT={}\n[TestWH]\nVerses=100%\n{emp}[VICTIM]\nStrength=100\n\
          [PAD]\nHelipad={}\nUnitRepair={}\nNumberOfDocks={}\n[DEPOT]\nStrength=500\n\
-         [Clear]\nTrack=100%\nFoot=100%\n",
+         [Clear]\nTrack=100%\nFoot=100%\n{c4}",
         int(input, "pose_dir", 2),
         int(input, "strength", 150),
         int(input, "ini_speed", 14),
@@ -548,6 +553,54 @@ fn configured_emp_spins_then_reactivates_a_grounded_aircraft_with_ares_off() {
     let locomotor = aircraft.locomotor.as_ref().unwrap();
     assert!(locomotor.is_powered());
     assert_eq!(locomotor.fly_runtime().unwrap().active_power_spin(), None);
+}
+
+/// The P1 lift flag bypasses immediate EMP destruction. When Fly is active,
+/// original 0x4CD6BE adds three per visit and 0x4CD8A9 dispatches living C4.
+#[test]
+fn unpowered_airborne_fly_drops_to_a_living_c4_impact() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules) = fixture(&serde_json::json!({
+        "z": 8, "mission": 5, "moving": false, "speed": 0.0, "target_speed": 0.0,
+        "emp": true, "fall_c4": true,
+    }));
+    let mut effects = crate::sim::world::FrameEffects::empty();
+    let aircraft = sim.substrate.entities.get_mut(AIRCRAFT).unwrap();
+    aircraft.lift.set_may_end_for_test(true);
+    let at = ground_pose::object_location(aircraft, sim.resolved_terrain.as_ref());
+    sim.apply_ares_emp_detonation(
+        crate::sim::projectile::ProjectileCoord::new(at.x, at.y, at.z),
+        None,
+        rules.warhead("TestWH").unwrap(),
+        &rules,
+        &mut effects,
+    );
+    assert!(sim.substrate.entities.get(AIRCRAFT).unwrap().is_under_emp());
+    let registry = Some(rules.overlay_registry());
+    sim.fly_process(AIRCRAFT, &rules, registry, &mut effects);
+    let aircraft = sim.substrate.entities.get(AIRCRAFT).unwrap();
+    assert_eq!(
+        ground_pose::object_location(aircraft, sim.resolved_terrain.as_ref()),
+        DriveCoord { z: 5, ..at },
+    );
+    let unique_before = sim.next_native_runtime_id();
+    sim.fly_process(AIRCRAFT, &rules, registry, &mut effects);
+    assert!(
+        sim.substrate
+            .entities
+            .get(AIRCRAFT)
+            .is_none_or(|entity| !entity.lifecycle.object_alive())
+    );
+    assert_eq!(sim.next_native_runtime_id(), unique_before + 2);
+    assert!(sim.combat_light_requests.iter().any(|request| matches!(
+        request,
+        crate::sim::combat::CombatLightRequest::Impact {
+            damage: 150,
+            coord,
+            warhead_ref,
+            ..
+        } if coord.z == -1 && sim.interner.resolve(*warhead_ref) == "CrashWH"
+    )));
 }
 
 /// A Stop row's world as `fly_stop.py` builds it: the Process fixture with

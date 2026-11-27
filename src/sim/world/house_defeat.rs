@@ -1101,7 +1101,7 @@ impl Simulation {
         }
         self.reset_orders_to_guard(id, rules, frame_effects);
         if needs_engineer {
-            self.disable_returned_tech_building(id, rules);
+            self.disable_returned_tech_building(id, rules, frame_effects);
         }
         true
     }

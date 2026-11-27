@@ -671,7 +671,7 @@ mod receiver {
                     house.request_tech_recheck();
                 }
                 Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
-                self.set_building_stuff_enabled(target, false, rules);
+                self.set_building_stuff_enabled(target, false, rules, effects);
                 //10062B73..10062B91: a Radar (+16A4) or SpySat (+16A5) type
                 // dirties RecheckRadar (House+5779).
                 if self.ares_emp_radar_provider(target, rules) {
@@ -837,9 +837,9 @@ mod receiver {
                     house.request_tech_recheck();
                 }
                 Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
-                //100627F0 also enables the Stuff of a LaserFencePost (+0x16BE)
-                // type whatever the power; its fence recalc4533A0 has no
-                // VERA port (no fence sections exist).
+                // Ares 3.0p1 also runs EnableStuff for LaserFencePost
+                // when power is out. The fence owner's 0x4533A0 path
+                // samples both posts before energizing each section.
                 let fence_post = self
                     .substrate
                     .entities
@@ -847,7 +847,7 @@ mod receiver {
                     .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                     .is_some_and(|object| object.laser_fence_post);
                 if operational || fence_post {
-                    self.set_building_stuff_enabled(target, true, rules);
+                    self.set_building_stuff_enabled(target, true, rules, effects);
                 }
                 //10062840..1006285E: RecheckRadar whatever the power.
                 if self.ares_emp_radar_provider(target, rules) {
@@ -2081,10 +2081,15 @@ mod receiver {
                 }
                 sim.session
                     .set_binary_frame_for_test(int(&fixture["global_frame"]) as u32);
-                sim.set_building_stuff_enabled(target, false, &rules);
+                sim.set_building_stuff_enabled(target, false, &rules, &mut FrameEffects::empty());
                 for (name, enabled) in [("paused", false), ("resumed", true)] {
                     if enabled {
-                        sim.set_building_stuff_enabled(target, true, &rules);
+                        sim.set_building_stuff_enabled(
+                            target,
+                            true,
+                            &rules,
+                            &mut FrameEffects::empty(),
+                        );
                     }
                     sim.object_ai_visit_one(
                         slot,

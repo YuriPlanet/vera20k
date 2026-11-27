@@ -103,6 +103,9 @@ impl Simulation {
         &mut self,
         input: ScenarioPostMapInput<'_>,
     ) -> Result<ScenarioPostMapOutput, crate::sim::crates::RuntimeOverlayError> {
+        // Native Full_Init 0x687C3A calls the live Building-array pass
+        // 0x452D40 with the map's authored post objects already placed.
+        self.place_scenario_laser_fences(input.rules, &mut FrameEffects::default());
         // Runtime rebuilds use this same sim-owned publication seam. Crate
         // placement below reads the newly published canonical grid.
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);

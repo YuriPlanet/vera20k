@@ -395,7 +395,7 @@ fn ares_emp_takes_a_coil_a_garrisonable_building_and_cloning_vats_offline() {
 
 /// A LaserFencePost is prone. DisableEMPEffect 100627F0 enables its Stuff
 /// even while its House is short of power, which leaves any other type's
-/// disabled; VERA has no fence sections for that to rebuild.
+/// disabled. Its own power gate still prevents energizing a section.
 #[test]
 fn ares_emp_expiry_enables_an_unpowered_laser_fence_posts_stuff() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -423,4 +423,93 @@ fn ares_emp_expiry_enables_an_unpowered_laser_fence_posts_stuff() {
     );
     assert!(stuff(&sim), "EnableStuff 0x452410 whatever the power");
     assert!(offline(&sim, post), "no Reactivate without power");
+}
+
+/// 0x440E57 forms the fence at placement. DisableStuff 0x452503 opens it
+/// synchronously, and EnableStuff 0x452441 reactivates it with power.
+#[test]
+fn configured_emp_opens_the_linked_fence_until_the_post_recovers_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[GAPILL]\nLaserFencePost=yes\nGuardRange=6\nPower=0\nPowered=no\nExplodes=yes\n\
+         [NALASR]\nLaserFence=yes\nPrimary=none\nSecondary=none\n\
+         [Warheads]\n321=EMPWH\n[EMPWH]\nCellSpread=1\nEMP.Duration=15\n",
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert!(!rules.ares());
+    let (mut sim, grid) = scene(&rules, false);
+    let source = spawn(&mut sim, &rules, "MTNK", "Russians", 2, 28);
+    let post = building(&mut sim, &rules, "GAPILL", 6, 8);
+    building(&mut sim, &rules, "GAPILL", 11, 8);
+    let section_at = |sim: &Simulation, x| {
+        sim.occupancy().first_building_on_layer(
+            x,
+            8,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+        )
+    };
+    let section = section_at(&sim, 8).expect("ordinary Put should build the laser fence");
+    let has_open_frame = |sim: &Simulation| sim.entities().get(section).unwrap().laser_fence_open();
+    assert!(run(&mut sim, &rules, &grid, 8, |sim| !has_open_frame(sim)));
+    assert!(!sim.path_grid_snapshot().unwrap().is_walkable(8, 8));
+    pulse(&mut sim, &rules, source, post);
+    assert!(emp(&sim, post) > 0);
+    assert!(has_open_frame(&sim));
+    assert!(sim.path_grid_snapshot().unwrap().is_walkable(8, 8));
+    let crossing = spawn(&mut sim, &rules, "E1", "Americans", 8, 8);
+
+    assert!(run(&mut sim, &rules, &grid, 20, |sim| emp(sim, post) == 0));
+    assert!(!has_open_frame(&sim));
+    assert!(!sim.path_grid_snapshot().unwrap().is_walkable(8, 8));
+    assert!(
+        sim.entities()
+            .get(crossing)
+            .is_none_or(|actor| actor.health.current() <= 0)
+    );
+
+    // The endpoint query crosses a hole, while state writes stay on
+    // the uninterrupted run adjacent to the post.
+    sim.uninit_with_rules(section_at(&sim, 9).unwrap(), &rules);
+    pulse(&mut sim, &rules, source, post);
+    assert!(has_open_frame(&sim));
+    assert!(run(&mut sim, &rules, &grid, 20, |sim| emp(sim, post) == 0));
+    assert!(!has_open_frame(&sim));
+
+    crate::sim::world::queue_and_commence(&mut sim, post, MissionType::Selling, &rules);
+    let mut effects = FrameEffects::default();
+    crate::sim::production::sell_stage_zero(&mut sim, &rules, post, &mut effects);
+    assert!(
+        has_open_frame(&sim),
+        "stage zero opens the fence synchronously"
+    );
+
+    let previous_lights = sim.combat_light_requests.len();
+    sim.receive_own_health_c4(post, &rules, Some(rules.overlay_registry()), &mut effects);
+    let post = sim
+        .entities()
+        .get(post)
+        .expect("the explosive post retains its body");
+    assert_eq!(post.health.current(), 0);
+    assert!(!post.lifecycle.in_limbo());
+    assert_eq!(
+        section_at(&sim, 8),
+        None,
+        "sections die before the post's Limbo"
+    );
+    assert!(
+        sim.combat_light_requests
+            .iter()
+            .skip(previous_lights)
+            .any(|light| {
+                matches!(
+                    light,
+                    crate::sim::combat::CombatLightRequest::Impact { coord, .. }
+                        if coord.x / 256 == 8 && coord.y / 256 == 8
+                )
+            })
+    );
 }
