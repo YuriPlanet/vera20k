@@ -67,10 +67,14 @@ pub struct FlyRuntime {
     /// Landing reads this instance value; BeginLanding separately reads live type.
     #[serde(default)]
     airport_bound: bool,
-    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`) and
-    /// only Process's fall block writes it (`0x004CD6C6`), never resetting it.
+    /// Fly+58, the fall counter. Process increments it (`0x004CD6C6`), and
+    /// Power_Off clears it after running Stop_Moving (`0x004CFD73`).
     #[serde(default)]
     fall_counter: i32,
+    /// Fly+53/+54: a live power-loss spin and its signed steps per frame.
+    /// A zero-rate spin stays active until the first powered Process visit.
+    #[serde(default)]
+    power_spin: Option<i32>,
     /// Fly+40, the target speed fraction the ramp chases. The constructor
     /// (`0x004CC9E5`) starts it at 0; Process's slowdown
     /// ([`Self::write_target_speed`]), Horizontal_Step's arrival
@@ -363,6 +367,31 @@ impl FlyRuntime {
 
     pub(crate) fn fall_counter(&self) -> i32 {
         self.fall_counter
+    }
+
+    pub(crate) fn begin_power_spin(&mut self, steps: i32) {
+        self.power_spin = Some(steps);
+    }
+
+    pub(crate) fn reset_fall_counter(&mut self) {
+        self.fall_counter = 0;
+    }
+
+    pub(crate) fn active_power_spin(&self) -> Option<i32> {
+        self.power_spin
+    }
+
+    /// Fly's Process spin (`0x004CE5A0`): apply the current steps as a
+    /// 16-bit facing delta, then damp by one. Restored power ends the spin.
+    pub(crate) fn advance_power_spin(&mut self, powered: bool) -> Option<u16> {
+        if powered {
+            self.power_spin = None;
+            return None;
+        }
+        let steps = self.power_spin.as_mut()?;
+        let delta = (*steps as u16).wrapping_shl(8);
+        *steps -= steps.signum();
+        Some(delta)
     }
 
     ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.

@@ -873,12 +873,12 @@ fn recalculate_power_for_owner(
             }
             (output_contribution, 0)
         };
-        // Ares 3.0 BuildingClass_PowerProduced_EMP 10014440 (hook
+        // Ares 3.0p1 BuildingClass_PowerProduced_EMP 0x100149D0 (hook
         // 0x0044E855): an EMP'd plant (`+0x504` > 0) skips the positive sum
         // to 0x0044E873 and outputs nothing; Ares EMP leaves its online latch
         // set. Phobos' replacement above already zeroes it.
         #[cfg(not(feature = "phobos"))]
-        let (power, extra_power) = if ares && entity.emp_remaining() > 0 {
+        let (power, extra_power) = if entity.emp_remaining() > 0 {
             (0, 0)
         } else {
             (power, extra_power)
@@ -1092,7 +1092,7 @@ fn radar_provider_available(
         return false;
     }
     // Native House+68 order chooses the first otherwise eligible provider;
-    // its EMP/warp result terminates, even when a later provider is healthy.
+    // its warp result terminates, even when a later provider is healthy.
     for &id in building_order {
         let Some(entity) = entities.get(id) else {
             continue;
@@ -1113,20 +1113,17 @@ fn radar_provider_available(
         {
             continue;
         }
-        // Ares Radar_Update_CheckEligible10024550 (hook508EBC) skips a
-        // jammed or EMPed (+504 > 0) radar to the next one; a remaining
-        // nonzero counter still ends the scan as508F12 does.
-        if rules.ares_form() {
-            if entity.seldom.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
-                continue;
-            }
-            if entity.emp_remaining() != 0 {
-                return false;
-            }
+        // Ares 3.0p1 Radar_Update_CheckEligible 0x10025070 (hook 0x508EBC)
+        // resumes at 0x508F08 for a jammed or EMPed (+504 > 0) provider.
+        if entity.emp_remaining() > 0
+            || (rules.ares_form() && entity.seldom.ares.radar_jam.is_jammed())
+        {
+            continue;
         }
-        // Building+504 EMP starts zero. VERA has no EMP writer yet; its
-        // online latch has independent map/trigger and Temporal writers.
-        // EMP and the independent HasPower transitions remain open.
+        // The original 0x508F12 scan still rejects a remaining nonzero counter.
+        if entity.emp_remaining() != 0 {
+            return false;
+        }
         return !entity.is_warped_out();
     }
     false
@@ -1755,7 +1752,7 @@ BuildSpeed=0.02
         states[&owner].total_output
     }
 
-    /// Ares 10014440 (hook 0x44E855): a plant under EMP keeps its online
+    /// Ares 3.0p1 0x100149D0 (hook 0x44E855): a plant under EMP keeps its online
     /// latch but outputs nothing.
     #[test]
     fn ares_emp_power_plant_outputs_nothing() {

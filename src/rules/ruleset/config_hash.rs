@@ -818,8 +818,8 @@ impl RuleSet {
             }))
             .hash(&mut hasher);
         }
-        if !self.ares && self.builtin_tunnel_emp {
-            b"builtin-tunnel-emp-v1".hash(&mut hasher);
+        if !self.ares && self.builtin_emp {
+            b"builtin-emp-v2".hash(&mut hasher);
             Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
                 let settings = wh.ares_rules().filter(|ext| ext.duration() != 0)?;
                 Some((name, settings))
@@ -828,10 +828,6 @@ impl RuleSet {
             self.emp_sparkles.hash(&mut hasher);
             self.object_list
                 .iter()
-                .filter(|object| {
-                    self.builtin_generic_emp
-                        || object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel
-                })
                 .map(|object| {
                     (
                         (object.category, object.id.to_ascii_uppercase()),

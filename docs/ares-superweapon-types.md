@@ -356,6 +356,15 @@ cannon shows the Super's `EMPulse.PulseBall` (none allowed) and waits its
 `EMPulse.PulseDelay`. The common launch, money and trigger events 75/77
 work as for the other new types.
 
+An EMP cannon with `IsLaser=yes` on weapon 0 uses the laser arm of
+GetBarrelPitch (`0x43E968`). It aims at the live firing target, including
+any lead, when that target differs from the super weapon's selected cell.
+When the cannon is occupied, the turret pivot and charge and projectile
+positions use the current firing port (`0x453A70`, `0x453840`).
+The shell and the self-target detonation deal the configured warhead's EMP
+through the ordinary detonation receiver (`0x46920B` → `0x10054390`),
+including with Ares off.
+
 **Type=DropPod** has its readers here; part 5 adds its launch.
 `DropPod.Minimum`, `.Maximum`, `.Veterancy` (2.0) and `.Types` are read per
 pass, and so are `[General] DropPodTrailer=`, `DropPodTypes=`,
@@ -365,16 +374,12 @@ mode.
 
 ### Still not included after part 4
 
-- An EMP cannon whose weapon 0 is `IsLaser=` aims its barrel by vt+0x2C8's
-  laser arm (`0x0043E968`); VERA uses the EMP arm. When no arc reaches the
-  cell, the stock barrel takes an uninitialized word; VERA's barrel counts
-  as aimed.
+- When no ballistic arc reaches the cell, the stock barrel takes an
+  uninitialized word. VERA's barrel counts as aimed.
 - A cannon without weapon 0 crashes the stock game (`0x0043E95A`); VERA
   parks it. A stock `PULSBALL` that does not exist is read out of bounds;
   VERA shows nothing. A stock weapon with no `Report=` divides by zero;
   VERA plays nothing (as Ares's hook 44D4CA does).
-- An occupied cannon's turret pivot takes the unoccupied arms: the
-  occupant's port is not read.
 - The building constructor's barrel sets (`0x0043BA5E`, `0x0043BACB`) are
   not ported; the barrel starts where Unlimbo leaves it.
 - A TargetSelf detonation that removes one of the House's buildings during

@@ -227,6 +227,11 @@ fn rules_for(input: &serde_json::Value) -> RuleSet {
             .map(|index| BUILDING_TYPES[index.as_u64().unwrap() as usize])
             .collect()
     });
+    let emp = if flag(input, "emp", false) {
+        "EMP.Duration=2\n"
+    } else {
+        ""
+    };
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nFlightLevel=1500\n[AudioVisual]\nPoseDir={}\n\
          [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n\
@@ -236,7 +241,7 @@ fn rules_for(input: &serde_json::Value) -> RuleSet {
          AirportBound={}\nPitchAngle=0\nAmmo=1\nPrimary=TestGun\nDock={}\n\
          Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n\
          [TestGun]\nDamage=10\nRange=5\nROF=10\nProjectile=TestShot\nWarhead=TestWH\n\
-         [TestShot]\nROT={}\n[TestWH]\nVerses=100%\n[VICTIM]\nStrength=100\n\
+         [TestShot]\nROT={}\n[TestWH]\nVerses=100%\n{emp}[VICTIM]\nStrength=100\n\
          [PAD]\nHelipad={}\nUnitRepair={}\nNumberOfDocks={}\n[DEPOT]\nStrength=500\n\
          [Clear]\nTrack=100%\nFoot=100%\n",
         int(input, "pose_dir", 2),
@@ -456,6 +461,93 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         sim.add_entity_occupancy(DOCK);
     }
     (sim, rules)
+}
+
+/// P1 0x100638A0 deactivates a grounded Aircraft. The original 0x004CFD20
+/// with Scenario seed 31 and a moving, grounded Fly writes -23, clears the
+/// fall counter and leaves 2225548056 as the next raw draw. Original spin
+/// 0x004CE5A0 then advances facing 0x4000 to 0x2900 and damps to -22.
+#[test]
+fn configured_emp_spins_then_reactivates_a_grounded_aircraft_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules) = fixture(&serde_json::json!({
+        "z": 0, "mission": 5, "moving": true, "speed": 0.0, "target_speed": 0.0, "emp": true,
+    }));
+    assert!(!rules.ares());
+    let warhead = rules.warhead("TestWH").unwrap();
+    let mut effects = crate::sim::world::FrameEffects::empty();
+    let aircraft = sim.substrate.entities.get_mut(AIRCRAFT).unwrap();
+    assert!(aircraft.lifecycle.object_alive());
+    let state = aircraft
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .fly_runtime_mut()
+        .unwrap();
+    for _ in 0..11 {
+        state.advance_fall(true);
+    }
+    let where_ = ground_pose::object_location(aircraft, sim.resolved_terrain.as_ref());
+    sim.apply_ares_emp_detonation(
+        crate::sim::projectile::ProjectileCoord::new(where_.x, where_.y, where_.z),
+        None,
+        warhead,
+        &rules,
+        &mut effects,
+    );
+    let locomotor = sim
+        .substrate
+        .entities
+        .get(AIRCRAFT)
+        .unwrap()
+        .locomotor
+        .as_ref()
+        .unwrap();
+    assert!(!locomotor.is_powered());
+    assert_eq!(
+        locomotor.fly_runtime().unwrap().active_power_spin(),
+        Some(-23)
+    );
+    assert_eq!(locomotor.fly_runtime().unwrap().fall_counter(), 0);
+    assert_eq!(sim.scenario_rng.clone().next_u32(), 2_225_548_056);
+
+    sim.fly_process(
+        AIRCRAFT,
+        &rules,
+        Some(rules.overlay_registry()),
+        &mut effects,
+    );
+    let aircraft = sim.substrate.entities.get(AIRCRAFT).unwrap();
+    assert_eq!(
+        aircraft.body_facing.current(sim.session.binary_frame()),
+        0x2900
+    );
+    assert_eq!(
+        aircraft
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .active_power_spin(),
+        Some(-22)
+    );
+
+    sim.tick_ares_emp(AIRCRAFT, &rules, &mut effects);
+    sim.tick_ares_emp(AIRCRAFT, &rules, &mut effects);
+    sim.fly_process(
+        AIRCRAFT,
+        &rules,
+        Some(rules.overlay_registry()),
+        &mut effects,
+    );
+    let aircraft = sim.substrate.entities.get(AIRCRAFT).unwrap();
+    assert_eq!(aircraft.emp_remaining(), 0);
+    assert!(!aircraft.deactivated.is_offline());
+    assert!(aircraft.lifecycle.object_alive());
+    let locomotor = aircraft.locomotor.as_ref().unwrap();
+    assert!(locomotor.is_powered());
+    assert_eq!(locomotor.fly_runtime().unwrap().active_power_spin(), None);
 }
 
 /// A Stop row's world as `fly_stop.py` builds it: the Process fixture with

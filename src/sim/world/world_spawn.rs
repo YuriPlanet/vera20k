@@ -3235,7 +3235,7 @@ impl Simulation {
         // Ares hook 0x44A04C (10053D60), right after that handover: the unit
         // takes the building's EMP counter and sparkle.
         if rules.ares()
-            || (rules.builtin_generic_emp()
+            || (rules.emp_enabled()
                 && self
                     .substrate
                     .entities

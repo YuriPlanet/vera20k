@@ -4035,7 +4035,6 @@ fn emit_detonation_receivers<'r>(
                 &mut out.effects,
             );
             world.apply_ares_emp_detonation(
-                false,
                 coordinate,
                 Some(detonation.source_id),
                 warhead,
@@ -4090,10 +4089,9 @@ fn emit_detonation_receivers<'r>(
             .entities
             .get(detonation.source_id)
             .map(|source| source.owner());
-        // A configured EMP warhead can hit a surfaced Tunnel mover in the
-        // built-in path. Keep that admission in the shared EMP receiver.
+        // BulletClass_Detonate (0x46920B -> Ares 3.0p1 0x10054390) shares
+        // the EMP receiver with GenericWarhead::Activate (call at 0x100727AF).
         world.apply_ares_emp_detonation(
-            false,
             coordinate,
             Some(detonation.source_id),
             warhead,

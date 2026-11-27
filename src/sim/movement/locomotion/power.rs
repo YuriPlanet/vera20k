@@ -6,11 +6,10 @@
 //! interface). The base `Power_On` (`0x0055A8F0`) writes 1, the base
 //! `Power_Off` (`0x0055A910`) writes 0 and `Is_Powered` (`0x0055A930`) reads
 //! it back; both setters then re-dispatch ILoco+60, returning the new flag.
-//! The base setters stop nothing and keep the destination. Every family
-//! keeps the base Power_On; Hover and Fly override Power_Off
-//! ([`Simulation::locomotor_power_off`](crate::sim::world::Simulation::locomotor_power_off)):
-//! a powered Hover (its byte, or any height) spins down and a moving one
-//! stops.
+//! The base setters keep the destination. Every family keeps the base
+//! Power_On. A powered Hover spins down and a moving one stops. A moving
+//! Fly starts a power-loss spin and runs its own Stop_Moving before the
+//! base Power_Off clears the powered byte.
 //!
 //! The flag itself lives on [`LocomotorState`]; this module owns the
 //! documentation of *when* it moves and what reads it, because that is the part
@@ -49,59 +48,79 @@
 //!
 //! ## The one observable effect
 //!
-//! **Hover.** An unpowered hover locomotor stops producing lift and sinks to the
-//! ground; every other family ignores the flag entirely today. That asymmetry is
-//! native, not a shortcut.
+//! **Hover and Fly.** The Hover stops producing lift and settles. A Fly's
+//! retained power-loss spin advances during Process while it has health.
 //!
 //! ## Frequency
 //!
 //! A Robot Tank (stock ROBO, a Hover) is unpowered for as long as it is
 //! offline (`sim::powered_unit`): every Robot Tank of a house whose Robot
-//! Control Center loses power or is lost settles and spins down. EMP-driven
-//! power is not modelled here. Deployment and ordinary depot servicing
-//! produce the other flag changes; depot departure reaches the shared Unit
-//! setter's current-cell power-on gate.
+//! Control Center loses power or is lost settles and spins down. EMP can
+//! shut down a Fly Aircraft at ground level. Deployment and depot servicing
+//! also drive power, with depot departure handled by the Unit setter.
 //!
 //! ## Explicitly out of scope
 //!
-//! EMP-drives-power; the Fly family's power-off RNG draws; anything reading ion
-//! sensitivity, ion storms or the special-flags ion path; any lightning-storm to
-//! locomotor-power coupling.
+//! Ion sensitivity, ion storms and the special-flags ion path, including
+//! lightning-storm to locomotor-power coupling.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sibling movement state only.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::sim::rng::SimRng;
-use crate::sim::world::ObjectSubstrate;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::world::FrameEffects;
 
 impl crate::sim::world::Simulation {
     /// ILocomotion+0x5C, `Power_Off`, on `id`'s active locomotor: Hover's
-    /// override (`0x00516BF0`, [`Self::hover_power_off`]) or the base
-    /// (`0x0055A910`).
-    ///
-    /// RESIDUAL: Fly's override (`0x004CFD20`) is not ported: while moving
-    /// it sets a spin of Scenario `RandomRanged(20, 30)`, negated when a
-    /// second `RandomRanged(0, 99)` is below 50, stops and zeroes the fall
-    /// speed. Stock play never reaches it (the callers are a Unit's dock and
-    /// depot service and Deactivate, which the stock `PoweredUnit=` type, a
-    /// Hover, alone reaches). Ares EMP deactivates an aircraft at height 0,
-    /// so a moving one there skips those two draws.
+    /// override (`0x00516BF0`, [`Self::hover_power_off`]), Fly's override
+    /// (`0x004CFD20`) or the base (`0x0055A910`). A moving Fly starts its
+    /// power-loss spin from two Scenario draws, stops while still powered,
+    /// and clears its fall speed. A stationary Fly only takes the base write.
     pub(crate) fn locomotor_power_off(
-        scenario_rng: &mut SimRng,
-        substrate: &mut ObjectSubstrate,
-        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        &mut self,
         id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
     ) {
-        if Self::hover_power_off(scenario_rng, substrate, resolved_terrain, id) {
+        if Self::hover_power_off(
+            &mut self.scenario_rng,
+            &mut self.substrate,
+            &self.resolved_terrain,
+            id,
+        ) {
             return;
         }
-        if let Some(locomotor) = substrate
+        let moving_fly = self.substrate.entities.get(id).is_some_and(|entity| {
+            entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|locomotor| locomotor.fly_runtime().is_some())
+                && super::super::motion_query::is_moving(entity) == Some(true)
+        });
+        if moving_fly {
+            let magnitude = self.scenario_rng.next_range_i32_inclusive(20, 30);
+            let negative = self.scenario_rng.next_range_i32_inclusive(0, 99) < 50;
+            if let Some(state) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|entity| entity.locomotor.as_mut())
+                .and_then(|locomotor| locomotor.fly_runtime_mut())
+            {
+                state.begin_power_spin(if negative { -magnitude } else { magnitude });
+            }
+            self.fly_stop_moving(id, rules, Some(rules.overlay_registry()), effects);
+        }
+        if let Some(locomotor) = self
+            .substrate
             .entities
             .get_mut(id)
             .and_then(|entity| entity.locomotor.as_mut())
         {
+            if moving_fly && let Some(state) = locomotor.fly_runtime_mut() {
+                state.reset_fall_counter();
+            }
             locomotor.power_off();
         }
     }

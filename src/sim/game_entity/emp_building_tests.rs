@@ -43,7 +43,6 @@ fn pulse(sim: &mut Simulation, rules: &RuleSet, source: u64, id: u64) {
         sim.resolved_terrain.as_ref(),
     );
     sim.apply_ares_emp_detonation(
-        false,
         crate::sim::projectile::ProjectileCoord {
             x: centre.x,
             y: centre.y,

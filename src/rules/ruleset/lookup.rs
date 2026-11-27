@@ -843,12 +843,7 @@ impl RuleSet {
 
     #[inline]
     pub(crate) fn emp_enabled(&self) -> bool {
-        self.ares || self.builtin_tunnel_emp
-    }
-
-    #[inline]
-    pub(crate) fn builtin_generic_emp(&self) -> bool {
-        self.builtin_generic_emp
+        self.ares || self.builtin_emp
     }
 
     /// Whether Phobos plays in this game: its Rules layers or map hold a key

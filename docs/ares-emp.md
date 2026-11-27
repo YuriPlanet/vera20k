@@ -1,10 +1,11 @@
 # Ares ground, airborne and building EMP
 
-Every build runs the full chain when the game plays Ares ([Ares](ares.md)).
-On Base-for-modders, a warhead with a nonzero `EMP.Duration` can also affect
-fully surfaced Tunnel movers with Ares off. Drive, Walk, Hover, Ship, Teleport,
-Fly, Jumpjet, Rocket and fully surfaced Tunnel victims use the same EMP timer
-and disable/restore path. It covers human and AI units, in or out of a Team,
+On Base-for-modders, a warhead with a nonzero `EMP.Duration` enables
+the same EMP receiver for ordinary projectiles, EMP cannons and
+GenericWarhead, including when the Ares rules mode is off. The area
+collector supplies Tunnel victims while they occupy a map cell.
+All admitted movers use the same EMP timer and disable/restore path. It covers
+human and AI units, in or out of a Team,
 with Spawn, Slave or Capture managers,
 a held Magnetron victim or a Temporal warp, harvesters, falling and
 mind-controlled victims, and the EMP.Threshold deaths. It admits every
@@ -15,6 +16,11 @@ spares a tank in a Tank Bunker and announces a hit on the player's miners and
 base (announceAttack).
 
 ## Building kinds
+
+The building-kind consumers below include the full Ares rules-mode paths.
+With Ares off, the shared EMP receiver still writes the counter and updates
+the building's operational state, power and radar. The separate House
+factory-availability and superweapon-status hooks follow the selected rules mode.
 
 IsTypeEMPProne (inlined in isEMPImmune10062D90) makes a BuildingType prone when
 it is Powered with a positive drain, or Radar, SuperWeapon/SuperWeapon2 (a
@@ -145,12 +151,13 @@ Airburst child fans and AttachEffect remain separate whole-weapon residuals.
 Parent `Airburst=yes` still enters the existing detonation receiver once, and
 EMP runs before ordinary damage and the later native Airburst tail; absence of
 a child-fan consumer is not a reason to suppress the parent's EMP. The
-building kinds above are covered through their own owners, not by this
-connected sample. Positive-output buildings (including explicit ImmuneToEMP=no providers and
-upgrade-added output) are not covered by the negative-power tower comparisons.
-Their EMP/output accounting and downstream House effects remain unproved;
-frequency is unknown and explicit use may expose incorrect power availability.
-No native immunity/output behavior is inferred from that coverage gap.
+building kinds above are covered through their own owners. Ares 3.0p1
+BuildingClass_PowerProduced_EMP (`0x44E855` → `0x100149D0` → `0x44E873`)
+returns zero for a plant while the EMP counter is positive, including the
+output from upgrades. Radar_Update_CheckEligible (`0x508EBC` → `0x10025070`
+→ `0x508F08`) skips an EMPed provider and checks the remaining buildings.
+Both consumers honor the EMP counter when a built-in projectile or
+GenericWarhead sets it with Ares off.
 
 ## Airborne victims and managers
 
@@ -181,11 +188,22 @@ the same queued EMPAIRecoverMission/Hunt as AI Drive.
 
 ## Every mover, miners, falling and controlled victims
 
-P1 delivery `0x10063070` uses the same immunity check for a fully surfaced
-Tunnel mover. The first hit (`0x10063213` → `0x100638A0`) calls Deactivate
-through the mover's inherited ILocomotion power slots (`0x0055A910` off and
-`0x0055A8F0` on). The Bullet applies the configured duration and the Techno
-visit advances the same EMP timer in either game mode.
+P1 delivery `0x10063070` uses the same immunity check for Tunnel movers.
+The first hit (`0x10063213` → `0x100638A0`) calls Deactivate `0x1004DA30`.
+ResetOrdersToGuard at `0x1004DA6B` reaches Tunnel Stop_Moving `0x00728C00`
+before Power_Off `0x0055A910`. An interrupted dig-in uses the existing exit
+state. A rising unit can finish rising while offline because Tunnel Process
+`0x00728E30` tests its motion state. The PreDigIn branch at `0x0072920C` uses
+P1 `0x1005E2F0` to finish after the destination is cleared. A unit travelling
+underground has already left the collector's map cell list and stays outside
+an ordinary ground EMP blast.
+
+A moving Fly on the ground uses the original Power_Off override at
+`0x004CFD20`. It takes `RandomRanged(20, 30)` and a `RandomRanged(0, 99)` sign
+roll, calls Stop_Moving while still powered and clears the fall counter. The
+offline facing steps at `0x004CE5A0` slow to a stop. Base Power_On `0x0055A8F0`
+clears the spin on the next Fly process visit. A stationary Fly takes no spin
+draws. The Techno visit advances EMP in either game mode.
 Each admitted mover reaches shared owners: Deactivate's Power_Off (Hover's
 override516BF0 spins it down and settles it), the Ares deactivated-Unit stop of
 TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
@@ -438,15 +456,16 @@ squared lengths to avoid platform sqrt differences; exact zero/half-cell and XYZ
 boundary controls are pinned, while arbitrary FSQRT rounding boundaries remain a
 small unproven precision residual.
 
-Ledger: the EMP delivery/expiry blocks draw no RNG and call no DetachAll; the
-reused Hunt handler retains its existing cadence draw and the Anim constructor
+The delivery and expiry blocks themselves draw no RNG and call no DetachAll.
+The reused Hunt handler retains its existing cadence draw and the Anim constructor
 can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
-The building kinds add no draws or DetachAll of their own; their owners keep
-theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), and a factory
-queue's suspend/resume and a Super's hold/release pause and resume their
-timers. The undeploy copy writes the unit's counter only.
+The building kinds add no draws or DetachAll of their own. A Hover Robot
+Tank's Deactivate draws twice in Power_Off. Moving Fly Power_Off also draws
+twice, before the reused Stop_Moving which can draw if it needs a random
+attack cell. Factory queues and superweapon charge keep their existing
+timer owners. The undeploy copy writes the unit's counter only.
 
 Regressions through real fire on retail Hills rules, with an EMP gun layered
 in through the map, are in
@@ -465,12 +484,9 @@ Delivery's bunker test (10062357..10062376) spares a victim whose
 BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
 PenetratesBunker; the bunker itself is an ordinary building victim.
 
-Tunnel movement transitions and underground states remain open. Delivery
-skips a Tunnel unit during those states, so a hit then leaves its movement and
-EMP counter as they were. A landed Aircraft's Deactivate reaches Fly's Power_Off
-override4CFD20, whose Random(20, 30) spin and stop are not ported
-(`locomotor_power_off`); the base flag write runs instead, without those two
-scenario draws. A LaserFencePost's fence sections are neither dropped by
+The held or recently dropped Magnetron Aircraft exception still has its own
+unpowered-airborne fall path. The grounded Fly spin does not model dormant
+ActivateVeins at `0x004CE636`. A LaserFencePost's fence sections are neither dropped by
 DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
 (trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
 mods with LaserFencePost types). The Super pass still reads only a provider's

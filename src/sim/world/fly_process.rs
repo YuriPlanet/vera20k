@@ -17,12 +17,9 @@
 //! tools/spatial_oracle/fly_map_edge.py runs the map-edge admission, which
 //! [`fly_map_edge`] replays; aircraft_crash.py the dead fall.
 //!
-//! RESIDUAL: the spin (`0x004CE5A0`). Power_Off (`0x004CFD20`) starts it on
-//! a moving Fly, with two Scenario draws, and then the unpowered fall
-//! (`Simulation::fly_crash_fall`) drops it. Both are unreachable natively:
-//! only an EMP powers off an aircraft, and EMPulseClass's constructor
-//! (`0x004C52B0`) has no caller or pointer in the executable (rulesmd's
-//! `[EMPuls]` says it is disabled in code).
+//! An EMP can start a grounded Fly's power-loss spin (`0x004CFD20`, two
+//! Scenario draws). The spin is applied before UpdateFlightMotion
+//! (`0x004CCBB8` to `0x004CE5A0`). Stock rules have no producer.
 //!
 //! Horizontal_Step ends by deselecting another house's object over the
 //! player's shroud ([`Simulation::deselect_over_player_shroud`]).
@@ -198,6 +195,22 @@ impl Simulation {
             let _ = self
                 .substrate
                 .mission_commence_exact(id, self.session.binary_frame());
+        }
+        // 0x004CE636 also invokes the cell's dormant ActivateVeins
+        // (0x00486920) on power restoration, as the Hover spin does.
+        if let Some(entity) = self.substrate.entities.get_mut(id)
+            && entity.health.current() > 0
+            && let Some(locomotor) = entity.locomotor.as_mut()
+        {
+            let powered = locomotor.is_powered();
+            if let Some(delta) = locomotor
+                .fly_runtime_mut()
+                .and_then(|state| state.advance_power_spin(powered))
+            {
+                let frame = self.session.binary_frame();
+                let facing = entity.body_facing.current(frame).wrapping_add(delta);
+                entity.body_facing.snap(facing, frame);
+            }
         }
         if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
             stats.impact = true;

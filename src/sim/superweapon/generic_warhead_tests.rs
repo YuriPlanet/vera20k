@@ -653,6 +653,46 @@ fn generic_warhead_checks_curtain_before_emp_and_attach_effect_with_ares_off() {
 }
 
 #[test]
+fn generic_warhead_emp_updates_house_power_and_uses_backup_radar_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let (mut sim, rules, owner, typ, target) = fixture(
+        "[Strike]\nSW.Damage=0\n[Payload]\nEMP.Duration=3\n\
+         [TARGET]\nPower=100\nRadar=yes\nImmuneToEMP=no\n",
+        "Russians",
+    );
+    let victim = sim.entities().get(target).unwrap().owner();
+    crate::sim::arena_fixture::discover(&mut sim, target);
+    let read_power_and_radar = |sim: &Simulation| {
+        let states = sim.power_states();
+        (
+            states[&victim].total_output(),
+            crate::sim::power_system::has_active_radar(states, victim),
+        )
+    };
+    let step = |sim: &mut Simulation| {
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+    };
+    step(&mut sim);
+    assert_eq!(read_power_and_radar(&sim), (100, true));
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    step(&mut sim);
+    assert!(sim.entities().get(target).unwrap().is_under_emp());
+    assert_eq!(read_power_and_radar(&sim), (0, false));
+    let backup = sim
+        .spawn_object_at_height("TARGET", "Americans", 23, 23, 0, 0, &rules)
+        .unwrap();
+    crate::sim::arena_fixture::discover(&mut sim, backup);
+    step(&mut sim);
+    assert!(sim.entities().get(target).unwrap().is_under_emp());
+    assert_eq!(read_power_and_radar(&sim), (100, true));
+    for _ in 0..3 {
+        step(&mut sim);
+    }
+    assert!(!sim.entities().get(target).unwrap().is_under_emp());
+    assert_eq!(read_power_and_radar(&sim), (200, true));
+}
+
+#[test]
 fn ares_generic_warhead_source_obeys_damage_self() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     for damage_self in [false, true] {

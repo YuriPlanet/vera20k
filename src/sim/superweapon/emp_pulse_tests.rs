@@ -72,9 +72,13 @@ const ART: &str = "[CANNON]\nFoundation=1x1\n[GUN]\nFoundation=1x1\n[DEPOT]\nFou
     [BALL]\n[PULSBALL]\n";
 
 fn rules(extra: &str) -> RuleSet {
+    rules_with_art(extra, ART)
+}
+
+fn rules_with_art(extra: &str, art: &str) -> RuleSet {
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
-    let art = IniFile::from_str(ART);
+    let art = IniFile::from_str(art);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     rules
@@ -273,6 +277,114 @@ fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
         step(&mut sim, &rules);
     }
     assert_eq!(mission(&sim, cannon), Some(MissionType::Guard));
+}
+
+#[test]
+fn builtin_emp_cannon_shell_disables_enemy_radar_with_ares_off() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = rules(
+        "[PulseWH]\nEMP.Duration=40\n[PulseGun]\nDamage=1\n\
+         [DEPOT]\nImmuneToEMP=no\nRadar=yes\nPower=100\n",
+    );
+    assert!(!rules.ares());
+    let (mut sim, _) = scene(&rules);
+    building(&mut sim, &rules, "CANNON", (20, 20));
+    let radar = sim
+        .spawn_object_at_height("DEPOT", "Americans", 26, 26, 0, 0, &rules)
+        .unwrap();
+    crate::sim::arena_fixture::discover(&mut sim, radar);
+    let victim = sim.entities().get(radar).unwrap().owner();
+    let has_radar =
+        |sim: &Simulation| crate::sim::power_system::has_active_radar(sim.power_states(), victim);
+    step(&mut sim, &rules);
+    assert!(has_radar(&sim));
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+
+    for _ in 0..200 {
+        step(&mut sim, &rules);
+        if sim.entities().get(radar).unwrap().is_under_emp() {
+            break;
+        }
+    }
+    assert!(sim.entities().get(radar).unwrap().is_under_emp());
+    step(&mut sim, &rules);
+    assert!(!has_radar(&sim));
+}
+
+#[test]
+fn builtin_laser_emp_cannon_aims_its_barrel_from_live_tarcom() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let art = ART.replace(
+        "[CANNON]\nFoundation=1x1",
+        "[CANNON]\nFoundation=1x1\nPrimaryFireFLH=0,0,768",
+    );
+    let rules = rules_with_art("[PulseGun]\nIsLaser=yes\n", &art);
+    assert!(!rules.ares());
+    let (mut sim, _) = scene(&rules);
+    let cannon = building(&mut sim, &rules, "CANNON", (20, 20));
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+    for _ in 0..200 {
+        step(&mut sim, &rules);
+        if sim.projectiles.iter().next().is_some() {
+            break;
+        }
+    }
+    let (_, shell) = sim.projectiles.iter().next().unwrap();
+    let building = sim.substrate.entities.get(cannon).unwrap();
+    assert_eq!(building.attack_target.target(), None);
+    // Original 0x0043EA42..0x0043EB0F executed for delta
+    // (-5120, -5120, -768) under the native x87 control word.
+    assert_eq!(building.barrel_elevation().destination(), 0x446A);
+    assert_eq!(shell.target(), ProjectileTarget::Cell { rx: 26, ry: 26 });
+    assert!(f64::from_bits(shell.velocity().native()[2].bits()) > 0.0);
+}
+
+#[test]
+fn builtin_occupied_emp_cannon_fires_from_its_current_port() {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let art = ART.replace(
+        "[CANNON]\nFoundation=1x1",
+        "[CANNON]\nFoundation=1x1\nMuzzleFlash0=30,15",
+    );
+    let rules = rules_with_art(
+        "[CANNON]\nCanBeOccupied=yes\nCanOccupyFire=no\nMaxNumberOccupants=1\n",
+        &art,
+    );
+    assert!(!rules.ares());
+    let (mut sim, _) = scene(&rules);
+    let cannon = building(&mut sim, &rules, "CANNON", (20, 20));
+    let occupant = building(&mut sim, &rules, "GUN", (18, 18));
+    sim.substrate
+        .entities
+        .get_mut(cannon)
+        .unwrap()
+        .passenger_role_mut()
+        .set_occupants_for_test(vec![occupant], 0);
+    assert!(launch(&mut sim, &rules, "Pulse", (26, 26)));
+    let mut ball = None;
+    for _ in 0..200 {
+        step(&mut sim, &rules);
+        if ball.is_none() {
+            ball = sim.substrate.anims.iter().find_map(|(_, anim)| {
+                (sim.interner.resolve(anim.type_id()) == "BALL").then(|| anim.world_coord())
+            });
+        }
+        if sim.projectiles.iter().next().is_some() {
+            break;
+        }
+    }
+    // 0x00453AA2..0x00453AE5 converts port 0's (30, 15) pixels to
+    // (+256, 0) and adds the building's virtual +AC anchor.
+    let expected = crate::sim::projectile::ProjectileCoord::new(21 * 256, 20 * 256, 0);
+    let ball = ball.unwrap();
+    assert_eq!(
+        [ball.x, ball.y, ball.z],
+        [expected.x, expected.y, expected.z]
+    );
+    assert_eq!(
+        sim.projectiles.iter().next().unwrap().1.launch_origin(),
+        expected
+    );
 }
 
 /// Ares hook 44CCE7 (10036570): an `EMPulse.Cannons` building without

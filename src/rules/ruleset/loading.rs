@@ -397,11 +397,9 @@ impl RuleSet {
                     warhead.bind_builtin_nuke_impact(retained.combat());
                 }
                 rules.builtin_attach_effects |= builtin;
-                rules.builtin_tunnel_emp |= ares.is_some_and(|settings| settings.duration() != 0);
+                rules.builtin_emp |= ares.is_some_and(|settings| settings.duration() != 0);
                 rules.builtin_generic_attach_effects |= generic
                     && ares.is_some_and(|settings| settings.attach_effect().duration() != 0);
-                rules.builtin_generic_emp |=
-                    generic && ares.is_some_and(|settings| settings.duration() != 0);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
@@ -2099,8 +2097,7 @@ impl RuleSet {
             ares: false,
             builtin_attach_effects: false,
             builtin_generic_attach_effects: false,
-            builtin_tunnel_emp: false,
-            builtin_generic_emp: false,
+            builtin_emp: false,
             phobos: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),

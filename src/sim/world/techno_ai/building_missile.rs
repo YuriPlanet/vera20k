@@ -268,7 +268,7 @@ fn emp_cannon(
             let flh = fire_coordinate(
                 sim,
                 rules,
-                &FireSource::of_entity(entity),
+                &FireSource::with_building_port(entity, object),
                 object,
                 0,
                 0,
@@ -455,15 +455,35 @@ fn weapon_zero<'r>(
     )
 }
 
-/// BuildingClass vt+0x2C8 (`0x0043E940`) for an EMP cannon whose weapon 0 is
-/// not `IsLaser=` (`+0x149`; `0x0043EB58..0x0043ED11`): the pitch
-/// [`emp_arc_pitch`] gives from vt+0x300 at the launch speed. The target's
-/// two ground-height reads and the FLH heading are discarded
-/// (`0x0043EB6D`, `0x0043EBEB`). `None` where neither arc reaches the cell:
-/// native then returns an uninitialized stack word (`0x0043ED05`).
+/// BuildingClass vt+0x2C8 (`0x0043E940`). The laser arm starts at
+/// `0x0043E968`; the cannon's ballistic aim (`0x0043EB58..0x0043ED11`)
+/// solves from vt+0x300 at the launch speed. P1 leaves this virtual intact.
+/// Native's two ground-height reads and the FLH heading are discarded
+/// (`0x0043EB6D`, `0x0043EBEB`). A refused ballistic solution keeps the
+/// current barrel in VERA because the native stack word is uninitialized.
 fn emp_barrel_pitch(sim: &Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) -> Option<u16> {
-    let speed = emp_launch_speed(sim, rules, id, cell);
     let entity = sim.substrate.entities.get(id)?;
+    let object = sim.object_type(entity.type_ref(), rules)?;
+    let weapon_record = crate::sim::combat::combat_weapon::get_weapon_record(
+        entity,
+        object,
+        0,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    );
+    if let Some(record) = weapon_record
+        && record.weapon(rules).is_some_and(|weapon| weapon.is_laser)
+    {
+        return fire_coord::building_laser_barrel_pitch(
+            sim,
+            rules,
+            entity,
+            object,
+            record.flh.height,
+        );
+    }
+    let speed = emp_launch_speed(sim, rules, id, cell);
     let source = fire_coord::turret_pivot_coordinate(sim, rules, entity, 0)?;
     emp_arc_pitch(sim, rules, id, source, cell, speed)
 }
@@ -506,7 +526,7 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
     let flh = fire_coordinate(
         sim,
         rules,
-        &FireSource::of_entity(entity),
+        &FireSource::with_building_port(entity, object),
         object,
         0,
         0,

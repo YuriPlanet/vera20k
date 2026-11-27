@@ -324,12 +324,7 @@ impl Simulation {
         self.reset_orders_to_guard(id, rules, effects);
         self.object_deselect(id);
         if foot {
-            Self::locomotor_power_off(
-                &mut self.scenario_rng,
-                &mut self.substrate,
-                &self.resolved_terrain,
-                id,
-            );
+            self.locomotor_power_off(id, rules, effects);
         }
         let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(

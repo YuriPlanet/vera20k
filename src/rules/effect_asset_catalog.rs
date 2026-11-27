@@ -360,10 +360,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // producer through this same closure, for graphical and headless loads.
     if ares_way || configured_emp || rules.temporal_attach_effects_enabled() {
         for object in rules.all_objects() {
-            if (ares_way
-                || rules.builtin_generic_emp()
-                || configured_emp
-                    && object.locomotor == crate::rules::locomotor_type::LocomotorKind::Tunnel)
+            if (ares_way || configured_emp)
                 && let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles())
             {
                 insert(name);

@@ -92,7 +92,6 @@ pub(super) fn launch(
         &mut death,
     );
     sim.apply_ares_emp_detonation(
-        true,
         impact,
         (source != RAD_NO_ATTACKER).then_some(source),
         warhead,

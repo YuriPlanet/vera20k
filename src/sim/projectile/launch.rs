@@ -134,6 +134,40 @@ pub(crate) fn solve_launch_direction(
     )
 }
 
+/// BuildingClass::GetBarrelPitch's laser arm, `0x0043EA2F..0x0043EB19`.
+/// It divides the planar Sqrt_Approx by the truncated spatial Sqrt_Approx,
+/// clamps above 1, then uses AsinFromTable4CAD80. The result is the visual
+/// barrel facing; Mission_Missile computes its actual shot arc separately.
+pub(crate) fn laser_barrel_pitch(delta: ProjectileCoord) -> Option<u16> {
+    if delta.z == 0 {
+        return Some(0x4000);
+    }
+    let [x, y, z] = [delta.x, delta.y, delta.z].map(X::load_i32);
+    let spatial = int(sqrt(X::add(X::add(square(x), square(z)), square(y))));
+    if spatial <= 0 {
+        return None;
+    }
+    let planar_squared = delta
+        .x
+        .wrapping_mul(delta.x)
+        .wrapping_add(delta.y.wrapping_mul(delta.y));
+    let planar = sqrt(X::load_i32(planar_squared));
+    let one = X::load_i32(1);
+    let ratio = round(X::div(planar, X::load_i32(spatial)).ok()?);
+    let angle = AcosTable::retail()
+        .asin_lookup(if less(one, ratio) { one } else { ratio })
+        .1;
+    let units = int(X::mul(
+        X::mul(angle, X::load_i32(0x4000)),
+        d(NativeF64Bits::from_bits(0x3fe4_5f30_6dc9_c883)),
+    )) as u16;
+    Some(if delta.z < 0 {
+        0x8000_u16.wrapping_sub(units)
+    } else {
+        units
+    })
+}
+
 /// The heading of an EMP cannon's shot (`0x0044D017..0x0044D065`): the
 /// DirStruct of `atan2(flh.y - centre.y, centre.x - flh.x)`, each delta
 /// formed by FILD/FISUB.

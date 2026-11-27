@@ -372,46 +372,129 @@ fn ares_emp_stops_hover_and_ship_movers() {
     }
 }
 
-/// The P1 delivery at 0x10063070 admits a surfaced Tunnel mover and takes
+fn configured_tunnel_emp_rules() -> Option<RuleSet> {
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let mut patch = IniFile::from_str(PATCH);
+    patch.merge(&IniFile::from_str(
+        "[General]\nTunnelSpeed=1\n\
+         [HTNK]\nLocomotor={4A582743-9839-11D1-B709-00A024DDAFD1}\nEMP.Threshold=no\n",
+    ));
+    let rules = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)?.rules;
+    assert!(!rules.ares() && !rules.ares_form());
+    Some(rules)
+}
+
+fn tunnel_emp_state(
+    sim: &Simulation,
+    victim: u64,
+) -> (crate::sim::movement::tunnel_movement::TunnelState, bool) {
+    let mover = sim
+        .entities()
+        .get(victim)
+        .unwrap()
+        .locomotor
+        .as_ref()
+        .unwrap();
+    (mover.tunnel_runtime().unwrap().state(), mover.is_powered())
+}
+
+/// The P1 delivery at 0x10063070 admits a surfaced Tunnel mover, using
 /// its ILocomotion Power_Off/Power_On slots through the ordinary EMP lifecycle.
 #[test]
 fn configured_emp_stops_and_recovers_a_surfaced_tunnel_mover_with_ares_off() {
     use crate::sim::movement::tunnel_movement::TunnelState;
 
-    let _stock = crate::rules::ares_switch::read_ares_way(false);
-    let mut patch = IniFile::from_str(PATCH);
-    patch.merge(&IniFile::from_str(
-        "[HTNK]\nLocomotor={4A582743-9839-11d1-B709-00A024DDAFD1}\nEMP.Threshold=no\n",
-    ));
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
-    else {
+    let Some(rules) = configured_tunnel_emp_rules() else {
         return;
     };
-    let rules = retail.rules;
-    assert!(!rules.ares() && !rules.ares_form());
     let (mut sim, grid) = scene(&rules, false);
     let gun = spawn(&mut sim, &rules, "MTNK", "Americans", 12, 10);
     let victim = spawn(&mut sim, &rules, "HTNK", "Russians", 15, 10);
-    let locomotor = |sim: &Simulation| {
-        let mover = sim
-            .entities()
-            .get(victim)
-            .unwrap()
-            .locomotor
-            .as_ref()
-            .unwrap();
-        (mover.tunnel_runtime().unwrap().state(), mover.is_powered())
-    };
-    assert_eq!(locomotor(&sim), (TunnelState::Idle, true));
-    assert!(
-        fire(&mut sim, &rules, &grid, gun, victim, victim),
-        "an EMP shell disables a Tunnel unit on the surface"
-    );
+    assert_eq!(tunnel_emp_state(&sim, victim), (TunnelState::Idle, true));
+    assert!(fire(&mut sim, &rules, &grid, gun, victim, victim));
     assert!(offline(&sim, victim));
-    assert_eq!(locomotor(&sim), (TunnelState::Idle, false));
+    assert_eq!(tunnel_emp_state(&sim, victim), (TunnelState::Idle, false));
     assert!(run(&mut sim, &rules, &grid, 151, |sim| emp(sim, victim) == 0));
     assert!(!offline(&sim, victim));
-    assert_eq!(locomotor(&sim), (TunnelState::Idle, true));
+    assert_eq!(tunnel_emp_state(&sim, victim), (TunnelState::Idle, true));
+}
+
+fn ordered_tunnel_trip(rules: &RuleSet) -> (Simulation, Arc<PathGrid>, u64) {
+    let (mut sim, grid) = scene(rules, false);
+    let victim = spawn(&mut sim, rules, "HTNK", "Americans", 7, 10);
+    spawn(&mut sim, rules, "ENGINEER", "Russians", 23, 22);
+    order(
+        &mut sim,
+        Command::Move {
+            entity_id: victim,
+            target_rx: 24,
+            target_ry: 10,
+        },
+    );
+    (sim, grid, victim)
+}
+
+fn emp_over_tunnel(sim: &mut Simulation, rules: &RuleSet, victim: u64) {
+    let center = location(sim, victim);
+    sim.apply_ares_emp_detonation(
+        crate::sim::projectile::ProjectileCoord::new(center.x, center.y, 0),
+        None,
+        rules.warhead("EMPWH").unwrap(),
+        rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+}
+
+#[test]
+fn configured_emp_cancels_a_tunnel_dig_in_and_recovers_with_ares_off() {
+    use crate::sim::movement::tunnel_movement::TunnelState;
+
+    let Some(rules) = configured_tunnel_emp_rules() else {
+        return;
+    };
+    let (mut sim, grid, victim) = ordered_tunnel_trip(&rules);
+    assert!(run(&mut sim, &rules, &grid, 120, |sim| {
+        tunnel_emp_state(sim, victim).0 == TunnelState::DiggingIn
+    }));
+    emp_over_tunnel(&mut sim, &rules, victim);
+    assert_eq!(tunnel_emp_state(&sim, victim), (TunnelState::DugOut, false));
+    assert!(run(&mut sim, &rules, &grid, 40, |sim| {
+        tunnel_emp_state(sim, victim).0 == TunnelState::Idle
+    }));
+    assert!(emp(&sim, victim) > 0 && offline(&sim, victim));
+    assert!(run(&mut sim, &rules, &grid, 151, |sim| emp(sim, victim) == 0));
+    assert_eq!(tunnel_emp_state(&sim, victim), (TunnelState::Idle, true));
+}
+
+#[test]
+fn configured_emp_spread_reaches_a_rising_tunnel_but_skips_its_unmarked_travel() {
+    use crate::sim::movement::tunnel_movement::TunnelState;
+
+    let Some(rules) = configured_tunnel_emp_rules() else {
+        return;
+    };
+    let (mut sim, grid, victim) = ordered_tunnel_trip(&rules);
+    assert!(run(&mut sim, &rules, &grid, 240, |sim| {
+        tunnel_emp_state(sim, victim).0 == TunnelState::Digging
+    }));
+    assert!(!sim.entities().get(victim).unwrap().lifecycle.cell_marked());
+    emp_over_tunnel(&mut sim, &rules, victim);
+    assert_eq!(emp(&sim, victim), 0);
+    assert!(run(&mut sim, &rules, &grid, 400, |sim| {
+        tunnel_emp_state(sim, victim).0 == TunnelState::PreDigOut
+    }));
+    assert!(sim.entities().get(victim).unwrap().lifecycle.cell_marked());
+    emp_over_tunnel(&mut sim, &rules, victim);
+    assert_eq!(
+        tunnel_emp_state(&sim, victim),
+        (TunnelState::PreDigOut, false)
+    );
+    assert!(run(&mut sim, &rules, &grid, 80, |sim| {
+        tunnel_emp_state(sim, victim).0 == TunnelState::Idle
+    }));
+    assert!(emp(&sim, victim) > 0 && offline(&sim, victim));
+    assert!(run(&mut sim, &rules, &grid, 151, |sim| emp(sim, victim) == 0));
+    assert_eq!(tunnel_emp_state(&sim, victim), (TunnelState::Idle, true));
 }
 
 /// A V3 rocket tilting on its launcher takes the Aircraft branch of
@@ -551,7 +634,6 @@ fn ares_emp_warnings_require_a_malicious_warhead() {
                 sim.resolved_terrain.as_ref(),
             );
             sim.apply_ares_emp_detonation(
-                false,
                 crate::sim::projectile::ProjectileCoord {
                     x: centre.x,
                     y: centre.y,
