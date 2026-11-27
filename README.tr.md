@@ -38,6 +38,8 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
 4. Entegre çok oyunculu istemci
 
+[Geliştirme önceliklerimiz](docs/roadmap.md) sırasıyla **1. Performans**, **2. Yol bulma** ve **3. Kullanıcı arayüzü ve deneyimi**.
+
 ## Katkıda bulunma
 
 Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi

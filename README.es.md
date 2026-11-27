@@ -39,6 +39,8 @@ palabra sobre su rumbo.
 3. Incorporar funciones ya conocidas de otros RTS y algunas nunca vistas.
 4. Cliente multijugador integrado
 
+Nuestras [prioridades de desarrollo](docs/roadmap.md) son **1. Rendimiento**, **2. Búsqueda de rutas** y **3. Interfaz y experiencia de usuario**.
+
 ## Contribuir
 
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir

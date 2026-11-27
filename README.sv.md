@@ -38,6 +38,8 @@ Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
 3. Integrera kända RTS-funktioner och några som aldrig setts förut.
 4. Integrerad flerspelarklient
 
+Våra [utvecklingsprioriteringar](docs/roadmap.md) är **1. Prestanda**, **2. Vägval för enheter** och **3. Gränssnitt och användarupplevelse**.
+
 ## Bidra
 
 Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver

@@ -38,6 +38,8 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 3. Đưa vào các tính năng RTS quen thuộc và cả một số tính năng chưa từng có.
 4. Client chơi mạng tích hợp sẵn
 
+[Ưu tiên phát triển](docs/roadmap.md) theo thứ tự là **1. Hiệu năng**, **2. Tìm đường** và **3. Giao diện và trải nghiệm người dùng**.
+
 ## Đóng góp
 
 Người đóng góp có thể nhận phụ trách các phần của engine, với nhiều tự do để thực hiện những thay

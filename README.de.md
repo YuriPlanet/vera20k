@@ -39,6 +39,8 @@ Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) 
 3. Bekannte RTS-Funktionen integrieren und einige, die es noch nie gab.
 4. Integrierter Mehrspieler-Client
 
+Unsere [Entwicklungsprioritäten](docs/roadmap.md) sind **1. Leistung**, **2. Wegfindung** und **3. Benutzeroberfläche und Bedienbarkeit**.
+
 ## Mitmachen
 
 Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
