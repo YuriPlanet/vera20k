@@ -376,7 +376,7 @@ impl GameConfig {
     }
 
     /// VERA: RA2 mode for this launch, once VERA.INI has been read: the
-    /// `-ra2` switch already recorded, or the player's saved Options choice
+    /// `-ra2` switch already recorded, or the player's saved edition
     /// (`[VERA] RA2Mode=`, `saved_choice`). Either turns it on for the whole
     /// process (`util::ra2_launch`) and selects its INI roots.
     pub fn use_ra2_mode(&mut self, saved_choice: bool) {

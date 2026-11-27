@@ -148,8 +148,29 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
+    /// What the Wasm modules change of its look; `None` for most objects
+    /// ([`ModuleFacts`]).
+    module: Option<Box<ModuleFacts>>,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
+}
+
+/// What the Wasm modules change of an object's look, kept out of the
+/// record of an object they leave alone: the record is copied for every
+/// object each lent tick.
+#[derive(Clone, Debug, Default)]
+struct ModuleFacts {
+    /// `GameEntity::module_tint`.
+    tint: Option<([u8; 3], f64)>,
+}
+
+impl ModuleFacts {
+    fn capture(entity: &GameEntity) -> Option<Box<Self>> {
+        let facts = Self {
+            tint: entity.module_tint(),
+        };
+        facts.tint.is_some().then(|| Box::new(facts))
+    }
 }
 
 /// `GameEntity`'s answers to the queries drawing asks it.
@@ -625,6 +646,7 @@ impl ObjectRecord {
     fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
         let pose = RenderPose::read(entity, at.binary_frame);
         let answers = Answers::of(entity);
+        let module = ModuleFacts::capture(entity);
         // `object_location` on the live map, which placing, the HUD and the
         // radar all read.
         let location =
@@ -724,6 +746,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
+            module,
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -869,6 +892,11 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// The module tint: `[R, G, B]` and the intensity, 1.0 = full.
+    pub(crate) fn module_tint(&self) -> Option<([u8; 3], f64)> {
+        self.module.as_ref().and_then(|module| module.tint)
     }
 
     #[cfg(feature = "phobos")]

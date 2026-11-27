@@ -341,7 +341,7 @@ module; a game refusal is `Err(Refused)`.
 | `fire_weapon(shooter, slot)`, `fire_weapon_at(shooter, slot, at)`, `fire_weapon_at_cell(shooter, slot, at)` | Fires weapon slot 0 or 1 now; `Refused` when it cannot fire (reloading, out of range) | v1 |
 | `launch_super_weapon(house, kind, at)` | Launches the house's superweapon | v1 |
 | `spawn_anim(at, anim)` | Plays an animation (`anim_id`) | v1 |
-| `attach_anim(target, anim)` | Plays an animation once, attached to the object | later in the RFC; implemented here |
+| `attach_anim(target, anim)`, `attach_anim_for(target, anim, frames)`, `detach_anim(target, anim)` | Plays an animation once attached to the object, or keeps it looping for `frames` frames (negative: until `detach_anim`); `detach_anim` with -1 removes all this module keeps there | preview |
 | `end_for(house, Outcome::Win \| Outcome::Lose)` | Ends the match for a house | v1 |
 | `set_score(house, n)`, `add_score(house, n)` | Score | v1 |
 | `log(line)` | The action form of `log` | v1 |

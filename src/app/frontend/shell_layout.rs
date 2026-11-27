@@ -143,7 +143,10 @@ pub(crate) fn on<L>(gpu: &GpuContext, layout: impl FnOnce(i32, i32, ShellScale) 
 
 /// Main menu dialog `0xE2`.
 pub(crate) fn main_menu_layout(gpu: &GpuContext) -> MainMenuShellLayout {
-    pick(gpu, compute_layout)
+    let (w, h) = shell_screen_size(gpu);
+    let fitted =
+        fills_window(gpu) || !crate::ui::main_menu_shell::retail_column_fits(w as i32, h as i32);
+    pick_at(fitted, (w, h), compute_layout)
 }
 
 /// A front-end box's rects on the window's mapping.

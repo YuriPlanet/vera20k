@@ -35,6 +35,7 @@ export enum ActionKind {
   Push = 1035,
   RaiseEvent = 1042,
   SetFacing = 1045,
+  DetachAnim = 1046,
   /** Trigger-only kinds ([`ActionDef::set_var`], [`ActionDef::module`]). */
   SetVar = 1024,
   Module = 1036,
