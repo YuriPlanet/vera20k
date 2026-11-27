@@ -109,6 +109,7 @@ impl FamilyPage {
 
     pub(crate) fn nodes(self) -> vera20k_gui::NodeSpec {
         match self {
+            Self::MainMenu => crate::ui::main_menu_shell::nodes(crate::util::ra2_launch::enabled()),
             Self::Campaign => crate::ui::campaign_shell::nodes(),
             _ => self.spec().nodes(),
         }

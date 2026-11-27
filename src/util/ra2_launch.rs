@@ -2,7 +2,7 @@
 //!
 //! VERA-only (docs/ra2-mode.md). Two things turn it on for a launch: the
 //! `-ra2` switch, which [`configure`] reads from argv before any config load,
-//! and the player's Options choice (`[VERA] RA2Mode=yes` in VERA.INI), which
+//! and the player's saved edition (`[VERA] RA2Mode=yes` in VERA.INI), which
 //! startup reads with VERA.INI (`GameConfig::use_ra2_mode`). Like a mod, the
 //! choice holds until the next start. It is stored here so every
 //! [`crate::util::config::GameConfig`] load — the app's own and the many

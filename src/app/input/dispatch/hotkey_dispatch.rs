@@ -1007,6 +1007,12 @@ fn dispatch_retail_hotkey(
         HotkeyCommand::RelationColors => {
             let presentation = &mut match_state.match_presentation;
             presentation.relation_colors = !presentation.relation_colors;
+            // Both toggles write the same override map, so turning one on
+            // turns the other off rather than leaving the last word to the
+            // rebuild order.
+            if presentation.relation_colors {
+                presentation.team_colors = false;
+            }
             match_state.refresh_relation_colors();
         }
         // VERA: turn HD art on or off at once (the HD art over the world and
@@ -1048,6 +1054,40 @@ fn dispatch_retail_hotkey(
                 Some(on),
             );
             log::info!("HD art: {}", if on { "on" } else { "off" });
+        }
+        // VERA: toggle team colours — draw every house by its launch team, so
+        // one team shares one colour on the map and the radar. Unlike the
+        // relation toggle this groups by the match's real teams, which never
+        // change, and not by the alliance graph, which does. Pure
+        // presentation, like the relation toggle.
+        HotkeyCommand::TeamColours => {
+            let presentation = &mut match_state.match_presentation;
+            presentation.team_colors = !presentation.team_colors;
+            if presentation.team_colors {
+                presentation.relation_colors = false;
+            }
+            match_state.refresh_relation_colors();
+            // The toggle is silent when no house carries a team, which is
+            // what a player who never picked teams sees; name it in the log
+            // rather than leaving "the key did nothing".
+            let recoloured = match_state
+                .match_presentation
+                .relation_color_map
+                .as_ref()
+                .map_or(0, |map| {
+                    let plain = &match_state.match_presentation.house_color_map;
+                    map.iter()
+                        .filter(|(owner, color)| plain.get(*owner) != Some(*color))
+                        .count()
+                });
+            log::info!(
+                "VERA team colours {}: {recoloured} house(s) recoloured",
+                if match_state.match_presentation.team_colors {
+                    "on"
+                } else {
+                    "off"
+                }
+            );
         }
     }
 }

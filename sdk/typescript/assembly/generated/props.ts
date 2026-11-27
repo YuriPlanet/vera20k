@@ -234,4 +234,5 @@ export namespace Prop {
   export const AutomationAllowed: Prop = 227;
   export const ROTMultiplier: Prop = 228;
   export const Backdrop: Prop = 229;
+  export const ImageOverride: Prop = 230;
 }

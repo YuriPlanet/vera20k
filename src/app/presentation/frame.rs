@@ -167,34 +167,45 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
-    /// What the client modules change of its look and what their status
+    /// What modules change of its look and what their status
     /// templates read of it; `None` for most objects ([`ModuleFacts`]).
     module: Option<Box<ModuleFacts>>,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
 }
 
-/// What the client modules change of an object's look and what their status
+/// What modules change of an object's look and what their status
 /// templates read of it, kept out of the record of an object they leave
 /// alone: the record is copied for every object each lent tick.
 #[derive(Clone, Debug, Default)]
 struct ModuleFacts {
+    tint: Option<([u8; 3], f64)>,
+    image: Option<InternedId>,
     local_look: LocalLook,
     /// Captured only while the match has status templates.
     status: Option<StatusFacts>,
 }
 
 impl ModuleFacts {
-    fn capture(entity: &GameEntity, at: &Capture<'_>) -> Option<Box<Self>> {
+    fn capture(entity: &GameEntity, at: &Capture<'_>, seen: Seen) -> Option<Box<Self>> {
         let facts = Self {
+            tint: entity.module_tint(),
+            image: at.sim.ext_module_image(entity.stable_id()).and_then(|name| at.sim.interner().get(name)),
             local_look: at
                 .local_looks
                 .get(&entity.stable_id())
+                .filter(|_| {
+                    // A tracked object disguised as terrain offers no decoration anchor.
+                    !seen.disguise_hides_house && (!seen.disguised_to_observer
+                        || at.sim.forced_disguise_type(entity.stable_id(), at.rules())
+                            .and_then(|kind| at.sim.interner().object_type(kind, at.rules())).is_some())
+                })
                 .copied()
                 .unwrap_or_default(),
             status: at.status_amounts.then(|| StatusFacts::capture(entity, at)),
         };
-        let plain = facts.local_look == LocalLook::default() && facts.status.is_none();
+        let plain = facts.tint.is_none() && facts.image.is_none()
+            && facts.local_look == LocalLook::default() && facts.status.is_none();
         (!plain).then(|| Box::new(facts))
     }
 }
@@ -484,6 +495,9 @@ pub(crate) struct StructureArt {
     pub(crate) current_body_frame: i32,
     /// `gate_open_body_frame` with its art's GateStages, for a gate.
     pub(crate) gate_open_body_frame: Option<i32>,
+    /// How a Wasm module's `DoorOpen` write holds its door drawn
+    /// (`Simulation::ext_module_door`).
+    pub(crate) module_door: Option<bool>,
 }
 
 impl StructureArt {
@@ -513,14 +527,24 @@ impl StructureArt {
                 at.sim.object_tech_level(object),
             ),
             gate_open_body_frame: gate_stages.and_then(|gate_stages| {
-                building_art::gate_open_body_frame(
-                    entity,
-                    gate_stages,
-                    object.strength,
-                    rules.general.condition_yellow,
-                    at.binary_frame,
-                )
+                match at.sim.ext_module_door(entity.stable_id()) {
+                    Some(open) => building_art::gate_held_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        open,
+                    ),
+                    None => building_art::gate_open_body_frame(
+                        entity,
+                        gate_stages,
+                        object.strength,
+                        rules.general.condition_yellow,
+                        at.binary_frame,
+                    ),
+                }
             }),
+            module_door: at.sim.ext_module_door(entity.stable_id()),
         })
     }
 }
@@ -799,7 +823,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
-            module: ModuleFacts::capture(entity, at),
+            module: ModuleFacts::capture(entity, at, seen),
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -945,6 +969,16 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// The simulation module's tint and intensity.
+    pub(crate) fn module_tint(&self) -> Option<([u8; 3], f64)> {
+        self.module.as_ref().and_then(|module| module.tint)
+    }
+
+    /// The type a simulation module draws in place of this object's own.
+    pub(crate) fn module_image(&self) -> Option<InternedId> {
+        self.module.as_ref().and_then(|module| module.image)
     }
 
     /// A client module's local look of it.

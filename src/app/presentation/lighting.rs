@@ -437,8 +437,8 @@ pub(crate) fn attach_effect_tint(
 }
 
 /// The custom tint `TechnoExt::UpdateTintValues` aggregates from every owner:
-/// Phobos shields and AttachEffects, then a client module's `Decoration`
-/// tint on this screen alone (appendix 7.10). Each owner ORs in its RGB565
+/// Phobos shields and AttachEffects, the simulation module's tint for every
+/// viewer, then client decorations on this screen (appendices 7.2 and 7.10). Each owner ORs in its RGB565
 /// word and adds its intensity, as one more AttachEffect would.
 pub(crate) fn custom_tint(
     entity: &crate::app::presentation::frame::ObjectRecord,
@@ -451,6 +451,7 @@ pub(crate) fn custom_tint(
         let (effect_word, effect_intensity) = attach_effect_tint(entity, simulation, rules);
         (base.0 | effect_word, base.1 + effect_intensity)
     };
+    let base = with_module_tint(base, entity.module_tint());
     with_module_tint(base, entity.local_look().tint)
 }
 
