@@ -679,6 +679,9 @@ pub(crate) fn existing_personal_rules(
     let mut rules = crate::rules::personal_rules::PersonalRules::default();
     rules.set_terrain_deformation(profile.terrain_deformation);
     rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
+    // That match plays the player's own Wasm budget too (`cncnet`, which
+    // shares the player's own rules), so its digest counts it.
+    rules.set_wasm_budget(profile.wasm_budget);
     // Building Production Queue stays off: the probe reports the digest a
     // launcher's network match agrees on, which plays without it
     // (`App::start_spawn_session`).
@@ -698,6 +701,52 @@ mod tests {
                 hsv: [0; 3],
             })
             .collect()
+    }
+
+    fn agreed_ini_of(directory: &Path) -> crate::app::rules_parts::AgreedIni {
+        let profile = existing_profile(directory);
+        crate::app::rules_parts::agreed_ini(
+            profile.ares,
+            profile.kratos,
+            profile.ra2_mode,
+            &existing_personal_rules(&profile),
+        )
+    }
+
+    /// The rules parts' `ini` values are what a launcher writes into its
+    /// player's VERA.INI to play a host's game: written back, they read as
+    /// the same settings, and the probe's rules play them.
+    #[test]
+    fn agreed_ini_values_read_back_as_the_settings_they_name() {
+        let root = std::env::temp_dir().join(format!("vera-agreed-ini-{}", std::process::id()));
+        let (host, guest) = (root.join("host"), root.join("guest"));
+        std::fs::create_dir_all(&host).unwrap();
+        std::fs::create_dir_all(&guest).unwrap();
+        std::fs::write(
+            host.join("VERA.INI"),
+            "[VERA]\nAres=yes\nKratos=on\nTerrainDeformation=true\nSuperweaponLimit=7\nWasmBudget=5000\n",
+        )
+        .unwrap();
+        let ini = agreed_ini_of(&host);
+        assert_eq!(
+            serde_json::to_string(&ini).unwrap(),
+            r#"{"VERA":{"Ares":"On","Kratos":"On","RA2Mode":"no","SuperweaponLimit":"7","TerrainDeformation":"yes","WasmBudget":"5000"}}"#
+        );
+        let written: String = ini["VERA"]
+            .iter()
+            .map(|(key, value)| format!("{key}={value}\n"))
+            .collect();
+        std::fs::write(
+            guest.join("VERA.INI"),
+            format!("[VERA]\nFullScreen=yes\n{written}"),
+        )
+        .unwrap();
+        assert_eq!(agreed_ini_of(&guest), ini);
+        assert_eq!(
+            existing_personal_rules(&existing_profile(&guest)).wasm_budget(),
+            5000
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

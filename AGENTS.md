@@ -151,6 +151,14 @@ named for players, so a refused start says what differs and not only that someth
 does. A new part or setting keeps the parts' old form for a game without it (left
 out while off), and its PR says what the launcher's `src/lib/rulesDiff.ts` must add
 to name it; `every_personal_rules_switch_is_a_setting` holds `PersonalRules` to this.
+A VERA.INI key whose value changes that digest (a launch setting such as `Ares` or
+`Kratos`, or a switch the player's own network match plays) is also named, in the
+same PR, in `rules_parts::agreed_ini` with the value as VERA.INI writes it: a launcher
+copies the host's `settings.ini` into its player's VERA.INI and names a differing key
+by itself, so it needs no change to follow the host's game, and a key left out is
+one players can differ on with nothing to fix it.
+`agreed_ini_values_read_back_as_the_settings_they_name` holds the values to reading
+back as the settings they name.
 
 ## Architecture and delivery
 

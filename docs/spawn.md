@@ -77,7 +77,9 @@ agree.
           {"id":"art","name":"artmd.ini","digest":"<16 hex>","source":"loose","changed":true,
            "sections":["General","NUKE"],"sections_more":0}],
  "settings":{"terrain_deformation":false,"superweapon_limit":0,"ares":"auto","ares_mix":false,
-             "ini_roots_stock":true,"mod":null},
+             "ini_roots_stock":true,"mod":null,
+             "ini":{"VERA":{"Ares":"Auto","Kratos":"Auto","RA2Mode":"no","SuperweaponLimit":"0",
+                            "TerrainDeformation":"no","WasmBudget":"0"}}},
  "mod_check":null}
 ```
 
@@ -116,6 +118,14 @@ agree.
   When the host enables automation, the rules parts include
   `settings.automation_allowed: true`. The player-facing label is “Allow automation”.
   While the switch is off, the field is omitted.
+  `ini` holds the VERA.INI values the game read that the digest covers, by section and key,
+  as VERA.INI writes them, defaults included: `[VERA]` `Ares`, `Kratos`, `RA2Mode`,
+  `TerrainDeformation`, `SuperweaponLimit` and `WasmBudget`. A launcher plays a host's game by
+  writing the host's `ini` values into its player's VERA.INI (and its player's own back after
+  the room), and names a differing key by its section and key, without knowing what each one
+  means. Every VERA.INI key whose value changes the digest is in `ini`; a build adds a new one
+  here, so a launcher follows it unchanged. Settings that live elsewhere (`ares_mix`, a file
+  in the game folder; `ini_roots_stock` and `resources`, config.toml) are only named.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
   (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null. It can name a file the
   `mod_files` part leaves out: one that only shows, plays or tells something, such as a `.csf`
