@@ -718,16 +718,15 @@ mod tests {
     /// the same settings, and the probe's rules play them.
     #[test]
     fn agreed_ini_values_read_back_as_the_settings_they_name() {
-        let root = std::env::temp_dir().join(format!("vera-agreed-ini-{}", std::process::id()));
-        let (host, guest) = (root.join("host"), root.join("guest"));
-        std::fs::create_dir_all(&host).unwrap();
-        std::fs::create_dir_all(&guest).unwrap();
-        std::fs::write(
-            host.join("VERA.INI"),
-            "[VERA]\nAres=yes\nKratos=on\nTerrainDeformation=true\nSuperweaponLimit=7\nWasmBudget=5000\n",
-        )
-        .unwrap();
-        let ini = agreed_ini_of(&host);
+        use crate::map::source::test_support::TestDirectory;
+
+        let host = TestDirectory::new("agreed-ini-host");
+        let guest = TestDirectory::new("agreed-ini-guest");
+        host.write(
+            "VERA.INI",
+            b"[VERA]\nAres=yes\nKratos=on\nTerrainDeformation=true\nSuperweaponLimit=7\nWasmBudget=5000\n",
+        );
+        let ini = agreed_ini_of(host.path());
         assert_eq!(
             serde_json::to_string(&ini).unwrap(),
             r#"{"VERA":{"Ares":"On","Kratos":"On","RA2Mode":"no","SuperweaponLimit":"7","TerrainDeformation":"yes","WasmBudget":"5000"}}"#
@@ -736,17 +735,15 @@ mod tests {
             .iter()
             .map(|(key, value)| format!("{key}={value}\n"))
             .collect();
-        std::fs::write(
-            guest.join("VERA.INI"),
-            format!("[VERA]\nFullScreen=yes\n{written}"),
-        )
-        .unwrap();
-        assert_eq!(agreed_ini_of(&guest), ini);
+        guest.write(
+            "VERA.INI",
+            format!("[VERA]\nFullScreen=yes\n{written}").as_bytes(),
+        );
+        assert_eq!(agreed_ini_of(guest.path()), ini);
         assert_eq!(
-            existing_personal_rules(&existing_profile(&guest)).wasm_budget(),
+            existing_personal_rules(&existing_profile(guest.path())).wasm_budget(),
             5000
         );
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
