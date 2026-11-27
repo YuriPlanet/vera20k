@@ -514,6 +514,8 @@ fn object_read(
     // fraction stays the real one.
     let worn = worn.map(|id| type_ref(NAME_TECHNO_TYPE, id));
     Ok(match (name, worn) {
+        // The disguise supplies the image this viewer sees.
+        ("ImageOverride", _) => (0, Status::Ok),
         ("Owner", _) => (house_ref(house), Status::Ok),
         ("Type", Some(worn)) => (worn, Status::Ok),
         ("Category" | "Strength", Some(worn)) => reader.read_in(worn, prop, at)?,
