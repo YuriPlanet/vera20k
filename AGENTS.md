@@ -298,9 +298,8 @@ Rust, plus native execution only where Exactness and evidence calls for it, and
 Never run gamemd as a whole game under Wine to compare.
 
 Performance work: find waste by reading the code, starting where existing profiles
-point, and fix it. Measure once per chain, at the end: one `--release` before/after,
-with sim-bench's final state hash unchanged for a simulation change. No timing per
-step.
+point, and fix it. Run one `--release` before/after comparison at the end of the chain.
+No timing per step.
 
 A check counts only if it ran: the test filter matched tests, no retail test printed
 `SKIPPED`, each build printed `Finished`, and an empty search counts only after the
