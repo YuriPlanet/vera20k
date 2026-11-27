@@ -84,6 +84,9 @@ pub(crate) struct ExpiryListeners {
     /// ([`Self::after_fixture_notes`]).
     #[cfg(any(test, feature = "test-support"))]
     fixture_notes: u64,
+    /// The empty stand-in of a presentation copy of the world
+    /// ([`Self::detached`]). Debug builds refuse reads of it.
+    detached: bool,
 }
 
 /// The listeners of one store.
@@ -107,6 +110,25 @@ struct StoreIndex {
 }
 
 impl ExpiryListeners {
+    /// The empty index a presentation copy of the world holds in place of
+    /// this one (`Simulation::presentation_copy`): only gameplay expires
+    /// pointers. Debug builds panic on a read of it.
+    pub(crate) fn detached() -> Self {
+        Self {
+            detached: true,
+            ..Self::default()
+        }
+    }
+
+    /// Debug builds: refuse a read of a [`Self::detached`] index.
+    #[inline]
+    fn check_attached(&self) {
+        debug_assert!(
+            !self.detached,
+            "read of the pointer-expiry index of a presentation copy of the world: only the live world holds it"
+        );
+    }
+
     /// The listeners `expired`'s expiry reaches, ascending, each with its
     /// store: the entity itself while stored, those naming it, and those any
     /// expiry reaches. The listeners that [`Self::asked_of_every`] selects.
@@ -115,6 +137,7 @@ impl ExpiryListeners {
         stores: ListenerStores<'_>,
         expired: u64,
     ) -> Vec<(u64, ObjectKind)> {
+        self.check_attached();
         let ListenerStores {
             entities,
             anims,
@@ -308,6 +331,7 @@ impl ExpiryListeners {
         projectiles: &mut ProjectileStore,
         expired: u64,
     ) -> Vec<u64> {
+        self.check_attached();
         self.refresh_projectiles(projectiles);
         self.projectiles.reaching(expired).collect()
     }

@@ -238,7 +238,7 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
             DebugSwitch::UnitInspector => toggle_inspector(&mut state.match_state.sim_runtime),
         },
         DebugCommand::CycleSpeedType { forward } => {
-            dispatch::cycle_terrain_cost_speed_type(state, forward);
+            dispatch::cycle_terrain_cost_speed_type(&mut state.diag, &state.match_state, forward);
         }
         DebugCommand::FrameStep {} => {
             dispatch::request_debug_frame_step(&mut state.diag, &state.match_state)

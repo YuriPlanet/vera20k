@@ -2,6 +2,12 @@
 //!
 //! Covers Choose Map and validation modal instance construction.
 
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
@@ -29,7 +35,12 @@ const VALIDATION_MODAL_SPRITE_DEPTHS: shell_paint::ModalDepths = shell_paint::Mo
 /// PUDLGBG frame, and paints the plain left/top Static. It neither regenerates a
 /// parent shell nor draws Cancel. Executed controls: saved_game_layout.json.
 pub(crate) fn render_saved_game_loading(
-    state: &mut crate::app::AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
@@ -40,16 +51,18 @@ pub(crate) fn render_saved_game_loading(
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
-    let frame = (state.render_width(), state.render_height());
-    let restored = state
-        .renderer
+    let frame = (
+        renderer.render_width(&frontend.screen),
+        renderer.render_height(&frontend.screen),
+    );
+    let restored = renderer
         .shell_surface_presenter
         .restore_cursor_free_composition(
-            &state.renderer.retail_screenshot_frame_cache,
-            &state.renderer.gpu.device,
+            &renderer.retail_screenshot_frame_cache,
+            &renderer.gpu.device,
             encoder,
             frame,
-            state.renderer.upscale_pass.as_ref(),
+            renderer.upscale_pass.as_ref(),
         );
     let art = match restored {
         Ok(true) => ShellFrameArt::Retained,
@@ -59,16 +72,16 @@ pub(crate) fn render_saved_game_loading(
             ShellFrameArt::Clear
         }
     };
-    let atlas = state
-        .frontend
+    let atlas = frontend
         .skirmish_shell_chrome
         .as_ref()
         .expect("loading shell chrome");
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
-    let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
-    let side =
-        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let in_match = frontend.screen == crate::ui::game_screen::GameScreen::InGame;
+    let side = in_match.then(|| {
+        crate::app::presentation::sidebar_render::current_sidebar_theme(frontend, match_state)
+    });
     let (width, height) = (frame.0 as i32, frame.1 as i32);
     // F0 is CE's box: its body over a Cancel it keeps hidden.
     let area = match in_match {
@@ -76,39 +89,39 @@ pub(crate) fn render_saved_game_loading(
         false => menu_area(width, height),
     };
     let layout = message_box_parts(1, area);
-    let body = state.csf_label("TXT_LOADING", "Mission is loading. Please wait...");
+    let body = process_assets.csf_label("TXT_LOADING", "Mission is loading. Please wait...");
     let shell_box = crate::ui::shell::modal::ShellBox::new(
         crate::ui::shell::descriptor::DialogResourceId(0xF0),
         body,
     );
     // Its widgets, which only this paint keeps.
-    let ui = &mut state.frontend.loading_box;
+    let ui = &mut frontend.loading_box;
     if ui.root_in(shell_box.dialog).is_none() {
         ui.push(shell_box.dialog);
     }
     crate::ui::shell::menu_page::sync_box(ui, &shell_box, &layout);
     // A zoomed match's text is drawn in the window (`window_ui`).
     let raster = crate::app::presentation::window_ui::shell_raster(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
         false,
     )
     .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
-    let frame_raster = state.renderer.bit_font.set_raster(raster);
+    let frame_raster = renderer.bit_font.set_raster(raster);
     let look = super::BoxLook::new(
         atlas.mode_two_dialog_background(side),
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
-    let tree = super::controller_tree(&state.frontend.loading_box, shell_box.dialog);
+    let tree = super::controller_tree(&frontend.loading_box, shell_box.dialog);
     let modal = super::paint_shell_box(
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        &platform.ime,
+        &renderer.bit_font,
+        frontend,
+        match_state,
+        process_assets,
         Some(atlas),
         tree,
         &shell_box,
@@ -117,7 +130,11 @@ pub(crate) fn render_saved_game_loading(
         look,
     );
     let painted = super::in_game_shell::render_shell_frame(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         encoder,
         destination,
         InGameShellFrame {
@@ -130,7 +147,7 @@ pub(crate) fn render_saved_game_loading(
         ShellFrameOverlay::default(),
         ShellFrameCursor::Hidden,
     );
-    state.renderer.bit_font.set_raster(frame_raster);
+    renderer.bit_font.set_raster(frame_raster);
     painted
 }
 

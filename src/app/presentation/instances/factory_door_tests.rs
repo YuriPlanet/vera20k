@@ -358,7 +358,7 @@ fn exit_roof_rules(product: &str, product_keys: &str) -> RuleSet {
     let tank_key = if product == "MTNK" { product_keys } else { "" };
     let hawk_key = if product == "SHAD" { product_keys } else { "" };
     let rules = crate::rules::ini_parser::IniFile::from_str(&format!(
-        "[Clear]\nBuildable=yes\n\
+        "[Clear]\nBuildable=yes\n[General]\nAIFireSale=yes\n\
          [InfantryTypes]\n\
          [VehicleTypes]\n0=MTNK\n\
          [AircraftTypes]\n0=SHAD\n\

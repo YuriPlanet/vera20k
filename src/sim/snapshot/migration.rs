@@ -39,6 +39,84 @@ const TS_LIMPETS: u32 = 0xF612_7DC1;
 const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
 // Older writers stored neither Kratos inputs nor its infantry firing offsets.
 const KRATOS_FLH: u32 = 0x9F1B_D701;
+// Tiberian Sun webs (docs/ts-webs.md) store the frame an infantryman's web
+// runs out with a byte saying he was webbed, a warhead's web keys and an
+// infantry type's Struggle record. Older worlds hold none: no man was
+// webbed, end frame 0 has passed, no warhead webs and no type has Struggle
+// frames.
+const TS_WEBS: u32 = 0xF215_BF3A;
+// The Wasm extension modules (RFC 0001), as their branch's writer `a33fcac81`
+// stored them: the world stores its modules, their modifiers, variables and
+// claims, and the trigger runtime the triggers they made. Older worlds ran no
+// module: both convert empty.
+const WASM_MODULES: u32 = 0xE18E_A373;
+// The Wasm modules' control points (RFC 0001 0.0.22, 0.0.23): projectile
+// paths and data words (`Launch`, `ProjectileFrame`), running pushes
+// (`Push`), the `ImmunityFlags` and `ROTMultiplier` stats appended to `Stat`
+// and the native body rates the ROT modifier keeps, without the image swap.
+// Older worlds hold no path, no push and no modifier of the new stats.
+const CONTROL_POINTS: u32 = 0x919A_B3CD;
+// Beside them, main's writer from #5205 stores each object image's Phobos
+// ArtImageSwap name (`ObjectImageState::image_swap`). Older worlds swapped no
+// image, as they played when saved.
+const ART_IMAGE_SWAP: u32 = 0x8C73_B1B3;
+// Main's writer once the modules joined it, with both the modules and the
+// image swap, without the control points.
+const MODULES_AND_IMAGE_SWAP: u32 = 0xB65C_0664;
+// NPatch's branch writer `2e67ebaa8` stored each processed rules layer's NPatch
+// key reads, which decide `RuleSet::npatch` (`rules::npatch_switch`), beside
+// the webs, without the modules or the image swap. Older worlds ran no NPatch
+// switch: their rules keep every NPatch key dormant, as they played when saved.
+const NPATCH_INPUTS: u32 = 0xE527_9FB2;
+// Main's writer stores the modules, the image swap and the NPatch key reads,
+// without the control points.
+const MODULES_SWAP_AND_NPATCH: u32 = 0xBA51_A42C;
+// The control points' writer stores the control points, the image swap and
+// the NPatch key reads, without the client modules' messages.
+const CONTROL_POINTS_SWAP_AND_NPATCH: u32 = 0xC66C_E753;
+// The client modules writer adds their state (RFC 0001 section 10):
+// the client messages waiting for `on_message` with their rate windows, and
+// the room's `AutomationAllowed`. Older worlds hold no message and did not
+// allow automation.
+const CLIENT_MESSAGES: u32 = 0x9909_B4E7;
+// Successive module writers retained animations (#5297), door positions
+// (#5298), then image overrides (#5304). Each new collection starts empty.
+const HELD_ANIMS: u32 = 0xED16_B100;
+const HELD_DOORS: u32 = 0x9593_BB1E;
+const HELD_IMAGES: u32 = 0xAA20_1352;
+// #4576 added four economy fields after the former controller flag.
+// Earlier saves gain their neutral encoding. The loader discards both
+// fields; see snapshot::retired_driver.
+const DRIVER_POLICY: u32 = 0xD5A9_6CCA;
+
+fn historical_layouts() -> &'static [u32] {
+    &[
+        V0_3_8_AND_0_3_9,
+        V0_4_0,
+        ALPHA_SHAPE_LISTENER,
+        ALTERNATE_THEATER_ART,
+        BRIDGE_DECK_AND_FLY_SPIN,
+        HOUSE_DEGRADES,
+        TS_ICE,
+        TERRAIN_DENT,
+        TS_LIMPETS,
+        TS_ANIM_SOUNDS,
+        KRATOS_FLH,
+        TS_WEBS,
+        WASM_MODULES,
+        ART_IMAGE_SWAP,
+        MODULES_AND_IMAGE_SWAP,
+        CONTROL_POINTS,
+        NPATCH_INPUTS,
+        MODULES_SWAP_AND_NPATCH,
+        CONTROL_POINTS_SWAP_AND_NPATCH,
+        CLIENT_MESSAGES,
+        HELD_ANIMS,
+        HELD_DOORS,
+        HELD_IMAGES,
+        DRIVER_POLICY,
+    ]
+}
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -72,10 +150,42 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == KRATOS_FLH
+        && current_layout_is_audited()
 }
 
-fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
+/// The merged writer adds Phobos's saved transport-reloader queue beside the
+/// upstream module state. Its traced layout hash is new, so audit the two
+/// owning fields directly rather than reusing either branch's old hash.
+fn current_layout_is_audited() -> bool {
+    static AUDITED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AUDITED.get_or_init(|| {
+        let Ok(description) = save_codec::layout::describe::<GameSnapshot>() else {
+            return false;
+        };
+        description.lines().any(|line| {
+            let Some((_, fields)) = line.split_once("struct{") else {
+                return false;
+            };
+            let Some(fields) = fields.strip_suffix('}') else {
+                return false;
+            };
+            let mut trailing = fields.rsplit(',');
+            trailing
+                .next()
+                .is_some_and(|field| field.starts_with("ext_modules:"))
+                && trailing
+                    .next()
+                    .is_some_and(|field| field.starts_with("transport_reloaders:"))
+        })
+    })
+}
+
+fn layout_fields(
+    source: u32,
+) -> Option<(
+    &'static [(&'static str, &'static [&'static str])],
+    &'static [(&'static str, &'static [&'static str])],
+)> {
     const IMAGE_FLAGS: (&str, &[&str]) = ("ObjectImageState", &["alternate_theater_art"]);
     const ALPHA_LISTENER: (&str, &[&str]) = ("AlphaShape", &["anim_listener"]);
     const DECK: (&str, &[&str]) = ("BridgeCellFacts", &["fixed_deck_level"]);
@@ -92,8 +202,283 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
     const KRATOS_INPUTS: (&str, &[&str]) = ("ProcessedRulesLayers", &["kratos_inputs"]);
     const KRATOS_OFFSETS: (&str, &[&str]) = ("WeaponOffsets", &["crawling", "elite_crawling"]);
-    let absent_fields: &'static [_] = match source {
+    const WEB: (&str, &[&str]) = ("InfantryRuntime", &["webbed"]);
+    const WEB_TIMER: (&str, &[&str]) = ("Seldom", &["web"]);
+    const WARHEAD_WEB: (&str, &[&str]) = ("WarheadAnimReadState", &["web"]);
+    const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
+    const EXT_MODULES: (&str, &[&str]) = ("Simulation", &["ext_modules"]);
+    const MODULE_TRIGGERS: (&str, &[&str]) = ("TriggerRuntime", &["module"]);
+    const CONTROL_POINT_STATE: (&str, &[&str]) = ("SavedExtModules", &["projectiles", "motions"]);
+    const NATIVE_ROTS: (&str, &[&str]) = ("ModifierStore", &["native_rots"]);
+    const IMAGE_SWAP: (&str, &[&str]) = ("ObjectImageState", &["image_swap"]);
+    // Worlds older than the NPatch switch stored no key reads either: their
+    // rules kept the switch off, which the all-zero empty read list restores.
+    const NPATCH_KEYS: (&str, &[&str]) = ("ProcessedRulesLayers", &["npatch_inputs"]);
+    const MESSAGES: (&str, &[&str]) = ("SavedExtModules", &["messages", "automation_allowed"]);
+    const HELD_VISUALS: (&str, &[&str]) = ("ActionHeld", &["anims", "doors", "images"]);
+    const DOORS_AND_IMAGES: (&str, &[&str]) = ("ActionHeld", &["doors", "images"]);
+    const IMAGES: (&str, &[&str]) = ("ActionHeld", &["images"]);
+    const POLICY: (&str, &[&str]) = ("HouseState", &["driver_policy"]);
+    type AbsentField = (&'static str, &'static [&'static str]);
+
+    // Every released writer represented by `previous_layout` is an upstream
+    // writer. The Phobos branch added these fields independently, so each old
+    // layout lacks the union of both branches' additions. Keep the upstream
+    // timeline below intact and add this common tail once when building the
+    // audited table. The codec's existing all-zero absent-field encoding is
+    // unchanged; no layout hash or field default is invented here. Skipped
+    // caches are not wire fields and stay out.
+    const PHOBOS_FIELDS: &[AbsentField] = &[
+        ("BasicSection", &["show_briefing"]),
+        ("HouseDefinition", &["repair_base_nodes"]),
+        ("ShpVehicleTurret", &["frame_count"]),
+        (
+            "BuildingUpgradeRules",
+            &["powers_up_owner", "powers_up_buildings"],
+        ),
+        ("ProcessedRulesLayers", &["phobos_required"]),
+        (
+            "NativeRulesRegistryState",
+            &["rules_timer_blink_color_scheme", "rules_missing_cameo"],
+        ),
+        (
+            "ProcessedType",
+            &[
+                "phobos_shadow_indices",
+                "phobos_shadow_indices_frames",
+                "phobos_shadow_index_frame",
+                "phobos_turret_shadow",
+                "phobos_object",
+                "super_weapon_phobos_chaining",
+                "super_weapon_phobos_detonate",
+                "super_weapon_phobos_limbo",
+                "super_weapon_phobos_messages",
+                "super_weapon_phobos_availability",
+                "ore_gathering",
+                "phobos_insignia",
+                "phobos_deploying_anims",
+            ],
+        ),
+        ("WeaponSlots", &["multi_weapon", "multi_weapon_read"]),
+        ("InfantryArt", &["phobos_land_sequences"]),
+        (
+            "ShieldType",
+            &[
+                "idle_anim",
+                "idle_anim_damaged",
+                "idle_anim_offline_action",
+                "idle_anim_temporal_action",
+                "allow_transfer",
+                "allow_transfer_convert",
+            ],
+        ),
+        ("ProjectileArtState", &["laser_trail_types"]),
+        (
+            "AresEMPulseRules",
+            &["empulse_weapon_index", "empulse_suspend_others"],
+        ),
+        (
+            "PhobosSuperWeaponAvailability",
+            &["shots", "range_minimum", "range_maximum"],
+        ),
+        (
+            "TerrainTypeReadState",
+            &[
+                "destroy_anim",
+                "destroy_sound",
+                "has_damaged_frames",
+                "has_crumbling_frames",
+                "crumbling_sound",
+                "animation_length",
+                "minimap_color",
+            ],
+        ),
+        (
+            "WeaponOffsets",
+            &[
+                "phobos_alternate",
+                "alternate_flh_on_turret",
+                "alternate_flh_apply_vehicle",
+                "burst",
+                "deployed_burst",
+                "prone_burst",
+                "deployed_simple",
+                "prone_simple",
+            ],
+        ),
+        ("HouseTeamCreation", &["team_delay"]),
+        (
+            "AnimObject",
+            &[
+                "firing_anim",
+                "invoker",
+                "invoker_house",
+                "from_death_unit",
+                "death_unit_facing",
+                "death_unit_has_turret",
+                "death_unit_turret_facing",
+            ],
+        ),
+        (
+            "AttachEffectInstance",
+            &[
+                "anim",
+                "should_be_discarded",
+                "firing_count",
+                "received_damage_count",
+                "last_sequence_check",
+                "armor_multiplier_timer",
+                "reflect_damage_timer",
+                "reset_anim",
+                "trail_last_location",
+            ],
+        ),
+        ("CloakRuntime", &["pending_anim"]),
+        (
+            "WeaponBurst",
+            &["force_full_rearm", "last_rearm_was_full_delay"],
+        ),
+        (
+            "GattlingState",
+            &[
+                "rate_down_accumulated",
+                "rate_down_should_update",
+                "rate_down_last_target",
+            ],
+        ),
+        ("Economy", &["owned_weed"]),
+        (
+            "Seldom",
+            &[
+                "grinding_weapon_accumulated_credits",
+                "grinding_weapon_last_fired_frame",
+                "phobos_accumulated_income",
+                "phobos_delayed_fire_start_frame",
+                "phobos_delayed_fire_duration",
+                "phobos_delayed_fire_weapon_index",
+                "phobos_delayed_fire_sequence_paused",
+                "phobos_delayed_fire_anim",
+                "phobos_delayed_fire_remove_anim_on_no_delay",
+                "phobos_skip_target_change_reset_sequence",
+                "phobos_keep_target_on_move",
+                "phobos_random_factor",
+                "phobos_drop_crate",
+                "phobos_drop_crate_type",
+                "created_from_map_file",
+                "phobos_infantry_undeploy_converted",
+                "phobos_infantry_deploy_converted",
+                "phobos_attack_move_follower_temp_count",
+                "phobos_construction_start_facing",
+                "unlimbo_detonate",
+                "phobos_turret_anim",
+                "phobos_current_empulse_sw",
+                "jumpjet_straight_ascend",
+                "phobos_be_controlled_threat_frame",
+                "auto_death_timer",
+                "should_be_dead",
+                "phobos_original_passenger_owner",
+                "phobos_revert_on_exit_latch",
+                "phobos_prevent_crew_escape",
+                "phobos_last_weapon_type",
+                "phobos_extra_threat_last_target_crd",
+                "phobos_extra_threat_last_target_clear_timer",
+                "passenger_deletion_timer",
+                "phobos_tiberium_eater_timer",
+                "phobos_attach_effects",
+                "phobos_stat_multipliers",
+                "shield",
+                "phobos_placement",
+                "wh_anim_remaining_creation_interval",
+            ],
+        ),
+        ("TurretSelection", &["phobos_charge_turret_timer"]),
+        (
+            "HouseState",
+            &[
+                "repair_base_nodes",
+                "ai_superweapon_delay_timer",
+                "combat_alert_timer",
+                "player_auto_repair",
+                "suspended_emp_pulse_sws",
+            ],
+        ),
+        ("TrackingFacts", &["exclude_from_multiple_factory_bonus"]),
+        (
+            "HouseTracking",
+            &[
+                "phobos_limbo_counts",
+                "limbo_delivered",
+                "non_mfb_factories",
+            ],
+        ),
+        (
+            "AircraftMissionLeaf",
+            &["strafe_bombs_dropped_this_round", "strafe_target_cell"],
+        ),
+        ("TeleportState", &["distance_leptons"]),
+        (
+            "ChronoWarp",
+            &["chrono_sphered", "warp_in_delay_pending", "warp_in_delay"],
+        ),
+        ("TunnelRuntime", &["ground_z"]),
+        ("ObjectFallState", &["hover_shutdown", "on_parachuted"]),
+        (
+            "Projectile",
+            &[
+                "phobos_trajectory",
+                "parabomb",
+                "current_strength",
+                "intercepted_status",
+                "detonate_on_interception",
+                "interceptor_type",
+                "interceptor_target",
+                "laser_trails",
+                "source_house",
+                "phobos_firer_house",
+            ],
+        ),
+        ("ScenarioSession", &["banners"]),
+        (
+            "ShieldTimers",
+            &["self_healing_wh_modifier", "respawn_wh_modifier"],
+        ),
+        (
+            "ShieldState",
+            &[
+                "respawn_modifier",
+                "self_healing_modifier",
+                "idle_anim",
+                "attached",
+            ],
+        ),
+        ("SpawnManagerState", &["spawn_queue"]),
+        ("TeamTypeIniMetadata", &["para_drop_aircraft"]),
+        (
+            "TerrainObjectState",
+            &["passable", "can_be_built_on", "is_crumbling"],
+        ),
+        ("TriggerRuntime", &["globals_values", "locals_values"]),
+        ("VoxelAnimObject", &["trailer_spawn_timer", "laser_trails"]),
+        ("AlphaShape", &["light_flash"]),
+        ("RegisteredBuilding", &["restricted"]),
+        ("HouseBaseState", &["restricted_plants"]),
+        (
+            "Simulation",
+            &[
+                "auto_death_objects",
+                "warhead_anim_runtime",
+                "phobos_all_map_detonation_active",
+                "particle_light_flash",
+                "firing_anim_update_count",
+                "transport_reloaders",
+            ],
+        ),
+    ];
+
+    let upstream_fields: &[(&str, &[&str])] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
+            POLICY,
+            HELD_VISUALS,
             IMAGE_FLAGS,
             ALPHA_LISTENER,
             DECK,
@@ -109,8 +494,18 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
         ALPHA_SHAPE_LISTENER => &[
+            POLICY,
+            HELD_VISUALS,
             IMAGE_FLAGS,
             DECK,
             PENDING_DECK,
@@ -125,8 +520,18 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
         ALTERNATE_THEATER_ART => &[
+            POLICY,
+            HELD_VISUALS,
             DECK,
             PENDING_DECK,
             SPIN,
@@ -140,8 +545,18 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
+            POLICY,
+            HELD_VISUALS,
             DEGRADES,
             ICE_TIMER,
             ICE_CRACKS,
@@ -152,8 +567,18 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
         HOUSE_DEGRADES => &[
+            POLICY,
+            HELD_VISUALS,
             ICE_TIMER,
             ICE_CRACKS,
             ICE_SINK,
@@ -163,26 +588,167 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
         TS_ICE => &[
+            POLICY,
+            HELD_VISUALS,
             DENT,
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
         TERRAIN_DENT => &[
+            POLICY,
+            HELD_VISUALS,
             LIMPETS,
             LIMPETED,
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
         ],
-        TS_LIMPETS => &[ANIM_SOUNDS, KRATOS_INPUTS, KRATOS_OFFSETS],
-        TS_ANIM_SOUNDS => &[KRATOS_INPUTS, KRATOS_OFFSETS],
+        TS_LIMPETS => &[
+            POLICY,
+            HELD_VISUALS,
+            ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+        ],
+        TS_ANIM_SOUNDS => &[
+            POLICY,
+            HELD_VISUALS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+        ],
+        KRATOS_FLH => &[
+            POLICY,
+            HELD_VISUALS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+        ],
+        TS_WEBS => &[
+            POLICY,
+            HELD_VISUALS,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+        ],
+        WASM_MODULES => &[
+            POLICY,
+            HELD_VISUALS,
+            CONTROL_POINT_STATE,
+            NATIVE_ROTS,
+            IMAGE_SWAP,
+            NPATCH_KEYS,
+            MESSAGES,
+        ],
+        ART_IMAGE_SWAP => &[
+            POLICY,
+            HELD_VISUALS,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            NPATCH_KEYS,
+        ],
+        MODULES_AND_IMAGE_SWAP => &[
+            POLICY,
+            HELD_VISUALS,
+            CONTROL_POINT_STATE,
+            NATIVE_ROTS,
+            NPATCH_KEYS,
+            MESSAGES,
+        ],
+        CONTROL_POINTS => &[POLICY, HELD_VISUALS, IMAGE_SWAP, NPATCH_KEYS, MESSAGES],
+        NPATCH_INPUTS => &[
+            POLICY,
+            HELD_VISUALS,
+            EXT_MODULES,
+            MODULE_TRIGGERS,
+            IMAGE_SWAP,
+        ],
+        MODULES_SWAP_AND_NPATCH => &[
+            POLICY,
+            HELD_VISUALS,
+            CONTROL_POINT_STATE,
+            NATIVE_ROTS,
+            MESSAGES,
+        ],
+        CONTROL_POINTS_SWAP_AND_NPATCH => &[POLICY, HELD_VISUALS, MESSAGES],
+        CLIENT_MESSAGES => &[POLICY, HELD_VISUALS],
+        HELD_ANIMS => &[POLICY, DOORS_AND_IMAGES],
+        HELD_DOORS => &[POLICY, IMAGES],
+        HELD_IMAGES => &[POLICY],
+        DRIVER_POLICY => &[],
         _ => return None,
     };
+    Some((upstream_fields, PHOBOS_FIELDS))
+}
+
+fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
+    type AbsentField = (&'static str, &'static [&'static str]);
+
+    static FIELDS: std::sync::OnceLock<std::collections::BTreeMap<u32, Box<[AbsentField]>>> =
+        std::sync::OnceLock::new();
+    let fields = FIELDS.get_or_init(|| {
+        historical_layouts()
+            .iter()
+            .map(|&source| {
+                let (upstream, phobos) =
+                    layout_fields(source).expect("every historical layout has a field table");
+                let mut absent = upstream.to_vec();
+                absent.extend_from_slice(phobos);
+                (source, absent.into_boxed_slice())
+            })
+            .collect()
+    });
+    let absent_fields = fields.get(&source)?;
     Some(save_codec::PreviousLayout {
         absent_fields,
         // v0.4.0 appended Mech without changing the earlier discriminants.
@@ -196,7 +762,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != KRATOS_FLH {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || !current_layout_is_audited() {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -318,57 +884,106 @@ mod tests {
 
     #[test]
     fn migration_leaves_unsupported_and_invalid_snapshots_byte_exact() {
-        let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
-        let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
-            product_magic: SNAPSHOT_PRODUCT_MAGIC,
-            envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            layout: wrong_layout,
-        })
-        .unwrap();
-        let original = bytes.clone();
-        let error = migrate(&mut bytes).unwrap_err();
-        assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != KRATOS_FLH
-        {
-            assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
-            return;
-        }
-        assert!(
-            matches!(error, MigrationError::UnsupportedSource(layout) if layout == wrong_layout)
-        );
+        crate::test_fixture::on_game_stack(|| {
+            let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
+            let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
+                product_magic: SNAPSHOT_PRODUCT_MAGIC,
+                envelope_version: SNAPSHOT_ENVELOPE_VERSION,
+                layout: wrong_layout,
+            })
+            .unwrap();
+            let original = bytes.clone();
+            let error = migrate(&mut bytes).unwrap_err();
+            assert_eq!(bytes, original);
+            if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+                || !current_layout_is_audited()
+            {
+                assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
+                return;
+            }
+            assert!(
+                matches!(error, MigrationError::UnsupportedSource(layout) if layout == wrong_layout)
+            );
 
-        // The empty world as the v0.3.8 writer wrote it, without the fields
-        // that writer lacked.
-        let current = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "migration", 0);
-        let snapshot: GameSnapshot = save_codec::deserialize(&current).unwrap();
-        let mut bytes =
-            save_codec::serialize_previous(&snapshot, &previous_layout(V0_3_8_AND_0_3_9).unwrap())
+            // The empty world as the v0.3.8 writer wrote it, without the fields
+            // that writer lacked.
+            let current = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "migration", 0);
+            let snapshot: GameSnapshot = save_codec::deserialize(&current).unwrap();
+            let mut bytes = save_codec::serialize_previous(
+                &snapshot,
+                &previous_layout(V0_3_8_AND_0_3_9).unwrap(),
+            )
+            .unwrap();
+            let old_preamble = save_codec::serialize(&GameSnapshotPreamble {
+                product_magic: SNAPSHOT_PRODUCT_MAGIC,
+                envelope_version: SNAPSHOT_ENVELOPE_VERSION,
+                layout: V0_3_8_AND_0_3_9,
+            })
+            .unwrap();
+            bytes[..old_preamble.len()].copy_from_slice(&old_preamble);
+            let before = bytes.clone();
+            assert!(supports(&GameSnapshot::read_metadata(&before).unwrap()));
+            assert!(matches!(
+                migrate(&mut bytes),
+                Err(MigrationError::HeaderOrState(
+                    SnapshotError::MissingScenarioResources
+                ))
+            ));
+            assert_eq!(bytes, before);
+
+            bytes.push(0);
+            let before = bytes.clone();
+            assert!(matches!(
+                migrate(&mut bytes),
+                Err(MigrationError::TrailingBytes)
+            ));
+            assert_eq!(bytes, before);
+        });
+    }
+
+    #[test]
+    fn retired_driver_saves_resume_with_ordinary_computer_control() {
+        use crate::sim::house_state::HouseState;
+
+        let computer = HouseState::new(Default::default(), 0, None, false, 500, 10);
+        let neutral = save_codec::serialize(&computer).unwrap();
+        // Isolate the retired controller replacement from the independent
+        // Phobos fields that every released layout also lacks.
+        let previous = || save_codec::PreviousLayout {
+            absent_fields: &[("HouseState", &["driver_policy"])],
+            absent_variant: None,
+        };
+        let mut old = save_codec::serialize_previous(&computer, &previous()).unwrap();
+        let mut added = Vec::new();
+        save_codec::deserialize_previous::<HouseState>(&old, previous(), &mut added).unwrap();
+        let &[(policy_offset, 4)] = added.as_slice() else {
+            panic!("the old house lacks only its four neutral policy bytes");
+        };
+        // The preceding byte was the external controller's ownership flag.
+        old[policy_offset - 1] = 1;
+        let (before_policy, rest) =
+            save_codec::deserialize_previous::<HouseState>(&old, previous(), &mut Vec::new())
                 .unwrap();
-        let old_preamble = save_codec::serialize(&GameSnapshotPreamble {
-            product_magic: SNAPSHOT_PRODUCT_MAGIC,
-            envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            layout: V0_3_8_AND_0_3_9,
-        })
-        .unwrap();
-        bytes[..old_preamble.len()].copy_from_slice(&old_preamble);
-        let before = bytes.clone();
-        assert!(supports(&GameSnapshot::read_metadata(&before).unwrap()));
-        assert!(matches!(
-            migrate(&mut bytes),
-            Err(MigrationError::HeaderOrState(
-                SnapshotError::MissingScenarioResources
-            ))
-        ));
-        assert_eq!(bytes, before);
+        assert!(rest.is_empty());
 
-        bytes.push(0);
-        let before = bytes.clone();
-        assert!(matches!(
-            migrate(&mut bytes),
-            Err(MigrationError::TrailingBytes)
-        ));
-        assert_eq!(bytes, before);
+        // The #4576 writer added the Hard grant, drip, binary32 scale and floor.
+        let policy = save_codec::serialize(&(
+            true,
+            Some((75_i32, 12_u32)),
+            Some(0x3f00_0000_u32),
+            Some(2000_i32),
+        ))
+        .unwrap();
+        old.splice(policy_offset..policy_offset, policy);
+        let (with_policy, rest) =
+            save_codec::deserialize_with_remainder::<HouseState>(&old).unwrap();
+        assert!(rest.is_empty());
+
+        for restored in [before_policy, with_policy] {
+            assert!(!restored.event_dispatch_eligible());
+            assert_eq!(restored.economy().credits(), 500);
+            assert_eq!(save_codec::serialize(&restored).unwrap(), neutral);
+        }
     }
 
     #[test]
@@ -392,6 +1007,11 @@ mod tests {
         let after_image = 8 + image.image().len();
         assert_eq!(&bytes[after_image..after_image + 3], &[1, 0, 1]);
         bytes.remove(after_image + 1);
+        // That writer also predates the optional Phobos image name, which
+        // now sits immediately before its retained model slots.
+        let slots_size = save_codec::serialize(&image.model_slots).unwrap().len();
+        let image_swap = bytes.len() - slots_size - 1;
+        assert_eq!(bytes.remove(image_swap), 0); // None
         let mut offsets = Vec::new();
         let (restored, rest) = save_codec::deserialize_previous::<ObjectImageState>(
             &bytes,
@@ -401,7 +1021,7 @@ mod tests {
         .unwrap();
         assert_eq!(restored, image);
         assert!(rest.is_empty());
-        assert_eq!(offsets, [(after_image + 1, 1)]);
+        assert_eq!(offsets, [(after_image + 1, 1), (image_swap, 1)]);
     }
 
     #[test]

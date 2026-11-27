@@ -301,6 +301,18 @@ pub(crate) fn scan(
     if !sim.substrate.entities.contains(id) {
         return false;
     }
+    // Kratos `Wreck` (`kratos_freeze`): a frozen object neither scans for a
+    // target nor retaliates, the target half of `OnUpdate_Freeze`'s clear.
+    if rules.kratos()
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| sim.entity_object_type(entity, rules))
+            .is_some_and(|object| object.kratos_freeze().frozen())
+    {
+        return false;
+    }
     retaliate_and_scan(
         &mut WorldScan {
             sim,
@@ -740,6 +752,52 @@ impl Simulation {
     ) -> FireError {
         let weapon = select_weapon(self, rules, id, Some(target));
         fire_error_at(self, rules, id, Some(target), weapon, check_range)
+    }
+
+    /// RFC 0001 `Engage`, for the slot SelectWeapon (vt+0x2E4) picks
+    /// against object `target`: GetFireError without range (vt+0x3BC),
+    /// whether that slot's Warhead has `Verses` exactly 0 against the target
+    /// type's armor (the test SelectWeapon itself makes, `0x006F36E3`,
+    /// `0x006F3716`), and CanFireAt's InRange (`0x006F77B0`). Range is asked
+    /// apart so that a transient answer (Rearm and the like) cannot hide it.
+    pub(crate) fn engage_check(
+        &self,
+        rules: &RuleSet,
+        id: u64,
+        target: u64,
+    ) -> (FireError, bool, bool) {
+        let kind = TargetKind::Entity(target);
+        let weapon = select_weapon(self, rules, id, Some(kind));
+        let error = fire_error_at(self, rules, id, Some(kind), weapon, false);
+        let armor = self
+            .substrate
+            .entities
+            .get(target)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+            .map(|object| object.armor_id());
+        let no_damage = armor.is_some_and(|armor| {
+            let warhead = weapon_at_index(self, rules, id, weapon)
+                .and_then(|weapon| rules.weapon_warhead(weapon));
+            combat_weapon::verses_is_zero(warhead, armor)
+        });
+        (error, no_damage, can_fire_at(self, rules, id, kind, weapon))
+    }
+
+    /// RFC 0001 `TargetInRange` and `CanFireAtTarget` of `id` against
+    /// `target` (its TarCom), for the slot SelectWeapon (vt+0x2E4) picks:
+    /// CanFireAt's InRange (`0x006F77B0`), and whether GetFireError with
+    /// range (vt+0x3C0) answers Ok.
+    pub(crate) fn target_check(
+        &self,
+        rules: &RuleSet,
+        id: u64,
+        target: TargetKind,
+    ) -> (bool, bool) {
+        let weapon = select_weapon(self, rules, id, Some(target));
+        (
+            can_fire_at(self, rules, id, target, weapon),
+            fire_error_at(self, rules, id, Some(target), weapon, true) == FireError::Ok,
+        )
     }
 }
 

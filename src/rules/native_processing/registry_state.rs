@@ -502,7 +502,7 @@ impl NativeRulesRegistryState {
     }
 
     pub(super) fn validate_radiation_types(&self) -> Result<(), RulesError> {
-        if self.phobos_radiation_types.is_some() != crate::rules::PHOBOS_ENABLED {
+        if self.compatibility.has_phobos() && self.phobos_radiation_types.is_none() {
             return Err(RulesError::InvalidSavedState(
                 "saved radiation type catalog does not match the compiled capability",
             ));
@@ -511,7 +511,7 @@ impl NativeRulesRegistryState {
     }
 
     pub(super) fn validate_shield_types(&self) -> Result<(), RulesError> {
-        if self.phobos_shield_types.is_some() != crate::rules::PHOBOS_ENABLED {
+        if self.compatibility.has_phobos() && self.phobos_shield_types.is_none() {
             return Err(RulesError::InvalidSavedState(
                 "saved shield type catalog does not match the compiled capability",
             ));
@@ -520,7 +520,7 @@ impl NativeRulesRegistryState {
     }
 
     pub(super) fn validate_attach_effect_types(&self) -> Result<(), RulesError> {
-        if self.phobos_attach_effect_types.is_some() != crate::rules::PHOBOS_ENABLED {
+        if self.compatibility.has_phobos() && self.phobos_attach_effect_types.is_none() {
             return Err(RulesError::InvalidSavedState(
                 "saved attach effect type catalog does not match the compiled capability",
             ));
@@ -529,7 +529,7 @@ impl NativeRulesRegistryState {
     }
 
     pub(super) fn validate_digital_display_types(&self) -> Result<(), RulesError> {
-        if self.phobos_digital_display_types.is_some() != crate::rules::PHOBOS_ENABLED {
+        if self.compatibility.has_phobos() && self.phobos_digital_display_types.is_none() {
             return Err(RulesError::InvalidSavedState(
                 "saved digital display type catalog does not match the compiled capability",
             ));

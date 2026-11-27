@@ -113,12 +113,12 @@ impl LiveRoundFlow {
     /// guest queues once the host has left this lobby for Quick Match (3 s
     /// later, for its list, join and request), or 30 s after the lobby
     /// settled without the host in it.
-    fn quick_match_turn(&mut self, core: &LiveLanCapture, state: &AppState) -> bool {
+    fn quick_match_turn(&mut self, core: &LiveLanCapture, wol: &Option<WolVisit>) -> bool {
         if core.host() {
             return true;
         }
         let host = self.online_config().host.clone();
-        let present = crate::app::shell_wol::lobby::member_names(state.frontend.wol.as_ref())
+        let present = crate::app::shell_wol::lobby::member_names(wol.as_ref())
             .any(|name| name.eq_ignore_ascii_case(&host));
         let (since, seen, left) =
             self.quick_match_wait
@@ -169,9 +169,9 @@ impl LiveRoundFlow {
             return Ok(true);
         }
         let settled = if self.config.is_some() {
-            online_setup_settled(state, true)
+            online_setup_settled(&state.frontend, true)
         } else {
-            setup_settled(state, true)
+            setup_settled(&state.frontend, true)
         };
         if rendered != PresentedShell::NetworkSetup || !settled {
             return Ok(false);
@@ -253,7 +253,13 @@ impl LiveRoundFlow {
             .push(json!({"render_frame":frame,"action":action,"round":self.rounds.len()+1}));
     }
 
-    fn write_prefix(&mut self, core: &LiveLanCapture, state: &AppState, frame: u32) -> Result<()> {
+    fn write_prefix(
+        &mut self,
+        core: &LiveLanCapture,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        frame: u32,
+    ) -> Result<()> {
         if self.failure_prefix_written {
             return Ok(());
         }
@@ -282,16 +288,14 @@ impl LiveRoundFlow {
                 HOST_NAME,
             )
         };
-        let prefix_frame = state
-            .match_state
+        let prefix_frame = match_state
             .sim_runtime
             .runtime()
             .context("prefix world")?
             .simulation
             .session()
             .binary_frame();
-        let primary_port = state
-            .match_state
+        let primary_port = match_state
             .live_network
             .as_ref()
             .context("prefix transport")?
@@ -299,19 +303,26 @@ impl LiveRoundFlow {
             .port();
         let prefix = json!({"schema":schema,"account":account,"host":host,
             "prefix_frame":prefix_frame,"primary_port":primary_port,
-            "external_fault_pending":true,"runtime":core.observed_receipt(state)?});
+            "external_fault_pending":true,"runtime":core.observed_receipt(frontend, match_state)?});
         write_new_file(path, &serde_json::to_vec_pretty(&prefix)?)?;
         self.failure_prefix_written = true;
         self.record(frame, "Real300-frame command/checksum prefix saved; external fault may begin after both receipts agree");
         Ok(())
     }
 
-    fn heartbeat(&mut self, state: &AppState, rendered: PresentedShell) {
+    fn heartbeat(
+        &mut self,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        rendered: PresentedShell,
+    ) {
         if self.last_heartbeat.elapsed() < std::time::Duration::from_secs(10) {
             return;
         }
         self.last_heartbeat = Instant::now();
-        let (page, pending) = state.frontend.wol.as_ref().map_or(("none", 0), |visit| {
+        let (page, pending) = frontend.wol.as_ref().map_or(("none", 0), |visit| {
             use crate::app::shell_wol::WolPage;
             let page = match &visit.page {
                 WolPage::Welcome => "welcome",
@@ -329,15 +340,14 @@ impl LiveRoundFlow {
             };
             (page, visit.pending_service_request_count())
         });
-        let (lobby_shown, lobby_wait, lobby_message) = state
-            .frontend
+        let (lobby_shown, lobby_wait, lobby_message) = frontend
             .wol
             .as_ref()
             .and_then(|visit| visit.lobby())
             .map_or((false, false, false), |lobby| {
                 (lobby.shown, lobby.wait.is_some(), lobby.message().is_some())
             });
-        let session = &state.match_state.session;
+        let session = &match_state.session;
         let setup = session.network_setup();
         let setup_humans = setup.map(|launch| launch.humans.len());
         let bound_rows = setup.map(|launch| {
@@ -356,10 +366,10 @@ impl LiveRoundFlow {
         let local = setup.and_then(|launch| launch.humans.get(launch.local_player_index));
         let local_row = local.and_then(|human| human.raw_slot_index);
         let local_start = local.map(|human| human.slot.start_position);
-        let accept_enabled = setup::view(state).map(|view| view.accept_enabled);
+        let accept_enabled = setup::view(renderer, frontend, match_state, process_assets)
+            .map(|view| view.accept_enabled);
         let desired_start = self.config.as_ref().and_then(|config| config.start);
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation);
@@ -369,25 +379,23 @@ impl LiveRoundFlow {
             .map(|timing| timing.frames_per_second());
         let max_ahead = sim.and_then(|sim| sim.session().network_max_ahead_frames());
         let local_commands = sim.map(|sim| sim.pending_local_command_count());
-        let live_wait = state
-            .match_state
+        let live_wait = match_state
             .live_network
             .as_ref()
             .and_then(|live| live.wait_info())
             .map(|wait| wait.kind);
-        let live_phase = state
-            .match_state
+        let live_phase = match_state
             .live_network
             .as_ref()
             .and_then(|live| live.phase());
         log::info!(
             "Network capture heartbeat: phase={:?}, page={page}, presented={rendered:?}, shell_exit={}, pending_requests={pending}, native_frame={native_frame:?}, timing_fps={fps:?}, max_ahead={max_ahead:?}, local_commands={local_commands:?}, live_wait={live_wait:?}, live_phase={live_phase:?}, setup_humans={setup_humans:?}, bound_rows={bound_rows:?}, seed_present={seed_present}, map_capacity={map_capacity:?}, setup_capacity={setup_capacity:?}, selected_map_present={selected_map_present}, local_row={local_row:?}, local_start={local_start:?}, accept_enabled={accept_enabled:?}, desired_start={desired_start:?}, lobby_shown={lobby_shown}, lobby_wait={lobby_wait}, lobby_message={lobby_message}, slide_first_paint={}, active_slide={:?}",
             self.phase,
-            state.frontend.shell_exit.is_some(),
-            state.frontend.shell_first_paint_slide.is_some(),
-            state.frontend.shell_slide_active_shell,
+            frontend.shell_exit.is_some(),
+            frontend.shell_first_paint_slide.is_some(),
+            frontend.shell_slide_active_shell,
         );
-        if let (Some(sim), Some(live)) = (sim, state.match_state.live_network.as_ref()) {
+        if let (Some(sim), Some(live)) = (sim, match_state.live_network.as_ref()) {
             crate::app::match_runtime::network_match::log_live_progress(
                 session,
                 sim,
@@ -415,9 +423,10 @@ impl LiveRoundFlow {
         use crate::ui::wol_persona::{ACCEPT, DECLINE};
         match rendered {
             PresentedShell::WolLocale
-                if MoviesCapture::slide_settled(state, ShellSlideKind::WolLocale) =>
+                if MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::WolLocale) =>
             {
-                let layout = persona::layout(state).context("online location dialog")?;
+                let layout = persona::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                    .context("online location dialog")?;
                 let Some(WolPage::Locale(page)) =
                     state.frontend.wol.as_ref().map(|visit| &visit.page)
                 else {
@@ -454,9 +463,13 @@ impl LiveRoundFlow {
                 Ok(true)
             }
             PresentedShell::WolAutoLoginQuery
-                if MoviesCapture::slide_settled(state, ShellSlideKind::WolAutoLoginQuery) =>
+                if MoviesCapture::slide_settled(
+                    &state.frontend,
+                    ShellSlideKind::WolAutoLoginQuery,
+                ) =>
             {
-                let layout = persona::layout(state).context("online auto-login dialog")?;
+                let layout = persona::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                    .context("online auto-login dialog")?;
                 click(
                     state,
                     layout.page.button_rect(DECLINE).context("auto-login No")?,
@@ -479,7 +492,13 @@ impl LiveRoundFlow {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
-        self.heartbeat(state, rendered);
+        self.heartbeat(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            rendered,
+        );
         if self.profile.is_none()
             && core
                 .config
@@ -512,15 +531,21 @@ impl LiveRoundFlow {
                         if online {
                             click(
                                 state,
-                                crate::app::shell_wol::lobby::layout(state)
-                                    .page
-                                    .button_rect(wol_lobby::BACK)
-                                    .context("profile lobby Back")?,
+                                crate::app::shell_wol::lobby::layout(
+                                    state.frontend.wol.as_ref(),
+                                    &state.renderer.gpu,
+                                )
+                                .page
+                                .button_rect(wol_lobby::BACK)
+                                .context("profile lobby Back")?,
                             );
                             self.phase = RoundPhase::ExitSignIn;
                         } else {
                             lobby_button(state, crate::ui::lan_shell::BACK)?;
-                            MoviesCapture::restore_neutral_pointer(state);
+                            MoviesCapture::restore_neutral_pointer(
+                                &state.renderer.gpu,
+                                &mut state.match_state.input,
+                            );
                             self.phase = RoundPhase::MainReturn;
                         }
                         self.record(frame,"Extended and native profile rows retained after actual Back/Create; return to Menu");
@@ -535,7 +560,7 @@ impl LiveRoundFlow {
         if self.config.is_some()
             && !core.host()
             && self.phase == RoundPhase::GuestSetup
-            && lobby_ready(state, rendered)
+            && lobby_ready(&state.frontend, rendered)
         {
             ensure!(
                 state.match_state.session.network_setup().is_none(),
@@ -561,8 +586,9 @@ impl LiveRoundFlow {
         } else {
             core.host()
         };
-        let online_room =
-            online && rendered == PresentedShell::NetworkSetup && online_setup_settled(state, host);
+        let online_room = online
+            && rendered == PresentedShell::NetworkSetup
+            && online_setup_settled(&state.frontend, host);
         // On LAN the guest rejoins the host after the room reopens. Note
         // the visit even while the room still slides in.
         if !online
@@ -581,11 +607,17 @@ impl LiveRoundFlow {
             RoundPhase::Main
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready_for(
-                        MainMenuCaptureSnapshot::from_state(state),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        ),
                         self.config.as_ref().is_some_and(|config| config.latency),
                     )? =>
             {
-                LanCapture::isolated_root(state)?;
+                LanCapture::isolated_root(&state.process_assets)?;
                 click_main_menu(
                     state,
                     crate::ui::main_menu_shell::MainMenuControlId::WwOnline0x684,
@@ -595,11 +627,14 @@ impl LiveRoundFlow {
             }
             RoundPhase::Login
                 if rendered == PresentedShell::WolLogin
-                    && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
+                    && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::WolLogin) =>
             {
-                let chooser = crate::app::shell_wol::login_layout(state)
-                    .entry_choice()
-                    .context("online entry chooser")?;
+                let chooser = crate::app::shell_wol::login_layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                )
+                .entry_choice()
+                .context("online entry chooser")?;
                 click(state, chooser.guest);
                 // The live clients locate each other's games by their agreed
                 // command-line names. Set that fixture identity before the
@@ -617,16 +652,19 @@ impl LiveRoundFlow {
                 );
                 self.phase = RoundPhase::Lobby;
             }
-            RoundPhase::Lobby if lobby_ready(state, rendered) => {
+            RoundPhase::Lobby if lobby_ready(&state.frontend, rendered) => {
                 if core.target == LanTarget::OnlineWatch {
                     self.watch_from_lobby(frame);
                     return Ok(());
                 }
                 if self.online_config().quick_match {
-                    if !self.quick_match_turn(core, state) {
+                    if !self.quick_match_turn(core, &state.frontend.wol) {
                         return Ok(());
                     }
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     click(
                         state,
                         layout
@@ -641,7 +679,10 @@ impl LiveRoundFlow {
                     return Ok(());
                 }
                 if core.host() {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     click(
                         state,
                         layout
@@ -674,7 +715,7 @@ impl LiveRoundFlow {
                     self.phase = RoundPhase::HostSetup;
                 }
             }
-            RoundPhase::Discover if lobby_ready(state, rendered) => {
+            RoundPhase::Discover if lobby_ready(&state.frontend, rendered) => {
                 let expected = format!("{}'s_game", self.online_config().host);
                 let selected = state
                     .frontend
@@ -699,7 +740,10 @@ impl LiveRoundFlow {
                     self.record(frame, "Configured discovered game joined");
                     self.phase = RoundPhase::GuestSetup;
                 } else if self.last_refresh.elapsed() >= Duration::from_secs(2) {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     click(
                         state,
                         layout
@@ -729,7 +773,7 @@ impl LiveRoundFlow {
             }
             RoundPhase::HostAi
                 if rendered == PresentedShell::NetworkSetup
-                    && online_setup_settled(state, true) =>
+                    && online_setup_settled(&state.frontend, true) =>
             {
                 let difficulty = self.online_config().ai.context("explicit AI difficulty")?;
                 let launch = state
@@ -743,7 +787,13 @@ impl LiveRoundFlow {
                     crate::skirmish_launch::AiDifficulty::Normal => 5,
                     crate::skirmish_launch::AiDifficulty::Hard => 6,
                 };
-                let view = setup::view(state).context("AI Player dropdown view")?;
+                let view = setup::view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )
+                .context("AI Player dropdown view")?;
                 let row = view
                     .combos
                     .iter()
@@ -786,7 +836,7 @@ impl LiveRoundFlow {
                     self.phase = RoundPhase::HostReady;
                 }
             }
-            RoundPhase::HostReady if online_setup_settled(state, true) => {
+            RoundPhase::HostReady if online_setup_settled(&state.frontend, true) => {
                 if core.select_start(state, self.online_config().start)? {
                     self.record(
                         frame,
@@ -810,8 +860,8 @@ impl LiveRoundFlow {
                 let start = self.online_config().start;
                 if ready
                     && !starting
-                    && core.start_matches(state, start)
-                    && core.choices_made(state, start.is_some())
+                    && core.start_matches(&state.match_state.session, start)
+                    && core.choices_made(&state.match_state.session, start.is_some())
                 {
                     setup_button(state, crate::ui::multiplayer_setup::START)?;
                     self.record(
@@ -820,8 +870,10 @@ impl LiveRoundFlow {
                     );
                 }
             }
-            RoundPhase::GuestSetup if online_setup_settled(state, false) => {
-                if self.online_config().start.is_some() && !core.start_selection_admitted(state) {
+            RoundPhase::GuestSetup if online_setup_settled(&state.frontend, false) => {
+                if self.online_config().start.is_some()
+                    && !core.start_selection_admitted(&state.match_state.session)
+                {
                     return Ok(());
                 }
                 // The guest's game accepts the received map and options by
@@ -851,12 +903,12 @@ impl LiveRoundFlow {
                     self.phase != RoundPhase::QuickMatch || self.quick_match_room.is_some(),
                     "Quick Match reached gameplay before its room was checked"
                 );
-                core.startup = Some(startup_receipt(state)?);
+                core.startup = Some(startup_receipt(&state.frontend.wol, &state.match_state)?);
                 if let Some(run) = core.cooperative.as_mut() {
-                    run.match_loaded(state);
+                    run.match_loaded(&state.match_state.session);
                 }
                 if let Some(ai) = core.ai.as_mut() {
-                    ai.observe(state)?;
+                    ai.observe(&state.match_state)?;
                 }
                 core.phase = Phase::Running;
                 self.record(
@@ -897,7 +949,14 @@ impl LiveRoundFlow {
                 let host = core.host();
                 let run = core.cooperative.as_mut().context("co-op run")?;
                 if rendered == PresentedShell::NetworkSetup
-                    && run.room_returned(state, host, &mut self.route, frame)?
+                    && run.room_returned(
+                        &state.frontend,
+                        &state.match_state.session,
+                        &state.process_assets,
+                        host,
+                        &mut self.route,
+                        frame,
+                    )?
                 {
                     // The next stage starts from the room as a first start does.
                     self.phase = if host {
@@ -917,16 +976,18 @@ impl LiveRoundFlow {
             RoundPhase::Running => {
                 core.observe_run(state, frame, self.players())?;
                 if core.failure.as_ref().is_some_and(|failure| failure.armed()) {
-                    self.write_prefix(core, state, frame)?;
+                    self.write_prefix(core, &state.frontend, &state.match_state, frame)?;
                 }
                 if core.phase == Phase::Finished {
                     if core.target == LanTarget::OnlineFailureGuest {
-                        self.write_prefix(core, state, frame)?;
+                        self.write_prefix(core, &state.frontend, &state.match_state, frame)?;
                         self.record(frame, "Guest remains live for external termination; no Observe or fabricated departure");
                         self.phase = RoundPhase::HoldFailureGuest;
                         return Ok(());
                     }
-                    self.current_round = Some(json!({"runtime":core.round_receipt(state)?}));
+                    self.current_round = Some(
+                        json!({"runtime":core.round_receipt(&state.frontend, &state.match_state)?}),
+                    );
                     if self.latency_failure.is_none()
                         && let Some(reason) = core
                             .latency
@@ -1058,7 +1119,7 @@ impl LiveRoundFlow {
             }
             RoundPhase::Results
                 if rendered == PresentedShell::Score
-                    && MoviesCapture::slide_settled(state, ShellSlideKind::Score)
+                    && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::Score)
                     && state
                         .frontend
                         .score_page
@@ -1094,11 +1155,19 @@ impl LiveRoundFlow {
                         crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu)
                             .paging_button(crate::ui::score_shell::NEXT_PAGE)
                             .context("score Next")?;
-                    set_window_pointer_to_rect_center(state, rect);
+                    set_window_pointer_to_rect_center(
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state.input,
+                        rect,
+                    );
                     App::handle_score_shell_mouse(state, None);
                     App::handle_score_shell_mouse(state, Some(true));
                     App::handle_score_shell_mouse(state, Some(false));
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.record(frame, "Next results page displayed through normal button");
                     return Ok(());
                 }
@@ -1119,16 +1188,24 @@ impl LiveRoundFlow {
                 self.current_round.as_mut().context("completed round")?["result"]["displayed_table_rows"] =
                     json!(self.result_rows);
                 self.current_round.as_mut().context("completed round")?["terminal_simulation"] =
-                    terminal_simulation_receipt(state)?;
+                    terminal_simulation_receipt(&state.match_state)?;
                 let rect = crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu)
                     .page
                     .button_rect(crate::ui::score_shell::CONTINUE_BUTTON)
                     .context("score Continue")?;
-                set_window_pointer_to_rect_center(state, rect);
+                set_window_pointer_to_rect_center(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    rect,
+                );
                 App::handle_score_shell_mouse(state, None);
                 App::handle_score_shell_mouse(state, Some(true));
                 App::handle_score_shell_mouse(state, Some(false));
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.record(frame, "Real multiplayer results acknowledged");
                 self.phase = RoundPhase::Returning;
             }
@@ -1137,7 +1214,7 @@ impl LiveRoundFlow {
                     .config
                     .as_ref()
                     .is_some_and(|config| config.ai.is_some())
-                    && (online_room || lobby_ready(state, rendered)) =>
+                    && (online_room || lobby_ready(&state.frontend, rendered)) =>
             {
                 self.current_round.as_mut().context("completed AI round")?["result"] =
                     json!({"shown":false,"completion":"ordinary B6 Leave"});
@@ -1151,7 +1228,7 @@ impl LiveRoundFlow {
                     .as_ref()
                     .is_some_and(|config| config.quick_match)
                     && self.abort.is_some()
-                    && lobby_ready(state, rendered) =>
+                    && lobby_ready(&state.frontend, rendered) =>
             {
                 self.current_round
                     .as_mut()
@@ -1165,11 +1242,12 @@ impl LiveRoundFlow {
             }
             RoundPhase::Returning
                 if if online {
-                    lobby_ready(state, rendered) || (core.failure.is_none() && online_room)
-                } else if returns_to_room(core, state) {
-                    room_returned(core, state, rendered)
+                    lobby_ready(&state.frontend, rendered)
+                        || (core.failure.is_none() && online_room)
+                } else if returns_to_room(core, &state.frontend) {
+                    room_returned(core, &state.frontend, &state.match_state.session, rendered)
                 } else {
-                    rendered == PresentedShell::LanLobby && lobby_settled(state)
+                    rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend)
                 } =>
             {
                 let room = rendered == PresentedShell::NetworkSetup;
@@ -1246,7 +1324,7 @@ impl LiveRoundFlow {
                 }
             }
             RoundPhase::LeaveRoom
-                if (online_room || (!online && rendered == PresentedShell::NetworkSetup && setup_settled(state, host)))
+                if (online_room || (!online && rendered == PresentedShell::NetworkSetup && setup_settled(&state.frontend, host)))
                     // Online the service reopens with everyone seated. A guest
                     // can leave before the host draws that first roster.
                     && (!host
@@ -1258,7 +1336,10 @@ impl LiveRoundFlow {
                                 .is_some_and(|launch| launch.humans.len() == 1)) =>
             {
                 setup_button(state, crate::ui::multiplayer_setup::BACK)?;
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.record(
                     frame,
                     if host {
@@ -1271,9 +1352,9 @@ impl LiveRoundFlow {
             }
             RoundPhase::LeaveLobby
                 if if online {
-                    lobby_ready(state, rendered)
+                    lobby_ready(&state.frontend, rendered)
                 } else {
-                    rendered == PresentedShell::LanLobby && lobby_settled(state)
+                    rendered == PresentedShell::LanLobby && lobby_settled(&state.frontend)
                 } =>
             {
                 ensure!(
@@ -1281,15 +1362,21 @@ impl LiveRoundFlow {
                     "Back from the reopened room retained its setup"
                 );
                 if online {
-                    let rect = crate::app::shell_wol::lobby::layout(state)
-                        .page
-                        .button_rect(wol_lobby::BACK)
-                        .context("WOL lobby Back button")?;
+                    let rect = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    )
+                    .page
+                    .button_rect(wol_lobby::BACK)
+                    .context("WOL lobby Back button")?;
                     click(state, rect);
                     self.phase = RoundPhase::ExitSignIn;
                 } else {
                     lobby_button(state, crate::ui::lan_shell::BACK)?;
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.phase = RoundPhase::MainReturn;
                 }
                 self.record(
@@ -1300,9 +1387,12 @@ impl LiveRoundFlow {
             RoundPhase::Watch => self.watch_step(state, rendered, frame)?,
             RoundPhase::ExitSignIn
                 if rendered == PresentedShell::WolLogin
-                    && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
+                    && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::WolLogin) =>
             {
-                let layout = crate::app::shell_wol::login_layout(state);
+                let layout = crate::app::shell_wol::login_layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                );
                 let rect = layout
                     .page
                     .button_rect(crate::ui::wol_login::BACK)
@@ -1316,9 +1406,12 @@ impl LiveRoundFlow {
                     self.phase = RoundPhase::MainReturn;
                 } else {
                     ensure!(
-                        crate::app::shell_wol::login_layout(state)
-                            .entry_choice()
-                            .is_some(),
+                        crate::app::shell_wol::login_layout(
+                            state.frontend.wol.as_ref(),
+                            &state.renderer.gpu
+                        )
+                        .entry_choice()
+                        .is_some(),
                         "Back did not return to the online entry chooser"
                     );
                 }
@@ -1326,11 +1419,20 @@ impl LiveRoundFlow {
             RoundPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
                     && steady_main_menu_capture_ready_for(
-                        MainMenuCaptureSnapshot::from_state(state),
+                        MainMenuCaptureSnapshot::from_state(
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence,
+                        ),
                         self.config.as_ref().is_some_and(|config| config.latency),
                     )? =>
             {
-                if crate::app::shell_wol::online_cleanup_pending(state) {
+                if crate::app::shell_wol::online_cleanup_pending(
+                    &state.frontend,
+                    &state.match_state,
+                ) {
                     return Ok(());
                 }
                 let visits_retired = state.frontend.lan.is_none() && state.frontend.wol.is_none();
@@ -1364,7 +1466,7 @@ impl LiveRoundFlow {
                     "visits_retired":visits_retired,"setup_retired":setup_retired,
                     "transport_retired":transport_retired,"session_retired":session_retired,
                     "scenario_retired":scenario_retired,
-                    "online_cleanup_pending":crate::app::shell_wol::online_cleanup_pending(state),
+                    "online_cleanup_pending":crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state),
                     "online_logout_acknowledged":acknowledged}));
                 self.record(
                     frame,
@@ -1381,9 +1483,9 @@ impl LiveRoundFlow {
         self.latency_failure.as_deref()
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
+    pub(super) fn receipt(&self, live_network: &Option<LiveCommandSession>) -> Result<Value> {
         if let Some(watch) = &self.watch {
-            return self.watch_receipt(state, watch);
+            return self.watch_receipt(live_network, watch);
         }
         ensure!(
             self.ready()
@@ -1398,7 +1500,7 @@ impl LiveRoundFlow {
             "network outcome capture is incomplete"
         );
         ensure!(
-            state.match_state.live_network.is_none(),
+            live_network.is_none(),
             "finished network capture retained command transport"
         );
         ensure!(
@@ -1456,44 +1558,45 @@ fn reset_round(core: &mut LiveLanCapture) {
 /// opens it again at once and the guest joins it again once it is open. The
 /// original-style room returns to BB, and the desync route keeps its own
 /// return check.
-fn returns_to_room(core: &LiveLanCapture, state: &AppState) -> bool {
-    core.failure.is_none() && !state.frontend.native_shell_ui
+fn returns_to_room(core: &LiveLanCapture, frontend: &FrontendState) -> bool {
+    core.failure.is_none() && !frontend.native_shell_ui
 }
 
-fn room_returned(core: &LiveLanCapture, state: &AppState, rendered: PresentedShell) -> bool {
+fn room_returned(
+    core: &LiveLanCapture,
+    frontend: &FrontendState,
+    session: &MatchSession,
+    rendered: PresentedShell,
+) -> bool {
     rendered == PresentedShell::NetworkSetup
-        && setup_settled(state, core.host())
-        && state
-            .match_state
-            .session
+        && setup_settled(frontend, core.host())
+        && session
             .network_setup()
             .is_some_and(|launch| core.host() || launch.humans.len() == 2)
 }
 
-fn lobby_ready(state: &AppState, rendered: PresentedShell) -> bool {
-    rendered == PresentedShell::WolLobby && online_lobby_settled(state)
+fn lobby_ready(frontend: &FrontendState, rendered: PresentedShell) -> bool {
+    rendered == PresentedShell::WolLobby && online_lobby_settled(frontend)
 }
 
-pub(super) fn online_lobby_settled(state: &AppState) -> bool {
-    MoviesCapture::slide_settled(state, ShellSlideKind::WolLobby)
-        && state
-            .frontend
+pub(super) fn online_lobby_settled(frontend: &FrontendState) -> bool {
+    MoviesCapture::slide_settled(frontend, ShellSlideKind::WolLobby)
+        && frontend
             .wol
             .as_ref()
             .and_then(|visit| visit.lobby())
             .is_some_and(|lobby| lobby.interactive())
 }
 
-pub(super) fn online_setup_settled(state: &AppState, host: bool) -> bool {
+pub(super) fn online_setup_settled(frontend: &FrontendState, host: bool) -> bool {
     MoviesCapture::slide_settled(
-        state,
+        frontend,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            &state.frontend,
+            frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Wol,
         )),
-    ) && state
-        .frontend
+    ) && frontend
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.statics.is_terminal())
@@ -1503,7 +1606,8 @@ pub(super) fn online_setup_settled(state: &AppState, host: bool) -> bool {
 /// adapter. False after a click that scrolls toward a row outside the list's
 /// view instead.
 fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
-    let layout = crate::app::shell_wol::lobby::layout(state);
+    let layout =
+        crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let lobby = state
         .frontend
         .wol
@@ -1556,9 +1660,14 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
 }
 
 fn click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
+    set_window_pointer_to_rect_center(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.input,
+        rect,
+    );
     App::handle_wol_mouse_move(state);
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
-    MoviesCapture::restore_neutral_pointer(state);
+    MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
 }

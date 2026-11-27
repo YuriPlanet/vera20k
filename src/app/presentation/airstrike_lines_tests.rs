@@ -186,10 +186,8 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
     for ms in [0, 128] {
         shades.step(&calls, &main.draws());
         let result = composite(&calls, ms, &shades, view);
-        // Phobos's hook at 0x007058F6 resumes past the stock draw at
-        // 0x00705905 and draws only its own scale.
+        // The stock shade owns the only ranged draw for this designation.
         reference.draws().ranged(190, 270);
-        reference.draws().ranged(745, 1000);
         assert_eq!(result.first(), Some(&opaque));
         assert_eq!(result.last(), Some(&opaque));
         assert_eq!(main.logical_state(), reference.logical_state());

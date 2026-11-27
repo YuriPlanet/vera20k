@@ -165,9 +165,10 @@ pub(crate) fn build(
     // into show_designator_range; the armed [SuperWeaponType] switch is the
     // third gate, checked here.
     // `SW.Designators`/`SW.Inhibitors` and `DesignatorRange`/`InhibitorRange`
-    // are Ares' SWTypeExt keys in VERA's rules; a phobos-only build carries no
-    // influence data, so the rings need both capabilities compiled in.
-    if show_designator_range
+    // are Ares' SWTypeExt keys in VERA's rules; the Phobos data switch admits
+    // the hook while those rules provide its lists and ranges.
+    if rules.phobos()
+        && show_designator_range
         && let Some(section) = armed_super_weapon
         && let Some(super_weapon) = rules.super_weapon(section)
         && super_weapon.show_designator_range
@@ -378,10 +379,10 @@ fn push_designator_rings(
     let Some(player) = sim.session().current_house() else {
         return;
     };
-    let Some(influence) = rules.super_weapon_metadata(&super_weapon.id) else {
+    let Some((designators, inhibitors)) = rules.super_weapon_influence_lists(&super_weapon.id)
+    else {
         return;
     };
-    let (designators, inhibitors) = (influence.designators(), influence.inhibitors());
     // `SW_Designators.Contains(pTechnoType)`: TechnoType identity is category
     // plus name, the same test the launch scan uses.
     let matches = |types: &[crate::rules::superweapon_type::TechnoTypeReference],

@@ -451,7 +451,8 @@ fn ambient_action_relights_no_cell_before_the_fade() {
 #[test]
 fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
     let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-        "[Radiation]\n\
+        "[General]\nAIFireSale=yes\n\
+         [Radiation]\n\
          RadDurationMultiple=1\nRadApplicationDelay=16\nRadLevelMax=500\n\
          RadLevelDelay=90\nRadLevelFactor=.2\nRadSiteWarhead=RadSite\n\
          [RadiationTypes]\n0=Violet\n\
@@ -515,7 +516,8 @@ fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
 #[test]
 fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
     let ini = IniFile::from_str(
-        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+        "[General]\nAIFireSale=yes\n\
+         [InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
          [VehicleTypes]\n0=TARGET\n\
          [TARGET]\nStrength=1000\nSpeed=6\n\
          AttachEffect.AttachTypes=RED,BLUE,HIDDEN\n\
@@ -568,7 +570,8 @@ fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
 fn cumulative_effect_tint_stacks_by_type_or_once() {
     let scene = |extra: &str| {
         let ini = IniFile::from_str(&format!(
-            "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+            "[General]\nAIFireSale=yes\n\
+             [InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [VehicleTypes]\n0=TARGET\n\
              [TARGET]\nStrength=1000\nSpeed=6\n\
              AttachEffect.AttachTypes=SAME,SAME\n\
@@ -736,5 +739,20 @@ fn air_unit_level_light_scales_the_height_and_takes_the_cell_scalar() {
     assert_eq!(
         super::air_unit_level_brightness(50, -52, false, false, 1.0, 0),
         -25
+    );
+}
+
+/// The module tint ORs its colour's RGB565 word into the Phobos owners'
+/// word and adds its intensity in thousandths; black adds no colour.
+#[test]
+fn the_module_tint_folds_into_the_custom_tint() {
+    assert_eq!(with_module_tint((0x001F, 250), None), (0x001F, 250));
+    assert_eq!(
+        with_module_tint((0x001F, 250), Some(([0xFF, 0x00, 0x00], 0.5))),
+        (0xF81F, 750)
+    );
+    assert_eq!(
+        with_module_tint((0, 0), Some(([0, 0, 0], -0.25))),
+        (0, -250)
     );
 }

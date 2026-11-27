@@ -1342,8 +1342,8 @@ fn walk_move(
     id: u64,
     to: (u16, u16),
 ) {
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &crate::sim::command::Command::Move {
             entity_id: id,
@@ -1353,7 +1353,7 @@ fn walk_move(
         rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
 }
 
 fn walk_frame(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {

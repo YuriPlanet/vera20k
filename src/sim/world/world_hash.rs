@@ -340,6 +340,10 @@ impl Simulation {
         // YR LogicClass trigger latches are save/lockstep state, even though
         // their camera/message outcomes stay app-owned and are not hashed.
         self.trigger_runtime.hash_state(hasher);
+        // Wasm extension modules; absent from stock play.
+        if !self.ext_modules.is_empty() {
+            self.ext_modules.hash_state(hasher);
+        }
         // ObjectClass+0x64, written by trigger action 99 and saved with the object.
         if !self.object_custom_sounds.is_empty() {
             b"object-custom-sounds-v1".hash(hasher);
@@ -378,9 +382,15 @@ impl Simulation {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
-        // Whether target scans are batched; their answers live within a pass.
+        // Whether target scans are batched, which also spreads the patrol
+        // scans and updates teams on their own turns; the scans' answers live
+        // within a pass.
         if self.scan_batch.is_some() {
             b"scan-batch-v1".hash(hasher);
+        }
+        // Whether turns draw from their own streams (`turn_streams`).
+        if *self.turn_streams {
+            b"turn-streams-v1".hash(hasher);
         }
 
         self.substrate.fold_raw_cell_occupation(hasher);

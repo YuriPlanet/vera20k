@@ -912,6 +912,19 @@ impl ProcessedRulesLayers {
         })
     }
 
+    pub(crate) fn super_weapon_influence_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            &crate::rules::superweapon_influence::SuperWeaponInfluence,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            &member.super_weapon_influence
+        })
+    }
+
     pub(crate) fn super_weapon_presentation_states(
         &self,
     ) -> impl Iterator<Item = (&str, &AresSuperWeaponPresentation)> {
@@ -1202,6 +1215,7 @@ impl ProcessedRulesLayers {
             &[String],
             &[NativeF64Bits; 11],
             Option<&AresWarheadVerses>,
+            Option<crate::rules::warhead_type::WarheadWeb>,
         ),
     > {
         self.native_type_construction_trace
@@ -1220,6 +1234,7 @@ impl ProcessedRulesLayers {
                     member.warhead_anim.debris_types.as_slice(),
                     &member.warhead_verses,
                     member.ares_verses.as_ref(),
+                    member.warhead_anim.web,
                 )
             })
     }

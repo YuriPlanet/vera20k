@@ -133,58 +133,60 @@ fn conversion_overwrites_only_the_selected_slot_and_keeps_its_path() {
 
 #[test]
 fn conversion_preserves_the_replaced_slot_and_takes_the_current_rules() {
-    use super::save_migration::SaveMigrationError;
-    use crate::sim::snapshot::migration;
+    crate::test_fixture::on_game_stack(|| {
+        use super::save_migration::SaveMigrationError;
+        use crate::sim::snapshot::migration;
 
-    let released = crate::test_fixture::bytes("tools/save_compatibility/fixtures/v0.3.9.sav");
-    let target_bytes = migration::migrate_named(released.to_vec(), "Known good").unwrap();
-    let mut header = GameSnapshot::read_metadata(released).unwrap();
-    let expected_rules = header.rules_hash;
-    header.rules_hash ^= 1;
-    let prefix = crate::util::save_codec::serialize(&header).unwrap();
-    let mut wrong_rules = released.to_vec();
-    wrong_rules[..prefix.len()].copy_from_slice(&prefix);
+        let released = crate::test_fixture::bytes("tools/save_compatibility/fixtures/v0.3.9.sav");
+        let target_bytes = migration::migrate_named(released.to_vec(), "Known good").unwrap();
+        let mut header = GameSnapshot::read_metadata(released).unwrap();
+        let expected_rules = header.rules_hash;
+        header.rules_hash ^= 1;
+        let prefix = crate::util::save_codec::serialize(&header).unwrap();
+        let mut wrong_rules = released.to_vec();
+        wrong_rules[..prefix.len()].copy_from_slice(&prefix);
 
-    let repository = fixture("conversion-replaced-slot");
-    let source = repository.write_named("old.sav", &wrong_rules).unwrap();
-    let target = repository.write_named("chosen.bin", &target_bytes).unwrap();
-    let backups = repository.directory().join("backups");
-    let replaced = backups.join("replaced");
-    std::fs::create_dir(&backups).unwrap();
-    std::fs::write(&replaced, b"obstruct destination backup").unwrap();
-    assert!(matches!(
-        repository.migrate_to_slot(&source, "Converted", Some(&target)),
-        Err(SaveMigrationError::Backup(_))
-    ));
-    assert!(repository.read(&target).unwrap() == target_bytes);
-    std::fs::remove_file(&replaced).unwrap();
+        let repository = fixture("conversion-replaced-slot");
+        let source = repository.write_named("old.sav", &wrong_rules).unwrap();
+        let target = repository.write_named("chosen.bin", &target_bytes).unwrap();
+        let backups = repository.directory().join("backups");
+        let replaced = backups.join("replaced");
+        std::fs::create_dir(&backups).unwrap();
+        std::fs::write(&replaced, b"obstruct destination backup").unwrap();
+        assert!(matches!(
+            repository.migrate_to_slot(&source, "Converted", Some(&target)),
+            Err(SaveMigrationError::Backup(_))
+        ));
+        assert!(repository.read(&target).unwrap() == target_bytes);
+        std::fs::remove_file(&replaced).unwrap();
 
-    let written = repository
-        .migrate_to_slot(&source, "Converted", Some(&target))
-        .unwrap();
-    assert_eq!(written, target);
-    let converted = repository.read(&target).unwrap();
-    // Whatever digest the old writer recorded, the converted save defers to
-    // the rules the game has when it loads.
-    assert_ne!(header.rules_hash, expected_rules);
-    assert_eq!(
-        GameSnapshot::read_metadata(&converted).unwrap().rules_hash,
-        migration::CONVERTED_RULES_HASH
-    );
-    let attempt = std::fs::read_dir(&replaced)
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap();
-    assert!(repository.read(&attempt.path().join("chosen.bin")).unwrap() == target_bytes);
-    assert!(
-        repository
-            .read(&backups.join(attempt.file_name()).with_extension("sav"))
+        let written = repository
+            .migrate_to_slot(&source, "Converted", Some(&target))
+            .unwrap();
+        assert_eq!(written, target);
+        let converted = repository.read(&target).unwrap();
+        // Whatever digest the old writer recorded, the converted save defers to
+        // the rules the game has when it loads.
+        assert_ne!(header.rules_hash, expected_rules);
+        assert_eq!(
+            GameSnapshot::read_metadata(&converted).unwrap().rules_hash,
+            migration::CONVERTED_RULES_HASH
+        );
+        let attempt = std::fs::read_dir(&replaced)
             .unwrap()
-            == wrong_rules
-    );
-    assert!(repository.read(&source).unwrap() == wrong_rules);
-    std::fs::remove_dir_all(repository.directory()).unwrap();
+            .next()
+            .unwrap()
+            .unwrap();
+        assert!(repository.read(&attempt.path().join("chosen.bin")).unwrap() == target_bytes);
+        assert!(
+            repository
+                .read(&backups.join(attempt.file_name()).with_extension("sav"))
+                .unwrap()
+                == wrong_rules
+        );
+        assert!(repository.read(&source).unwrap() == wrong_rules);
+        std::fs::remove_dir_all(repository.directory()).unwrap();
+    });
 }
 
 #[test]

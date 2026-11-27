@@ -75,7 +75,9 @@ class Capability:
 
 # The single stated home of the capability list (see the module docstring).
 # `test=False` means no capability-specific suite exists yet: the capability is
-# compile-covered only, as `npatch` is until its first chain lands.
+# compile-covered only. Ares, Phobos and NPatch need no build feature: every
+# build holds them and a game's data switches them on (`rules::ares_switch`,
+# `rules::phobos_switch`, `rules::npatch_switch`).
 CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "phobos",
@@ -88,13 +90,6 @@ CAPABILITIES: tuple[Capability, ...] = (
             "a_bound_radiation_type",
             "build_text",
         ),
-    ),
-    Capability(
-        "npatch",
-        ("npatch",),
-        "NPatch placeholder; no behaviour is compiled in yet, so compile "
-        "coverage is the whole job until the first chain lands.",
-        test=False,
     ),
     Capability(
         "verax",
@@ -160,15 +155,12 @@ CAPABILITIES: tuple[Capability, ...] = (
     ),
 )
 
-# The capability mixes #2797 declares meaningful: the remaining extension flags
-# are orthogonal, so every pair of them is compiled, then all of them together,
-# and the diagnostic build over all of them. Ares and Phobos need no flag: they
-# are in every build and switch on from a game's data. Combinations are
-# compile-covered; each capability is tested on its own so the matrix stays
-# bounded.
+# The capability mixes #2797 declares meaningful: the extension flags are
+# orthogonal, so the remaining meaningful mixes are compile-covered. Ares,
+# Phobos and NPatch need no flag: they are in every build and switch on from a
+# game's data. Each capability is tested on its own so the matrix stays bounded.
 COMBINATIONS: tuple[tuple[str, ...], ...] = (
-    ("npatch", "npbug"),
-    ("debug-tools", "npatch", "npbug"),
+    ("debug-tools", "npbug"),
 )
 
 BY_NAME = {capability.name: capability for capability in CAPABILITIES}
@@ -197,7 +189,7 @@ def run_cargo(args: Sequence[str]) -> int:
 
 
 def feature_args(features: Sequence[str]) -> list[str]:
-    """`--features` pair for a flag-carrying capability; empty when none is left."""
+    """`--features` pair for a flag-carrying capability; empty when none applies."""
     return ["--features", ",".join(features)] if features else []
 
 

@@ -298,15 +298,7 @@ fn infantry_shp_material_matches_original_gi_draws() {
             .set_active_for_test(row["input"]["berserk"].as_bool().unwrap());
         let light = body_palette_light(&grid, (10, 20), body_extra_light(&gi, rules, &sim, None));
         let gi = ObjectRecord::of_test(&gi);
-        let (_, light) = techno_effect_light(
-            &gi,
-            [1.; 3],
-            light,
-            &sim,
-            None,
-            false,
-            TechnoDraw::Shape,
-        );
+        let (_, light) = techno_effect_light(&gi, [1.; 3], light, &sim, None, TechnoDraw::Shape);
         assert_eq!(
             light.brightness(),
             int(&row["body"]["intensity"]),
@@ -316,18 +308,12 @@ fn infantry_shp_material_matches_original_gi_draws() {
         let word = shp_colour_word(&gi, &sim, rules, || {
             row["input"]["shrouded"].as_bool().unwrap()
         });
-        // Phobos `TechnoExt::GetTintColor` replaces the stock three-arm word
-        // with `GetColorFromColorAdd`'s single RGB565 arm, so a berserk GI's
-        // retail HighRed (24,0,0) is 0xC000 where the oracle has 0xE000.
-        let expected = if gi.berserk.is_active() {
-            rules.color_add.phobos_word(
-                rules.general.berserk_color,
-                rules.phobos_globals.color_add_use_8bit_rgb,
-            )
-        } else {
-            0
-        };
-        assert_eq!(word, expected, "{}", row["name"]);
+        assert_eq!(
+            u64::from(word),
+            row["body"]["colour_word"].as_u64().unwrap(),
+            "{}",
+            row["name"]
+        );
     }
 }
 
@@ -353,10 +339,7 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
     rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
     let native =
         crate::test_fixture::json("tools/procedural_drawing_oracle/infantry_berserk_body.json");
-    let active_word = rules.color_add.phobos_word(
-        rules.general.berserk_color,
-        rules.phobos_globals.color_add_use_8bit_rgb,
-    );
+    let active_word = native["rows"][1]["body"]["colour_word"].as_u64().unwrap() as u16;
     let mut histories = Vec::new();
     for move_step in [40, 120] {
         let mut sim = Simulation::with_seed(31);
@@ -671,7 +654,8 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
 #[test]
 fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[ColorAdd]\nNone=0,0,0\nStrongRed=31,0,0\nDarkRed=24,0,0\n\
+        "[General]\nAIFireSale=yes\n\
+         [ColorAdd]\nNone=0,0,0\nStrongRed=31,0,0\nDarkRed=24,0,0\n\
          [AudioVisual]\nLaserTargetColor=2\n\
          [InfantryTypes]\n0=BORIS\n1=PLAIN\n[BORIS]\nLaserTargetColor=1\n[PLAIN]\n",
     ))
@@ -720,7 +704,8 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
 #[test]
 fn airstrike_tint_reads_the_entry_as_8bit_rgb_with_the_switch() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[ColorAdd]\nEighty=255,64,8\n\
+        "[General]\nAIFireSale=yes\n\
+         [ColorAdd]\nEighty=255,64,8\n\
          [AudioVisual]\nLaserTargetColor=0\nColorAddUse8BitRGB=yes\n\
          [InfantryTypes]\n0=BORIS\n[BORIS]\n",
     ))

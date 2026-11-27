@@ -9,19 +9,26 @@ use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolProvider};
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
 use crate::util::config::GameConfig;
 use vera20k_gui::shell::list::ShellListGeometry;
 use vera20k_gui::{NodeId, Prop, Value};
+use winit::window::Window;
 
 /// Native diagnostics use the file next to VERA.INI; modern online visits
 /// never read or create the legacy account/persona file.
@@ -224,89 +231,104 @@ pub(super) fn user_locales(
 
 /// `0x00786BE6..0x00786C07`: `0xFE` runs over the backdrop; its init asks
 /// the service how many locales there are.
-pub(super) fn open_locale_page(state: &mut AppState) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(super) fn open_locale_page(frontend: &mut FrontendState, renderer: &RendererState) {
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page = WolPage::Locale(Box::default());
     visit.requests.push(WolServiceRequest::LocaleCount);
-    state.frontend.shell_controller.reset_to(LOCALE_DIALOG);
+    frontend.shell_controller.reset_to(LOCALE_DIALOG);
     // OK is created disabled (0x5800000B).
-    if let Some(root) = sync(state) {
-        let gui = state.frontend.shell_controller.gui_mut();
+    if let Some(root) = sync(frontend, renderer) {
+        let gui = frontend.shell_controller.gui_mut();
         page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(false));
     }
 }
 
 /// API+0xD0's count fills `0xFE`'s list with `WOL:Locale%02d` (`0x00780A00`,
 /// format `0x0084A684`).
-pub(super) fn locale_count(state: &mut AppState, count: i32) {
+pub(super) fn locale_count(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    count: i32,
+) {
     let texts: Vec<(i32, String)> = (0..count.max(0))
-        .map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}"))))
+        .map(|locale| {
+            (
+                locale,
+                process_assets.csf_text(&format!("WOL:Locale{locale:02}")),
+            )
+        })
         .collect();
-    let Some(WolPage::Locale(page)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page)
-    else {
+    let Some(WolPage::Locale(page)) = frontend.wol.as_mut().map(|visit| &mut visit.page) else {
         return;
     };
     page.fill(texts);
     let items = page.rows.iter().map(|row| row.text.clone()).collect();
-    if let Some(root) = sync(state) {
-        let gui = state.frontend.shell_controller.gui_mut();
+    if let Some(root) = sync(frontend, renderer) {
+        let gui = frontend.shell_controller.gui_mut();
         page::set(gui, root, LOCALE_LIST, Prop::Items, Value::Items(items));
     }
 }
 
 /// `0x0078766F..0x007876C1`: the empty backdrop, the AutoLoginQuery art and
 /// `0x112`.
-pub(super) fn open_auto_login_query(state: &mut AppState) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(super) fn open_auto_login_query(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+) {
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page = WolPage::AutoLoginQuery;
-    super::leaf::open_art(state, AUTO_LOGIN_DIALOG);
-    state.frontend.shell_controller.reset_to(AUTO_LOGIN_DIALOG);
+    super::leaf::open_art(frontend, process_assets, renderer, AUTO_LOGIN_DIALOG);
+    frontend.shell_controller.reset_to(AUTO_LOGIN_DIALOG);
 }
 
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
-/// Ask flag; `0x0072BCF0` frees the art and the flow returns 1.
-pub(crate) fn commit_auto_login(state: &mut AppState, answer: AutoLoginAnswer) {
-    super::leaf::free_art(&mut state.frontend.wol_art, AUTO_LOGIN_DIALOG);
-    if let Some(file) = info_file(
-        state.frontend.wol.as_ref(),
-        state.platform.game_config.as_ref(),
-    ) {
+/// Ask flag; `0x0072BCF0` frees the art and the flow returns 1, the
+/// returned step.
+pub(crate) fn commit_auto_login(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    answer: AutoLoginAnswer,
+) -> ClientStep {
+    super::leaf::free_art(&mut frontend.wol_art, AUTO_LOGIN_DIALOG);
+    if let Some(file) = info_file(frontend.wol.as_ref(), game_config) {
         match answer {
-            AutoLoginAnswer::Yes => file.set_auto_login(&state.frontend.wol_account.nickname),
+            AutoLoginAnswer::Yes => file.set_auto_login(&frontend.wol_account.nickname),
             AutoLoginAnswer::No { ask_again } => file.set_ask_auto_login(ask_again),
         }
     }
-    if let Some(visit) = state.frontend.wol.as_mut() {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page = WolPage::Backdrop { wait: None };
     }
-    service::finish_login(state);
+    ClientStep::Now(Box::new(service::finish_login))
 }
 
 /// `0x007A2970`'s modal `0x122` (`0x006241F0`) over the empty backdrop;
 /// its init formats `WOL:AddBuddyQuery` with the opponent (`0x007A2ABC`).
-pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(super) fn open_add_buddy_query(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    opponent: &str,
+) {
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page = WolPage::AddBuddyQuery(Box::new(AddBuddyQuery {
         opponent: opponent.to_owned(),
     }));
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
-    );
-    state.frontend.shell_controller.reset_to(ADD_BUDDY_DIALOG);
-    let question =
-        add_buddy_text(state.frontend.wol.as_ref(), &state.process_assets).unwrap_or_default();
-    if let Some(root) = sync(state) {
-        let gui = state.frontend.shell_controller.gui_mut();
+    frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    frontend.shell_controller.reset_to(ADD_BUDDY_DIALOG);
+    let question = add_buddy_text(frontend.wol.as_ref(), process_assets).unwrap_or_default();
+    if let Some(root) = sync(frontend, renderer) {
+        let gui = frontend.shell_controller.gui_mut();
         page::set(gui, root, TEXT, Prop::Text, Value::Text(question));
     }
 }
@@ -331,12 +353,18 @@ pub(crate) fn add_buddy_text(
     ))
 }
 
-/// `0x122`'s teardown has run with Yes or No.
-pub(crate) fn commit_add_buddy(state: &mut AppState, yes: bool, ask_again: bool) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
+/// `0x122`'s teardown has run with Yes or No; the welcome or the online
+/// lobby is the returned step.
+pub(crate) fn commit_add_buddy(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    yes: bool,
+    ask_again: bool,
+) -> ClientStep {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page = WolPage::Backdrop { wait: None };
     }
-    super::quick_match::add_buddy_answered(state, yes, ask_again);
+    super::quick_match::add_buddy_answered(frontend, game_config, yes, ask_again)
 }
 
 /// `0xFE`'s teardown has run with its result.
@@ -359,20 +387,20 @@ pub(crate) fn dialog(
     }
 }
 
-pub(crate) fn layout(state: &AppState) -> Option<WolPersonaLayout> {
-    let dialog = dialog(state.frontend.wol.as_ref())?;
-    Some(shell_layout::on(&state.renderer.gpu, |w, h, scale| {
+pub(crate) fn layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> Option<WolPersonaLayout> {
+    let dialog = dialog(wol)?;
+    Some(shell_layout::on(gpu, |w, h, scale| {
         WolPersonaLayout::new(dialog, w, h, scale)
     }))
 }
 
 /// Builds and places the open page's widgets; the root.
-pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
-    let layout = layout(state)?;
+pub(crate) fn sync(frontend: &mut FrontendState, renderer: &RendererState) -> Option<NodeId> {
+    let layout = layout(frontend.wol.as_ref(), &renderer.gpu)?;
     let dialog = layout.dialog;
     leaf::sync(
-        &mut state.frontend.shell_controller,
-        &state.renderer.bit_font,
+        &mut frontend.shell_controller,
+        &renderer.bit_font,
         dialog,
         layout.page.scale,
         || spec(dialog),
@@ -387,19 +415,40 @@ pub(crate) fn list_view(controller: &DialogController) -> Option<(ShellListGeome
     Some((gui.list_geometry(list)?, gui.list_view(list)?.top))
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    sync(state);
-    leaf::pointer(state, Pointer::Move);
+pub(super) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    sync(frontend, renderer);
+    leaf::pointer(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        Pointer::Move,
+    );
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    let Some(root) = sync(state) else {
+    let Some(root) = sync(&mut state.frontend, &state.renderer) else {
         return;
     };
-    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    let events = leaf::pointer(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    );
     for event in events {
         let gui = state.frontend.shell_controller.gui_mut();
-        let close: Option<(ShellSlideKind, ShellExitThen)> =
+        let close: Option<ClientStep> =
             match (event, &state.frontend.wol.as_ref().map(|visit| &visit.page)) {
                 // LBN_SELCHANGE (0x00796C3C): OK follows the selection.
                 (PageEvent::Selected(LOCALE_LIST, _), _) => {
@@ -408,11 +457,16 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 }
                 (PageEvent::Activated(id), Some(WolPage::AutoLoginQuery)) => {
                     WolAutoLoginQuery::activate(id, page::checked(gui, root, DO_NOT_ASK)).map(
-                        |answer| -> (ShellSlideKind, ShellExitThen) {
-                            (
+                        |answer| {
+                            ClientStep::Leave(
                                 ShellSlideKind::WolAutoLoginQuery,
                                 Box::new(move |state: &mut AppState| {
-                                    commit_auto_login(state, answer)
+                                    let step = commit_auto_login(
+                                        &mut state.frontend,
+                                        state.platform.game_config.as_ref(),
+                                        answer,
+                                    );
+                                    App::apply_step(state, step);
                                 }),
                             )
                         },
@@ -422,10 +476,16 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 // (0x007A2B2F, 0x007A2B66).
                 (PageEvent::Activated(id), Some(WolPage::AddBuddyQuery(_))) => {
                     let (yes, ask_again) = (id == ACCEPT, !page::checked(gui, root, DO_NOT_ASK));
-                    Some((
+                    Some(ClientStep::Leave(
                         ShellSlideKind::WolAddBuddyQuery,
                         Box::new(move |state: &mut AppState| {
-                            commit_add_buddy(state, yes, ask_again)
+                            let step = commit_add_buddy(
+                                &mut state.frontend,
+                                state.platform.game_config.as_ref(),
+                                yes,
+                                ask_again,
+                            );
+                            App::apply_step(state, step);
                         }),
                     ))
                 }
@@ -433,8 +493,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     let selected = page::int(gui, root, LOCALE_LIST, Prop::Selected);
                     locale
                         .activate(id, selected.and_then(|row| usize::try_from(row).ok()))
-                        .map(|locale| -> (ShellSlideKind, ShellExitThen) {
-                            (
+                        .map(|locale| {
+                            ClientStep::Leave(
                                 ShellSlideKind::WolLocale,
                                 Box::new(move |state: &mut AppState| commit_locale(state, locale)),
                             )
@@ -442,8 +502,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 }
                 _ => None,
             };
-        if let Some((kind, then)) = close {
-            App::leave_shell_dialog(state, kind, then);
+        if let Some(step) = close {
+            App::apply_step(state, step);
         }
     }
 }

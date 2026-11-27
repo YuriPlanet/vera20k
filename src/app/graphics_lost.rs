@@ -67,7 +67,18 @@ fn save_match(state: &mut AppState) -> Option<String> {
         return None;
     }
     let description = App::current_save_description(&state.match_state, &state.process_assets);
-    match crate::app::persistence::commands::save_game(state, &description, None) {
+    match crate::app::persistence::commands::save_game(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state,
+        &state.persistence,
+        &state.audio,
+        &state.diag,
+        &state.process_assets,
+        &description,
+        None,
+    ) {
         Ok(path) => {
             log::info!("Saved the match to {}", path.display());
             Some(description)

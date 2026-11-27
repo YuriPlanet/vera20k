@@ -8,8 +8,8 @@ use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::abort::{AbortButton, AbortSecondary};
 use crate::ui::shell::pause_menu::{PauseMenuButton, PauseMenuTemplate};
 
-fn menu_dialog(state: &AppState) -> u32 {
-    match crate::app::input::pause_menu::current_template(&state.match_state.match_presentation) {
+fn menu_dialog(match_presentation: &MatchPresentationState) -> u32 {
+    match crate::app::input::pause_menu::current_template(match_presentation) {
         PauseMenuTemplate::Offline => 0xb5,
         PauseMenuTemplate::Network => 0xbba,
         PauseMenuTemplate::Internet => 0xff,
@@ -17,10 +17,8 @@ fn menu_dialog(state: &AppState) -> u32 {
 }
 
 /// The local House's queued DESTRUCT records.
-fn queued_destructs(state: &AppState) -> Result<usize> {
-    let sim = &state
-        .match_state
-        .sim_runtime
+fn queued_destructs(sim_runtime: &SimHost) -> Result<usize> {
+    let sim = &sim_runtime
         .runtime()
         .context("abort lost its installed runtime")?
         .simulation;
@@ -142,7 +140,7 @@ impl AbortReturnInput {
                     == crate::ui::pause_menu::InGameMenuState::Menu,
             "ordinary Escape did not open B5"
         );
-        route.push(json!({"frame": frame, "action": "Escape press", "dialog": menu_dialog(state)}));
+        route.push(json!({"frame": frame, "action": "Escape press", "dialog": menu_dialog(&state.match_state.match_presentation)}));
         Ok(Self {
             phase: if advance {
                 AbortInputPhase::Menu
@@ -172,11 +170,15 @@ impl AbortReturnInput {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
                         && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence
                         ),
                     "the in-game menu did not present with its required loaded artwork"
                 );
-                let dialog = menu_dialog(state);
+                let dialog = menu_dialog(&state.match_state.match_presentation);
                 // The window handler's modal branch consumes the press. Its
                 // paused Escape release reaches this existing KeyEdge owner.
                 let escape = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape);
@@ -198,8 +200,14 @@ impl AbortReturnInput {
                 route.push(
                     json!({"frame": frame, "action": "pause menu presented", "dialog": dialog}),
                 );
-                let mut layout = crate::app::input::pause_menu::current_layout(state)
-                    .context("B5 has no loaded hit geometry")?;
+                let mut layout = crate::app::input::pause_menu::current_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B5 has no loaded hit geometry")?;
                 if self.stop_at_menu {
                     let internet = state.match_state.match_presentation.pause_menu_template
                         == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet;
@@ -218,8 +226,14 @@ impl AbortReturnInput {
                                 .get(row)
                                 .with_context(|| format!("FF has no {step} button"))?;
                             let point = click_in_game(state, rect);
-                            layout = crate::app::input::pause_menu::current_layout(state)
-                                .context("FF has no loaded hit geometry")?;
+                            layout = crate::app::input::pause_menu::current_layout(
+                                &state.platform,
+                                &state.renderer,
+                                &state.frontend,
+                                &state.match_state,
+                                &state.persistence,
+                            )
+                            .context("FF has no loaded hit geometry")?;
                             route.push(json!({"frame": frame, "action": step,
                                 "dialog": dialog, "point": point}));
                         }
@@ -247,7 +261,10 @@ impl AbortReturnInput {
                         route.push(json!({"frame": frame, "action": "speed trackbar jump",
                             "dialog": dialog, "point": point, "positions": pause.positions}));
                     }
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
@@ -298,7 +315,7 @@ impl AbortReturnInput {
                     "physical B5 Abort release did not open B6"
                 );
                 route.push(json!({"frame": frame, "action": "Abort release",
-                    "dialog": menu_dialog(state)}));
+                    "dialog": menu_dialog(&state.match_state.match_presentation)}));
                 self.phase = AbortInputPhase::Modal;
             }
             AbortInputPhase::Modal => {
@@ -306,12 +323,22 @@ impl AbortReturnInput {
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm
                         && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
+                            &state.platform,
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.persistence
                         ),
                     "B6 did not present with its required loaded artwork"
                 );
-                let layout = crate::app::input::abort::current_abort_layout(state)
-                    .context("B6 has no loaded geometry")?;
+                let layout = crate::app::input::abort::current_abort_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B6 has no loaded geometry")?;
                 route.push(
                     json!({"frame": frame, "action": "abort modal presented", "dialog": 0xb6,
                     "secondary": format!("{:?}", layout.secondary_kind),
@@ -320,7 +347,10 @@ impl AbortReturnInput {
                         .collect::<Vec<_>>()}),
                 );
                 let Some(choice) = self.choice else {
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 };
@@ -353,7 +383,10 @@ impl AbortReturnInput {
                     "dialog": 0x120, "rect": [layout.dialog.x, layout.dialog.y,
                     layout.dialog.w, layout.dialog.h]}));
                 if self.surrender != Some(true) {
-                    MoviesCapture::restore_neutral_pointer(state);
+                    MoviesCapture::restore_neutral_pointer(
+                        &state.renderer.gpu,
+                        &mut state.match_state.input,
+                    );
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
@@ -389,7 +422,7 @@ impl AbortReturnInput {
                             && Some(command.owner) == sim.session().current_house()
                     })
                     .count();
-                let destructs = queued_destructs(state)?;
+                let destructs = queued_destructs(&state.match_state.sim_runtime)?;
                 ensure!(
                     state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
                         && !state.match_state.match_presentation.modal_latch
@@ -400,7 +433,10 @@ impl AbortReturnInput {
                 );
                 route.push(json!({"frame": frame, "action": "Surrender OK release",
                     "destruct_queued": true, "exit_queued": true}));
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.phase = AbortInputPhase::Queued;
                 return Ok(true);
             }
@@ -414,9 +450,15 @@ impl AbortReturnInput {
                         ),
                     "B6 secondary capture changed before its presented press/release"
                 );
-                let secondary = crate::app::input::abort::current_abort_layout(state)
-                    .context("B6 has no loaded geometry")?
-                    .secondary_kind;
+                let secondary = crate::app::input::abort::current_abort_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B6 has no loaded geometry")?
+                .secondary_kind;
                 crate::app::input::dispatch::handle_mouse_input(
                     state,
                     MouseButton::Left,
@@ -427,7 +469,7 @@ impl AbortReturnInput {
                         state.match_state.match_presentation.in_game_menu
                             == InGameMenuState::Closed
                             && !state.match_state.match_presentation.modal_latch
-                            && queued_destructs(state)? == 1,
+                            && queued_destructs(&state.match_state.sim_runtime)? == 1,
                         "physical Observe did not close B6, clear the latch and queue DESTRUCT"
                     );
                     let sim = &state
@@ -461,7 +503,10 @@ impl AbortReturnInput {
                         "restart_requested": true}),
                     );
                 }
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.phase = AbortInputPhase::Queued;
             }
             AbortInputPhase::ChoicePressed => {
@@ -490,9 +535,15 @@ impl AbortReturnInput {
                         )),
                     "an EXIT was already queued before physical Leave release"
                 );
-                let destructs = crate::app::input::abort::current_abort_layout(state)
-                    .context("B6 has no loaded geometry")?
-                    .secondary_kind
+                let destructs = crate::app::input::abort::current_abort_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B6 has no loaded geometry")?
+                .secondary_kind
                     == AbortSecondary::Observe;
                 crate::app::input::dispatch::handle_mouse_input(
                     state,
@@ -526,7 +577,7 @@ impl AbortReturnInput {
                     !sim.quit_requested(),
                     "Leave confirmation executed EXIT instead of only queueing it"
                 );
-                let destruct_count = queued_destructs(state)?;
+                let destruct_count = queued_destructs(&state.match_state.sim_runtime)?;
                 ensure!(
                     destruct_count == usize::from(destructs),
                     "Leave queued {destruct_count} DESTRUCT records; result {} expects {}",
@@ -542,7 +593,10 @@ impl AbortReturnInput {
                     "owner_native_unique_id": sim.houses().get(&exit.owner).and_then(|house| house.native_unique_id()),
                     "modal_closed": !state.match_state.paused(), "diagnostic_simulation_freeze": false,
                     "quit_requested": sim.quit_requested()}));
-                MoviesCapture::restore_neutral_pointer(state);
+                MoviesCapture::restore_neutral_pointer(
+                    &state.renderer.gpu,
+                    &mut state.match_state.input,
+                );
                 self.phase = AbortInputPhase::Queued;
             }
             AbortInputPhase::Queued => {}

@@ -126,7 +126,7 @@ impl Simulation {
             return false;
         };
         let powered = (Self::anim_power_policy(object, entity, rules)
-            && crate::sim::power_system::native_building_power_drain(object.power) > 0
+            && object.power_drain() > 0
             && (flags.powered || flags.powered_light || flags.powered_effect))
             || (object.powered_special && flags.powered_special);
         if !powered {
@@ -179,9 +179,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if Self::anim_power_policy(object, entity, rules)
-            && crate::sim::power_system::native_building_power_drain(object.power) > 0
-        {
+        if Self::anim_power_policy(object, entity, rules) && object.power_drain() > 0 {
             self.apply_building_anim_power(id, operational, rules);
         }
         if !object.powered_special {

@@ -194,6 +194,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
         native_draw_bounds: Some([-128, -128, 256, 256]),
         shadow_center: None,
         pool_bytes: 0,
+        hd: None,
     }];
     let key_for = |caller: &serde_json::Value| UnitSpriteKey {
         type_id: "native-unit".into(),
@@ -237,6 +238,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
                 ]),
                 shadow_center: center,
                 pool_bytes: 0,
+                hd: None,
             });
         }
     }
@@ -403,6 +405,7 @@ fn shadow_first_fill_hits_and_later_pictures_keep_payloads() {
         ]),
         shadow_center: None,
         pool_bytes: 0,
+        hd: None,
     };
     let cache = vec![
         make(
@@ -483,6 +486,7 @@ fn shadow_sources_are_found_by_placement_and_key() {
         native_draw_bounds: Some([0, 0, 2, 2]),
         shadow_center: None,
         pool_bytes: 0,
+        hd: None,
     };
     let atlas = UnitAtlas::from_test_sprites(vec![
         sprite(VxlLayer::Body, vec![7, 0, 0, 7]),

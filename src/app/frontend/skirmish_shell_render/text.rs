@@ -3,7 +3,6 @@
 //! Owns localized labels, text rect conversion, modal/listbox text,
 //! status help text, and start-marker number labels.
 
-use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
@@ -348,14 +347,16 @@ pub(super) fn build_shell_text_draws(
     shell_draws
 }
 
-/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
-pub(crate) fn skirmish_labels(
-    frontend: &FrontendState,
-    match_state: &MatchState,
-    process_assets: &ProcessAssets,
-) -> crate::ui::skirmish_shell::page::SkirmishLabels {
-    use crate::skirmish_launch::{NATIVE_TEAMS, SKIRMISH_MAX_SLOT_COUNT};
-    let shell = &frontend.skirmish_shell_state;
+/// The combo entries the page's labels answer for: every item a row's list can
+/// draw, the country catalog, and the two menus. The Team items come from the
+/// same owner as the Team combos ([`crate::ui::skirmish_shell::team_items`]),
+/// so a map past gamemd's eight starts labels E..O instead of leaving them
+/// blank.
+fn label_items(
+    shell: &crate::ui::skirmish_shell::SkirmishShellState,
+    maps: &[crate::map::scenario_menu::MapMenuEntry],
+) -> Vec<SkirmishComboItem> {
+    use crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT;
     let ai = [
         SkirmishAiRowType::None,
         SkirmishAiRowType::Easy,
@@ -366,20 +367,31 @@ pub(crate) fn skirmish_labels(
     let starts = std::iter::once(LaunchStartPosition::Auto)
         .chain((0..SKIRMISH_MAX_SLOT_COUNT as u8).map(LaunchStartPosition::Position))
         .map(SkirmishComboItem::Start);
-    let teams = (-2..i32::from(NATIVE_TEAMS)).map(SkirmishComboItem::Team);
+    let teams = crate::ui::skirmish_shell::team_items(shell, maps);
     // VERA's Quick Team Setup and Bulk Seat Actions: their items as the
     // rows stand now, a greyed one with why.
-    let maps = frontend.scenario_catalog.shell_maps();
     let menus = [SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu]
         .into_iter()
         .flat_map(|menu| crate::ui::skirmish_shell::combo_items(shell, maps, menu));
-    let items = ai
-        .into_iter()
+    ai.into_iter()
         .chain(shell.country_catalog.items().iter().copied())
         .chain([SkirmishComboItem::ColorSentinel(-2)])
         .chain(starts)
         .chain(teams)
         .chain(menus)
+        .collect()
+}
+
+/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
+pub(crate) fn skirmish_labels(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> crate::ui::skirmish_shell::page::SkirmishLabels {
+    let shell = &frontend.skirmish_shell_state;
+    let maps = frontend.scenario_catalog.shell_maps();
+    let items = label_items(shell, maps)
+        .into_iter()
         .map(|item| {
             (
                 item,
@@ -449,6 +461,15 @@ pub(super) fn random_map_paint(
 ) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::random_map_page;
     use crate::ui::skirmish_shell::{RandomMapSetupControl as C, SetupCombo};
+    // DrawFill (0x00643470) uses the DarkRed scheme for the dialog outline.
+    let progress_outline = {
+        use crate::rules::color_scheme::{hsv_to_rgb, scheme_entry_by_name, scheme_hsv_by_entry};
+        crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
+            let schemes = &rules.color_schemes;
+            let index = scheme_entry_by_name(schemes, "DarkRed")?;
+            Some(hsv_to_rgb(scheme_hsv_by_entry(schemes, index)?).map(|v| f32::from(v) / 255.0))
+        })
+    };
     let modal = frontend
         .skirmish_shell_state
         .random_map_setup_modal
@@ -502,16 +523,23 @@ pub(super) fn random_map_paint(
         }),
         _ => None,
     };
-    // The progress well while a map generates: the panel colour in the
-    // owner-draw dark outline.
     let frame_of = |id: i32| {
-        (id == i32::from(RandomMapSetupLayout::PROGRESS_BAR)).then_some(FrameArt::Filled {
-            fill: super::SHELL_MODAL_PANEL_RGB,
-            outline: super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            depths: [
-                super::SHELL_DROPDOWN_DEPTH - 0.00013,
-                super::SHELL_DROPDOWN_DEPTH - 0.00014,
-            ],
+        if id != i32::from(RandomMapSetupLayout::PROGRESS_BAR) {
+            return None;
+        }
+        let outline = progress_outline;
+        Some(match atlas.random_map_progress {
+            Some(shape) => FrameArt::RandomMapProgress {
+                shape,
+                outline,
+                percent: modal.progress_percent,
+            },
+            None => FrameArt::Progress {
+                rgb: outline.unwrap_or(SHELL_LABEL_TEXT_RGB),
+                done: u64::from(modal.progress_percent),
+                total: 100,
+                depth: super::SHELL_DROPDOWN_DEPTH - 0.00014,
+            },
         })
     };
     let style = GuiStyle {
@@ -580,13 +608,16 @@ pub(super) fn random_map_paint(
 /// ([`crate::ui::skirmish_shell::choose_map_page`]) with their words and
 /// rows, the search box's text, then its heading and status line.
 pub(super) fn choose_map_paint(
-    state: &mut AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     layout: &ChooseMapModalLayout,
     sliding: bool,
 ) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::choose_map_page;
-    let frontend = &mut state.frontend;
     let modal = frontend.skirmish_shell_state.choose_map_modal.as_mut()?;
     // The heading and status line, revealed from the entry slide's end; a
     // hidden chooser shows neither.
@@ -602,7 +633,7 @@ pub(super) fn choose_map_paint(
     let modal = &*modal;
     let controller = &mut frontend.shell_controller;
     let root = choose_map_page::sync_page(controller, modal, layout)?;
-    let csf = state.process_assets.csf.as_ref();
+    let csf = process_assets.csf.as_ref();
     let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
     choose_map_page::show_texts(
         controller,
@@ -611,16 +642,12 @@ pub(super) fn choose_map_paint(
         sliding,
         &label,
     );
-    let state = &*state;
-    let modal = state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .as_ref()?;
+    let frontend = &*frontend;
+    let modal = frontend.skirmish_shell_state.choose_map_modal.as_ref()?;
     let rows_of = |id| {
         Some(choose_map_rows(
-            &state.frontend,
-            &state.process_assets,
+            frontend,
+            process_assets,
             modal,
             layout,
             id == 0x6EB,
@@ -629,7 +656,7 @@ pub(super) fn choose_map_paint(
     // VERA's search line over the map list shows the search with its
     // composition, or names itself while empty; an empty list says why.
     // The line takes its text once a frame: it moves in, not a copy.
-    let search = map_search_display(&state.platform.ime, &modal.search);
+    let search = map_search_display(ime, &modal.search);
     let empty = search.is_empty();
     let search = std::cell::Cell::new(Some(search));
     let text_of = |id: i32| {
@@ -651,7 +678,7 @@ pub(super) fn choose_map_paint(
     };
     let empty_of = |id: i32| {
         (id == i32::from(choose_map_page::MAP_LIST))
-            .then(|| choose_map_empty_text(state, modal))
+            .then(|| choose_map_empty_text(frontend, modal))
             .flatten()
     };
     // Native owner-draw lists keep the composed backing; only the
@@ -672,13 +699,13 @@ pub(super) fn choose_map_paint(
         empty_of: Some(&empty_of),
         ..Default::default()
     };
-    let gui = state.frontend.shell_controller.gui();
+    let gui = frontend.shell_controller.gui();
     let mut paint = paint_gui_with(
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
         atlas,
         gui,
         root,
@@ -687,7 +714,7 @@ pub(super) fn choose_map_paint(
         style,
     );
     paint.texts.extend(super::paint_map_dialog_statics(
-        &state.renderer.bit_font,
+        bit_font,
         &statics,
         layout.scale,
     ));
@@ -720,6 +747,8 @@ fn choose_map_rows(
             let chosen = modal.mode_rows().get(row)?;
             return Some(if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
                 tr("VERA:OnlineMaps")
+            } else if let Some(key) = chosen.online_category_label() {
+                format!("  {}", tr(key))
             } else if chosen.id == crate::ui::skirmish_shell::RANDOM_MAPS_ROW {
                 tr("VERA:RandomMaps")
             } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
@@ -763,7 +792,7 @@ fn choose_map_rows(
 /// VERA: why an empty Online Maps or Favorites list is empty, which it
 /// shows down the list.
 fn choose_map_empty_text(
-    state: &AppState,
+    frontend: &FrontendState,
     modal: &crate::ui::skirmish_shell::ChooseMapModalState,
 ) -> Option<String> {
     if modal.map_row_count() > 0 {
@@ -771,9 +800,7 @@ fn choose_map_empty_text(
     } else if modal.random_maps_selected() && modal.search.is_empty() {
         Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
-        Some(crate::app::map_library::empty_online_maps_text(
-            &state.frontend,
-        ))
+        Some(crate::app::map_library::empty_online_maps_text(frontend))
     } else if modal.favorites_selected() && modal.search.is_empty() {
         Some(tr(if modal.favorites.is_empty() {
             "VERA:NoFavorites"
@@ -788,8 +815,12 @@ fn choose_map_empty_text(
 /// The committed query plus the currently composed IME text, for display
 /// only; filtering still uses the committed query.
 pub(super) fn map_search_display(ime: &ImeState, search: &str) -> String {
-    let composition = ime
-        .composition(crate::app::input::ime::ImeTarget::ChooseMapSearch)
+    #[cfg(not(target_os = "android"))]
+    let composition = ime.composition(crate::app::input::ime::ImeTarget::ChooseMapSearch);
+    // Android: the search line is the focused GUI edit (`ImeTarget::Gui`).
+    #[cfg(target_os = "android")]
+    let composition = ime.open_composition();
+    let composition = composition
         .map(|(text, _)| String::from_utf16_lossy(text))
         .unwrap_or_default();
     format!("{search}{composition}")
@@ -888,16 +919,17 @@ pub(super) fn exclude_text_under(out: &mut Vec<ShellTextDraw>, dialog: RectPx) {
 /// The body and first button of Use Map's box. The download and random-map
 /// failure texts are VERA's own; the retail string table has none.
 pub(super) fn choose_map_prompt_labels(
-    state: &AppState,
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
 ) -> (String, String) {
     use crate::ui::skirmish_shell::ChooseMapPromptKind;
     let record = prompt
         .selection
         .record_index
-        .and_then(|index| state.frontend.scenario_catalog.records().get(index));
+        .and_then(|index| frontend.scenario_catalog.records().get(index));
     let online = record.and_then(|record| {
-        let map = state.frontend.map_library.online_map(record)?;
+        let map = frontend.map_library.online_map(record)?;
         Some((map.name.as_str(), record.player_capacity, map.byte_length))
     });
     // The map's name fills in last, so a `{...}` in it stays as written.
@@ -913,7 +945,7 @@ pub(super) fn choose_map_prompt_labels(
             &[("size", &bytes.div_ceil(1024)), ("name", &name)],
         ),
         (ChooseMapPromptKind::Downloading, Some((name, ..))) => {
-            match crate::app::map_library::download_progress(&state.frontend) {
+            match crate::app::map_library::download_progress(frontend) {
                 Some((received, length)) => tr_fill(
                     "VERA:DownloadingMapPercent",
                     &[
@@ -931,12 +963,12 @@ pub(super) fn choose_map_prompt_labels(
             tr_fill("VERA:MapSaveFailed", &[("name", &name)])
         }
         (ChooseMapPromptKind::RandomMapFailed, _) => tr("VERA:RandomMapSaveFailed"),
-        _ => state.csf_label("GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
+        _ => process_assets.csf_label("GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };
     let ok = match prompt.kind {
         ChooseMapPromptKind::EjectAi
         | ChooseMapPromptKind::Downloaded
-        | ChooseMapPromptKind::RandomMapFailed => state.csf_label("GUI:Ok", "OK"),
+        | ChooseMapPromptKind::RandomMapFailed => process_assets.csf_label("GUI:Ok", "OK"),
         _ => tr("VERA:Download"),
     };
     (body, ok)
@@ -1025,6 +1057,45 @@ mod tests {
         assert_eq!(room_team_label(3), None);
         assert_eq!(room_team_label(4).as_deref(), Some("E"));
         assert_eq!(room_team_label(14).as_deref(), Some("O"));
+    }
+
+    fn map_entry_with_starts(start_count: usize) -> crate::map::scenario_menu::MapMenuEntry {
+        crate::map::scenario_menu::MapMenuEntry {
+            file_name: "map.mmx".to_string(),
+            display_name: "map.mmx".to_string(),
+            author: None,
+            preview: Default::default(),
+            multiplayer_start_waypoints: (0..start_count)
+                .map(|index| crate::map::waypoints::Waypoint {
+                    index: index as u32,
+                    rx: index as u16,
+                    ry: index as u16,
+                })
+                .collect(),
+            player_capacity: start_count as i32,
+            preview_source_bounds: None,
+        }
+    }
+
+    #[test]
+    fn team_labels_cover_every_item_the_team_combo_offers() {
+        let shell = crate::ui::skirmish_shell::SkirmishShellState::default();
+        let maps = [map_entry_with_starts(13)];
+        let offered =
+            crate::ui::skirmish_shell::combo_items(&shell, &maps, SkirmishComboId::Team(0));
+        assert!(
+            offered.contains(&SkirmishComboItem::Team(14)),
+            "a map past gamemd's eight starts runs teams to O"
+        );
+        let labels = label_items(&shell, &maps);
+        let teams: Vec<_> = labels
+            .into_iter()
+            .filter(|item| matches!(item, SkirmishComboItem::Team(_)))
+            .collect();
+        assert_eq!(
+            teams, offered,
+            "the Team column's labels must name every item its list offers"
+        );
     }
 
     #[test]

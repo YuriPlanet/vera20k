@@ -899,7 +899,7 @@ fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
     use std::cell::RefCell;
 
     let rules_ini = IniFile::from_str(
-        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+        "[General]\nAIFireSale=yes\n[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
          [VehicleTypes]\n0=HTNK\n[HTNK]\nStrength=100\nSpeed=6\n\
          [Animations]\n0=ANIM\n",
     );

@@ -465,7 +465,15 @@ impl RulesPassProcessor {
                     // LoadFromINIFile10033250: the first call runs the Type
                     // handler's Initialize, then LoadFromINI10033370 reads
                     // EVA.Ready/Activated/Detected before the other fields.
-                    let kind = kind.as_deref();
+                    // SW_Protect::HandlesType10074B40 selects the same Initialize
+                    // and LoadFromINI for stock IronCurtain as for Type=Protect.
+                    let kind = kind.as_deref().map(|kind| {
+                        if kind.eq_ignore_ascii_case("IronCurtain") {
+                            "Protect"
+                        } else {
+                            kind
+                        }
+                    });
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
                         .read_pass(&raw, kind);
@@ -885,6 +893,24 @@ impl RulesPassProcessor {
                         // Activation sound resolves against the fixed SOUNDMD catalog
                         // in RuleSet::bind_type_sound_references, using this type's
                         // retained INI read history rather than an unresolved name.
+                    }
+                }
+                if !ares_way {
+                    let designators = crate::rules::ares_switch::not_ares_read(|| {
+                        self.resolve_existing_techno_type_list_from(&raw, "SW.Designators")
+                    });
+                    if let Some(designators) = designators {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_influence
+                            .designators = designators;
+                    }
+                    let inhibitors = crate::rules::ares_switch::not_ares_read(|| {
+                        self.resolve_existing_techno_type_list_from(&raw, "SW.Inhibitors")
+                    });
+                    if let Some(inhibitors) = inhibitors {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_influence
+                            .inhibitors = inhibitors;
                     }
                 }
             } else if ares_way {

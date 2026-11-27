@@ -219,6 +219,31 @@ def _inspect_cached(store: Path, binary: Path, revision: str, preserved, counter
     return refs
 
 
+def _prune_inspections(directory: Path) -> int:
+    """Remove the inspection record of each executable that no longer exists.
+
+    A record answers only for its executable's current identity, so once the
+    file is gone no pass reads it again; without this the store keeps one
+    record for every executable ever built. An unreadable record stays: the
+    read that reaches it decides.
+    """
+    removed = 0
+    for entry in os.scandir(directory):
+        if not entry.name.endswith('.json') or not entry.is_file(follow_symlinks=False):
+            continue
+        try:
+            binary = json.loads(Path(entry.path).read_text()).get('binary')
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(binary, str) and os.path.isabs(binary) and not os.path.exists(binary):
+            try:
+                os.unlink(entry.path)
+            except OSError:
+                continue  # Gone already, or the next pass removes it.
+            removed += 1
+    return removed
+
+
 def _directory_identity(path: Path) -> tuple:
     _plain(path)
     info = path.stat()
@@ -361,8 +386,9 @@ def _abandoned_roots(root: Path, store: Path) -> set[Path]:
 def _abandoned_output(cache: Path, path: Path) -> bool:
     """Cargo's own output in an abandoned cache: profile trees and root files.
 
-    A `--target` build keeps one tree per profile in <triple>, beside a CACHEDIR.TAG.
-    The profile can be one the runner has no name for (tools/wasm/build.py builds
+    A host build keeps one tree per profile in the cache root; a `--target` build
+    keeps them in <triple>, beside a CACHEDIR.TAG. The profile can be one the runner
+    has no name for (tools/scale_bench.py builds `shipping`, tools/wasm/build.py
     `wasm`), so such a tree is known by Cargo's .fingerprint directory, which a
     stopped pass leaves behind: only a finished pass removes directories. Host trees
     alone were reclaimed until four removed worktrees' wasm32 output, 8.3 GB that no
@@ -373,8 +399,9 @@ def _abandoned_output(cache: Path, path: Path) -> bool:
     if (len(parts) > 1 and parts[0] in HOST_PROFILES) or parts in (
             ('.rustc_info.json',), ('.future-incompat-report.json',), ('CACHEDIR.TAG',)):
         return True
-    return parts[1:] == ('CACHEDIR.TAG',) or (
-        len(parts) > 2 and (cache / parts[0] / parts[1] / '.fingerprint').is_dir())
+    return parts[1:] == ('CACHEDIR.TAG',) or any(
+        len(parts) > depth and cache.joinpath(*parts[:depth], '.fingerprint').is_dir()
+        for depth in (1, 2))
 
 
 def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None, uses=None):
@@ -1109,6 +1136,8 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 'incremental_bytes': max(0, projected_incremental - policy.incremental_bytes),
                 'free_bytes': {key: max(0, policy.min_free_bytes - count)
                                for key, count in (projected_free if dry_run else receipt['free_after']).items()}}
+        if not dry_run:
+            receipt['removed_inspection_records'] = _prune_inspections(store / 'inspections')
     except (OSError, ValueError, subprocess.SubprocessError, UnicodeError) as error:
         receipt['state'] = 'partial' if receipt['removed_files'] else 'blocked'
         receipt['errors'].append(str(error))

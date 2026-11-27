@@ -360,8 +360,10 @@ impl<'a> FireSubject<'a> {
                     .ares_disable_weapons
                     .remaining(frame as i32)
                     > 0,
+            module_weapons_disabled: firer.module_weapons_disabled(),
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
+            webbed: firer.is_webbed(frame as i32),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -642,16 +644,22 @@ impl<'a> FireSubject<'a> {
                         // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
                         // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
                         // type flag and `ImmuneToBerserk` overrides both.
-                        immune_to_psionics: if self.rules.ares() {
-                            target_obj.techno_combat().combat().immune_to_berserk(
+                        // A module's `ImmunityFlags` bit 6 (berserk) replaces it.
+                        immune_to_psionics: entity.module_immune(
+                            crate::sim::ext_modules::modifiers::Immunity::Berserk,
+                            if self.rules.ares() {
+                                target_obj.techno_combat().combat().immune_to_berserk(
+                                    target_obj.immune_to_psionics
+                                        || target_obj.promotion_abilities().is_some_and(
+                                            |abilities| {
+                                                abilities.psionics_immune(entity.veterancy.raw())
+                                            },
+                                        ),
+                                )
+                            } else {
                                 target_obj.immune_to_psionics
-                                    || target_obj.promotion_abilities().is_some_and(|abilities| {
-                                        abilities.psionics_immune(entity.veterancy.raw())
-                                    }),
-                            )
-                        } else {
-                            target_obj.immune_to_psionics
-                        },
+                            },
+                        ),
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,

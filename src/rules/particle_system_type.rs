@@ -50,6 +50,11 @@ pub enum ParticleSystemBehavesLike {
     /// Constructor and unrecognized/empty ReadINI result.
     #[default]
     Unknown = -1,
+    /// Firestorm 2.0's sixth name (`0x00707B34`): the system a Webby
+    /// warhead leaves in each cell it webs (docs/ts-webs.md). gamemd's table
+    /// stops at Railgun. Declared last so the saved variant order of the
+    /// others stays as it was.
+    Web = 5,
 }
 
 impl ParticleSystemBehavesLike {
@@ -61,9 +66,10 @@ impl ParticleSystemBehavesLike {
             Self::Fire,
             Self::Spark,
             Self::Railgun,
+            Self::Web,
         ]
         .into_iter()
-        .zip(["Smoke", "Gas", "Fire", "Spark", "Railgun"])
+        .zip(["Smoke", "Gas", "Fire", "Spark", "Railgun", "Web"])
         .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }

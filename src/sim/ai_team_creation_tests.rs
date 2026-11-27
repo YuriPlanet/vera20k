@@ -438,18 +438,17 @@ fn ares_trigger_side_tokens_admit_any_registered_side() {
 }
 
 #[test]
-fn a_command_driven_house_stands_down_from_team_creation() {
+fn a_human_controlled_house_stands_down_from_team_creation() {
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.set_binary_frame_for_test(100);
     let owner = sim.interner.intern("H0");
-    let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-    // Expired timer, an ordinary computer house: without the stand-down the
+    let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+    // Expired timer, a human-controlled house: without the stand-down the
     // selector's first act is its `RandomRanged(1, 100)` roll.
     house.team_creation_mut().timer = CdTimer::from_raw(0, 1);
-    house.make_command_driven();
     sim.houses.register(house);
     let before = rng_digest(&sim.scenario_rng);
     update_team_creation(

@@ -401,13 +401,27 @@ impl RuleSet {
     /// before its registry ID (`+0x24`), ignoring case. The shared owner
     /// retains `<random>`=-2 and unknown=-1; this typed projection returns
     /// only registered Country identities.
+    ///
+    /// VERA-only: the answer comes from `country_name_indices`, which holds
+    /// the first Country of the scan for every alias and identity, so a
+    /// lookup compares no names. A debug build under the live-read check runs
+    /// the scan beside it.
     pub(crate) fn country_index_of_name(&self, name: &str) -> Option<CountryIdx> {
-        let index = house_type_index_of_name(name, self.country_lookup_members());
-        (index >= 0).then(|| {
-            CountryIdx(
-                u16::try_from(index).expect("COUNTRY_LIMIT keeps the Country registry within u16"),
-            )
-        })
+        // The shared owner answers `<random>` with -2 before its scan.
+        let found = (!name.eq_ignore_ascii_case("<random>"))
+            .then(|| {
+                crate::util::native_string::with_ascii_uppercase(name, |key| {
+                    self.country_name_indices.get(key).copied()
+                })
+            })
+            .flatten();
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || found.map_or(-1, |index| i32::from(index.0)).max(-1)
+                    == house_type_index_of_name(name, self.country_lookup_members()).max(-1),
+            "the Country name index answers {found:?} for {name:?}, unlike the scan"
+        );
+        found
     }
 
     /// Cooperative5C34F0/5C35F0 draw over the complete retained HouseType
@@ -544,20 +558,10 @@ impl RuleSet {
     ///
     /// The native ID match (`0x00732C30`) admits a building of a listed type
     /// when CanBeSelectedNow (vt+0x13C) answers true or its type has
-    /// `UndeploysInto=` (`0x00732C61..0x00732C83`). A building's
-    /// CanBeSelectedNow (`0x00459C00`) first asks `0x00465D40`, true only for
-    /// a 1x1 `UndeploysInto=` type, so retail admits exactly the
-    /// `UndeploysInto=` buildings. Phobos's hook makes `0x00465D40` answer true
-    /// during the ID match under `BuildingTypeSelectable`, with Ares loaded.
-    /// RESIDUAL: with the switch on, native still applies CanBeSelectedNow's
-    /// TechnoClass checks (`0x006FC030`); this admits every building of the
-    /// type.
+    /// `UndeploysInto=` (`0x00732C61..0x00732C83`). This is the ID match's
+    /// independent building arm; Phobos's `BuildingTypeSelectable` hook lifts
+    /// the separate CanBeSelectedNow type query only for that ID-match call.
     pub fn structure_type_selectable(&self, id: &str) -> bool {
-            {
-            if self.ares && self.general.building_type_selectable {
-                return true;
-            }
-        }
         self.object(id)
             .is_some_and(|object| object.undeploys_into.is_some())
     }

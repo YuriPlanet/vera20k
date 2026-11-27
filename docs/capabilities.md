@@ -1,12 +1,13 @@
 # Optional capabilities
 
 The engine ships optional feature flags that no default or release build
-compiles: `npatch`, `npbug` and the diagnostic builds (`debug-tools`,
-`telemetry-dashboard`, `perf`). They are orthogonal and mixable (`--features
-npatch,npbug`); an implemented capability must keep working with the others
-present without assuming they are absent. Ares and Phobos are not among them:
-every build holds both, and a game's data switches each on
-([Ares](ares.md), [Phobos](phobos.md)). A flag that nothing
+compiles, including `npbug` and the diagnostic builds (`debug-tools`,
+`telemetry-dashboard`, `perf`). They are orthogonal and mixable
+(`--features npbug,debug-tools`); an implemented capability must keep working
+with the others present without assuming they are absent. Ares, Phobos and
+NPatch are not among them: every build holds all three, and a game's data
+switches each on ([Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md)).
+A flag that nothing
 compiles is a break waiting to be found by whoever tries it first — that gap
 is tracked as #2798, and #2789 (`telemetry-dashboard` unbuildable from `main`
 for a day) is what it costs. `npbug` is VERA20K's own opt-in bug-fix
@@ -33,7 +34,7 @@ python -m tools.capability_tests list                        # the registry
 python -m tools.capability_tests test phobos                 # full suite, phobos on
 python -m tools.capability_tests test phobos -- --test-threads=8
 python -m tools.capability_tests focus phobos                # dedicated modules only
-python -m tools.capability_tests build npatch                # compile coverage only
+python -m tools.capability_tests build npbug                 # compile coverage only
 python -m tools.capability_tests check                       # the CI sequence
 ```
 

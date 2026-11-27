@@ -11,9 +11,15 @@
 
 use std::collections::HashMap;
 
-use crate::app::AppState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::super_timer_groups::{TeamKey, TeamSuperRow, grouped_super_rows};
 use crate::app::presentation::text_hud::{self, TextHud};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::assets::csf_file::type_ui_name;
 use crate::map::houses::is_allied_with;
 use crate::render::batch::SpriteInstance;
@@ -153,28 +159,15 @@ fn timer_seconds(frames: i32, clock: &TimerClock) -> i32 {
 
 /// The clock for this frame's timer lines: the `[Phobos]` switches, the
 /// engine speed index, the session's mode and the published frame rate.
-fn timer_clock(state: &AppState, sim: &crate::sim::world::Simulation) -> TimerClock {
-    let (real_time, adaptive) = {
-        let presentation = &state.match_state.match_presentation;
-        (
-            presentation.real_time_timers,
-            presentation.real_time_timers_adaptive,
-        )
-    };
+fn timer_clock(match_state: &MatchState, sim: &crate::sim::world::Simulation) -> TimerClock {
+    let presentation = &match_state.match_presentation;
     TimerClock {
-        real_time,
-        adaptive,
+        real_time: presentation.real_time_timers,
+        adaptive: presentation.real_time_timers_adaptive,
         game_speed: sim.session().game_options().game_speed,
         multiplayer: sim.session().multiplayer_mode_class().is_some(),
         custom_game_speed: false,
-        frame_rate: f64::from(
-            state
-                .match_state
-                .match_presentation
-                .detail
-                .borrow()
-                .frame_rate(),
-        ),
+        frame_rate: f64::from(presentation.detail.borrow().frame_rate()),
     }
 }
 
@@ -497,10 +490,20 @@ impl TimerDock {
 
 /// The cursor in the pixels of the timers' box, where the dock keeps its hit
 /// areas: the battlefield's own pixels in the original interface.
-pub(crate) fn cursor_in_view(state: &AppState) -> (i32, i32) {
-    let (x, y) = state.match_state.input.cursor_px();
+pub(crate) fn cursor_in_view(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> (i32, i32) {
+    let (x, y) = match_state.input.cursor_px();
     let [left, top, _, _] = crate::app::presentation::field_parts::rect(
-        state,
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
         crate::ui::field_layout::FieldPart::Timers,
     );
     (x - left, y - top)
@@ -508,10 +511,16 @@ pub(crate) fn cursor_in_view(state: &AppState) -> (i32, i32) {
 
 /// Consume wheel messages only over the expanded timer ink, before world zoom
 /// or sidebar scrolling. Empty space around the rows stays interactive terrain.
-pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
-    let (x, y) = cursor_in_view(state);
-    state
-        .match_state
+pub(crate) fn wheel(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    delta: f32,
+) -> bool {
+    let (x, y) = cursor_in_view(platform, renderer, screen, match_state, persistence);
+    match_state
         .match_presentation
         .super_timer_dock
         .wheel(x, y, delta)
@@ -545,38 +554,35 @@ pub(crate) struct TimerFrame {
 /// their places and colours ([`TimerFrame`]), the dock's rows and hit areas,
 /// and each Super's blink, which steps on the wall clock. The drawing then
 /// only reads what this left ([`build_super_timer_instances`]).
-pub(crate) fn update_super_timers(state: &mut AppState) {
-    state
-        .match_state
+pub(crate) fn update_super_timers(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    match_state
         .match_presentation
         .super_timer_frame
         .texts
         .clear();
-    state
-        .match_state
-        .match_presentation
-        .super_timer_frame
-        .toggle = None;
-    state
-        .match_state
-        .match_presentation
-        .super_timer_dock
-        .clear_hits();
-    state
-        .match_state
-        .match_presentation
-        .super_timer_next_flip_ms = None;
+    match_state.match_presentation.super_timer_frame.toggle = None;
+    match_state.match_presentation.super_timer_dock.clear_hits();
+    match_state.match_presentation.super_timer_next_flip_ms = None;
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
     // A layout that leaves the timers out draws none and keeps no hit area.
-    if state.frontend.screen != GameScreen::InGame
-        || !field_parts::shows(&state.match_state.match_presentation, FieldPart::Timers)
+    if frontend.screen != GameScreen::InGame
+        || !field_parts::shows(&match_state.match_presentation, FieldPart::Timers)
     {
         return;
     }
-    let (Some(runtime), Some(rules)) =
-        (state.match_state.sim_runtime.presentation(), state.rules())
-    else {
+    let (Some(runtime), Some(rules)) = (
+        match_state.sim_runtime.presentation(),
+        crate::app::state::active_rules(frontend, match_state),
+    ) else {
         return;
     };
     let sim = &runtime.simulation;
@@ -601,8 +607,8 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         (house, left)
     });
     let scenario = sim.session().scenario_timer_view();
-    let clock = timer_clock(state, sim);
-    let grouped = state.persistence.options_profile.grouped_super_timers;
+    let clock = timer_clock(match_state, sim);
+    let grouped = persistence.options_profile.grouped_super_timers;
     let local = sim.session().current_house();
     // Teams are the match's REAL launch teams, kept for the whole game in the
     // app-owned SkirmishLaunchSession. Do not infer them from
@@ -616,11 +622,10 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
     // seat (a human-controlled or AI House, not an observer). The per-team
     // player count is how many such houses sit on that team; it is the "N" in
     // the no-team row's `(N)` caption.
-    let launch = state
-        .match_state
+    let launch = match_state
         .session
         .network_setup()
-        .or_else(|| state.match_state.startup.offline_launch());
+        .or_else(|| match_state.startup.offline_launch());
     let mut team_by_name: HashMap<String, Option<u8>> = HashMap::new();
     let mut players_by_team: HashMap<Option<u8>, usize> = HashMap::new();
     if let Some(launch) = launch {
@@ -675,13 +680,12 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         return;
     }
 
-    let csf = state.process_assets.csf.as_ref();
+    let csf = process_assets.csf.as_ref();
     let schemes = rules.color_schemes.as_slice();
     let house_rgb = |house: Option<InternedId>| {
         let color = house
             .and_then(|house| {
-                state
-                    .match_state
+                match_state
                     .match_presentation
                     .effective_house_color_map()
                     .get(sim.interner().resolve(house))
@@ -703,6 +707,9 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
     // red. Same-team is decided by the launch team (stable all match); the
     // green check uses the live alliance graph, which is the right source for
     // "are we allies right now" even though it must never decide grouping.
+    // Under the team-colours toggle an enemy team takes the colour the map
+    // gives it, so the timers agree with the units and the radar.
+    let team_colours = match_state.match_presentation.team_colors;
     let alliances = sim.house_alliances();
     let local_name = local.map(|house| sim.interner().resolve(house));
     let team_rgb = |row: &TeamSuperRow| {
@@ -711,20 +718,25 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
             (TeamKey::Unteamed, None) => true,
             _ => false,
         };
-        let relation = if same_team {
-            RELATION_SELF
-        } else if local_name.is_some_and(|name| {
+        if team_colours && row.team == TeamKey::Unteamed {
+            return house_text_rgb(schemes, RELATION_ENEMY);
+        }
+        if same_team {
+            return house_text_rgb(schemes, RELATION_SELF);
+        }
+        if local_name.is_some_and(|name| {
             is_allied_with(
                 alliances.as_map(),
                 name,
                 sim.interner().resolve(row.representative),
             )
         }) {
-            RELATION_ALLY
-        } else {
-            RELATION_ENEMY
-        };
-        house_text_rgb(schemes, relation)
+            return house_text_rgb(schemes, RELATION_ALLY);
+        }
+        if team_colours && matches!(row.team, TeamKey::Named(_)) {
+            return house_rgb(Some(row.representative));
+        }
+        house_text_rgb(schemes, RELATION_ENEMY)
     };
     let lines: Vec<(TimerLine, String, [u8; 3])> = lines
         .into_iter()
@@ -762,15 +774,22 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         })
         .collect();
     let blink_rgb = blink_rgb(rules);
-    let now_ms = crate::app::input::tooltips::now_ms(&state.diag, &state.match_state);
+    let now_ms = crate::app::input::tooltips::now_ms(diag, match_state);
     // The dock stacks up from the bottom right of its box, the battlefield
     // in the original interface, and works in the box's own pixels.
-    let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
-    let font = &state.renderer.bit_font;
+    let [_, _, view_w, view_h] = field_parts::rect(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+        FieldPart::Timers,
+    );
+    let font = &renderer.bit_font;
     let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
     // The grouped lines are few; they replace the compact dock's paging.
-    let compact = state.persistence.options_profile.compact_super_timers && !grouped;
-    let dock = &mut state.match_state.match_presentation.super_timer_dock;
+    let compact = persistence.options_profile.compact_super_timers && !grouped;
+    let dock = &mut match_state.match_presentation.super_timer_dock;
     let rows = dock.rows(
         &timer_lines,
         local,
@@ -784,7 +803,7 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
             positions[*i] = Some(position);
         }
     }
-    let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
+    let blinks = &mut match_state.match_presentation.super_timer_blinks;
     let mut shown = Vec::with_capacity(2 * lines.len());
     let mut next_flip_ms: Option<u64> = None;
     for (index, (line, label, rgb)) in lines.iter().enumerate() {
@@ -833,7 +852,7 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         shown.push((time, time_at, time_rgb));
     }
     let toggle = dock.toggle_rect.map(|rect| (rect, dock.expanded));
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.super_timer_next_flip_ms = next_flip_ms;
     presentation.super_timer_frame.texts = shown;
     presentation.super_timer_frame.toggle = toggle;
@@ -843,20 +862,31 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
 /// out this frame: a box and a text node of `hud` for each text, the boxes
 /// drawn first, then the text. Returns the boxes and the glyphs.
 pub(crate) fn build_super_timer_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     hud: &mut TextHud,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
-    let frame = &state.match_state.match_presentation.super_timer_frame;
+    let frame = &match_state.match_presentation.super_timer_frame;
     // Screen-space lanes add back the world camera the UI shader subtracts,
     // and the box's corner.
     let camera = if frame.texts.is_empty() {
         [0.0; 2]
     } else {
-        field_parts::lane_camera(state, FieldPart::Timers)
+        field_parts::lane_camera(
+            platform,
+            renderer,
+            screen,
+            match_state,
+            persistence,
+            FieldPart::Timers,
+        )
     };
-    draw_timer_frame(frame, camera, &state.renderer.bit_font, hud)
+    draw_timer_frame(frame, camera, &renderer.bit_font, hud)
 }
 
 /// [`build_super_timer_instances`] for a given frame and lane camera.
@@ -913,14 +943,11 @@ fn draw_timer_frame(
 
 /// Whether a 0 s Super line's blink flips on the next timer draw
 /// (`0x006D4C75..0x006D4CDF`): its deadline has passed on the same clock.
-pub(crate) fn blink_due(state: &AppState) -> bool {
-    state
-        .match_state
+pub(crate) fn blink_due(diag: &DiagnosticsState, match_state: &MatchState) -> bool {
+    match_state
         .match_presentation
         .super_timer_next_flip_ms
-        .is_some_and(|next| {
-            crate::app::input::tooltips::now_ms(&state.diag, &state.match_state) >= next
-        })
+        .is_some_and(|next| crate::app::input::tooltips::now_ms(diag, match_state) >= next)
 }
 
 #[cfg(all(test, tests_app_presentation))]

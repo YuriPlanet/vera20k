@@ -126,11 +126,16 @@ pub(crate) struct WeaponOffsets {
     // TechnoType710AF0, clears7116E6..71173A: both WeaponStruct arrays.
     base: [WeaponSlotGeometry; WEAPON_SLOT_COUNT],
     elite: [WeaponSlotGeometry; WEAPON_SLOT_COUNT],
-    /// GetFLH6F3AF5's `AlternateFLH0..4`, plus Phobos's sixth
-    /// `AlternateFLH5` entry (`Ext/TechnoType/Body.cpp:1368-1384`): ports 0..4
-    /// default to `Weapon[0].FLH`, and the sixth is appended only when
-    /// authored, otherwise the stock negative-index read stays at zero.
-    alternate: [[i32; 3]; 6],
+    /// GetFLH6F3AF5's `AlternateFLH0..4`: ports 0..4 default to
+    /// `Weapon[0].FLH`. Keep the stock five coordinates as one wire field so
+    /// every released writer decodes without a partial-array migration.
+    alternate: [[i32; 3]; 5],
+    /// Phobos's sixth `AlternateFLH5` entry (`Ext/TechnoType/Body.cpp:1368-1384`).
+    /// It is appended only when authored, otherwise the stock negative-index
+    /// read stays at zero. A one-element array keeps the Phobos writer's raw
+    /// three-dword encoding while giving older writers one absent field.
+    #[serde(default)]
+    phobos_alternate: [[i32; 3]; 1],
     // Ares extension slots past the original eighteen; only a read the Ares
     // way fills them.
     extra_base: Vec<WeaponSlotGeometry>,
@@ -225,7 +230,7 @@ impl WeaponOffsets {
         }
         //715F9E..716005 always reads all five ports after either arm, with
         // the current base Weapon[0] coordinate as each default.
-        for (port, offset) in self.alternate[..5].iter_mut().enumerate() {
+        for (port, offset) in self.alternate.iter_mut().enumerate() {
             *offset = art.read_coord3(&format!("AlternateFLH{port}"), self.base[0].flh);
         }
         // Phobos's loop appends a sixth entry only when `AlternateFLH5` is
@@ -233,7 +238,7 @@ impl WeaponOffsets {
         // the negative-index read answers as the zero FLH
         // (`Ext/TechnoType/Body.cpp:1368-1384`).
         if let Some(fifth) = nullable_flh(art, "AlternateFLH5") {
-            self.alternate[5] = fifth;
+            self.phobos_alternate[0] = fifth;
         }
         read_burst_rows(art, turret_count, weapon_count, "", &mut self.burst);
         // Phobos `TechnoTypeExt::LoadFromINIFile`
@@ -437,9 +442,17 @@ impl WeaponOffsets {
         }
     }
 
-    /// GetFLH6F3AF5..6F3B21: ports beyond the five stored coordinates are zero.
+    /// GetFLH6F3AF5..6F3B21 plus Phobos's sixth coordinate. Ports beyond
+    /// either stored range are zero.
     pub(crate) fn alternate(&self, port: usize) -> Flh {
-        self.alternate.get(port).copied().unwrap_or_default().into()
+        let coordinate = if port < self.alternate.len() {
+            self.alternate[port]
+        } else if port == self.alternate.len() {
+            self.phobos_alternate[0]
+        } else {
+            [0; 3]
+        };
+        coordinate.into()
     }
 }
 

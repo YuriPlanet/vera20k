@@ -432,7 +432,23 @@ impl Simulation {
             .get(target_id)
             .is_some_and(|target| target.lifecycle.object_alive())
         {
-            self.dispatch_object_tag_event(target_id, 69, Some(target_id), None, context);
+            self.dispatch_object_tag_event(
+                target_id,
+                69,
+                Some(target_id),
+                None,
+                context.reborrow(),
+            );
+        }
+        // Wasm module `ThievedBy` (stock 3) on the taken vehicle, the captor
+        // as `other`, before the caller consumes the captor.
+        if self
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.lifecycle.object_alive())
+        {
+            self.raise_module_infiltration_event(rules, context.effects(), 3, target_id, actor_id);
         }
         Ok(VehicleCaptureOutcome {
             consumed: !board_driver,

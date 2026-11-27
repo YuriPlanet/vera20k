@@ -137,6 +137,7 @@ fn the_switch_admits_every_building() {
 
 #[test]
 fn the_switch_still_applies_the_building_selection_checks() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (sim, order) = building_pair_with_garrison("GAPOWR");
     let rules = rules("BuildingTypeSelectable=yes\n");
     assert_eq!(
@@ -149,6 +150,7 @@ fn the_switch_still_applies_the_building_selection_checks() {
 
 #[test]
 fn the_undeploysinto_arm_still_outranks_the_building_checks() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (sim, order) = building_pair_with_garrison("GACNST");
     let rules = rules("BuildingTypeSelectable=yes\n");
     assert_eq!(
@@ -160,6 +162,7 @@ fn the_undeploysinto_arm_still_outranks_the_building_checks() {
 
 #[test]
 fn the_switch_lifts_only_the_id_match_context() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Phobos sets ExtSelection::ProcessingIDMatches around the ID match only
     // (hooks 0x732A85/0x732B28, cleared at 0x732C06), so the band and N/M
     // walks keep CanBeSelectedNow's own type query.

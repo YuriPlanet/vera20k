@@ -1,8 +1,9 @@
 [package]
 name = "vera20k-android"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
-description = "Android NativeActivity entry point for the VERA20k client"
+build = "build.rs"
+description = "Android GameActivity entry point for the VERA20k client"
 publish = false
 
 # A cdylib: Android loads libvera20k_android.so and calls `android_main`.
@@ -26,16 +27,17 @@ dev-overlays = ["vera20k/dev-overlays"]
 # The client, for entry::run_with_loop and the App it drives.
 vera20k = { path = "..", default-features = false }
 # The JNI-facing activity type winit takes from the loader.
-android-activity = { version = "0.6", features = ["native-activity"] }
+android-activity = { version = "=0.6.0", default-features = false, features = ["game-activity"] }
 # Same version and default-feature set as the client's dependency; the Android
 # backend feature must agree with it or winit compiles without a backend.
-winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-game-activity"] }
 # The folder picker: a Storage Access Framework tree has no filesystem path, so
 # the activity and its ContentResolver are reached through JNI.
 jni = "0.21"
 ndk-context = "0.1"
 anyhow = { workspace = true }
 log = { workspace = true }
+libc = "0.2"
 
 [lints]
 workspace = true

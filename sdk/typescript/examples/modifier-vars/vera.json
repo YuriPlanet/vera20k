@@ -1,0 +1,9 @@
+{
+  "kind": "rules",
+  "entry": "src/index.ts",
+  "out": "build/rules.wasm",
+  "vars": [
+    { "name": "Wave", "scope": "global", "visibility": "public", "initial": 7 },
+    { "name": "Marked", "scope": "object", "visibility": "private", "initial": 0 }
+  ]
+}

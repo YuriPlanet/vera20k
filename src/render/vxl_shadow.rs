@@ -316,6 +316,7 @@ pub(crate) fn render_raster(vxl: &VxlFile, raster: &StencilRaster) -> Option<Vxl
         height: h as u32,
         offset_x: ox as f32,
         offset_y: oy as f32,
+        hd: None,
     })
 }
 
@@ -430,6 +431,7 @@ pub(crate) fn render_indices(
         height: h as u32,
         offset_x: (anchor[0] - 128 + x0) as f32,
         offset_y: (anchor[1] - 128 + y0) as f32,
+        hd: None,
     })
 }
 

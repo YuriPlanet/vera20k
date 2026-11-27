@@ -435,6 +435,16 @@ fn click_fire(
                 overlay_registry,
                 frame_effects,
             );
+            // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3).
+            if effect_launched {
+                sim.raise_module_super_weapon_launched(
+                    rules,
+                    frame_effects,
+                    owner,
+                    sw_type_id,
+                    cell,
+                );
+            }
             // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
             // type here too. Its money step never settles: Fire_SW refuses a
             // charge-drain type with Money.Amount before this click.
@@ -490,6 +500,11 @@ fn click_fire(
         overlay_registry,
         frame_effects,
     );
+    // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3), after
+    // SuperClass::Launch (`0x006CC390`).
+    if effect_launched {
+        sim.raise_module_super_weapon_launched(rules, frame_effects, owner, sw_type_id, cell);
+    }
     // Installed Ares SWTypeExt::Launch10032ED0 calls Activate first and only
     // reaches money10032FDF after success. In particular a HunterSeeker with
     // no usable launch building still spends its charge, but never its fee.
@@ -602,12 +617,17 @@ fn launch(
 ) -> bool {
     use super::paradrop::ParaDropKind;
     let ares = rules.ares_form();
+    let launch_kind = if ares {
+        sw.kind.ares_handler_kind()
+    } else {
+        sw.kind
+    };
     // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
     // redirected Type's handler Activate runs first; an accepted one ends
     // Launch through the common tail, a refused one falls through to the
     // stock case, which then reports no Ares activation.
-    let redirect_refused = if ares && sw.kind.is_ares_redirect() {
-        let activated = match sw.kind {
+    let redirect_refused = if ares && launch_kind.is_ares_redirect() {
+        let activated = match launch_kind {
             SuperWeaponKind::ChronoSphere => {
                 super::chronosphere::ares_launch_source(
                     sim,
@@ -700,14 +720,14 @@ fn launch(
     // (ForceShield6CD072..6CD077; case4 starts6CC4B2 with radar production).
     // Drain ClickFire can reach Launch after Reset retained state1 but cleared
     // rawReady. Keep the earlier timer transition while skipping case effects.
-    let native_kind = sw.kind.native_index();
+    let native_kind = launch_kind.native_index();
     if (0..12).contains(&native_kind)
         && native_kind != 4
         && !super::is_charged(sim, owner, sw_type_id)
     {
         return false;
     }
-    match sw.kind {
+    match launch_kind {
         // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
         // effects. ClickFire's ordinary/one-time finish still runs afterwards.
         SuperWeaponKind::NoEffect => {}

@@ -461,7 +461,6 @@ impl ProjectileCollisionPolicy {
     pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
         self.gravity
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1089,6 +1088,15 @@ impl ProjectilePayload {
     /// The FireAt bullet's Ares Range ([`Self::ares_range`]).
     pub(crate) fn with_ares_range(self, ares_range: Option<i32>) -> Self {
         Self { ares_range, ..self }
+    }
+
+    /// The same payload carrying another BulletType: a Wasm module's `Fire`
+    /// plan entry fired with the shot's own weapon (RFC 0001 section 9).
+    pub(crate) fn with_projectile_type(self, projectile_type: Option<InternedId>) -> Self {
+        Self {
+            projectile_type,
+            ..self
+        }
     }
 
     /// The sole +130 mutation, corresponding to SetWeaponType46B260.
@@ -1770,14 +1778,15 @@ pub enum ProjectileDetonationReason {
     AttachEffectShot,
     /// A `NUKE` impact's wait ended: its anim is gone (`0x00466771`).
     AnimEnded,
-    /// Phobos `StraightTrajectory`'s own warhead detonations
-    /// (`WarheadTypeExt::DetonateAt`): the pass-through, proximity and
-    /// last-check hits, and the bullet's own trajectory-triggered detonation.
-    PhobosTrajectory,
     /// Phobos `ApplyCrit`'s `Crit.Warhead_FullDetonation` arm:
     /// `WarheadTypeExt::DetonateAt` builds a bullet with no weapon type and
     /// explodes it at the target (`Ext/WarheadType/Body.cpp:102..110`).
     CritWarhead,
+    /// Phobos `StraightTrajectory`'s own warhead detonations
+    /// (`WarheadTypeExt::DetonateAt`): the pass-through, proximity and
+    /// last-check hits, and the bullet's own trajectory-triggered detonation.
+    /// Appended after the upstream reasons to preserve their saved indices.
+    PhobosTrajectory,
     /// Phobos ExtraWarheads' full-detonation arm
     /// (`Ext/Bullet/Hooks.DetonateLogics.cpp:418-419`): the same
     /// `WarheadTypeExt::DetonateAt` bullet, at the parent's impact.
@@ -1902,6 +1911,24 @@ mod trailer_tests;
 pub(crate) struct ProjectileAiHead {
     id: u64,
     phase: ProjectileAiPhase,
+}
+
+/// A Wasm module's step for one flight visit (RFC 0001 section 9, appendix
+/// 4.5 `ProjectileFrame` and `Launch`): it replaces the candidate step of
+/// [`ProjectileStore::advance_after_head`], guided and Vertical arms
+/// included, together with the detonation tests those arms make (arrival
+/// snap, safety altitude, closing rate, bridge decks, DetonationAltitude).
+/// The ordinary tail, range, firestorm, shared probe, proximity fuse and
+/// impact ladder follow for every such bullet, guided or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ModuleMotion {
+    /// The bullet's new velocity; `None` keeps its binary64 bits.
+    pub(crate) velocity: Option<ProjectileVelocity>,
+    /// The candidate; `None` takes the position plus the (new) velocity's
+    /// integer projection.
+    pub(crate) position: Option<ProjectileCoord>,
+    /// An impact at the candidate (leaving the map still comes first).
+    pub(crate) detonate: bool,
 }
 
 enum ProjectileAiPhase {
@@ -2696,7 +2723,43 @@ impl ProjectileStore {
             false,
             collides_at,
             nuke,
+            None,
         )
+    }
+
+    /// Whether the flight visit `head` starts reaches the candidate step of
+    /// [`Self::advance_after_head`]: a flying bullet (no anim wait) whose
+    /// target still resolves and whose frame fuse has not run out. Only
+    /// reads, so a module can be asked in between (`ProjectileFrame`).
+    pub(crate) fn reaches_candidate_step(
+        &self,
+        head: &ProjectileAiHead,
+        mut resolve_target_position: impl FnMut(
+            ProjectileTarget,
+            ProjectileTargetQuery,
+        ) -> Option<ProjectileCoord>,
+    ) -> bool {
+        if !matches!(head.phase, ProjectileAiPhase::Flight(_)) {
+            return false;
+        }
+        let Some(projectile) = self.get(head.id) else {
+            return false;
+        };
+        let resolves = match projectile.target {
+            target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                resolve_target_position(
+                    target,
+                    if projectile.tracks_target {
+                        ProjectileTargetQuery::GuidanceAim
+                    } else {
+                        ProjectileTargetQuery::TargetAim
+                    },
+                )
+                .is_some()
+            }
+            _ => true,
+        };
+        resolves && projectile.fuse_frames_remaining != Some(0)
     }
 
     pub(crate) fn advance_after_head(
@@ -2720,6 +2783,7 @@ impl ProjectileStore {
             ProjectileCollisionPhase,
         ) -> Option<ProjectileCollisionResponse>,
         nuke: Option<&NukeImpactContext<'_>>,
+        module_motion: Option<ModuleMotion>,
     ) -> Option<ProjectileAdvanceResult> {
         let mut result = ProjectileAdvanceResult::default();
 
@@ -2819,31 +2883,44 @@ impl ProjectileStore {
         // gravity/reflection commit (`Ext/Bullet/Hooks.cpp:610-618`, hook
         // 0x467AB2 -> 0x467B1A).
         let parabomb = projectile.parabomb.is_some();
-        let mut candidate = if parabomb {
-            {
-                let state = projectile
-                    .parabomb
-                    .as_mut()
-                    .expect("checked parabomb state");
-                state.accumulated_rate =
-                    crate::sim::movement::parachute_descent::parachuted_bullet_rate(
-                        state.accumulated_rate,
-                        state.fall_rate_step,
-                        state.max_fall_rate,
-                    );
-                let rate = state.accumulated_rate;
-                let ground = projectile_ground_z(terrain, shared_cell_dummy, projectile.position);
-                let candidate = ProjectileCoord::new(
-                    projectile.position.x,
-                    projectile.position.y,
-                    projectile.position.z.wrapping_add(rate),
-                );
-                if candidate.z <= ground {
-                    impact_flag = true;
-                    impact_reason = ProjectileDetonationReason::Collision;
-                }
-                candidate
+        // A module's step (RFC 0001 section 9) replaces whichever arm
+        // follows; that arm's own detonation tests go with it.
+        let mut candidate = if let Some(motion) = module_motion {
+            if let Some(velocity) = motion.velocity {
+                projectile.velocity = velocity;
             }
+            impact_flag = motion.detonate;
+            motion.position.unwrap_or_else(|| {
+                let step = projectile.velocity.integer_projection();
+                ProjectileCoord::new(
+                    projectile.position.x.wrapping_add(step.x),
+                    projectile.position.y.wrapping_add(step.y),
+                    projectile.position.z.wrapping_add(step.z),
+                )
+            })
+        } else if parabomb {
+            let state = projectile
+                .parabomb
+                .as_mut()
+                .expect("checked parabomb state");
+            state.accumulated_rate =
+                crate::sim::movement::parachute_descent::parachuted_bullet_rate(
+                    state.accumulated_rate,
+                    state.fall_rate_step,
+                    state.max_fall_rate,
+                );
+            let rate = state.accumulated_rate;
+            let ground = projectile_ground_z(terrain, shared_cell_dummy, projectile.position);
+            let candidate = ProjectileCoord::new(
+                projectile.position.x,
+                projectile.position.y,
+                projectile.position.z.wrapping_add(rate),
+            );
+            if candidate.z <= ground {
+                impact_flag = true;
+                impact_reason = ProjectileDetonationReason::Collision;
+            }
+            candidate
         } else if projectile.guidance.is_some() {
             let step = homing::step(
                 projectile,
@@ -2931,22 +3008,17 @@ impl ProjectileStore {
         // Early returns preserve Bullet+E8 at tail entry. Ordinary scratch
         // gravity/reflection commits only at 467AB2; Vertical already
         // committed its ramp at 4672A3..4672B4 and skips that copyback.
-        if !parabomb
-            && projectile.guidance.is_none()
-            && let Some(ProjectileCollisionResponse::Ordinary {
-                candidate: selected,
-                velocity,
-                impact,
-                near_target: near,
-                left_map,
-            }) = collides_at(
+        // A module-moved bullet takes this tail whatever its ROT, with the
+        // velocity the module left (RFC 0001 section 9). A parachuted bullet
+        // keeps Phobos's early skip unless a module replaced its motion.
+        let collision = if module_motion.is_some() || (!parabomb && projectile.guidance.is_none()) {
+            collides_at(
                 projectile,
                 candidate,
                 ProjectileCollisionPhase::Ordinary {
-                    persistent_velocity: if matches!(
-                        projectile.trajectory,
-                        ProjectileTrajectory::Vertical { .. }
-                    ) {
+                    persistent_velocity: if module_motion.is_some()
+                        || matches!(projectile.trajectory, ProjectileTrajectory::Vertical { .. })
+                    {
                         projectile.velocity
                     } else {
                         previous_velocity
@@ -2956,6 +3028,16 @@ impl ProjectileStore {
                     }),
                 },
             )
+        } else {
+            None
+        };
+        if let Some(ProjectileCollisionResponse::Ordinary {
+            candidate: selected,
+            velocity,
+            impact,
+            near_target: near,
+            left_map,
+        }) = collision
         {
             candidate = selected;
             projectile.velocity = velocity;
@@ -4049,6 +4131,7 @@ mod tests {
                         (collision && matches!(phase, ProjectileCollisionPhase::Shared))
                             .then_some(ProjectileCollisionResponse::TargetZClamp(candidate))
                     },
+                    None,
                     None,
                 )
                 .unwrap();

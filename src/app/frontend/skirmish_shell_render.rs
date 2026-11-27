@@ -397,10 +397,18 @@ fn render_skirmish_shell_with_atlas(
     // that clears "Working / Please Wait" is the one showing the finished map.
     // While a job is in flight the shell keeps asking for frames -- nothing else
     // is driving redraws, and without this the dialog would freeze on the first
-    // "working" frame until the player moved the mouse.
-    if crate::app::App::poll_random_map_generation(state)
-        || state.frontend.random_map_generation.is_some()
-    {
+    // "working" frame until the player moved the mouse. An OK that waited
+    // for the map begins its teardown slide here, before the frame lays
+    // anything out.
+    let (changed, step) = crate::app::App::poll_random_map_generation(
+        &mut state.frontend,
+        &mut state.match_state.sim_runtime,
+        &mut state.process_assets,
+    );
+    if let Some(step) = step {
+        crate::app::App::apply_step(state, step);
+    }
+    if changed || state.frontend.random_map_generation.is_some() {
         state.platform.window.request_redraw();
     }
     let layout =
@@ -465,9 +473,9 @@ fn render_skirmish_shell_with_atlas(
     let message_box_up = validation.is_some() || message_box.is_some();
     // The boxes on their widgets on the shell controller before they paint,
     // Use Map's raised as its input raises it.
-    let prompt_box = message_box
-        .as_ref()
-        .map(|prompt| shell_box::choose_map_prompt_shell_box(state, prompt));
+    let prompt_box = message_box.as_ref().map(|prompt| {
+        shell_box::choose_map_prompt_shell_box(&state.frontend, &state.process_assets, prompt)
+    });
     let size = shell_box::render_size(&state.renderer, &state.frontend.screen);
     let validation_parts = validation
         .as_ref()
@@ -516,9 +524,23 @@ fn render_skirmish_shell_with_atlas(
     let preview_rect = setup_preview_rect
         .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
         .unwrap_or(layout.map_preview);
-    ensure_selected_preview_texture(state, preview_rect);
-    let zoom_layout =
-        ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
+    ensure_selected_preview_texture(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence,
+        preview_rect,
+    );
+    let zoom_layout = ensure_zoom_texture(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state.input,
+        &state.process_assets,
+        layout.scale,
+        !sliding && !leaving && !message_box_up,
+    );
     let selected_entry = preview::preview_map_idx(&state.frontend)
         .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
     // A generated preview carries its red squares (0x00641140) and also gets
@@ -601,7 +623,14 @@ fn render_skirmish_shell_with_atlas(
     // `0x102`'s widgets, synced to the session, through the shared painter;
     // an open list goes over every dialog text.
     let page_root = parent_showing
-        .then(|| crate::app::App::sync_skirmish_page(state))
+        .then(|| {
+            crate::app::App::sync_skirmish_page(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+        })
         .flatten();
     if let Some(root) = page_root {
         show_skirmish_flags(&mut state.frontend, root, layout.shown_rows);
@@ -665,7 +694,7 @@ fn render_skirmish_shell_with_atlas(
         _ if message_box_up => None,
         (Some(_), Some(seed_layout)) => shell.saved_seed_browser.as_ref().map(|browser| {
             let (key, fallback) = browser.mode.title_label();
-            let title = state.csf_label(key, fallback);
+            let title = state.process_assets.csf_label(key, fallback);
             saved_games::seed_browser_paint(
                 &state.platform.ime,
                 &state.renderer,
@@ -690,7 +719,16 @@ fn render_skirmish_shell_with_atlas(
                 setup_layout,
                 sliding,
             ),
-            None => text::choose_map_paint(state, atlas, choose_map_layout, sliding),
+            None => text::choose_map_paint(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                atlas,
+                choose_map_layout,
+                sliding,
+            ),
         },
         (None, _) => setups_layout
             .as_ref()
@@ -746,7 +784,17 @@ fn render_skirmish_shell_with_atlas(
         .zip(prompt_box.as_ref())
         .zip(prompt_parts.as_ref())
         .map(|((prompt, prompt_box), parts)| {
-            shell_box::choose_map_prompt_box(state, Some(atlas), prompt, prompt_box, parts)
+            shell_box::choose_map_prompt_box(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                Some(atlas),
+                prompt,
+                prompt_box,
+                parts,
+            )
         });
     let mut instances = if message_box_up {
         let mut instances = Vec::new();
@@ -833,8 +881,8 @@ fn render_skirmish_shell_with_atlas(
         .create_instance_buffer(&state.renderer.gpu, &marker_label_instances);
     state.renderer.batch_renderer.update_camera(
         &state.renderer.gpu,
-        state.render_width() as f32,
-        state.render_height() as f32,
+        state.renderer.render_width(&state.frontend.screen) as f32,
+        state.renderer.render_height(&state.frontend.screen) as f32,
         0.0,
         0.0,
         1.0,
@@ -871,11 +919,17 @@ fn render_skirmish_shell_with_atlas(
                 .create_instance_buffer(&state.renderer.gpu, &d.instances)
         })
         .collect();
-    let cursor_instances: Vec<SpriteInstance> =
-        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
+    let cursor_instances: Vec<SpriteInstance> = crate::app::frontend::shell_pass::software_cursor(
+        &mut state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        SHELL_CURSOR_DEPTH,
+    )
+    .map(|(_, instance)| instance)
+    .into_iter()
+    .collect();
     let cursor_buffer = state
         .renderer
         .batch_renderer
@@ -892,7 +946,9 @@ fn render_skirmish_shell_with_atlas(
         .map(|frame| &frame.texture);
 
     // A game room's Choose Map is one of the online client's screens.
-    let smooth_art = state.smooth_online_menus()
+    let smooth_art = state
+        .persistence
+        .smooth_online_menus(state.frontend.native_shell_ui)
         && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup;
     let mut pass = begin_shell_pass(encoder, target, "Skirmish Shell");
     state.renderer.batch_renderer.draw_chrome(
@@ -936,7 +992,12 @@ fn render_skirmish_shell_with_atlas(
         &shell_draws,
         &scissored_text_buffers,
     );
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     if let Some((buffer, count)) = dropdown_buffer.as_ref() {
         state.renderer.batch_renderer.draw_chrome(
             &mut pass,
@@ -953,7 +1014,12 @@ fn render_skirmish_shell_with_atlas(
         &dropdown_text_buffers,
     );
     // Reset scissor to full render so any subsequent draws / passes aren't clipped.
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    pass.set_scissor_rect(
+        0,
+        0,
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    );
     if let Some(buffers) = zoom_buffers.as_ref() {
         draw_zoom(
             &mut pass,
@@ -1953,6 +2019,8 @@ mod sound;
 pub(crate) use sound::render_sound_shell;
 
 pub(crate) use chrome::type3_button_frames;
+#[cfg(target_os = "android")]
+pub(crate) use controls::push_new_edit;
 
 mod keyboard;
 mod lan_lobby;
@@ -1963,6 +2031,34 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
+/// VERA's send key in `rect`, drawn with the online room's emote button art
+/// (`0x3ED`'s released image, as `Picture::Emote` draws it).
+fn push_chat_send_key(
+    controls: &mut Vec<crate::render::batch::SpriteInstance>,
+    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
+    scale: crate::ui::shell::geom::ShellScale,
+    rect: crate::ui::shell::geom::RectPx,
+) {
+    let (Some(mut entry), _) = atlas.wol_emote_images() else {
+        return;
+    };
+    let [aw, ah] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+    if aw <= 0.0 || ah <= 0.0 {
+        return;
+    }
+    let draw = [aw.min(rect.w as f32), ah.min(rect.h as f32)];
+    entry.uv_size[0] *= draw[0] / aw;
+    entry.uv_size[1] *= draw[1] / ah;
+    crate::render::shell_paint::push_entry_sized(
+        controls,
+        entry,
+        rect.x as f32,
+        rect.y as f32,
+        draw,
+        SHELL_CONTROL_DEPTH,
+    );
+}
+
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
 pub(crate) use wol_lobby::{

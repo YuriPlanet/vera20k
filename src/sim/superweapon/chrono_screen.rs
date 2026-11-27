@@ -101,8 +101,8 @@ impl crate::sim::scenario_session::ScenarioSession {
         let commands = self.step_chrono_screen_state();
         for command in commands {
             match command {
-                ChronoScreenCommand::Pause => effects.extend(self.pause_scenario(0)),
-                ChronoScreenCommand::Finish => effects.extend(self.resume_scenario()),
+                ChronoScreenCommand::Pause => effects.extend(Vec::from(self.pause_scenario(0))),
+                ChronoScreenCommand::Finish => effects.extend(Vec::from(self.resume_scenario())),
                 _ => {}
             }
             effects.push(TriggerEffect::ChronoScreen { command });

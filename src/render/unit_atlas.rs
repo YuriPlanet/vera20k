@@ -223,6 +223,9 @@ pub struct UnitAtlas {
     vpl: Option<VplFile>,
     /// The device's 2D texture limit, which bounds pages and pictures.
     max_texture_dim: u32,
+    /// VERA's HD art pages: each page's pictures at twice the resolution
+    /// (`render::hd_art`), made with the first HD picture placed on it.
+    hd_pages: Vec<Option<wgpu::TextureView>>,
 }
 
 /// [`UnitAtlas::resident`]: the CPU side of every picture.
@@ -256,6 +259,8 @@ struct Resident {
     page_sizes: Vec<[u32; 2]>,
     /// Texels placed since the last upload, in the order they were placed.
     uploads: Vec<PendingTexels>,
+    /// VERA's HD art pictures of those, at twice the page coordinates.
+    hd_uploads: Vec<PendingTexels>,
     /// Sprites rasterized so far.
     rendered: u32,
 }
@@ -518,6 +523,54 @@ impl UnitAtlas {
                 pending.texels.bytes(&resident.rendered_cache),
             );
         }
+        for texels in resident.hd_uploads.drain(..) {
+            // HD pictures are always staged as their own texels.
+            let StagedTexels::Written(hd_texels) = &texels.texels else {
+                continue;
+            };
+            let Some(&[width, height]) = resident.page_sizes.get(texels.page) else {
+                continue;
+            };
+            let [width, height] = [width * 2, height * 2];
+            if width > self.max_texture_dim || height > self.max_texture_dim {
+                continue;
+            }
+            if self.hd_pages.len() <= texels.page {
+                self.hd_pages.resize_with(texels.page + 1, || None);
+            }
+            let view = self.hd_pages[texels.page].get_or_insert_with(|| {
+                device
+                    .create_texture(&wgpu::TextureDescriptor {
+                        label: Some("HD art unit atlas page"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::R8Uint,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    })
+                    .create_view(&Default::default())
+            });
+            atlas_growth::write_texels(
+                queue,
+                view.texture(),
+                texels.origin,
+                texels.size,
+                1,
+                hd_texels,
+            );
+        }
+    }
+
+    /// VERA's HD art page of `page`: its pictures at twice the resolution,
+    /// 0 where a picture has none.
+    pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
+        self.hd_pages.get(page)?.as_ref()
     }
 
     /// Number of pictures drawn so far.
@@ -599,6 +652,7 @@ impl UnitAtlas {
             models: HashMap::new(),
             vpl: None,
             max_texture_dim,
+            hd_pages: Vec::new(),
         }
     }
 }
@@ -627,7 +681,7 @@ impl Resident {
     /// is full, and stage its texels for the next upload. A sprite larger
     /// than the texture limit, or whose pixels do not fill it, is counted
     /// and left out.
-    fn place(&mut self, sprite: CachedUnitSprite, max_dim: u32) {
+    fn place(&mut self, mut sprite: CachedUnitSprite, max_dim: u32) {
         self.rendered = self.rendered.saturating_add(1);
         let [width, height] = [sprite.width, sprite.height];
         if sprite.pixels.len() != width as usize * height as usize {
@@ -668,6 +722,16 @@ impl Resident {
             size: [width, height],
             texels: StagedTexels::Placed(self.rendered_cache.len()),
         });
+        if let Some(hd) = sprite.hd.take()
+            && hd.palette_indices.len() == 4 * sprite.pixels.len()
+        {
+            self.hd_uploads.push(PendingTexels {
+                page,
+                origin: origin.map(|v| v * 2),
+                size: [width * 2, height * 2],
+                texels: StagedTexels::Written(hd.palette_indices.clone()),
+            });
+        }
         if let Some(old) = self.entries.insert(sprite.key.clone(), entry) {
             self.rendered_index.by_place.remove(&sprite_place(&old));
         }
@@ -683,6 +747,20 @@ impl Resident {
         let Some(&[page_width, page_height]) = self.page_sizes.get(entry.page) else {
             return;
         };
+        // The HD picture no longer matches: clear it, so the native one shows.
+        let origin = [
+            (entry.uv_origin[0] * page_width as f32).round() as u32,
+            (entry.uv_origin[1] * page_height as f32).round() as u32,
+        ];
+        let size = entry.pixel_size.map(|side| side as u32);
+        if vxl_raster::hd_voxels() {
+            self.hd_uploads.push(PendingTexels {
+                page: entry.page,
+                origin: origin.map(|v| v * 2),
+                size: size.map(|v| v * 2),
+                texels: StagedTexels::Written(vec![0; (size[0] * size[1] * 4) as usize]),
+            });
+        }
         self.uploads.push(PendingTexels {
             page: entry.page,
             origin: [
@@ -836,6 +914,8 @@ struct CachedUnitSprite {
     /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]), counted
     /// once where the sprite is rasterized.
     pool_bytes: u32,
+    /// VERA's HD art picture, until [`Resident::place`] stages it.
+    hd: Option<std::sync::Arc<vxl_raster::VxlHd>>,
 }
 
 impl CachedUnitSprite {
@@ -856,6 +936,7 @@ impl CachedUnitSprite {
             native_draw_bounds: rs.native_draw_bounds,
             shadow_center: None,
             pool_bytes,
+            hd: rs.sprite.hd,
         }
     }
 }
@@ -1076,7 +1157,54 @@ pub(crate) fn admit_world_models(
     interner: Option<&crate::sim::intern::StringInterner>,
     max_texture_dim: u32,
 ) {
-    if atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+    admit_world_and_image_models(
+        atlas,
+        entities,
+        std::iter::empty(),
+        asset_manager,
+        rules,
+        interner,
+        max_texture_dim,
+    );
+}
+
+/// [`admit_world_models`] with the types a Wasm module's `ImageOverride`
+/// draws objects as (`Simulation::ext_module_images`): a voxel one no
+/// object of the map has is admitted too.
+pub(crate) fn admit_world_and_image_models<'i>(
+    atlas: &mut Option<UnitAtlas>,
+    entities: &crate::sim::entity_store::EntityStore,
+    images: impl Iterator<Item = &'i str>,
+    asset_manager: &AssetManager,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    max_texture_dim: u32,
+) {
+    let mut images = images.peekable();
+    if images.peek().is_none() && atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+        return;
+    }
+    let mut demand = UnitAtlasDemand::of_world(entities, rules, interner);
+    if let Some(rules) = rules {
+        for image in images {
+            let Some(object) = rules.object(image) else {
+                continue;
+            };
+            if !crate::sim::game_entity::GameEntity::object_uses_voxel(&object.id, object, rules) {
+                continue;
+            }
+            let set = if object.category == crate::rules::object_type::ObjectCategory::Aircraft {
+                &mut demand.air
+            } else {
+                &mut demand.ground
+            };
+            set.insert(object.id.clone());
+        }
+    }
+    if atlas
+        .as_ref()
+        .map_or(demand.is_empty(), |atlas| demand.without(&atlas.covered).is_empty())
+    {
         return;
     }
     let started = Instant::now();
@@ -1087,7 +1215,7 @@ pub(crate) fn admit_world_models(
     // For turret units, separate Body/Turret/Barrel keys per facing; for the
     // rest a single Composite key per facing. Multi-frame HVA units get keys
     // for each frame.
-    let missing = UnitAtlasDemand::of_world(entities, rules, interner).without(&atlas.covered);
+    let missing = demand.without(&atlas.covered);
     let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules);
     let mut by_model: BTreeMap<smol_str::SmolStr, Vec<UnitSpriteKey>> = BTreeMap::new();
     for key in needed {
@@ -2035,17 +2163,11 @@ fn composite_vxl_layers(layers: &[VxlSprite]) -> VxlSprite {
             height: 1,
             offset_x: 0.0,
             offset_y: 0.0,
+            hd: None,
         };
     }
     if layers.len() == 1 {
-        return VxlSprite {
-            palette_indices: layers[0].palette_indices.clone(),
-            depth: layers[0].depth.clone(),
-            width: layers[0].width,
-            height: layers[0].height,
-            offset_x: layers[0].offset_x,
-            offset_y: layers[0].offset_y,
-        };
+        return layers[0].clone();
     }
 
     // Offsets are already integer-truncated from the fixed-point rasterizer,
@@ -2096,6 +2218,7 @@ fn composite_vxl_layers(layers: &[VxlSprite]) -> VxlSprite {
         }
     }
 
+    let hd = hd_union(layers.iter(), [min_x_i, min_y_i], [width, height]);
     VxlSprite {
         palette_indices,
         depth: depth_buf,
@@ -2103,7 +2226,49 @@ fn composite_vxl_layers(layers: &[VxlSprite]) -> VxlSprite {
         height,
         offset_x: min_x_i as f32,
         offset_y: min_y_i as f32,
+        hd,
     }
+}
+
+/// VERA's HD art voxels: `layers`' HD pictures merged by depth on a canvas
+/// twice the native `size` at native `corner`, as [`composite_vxl_layers`]
+/// merges the native ones. None unless every layer has one.
+fn hd_union<'a>(
+    layers: impl Iterator<Item = &'a VxlSprite> + Clone,
+    corner: [i32; 2],
+    size: [u32; 2],
+) -> Option<std::sync::Arc<vxl_raster::VxlHd>> {
+    if layers.clone().any(|layer| layer.hd.is_none()) {
+        return None;
+    }
+    let [width, height] = size.map(|side| side as i32 * 2);
+    let mut palette_indices = vec![0u8; (width * height) as usize];
+    let mut depth = vec![f32::NEG_INFINITY; (width * height) as usize];
+    for layer in layers {
+        let hd = layer.hd.as_ref()?;
+        let dx = (layer.offset_x as i32 - corner[0]) * 2;
+        let dy = (layer.offset_y as i32 - corner[1]) * 2;
+        let layer_width = layer.width as i32 * 2;
+        for (index, &byte) in hd.palette_indices.iter().enumerate() {
+            if byte == 0 {
+                continue;
+            }
+            let px = dx + index as i32 % layer_width;
+            let py = dy + index as i32 / layer_width;
+            if px < 0 || py < 0 || px >= width || py >= height {
+                continue;
+            }
+            let at = (py * width + px) as usize;
+            if hd.depth[index] >= depth[at] {
+                depth[at] = hd.depth[index];
+                palette_indices[at] = byte;
+            }
+        }
+    }
+    Some(std::sync::Arc::new(vxl_raster::VxlHd {
+        palette_indices,
+        depth,
+    }))
 }
 
 /// Pad a single VXL layer sprite into a canvas sized to the union bounding box
@@ -2159,6 +2324,7 @@ fn pad_layer_to_union_bounds(layer: &VxlSprite, all_layers: &[&VxlSprite]) -> Vx
         }
     }
 
+    let hd = hd_union(std::iter::once(layer), [min_x_i, min_y_i], [width, height]);
     VxlSprite {
         palette_indices,
         depth: depth_buf,
@@ -2166,6 +2332,7 @@ fn pad_layer_to_union_bounds(layer: &VxlSprite, all_layers: &[&VxlSprite]) -> Vx
         height,
         offset_x: min_x_i as f32,
         offset_y: min_y_i as f32,
+        hd,
     }
 }
 

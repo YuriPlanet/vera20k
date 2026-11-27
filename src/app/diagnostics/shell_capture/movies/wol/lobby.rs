@@ -9,7 +9,10 @@ impl WolCapture {
     /// the lobby"); this plays the lobby's answers and the room's events.
     pub(super) fn lobby_visit(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         crate::app::shell_lan::append_chat(
-            state,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
             crate::ui::lan_shell::LanChatLine {
                 text: "before the lobby".encode_utf16().collect(),
                 color: u32::MAX,
@@ -59,10 +62,10 @@ impl WolCapture {
             seated.iter().any(|name| name == "Natasha"),
             "the room had no Natasha to let go: {seated:?}"
         );
-        setup_requests(state);
-        self.requests(state, frame)?;
+        setup_requests(&mut state.frontend.network_setup_protocol);
+        self.requests(&mut state.frontend.wol, frame)?;
         setup_button(state, crate::ui::multiplayer_setup::LOBBY)?;
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests.contains(&WolServiceRequest::VisitLobby),
             "C2's Lobby did not visit the lobby: {requests:?}"
@@ -106,7 +109,8 @@ impl WolCapture {
         self.event(frame, "Lobby: the public lobby over the hidden room");
         // The destination can fill between listing and joining. The current
         // host and their guests must still be together after the refusal.
-        let destination = local_games(state).remove(0);
+        let destination =
+            local_games(&state.frontend.scenario_catalog, &state.process_assets).remove(0);
         let switch = |movie: &mut Self, state: &mut AppState| -> Result<()> {
             service_event(
                 state,
@@ -116,9 +120,12 @@ impl WolCapture {
                 },
             );
             game_row_click(state, 0)?;
-            let layout = crate::app::shell_wol::lobby::layout(state);
+            let layout = crate::app::shell_wol::lobby::layout(
+                state.frontend.wol.as_ref(),
+                &state.renderer.gpu,
+            );
             lobby_button(state, &layout, lobby_ui::JOIN)?;
-            let requests = movie.requests(state, frame)?;
+            let requests = movie.requests(&mut state.frontend.wol, frame)?;
             ensure!(
                 requests.iter().any(|request| matches!(request,
                 WolServiceRequest::JoinChannel { channel, .. } if channel == &destination))
@@ -130,7 +137,7 @@ impl WolCapture {
         switch(self, state)?;
         service_event(state, WolServiceEvent::Joined(Err(0x8004_006E)));
         ensure!(
-            Self::lobby(state)?.message().is_some(),
+            Self::lobby(&state.frontend.wol)?.message().is_some(),
             "no room-full message"
         );
         let screen = &state.renderer.gpu.config;
@@ -139,7 +146,7 @@ impl WolCapture {
                 .button(0);
         welcome_click(state, ok);
         ensure!(
-            Self::lobby(state)?.message().is_none()
+            Self::lobby(&state.frontend.wol)?.message().is_none()
                 && crate::app::shell_wol::lobby::visiting(state.frontend.wol.as_ref())
                 && state.match_state.session.host()
                 && names(state) == seated,
@@ -197,15 +204,16 @@ impl WolCapture {
             names(state)
         );
         self.event(frame, "the hidden room seats Golf and lets Natasha go");
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::BACK_TO_ROOM)?;
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests.contains(&WolServiceRequest::EndVisit)
                 && state.frontend.shell_route == ShellRoute::NetworkSetup
                 && !crate::app::shell_wol::lobby::visiting(state.frontend.wol.as_ref())
                 && names(state) == back
-                && setup_chat_has(state, "before the lobby")?,
+                && setup_chat_has(&state.frontend.multiplayer_setup, "before the lobby")?,
             "Back to Room did not show the room as it is now: {requests:?}, route {:?}",
             state.frontend.shell_route
         );
@@ -213,7 +221,7 @@ impl WolCapture {
         // On success the server emits channel_left followed by joined. Start
         // the new room as a guest before applying its host's options.
         setup_button(state, crate::ui::multiplayer_setup::LOBBY)?;
-        self.requests(state, frame)?;
+        self.requests(&mut state.frontend.wol, frame)?;
         service_event(state, visit_joined());
         switch(self, state)?;
         service_event(state, WolServiceEvent::ChannelLeft);
@@ -237,7 +245,7 @@ impl WolCapture {
         );
         // A visit from the new room outlives that room when it closes.
         setup_button(state, crate::ui::multiplayer_setup::LOBBY)?;
-        self.requests(state, frame)?;
+        self.requests(&mut state.frontend.wol, frame)?;
         service_event(state, visit_joined());
         service_event(state, WolServiceEvent::ChannelLeft);
         let closed = crate::i18n::tr_fill("VERA:VisitedRoomClosed", &[("room", &destination.name)]);
@@ -306,7 +314,12 @@ impl WolCapture {
                     .iter()
                     .map(|human| (human.name.clone(), human.raw_slot_index))
                     .collect();
-                let view = setup_view(state)?;
+                let view = setup_view(
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                )?;
                 let marked = view.row_icons.iter().flatten().any(|icon| icon.host);
                 ensure!(
                     rows.contains(&(PEER.to_owned(), None)) && !marked,
@@ -317,10 +330,16 @@ impl WolCapture {
             }
             WolTarget::GuestAccept => {
                 setup_button(state, setup_ui::ACCEPT)?;
-                let requests = setup_requests(state);
+                let requests = setup_requests(&mut state.frontend.network_setup_protocol);
                 ensure!(
                     requests.contains(&NetworkSetupRequest::Ready(true))
-                        && !setup_view(state)?.enabled(setup_ui::ACCEPT),
+                        && !setup_view(
+                            &state.renderer,
+                            &state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                        )?
+                        .enabled(setup_ui::ACCEPT),
                     "C9 Accept did not report readiness: {requests:?}"
                 );
                 self.event(frame, "C9 Accept");
@@ -330,13 +349,16 @@ impl WolCapture {
                 // its host leaves: `host_changed`, then the old host's
                 // `member_left`. This guest's game hosts it on, chat and all.
                 crate::app::shell_lan::append_chat(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     crate::ui::lan_shell::LanChatLine {
                         text: "before the host left".encode_utf16().collect(),
                         color: u32::MAX,
                     },
                 );
-                setup_requests(state);
+                setup_requests(&mut state.frontend.network_setup_protocol);
                 service_event(
                     state,
                     WolServiceEvent::HostChanged {
@@ -355,7 +377,7 @@ impl WolCapture {
                     .map(|human| human.name.clone())
                     .collect();
                 let host = state.match_state.session.host();
-                let requests = setup_requests(state);
+                let requests = setup_requests(&mut state.frontend.network_setup_protocol);
                 ensure!(
                     host && names == [NICKNAME]
                         && state.frontend.shell_route == ShellRoute::NetworkSetup
@@ -368,7 +390,7 @@ impl WolCapture {
                 let now_host = crate::i18n::tr("VERA:NowHost");
                 for line in ["before the host left", left.as_str(), now_host.as_str()] {
                     ensure!(
-                        setup_chat_has(state, line)?,
+                        setup_chat_has(&state.frontend.multiplayer_setup, line)?,
                         "the room's chat lacks {line:?}"
                     );
                 }
@@ -376,7 +398,7 @@ impl WolCapture {
             }
             WolTarget::GuestBack => {
                 setup_button(state, setup_ui::BACK)?;
-                let requests = setup_requests(state);
+                let requests = setup_requests(&mut state.frontend.network_setup_protocol);
                 // The user-list sink's first R (0x7A7A5D) precedes Back's leave.
                 ensure!(
                     matches!(
@@ -402,12 +424,13 @@ impl WolCapture {
                 match target {
                     WolTarget::SetupStartNotReady => {
                         setup_button(state, setup_ui::START)?;
-                        let requests = setup_requests(state);
-                        let line =
-                            state.csf_label("GUI:HostGameStartHost", "GUI:HostGameStartHost");
+                        let requests = setup_requests(&mut state.frontend.network_setup_protocol);
+                        let line = state
+                            .process_assets
+                            .csf_label("GUI:HostGameStartHost", "GUI:HostGameStartHost");
                         ensure!(
                             requests == [NetworkSetupRequest::RequestAcceptance]
-                                && setup_chat_has(state, &line)?,
+                                && setup_chat_has(&state.frontend.multiplayer_setup, &line)?,
                             "Start with an unready guest: {requests:?}"
                         );
                         self.event(frame, "C2 Start refused: guest not ready");
@@ -432,7 +455,7 @@ impl WolCapture {
             }
             _ => {}
         }
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         crate::app::input::multiplayer_setup::cursor_moved(state);
         self.settle();
         Ok(())
@@ -441,7 +464,7 @@ impl WolCapture {
     /// The clan game's match: the WOL start terms in the sim, the refused
     /// Ally, then the target's own step.
     pub(super) fn clan_match(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let peer = clan_peer_house(state)?;
+        let peer = clan_peer_house(&state.match_state)?;
         let (terms, pending) = {
             let sim = &state
                 .match_state
@@ -499,7 +522,11 @@ impl WolCapture {
                 self.phase = WolPhase::AbortInput;
             }
             WolTarget::ClanLeaver => {
-                queue_peer_command(state, 1, crate::sim::command::Command::ExitMatch)?;
+                queue_peer_command(
+                    &mut state.match_state,
+                    1,
+                    crate::sim::command::Command::ExitMatch,
+                )?;
                 let tick = state
                     .match_state
                     .sim_runtime
@@ -530,7 +557,7 @@ impl WolCapture {
             .session
             .network_observer_row()
             .unwrap_or(8);
-        let opened = setup_requests(state);
+        let opened = setup_requests(&mut state.frontend.network_setup_protocol);
         self.route.push(json!({"frame": frame,
             "c2_open_requests": opened.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>()}));
         setup::service_event(
@@ -542,7 +569,7 @@ impl WolCapture {
                 slot,
             }),
         )?;
-        let requests = setup_requests(state);
+        let requests = setup_requests(&mut state.frontend.network_setup_protocol);
         ensure!(
             requests
                 == [
@@ -573,8 +600,15 @@ impl WolCapture {
 
     /// C2 chat: a page through the CSF command, then an emote.
     fn setup_chat(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let page = state.csf_label("TXT_PAGE_COMMAND", "TXT_PAGE_COMMAND");
-        let layout = crate::app::input::multiplayer_setup::layout(state);
+        let page = state
+            .process_assets
+            .csf_label("TXT_PAGE_COMMAND", "TXT_PAGE_COMMAND");
+        let layout = crate::app::input::multiplayer_setup::layout(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         setup_click(state, layout.chat);
         crate::app::input::multiplayer_setup::key_press(
             state,
@@ -586,7 +620,7 @@ impl WolCapture {
             Some(winit::keyboard::KeyCode::Enter),
             None,
         );
-        let requests = setup_requests(state);
+        let requests = setup_requests(&mut state.frontend.network_setup_protocol);
         ensure!(
             requests
                 == [NetworkSetupRequest::WolChat(WolChatLine::Page {
@@ -596,20 +630,30 @@ impl WolCapture {
             "the page line was not sent: {requests:?}"
         );
         ensure!(
-            setup_chat_has(state, &format!("[{NICKNAME} > {PEER}] ready?"))?,
+            setup_chat_has(
+                &state.frontend.multiplayer_setup,
+                &format!("[{NICKNAME} > {PEER}] ready?")
+            )?,
             "the page echo did not show"
         );
         crate::app::input::multiplayer_setup::key_press(state, None, Some("waves"));
         setup_click(state, layout.emote.context("C2 emote")?);
-        let requests = setup_requests(state);
+        let requests = setup_requests(&mut state.frontend.network_setup_protocol);
         ensure!(
             requests
                 == [NetworkSetupRequest::WolEmote(
                     "waves".encode_utf16().collect()
                 )]
-                && setup_chat_has(state, &format!("{NICKNAME} waves"))?
+                && setup_chat_has(
+                    &state.frontend.multiplayer_setup,
+                    &format!("{NICKNAME} waves")
+                )?
                 && state.frontend.multiplayer_setup.is_some()
-                && crate::app::input::multiplayer_setup::chat_text(state).is_empty(),
+                && crate::app::input::multiplayer_setup::chat_text(
+                    &state.frontend,
+                    &state.match_state
+                )
+                .is_empty(),
             "the emote was not sent or echoed: {requests:?}"
         );
         // C2 in the stack passes the language gate: with both display
@@ -631,7 +675,10 @@ impl WolCapture {
             },
         );
         ensure!(
-            setup_chat_has(state, &format!("[{PEER}] : \u{4f60}\u{597d}"))?,
+            setup_chat_has(
+                &state.frontend.multiplayer_setup,
+                &format!("[{PEER}] : \u{4f60}\u{597d}")
+            )?,
             "the guest's line did not show in C2"
         );
         self.event(frame, "C2 page, emote and a received line");
@@ -647,7 +694,12 @@ impl WolCapture {
             accepted: true,
         };
         setup::service_event(state, ready())?;
-        let layout = crate::app::input::multiplayer_setup::layout(state);
+        let layout = crate::app::input::multiplayer_setup::layout(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         // A clan room's Short Game is locked (0x78F85E), so the edit is
         // made only elsewhere.
         if !self.target.clan_match() {
@@ -662,11 +714,11 @@ impl WolCapture {
                 !state.match_state.session.network_player_ready(1),
                 "a C2 option edit kept the guest's acceptance"
             );
-            setup_requests(state);
+            setup_requests(&mut state.frontend.network_setup_protocol);
             setup::service_event(state, ready())?;
         }
         setup_button(state, setup_ui::START)?;
-        let requests = setup_requests(state);
+        let requests = setup_requests(&mut state.frontend.network_setup_protocol);
         ensure!(
             requests
                 == [
@@ -693,7 +745,7 @@ impl WolCapture {
             crate::ui::skirmish_shell::checkbox_icon_rect(layout.checkboxes[0], layout.page.scale),
         );
         ensure!(
-            setup_requests(state).is_empty()
+            setup_requests(&mut state.frontend.network_setup_protocol).is_empty()
                 && state.frontend.shell_exit.is_none()
                 && options(state) == before
                 && state.match_state.session.network_player_ready(1),
@@ -715,12 +767,13 @@ impl WolCapture {
             },
         )?;
         ensure!(
-            setup_requests(state).is_empty() && state.frontend.shell_exit.is_none(),
+            setup_requests(&mut state.frontend.network_setup_protocol).is_empty()
+                && state.frontend.shell_exit.is_none(),
             "a mismatched OnGameStart started the game"
         );
         setup_button(state, setup_ui::START)?;
         ensure!(
-            setup_requests(state).last()
+            setup_requests(&mut state.frontend.network_setup_protocol).last()
                 == Some(&NetworkSetupRequest::StartGame {
                     users: vec![NICKNAME.into(), PEER.into()]
                 }),
@@ -743,7 +796,7 @@ impl WolCapture {
                 .map(|verify| (verify.names.clone(), verify.checked()))
         };
         ensure!(
-            setup_requests(state).is_empty()
+            setup_requests(&mut state.frontend.network_setup_protocol).is_empty()
                 && state.frontend.shell_exit.is_none()
                 && names(state).is_some_and(|(names, checked)| {
                     names == [NICKNAME.to_owned(), PEER.to_owned()] && checked == [false; 2]
@@ -760,13 +813,13 @@ impl WolCapture {
         ensure!(
             session.network_player_ready(1)
                 && session.network_map_status(1) == Some(1)
-                && setup_requests(state).is_empty(),
+                && setup_requests(&mut state.frontend.network_setup_protocol).is_empty(),
             "a guest packet changed the setup under 0x130"
         );
         setup::service_event(state, NetworkSetupEvent::VerifyStarted { pairs: true })?;
         setup::service_event(state, NetworkSetupEvent::PeerConnected { node: 1 })?;
         // A click holds node 0's box and clears a peer's (0x7932D7).
-        let layout = setup::verify_layout(state);
+        let layout = setup::verify_layout(&state.renderer.gpu, &state.frontend, &state.match_state);
         for node in [0, 1] {
             setup_click(
                 state,
@@ -783,20 +836,23 @@ impl WolCapture {
         );
         self.event(frame, json!({"0x130 after clicks": checked[..2]}));
         if self.target == WolTarget::VerifyDialog {
-            MoviesCapture::restore_neutral_pointer(state);
+            MoviesCapture::restore_neutral_pointer(
+                &state.renderer.gpu,
+                &mut state.match_state.input,
+            );
             crate::app::input::multiplayer_setup::cursor_moved(state);
             self.settle();
             return Ok(());
         }
         setup::service_event(state, NetworkSetupEvent::Negotiated { result: 0 })?;
-        let requests = setup_requests(state);
+        let requests = setup_requests(&mut state.frontend.network_setup_protocol);
         ensure!(
             requests == [NetworkSetupRequest::Leave]
                 && state.frontend.shell_exit.is_some()
                 && setup::verify(state.frontend.network_setup_protocol.as_ref()).is_none(),
             "the negotiation did not close 0x130, leave and slide C2 out: {requests:?}"
         );
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         self.event(frame, "negotiated: 0x130 closed, channel left");
         self.phase = WolPhase::Loading;
         Ok(())
@@ -807,7 +863,7 @@ impl WolCapture {
     pub(super) fn lobby_entry(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         // The mode-loop pass (0x0077B402) applies the preferences first;
         // after a match the entry apply (0x0077B31D) already has WOLAPI.
-        let mut requests = self.requests(state, frame)?;
+        let mut requests = self.requests(&mut state.frontend.wol, frame)?;
         if let Some(locale) = self.chosen_locale {
             let sent = [
                 WolServiceRequest::SetLocale(locale),
@@ -830,7 +886,9 @@ impl WolCapture {
         let passes = if self.rejoined { 2 } else { 1 };
         ensure!(
             apply.len() == 2 * passes
-                && apply.chunks(2).all(|pair| pair == Self::applied(state))
+                && apply
+                    .chunks(2)
+                    .all(|pair| pair == Self::applied(&state.frontend.wol_preferences))
                 && *squad == WolServiceRequest::SquadInfo { id: 0 }
                 && *buddies == WolServiceRequest::ListBuddies
                 && *game_list
@@ -856,7 +914,7 @@ impl WolCapture {
                 channels: lobbies(),
             },
         );
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests
                 == [WolServiceRequest::JoinChannel {
@@ -866,7 +924,7 @@ impl WolCapture {
             "the picker did not join Lob_41_0: {requests:?}"
         );
         join_lobby(state);
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         // The user-list sink's batch of every unranked user (0x007A77CB),
         // then the lists.
         let listed: Vec<String> = ["Hotel", NICKNAME, "Echo", "Foxtrot"]
@@ -896,7 +954,7 @@ impl WolCapture {
             state,
             WolServiceEvent::Channels {
                 kind: GAME_CHANNEL,
-                channels: local_games(state),
+                channels: local_games(&state.frontend.scenario_catalog, &state.process_assets),
             },
         );
         self.event(frame, "controlled lobbies, join and games");
@@ -904,21 +962,18 @@ impl WolCapture {
         Ok(())
     }
 
-    pub(super) fn lobby(state: &AppState) -> Result<&crate::app::shell_wol::lobby::WolLobby> {
-        state
-            .frontend
-            .wol
-            .as_ref()
+    pub(super) fn lobby(wol: &Option<WolVisit>) -> Result<&crate::app::shell_wol::lobby::WolLobby> {
+        wol.as_ref()
             .and_then(|visit| visit.lobby())
             .context("the lobby runner")
     }
 
-    pub(super) fn chat_has(state: &AppState, text: &str) -> Result<bool> {
-        Ok(Self::chat_color(state, text)?.is_some())
+    pub(super) fn chat_has(wol: &Option<WolVisit>, text: &str) -> Result<bool> {
+        Ok(Self::chat_color(wol, text)?.is_some())
     }
 
-    fn chat_color(state: &AppState, text: &str) -> Result<Option<u32>> {
-        Ok(Self::lobby(state)?
+    fn chat_color(wol: &Option<WolVisit>, text: &str) -> Result<Option<u32>> {
+        Ok(Self::lobby(wol)?
             .ui
             .chat
             .lines
@@ -935,16 +990,19 @@ impl WolCapture {
 
     /// `0x113` shown and settled: drive the target's interaction.
     pub(super) fn lobby_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         let (width, height) = (
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
         );
-        let joined = state.csf_label("TXT_JOINED_S", "TXT_JOINED_S");
-        let base = state.csf_label("TXT_LOB_1", "TXT_LOB_1");
+        let joined = state
+            .process_assets
+            .csf_label("TXT_JOINED_S", "TXT_JOINED_S");
+        let base = state.process_assets.csf_label("TXT_LOB_1", "TXT_LOB_1");
         ensure!(
             Self::chat_has(
-                state,
+                &state.frontend.wol,
                 &crate::assets::csf_file::format_csf(
                     &joined,
                     &[crate::assets::csf_file::CsfArg::Str(&base)]
@@ -952,7 +1010,7 @@ impl WolCapture {
             )?,
             "TXT_JOINED_S was not printed"
         );
-        let lobby = Self::lobby(state)?;
+        let lobby = Self::lobby(&state.frontend.wol)?;
         ensure!(
             lobby.ui.game_rows.len() == 4
                 && lobby.ui.player_rows.len() == 4
@@ -981,7 +1039,10 @@ impl WolCapture {
         }
         self.event(frame, "0x113 settled");
         if self.target.options() {
-            self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
+            self.options_before = Some((
+                read_settings(&state.platform.game_config)?,
+                state.frontend.wol_preferences,
+            ));
             lobby_button(state, &layout, lobby_ui::OPTIONS)?;
             ensure!(
                 state.frontend.shell_exit.is_some(),
@@ -994,7 +1055,7 @@ impl WolCapture {
         match self.target {
             WolTarget::LoginAccepted => {
                 ensure!(
-                    Self::chat_has(state, "Controlled message of the day")?,
+                    Self::chat_has(&state.frontend.wol, "Controlled message of the day")?,
                     "the MOTD was not printed"
                 );
             }
@@ -1005,7 +1066,7 @@ impl WolCapture {
                 welcome_click(state, rect);
                 ensure!(
                     state.frontend.wol_lobby_globals.game_sort != 0
-                        && Self::lobby(state)?.ui.game_rows[0].name == "Alpha's_game",
+                        && Self::lobby(&state.frontend.wol)?.ui.game_rows[0].name == "Alpha's_game",
                     "the ping sort did not re-sort"
                 );
                 self.event(frame, "ping sort");
@@ -1013,7 +1074,7 @@ impl WolCapture {
             WolTarget::LobbyChat => {
                 App::handle_wol_key(state, None, true, Some("hello"));
                 App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Enter), true, None);
-                let requests = self.requests(state, frame)?;
+                let requests = self.requests(&mut state.frontend.wol, frame)?;
                 ensure!(
                     requests
                         == [WolServiceRequest::Chat {
@@ -1032,15 +1093,15 @@ impl WolCapture {
                     },
                 );
                 ensure!(
-                    Self::chat_has(state, &format!("[{NICKNAME}] hello"))?
-                        && Self::chat_has(state, "(Golf) are you there?")?
+                    Self::chat_has(&state.frontend.wol, &format!("[{NICKNAME}] hello"))?
+                        && Self::chat_has(&state.frontend.wol, "(Golf) are you there?")?
                         && crate::app::shell_wol::last_pager(state.frontend.wol.as_ref())
                             == Some("Golf"),
                     "the echo or the page did not show"
                 );
                 service_event(state, WolServiceEvent::UserJoined(member("India", 0, "")));
                 service_event(state, WolServiceEvent::UserLeft("Foxtrot".into()));
-                let names: Vec<String> = Self::lobby(state)?
+                let names: Vec<String> = Self::lobby(&state.frontend.wol)?
                     .ui
                     .player_rows
                     .iter()
@@ -1089,12 +1150,12 @@ impl WolCapture {
                 ];
                 for (text, color) in expected {
                     ensure!(
-                        Self::chat_color(state, text)? == Some(color),
+                        Self::chat_color(&state.frontend.wol, text)? == Some(color),
                         "{text:?} did not show in {color:#X}"
                     );
                 }
                 ensure!(
-                    !Self::chat_has(state, &format!("[{NICKNAME}] : my own line"))?,
+                    !Self::chat_has(&state.frontend.wol, &format!("[{NICKNAME}] : my own line"))?,
                     "the user's own line was shown"
                 );
                 self.event(frame, "received lines in their sink colors");
@@ -1124,14 +1185,16 @@ impl WolCapture {
                 say(state, "Hotel", "", "\u{4f60}\u{597d}");
                 say(state, "Foxtrot", "", "caf\u{e9}");
                 ensure!(
-                    !Self::chat_has(state, "[Echo] : \u{4f60}\u{597d}")?
-                        && Self::chat_has(state, "[Hotel] : \u{4f60}\u{597d}")?
-                        && Self::chat_has(state, "[Foxtrot] : caf\u{e9}")?,
+                    !Self::chat_has(&state.frontend.wol, "[Echo] : \u{4f60}\u{597d}")?
+                        && Self::chat_has(&state.frontend.wol, "[Hotel] : \u{4f60}\u{597d}")?
+                        && Self::chat_has(&state.frontend.wol, "[Foxtrot] : caf\u{e9}")?,
                     "the language gate did not hold"
                 );
                 // /clan: the local user has no clan, so only clanless users
                 // show; Echo's clan hides it.
-                let clan = state.csf_label("TXT_CLAN_FILTER", "TXT_CLAN_FILTER");
+                let clan = state
+                    .process_assets
+                    .csf_label("TXT_CLAN_FILTER", "TXT_CLAN_FILTER");
                 Self::type_line(state, &clan);
                 ensure!(
                     state.frontend.wol_preferences.display_clan,
@@ -1140,33 +1203,39 @@ impl WolCapture {
                 say(state, "Echo", "WW", "clan one");
                 say(state, "Foxtrot", "", "clan two");
                 ensure!(
-                    !Self::chat_has(state, "[Echo] : clan one")?
-                        && Self::chat_has(state, "[Foxtrot] : clan two")?,
+                    !Self::chat_has(&state.frontend.wol, "[Echo] : clan one")?
+                        && Self::chat_has(&state.frontend.wol, "[Foxtrot] : clan two")?,
                     "the clan gate did not hold"
                 );
                 // /clan off and /buddy on: no buddies, every sender hidden.
                 Self::type_line(state, &clan);
-                let buddy = state.csf_label("TXT_BUDDY_FILTER", "TXT_BUDDY_FILTER");
+                let buddy = state
+                    .process_assets
+                    .csf_label("TXT_BUDDY_FILTER", "TXT_BUDDY_FILTER");
                 Self::type_line(state, &buddy);
                 say(state, "Foxtrot", "", "buddy one");
                 say(state, "Hotel", "", "buddy two");
                 ensure!(
-                    !Self::chat_has(state, "[Foxtrot] : buddy one")?
-                        && !Self::chat_has(state, "[Hotel] : buddy two")?,
+                    !Self::chat_has(&state.frontend.wol, "[Foxtrot] : buddy one")?
+                        && !Self::chat_has(&state.frontend.wol, "[Hotel] : buddy two")?,
                     "the buddy gate let a sender through"
                 );
                 self.event(frame, "language, clan and buddy gates");
             }
             WolTarget::LobbyFind => {
-                let online = state.csf_label("TXT_ONLINE_COMMAND", "TXT_ONLINE_COMMAND");
-                let room = state.csf_label("TXT_LOB_1", "TXT_LOB_1");
+                let online = state
+                    .process_assets
+                    .csf_label("TXT_ONLINE_COMMAND", "TXT_ONLINE_COMMAND");
+                let room = state.process_assets.csf_label("TXT_LOB_1", "TXT_LOB_1");
                 use crate::assets::csf_file::{CsfArg, format_csf};
                 let cases: [(&str, Result<WolChannel, u32>, String); 3] = [
                     (
                         "Hotel",
                         Ok(lobbies()[0].clone()),
                         format_csf(
-                            &state.csf_label("TXT_USER_FOUND", "TXT_USER_FOUND"),
+                            &state
+                                .process_assets
+                                .csf_label("TXT_USER_FOUND", "TXT_USER_FOUND"),
                             &[CsfArg::Str("Hotel"), CsfArg::Str(&room)],
                         ),
                     ),
@@ -1174,7 +1243,9 @@ impl WolCapture {
                         "Zulu",
                         Err(0x0004_0130),
                         format_csf(
-                            &state.csf_label("TXT_USER_NOT_ONLINE", "TXT_USER_NOT_ONLINE"),
+                            &state
+                                .process_assets
+                                .csf_label("TXT_USER_NOT_ONLINE", "TXT_USER_NOT_ONLINE"),
                             &[CsfArg::Str("Zulu")],
                         ),
                     ),
@@ -1182,14 +1253,16 @@ impl WolCapture {
                         "Kilo",
                         Err(0x0004_0132),
                         format_csf(
-                            &state.csf_label("TXT_USER_FIND_DISABLED", "TXT_USER_FIND_DISABLED"),
+                            &state
+                                .process_assets
+                                .csf_label("TXT_USER_FIND_DISABLED", "TXT_USER_FIND_DISABLED"),
                             &[CsfArg::Str("Kilo")],
                         ),
                     ),
                 ];
                 for (name, result, expected) in cases {
                     Self::type_line(state, &format!("{online} {name}"));
-                    let requests = self.requests(state, frame)?;
+                    let requests = self.requests(&mut state.frontend.wol, frame)?;
                     ensure!(
                         requests
                             == [WolServiceRequest::Chat {
@@ -1202,7 +1275,7 @@ impl WolCapture {
                     );
                     service_event(state, WolServiceEvent::Located(result));
                     ensure!(
-                        Self::chat_color(state, &expected)? == Some(u32::MAX),
+                        Self::chat_color(&state.frontend.wol, &expected)? == Some(u32::MAX),
                         "{expected:?} did not show"
                     );
                 }
@@ -1222,7 +1295,7 @@ impl WolCapture {
                     WolServiceEvent::UserLocales(Ok(vec![("Echo".into(), 2)])),
                 );
                 // Player rows: Hotel, Echo, Foxtrot, the user.
-                let lobby = Self::lobby(state)?;
+                let lobby = Self::lobby(&state.frontend.wol)?;
                 ensure!(
                     lobby.ui.player_rows.get(1).map(|row| row.name.as_str()) == Some("Echo"),
                     "Echo is not the second player row"
@@ -1236,12 +1309,19 @@ impl WolCapture {
                     layout.page.scale,
                 );
                 let rect = geometry.row(1 - lobby.ui.list_top(crate::ui::wol_lobby::PLAYERS));
-                set_window_pointer_to_rect_center(state, rect);
+                set_window_pointer_to_rect_center(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &mut state.match_state.input,
+                    rect,
+                );
                 App::handle_wol_mouse_move(state);
                 let expected = format!(
                     "Echo : {} 42: Westwood Warriors : {}",
-                    state.csf_label("TXT_RANK", "TXT_RANK"),
-                    state.csf_label("WOL:Locale02", "WOL:Locale02")
+                    state.process_assets.csf_label("TXT_RANK", "TXT_RANK"),
+                    state
+                        .process_assets
+                        .csf_label("WOL:Locale02", "WOL:Locale02")
                 );
                 let help = crate::app::shell_wol::lobby::status_help(
                     &state.frontend,
@@ -1279,7 +1359,7 @@ impl WolCapture {
                     state,
                     WolServiceEvent::Ladder(vec![ladder("Hotel", 3), ladder("Echo", 42)]),
                 );
-                let rows: Vec<_> = Self::lobby(state)?
+                let rows: Vec<_> = Self::lobby(&state.frontend.wol)?
                     .ui
                     .player_rows
                     .iter()
@@ -1338,7 +1418,7 @@ impl WolCapture {
                         ..Default::default()
                     }]),
                 );
-                let names: Vec<String> = Self::lobby(state)?
+                let names: Vec<String> = Self::lobby(&state.frontend.wol)?
                     .ui
                     .player_rows
                     .iter()
@@ -1355,12 +1435,13 @@ impl WolCapture {
             WolTarget::LobbyGameTooltip => {
                 // Rows: Alpha (the retail map), Charlie, Delta, Bravo (the
                 // random map, full).
-                let (_, map) = first_record(state);
-                let random =
-                    state.csf_label("TXT_RANDOM_MAP_DESCRIPTION", "TXT_RANDOM_MAP_DESCRIPTION");
+                let (_, map) = first_record(&state.frontend.scenario_catalog);
+                let random = state
+                    .process_assets
+                    .csf_label("TXT_RANDOM_MAP_DESCRIPTION", "TXT_RANDOM_MAP_DESCRIPTION");
                 let mut helps = Vec::new();
                 for (row, name) in [(0, map), (3, random)] {
-                    let lobby = Self::lobby(state)?;
+                    let lobby = Self::lobby(&state.frontend.wol)?;
                     let geometry = lobby.ui.shown_geometry(
                         crate::ui::wol_lobby::GAMES,
                         layout
@@ -1370,7 +1451,12 @@ impl WolCapture {
                         layout.page.scale,
                     );
                     let rect = geometry.row(row - lobby.ui.list_top(crate::ui::wol_lobby::GAMES));
-                    set_window_pointer_to_rect_center(state, rect);
+                    set_window_pointer_to_rect_center(
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &mut state.match_state.input,
+                        rect,
+                    );
                     App::handle_wol_mouse_move(state);
                     let help = crate::app::shell_wol::lobby::status_help(
                         &state.frontend,
@@ -1392,7 +1478,9 @@ impl WolCapture {
                     state,
                     WolServiceEvent::NetStatus(crate::app::shell_wol::NET_STATUS_LOST),
                 );
-                let expected = state.csf_label("TXT_YOURE_DISCON", "TXT_YOURE_DISCON");
+                let expected = state
+                    .process_assets
+                    .csf_label("TXT_YOURE_DISCON", "TXT_YOURE_DISCON");
                 ensure!(
                     state
                         .frontend
@@ -1438,7 +1526,9 @@ impl WolCapture {
                     },
                 );
                 let other = format_csf(
-                    &state.csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
+                    &state
+                        .process_assets
+                        .csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
                     &[
                         CsfArg::Str("Foxtrot"),
                         CsfArg::Str(&channel.name),
@@ -1446,13 +1536,15 @@ impl WolCapture {
                     ],
                 );
                 let ban = format_csf(
-                    &state.csf_label("TXT_CHAN_BAN", "TXT_CHAN_BAN"),
+                    &state
+                        .process_assets
+                        .csf_label("TXT_CHAN_BAN", "TXT_CHAN_BAN"),
                     &[CsfArg::Str("Foxtrot")],
                 );
                 ensure!(
-                    Self::chat_has(state, &other)?
-                        && Self::chat_has(state, &ban)?
-                        && !Self::lobby(state)?
+                    Self::chat_has(&state.frontend.wol, &other)?
+                        && Self::chat_has(&state.frontend.wol, &ban)?
+                        && !Self::lobby(&state.frontend.wol)?
                             .ui
                             .player_rows
                             .iter()
@@ -1469,7 +1561,9 @@ impl WolCapture {
                     },
                 );
                 let kicked = format_csf(
-                    &state.csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED"),
+                    &state
+                        .process_assets
+                        .csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED"),
                     &[CsfArg::Str(&channel.name), CsfArg::Str("Hotel")],
                 );
                 ensure!(
@@ -1484,12 +1578,14 @@ impl WolCapture {
                 let ok = crate::ui::shell::modal::menu_message_box(1, width, height).button(0);
                 welcome_click(state, ok);
                 let left = format_csf(
-                    &state.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
-                    &[CsfArg::Str(&state.csf_label("TXT_LOB_1", "TXT_LOB_1"))],
+                    &state.process_assets.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
+                    &[CsfArg::Str(
+                        &state.process_assets.csf_label("TXT_LOB_1", "TXT_LOB_1"),
+                    )],
                 );
                 ensure!(
-                    Self::chat_has(state, &left)?
-                        && Self::lobby(state)?.ui.player_rows.is_empty()
+                    Self::chat_has(&state.frontend.wol, &left)?
+                        && Self::lobby(&state.frontend.wol)?.ui.player_rows.is_empty()
                         && state.frontend.wol_lobby_globals.lobby_number == number + 1
                         && !crate::app::shell_wol::lobby::in_channel(state.frontend.wol.as_ref()),
                     "the kick's box did not leave the channel"
@@ -1500,14 +1596,19 @@ impl WolCapture {
                 // Rows: Alpha, Charlie (other rules), Delta, Bravo (full).
                 game_row_click(state, 1)?;
                 game_row_click(state, 3)?;
-                let mismatch = state.csf_label("TXT_MISMATCH", "TXT_MISMATCH");
-                let full = state.csf_label("WOL:GameFull", "WOL:GameFull");
+                let mismatch = state
+                    .process_assets
+                    .csf_label("TXT_MISMATCH", "TXT_MISMATCH");
+                let full = state
+                    .process_assets
+                    .csf_label("WOL:GameFull", "WOL:GameFull");
                 ensure!(
-                    Self::chat_has(state, &mismatch)? && Self::chat_has(state, &full)?,
+                    Self::chat_has(&state.frontend.wol, &mismatch)?
+                        && Self::chat_has(&state.frontend.wol, &full)?,
                     "the admission refusals were not printed"
                 );
                 ensure!(
-                    !Self::lobby(state)?.ui.enabled(lobby_ui::JOIN),
+                    !Self::lobby(&state.frontend.wol)?.ui.enabled(lobby_ui::JOIN),
                     "a refused game enabled Join"
                 );
                 self.event(frame, "mismatched and full games refused");
@@ -1516,7 +1617,7 @@ impl WolCapture {
                 game_row_click(state, 2)?;
                 lobby_button(state, &layout, lobby_ui::JOIN)?;
                 ensure!(
-                    Self::lobby(state)?
+                    Self::lobby(&state.frontend.wol)?
                         .ui
                         .popup
                         .as_ref()
@@ -1561,7 +1662,7 @@ impl WolCapture {
                 }
                 lobby_button(state, &layout, lobby_ui::CREATE)?;
                 ensure!(
-                    Self::lobby(state)?
+                    Self::lobby(&state.frontend.wol)?
                         .ui
                         .popup
                         .as_ref()

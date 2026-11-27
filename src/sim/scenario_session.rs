@@ -1906,8 +1906,7 @@ impl ScenarioSession {
     }
 
     /// Scenario::GetWaypointCoords68BCC0 copies the packed signed words. An
-    /// unset valid slot is (0,0); reading outside its702-slot allocation is
-    /// not a deterministic malformed-map contract and is rejected here.
+    /// unset slot inside VERA's waypoint allocation is `(0, 0)`.
     pub fn waypoint_cell(&self, index: i32) -> Option<(i16, i16)> {
         let index = crate::map::waypoints::waypoint_slot(index)?;
         Some(self.waypoints.get(&index).copied().unwrap_or((0, 0)))
@@ -1919,6 +1918,14 @@ impl ScenarioSession {
         crate::map::waypoints::waypoint_is_defined(index, |index| {
             self.waypoints.get(&index).copied()
         })
+    }
+
+    /// Defined waypoint cells in ascending slot order, excluding the empty cell.
+    pub(crate) fn defined_waypoint_cells(&self) -> impl Iterator<Item = (i16, i16)> + '_ {
+        self.waypoints
+            .range(..crate::map::waypoints::WAYPOINT_SLOT_COUNT)
+            .map(|(_, &cell)| cell)
+            .filter(|&cell| cell != (0, 0))
     }
 
     pub fn first_multiplayer_start(&self) -> Option<crate::map::waypoints::Waypoint> {
@@ -3291,3 +3298,4 @@ impl ScenarioSession {
 }
 
 mod pause;
+pub use pause::ScenarioPauseChange;

@@ -53,9 +53,17 @@ mod command_bar;
 pub(crate) use command_bar::{places as command_bar_places, tooltips as command_bar_tooltips};
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::retained_hud::PICTURE;
+use crate::ui::game_screen::GameScreen;
 use crate::ui::sidebar::{self, SidebarAction, SidebarPart, SidebarTab, SidebarView};
 
 /// gamemd sidebar button IDs (study §2.5 live-population table).
@@ -117,8 +125,10 @@ pub(crate) struct ChromeNodes {
     /// index: it fires on the left or right press. Grown, never shrunk.
     sw_buttons: Vec<NodeId>,
     layout_group: NodeId,
-    /// The layout's added parts, a node each by part index: a part that is
-    /// no button takes no pointer. Grown to fit, never shrunk.
+    /// The layout's added parts, a node each by part index, named by the
+    /// part and of its kind, which client modules find and write (RFC 0001
+    /// section 10): a part that is no button takes no pointer here. Grown
+    /// to fit, never shrunk; made anew when a part's name or kind changes.
     pub(crate) layout_buttons: Vec<NodeId>,
     pub(crate) timer_dock: NodeId,
     /// Each sidebar part's node by `SidebarPart as usize`, in a group of
@@ -193,6 +203,8 @@ struct SyncKey {
     minimap: bool,
     timer: Option<Rect>,
     layout: Vec<Option<Rect>>,
+    /// Each added part's name and node kind, for its node.
+    layout_parts: Vec<(String, NodeKind)>,
 }
 
 /// The chrome's state on the match presentation.
@@ -431,16 +443,13 @@ struct SwPlaces {
 /// The column's places. The toggle takes nothing without its On or Off PCX
 /// (`ToggleSWButtonClass::Draw` draws nothing and its `Action` ignores
 /// input), and the columns are inert while collapsed.
-fn sw_places(state: &AppState) -> SwPlaces {
-    let presentation = &state.match_state.match_presentation;
+fn sw_places(presentation: &MatchPresentationState) -> SwPlaces {
     let sw = &presentation.sw_sidebar;
     if !sw.ui.enabled {
         return SwPlaces::default();
     }
     let expanded = presentation.sidebar_projection.model.sw_sidebar_expanded();
-    let has_toggle =
-        crate::app::presentation::sw_sidebar::toggle_art(&state.match_state.match_presentation)
-            .is_some();
+    let has_toggle = crate::app::presentation::sw_sidebar::toggle_art(presentation).is_some();
     sw_layout_places(&sw.layout, expanded, has_toggle)
 }
 
@@ -475,8 +484,21 @@ fn cursor_rect(r: sidebar::Rect) -> Rect {
     )
 }
 
-fn places(state: &AppState, view: &SidebarView) -> Places {
-    let frame = state.sidebar_frame();
+fn places(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    view: &SidebarView,
+) -> Places {
+    let frame = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    );
     let tab = |i: usize| {
         view.tabs
             .get(i)
@@ -492,19 +514,25 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
     // have no in-game map editor (gamemd registers it only when
     // !g_IsMapEditor).
     let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     // Minimap region rect = the live minimap screen rect; off when the radar
     // is offline or the minimap is absent (the gate `is_cursor_over_minimap`
     // uses, `presentation::sidebar_render`).
-    let minimap = minimap_available(state).then(|| {
+    let minimap = minimap_available(&match_state.match_presentation).then(|| {
         rect_px(
             frame,
-            crate::app::presentation::sidebar_render::active_minimap_content_screen_rect(state),
+            crate::app::presentation::sidebar_render::active_minimap_content_screen_rect(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            ),
         )
     });
     Places {
@@ -527,90 +555,208 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
             .iter()
             .map(|item| rect_px(frame, item.rect))
             .collect(),
-        command_bar: command_bar::places(state),
-        timer: timer_rect(state),
+        command_bar: command_bar::places(platform, renderer, frontend, match_state, persistence),
+        timer: timer_rect(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+        ),
     }
 }
 
-fn minimap_available(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::minimap_shown(&state.match_state.match_presentation)
-        && state.match_state.match_presentation.minimap.is_some()
+fn minimap_available(presentation: &MatchPresentationState) -> bool {
+    crate::app::presentation::sidebar_render::minimap_shown(presentation)
+        && presentation.minimap.is_some()
 }
 
 /// The timer dock's arrow: the dock keeps its areas in the pixels of the
 /// timers' box, the battlefield's own in the original interface. A tiny
 /// control before the full-tactical catcher, without catching timer text or
 /// transparent space; no tooltip is registered for it.
-fn timer_rect(state: &AppState) -> Option<Rect> {
-    let rect = state
-        .match_state
-        .match_presentation
-        .super_timer_dock
-        .toggle_rect()?;
+fn timer_rect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+) -> Option<Rect> {
+    let rect = presentation.super_timer_dock.toggle_rect()?;
     let [left, top, _, _] = crate::app::presentation::field_parts::rect(
-        state,
+        platform,
+        renderer,
+        screen,
+        presentation,
+        persistence,
         crate::ui::field_layout::FieldPart::Timers,
     );
     Some(Rect::new(rect.x + left, rect.y + top, rect.w, rect.h))
 }
 
-/// The buttons the side's layout adds take clicks where they are drawn: a
-/// rect per added part, `None` for a part that takes no click.
-fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
-    crate::app::presentation::layout_parts::placed(state)
+/// Each added part's frame-pixel rect: none for a row, a column or a cameo
+/// grid (which place or take their own) and for a part a client module hid.
+fn layout_rects(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<Option<Rect>> {
+    crate::app::presentation::layout_parts::placed(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    )
+    .iter()
+    .take(LAYOUT_BUTTONS_MAX)
+    .map(|part| {
+        (!part.group && !part.hidden).then(|| {
+            let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
+                platform,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
+                persistence,
+                part,
+            );
+            Rect::new(x, y, w, h)
+        })
+    })
+    .collect()
+}
+
+/// Each added part's name (its section's after the layout's) and the kind
+/// of node it is.
+fn layout_parts(presentation: &MatchPresentationState) -> Vec<(String, NodeKind)> {
+    use crate::ui::added_parts::AddedKind;
+    presentation
+        .added_parts
         .iter()
         .take(LAYOUT_BUTTONS_MAX)
         .map(|part| {
-            part.button.then(|| {
-                let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
-                    part,
-                );
-                Rect::new(x, y, w, h)
-            })
+            let name = part
+                .section
+                .split_once('.')
+                .map_or(part.section.as_str(), |(_, name)| name);
+            let kind = match part.kind {
+                AddedKind::Button { .. } => NodeKind::Button,
+                AddedKind::Text { .. } => NodeKind::Text,
+                AddedKind::Image { .. } => NodeKind::Image,
+                AddedKind::Bar => NodeKind::Bar,
+                AddedKind::List => NodeKind::List,
+                AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => NodeKind::Panel,
+            };
+            (name.to_owned(), kind)
         })
         .collect()
 }
 
-fn sync_key(state: &AppState) -> SyncKey {
-    let presentation = &state.match_state.match_presentation;
+/// The node of the layout's added part `index`, in the chrome's GUI.
+pub(crate) fn layout_part_node(
+    presentation: &MatchPresentationState,
+    index: usize,
+) -> Option<(&Gui, NodeId)> {
+    let (gui, nodes) = chrome(presentation)?;
+    Some((gui, *nodes.layout_buttons.get(index)?))
+}
+
+/// The node of the cameo grid that `view`'s cameo `slot` is in: a grid the
+/// layout adds is its part's node, any other cameo the sidebar's own grid's
+/// (the part `Cameos`). Client modules find either by its part name and
+/// write its `ItemTooltips` (RFC 0001 appendix 7.10).
+pub(crate) fn cameo_grid_node(
+    presentation: &MatchPresentationState,
+    view: &SidebarView,
+    slot: usize,
+) -> Option<NodeId> {
+    let (_, nodes) = chrome(presentation)?;
+    match view
+        .added_grids
+        .iter()
+        .find(|grid| (grid.first..grid.first + grid.len).contains(&slot))
+    {
+        Some(grid) => nodes.layout_buttons.get(grid.part).copied(),
+        None => Some(nodes.sidebar_parts[SidebarPart::Cameos as usize]),
+    }
+}
+
+fn sync_key(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> SyncKey {
+    let presentation = &match_state.match_presentation;
     SyncKey {
-        sw: sw_places(state),
+        sw: sw_places(&match_state.match_presentation),
         placement_revision: presentation.sidebar_projection.placement_revision(),
-        frame: state.sidebar_frame(),
+        frame: crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
         command_bar_closed: presentation.sidebar_gadget_state.command_bar_closed,
-        minimap: minimap_available(state),
-        timer: timer_rect(state),
-        layout: layout_rects(state),
+        minimap: minimap_available(&match_state.match_presentation),
+        timer: timer_rect(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+        ),
+        layout: layout_rects(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+        ),
+        layout_parts: layout_parts(&match_state.match_presentation),
     }
 }
 
 /// Builds the chrome when the controller has none and, when `force` or
 /// what places it changed, puts its nodes where the match draws them.
 /// False without a sidebar view: the chrome takes nothing then.
-fn sync(state: &mut AppState, force: bool) -> bool {
-    let Some(view) = state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .view()
-    else {
+fn sync(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    force: bool,
+) -> bool {
+    let Some(view) = match_state.match_presentation.sidebar_projection.view() else {
         return false;
     };
-    let presentation = &state.match_state.match_presentation;
+    let presentation = &match_state.match_presentation;
     let built = presentation
         .in_game_chrome
         .nodes(presentation.dialog_ui.gui())
         .is_some();
-    let key = sync_key(state);
+    let key = sync_key(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    );
     let changed = !built || presentation.in_game_chrome.key.as_ref() != Some(&key);
     if changed || force {
-        let places = places(state, view);
-        let presentation = &mut state.match_state.match_presentation;
+        let places = places(platform, renderer, frontend, match_state, persistence, view);
+        let presentation = &mut match_state.match_presentation;
         let gui = presentation.dialog_ui.gui_mut();
         let Some(nodes) = ensure(&mut presentation.in_game_chrome, gui) else {
             return false;
@@ -618,17 +764,17 @@ fn sync(state: &mut AppState, force: bool) -> bool {
         write_places(gui, nodes, &places, &key);
         presentation.in_game_chrome.key = Some(key);
     }
-    let point = state.match_state.input.cursor_px();
-    let presentation = &mut state.match_state.match_presentation;
+    let point = match_state.input.cursor_px();
+    let presentation = &mut match_state.match_presentation;
     if let Some((hovered, held)) = presentation.in_game_chrome.refresh_hover(
         &mut presentation.dialog_ui,
         point,
         changed || force,
     ) {
         if held.is_some() {
-            publish_pressed_visuals(&mut state.match_state.match_presentation);
+            publish_pressed_visuals(&mut match_state.match_presentation);
         }
-        apply_cameo_hover_tooltip(&mut state.match_state.match_presentation, hovered);
+        apply_cameo_hover_tooltip(&mut match_state.match_presentation, hovered);
     }
     true
 }
@@ -687,7 +833,7 @@ fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places, key: &S
     write_cameos(gui, nodes, &places.cameos);
     command_bar::sync(gui, &nodes.command_bar, &places.command_bar);
     place(gui, nodes.timer_dock, places.timer, true);
-    write_layout_buttons(gui, nodes, &key.layout);
+    write_layout_buttons(gui, nodes, &key.layout, &key.layout_parts);
 }
 
 /// Phobos' column: the toggle, and the button pool grown to the column's
@@ -732,22 +878,60 @@ fn write_cameos(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Rect]) {
 /// One node per added part, in the layout group at the list's head so a
 /// button over the battlefield comes before the full-tactical catcher. The
 /// gadget driver added each at the head, so the last part comes first; a
-/// pool that grows is laid out again in that order.
-fn write_layout_buttons(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Option<Rect>]) {
-    if nodes.layout_buttons.len() < rects.len() {
+/// pool that grows, or whose parts' names or kinds change, is laid out
+/// again in that order. `parts` gives each part's name and kind (a part
+/// past it is an unnamed button). Only a button takes the pointer here; any
+/// other part's rect is where a client module's pointer events find it.
+fn write_layout_buttons(
+    gui: &mut Gui,
+    nodes: &mut ChromeNodes,
+    rects: &[Option<Rect>],
+    parts: &[(String, NodeKind)],
+) {
+    let part = |index: usize| {
+        parts
+            .get(index)
+            .map_or(("", NodeKind::Button), |(name, kind)| (name.as_str(), *kind))
+    };
+    let stale = nodes.layout_buttons.iter().enumerate().any(|(index, &node)| {
+        let (name, kind) = part(index);
+        let named = match gui.get(node, Prop::Name) {
+            Ok(Some(Value::Text(own))) => own == name,
+            Ok(_) => name.is_empty(),
+            Err(_) => false,
+        };
+        index < parts.len() && (gui.tree().kind(node) != Ok(kind) || !named)
+    });
+    if nodes.layout_buttons.len() < rects.len() || stale {
         for node in nodes.layout_buttons.drain(..) {
             let _ = gui.remove(node);
         }
-        let mut made = Vec::with_capacity(rects.len());
-        for index in (0..rects.len()).rev() {
-            match button(gui, nodes.layout_group, ID_LAYOUT_BASE + index as u16, LEFT) {
+        let count = rects.len().max(parts.len());
+        let mut made = Vec::with_capacity(count);
+        for index in (0..count).rev() {
+            let (name, kind) = part(index);
+            let id = ID_LAYOUT_BASE + index as u16;
+            let node = match kind {
+                NodeKind::Button => button(gui, nodes.layout_group, id, LEFT),
+                kind => gui.create(kind, Some(nodes.layout_group)).and_then(|node| {
+                    gui.set(node, Prop::Id, Value::Int(i32::from(id)))?;
+                    Ok(node)
+                }),
+            };
+            let named = node.and_then(|node| {
+                if !name.is_empty() {
+                    gui.set(node, Prop::Name, Value::Text(name.to_owned()))?;
+                }
+                Ok(node)
+            });
+            match named {
                 Ok(node) => made.push(node),
                 Err(_) => break,
             }
         }
         made.reverse();
         // A pool cut short by the node budget keeps none of its tail.
-        if made.len() == rects.len() {
+        if made.len() == count {
             nodes.layout_buttons = made;
         } else {
             for node in made {
@@ -756,7 +940,13 @@ fn write_layout_buttons(gui: &mut Gui, nodes: &mut ChromeNodes, rects: &[Option<
         }
     }
     for (index, node) in nodes.layout_buttons.iter().enumerate() {
-        place(gui, *node, rects.get(index).copied().flatten(), true);
+        let rect = rects.get(index).copied().flatten();
+        if part(index).1 == NodeKind::Button {
+            place(gui, *node, rect, true);
+        } else if let Some(rect) = rect {
+            // No pointer here: its enabled state is the client module's.
+            let _ = gui.set(*node, Prop::HitRect, Value::Rect(rect));
+        }
     }
 }
 
@@ -799,7 +989,15 @@ pub(crate) fn mouse_button(
     {
         return ChromeRoute::Consumed;
     }
-    if !sync(state, true) {
+    if !sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &state.persistence,
+        true,
+    ) {
         return ChromeRoute::NotConsumed;
     }
     let button = match button {
@@ -837,7 +1035,18 @@ pub(crate) fn mouse_button(
     kept.last_fired = fired;
     let routed = classify(&state.match_state.match_presentation, result);
     if let Some((node, right)) = fired
-        && !apply_sw(state, node, right)
+        && !apply_sw(
+            &mut state.platform,
+            &state.renderer,
+            &state.diag,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            node,
+            right,
+        )
         && let Some(id) =
             chrome(&state.match_state.match_presentation).and_then(|(gui, _)| gui.id_of(node))
     {
@@ -850,14 +1059,44 @@ pub(crate) fn mouse_button(
 
 /// Builds the chrome if needed and puts its nodes where the match draws them
 /// now, for a reader outside the pointer path (a diagnostic receipt).
-pub(crate) fn refresh(state: &mut AppState) -> bool {
-    sync(state, true)
+pub(crate) fn refresh(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> bool {
+    sync(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        true,
+    )
 }
 
 /// Reconcile the hit regions and pointer when either may have changed.
-pub(crate) fn refresh_pointer(state: &mut AppState) {
-    if !crate::app::input::campaign_input::is_locked(&state.match_state) {
-        sync(state, false);
+pub(crate) fn refresh_pointer(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    if !crate::app::input::campaign_input::is_locked(match_state) {
+        sync(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            false,
+        );
     }
 }
 
@@ -958,24 +1197,34 @@ fn apply_cameo_hover_tooltip(presentation: &mut MatchPresentationState, before: 
 
 /// [AudioVisual] GUITabSound — played on every consumed tab click, including
 /// a click on the tab that is already active (Sidebar Action `0x006A7A66`).
-fn play_gui_tab_sound(state: &mut AppState) {
+fn play_gui_tab_sound(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
     crate::app::App::play_shell_rules_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         |rules| rules.general.gui_tab_sound.as_deref(),
     );
 }
 
 /// [AudioVisual] GUIMainButtonSound — the in-game Repair/Sell toggle click
 /// sound (the same event the main-menu shell buttons play).
-pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
+pub(crate) fn play_gui_main_button_sound(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
     crate::app::App::play_shell_rules_sound(
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
-        &mut state.audio.sfx_player,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
         |rules| rules.general.gui_main_button_sound.as_deref(),
     );
 }
@@ -985,7 +1234,18 @@ pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
 /// identically (study §2.2: `key & ~0x4000`). The retained sidebar view the
 /// press ran on is read before the action that may change it.
 fn apply_result(state: &mut AppState, id: u16, right: bool) {
-    if command_bar::apply(state, id, right) {
+    if command_bar::apply(
+        &mut state.platform,
+        &mut state.renderer,
+        &state.diag,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
+        id,
+        right,
+    ) {
         return;
     }
     let (side2_tiles, cameos) = current_sidebar_view(&state.match_state.match_presentation)
@@ -1024,25 +1284,87 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
         }
         _ if (ID_TAB_BASE..ID_TAB_BASE + 4).contains(&id) => {
             let tab = SidebarTab::all()[(id - ID_TAB_BASE) as usize];
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::SelectTab(tab));
-            play_gui_tab_sound(state);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::SelectTab(tab),
+            );
+            play_gui_tab_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         ID_DIPLOMACY => {
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::OpenDiplomacy);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::OpenDiplomacy,
+            );
         }
         ID_OPTIONS => {
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::OpenPauseMenu);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::OpenPauseMenu,
+            );
         }
         ID_REPAIR => {
             crate::app::input::dispatch::apply_sidebar_action(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 SidebarAction::ToggleRepairMode,
             );
-            play_gui_main_button_sound(state);
+            play_gui_main_button_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         ID_SELL => {
-            crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::ToggleSellMode);
-            play_gui_main_button_sound(state);
+            crate::app::input::dispatch::apply_sidebar_action(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                SidebarAction::ToggleSellMode,
+            );
+            play_gui_main_button_sound(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
         }
         // One page per click (mask 0x55 has no held bits ⇒ no repeat).
         // Sidebar Action 0x006A7780 queues the page on the active strip while
@@ -1082,7 +1404,17 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
                 .and_then(|view| view.items.get(slot))
                 .map(|item| crate::ui::sidebar::hit_test_item(item, right, shift));
             if let Some(action) = action {
-                crate::app::input::dispatch::apply_sidebar_action(state, action);
+                crate::app::input::dispatch::apply_sidebar_action(
+                    &mut state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    action,
+                );
             }
         }
         _ => {}
@@ -1093,22 +1425,37 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
 /// release, a button launches or selects its superweapon by the same
 /// `apply_sidebar_action` path as the vanilla cameo. False when `node` is none
 /// of the column's.
-fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
-    let Some((_, nodes)) = chrome(&state.match_state.match_presentation) else {
+fn apply_sw(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &crate::app::diagnostics::state::DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    node: NodeId,
+    right: bool,
+) -> bool {
+    let Some((_, nodes)) = chrome(&match_state.match_presentation) else {
         return false;
     };
     if node == nodes.sw_toggle {
         if !right {
-            crate::app::presentation::sw_sidebar::toggle(&mut state.match_state.match_presentation);
-            play_gui_main_button_sound(state);
+            crate::app::presentation::sw_sidebar::toggle(&mut match_state.match_presentation);
+            play_gui_main_button_sound(
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
+            );
         }
         return true;
     }
     let Some(index) = nodes.sw_index(node) else {
         return false;
     };
-    let section = state
-        .match_state
+    let section = match_state
         .match_presentation
         .sw_sidebar
         .entries
@@ -1116,7 +1463,14 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
         .map(|entry| entry.type_id.clone());
     if let Some(section) = section {
         crate::app::input::dispatch::apply_sidebar_action(
-            state,
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             SidebarAction::SuperWeaponPress { section, right },
         );
     }
@@ -1263,7 +1617,7 @@ mod tests {
         let (mut gui, mut nodes) = test_layer();
         place(&mut gui, nodes.tactical, Some(r(0, 0, 800, 600)), true);
         // The layout's first part is a text, its second a button.
-        write_layout_buttons(&mut gui, &mut nodes, &[None, Some(r(20, 100, 60, 17))]);
+        write_layout_buttons(&mut gui, &mut nodes, &[None, Some(r(20, 100, 60, 17))], &[]);
         let hit = |gui: &Gui, x, y| gui.chrome_hit(x, y).filter(|n| *n != nodes.tactical);
         assert!(hit(&gui, 25, 105).is_some());
         assert!(hit(&gui, 400, 300).is_none());
@@ -1279,7 +1633,7 @@ mod tests {
         assert_eq!(press.passthrough, Some(nodes.tactical));
         edge(&mut gui, 300, 300, GuiButton::Left, false);
         // A layout without the button leaves its node off the pointer.
-        write_layout_buttons(&mut gui, &mut nodes, &[None, None]);
+        write_layout_buttons(&mut gui, &mut nodes, &[None, None], &[]);
         let (press, _) = edge(&mut gui, 30, 108, GuiButton::Left, true);
         assert_eq!(press.passthrough, Some(nodes.tactical));
     }
@@ -1289,11 +1643,12 @@ mod tests {
     #[test]
     fn a_later_layout_button_comes_first_as_the_gadget_list_had_it() {
         let (mut gui, mut nodes) = test_layer();
-        write_layout_buttons(&mut gui, &mut nodes, &[Some(r(0, 0, 50, 20))]);
+        write_layout_buttons(&mut gui, &mut nodes, &[Some(r(0, 0, 50, 20))], &[]);
         write_layout_buttons(
             &mut gui,
             &mut nodes,
             &[Some(r(0, 0, 50, 20)), Some(r(0, 0, 50, 20))],
+            &[],
         );
         edge(&mut gui, 5, 5, GuiButton::Left, true);
         assert_eq!(gui.pressed_in(nodes.layer), Some(nodes.layout_buttons[1]));

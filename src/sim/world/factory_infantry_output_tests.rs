@@ -1108,14 +1108,14 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
             assert_eq!(entity_id, id);
             let expected = ground_command_nav_target(&dispatch["after"]).unwrap();
             assert_eq!(NavTargetRef::cell(target_rx, target_ry), expected);
-            assert!(sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &decoded.payload,
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default()
-            ));
+            )).is_ok());
             assert_ground_command_fields(&sim, id, row, &dispatch["after"]);
         }
     }
@@ -1150,14 +1150,14 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
             return;
         };
         if let Some(stop) = stop {
-            assert!(sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &Command::Stop { entity_id: id },
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default()
-            ));
+            )).is_ok());
             assert_ground_command_fields(&sim, id, row, &stop["after"]);
         }
         let input = row["inputs"].as_array().unwrap().last().unwrap();
@@ -1171,14 +1171,14 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
             false,
         );
         assert!(matches!(decoded.payload, Command::Move { .. }));
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &decoded.payload,
             &rules,
             Some(&registry),
             &mut crate::sim::world::FrameEffects::default()
-        ));
+        )).is_ok());
         let dispatch = boundaries
             .iter()
             .rfind(|boundary| boundary["label"] == "actual_local_OutList_DoList_dispatch")
@@ -1219,8 +1219,8 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
         panic!("original emitted Move destination is a Cell");
     };
     assert!(
-        sim.apply_command_with_overlays(
-            None,
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1230,7 +1230,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
             &rules,
             Some(&registry),
             &mut crate::sim::world::FrameEffects::default()
-        ),
+        )).is_ok(),
         "the void class refusal is still an executed Move"
     );
     assert_ground_command_fields(&sim, id, row, &dispatch["after"]);
@@ -1272,8 +1272,8 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
         )
         .unwrap()
         .unwrap();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::Move {
             entity_id: id,
@@ -1283,7 +1283,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
         &rules,
         Some(&registry),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     assert_ground_command_fields(&sim, id, row, &row["final"]);
 }
 
@@ -1352,8 +1352,8 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
             )
             .unwrap()
             .unwrap();
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1363,7 +1363,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
             &rules,
             Some(&registry),
             &mut crate::sim::world::FrameEffects::default()
-        ));
+        )).is_ok());
         assert_ground_command_fields(&sim, id, row, &row["final"]);
     }
 }
@@ -1641,8 +1641,8 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
         )
         .unwrap()
         .unwrap();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::Move {
             entity_id: id,
@@ -1652,7 +1652,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
         &rules,
         Some(&registry),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     assert_ground_command_fields(&sim, id, row, &row["final"]);
 }
 

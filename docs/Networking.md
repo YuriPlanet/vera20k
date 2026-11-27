@@ -29,6 +29,12 @@ password or delete it ([Accounts](lobby-protocol.md#accounts)). Players then cre
 or join a game. A host can select Easy, Normal or Hard AI from an open player slot in
 Battle or Free For All.
 
+In a desktop online room, **Choose Map → Online Maps** lets the host browse the
+same categories as the website. A map may appear in several categories, including
+after the host downloads it. A public, optional [category feed](lobby-protocol.md#map-library)
+only filters the host's picker. Mixed rooms, releases without category support and
+rollbacks use the existing room map selection and transfer messages.
+
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
@@ -510,16 +516,23 @@ Native lockstep instead slows every match to its slowest player (ProcessNetwork
 
 A lobby that turns on continuous pacing (certificate flags bit 2, below) lets the
 relay seal at any whole rate instead of Game Speed rows, as lockstep LAN play
-follows its slowest player: a slow player slows the match to its holdable rate,
-nine tenths of what it ran while behind, at least one frame and at most a
-quarter slower at a time, never below 10 frames a second. A player whose frames
-keep waiting for ten seconds though it runs as many as the relay seals slows it
-a twentieth, so that backlog drains. After a third of the raise wait the match
-speeds up half the way to the slowest player's ceiling, at least one frame and
-at most a tenth of its rate at a time, up to its own speed. The ceiling is the
-player's tick cost and nineteen twentieths of what it ran in a ten-second
-backlog or when it fell behind a second time within five minutes, so a hitch of a
-few seconds holds nothing back. Messages, replays and saves are as above.
+follows its slowest player. The relay estimates what each player can run: what
+its tick cost holds and, while frames wait on it, nine tenths of what it ran. It
+holds the low point of that estimate until the player has kept up for a wait,
+then raises it once: by a fifth, or to nine tenths of the most the player has run
+since, and by a fifth again after each further wait it keeps up. A raise the
+player cannot hold doubles the wait, from 30 seconds up to two minutes; one that
+held a minute starts it over. The clock aims at the smallest estimate
+less that player's backlog over ten seconds (at most four tenths of the
+estimate), so a backlog always drains. The backlog comes from the sampled
+checksums the games already send: the newest frame when a checksum arrives,
+less the checksum's frame, less the least such gap while the player kept up.
+Every five seconds the clock moves towards that aim, and only when it is a
+twentieth or more away: down by at most half, up all the way and at most a
+quarter; never below 10 frames a second or above the match's own speed. Messages,
+replays and saves are as above. These rules live in the relay alone: games of
+any version play under a relay with either set, and rolling the relay back
+brings back the earlier rules for matches it starts.
 
 The lobby enables continuous pacing only after every participating relay and
 every admitted game build support bit 2. An older game rejects the grant with
@@ -703,6 +716,19 @@ A successful join moves them once. A lost reply retries the same command ID.
 Earlier clients leave first; a lobby without visits never offers this switch.
 The game, lobby and relay exchange the same messages.
 
+Simulation WASM modules run locally on every peer. The existing mod-file
+digest covers a selected mod's loose rules module, and an embedded module
+travels with the agreed map. Module state participates in the match checksum.
+The source-derived build identity refuses a mixed room before simulation.
+Peers on the same earlier build use its earlier behavior after a rollback.
+
+A client module (`ui.wasm`) can send up to 96 bytes to its simulation module
+through the ordinary player command stream. LAN, the relay and replays carry
+the same record. The simulation checks the sender and message limits on each
+peer. The host's `automation_allowed` launch setting defaults to off and enters the room's
+rules digest when enabled. The build check runs before peers exchange module
+messages, including after a rollback.
+
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
 as their name appears. Released clients use the same ladder messages. After a lobby
@@ -720,7 +746,18 @@ again without it. A lobby that lists matches to watch already supports Teams, th
 and the room rules. A refusal from it leaves the settings in place. The host checks the
 map has enough starts for the playing teams, people and AI before publishing, so they
 can change the map or the seats while keeping their room settings. A room has 2 to 15
-teams, named A to O.
+teams, named A to O. A count outside that range, from a room or a peer, leaves Teams
+Off.
+
+A room's list and its seats come from one number: the rows that admit players. That
+is the map's capacity, and the host's observer row adds one more row when the room
+has one: a WOL room holds the six rows of the original service (`0x005E6440`), or two
+in a tournament room, and the host's observer row adds a row only when the capacity
+is under that limit (`0x005EC4A3..0x005EC4EF`). The list shows exactly those rows, so
+a newcomer takes a row the list shows and the room refuses the next one, instead of
+seating a player in a row nobody sees. Nothing new travels: a player's row travels
+as before, and a room of mixed versions seats as many players as the host's rows
+allow. An older host keeps its own rows, and a rollback does again.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
@@ -874,6 +911,15 @@ doesn't offer it. A guest's own pick sent at the same moment carries its whole r
 wins on the host. Online, a game sends its room commands to the lobby one at a time; a
 newer options, map-status or ready command replaces an older one of the same kind that
 is still waiting, and goes out after whatever was queued before it.
+A guest's own pick travels as the `R` words the shell wrote, and the host reads them
+with the same owner the room's publication uses (`app::lan_service::picks`): a side
+(-3 while the seat watches, -2 for Random, else the country index up to 65535), a
+colour (-2 for Random, else the index up to 255), a start (-2 or -1 for Auto, else a
+waypoint below the shell's own 120 rows) and a team (-2 or -1 for no team, else the
+team index up to 255). A value outside its domain is refused rather than trimmed, so
+the row the host stores is the row the room re-applies. A guest of another build never
+reaches this path: it is refused at the build check. Online, a pick travels as the
+lobby's typed room data, not as these words, so the online wire is unchanged.
 
 ### Build check
 
@@ -1257,15 +1303,16 @@ command stream above is an intentional adaptation.
   receiver refuses one without it (`net::event_packet`). VERA's own records,
   which LAN packets and online batches carry alike, are laid out in
   `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
-  recordings play; no input sends it), 0x32 producer cycle, 0x33 explicit
-  target-House economic order, and 0x34 Phobos player-wide auto-repair. The 0x34
-  body is one requested-state byte; its event header authenticates the issuing
-  House. The 0x33 body is a native House slot byte, an inner economic opcode
-  byte, and 21 bytes of inner payload with zero padding; its event header also
-  authenticates the issuing source. The simulation requires FullControl over
-  the target. Ordinary production, placement and superweapon records continue
-  to use the source's primary House. The build check refuses peers with older
-  codecs before play.
+  recordings play; no input sends it), 0x32 producer cycle, and 0x33 explicit
+  target-House economic order. Record 0x34 carries a client module message with
+  a source byte, a length byte and a 96-byte data field. Record 0x35 carries
+  Phobos player-wide auto-repair with one requested-state byte; its event header
+  authenticates the issuing House. The 0x33 body is a native House slot byte, an
+  inner economic opcode byte, and 21 bytes of inner payload with zero padding.
+  The event header still authenticates the issuing source. The simulation
+  requires FullControl over the target. Ordinary production, placement and
+  superweapon records continue to use the source's primary House. The build
+  check refuses peers with older codecs before play.
 - `649CA0` mirrors the local OutList before broadcasting it. Send failures do not
   undo that mirror; the reached native wait and recovery paths decide what
   happens next. Transport queues retain bytes, not gameplay decisions.

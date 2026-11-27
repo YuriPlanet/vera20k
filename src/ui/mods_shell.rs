@@ -19,8 +19,22 @@ pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
 pub(crate) const CHECK: u16 = 0x7E34;
 pub(crate) const NEW: u16 = 0x7E35;
-#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+#[cfg(any(
+    windows,
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "android"
+))]
 pub(crate) const ADD: u16 = 0x7E36;
+/// Android: remove the selected mod's folder (the app owns it).
+#[cfg(target_os = "android")]
+pub(crate) const DELETE: u16 = 0x7E37;
+/// Android: add a home-screen shortcut for the selected mod.
+#[cfg(target_os = "android")]
+pub(crate) const PIN: u16 = 0x7E38;
+/// Android: rename the selected mod's folder.
+#[cfg(target_os = "android")]
+pub(crate) const RENAME: u16 = 0x7E39;
 
 /// The Options button's caption and the page's heading.
 pub(crate) const TITLE_KEY: &str = "VERA:Mods";
@@ -40,6 +54,16 @@ pub(crate) const HINT_TEXT: u16 = 0x7E40;
 pub(crate) const DETAIL_TEXTS: [u16; 5] = [0x7E41, 0x7E42, 0x7E43, 0x7E44, 0x7E45];
 pub(crate) const PROMPT_TEXT: u16 = 0x7E46;
 
+/// Android: New Mod's and Rename Mod's name dialog, a page dialog rather than
+/// a message box so the edit keeps its text and focus across frames. Hidden
+/// until one of them opens it (`app::shell_mods`).
+#[cfg(target_os = "android")]
+pub(crate) const NAME_EDIT: u16 = 0x7E62;
+#[cfg(target_os = "android")]
+pub(crate) const NAME_OK: u16 = 0x7E63;
+#[cfg(target_os = "android")]
+pub(crate) const NAME_CLOSE: u16 = 0x7E64;
+
 /// The page's buttons, then its statics in the order they paint.
 pub(crate) fn nodes() -> NodeSpec {
     let text = |id: u16, align: ShellAlign| {
@@ -47,29 +71,117 @@ pub(crate) fn nodes() -> NodeSpec {
             .id(id.into())
             .with(Prop::Align, Value::Int(align.0.into()))
     };
-    PAGE.nodes()
+    let page = PAGE
+        .nodes()
         .child(text(HINT_TEXT, ShellAlign::NONE))
         .children(DETAIL_TEXTS.map(|id| text(id, ShellAlign::NONE)))
-        .child(text(PROMPT_TEXT, ShellAlign::H_CENTER).label(PROMPT_KEY))
+        .child(text(PROMPT_TEXT, ShellAlign::H_CENTER).label(PROMPT_KEY));
+    #[cfg(target_os = "android")]
+    let page = page.children(name_dialog_nodes());
+    page
+}
+
+/// Android: the name dialog in window pixels, on the message box template's
+/// dialog, text body and two buttons, so it sits where the Mods page's boxes
+/// do (`App::name_dialog_parts`).
+#[cfg(target_os = "android")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NameDialogRects {
+    /// The panel: the template's dialog in `PUDLGBGN.SHP`'s shape.
+    pub(crate) panel: RectPx,
+    /// Where the hint and the name field start, as a box's text does.
+    pub(crate) body: RectPx,
+    pub(crate) ok: RectPx,
+    pub(crate) close: RectPx,
+}
+
+#[cfg(target_os = "android")]
+impl NameDialogRects {
+    /// `aspect`: the panel art's height over its width, when it is loaded;
+    /// the panel keeps that shape, centred on the template's dialog.
+    pub(crate) fn new(
+        dialog: RectPx,
+        body: RectPx,
+        ok: RectPx,
+        close: RectPx,
+        aspect: Option<f32>,
+    ) -> Self {
+        let h = aspect
+            .filter(|aspect| aspect.is_finite() && *aspect > 0.0)
+            .map_or(dialog.h, |aspect| {
+                ((dialog.w as f32 * aspect).round() as i32).max(80)
+            });
+        let y = dialog.y + (dialog.h - h) / 2;
+        Self {
+            panel: RectPx::new(dialog.x, y.max(0), dialog.w, h),
+            body,
+            ok,
+            close,
+        }
+    }
+
+    /// OK's or Close's window.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        match id {
+            NAME_OK => Some(self.ok),
+            NAME_CLOSE => Some(self.close),
+            _ => None,
+        }
+    }
+}
+
+/// Android: the name dialog's widgets, flat under the page's dialog: the edit,
+/// which only takes keys (the overlay paints its field and the hint), OK and
+/// Close. `app::shell_mods` shows them and places them.
+#[cfg(target_os = "android")]
+fn name_dialog_nodes() -> [NodeSpec; 3] {
+    let hidden = |spec: NodeSpec| spec.with(Prop::Visible, Value::Bool(false));
+    let button =
+        |id: u16, key: &str| hidden(NodeSpec::new(NodeKind::Button).id(id.into()).label(key));
+    [
+        hidden(NodeSpec::new(NodeKind::Edit).id(NAME_EDIT.into())),
+        button(NAME_OK, "TXT_OK"),
+        button(NAME_CLOSE, "VERA:Close"),
+    ]
 }
 
 /// The mod actions in the right column, Back on the bottom row.
+///
+/// Android has no file manager path into the app's storage: Add Mod picks
+/// through the system file manager, Open Folder becomes Export Mod through
+/// its folder picker, and Rename, Delete and Add Desktop Entry join the
+/// column (`docs/android.md`).
+#[cfg(target_os = "android")]
+pub(crate) const ACTIONS: &[MenuPageButtonSpec] = &[
+    MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+    MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
+    MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
+    MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
+    MenuPageButtonSpec::new(OPEN_FOLDER, 230, "VERA:ModExport", "VERA:ModExportHelp"),
+    MenuPageButtonSpec::new(RENAME, 257, "VERA:ModRename", "VERA:ModRenameHelp"),
+    MenuPageButtonSpec::new(DELETE, 284, "VERA:ModDelete", "VERA:ModDeleteHelp"),
+    MenuPageButtonSpec::new(PIN, 311, "VERA:ModPin", "VERA:ModPinHelp"),
+];
+
+#[cfg(not(target_os = "android"))]
+pub(crate) const ACTIONS: &[MenuPageButtonSpec] = &[
+    MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+    MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
+    MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
+    MenuPageButtonSpec::new(
+        OPEN_FOLDER,
+        230,
+        "VERA:ModsOpenFolder",
+        "VERA:ModsOpenFolderHelp",
+    ),
+];
+
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: TITLE_KEY,
-    stacked: &[
-        MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
-        MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
-        MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-        MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
-        MenuPageButtonSpec::new(
-            OPEN_FOLDER,
-            230,
-            "VERA:ModsOpenFolder",
-            "VERA:ModsOpenFolderHelp",
-        ),
-    ],
+    stacked: ACTIONS,
     back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
 

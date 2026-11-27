@@ -836,6 +836,11 @@ pub struct RuleSet {
     country_ids: Vec<String>,
     /// Uppercase country identity -> source-order index; only looked up.
     country_indices: LookupMap<String, CountryIdx>,
+    /// Uppercase `Name=` alias or identity -> the first Country in source
+    /// order that carries it, as `HouseTypeClass__FindIndexOfName @
+    /// 0x005117D0`'s scan finds it ([`Self::country_index_of_name`]). Built
+    /// with `countries` and `country_ids`, its sources; only looked up.
+    country_name_indices: LookupMap<String, CountryIdx>,
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
@@ -921,6 +926,11 @@ pub struct RuleSet {
     /// house-color producer (loading-bar backing, lobby swatch, map `Color=`,
     /// skirmish slot priority).
     pub color_schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry>,
+    /// The warm colours enemies draw in under VERA's team-colour view
+    /// (Alt+T), team A first, taken from the colours a lobby already offers
+    /// ([`crate::rules::team_colors`]). Empty when the rules list no warm
+    /// colour, which leaves every enemy on the relation view's red.
+    pub enemy_team_palette: crate::rules::team_colors::EnemyTeamPalette,
     /// Per-`[Colors]`-entry team-color ramps (palette indices 16..31), built once
     /// from `color_schemes`. Indexed by `HouseColorIndex` (= `[Colors]` entry
     /// index). Consumed by unit/building atlas bake, the voxel GPU ramp texture,
@@ -1028,6 +1038,10 @@ pub struct RuleSet {
     /// processed rules and projection made by `rules::kratos_switch`. Read
     /// through [`Self::kratos`].
     kratos: bool,
+    /// Whether NPatch plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::npatch_switch`. Read
+    /// through [`Self::npatch`].
+    npatch: bool,
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].
@@ -1049,6 +1063,11 @@ pub struct RuleSet {
     /// aux/list fields remain read-only compatibility views from that source.
     ares_super_weapon_metadata:
         BTreeMap<String, crate::rules::superweapon_type::AresSuperWeaponMetadata>,
+    /// SWTypeExt designation/inhibition lists projected independently of the
+    /// Ares runtime switch: Phobos' range-ring hook reads the same retained
+    /// lists even when the game does not ship Ares.
+    super_weapon_influence:
+        BTreeMap<String, crate::rules::superweapon_influence::SuperWeaponInfluence>,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos` for every
     /// registered superweapon, projected from the retained registry.
     phobos_super_weapon_metadata:
@@ -1383,12 +1402,12 @@ impl RuleSet {
         &[crate::rules::superweapon_type::TechnoTypeReference],
         &[crate::rules::superweapon_type::TechnoTypeReference],
     )> {
-        self.super_weapon_metadata(id).map(|metadata| {
-            let influence = metadata.influence();
-            (
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            let influence = self.super_weapon_influence.get(key)?;
+            Some((
                 influence.designators.as_slice(),
                 influence.inhibitors.as_slice(),
-            )
+            ))
         })
     }
 

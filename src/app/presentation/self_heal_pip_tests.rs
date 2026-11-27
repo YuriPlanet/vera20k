@@ -7,8 +7,24 @@ use crate::sim::world::Simulation;
 const OWNER: &str = "Americans";
 
 fn scene(tail: &str) -> (Simulation, RuleSet) {
+    scene_with_phobos(tail, true)
+}
+
+fn stock_scene() -> (Simulation, RuleSet) {
+    scene_with_phobos("", false)
+}
+
+fn scene_with_phobos(tail: &str, phobos: bool) -> (Simulation, RuleSet) {
+    // Keep the fixture's Phobos switch in the same [General] section as the
+    // test's gate. Native fresh-file lookup reads only the first section, so a
+    // second header would silently hide the gate under test.
+    let (general, tail) = match tail.strip_prefix("[General]\n") {
+        Some(general) => (general, ""),
+        None => ("", tail),
+    };
+    let switch = if phobos { "AIFireSale=yes\n" } else { "" };
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
-        "[InfantryTypes]\n0=E1\n1=E2\n2=E3\n\
+        "[General]\n{switch}{general}[InfantryTypes]\n0=E1\n1=E2\n2=E3\n\
          [VehicleTypes]\n0=MTNK\n1=MTNK2\n2=MTNK3\n3=MTNK4\n\
          [AircraftTypes]\n0=ORCA\n\
          [BuildingTypes]\n0=POWR\n\
@@ -23,6 +39,7 @@ fn scene(tail: &str) -> (Simulation, RuleSet) {
          [POWR]\nStrength=750\nSelfHealGainType=Units\n{tail}"
     )))
     .expect("self-heal rules");
+    assert_eq!(rules.phobos(), phobos, "the fixture's data switch");
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -173,6 +190,7 @@ fn authored_self_heal_frames_and_offsets_apply() {
 #[test]
 fn house_sources_and_the_damage_pulse_gate_the_marker() {
     let (mut sim, rules) = scene("[General]\nGainSelfHealFromAllies=yes\n");
+    assert!(rules.phobos_globals.gain_self_heal_from_allies);
     let mtnk = spawn(&mut sim, &rules, "MTNK", 18, 16);
     assert_eq!(marker(&sim, &rules, mtnk), None, "no house has a source");
 
@@ -190,6 +208,7 @@ fn house_sources_and_the_damage_pulse_gate_the_marker() {
     // `GainSelfHealFromPlayerControl`: in a campaign, another human or
     // player-controlled house's counter feeds the scan.
     let (mut sim, rules) = scene("[General]\nGainSelfHealFromPlayerControl=yes\n");
+    assert!(rules.phobos_globals.gain_self_heal_from_player_control);
     let british = sim.intern("British");
     sim.houses_mut_for_test()
         .register(crate::sim::house_state::HouseState::new(
@@ -203,6 +222,7 @@ fn house_sources_and_the_damage_pulse_gate_the_marker() {
     );
 
     let (mut sim, rules) = scene("[General]\nGainSelfHealFromAllies=no\n");
+    assert!(!rules.phobos_globals.gain_self_heal_from_allies);
     let mtnk = spawn(&mut sim, &rules, "MTNK", 18, 16);
     let russians = sim.interner().get("Russians").unwrap();
     grant_at(&mut sim, russians, 0, 1);
@@ -217,6 +237,7 @@ fn house_sources_and_the_damage_pulse_gate_the_marker() {
     );
 
     let (mut sim, rules) = scene("[General]\nGainSelfHealAllowMultiplayPassive=no\n");
+    assert!(!rules.phobos_globals.gain_self_heal_allow_multiplay_passive);
     let mtnk = spawn(&mut sim, &rules, "MTNK", 18, 16);
     grant(&mut sim, 0, 1);
     let owner = sim.interner().get(OWNER).unwrap();
@@ -268,7 +289,7 @@ fn grant_at(
 /// Unit, 15,-25 for an Infantry) through the same marker owner.
 #[test]
 fn the_stock_marker_keeps_its_frames_and_offsets() {
-    let (mut sim, rules) = scene("");
+    let (mut sim, rules) = stock_scene();
     let e1 = spawn(&mut sim, &rules, "E1", 16, 16);
     let mtnk = spawn(&mut sim, &rules, "MTNK", 18, 16);
     grant(&mut sim, 1, 1);

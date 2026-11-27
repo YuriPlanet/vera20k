@@ -701,8 +701,7 @@ fn assert_incoming_resources(
         "unrelated trigger hold survives missing video retirement"
     );
     assert!(
-        restored_session
-            .resume_scenario()
+        Vec::from(restored_session.resume_scenario())
             .contains(&crate::sim::trigger_runtime::TriggerEffect::ScenarioResume)
     );
     assert!(!restored_session.session().scenario_paused());

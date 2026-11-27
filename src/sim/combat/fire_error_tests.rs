@@ -242,6 +242,7 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             z: int(&f["z"]),
             // The native rows run without Ares: no DisableWeaponTimer.
             weapons_disabled: false,
+            module_weapons_disabled: false,
             transporter_gunner_open_topped: false,
             transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),
@@ -274,6 +275,7 @@ fn facts(input: &Value, ares: bool) -> FireFacts {
             // Foot `0x004DE770` (SETNE); a Building's vt+0x380 is false.
             paralyzed: class.is_foot()
                 && time_left(&f["paralysis_start"], &f["paralysis_left"], frame) != 0,
+            webbed: false,
             spawns,
             primary_facing: int(&f["primary_facing"]) as u16,
             secondary_facing: int(&f["secondary_facing"]) as u16,
@@ -574,11 +576,10 @@ fn original_fire_error_rows() {
         // (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
         // `ares_heal_and_temporal_fire_errors` holds their Ares rows.
         if row["input"]["name"].as_str().is_some_and(|name| {
-                ["U6.", "U10.", "I2."]
-                    .iter()
-                    .any(|arm| name.starts_with(arm))
-            })
-        {
+            ["U6.", "U10.", "I2."]
+                .iter()
+                .any(|arm| name.starts_with(arm))
+        }) {
             continue;
         }
         // Phobos removes the stock T16 block (jump `0x6FC22A` -> `0x6FC24D`)

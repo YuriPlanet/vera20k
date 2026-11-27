@@ -182,6 +182,11 @@ pub(crate) fn try_fire(
     if !ares && human {
         return;
     }
+    // VERA: a Wasm module that claimed `SuperWeapons` chooses and fires
+    // them by order (RFC 0001 6i, `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_SUPER_WEAPONS) {
+        return;
+    }
     for name in &rules.super_weapon_order {
         let Some(sw) = rules.super_weapon(name) else {
             continue;
@@ -901,11 +906,7 @@ fn rally_value(
             Some(FactoryType::UnitType) if !ty.naval => value(&values.war_factory),
             // `Power=` as the reader stores it (`0x00461080..0x0046109A`):
             // the bonus when not negative, else the negated drain.
-            _ if ty.power.max(0)
-                > crate::sim::power_system::native_building_power_drain(ty.power) =>
-            {
-                value(&values.power)
-            }
+            _ if ty.power.max(0) > ty.power_drain() => value(&values.power),
             _ if ty.is_base_defense => value(&values.base_defense),
             _ if ty.is_plug => value(&values.plug),
             _ if ty.is_temple => value(&values.temple),
@@ -972,11 +973,7 @@ fn ion_cannon_value(
         EntityCategory::Structure => match ty.factory_type() {
             Some(FactoryType::BuildingType) => value(&values.con_yard),
             Some(FactoryType::UnitType) => value(&values.war_factory),
-            _ if ty.power.max(0)
-                > crate::sim::power_system::native_building_power_drain(ty.power) =>
-            {
-                value(&values.power)
-            }
+            _ if ty.power.max(0) > ty.power_drain() => value(&values.power),
             _ if ty.is_base_defense => value(&values.base_defense),
             _ if ty.is_plug => value(&values.plug),
             _ if ty.is_temple => value(&values.temple),

@@ -121,7 +121,7 @@ pub(crate) fn recalc_base_plan(
         })
         // NPSE AI_RecalcBuildOptions5056C1 -> C2C331 repeats the
         // eligible append, before seed selection505714 and prerequisites.
-        .flat_map(|candidate| std::iter::repeat_n(candidate, planning_repeats(candidate)))
+        .flat_map(|candidate| std::iter::repeat_n(candidate, planning_repeats(candidate, rules)))
         .collect();
     let mut selected = vec![false; eligible.len()];
     let mut priority: Vec<&ObjectType> = Vec::new();
@@ -336,8 +336,8 @@ pub(crate) fn recalc_base_plan(
 /// the `ReadInt` result through `al` (`0xC2E223..0xC2E237`). The loop's
 /// byte CMP/JL (`0xC2C35A..0xC2C361`) is signed, so 0 and high-bit counts
 /// keep one entry. Source: author-linked NPSE 2.0 #359 release.
-fn planning_repeats(candidate: &ObjectType) -> usize {
-    if crate::rules::NPATCH_ENABLED {
+fn planning_repeats(candidate: &ObjectType, rules: &RuleSet) -> usize {
+    if rules.npatch() {
         (candidate.ai_planning_count as i8).max(1) as usize
     } else {
         1
@@ -566,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_planning_count_respects_the_build_capability() {
+    fn ai_planning_count_key_turns_npatch_on_and_repeats_candidates() {
         let rules = basic_rules(
             "7=TEST\n\
              [TEST]\n\
@@ -574,11 +574,8 @@ mod tests {
              AIBuildThis=yes\nTechLevel=1\nFoundation=1x1\nAIPlanningCount=3\n",
             "",
         );
-        let expected = if crate::rules::NPATCH_ENABLED { 3 } else { 1 };
-        assert_eq!(
-            rules.object("TEST").unwrap().ai_planning_count,
-            if crate::rules::NPATCH_ENABLED { 3 } else { 0 },
-        );
+        assert!(rules.npatch(), "the authored key turns NPatch on");
+        assert_eq!(rules.object("TEST").unwrap().ai_planning_count, 3);
         let (plan, _) =
             generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 0xC057_0F01);
         let values = values(&plan);
@@ -589,11 +586,11 @@ mod tests {
             .expect("the counted type is planned");
         assert_eq!(
             values.iter().filter(|value| **value == test_index).count(),
-            expected,
-            "only an NPatch build honors the requested copies"
+            3,
+            "the NPatch game honors the requested copies"
         );
         assert!(
-            values[first..first + expected]
+            values[first..first + 3]
                 .iter()
                 .all(|value| *value == test_index),
             "the repeats are consecutive at the type's own position"
@@ -678,10 +675,8 @@ mod tests {
             "7=COUNTED\n",
             "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n[AI]\nBuildConst=COUNTED\n",
         );
-        assert_eq!(
-            rules.object("COUNTED").unwrap().ai_planning_count,
-            if crate::rules::NPATCH_ENABLED { 2 } else { 0 }
-        );
+        assert!(rules.npatch(), "the authored key turns NPatch on");
+        assert_eq!(rules.object("COUNTED").unwrap().ai_planning_count, 2);
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
         let index = rules.object("COUNTED").unwrap().base_plan_type_index;
         assert_eq!(
@@ -689,7 +684,7 @@ mod tests {
                 .iter()
                 .filter(|value| **value == index)
                 .count(),
-            if crate::rules::NPATCH_ENABLED { 2 } else { 1 }
+            2
         );
     }
 

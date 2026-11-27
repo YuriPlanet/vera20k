@@ -404,33 +404,39 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
         previous,
         "completion held in factory is not placement"
     );
-    assert!(!production::place_production_with_overlays(
-        &mut sim,
-        &rules,
-        "Americans",
-        ProductionPlacement::Building {
-            type_id: "GAWEAP".into(),
-            cell: (18, 18)
-        },
-        None,
-        &mut FrameEffects::default()
-    ));
+    assert!(
+        !production::place_production_with_overlays(
+            &mut sim,
+            &rules,
+            "Americans",
+            ProductionPlacement::Building {
+                type_id: "GAWEAP".into(),
+                cell: (18, 18)
+            },
+            None,
+            &mut FrameEffects::default()
+        )
+        .is_ok()
+    );
     assert_eq!(
         sim.houses[&house].last_built_type_index(ObjectCategory::Building),
         previous,
         "refused placement must not record the type"
     );
-    assert!(production::place_production_with_overlays(
-        &mut sim,
-        &rules,
-        "Americans",
-        ProductionPlacement::Building {
-            type_id: "GAWEAP".into(),
-            cell: (23, 19)
-        },
-        None,
-        &mut FrameEffects::default()
-    ));
+    assert!(
+        production::place_production_with_overlays(
+            &mut sim,
+            &rules,
+            "Americans",
+            ProductionPlacement::Building {
+                type_id: "GAWEAP".into(),
+                cell: (23, 19)
+            },
+            None,
+            &mut FrameEffects::default()
+        )
+        .is_ok()
+    );
     assert_eq!(
         sim.houses[&house].last_built_type_index(ObjectCategory::Building),
         expected_index

@@ -18,11 +18,13 @@ use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_LOWER_STRIP_DEPTH,
     SHELL_PARENT_BACKGROUND_DEPTH,
 };
-use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::hud_paint::Material;
 use crate::render::shell_text;
@@ -34,25 +36,45 @@ use crate::util::time::Instant;
 use vera20k_gui::NodeId;
 
 pub(crate) fn render_multiplayer_setup(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let Some(view) = crate::app::shell_network_setup::view(state) else {
-        crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
+    let Some(view) =
+        crate::app::shell_network_setup::view(renderer, frontend, match_state, process_assets)
+    else {
+        crate::app::frontend::preview_zoom::close(&platform.window, frontend);
         return Ok(());
     };
-    crate::app::input::multiplayer_setup::update_geometry(state);
-    crate::app::shell_network_setup::verify_sync(state);
-    let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
+    crate::app::input::multiplayer_setup::update_geometry(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+    );
+    crate::app::shell_network_setup::verify_sync(&renderer.gpu, frontend, match_state);
+    let layout = crate::app::input::multiplayer_setup::layout_of(
+        &renderer.gpu,
+        frontend,
+        match_state,
+        &view,
+    )
+    .with_touch_send(platform.touch_send);
     let scale = layout.page.scale;
-    let (width, height) = (state.render_width(), state.render_height());
+    let (width, height) = (
+        renderer.render_width(&frontend.screen),
+        renderer.render_height(&frontend.screen),
+    );
     // The notice on its widgets before it paints.
-    let notice_parts = (state.frontend.multiplayer_setup.as_ref())
+    let notice_parts = (frontend.multiplayer_setup.as_ref())
         .and_then(|ui| ui.notice.as_ref())
         .map(|notice| super::shell_box::skirmish_parts(notice, (width as i32, height as i32)));
     {
-        let frontend = &mut state.frontend;
         let notice = frontend
             .multiplayer_setup
             .as_ref()
@@ -66,29 +88,44 @@ pub(crate) fn render_multiplayer_setup(
     }
     let now = Instant::now();
     let exit = crate::app::frontend::shell_transition::shell_exit_wave(
-        &state.frontend.shell_exit,
+        &frontend.shell_exit,
         ShellSlideKind::NetworkSetup(view.dialog),
     )
     .cloned();
     let leaving = exit.is_some();
-    let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
+    let wave = exit.or_else(|| frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
-        ensure_map_preview_texture(state, index, layout.map_preview);
+        ensure_map_preview_texture(
+            platform,
+            renderer,
+            frontend,
+            process_assets,
+            persistence,
+            index,
+            layout.map_preview,
+        );
     } else if !view.dialog.host {
-        super::preview::ensure_received_preview_texture(&state.renderer, &mut state.frontend);
+        super::preview::ensure_received_preview_texture(renderer, frontend);
     } else {
-        state.frontend.skirmish_preview_texture = None;
+        frontend.skirmish_preview_texture = None;
     }
-    let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
-    let heading = state.csf_label(view.page().title_key, view.page().title_key);
-    let accept_highlight = state
-        .frontend
+    let zoom_layout = ensure_zoom_texture(
+        platform,
+        renderer,
+        frontend,
+        &match_state.input,
+        process_assets,
+        scale,
+        !sliding,
+    );
+    let heading = process_assets.csf_label(view.page().title_key, view.page().title_key);
+    let accept_highlight = frontend
         .multiplayer_setup
         .as_mut()
         .expect("active setup")
         .accept_highlight(!view.dialog.host && view.start_requested, now);
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     if let Some(node) = controller.control(view.page().dialog, ACCEPT) {
         let lit = vera20k_gui::Value::Bool(accept_highlight);
         let _ = controller
@@ -96,11 +133,7 @@ pub(crate) fn render_multiplayer_setup(
             .set(node, vera20k_gui::Prop::Toggled, lit);
     }
     let labels = {
-        let ui = state
-            .frontend
-            .multiplayer_setup
-            .as_mut()
-            .expect("active setup");
+        let ui = frontend.multiplayer_setup.as_mut().expect("active setup");
         if !sliding && !ui.shown {
             ui.statics
                 .show(&heading, &view.mode_label, &view.map_label, now);
@@ -134,22 +167,10 @@ pub(crate) fn render_multiplayer_setup(
         ))
         .collect::<Vec<_>>()
     };
-    let look = crate::app::input::multiplayer_setup::room_look(
-        &state.frontend,
-        &state.match_state.input,
-        &view,
-    );
-    let ui = state
-        .frontend
-        .multiplayer_setup
-        .as_ref()
-        .expect("active setup");
-    let atlas = state
-        .frontend
-        .skirmish_shell_chrome
-        .as_ref()
-        .expect("setup art");
-    let font = &state.renderer.bit_font;
+    let look = crate::app::input::multiplayer_setup::room_look(frontend, &match_state.input, &view);
+    let ui = frontend.multiplayer_setup.as_ref().expect("active setup");
+    let atlas = frontend.skirmish_shell_chrome.as_ref().expect("setup art");
+    let font = &renderer.bit_font;
     let mut art =
         super::launcher_options::launcher_background_instances(atlas, width, height, scale);
     // LAN 0xBB/BC/BD and WOL C2/C9 follow the persisted shell style, like
@@ -213,7 +234,7 @@ pub(crate) fn render_multiplayer_setup(
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay {
-        smooth_art: state.smooth_online_menus(),
+        smooth_art: persistence.smooth_online_menus(frontend.native_shell_ui),
         ..Default::default()
     };
     let sized =
@@ -242,12 +263,12 @@ pub(crate) fn render_multiplayer_setup(
         SHELL_LABEL_TEXT_RGB
     };
     // The room's widgets paint from its trees, in the order the room drew.
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let page_root = controller.root_in(view.page().dialog);
     let text_of = |id: i32| {
         widget_text(
-            &state.frontend.skirmish_shell_state,
-            &state.process_assets,
+            &frontend.skirmish_shell_state,
+            process_assets,
             &view,
             &layout,
             id,
@@ -261,7 +282,7 @@ pub(crate) fn render_multiplayer_setup(
     // The room's own looks: its texts' and cells' colours, its boxes and
     // bands, and its pictures.
     let drag = row_drag(controller, &view);
-    let rgb_of = |id: i32| room_rgb(&state.frontend, &state.match_state, &view, &look, id);
+    let rgb_of = |id: i32| room_rgb(frontend, match_state, &view, &look, id);
     let frame_of = |id: i32| room_frame(&view, &look, drag, id);
     let picture_of = |id: i32| room_picture(&view, id);
     let frames = GuiStyle {
@@ -271,11 +292,11 @@ pub(crate) fn render_multiplayer_setup(
     let paint_ids = |root: Option<NodeId>, ids: &[u16], scale, style| {
         root.map(|root| {
             paint_gui_ids(
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 controller.gui(),
                 root,
                 ids.iter().copied(),
@@ -292,11 +313,11 @@ pub(crate) fn render_multiplayer_setup(
     let paint_node = |node: Option<NodeId>, style| {
         node.map(|node| {
             paint_gui_styled(
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 controller.gui(),
                 node,
                 scale,
@@ -488,6 +509,7 @@ pub(crate) fn render_multiplayer_setup(
         let chat_edit = GuiStyle {
             focus_of: Some(&chat_focus),
             caret_of: Some(&chat_caret),
+            #[cfg(not(target_os = "android"))]
             ime_target: Some(crate::app::input::ime::ImeTarget::SetupChat),
             rgb: label_rgb,
             ..GuiStyle::default()
@@ -512,7 +534,7 @@ pub(crate) fn render_multiplayer_setup(
         controls.extend(chat.lane(Material::Controls).copied());
         texts.extend(chat.texts);
         if !sliding {
-            if let Some(preview) = state.frontend.skirmish_preview_texture.as_ref() {
+            if let Some(preview) = frontend.skirmish_preview_texture.as_ref() {
                 overlay.preview = build_preview_surface_instance(
                     layout.map_preview,
                     preview.width,
@@ -522,8 +544,7 @@ pub(crate) fn render_multiplayer_setup(
                 // its bounds, drawn when 1 <= count <= 8 (0x00640710).
                 let received_bounds = (preview.received_preview.is_some())
                     .then(|| {
-                        state
-                            .frontend
+                        frontend
                             .multiplayer_shell_runtime
                             .start_staging()
                             .preview_source_bounds()
@@ -533,15 +554,14 @@ pub(crate) fn render_multiplayer_setup(
                 // starts, copied back by 0x0058BB30 (0x005E67ED).
                 let entry = view
                     .selected_map_index
-                    .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
+                    .and_then(|index| frontend.scenario_catalog.shell_maps().get(index));
                 let own_bounds = super::preview::start_marker_bounds(
                     entry
                         .is_some_and(super::preview::is_random_map_sentinel_entry)
-                        .then(|| state.frontend.random_map_retention.generated_header()),
+                        .then(|| frontend.random_map_retention.generated_header()),
                     entry.and_then(|entry| entry.preview_source_bounds.as_ref()),
                 );
-                let bounds = state
-                    .frontend
+                let bounds = frontend
                     .network_setup_protocol
                     .as_ref()
                     .and_then(|protocol| protocol.received_preview_bounds())
@@ -549,8 +569,8 @@ pub(crate) fn render_multiplayer_setup(
                     .or(own_bounds.as_ref());
                 overlay.zoom = zoom_layout.as_ref().map(|zoom_layout| {
                     zoom_draws(
-                        &state.renderer,
-                        &state.frontend.screen,
+                        renderer,
+                        &frontend.screen,
                         atlas,
                         zoom_layout,
                         bounds,
@@ -567,7 +587,7 @@ pub(crate) fn render_multiplayer_setup(
                     let mut instances = Vec::new();
                     push_start_marker_labels(
                         &mut instances,
-                        &state.renderer.bit_font,
+                        &renderer.bit_font,
                         &positions,
                         scale,
                         0.00040,
@@ -638,8 +658,7 @@ pub(crate) fn render_multiplayer_setup(
             let progress = offer
                 .downloading
                 .then(|| {
-                    state
-                        .frontend
+                    frontend
                         .network_setup_protocol
                         .as_ref()
                         .and_then(|protocol| protocol.transfer_progress())
@@ -667,7 +686,7 @@ pub(crate) fn render_multiplayer_setup(
             let text_of = |id: i32| match u16::try_from(id).ok()? {
                 MAP_OFFER_BODY => Some(body.clone()),
                 MAP_OFFER_DOWNLOAD => Some(crate::i18n::tr(offer.button_key)),
-                MAP_OFFER_LEAVE => Some(state.csf_label("GUI:Leave", "Leave")),
+                MAP_OFFER_LEAVE => Some(process_assets.csf_label("GUI:Leave", "Leave")),
                 _ => None,
             };
             // Download greys while the map comes, but still takes a press.
@@ -695,11 +714,11 @@ pub(crate) fn render_multiplayer_setup(
                 .root_in(MAP_OFFER_BOX)
                 .map(|root| {
                     paint_gui_styled(
-                        &state.platform.ime,
-                        &state.renderer.bit_font,
-                        &state.frontend,
-                        &state.match_state,
-                        &state.process_assets,
+                        &platform.ime,
+                        &renderer.bit_font,
+                        frontend,
+                        match_state,
+                        process_assets,
                         controller.gui(),
                         root,
                         scale,
@@ -728,13 +747,13 @@ pub(crate) fn render_multiplayer_setup(
         let pressed = |id| ok && id == crate::ui::shell::modal::control::OK;
         let box_look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
         let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
-        let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
+        let tree = super::controller_tree(&frontend.shell_controller, notice.dialog);
         super::shell_box::push_skirmish_box(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            &platform.ime,
+            &renderer.bit_font,
+            frontend,
+            match_state,
+            process_assets,
             Some(atlas),
             tree,
             notice,
@@ -746,28 +765,48 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
-    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
+    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(
+        &platform.ime,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+    ) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
     // Start Game Now's 0x130 over the locked C2/C9; VERA's room waits a
     // moment so a quick check does not flash it.
-    let verify =
-        crate::app::shell_network_setup::verify(state.frontend.network_setup_protocol.as_ref());
+    let verify = crate::app::shell_network_setup::verify(frontend.network_setup_protocol.as_ref());
     if verify.is_some_and(|verify| !verify.shown(view.dialog.modern, now)) {
-        state.platform.window.request_redraw();
+        platform.window.request_redraw();
     }
     if let Some(verify) = verify.filter(|verify| verify.shown(view.dialog.modern, now)) {
         let paint = super::paint_wol_verify(
-            state,
+            &platform.ime,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
             verify,
-            &crate::app::shell_network_setup::verify_layout(state),
+            &crate::app::shell_network_setup::verify_layout(&renderer.gpu, frontend, match_state),
         );
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);
     }
+    // VERA's send key beside the chat box. Only the LAN room needs it: the
+    // online room already has its native emote button in the chat row
+    // (`0x3ED`, WOL rooms only). It goes with the page's slide, like the LAN
+    // lobby's.
+    if !leaving && let Some(rect) = layout.chat_send(view.dialog) {
+        super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
+    }
     in_game_shell::render_shell_frame(
-        state,
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
         encoder,
         destination,
         InGameShellFrame {
@@ -785,7 +824,7 @@ pub(crate) fn render_multiplayer_setup(
         overlay,
         ShellFrameCursor::Visible,
     )?;
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
     Ok(())
 }
 

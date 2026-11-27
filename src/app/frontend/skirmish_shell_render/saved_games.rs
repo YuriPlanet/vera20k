@@ -8,12 +8,13 @@ use super::gui_paint::{ButtonArt, CellRow, GuiStyle, paint_gui_into};
 use super::in_game_shell::{InGamePaint, render_in_game_shell_frame};
 use super::shell_box::{BoxLook, push_skirmish_box, skirmish_parts};
 use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::ime::ImeState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, Material};
@@ -21,10 +22,11 @@ use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::saved_games::saved_game_layout;
+use crate::ui::sidebar::SidebarTheme;
 use crate::ui::skirmish_shell::saved_seed_browser::{
     ACTION, BACK, BROWSER_DIALOG, CONVERT, LIST, PROMPT, PROMPT_DIALOG, TITLE,
 };
-use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
+use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// Each row's description, date and time in the template's columns (the
@@ -145,13 +147,14 @@ pub(crate) fn push_saved_browser_box<I>(
     atlas: Option<&SkirmishShellChromeAtlas>,
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
+    side: Option<SidebarTheme>,
     sprites: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
 ) {
     let Some(prompt) = browser.prompt.as_ref() else {
         return;
     };
-    let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
+    let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(side)));
     let shell_box = prompt.shell_box();
     let parts = skirmish_parts(&shell_box, (layout.screen.w, layout.screen.h));
     let pressed = |id| browser.pressed(id);
@@ -222,6 +225,7 @@ pub(super) fn seed_browser_paint<I>(
             Some(atlas),
             layout,
             browser,
+            None,
             sprites,
             texts,
         )
@@ -230,14 +234,19 @@ pub(super) fn seed_browser_paint<I>(
 }
 
 pub(crate) fn render_saved_game_shell(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     let frame = {
-        let mut paint = InGamePaint::new(state);
-        let state = paint.state;
-        let presentation = &state.match_state.match_presentation;
+        let mut paint = InGamePaint::new(platform, renderer, frontend, match_state, persistence);
+        let (ime, bit_font) = (&platform.ime, &renderer.bit_font);
+        let presentation = &match_state.match_presentation;
         let crate::ui::pause_menu::InGameMenuState::SavedGame(_) = presentation.in_game_menu else {
             return Ok(());
         };
@@ -251,12 +260,12 @@ pub(crate) fn render_saved_game_shell(
         // The heading and the prompt, then the widgets; the column's buttons
         // are the active game's SIDEBTTN art.
         let widgets = paint_saved_browser(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            state.frontend.skirmish_shell_chrome.as_ref(),
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            frontend.skirmish_shell_chrome.as_ref(),
             &layout,
             browser,
             ButtonArt::Host,
@@ -275,8 +284,8 @@ pub(crate) fn render_saved_game_shell(
             paint
                 .texts
                 .push(crate::render::shell_text::draw_in_rect_scaled(
-                    &state.renderer.bit_font,
-                    &state.csf_text(key),
+                    bit_font,
+                    &process_assets.csf_text(key),
                     crate::render::shell_text::TextRect::of(layout.blank),
                     SHELL_LABEL_TEXT_RGB,
                     ShellAlign::NONE,
@@ -293,10 +302,10 @@ pub(crate) fn render_saved_game_shell(
             match u16::try_from(id).ok()? {
                 ACTION => {
                     let (key, fallback) = browser.mode.action_label();
-                    Some(state.csf_label(key, fallback))
+                    Some(process_assets.csf_label(key, fallback))
                 }
-                CONVERT => Some(state.csf_label("VERA:ConvertSave", "Convert")),
-                BACK => Some(state.csf_label("GUI:Back", "Back")),
+                CONVERT => Some(process_assets.csf_label("VERA:ConvertSave", "Convert")),
+                BACK => Some(process_assets.csf_label("GUI:Back", "Back")),
                 _ => None,
             }
         };
@@ -322,23 +331,49 @@ pub(crate) fn render_saved_game_shell(
             ..GuiStyle::default()
         };
         if let Some(root) = browser.ui.root_in(BROWSER_DIALOG) {
-            paint.nodes_in(browser.ui.gui(), root, &[ACTION, CONVERT, BACK], style);
+            paint.nodes_in(
+                ime,
+                bit_font,
+                frontend,
+                match_state,
+                process_assets,
+                browser.ui.gui(),
+                root,
+                &[ACTION, CONVERT, BACK],
+                style,
+            );
         }
+        // game.exe's mode-2 paint (0x005FF1F5) draws the player's side
+        // PUDLGBG art while a game runs; classic RA2's Save and Delete
+        // prompts show it.
+        let prompt_side = (crate::util::ra2_launch::enabled()
+            && matches!(browser.mode, SavedSeedMode::Save | SavedSeedMode::Delete))
+        .then_some(paint.theme);
         // The box's clipping excludes all underlying text, the active-game
         // title and column labels included.
         push_saved_browser_box(
-            &state.platform.ime,
-            &state.renderer.bit_font,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            state.frontend.skirmish_shell_chrome.as_ref(),
+            ime,
+            bit_font,
+            frontend,
+            match_state,
+            process_assets,
+            frontend.skirmish_shell_chrome.as_ref(),
             &layout,
             browser,
+            prompt_side,
             &mut paint.controls,
             &mut paint.texts,
         );
         paint.finish("Active Saved Game Browser")
     };
-    render_in_game_shell_frame(state, encoder, destination, frame)
+    render_in_game_shell_frame(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        encoder,
+        destination,
+        frame,
+    )
 }

@@ -14,7 +14,12 @@ impl Simulation {
     /// Native executable controls for the downstream FocusOn/TacticalAI:
     /// tools/input_oracle/fast_scroll.{py,json,meta.json}.
     pub(crate) fn trigger_waypoint_ground_coord(&self, index: i32) -> Option<[i32; 3]> {
-        let cell = self.session.waypoint_cell(index)?;
+        self.trigger_cell_ground_coord(self.session.waypoint_cell(index)?)
+    }
+
+    /// [`Self::trigger_waypoint_ground_coord`] after GetWaypoint68BCC0, for a
+    /// cell (a Wasm module's cell target).
+    pub(crate) fn trigger_cell_ground_coord(&self, cell: (i16, i16)) -> Option<[i32; 3]> {
         let terrain = self.resolved_terrain.as_ref()?;
         let cells = NativeCellQuery::canonical(terrain);
         let center = crate::sim::cell_kernel::cell_center(
@@ -33,8 +38,13 @@ impl Simulation {
     /// The same query plus the deck height, shared by cases 41 (6E2290) and
     /// 43 (6E2520).
     pub(crate) fn trigger_waypoint_coord(&self, index: i32) -> Option<[i32; 3]> {
-        let [x, y, mut z] = self.trigger_waypoint_ground_coord(index)?;
-        let cell = self.session.waypoint_cell(index)?;
+        self.trigger_cell_coord(self.session.waypoint_cell(index)?)
+    }
+
+    /// [`Self::trigger_waypoint_coord`] for a cell (a Wasm module's cell
+    /// target).
+    pub fn trigger_cell_coord(&self, cell: (i16, i16)) -> Option<[i32; 3]> {
+        let [x, y, mut z] = self.trigger_cell_ground_coord(cell)?;
         let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref()?);
         let first = cells.lookup(cell);
         if cells.flags(first) & 0x100 != 0 || cells.flags(cells.lookup(cell)) & 0x400 != 0 {

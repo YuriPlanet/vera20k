@@ -889,7 +889,13 @@ fn after_server_list(state: &mut AppState) {
         .as_ref()
         .is_some_and(|visit| visit.provider == WolProvider::Online)
     {
-        super::login::open(state);
+        super::login::open(
+            &mut state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        );
         return;
     }
     let auto_name = super::persona::info_file(
@@ -941,7 +947,13 @@ fn after_server_list(state: &mut AppState) {
         }
     }
     prepare_login_dialog(&mut state.frontend, state.platform.game_config.as_ref());
-    super::login::open(state);
+    super::login::open(
+        &mut state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.process_assets,
+        &state.renderer,
+        &state.persistence.options_profile,
+    );
 }
 
 /// `0x00787362..0x007873AC`: an empty nickname takes LastValid, then
@@ -1020,15 +1032,45 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     }
     let event = match event {
         WolServiceEvent::Account(result) => {
-            super::login::account_answered(state, result);
+            let step = super::login::account_answered(
+                &mut state.frontend,
+                &state.renderer,
+                state.platform.game_config.as_ref(),
+                result,
+            );
+            if let Some(step) = step {
+                App::apply_step(state, step);
+            }
             return;
         }
         WolServiceEvent::Page { from, text, ansi } => {
-            super::lobby::page_received(state, from, text, ansi);
+            super::lobby::page_received(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.diag,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                from,
+                text,
+                ansi,
+            );
             return;
         }
         WolServiceEvent::PageResult(result) => {
-            super::lobby::page_result(state, result);
+            super::lobby::page_result(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.diag,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                result,
+            );
             return;
         }
         WolServiceEvent::Message {
@@ -1043,7 +1085,12 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             sent_at,
         } => {
             super::lobby::message_received(
-                state,
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
                 super::lobby::ReceivedMessage {
                     from,
                     text,
@@ -1068,7 +1115,12 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             sent_at,
         } => {
             super::lobby::message_received(
-                state,
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.persistence.options_profile,
                 super::lobby::ReceivedMessage {
                     from,
                     text,
@@ -1085,7 +1137,17 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::Located(result) => {
-            super::lobby::located(state, result);
+            super::lobby::located(
+                &mut state.frontend,
+                &state.platform,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &state.diag,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                result,
+            );
             return;
         }
         WolServiceEvent::NetStatus(status)
@@ -1102,7 +1164,14 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::ChannelBan { name, banned } => {
-            super::lobby::channel_ban(state, &name, banned);
+            super::lobby::channel_ban(
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &state.renderer,
+                &name,
+                banned,
+            );
             return;
         }
         WolServiceEvent::LadderSeason(season) => {
@@ -1110,7 +1179,13 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::Ladder(records) => {
-            super::buddies::ladder_received(state, records);
+            super::buddies::ladder_received(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.process_assets,
+                &state.renderer,
+                records,
+            );
             return;
         }
         WolServiceEvent::HighScores(result) => {
@@ -1118,7 +1193,13 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::Buddies(result) => {
-            super::buddies::buddy_list_received(state, result);
+            super::buddies::buddy_list_received(
+                &mut state.frontend,
+                &state.platform.window,
+                &state.process_assets,
+                &state.renderer,
+                result,
+            );
             return;
         }
         WolServiceEvent::UserLocales(result) => {
@@ -1140,9 +1221,20 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         }
         WolServiceEvent::LocaleCount(count) => {
             if super::my_info::page_open(state.frontend.wol.as_ref()) {
-                super::my_info::locale_count(state, count);
+                super::my_info::locale_count(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.process_assets,
+                    &state.renderer,
+                    count,
+                );
             } else {
-                super::persona::locale_count(state, count);
+                super::persona::locale_count(
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &state.renderer,
+                    count,
+                );
             }
             return;
         }
@@ -1254,7 +1346,11 @@ fn apply(state: &mut AppState, step: WolStep) {
                 .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(&state.process_assets, state.csf_text(key), yes_no);
+            let message = message_box(
+                &state.process_assets,
+                state.process_assets.csf_text(key),
+                yes_no,
+            );
             let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };
@@ -1274,12 +1370,25 @@ fn apply(state: &mut AppState, step: WolStep) {
             if visit.mode == Some(WolMode::MyInformation) {
                 // 0x797640 closed 0xC4 itself.
                 visit.page = WolPage::Backdrop { wait: None };
-                super::my_info::open(state);
+                super::my_info::open(
+                    &mut state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &state.persistence.options_profile,
+                );
             } else {
                 after_server_list(state);
             }
         }
-        WolStep::OpenLogin => super::login::open(state),
+        WolStep::OpenLogin => super::login::open(
+            &mut state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+        ),
         WolStep::Accepted => connect_succeeded(state),
         WolStep::AutoLoginFailed => auto_login_failed(state),
         WolStep::LocaleDecided => locale_decided(state),
@@ -1338,7 +1447,7 @@ fn connect_succeeded(state: &mut AppState) {
         file.as_ref(),
         &nickname,
         server.as_ref().map(WolServer::persona_server),
-        &|key| state.csf_text(key),
+        &|key| state.process_assets.csf_text(key),
     );
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
@@ -1428,7 +1537,7 @@ fn locale_decided(state: &mut AppState) {
         None if persona.locale != 0 => send_locale(&mut state.frontend, persona.locale),
         None => {
             flow.persona = Some(persona);
-            super::persona::open_locale_page(state);
+            super::persona::open_locale_page(&mut state.frontend, &state.renderer);
             return;
         }
     }
@@ -1515,7 +1624,11 @@ fn connect_returned(state: &mut AppState) {
         )
         .is_some_and(|file| file.ask_auto_login())
         {
-            super::persona::open_auto_login_query(state);
+            super::persona::open_auto_login_query(
+                &mut state.frontend,
+                &state.process_assets,
+                &state.renderer,
+            );
             return;
         }
     }
@@ -1548,7 +1661,9 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
     };
     let step = match &visit.page {
         WolPage::Lobby | WolPage::QuickMatch(_) => {
-            super::lobby::box_command(state, answer);
+            if let Some(step) = super::lobby::box_command(state, answer) {
+                App::apply_step(state, step);
+            }
             state.platform.window.request_redraw();
             return;
         }

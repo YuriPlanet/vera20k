@@ -553,8 +553,14 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
 }
 
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, &mut FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        rules,
+        33,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
 }
 
 /// One composite while `armed` is placed at `cursor` or `super_weapon` is
@@ -993,7 +999,7 @@ fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
 
 fn designator_rules(sw_extra: &str) -> RuleSet {
     let ini = IniFile::from_str(&format!(
-        "[Countries]\n0=Americans\n1=Russians\n\
+        "[General]\nAIFireSale=yes\n[Countries]\n0=Americans\n1=Russians\n\
          [VehicleTypes]\n0=DESIG\n1=INHIB\n2=FALLBACK\n3=UNLISTED\n\
          [DESIG]\nStrength=100\nArmor=light\nSpeed=6\nSight=3\nDesignatorRange=5\n\
          [INHIB]\nStrength=100\nArmor=light\nSpeed=6\nSight=2\nInhibitorRange=4\n\

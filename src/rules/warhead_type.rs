@@ -24,6 +24,48 @@ use crate::rules::ini_parser::IniSection;
 use crate::rules::ini_value::{PERCENT_SCALE, crt_atoi, parse_leading_f64};
 use crate::util::native_x87::X87Chop53;
 
+/// Firestorm 2.0's `Webby=` warhead keys (`0x0066EE30` reads them through
+/// `INIClass::Get_Bool @ 0x004DE0C0` and `Get_Int @ 0x004DD0C0`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct WarheadWeb {
+    /// `Webby=` (WarheadType `+0xD5`): webs infantry instead of area damage.
+    pub webby: bool,
+    /// `WebDuration=` (`+0xC0`), frames.
+    pub duration: i32,
+    /// `WebDurationVariation=` (`+0xC4`), frames either side of the duration.
+    pub duration_variation: i32,
+    /// `WebRadius=` (`+0xC8`), cells.
+    pub radius: i32,
+}
+
+impl WarheadWeb {
+    /// Constructor `0x0066EB10`: `Webby` false (`0x0066EBB6`), `WebDuration`
+    /// 300 (`0x0066EB86`), `WebDurationVariation` 25 (`0x0066EB90`) and
+    /// `WebRadius` 2 (`0x0066EB9A`).
+    pub const CONSTRUCTED: Self = Self {
+        webby: false,
+        duration: 300,
+        duration_variation: 25,
+        radius: 2,
+    };
+
+    /// One Rules pass of `Read_INI` `0x0066F0FE..0x0066F15B`: `Webby` with its
+    /// current value as default, then, only when the value it now holds is
+    /// true (`0x0066F10B`), the three numbers with theirs. `None` stands for
+    /// the constructor's values, so a game without webs keeps no state.
+    pub(crate) fn read_pass(current: Option<Self>, section: &IniSection) -> Option<Self> {
+        let mut web = current.unwrap_or(Self::CONSTRUCTED);
+        web.webby = section.read_bool("Webby", web.webby);
+        if web.webby {
+            web.duration = section.read_int("WebDuration", web.duration);
+            web.duration_variation =
+                section.read_int("WebDurationVariation", web.duration_variation);
+            web.radius = section.read_int("WebRadius", web.radius);
+        }
+        (web != Self::CONSTRUCTED).then_some(web)
+    }
+}
+
 /// A warhead definition parsed from a rules.ini section.
 ///
 /// Warheads are the final link in the damage chain: weapon -> projectile -> warhead.
@@ -348,6 +390,9 @@ pub struct WarheadType {
     /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
     /// mounted by no stock weapon.
     pub em_effect: bool,
+    /// Tiberian TS Firestorm's web keys (`docs/ts-webs.md`), projected from
+    /// the Rules passes. `None` is the constructor's: not `Webby=`.
+    pub web: Option<WarheadWeb>,
     /// Tiberian Sun's `LimpetFactor=` (docs/ts-limpets.md): the speed a
     /// limpeted vehicle loses, in percent. Firestorm 2.0
     /// `WarheadTypeClass::Read_INI @ 0x0066EE30` reads it on every pass
@@ -752,6 +797,11 @@ impl WarheadAttachEffectRules {
 }
 
 impl WarheadType {
+    /// The web keys of a `Webby=` warhead.
+    pub fn webby(&self) -> Option<&WarheadWeb> {
+        self.web.as_ref().filter(|web| web.webby)
+    }
+
     /// `debris_types` as its RuleSet resolved it; reads go through
     /// `RuleSet::warhead_debris_types`, which checks the resolving set.
     pub(crate) fn resolved_debris(&self) -> &crate::rules::ruleset::ResolvedDebris {
@@ -999,6 +1049,7 @@ impl WarheadType {
             nuke_maker: section.read_bool("NukeMaker", false),
             em_effect: false,
             limpet_factor: X87Chop53::ftol_f64_low_masked(section.read_double("LimpetFactor", 0.0)),
+            web: None,
 
             // List fields
             debris_types: Vec::new(),

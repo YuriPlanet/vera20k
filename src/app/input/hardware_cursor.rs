@@ -24,10 +24,13 @@ use std::collections::HashMap;
 
 use winit::event_loop::ActiveEventLoop;
 
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::renderer_state::RendererState;
 use crate::app::types::CursorId;
-use crate::app::{AppState, PlatformState};
 use crate::render::cursor_atlas::OsCursorImage;
 use crate::ui::game_screen::GameScreen;
 
@@ -75,7 +78,8 @@ pub(crate) struct HardwareCursor {
     /// This run reads its frames back, and they must hold the cursor.
     frames_read_back: bool,
     /// The shape this draw offered, until [`show`] takes it. A `Cell`: the
-    /// draw offers it through `&AppState`.
+    /// match draw (`ui_overlays::build_software_cursor_instances`) offers it
+    /// ([`takes_cursor`]) through `&PlatformState`.
     offered: Cell<Option<(CursorId, usize)>>,
     shown: Shown,
     /// Images made so far: one mouse.sha load at one size. A new image of
@@ -145,17 +149,33 @@ fn zoom_scale(renderer: &RendererState, screen: &GameScreen) -> f32 {
 
 /// After a draw, put what it settled on at the pointer: the shape it offered,
 /// else the `arrow`, else nothing.
-pub(crate) fn show(state: &mut AppState, event_loop: &ActiveEventLoop, arrow: bool) {
-    let offered = state.platform.hardware_cursor.offered.take();
-    let next = match offered
-        .filter(|_| !arrow)
-        .and_then(|(id, frame)| prepare_image(state, event_loop, id, frame))
-    {
+pub(crate) fn show(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    event_loop: &ActiveEventLoop,
+    arrow: bool,
+) {
+    let offered = platform.hardware_cursor.offered.take();
+    let next = match offered.filter(|_| !arrow).and_then(|(id, frame)| {
+        prepare_image(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+            event_loop,
+            id,
+            frame,
+        )
+    }) {
         Some(shape) => Shown::Game(shape),
         None if arrow => Shown::Arrow,
         None => Shown::Hidden,
     };
-    apply(&mut state.platform, next);
+    apply(platform, next);
 }
 
 /// The window went to the background and may draw no frame that would give
@@ -176,19 +196,24 @@ pub(crate) fn hide_game_cursor(platform: &mut PlatformState) {
 /// first use. `None` leaves this draw without a cursor and the next ones with
 /// the sprite.
 fn prepare_image(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     event_loop: &ActiveEventLoop,
     id: CursorId,
     frame: usize,
 ) -> Option<Shape> {
-    let scale = crate::app::frontend::shell_layout::menu_cursor_scale(state)
-        * zoom_scale(&state.renderer, &state.frontend.screen);
-    let backing = state.platform.window.scale_factor();
-    let art = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
+    let scale = crate::app::frontend::shell_layout::menu_cursor_scale(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) * zoom_scale(renderer, &frontend.screen);
+    let backing = platform.window.scale_factor();
+    let art = match_state.match_presentation.software_cursor.as_ref()?;
     let shape = Shape {
         id,
         frame,
@@ -196,7 +221,7 @@ fn prepare_image(
         scale: scale.to_bits(),
         backing: backing.to_bits(),
     };
-    let cursor = &mut state.platform.hardware_cursor;
+    let cursor = &mut platform.hardware_cursor;
     if cursor.images.contains_key(&shape) {
         return Some(shape);
     }

@@ -38,6 +38,7 @@ pub(crate) use wol::{
 };
 
 use super::{App, AppState};
+use crate::app::PlatformState;
 use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
 use crate::app::frontend::state::FrontendState;
@@ -45,6 +46,7 @@ use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
@@ -682,14 +684,30 @@ pub(crate) fn install_watch_setup(
 
 /// A white (0xFFFFFFFF) CSF line in the setup chat log: Start refusals and
 /// WOL chat notices.
-fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
-    let text = crate::assets::csf_file::format_csf(&state.csf_label(key, key), args);
-    room_notice(state, &text);
+fn chat_notice(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    key: &str,
+    args: &[crate::assets::csf_file::CsfArg],
+) {
+    let text = crate::assets::csf_file::format_csf(&process_assets.csf_label(key, key), args);
+    room_notice(renderer, frontend, match_state, process_assets, &text);
 }
 
-fn room_notice(state: &mut AppState, text: &str) {
+fn room_notice(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    text: &str,
+) {
     crate::app::shell_lan::append_room_chat(
-        state,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
         crate::ui::lan_shell::LanChatLine {
             text: text.encode_utf16().collect(),
             color: u32::MAX,
@@ -739,7 +757,15 @@ fn open_service_lobby(state: &mut AppState, dialog: SetupDialog) {
     if dialog.wol() {
         crate::app::shell_wol::open_lobby(state, false);
     } else {
-        App::open_lan_lobby(state);
+        App::open_lan_lobby(
+            &state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &mut state.process_assets,
+            &mut state.audio.sfx_player,
+            &mut state.persistence.options_profile,
+        );
     }
 }
 
@@ -813,7 +839,10 @@ impl App {
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
         }
         if let Err(error) = install_setup(
-            state,
+            &state.platform,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
             launch,
             dialog,
             vacancies,
@@ -890,7 +919,10 @@ impl App {
         );
         let dialog = setup_dialog(&state.frontend, false, flavor);
         if let Err(error) = install_setup(
-            state,
+            &state.platform,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
             launch,
             dialog,
             [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
@@ -915,7 +947,10 @@ fn initialize_host_seed(
 }
 
 fn install_setup(
-    state: &mut AppState,
+    platform: &PlatformState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
     launch: SkirmishLaunchSession,
     dialog: SetupDialog,
     vacancies: [NetworkVacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
@@ -925,26 +960,23 @@ fn install_setup(
     if !host {
         // Type7 uses setters with drawflag0. BC New only reads the retained
         // preferences, including concrete values behind Random markers.
-        state
-            .frontend
+        frontend
             .multiplayer_shell_runtime
             .update_local_preferences(launch.local_player(), launch.mode.id);
     }
-    state
-        .match_state
+    match_state
         .session
         .accept_network_setup(launch, host, observer_row, dialog.modern)?;
-    let quick_match = dialog.wol()
-        && crate::app::shell_wol::quick_match::mode_active(state.frontend.wol.as_ref());
+    let quick_match =
+        dialog.wol() && crate::app::shell_wol::quick_match::mode_active(frontend.wol.as_ref());
     if dialog.wol() {
-        let room = crate::app::shell_wol::lobby::room(state.frontend.wol.as_ref());
-        state.match_state.session.set_network_room(room);
+        let room = crate::app::shell_wol::lobby::room(frontend.wol.as_ref());
+        match_state.session.set_network_room(room);
         // C2's lockout in a tournament or clan room, after the profile
         // restore (0x79132A..0x7913D1): Short Game and Bases on; the AI
         // count is already 0 on WOL.
         if host && room.tournament_or_clan() && !quick_match {
-            let mut options = state
-                .match_state
+            let mut options = match_state
                 .session
                 .network_setup()
                 .expect("admitted setup")
@@ -952,43 +984,27 @@ fn install_setup(
                 .clone();
             options.short_game = true;
             options.bases = true;
-            state.match_state.session.set_network_options(options)?;
+            match_state.session.set_network_options(options)?;
         }
     }
     if host {
         for (row, vacancy) in vacancies.iter().copied().enumerate().take(8) {
-            if state
-                .match_state
-                .session
-                .network_vacancy(row as u8)
-                .is_some()
-            {
-                state
-                    .match_state
+            if match_state.session.network_vacancy(row as u8).is_some() {
+                match_state
                     .session
                     .set_network_vacancy(row as u8, vacancy)?;
             }
         }
     }
     if host {
-        let launch = state
-            .match_state
-            .session
-            .network_setup()
-            .expect("admitted host");
-        if let Some(map) = state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .iter()
-            .find(|map| {
-                launch
-                    .selected_map_file
-                    .as_deref()
-                    .is_some_and(|file| file.eq_ignore_ascii_case(&map.file_name))
-            })
-        {
-            let removed = state.match_state.session.select_network_map(
+        let launch = match_state.session.network_setup().expect("admitted host");
+        if let Some(map) = frontend.scenario_catalog.shell_maps().iter().find(|map| {
+            launch
+                .selected_map_file
+                .as_deref()
+                .is_some_and(|file| file.eq_ignore_ascii_case(&map.file_name))
+        }) {
+            let removed = match_state.session.select_network_map(
                 launch.mode.clone(),
                 map.file_name.clone(),
                 map.player_capacity,
@@ -1002,14 +1018,9 @@ fn install_setup(
         // were restored in their original order (FUN_005ED5A0).
         for (row, vacancy) in vacancies.into_iter().enumerate().skip(8) {
             if vacancy == NetworkVacancy::Closed
-                && state
-                    .match_state
-                    .session
-                    .network_vacancy(row as u8)
-                    .is_some()
+                && match_state.session.network_vacancy(row as u8).is_some()
             {
-                state
-                    .match_state
+                match_state
                     .session
                     .set_network_vacancy(row as u8, vacancy)?;
             }
@@ -1018,61 +1029,58 @@ fn install_setup(
         // opens its spectator row if spectators may join, but for Quick
         // Match's matchbot game.
         if dialog.modern && !quick_match {
-            let limits = state.frontend.room_limits;
-            let session = &mut state.match_state.session;
+            let limits = frontend.room_limits;
+            let session = &mut match_state.session;
             session.set_network_people_limit(limits.players)?;
             session.set_network_spectators(limits.spectators)?;
         }
-        if let Some(file) = state
-            .match_state
+        if let Some(file) = match_state
             .session
             .network_setup()
             .and_then(|launch| launch.selected_map_file.clone())
         {
             let metadata = local_map_metadata(
-                state.platform.game_config.as_ref(),
-                &state.frontend.scenario_catalog,
-                &state.process_assets,
+                platform.game_config.as_ref(),
+                &frontend.scenario_catalog,
+                process_assets,
                 &file,
             )?;
-            state
-                .match_state
+            match_state
                 .session
                 .accept_network_map_metadata(metadata, None, true)?;
         }
     }
-    state.frontend.lan = None;
+    frontend.lan = None;
     let mut setup_ui = MultiplayerSetupState::default();
     // VERA's rooms list their players first, from the first page.
     if !dialog.modern
-        && let Some(row) = state
-            .match_state
+        && let Some(row) = match_state
             .session
             .network_setup()
             .and_then(|launch| launch.local_player().raw_slot_index)
     {
         setup_ui.show_row(usize::from(row), dialog.rows_per_page());
     }
-    state.frontend.multiplayer_setup = Some(setup_ui);
+    frontend.multiplayer_setup = Some(setup_ui);
     let mut protocol = NetworkSetupProtocol::new(dialog, quick_match);
     if dialog.modern && !quick_match {
-        protocol.campaign_catalog = campaign_room::discover(state.platform.game_config.as_ref());
+        protocol.campaign_catalog = campaign_room::discover(platform.game_config.as_ref());
     }
     // VERA's online room publishes its host's Watching from Create Game,
     // also when it comes back after a match; Quick Match's lobby decides.
     if dialog.host && dialog.modern && dialog.wol() && !quick_match {
-        protocol.watching = state.frontend.wol_room_watching;
+        protocol.watching = frontend.wol_room_watching;
     }
-    state.frontend.network_setup_protocol = Some(protocol);
-    if !quick_match && state.match_state.session.host() {
-        note_scenario(&mut state.frontend, &state.match_state.session);
+    frontend.network_setup_protocol = Some(protocol);
+    if !quick_match && match_state.session.host() {
+        note_scenario(frontend, &match_state.session);
     }
     if quick_match {
         // 0x117 stays up and takes the lines; no dialog opens.
-        state.platform.window.request_redraw();
+        platform.window.request_redraw();
         return Ok(());
     }
-    show_dialog(state, dialog);
+    show_dialog(&platform.window, frontend, dialog);
     Ok(())
 }
 
@@ -1099,12 +1107,17 @@ pub(super) fn note_scenario(frontend: &mut FrontendState, session: &MatchSession
     frontend.multiplayer_shell_runtime.set_scenario_index(index);
 }
 
-pub(crate) fn show_statics(state: &mut AppState) {
-    let Some(view) = view(state) else {
+pub(crate) fn show_statics(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let Some(view) = view(renderer, frontend, match_state, process_assets) else {
         return;
     };
-    let heading = state.csf_label(view.page().title_key, view.page().title_key);
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+    let heading = process_assets.csf_label(view.page().title_key, view.page().title_key);
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.statics
             .show(&heading, &view.mode_label, &view.map_label, Instant::now());
         ui.shown = true;
@@ -1183,7 +1196,7 @@ pub(crate) fn local_map_metadata(
 /// 0x113, leaving the process preference/RNG owners and the WOL login intact
 /// and clearing the admitted setup through its owner.
 pub(crate) fn commit_back(state: &mut AppState) {
-    let dialog = leave_setup(state);
+    let dialog = leave_setup(&mut state.frontend, &mut state.match_state);
     if dialog.wol() && dialog.host {
         crate::app::shell_wol::lobby::host_setup_left(state.frontend.wol.as_mut());
     }
@@ -1194,7 +1207,7 @@ pub(crate) fn commit_back(state: &mut AppState) {
 /// `WOL_Main` again, whose lobby runner runs with postmatch set
 /// (`0x77B44B`) and rejoins the previous chat lobby.
 pub(crate) fn return_after_match(state: &mut AppState) {
-    let dialog = leave_setup(state);
+    let dialog = leave_setup(&mut state.frontend, &mut state.match_state);
     if dialog.wol() {
         crate::app::shell_wol::reenter_after_match(state);
     } else {
@@ -1206,29 +1219,41 @@ pub(crate) fn return_after_match(state: &mut AppState) {
 /// VERA: the room goes on unshown while its player looks round the public
 /// lobby (docs/lobby-protocol.md "Visiting the lobby"); [`show_room`] shows
 /// it again and [`abandon_for_wol_runner`] ends it.
-pub(crate) fn hide_room(state: &mut AppState) {
-    crate::app::input::multiplayer_setup::park_chat(state);
-    state.frontend.skirmish_shell_state.choose_map_modal = None;
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+pub(crate) fn hide_room(frontend: &mut FrontendState, match_state: &MatchState) {
+    crate::app::input::multiplayer_setup::park_chat(frontend, match_state);
+    frontend.skirmish_shell_state.choose_map_modal = None;
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.show_game_options(None);
     }
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+    frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
 }
 
 /// The hidden room is back on screen as it is now.
-pub(crate) fn show_room(state: &mut AppState) {
-    show_dialog(state, dialog(&state.frontend, &state.match_state));
-    crate::app::input::multiplayer_setup::unpark_chat(state);
+pub(crate) fn show_room(
+    window: &Window,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let dialog = dialog(frontend, match_state);
+    show_dialog(window, frontend, dialog);
+    crate::app::input::multiplayer_setup::unpark_chat(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+    );
 }
 
 /// The setup's dialog on screen, newly installed or shown again.
-fn show_dialog(state: &mut AppState, dialog: SetupDialog) {
+fn show_dialog(window: &Window, frontend: &mut FrontendState, dialog: SetupDialog) {
     let route = crate::app::shell_route::ShellRoute::NetworkSetup;
-    App::show_shell_page(&mut state.frontend, route, dialog.page().dialog);
-    state.frontend.skirmish_shell_state.choose_map_modal = None;
-    state.frontend.skirmish_preview_texture = None;
-    shell_transition::invalidate_main_menu_dialog_instance(&mut state.frontend);
-    state.platform.window.request_redraw();
+    App::show_shell_page(frontend, route, dialog.page().dialog);
+    frontend.skirmish_shell_state.choose_map_modal = None;
+    frontend.skirmish_preview_texture = None;
+    shell_transition::invalidate_main_menu_dialog_instance(frontend);
+    window.request_redraw();
 }
 
 /// Type8's synchronous native departure drain blocks further setup input.
@@ -1241,19 +1266,17 @@ pub(crate) fn lock_lan_departure(protocol: &mut Option<NetworkSetupProtocol>) {
 
 /// The WOL runner closes every dialog (`LAB_00787F98`) while C2/C9 runs:
 /// the setup is dropped through its owner without reopening a lobby.
-pub(crate) fn abandon_for_wol_runner(state: &mut AppState) {
-    leave_setup(state);
+pub(crate) fn abandon_for_wol_runner(frontend: &mut FrontendState, match_state: &mut MatchState) {
+    leave_setup(frontend, match_state);
 }
 
-fn leave_setup(state: &mut AppState) -> SetupDialog {
-    let dialog = dialog(&state.frontend, &state.match_state);
-    let unlocked = state
-        .frontend
+fn leave_setup(frontend: &mut FrontendState, match_state: &mut MatchState) -> SetupDialog {
+    let dialog = dialog(frontend, match_state);
+    let unlocked = frontend
         .network_setup_protocol
         .as_ref()
         .is_some_and(|p| !p.locked);
-    if dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state.frontend.wol.as_ref())
-    {
+    if dialog.wol() && crate::app::shell_wol::quick_match::mode_active(frontend.wol.as_ref()) {
         // C2/C9's teardowns write the settings (0x6990A0, 0x5ED400); the
         // Quick Match path has neither and writes none.
     } else if unlocked && dialog.wol() && !dialog.host {
@@ -1261,34 +1284,36 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
         // settings: no 0x6990A0 or 0x5ED400 on Back, a kick or the host
         // leaving.
     } else if unlocked {
-        remember_setup(&mut state.frontend, &state.match_state);
+        remember_setup(frontend, match_state);
     } else {
         // A completed/failed handoff already snapshotted raw choices before
         // assignment. Never replace Random markers with resolved launch data.
-        persist_setup_preferences(&mut state.frontend, &state.match_state);
+        persist_setup_preferences(frontend, match_state);
     }
-    state.frontend.multiplayer_setup = None;
-    state.frontend.network_setup_protocol = None;
-    state.frontend.skirmish_preview_texture = None;
-    state.frontend.skirmish_shell_state.choose_map_modal = None;
+    frontend.multiplayer_setup = None;
+    frontend.network_setup_protocol = None;
+    frontend.skirmish_preview_texture = None;
+    frontend.skirmish_shell_state.choose_map_modal = None;
     if !dialog.wol() {
-        crate::app::lan_service::leave_setup(&mut state.match_state);
+        crate::app::lan_service::leave_setup(match_state);
     }
-    state.match_state.session.return_to_network_lobby();
+    match_state.session.return_to_network_lobby();
     dialog
 }
 
 /// VERA asks first: a guest's online room offers its map before the
 /// transfer downloads it (`shell_wol::live_service::maps`).
 pub(crate) fn offer_missing_map(
-    state: &mut AppState,
+    window: &Window,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
     name: String,
     message: String,
     button_key: &'static str,
 ) {
     // The offer takes the pointer from a row's open list too.
-    crate::app::input::multiplayer_setup::drop_pointer(state, true);
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+    crate::app::input::multiplayer_setup::drop_pointer(frontend, match_state, true);
+    if let Some(ui) = frontend.multiplayer_setup.as_mut() {
         ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
             name,
             message,
@@ -1297,7 +1322,7 @@ pub(crate) fn offer_missing_map(
             opened: Instant::now(),
         });
     }
-    state.platform.window.request_redraw();
+    window.request_redraw();
 }
 
 /// The offer's map arrived, changed, or its transfer ended.

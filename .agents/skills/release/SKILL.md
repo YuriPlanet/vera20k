@@ -28,6 +28,13 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 
 ## Dev build
 
+Each release runner collects a gameplay profile on its own OS and CPU architecture
+with the retail fixture from `RETAIL_GAME_DATA_URL`. Its build log shows the LLVM
+counter summary, the merged profile hash and the final game binary hash. The
+installer checks compare the packaged executable with that final build (the Mach-O
+UUID on Macs, where signing changes the binary). Profile collection and the
+optimized rebuild are required for a new dev build.
+
 `nightly.yml` starts one from main at 18:00 UTC each day that main has changed, unless it is
 disabled (`gh workflow list --all` shows its state). By hand:
 

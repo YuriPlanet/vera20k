@@ -159,10 +159,29 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         !RulesCompatibility::default().has_ares(),
         "no build records Ares any more"
     );
+    assert!(
+        !RulesCompatibility::default().has_npatch(),
+        "NPatch is a per-game switch, not a build capability"
+    );
+    assert!(
+        !RulesCompatibility::default().has_phobos(),
+        "Phobos is a per-game switch, not a build capability"
+    );
+    let phobos_legacy = RulesCompatibility::from_capabilities(
+        false,
+        true,
+        false,
+        VERAX_ENABLED,
+        crate::rules::NPBUG_ENABLED,
+    );
+    assert!(
+        phobos_legacy.matches_build(),
+        "old Phobos-tagged saves remain readable by the always-built port"
+    );
     let other = RulesCompatibility::from_capabilities(
         true,
         !PHOBOS_ENABLED,
-        !crate::rules::NPATCH_ENABLED,
+        true,
         !VERAX_ENABLED,
         !crate::rules::NPBUG_ENABLED,
     );

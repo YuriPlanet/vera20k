@@ -860,6 +860,10 @@ pub struct GeneralRules {
     /// the AnimType lookup at `0x0066A587..0x0066A5B1` over the constructor's
     /// null (`0x00665A10`). Retail leaves it unset.
     pub dig_anim: Option<String>,
+    /// Tiberian Sun Firestorm's `[AudioVisual] WebbedInfantry=` (Rules
+    /// `+0xF68`), the AnimType whose shapes a webbed infantryman's Struggle
+    /// frames come from (`docs/ts-webs.md`). gamemd has no such key.
+    pub webbed_infantry: Option<String>,
     /// `[General] NukeTakeOff=` (stock `NUKETO`), the AnimType at `Rules+0x98`
     /// (ReadString then the AnimType lookup, `0x0066D829..0x0066D850`;
     /// constructor null at `0x00665735`). `BuildingClass::Mission_Missile`
@@ -1313,6 +1317,10 @@ pub struct GeneralRules {
     /// computer house's yard deploy runs
     /// `HouseClass::MoveGroundForcesToBase @ 0x0050C920` (`0x00739926`).
     pub gather_when_mcv_deploy: bool,
+    /// Phobos `[General] ArtImageSwap=` (default false): a TechnoType's own
+    /// ART section `Image=` names its visual SHP/VXL files without changing
+    /// the ART keys read from that section.
+    pub art_image_swap: bool,
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`: the runtime ColorScheme
     /// a finished superweapon timer blinks in, `[Colors]` entry `R / 2`, or -1
     /// for `none`. Constructor 5, the third `[Colors]` entry the game uses.
@@ -2069,6 +2077,7 @@ impl Default for GeneralRules {
             lightning_print_text: true,
             dig_sound: None,
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: String::new(),
             ai_super_defense_probability: Vec::new(),
             ai_super_defense_distance: 10,
@@ -2169,6 +2178,7 @@ impl Default for GeneralRules {
             ai_fire_sale_delay: 0,
             ai_all_to_hunt: true,
             gather_when_mcv_deploy: true,
+            art_image_swap: false,
             timer_blink_color_scheme: 5,
             harvester_too_far_distance: 5,
             approach_target_reset_multiplier: 1,
@@ -2743,23 +2753,25 @@ impl GeneralRules {
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             // ext173 reads it with the current byte as default into
             // `Rules+0x641` (`0xC2D132..0xC2D151`, `ReadBooleanByte 0x5295F0`).
-            enable_ai_build_limitation: crate::rules::NPATCH_ENABLED
-                && general.read_bool(
+            enable_ai_build_limitation: crate::rules::npatch_switch::npatch_read(|| {
+                general.read_bool(
                     "EnableAIBuildLimitation",
                     defaults.enable_ai_build_limitation,
-                ),
+                )
+            }),
             // NPSE reads it with the current field as default into Rules+0x2D
             // (C30303..C3031A); the constructor's 66569B store leaves 0. NPExt
             // ext173 reads its name of the same global switch into Rules+0x640
             // (reader C2BDDA..C2BDE7, gate C2D482), so an absent or unparsable
             // NPSE value falls through to that name.
-            disable_parallel_ai_queues: crate::rules::NPATCH_ENABLED
-                && general.read_bool(
+            disable_parallel_ai_queues: crate::rules::npatch_switch::npatch_read(|| {
+                general.read_bool(
                     "DisableParallelAIQueues",
                     general
                         .read_bool_value("DisableAIParallelProduction")
                         .unwrap_or(defaults.disable_parallel_ai_queues),
-                ),
+                )
+            }),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
             // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current
@@ -3000,6 +3012,8 @@ impl GeneralRules {
             // Published by the Rules processor's `Dig` pointer
             // (`rules_type_references`).
             dig_anim: None,
+            // Published by the Rules processor's `WebbedInfantry` pointer.
+            webbed_infantry: None,
             nuke_take_off: defaults.nuke_take_off.clone(),
             ai_super_defense_probability: general
                 .read_int_list("AISuperDefenseProbability")
@@ -3168,6 +3182,7 @@ impl GeneralRules {
             ai_fire_sale_delay: phobos_read(|| general.read_int("AIFireSaleDelay", 0)),
             ai_all_to_hunt: phobos_read(|| general.read_bool("AIAllToHunt", true)),
             gather_when_mcv_deploy: phobos_read(|| general.read_bool("GatherWhenMCVDeploy", true)),
+            art_image_swap: phobos_read(|| general.read_bool("ArtImageSwap", false)),
             harvester_too_far_distance: general.read_int("HarvesterTooFarDistance", 5),
             approach_target_reset_multiplier: general.read_int("ApproachTargetResetMultiplier", 1),
             chrono_harv_too_far_distance: general.read_int("ChronoHarvTooFarDistance", 50),

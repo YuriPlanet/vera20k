@@ -1,6 +1,6 @@
 # Optional Phobos compatibility
 
-VERA20K can build in partial, Rust-native support for some Phobos extensions. It does not load the
+VERA20K includes partial, Rust-native support for some Phobos extensions. It does not load the
 Phobos DLL and is not general mod support.
 
 ## The Phobos switch
@@ -39,24 +39,25 @@ cargo run --release --bin vera20k
 ```
 
 Phobos is independent of Ares and NPatch: it needs neither. Every build holds
-Ares, which a game's data switches on ([Ares](ares.md)), and Phobos combines with NPatch
-(`--features npatch`). Every implemented Phobos chain must keep working
-when Ares plays or the other capabilities are compiled in — the compatibility rule and the pattern for two
+all three, and a game's data switches each on ([Ares](ares.md),
+`rules::phobos_switch`, [NPatch](npatch.md)). Every implemented Phobos chain must
+keep working when Ares or NPatch plays, or the other capabilities are compiled
+in — the compatibility rule and the pattern for two
 extensions touching one native site are in
-[NPatch placeholder](npatch.md#cross-extension-compatibility).
+[NPatch](npatch.md#cross-extension-compatibility).
 
-Phobos builds identify themselves in the window title, the startup log, and the build description
-drawn at the tactical view's top right during a match. That description is Phobos's own text: the
-product name, the version and the build-type warning derived exactly as `Phobos.version.h` derives
-them, so a Phobos build prints
+Every build identifies its compiled Phobos support in the window title, the startup log, and the
+build description drawn at the tactical view's top right during a match. That description is
+Phobos's own text: the product name, the version and the build-type warning derived exactly as
+`Phobos.version.h` derives them, so it prints
 
 ```
 Phobos v0.5.0.0-alpha1. Please test the build before shipping.
 ```
 
 in red on black, ten pixels in from the view's right edge — the same string, site and colors as
-Phobos's `GScreenClass::DrawText` hook. Saves retain the build capability and cannot load in the
-other mode, even with identical retail INIs.
+Phobos's `GScreenClass::DrawText` hook. Saves retain the compiled capability identity; a save
+from a build without Phobos support is refused even with identical retail INIs.
 
 Supported extensions:
 

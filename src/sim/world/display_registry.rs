@@ -226,7 +226,9 @@ impl Simulation {
     /// (`Simulation::presentation_anims`) where gamemd's Display would hold
     /// it as an ordinary anim: at the place in submission order it took when
     /// it was placed (`AnimObject::presentation_order`), Ground by its
-    /// GetYSort key first (Anim422BC0). What the picture draws.
+    /// GetYSort key first (Anim422BC0). The presentation particle systems
+    /// and their particles take their places the same way
+    /// (`ParticleSystemStore::presented_systems`). What the picture draws.
     pub fn picture_draw_order(&self, rules: Option<&RuleSet>) -> Vec<(DisplayLayer, u64)> {
         self.draw_order(rules, true)
     }
@@ -241,6 +243,19 @@ impl Simulation {
                 {
                     unshared[usize::from(layer.index())].push((anim.presentation_order(), id));
                 }
+            }
+            // A presentation particle system draws where Ground would hold
+            // it (ParticleSystem VT7EFB9C+78 ->62FE80), and each of its
+            // particles where Air would (GetLayer62D770).
+            for (id, system) in self.substrate.particle_systems.presented_systems() {
+                unshared[usize::from(DisplayLayer::GROUND.index())]
+                    .push((system.presentation_order(), id));
+                unshared[usize::from(DisplayLayer::AIR.index())].extend(
+                    system
+                        .particles()
+                        .iter()
+                        .map(|particle| (particle.presentation_order(), particle.stable_id())),
+                );
             }
         }
         let mut order = Vec::with_capacity(

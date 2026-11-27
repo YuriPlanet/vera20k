@@ -10,7 +10,7 @@
 
 use super::Particle;
 use super::wind::{SMOKE_WIND_DX, SMOKE_WIND_DY};
-use crate::rules::particle_type::ParticleType;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
@@ -35,7 +35,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         .resolved_terrain
         .as_ref()
         .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-    let followed = sys
+    let mut followed = sys
         .owner_entity
         .filter(|&owner| {
             sim.substrate
@@ -58,17 +58,36 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
                 sys.offset.z,
             )
         });
-    if let Some(coords) = followed {
-        sim.substrate.particle_systems.get_mut(id).unwrap().coords = coords;
-    }
+    let frame = sim.session.binary_frame();
     //62EDC7..62EDDE re-reads Count after each synchronous child AI.
+    // VERA-only, results unchanged: the system is found once for each run of
+    // Smoke children, whose AI reads nothing of the world and runs on the
+    // child where it is stored. Any other child's AI may reach the whole
+    // world (Gas damage can append to this system), so it runs on a copy
+    // that the store takes back, and the system is found again after it.
     let mut index = 0;
-    while let Some(mut p) = sim
-        .particle_systems()
-        .get(id)
-        .and_then(|sys| sys.particles.get(index))
-        .cloned()
-    {
+    loop {
+        let Some((sys, rng)) = sim
+            .substrate
+            .particle_systems
+            .system_and_rng_mut(id, &mut sim.scenario_rng)
+        else {
+            return;
+        };
+        if let Some(coords) = followed.take() {
+            sys.coords = coords;
+        }
+        while let Some(p) = sys.particles.get_mut(index) {
+            let pt = rules.particle_type(p.type_id);
+            if pt.behaves_like != ParticleBehavesLike::Smoke {
+                break;
+            }
+            super::system_ai::tick_smoke_particle(p, pt, frame, rng);
+            index += 1;
+        }
+        let Some(mut p) = sys.particles.get(index).cloned() else {
+            break;
+        };
         super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
         sim.substrate
             .particle_systems

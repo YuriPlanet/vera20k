@@ -422,10 +422,11 @@ impl App {
         );
         let options_profile = options_load.retained_profile;
         // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
-        // switch or the saved Options choice, before any archive or CSF opens.
+        // switch or the saved edition, before any archive or CSF opens.
         if let Some(config) = game_config.as_mut() {
             config.use_ra2_mode(
-                options_profile.ra2_mode && crate::ui::main_menu_dialogs::options::HAS_RA2_MODE,
+                options_profile.ra2_mode
+                    && !cfg!(all(target_arch = "wasm32", target_os = "unknown")),
             );
         }
         if crate::util::ra2_launch::enabled() {
@@ -434,6 +435,7 @@ impl App {
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         personal_rules.set_building_production_queue(options_profile.building_production_queue);
+        personal_rules.set_wasm_budget(options_profile.wasm_budget);
         // The Ares setting holds for the whole launch, as the mod does.
         let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {
@@ -483,6 +485,8 @@ impl App {
             mods.add_rules_file_notice(text);
         }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
+        // HD art can be on only when the mod brings an HD art pack.
+        crate::render::hd_art::refresh_pack_available();
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -1318,6 +1322,8 @@ impl App {
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
                     relation_colors: false,
+                    team_colors: false,
+                    team_by_owner: None,
                     superweapon_building_timers: false,
                     convenience_help: false,
                     relation_color_map: None,
@@ -1370,6 +1376,7 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
+                ui_modules: None,
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
@@ -1505,6 +1512,11 @@ impl App {
                 tooltip_blur: None,
                 terrain_picture: Default::default(),
                 native_z_seed: Default::default(),
+                hd_art: None,
+                hd_terrain: None,
+                hd_voxel: None,
+                hd_art_seen: false,
+                hd_art_zoom_pending: true,
             },
             process_assets,
             audio: startup_audio_runtime,
@@ -1545,8 +1557,16 @@ impl App {
                         );
                     }
                 }
-                Self::sync_zoom_pass(&mut state);
-                Self::sync_present_mode(&mut state);
+                Self::sync_zoom_pass(
+                    &state.platform,
+                    &mut state.renderer,
+                    &state.persistence.options_profile,
+                );
+                Self::sync_present_mode(
+                    &state.platform,
+                    &mut state.renderer.gpu,
+                    &state.persistence.options_profile,
+                );
                 #[cfg(feature = "telemetry-dashboard")]
                 attach_dashboard(&mut state.diag);
 

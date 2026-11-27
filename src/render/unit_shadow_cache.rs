@@ -160,6 +160,7 @@ impl UnitAtlas {
             height,
             offset_x: offset[0],
             offset_y: offset[1],
+            hd: None,
         })
     }
 }

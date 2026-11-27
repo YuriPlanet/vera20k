@@ -1,6 +1,12 @@
 //! The LAN lobby's join flow: chat packets, discovered-game projection, lobby
 //! requests, and the host/guest join offer, confirm, denial and cancel exchange.
 
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::net::global::GlobalDestination;
 use crate::net::lan_messages::LanJoinRequest;
 use crate::net::lan_messages::LanMessage;
@@ -55,8 +61,14 @@ pub(super) fn chat_line(
     })
 }
 
-pub(super) fn project_games(state: &mut AppState) {
-    let Some(service) = state.match_state.lan_service.as_ref() else {
+pub(super) fn project_games(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let Some(service) = match_state.lan_service.as_ref() else {
         return;
     };
     let games = service
@@ -68,23 +80,43 @@ pub(super) fn project_games(state: &mut AppState) {
             open: record.open,
         })
         .collect();
-    super::shell_lan::service_event(state, super::shell_lan::LanServiceEvent::Games(games));
+    super::shell_lan::service_event(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        super::shell_lan::LanServiceEvent::Games(games),
+    );
 }
 
-pub(super) fn drain_requests(state: &mut AppState, now: u32) {
-    let requests = state
-        .frontend
+pub(super) fn drain_requests(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    now: u32,
+) {
+    let requests = frontend
         .lan
         .as_mut()
         .map(|lobby| lobby.take_service_requests())
         .unwrap_or_default();
     for request in requests {
-        if let Err(error) = lobby_request(state, request) {
+        if let Err(error) = lobby_request(
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            request,
+        ) {
             log::warn!("LAN request failed: {error:#}");
         }
     }
     // Native5DB720 expires discovery advertisements after300 wall buckets.
-    let Some(service) = state.match_state.lan_service.as_mut() else {
+    let Some(service) = match_state.lan_service.as_mut() else {
         return;
     };
     let old_len = service.games.len();
@@ -98,51 +130,52 @@ pub(super) fn drain_requests(state: &mut AppState, now: u32) {
         .retain(|peer| (now.wrapping_sub(peer.last_seen) as i32) <= 360);
     let players_changed = old_participants != service.observed_participants.len();
     if changed {
-        project_games(state);
+        project_games(renderer, frontend, match_state, process_assets, sfx_player);
     }
     if players_changed {
-        project_players(state);
+        project_players(renderer, frontend, match_state, process_assets, sfx_player);
     }
 }
 
 fn lobby_request(
-    state: &mut AppState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
     request: super::shell_lan::LanServiceRequest,
 ) -> anyhow::Result<()> {
     use super::shell_lan::LanServiceRequest;
-    let name = local_name(&state.frontend, &state.match_state.session);
+    let name = local_name(frontend, &match_state.session);
     match request {
         LanServiceRequest::Refresh => {
-            state
-                .match_state
+            match_state
                 .lan_service
                 .as_mut()
                 .ok_or_else(super::closed_visit)?
                 .discovery_timer = Default::default();
         }
         LanServiceRequest::SelectGame { game_id, change } => {
-            let service = state
-                .match_state
+            let service = match_state
                 .lan_service
                 .as_mut()
                 .ok_or_else(super::closed_visit)?;
             service.select_game(game_id, change);
-            project_players(state);
+            project_players(renderer, frontend, match_state, process_assets, sfx_player);
         }
         LanServiceRequest::Join { game_id, observe } => {
-            let peer = state
-                .match_state
+            let peer = match_state
                 .lan_service
                 .as_ref()
                 .and_then(|service| service.game(game_id))
                 .ok_or_else(|| anyhow::anyhow!("LAN game is no longer advertised"))?
                 .endpoint;
-            let local = state.frontend.multiplayer_shell_runtime.local_participant();
+            let local = frontend.multiplayer_shell_runtime.local_participant();
             let request = crate::net::lan_messages::LanJoinRequest {
                 country: local.slot.country_shell_value(observe),
                 color: local.slot.color_shell_value(),
                 version: crate::net::lan_messages::LanVersionInterval::RETAIL,
-                compatibility: compatibility(&state.process_assets)
+                compatibility: compatibility(process_assets)
                     .ok_or_else(|| anyhow::anyhow!("retail compatibility inputs unavailable"))?,
                 observer_request: u32::from(observe),
             };
@@ -158,8 +191,7 @@ fn lobby_request(
                 rules_digest: String::new(),
             };
             let join = LanMessage::join_request(&name, &[], request)?.with_session_proof(&proof)?;
-            let service = state
-                .match_state
+            let service = match_state
                 .lan_service
                 .as_mut()
                 .ok_or_else(super::closed_visit)?;
@@ -173,34 +205,37 @@ fn lobby_request(
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            let service = state
-                .match_state
+            let service = match_state
                 .lan_service
                 .as_mut()
                 .ok_or_else(super::closed_visit)?;
             if service.pending_host.is_some() {
                 service.begin_departure(
-                    &state.match_state.session,
+                    &match_state.session,
                     DepartureReason::CancelJoin { game_id },
                     now,
                 )?;
             } else {
                 super::shell_lan::service_event(
-                    state,
+                    renderer,
+                    frontend,
+                    match_state,
+                    process_assets,
+                    sfx_player,
                     super::shell_lan::LanServiceEvent::JoinCanceled { game_id },
                 );
             }
         }
         LanServiceRequest::NameChanged => {
-            if let Some(service) = state.match_state.lan_service.as_mut() {
+            if let Some(service) = match_state.lan_service.as_mut() {
                 service.force_presence = true;
             }
         }
         LanServiceRequest::Chat { text } => {
-            let game = active_game_name(&state.match_state).unwrap_or_default();
+            let game = active_game_name(match_state).unwrap_or_default();
             let message = chat_packet(&name, &game, &text)?;
             send(
-                &mut state.match_state,
+                match_state,
                 &message,
                 GlobalDestination::Broadcast { port_override: 0 },
                 false,
@@ -232,29 +267,16 @@ pub(super) fn active_game_name(
     }
 }
 
-pub(super) fn received_choices(
-    country: i32,
-    color: i32,
-    initial: &crate::skirmish_launch::SkirmishLocalSlot,
-) -> anyhow::Result<crate::skirmish_launch::SkirmishLocalSlot> {
-    let mut slot = initial.clone();
-    // Type3 initializes start/team to Random. Subsequent authoritative host
-    // options own their selected values (696FF0/697020 at5E060D..5E061A).
-    slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
-    slot.team = crate::skirmish_launch::LaunchTeam::None;
-    slot.country_random = country < 0;
-    if country >= 0 {
-        anyhow::ensure!(
-            country <= i32::from(u16::MAX),
-            "country outside registry domain"
-        );
-        slot.country = crate::skirmish_launch::LaunchCountry::from_country_index(country as u32);
-    }
-    slot.color_random = color < 0;
-    if color >= 0 {
-        slot.color_index = u8::try_from(color)?;
-    }
-    Ok(slot)
+/// The room admits a participant whose name no seated player already
+/// carries: a name that differs only in case names the same player, as
+/// the guest's admission projection compares it.
+pub(super) fn admits_participant(session: &MatchSession, name: &str) -> bool {
+    !session.network_setup().is_some_and(|launch| {
+        launch
+            .humans
+            .iter()
+            .any(|human| human.name.eq_ignore_ascii_case(name))
+    })
 }
 
 pub(super) fn accept_participant(
@@ -295,9 +317,7 @@ pub(super) fn accept_participant(
             "different LAN game"
         );
     }
-    if let Some(launch) = state.match_state.session.network_setup()
-        && launch.humans.iter().any(|human| human.name == name)
-    {
+    if !admits_participant(&state.match_state.session, &name) {
         return Ok(());
     }
     let initial = state
@@ -307,7 +327,7 @@ pub(super) fn accept_participant(
         .slot;
     let human = crate::skirmish_launch::SkirmishHumanSlot {
         name: name.clone(),
-        slot: received_choices(fields.country, fields.color, &initial)?,
+        slot: super::picks::decoded_participant(fields.country, fields.color, &initial)?,
         //5E0685 passes this slot to5E8D90 after appending the node.
         raw_slot_index: Some(
             u8::try_from(fields.field_0x53)
@@ -636,7 +656,7 @@ pub(super) fn confirm_join(
                 .multiplayer_shell_runtime
                 .local_participant()
                 .slot;
-            let slot = received_choices(request.country, request.color, &initial)?;
+            let slot = super::picks::decoded_participant(request.country, request.color, &initial)?;
             // With every seat taken, VERA's room seats the newcomer on the
             // last AI's, which it frees.
             let freed = state.match_state.session.free_network_seat_for_newcomer()?;

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::map::waypoints::decode_waypoint_token;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::{AiTriggerOwnerIni, TeamAiDefinitionSource, TeamAiIniRegistry};
@@ -177,18 +178,14 @@ impl TeamScriptVm {
                     }),
                     veteran_level: fields.read_int("VeteranLevel", 1),
                     waypoint: fields.read_string_with("Waypoint", 0x40, -1, |_, value| {
-                        crate::map::actions::decode_waypoint_token(value)
-                            .map_or(-1, |index| index as i32)
+                        decode_waypoint_token(value).map_or(-1, |index| index as i32)
                     }),
                     use_transport_origin: fields.read_bool("UseTransportOrigin", false),
                     transport_waypoint: fields.read_string_with(
                         "TransportWaypoint",
                         0x40,
                         -1,
-                        |_, value| {
-                            crate::map::actions::decode_waypoint_token(value)
-                                .map_or(-1, |index| index as i32)
-                        },
+                        |_, value| decode_waypoint_token(value).map_or(-1, |index| index as i32),
                     ),
                     full: fields.read_bool("Full", false),
                     whiner: fields.read_bool("Whiner", false),

@@ -1017,20 +1017,21 @@ impl WolCapture {
         use crate::ui::wol_lobby::CARD_COUNTRY_ROWS;
         player_row_click(state, NICKNAME)?;
         ensure!(
-            Self::lobby(state)?
+            Self::lobby(&state.frontend.wol)?
                 .ui
                 .card
                 .as_ref()
                 .is_some_and(|card| card.name == NICKNAME),
             "a click on your own name did not open your card"
         );
-        let message = player_card::layout(state).message;
+        let message = player_card::layout(state.frontend.wol.as_ref(), &state.renderer.gpu).message;
         let countries = |state: &AppState| {
-            player_card::view(state).and_then(|view| view.countries.map(|list| (view.rows, list)))
+            player_card::view(&state.frontend, &state.process_assets, &state.renderer.gpu)
+                .and_then(|view| view.countries.map(|list| (view.rows, list)))
         };
         // The open list's row for `locale` and the top row it should open at.
         let opens_at = |state: &AppState, locale: i32| -> Result<(usize, usize)> {
-            let rows = &Self::lobby(state)?
+            let rows = &Self::lobby(&state.frontend.wol)?
                 .ui
                 .card
                 .as_ref()
@@ -1054,7 +1055,11 @@ impl WolCapture {
         // The first shown row of another country: where the United States
         // sits depends on the language's names.
         let (row, locale) = {
-            let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+            let card = Self::lobby(&state.frontend.wol)?
+                .ui
+                .card
+                .as_ref()
+                .context("your card")?;
             (list.popup.first..list.popup.first + CARD_COUNTRY_ROWS)
                 .filter_map(|row| card.countries.get(row).map(|country| (row, country.locale)))
                 .find(|&(_, locale)| locale != 2)
@@ -1066,7 +1071,7 @@ impl WolCapture {
             state.persistence.options_profile.online_locale == locale,
             "VERA.INI did not keep {locale}"
         );
-        let requests = self.requests(state, frame)?;
+        let requests = self.requests(&mut state.frontend.wol, frame)?;
         ensure!(
             requests.contains(&WolServiceRequest::SetLocale(locale)),
             "the pick sent {requests:?}"
@@ -1081,7 +1086,11 @@ impl WolCapture {
             list.hot_row,
             list.popup.first
         );
-        let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+        let card = Self::lobby(&state.frontend.wol)?
+            .ui
+            .card
+            .as_ref()
+            .context("your card")?;
         let picked = &card.countries.get(row).context("the picked row")?.text;
         ensure!(
             rows.iter().any(|(_, value)| value == picked),
@@ -1090,41 +1099,38 @@ impl WolCapture {
         Ok(())
     }
 
-    fn requests(&mut self, state: &mut AppState, frame: u32) -> Result<Vec<WolServiceRequest>> {
-        let requests = state
-            .frontend
-            .wol
-            .as_mut()
-            .context("WOL visit")?
-            .take_service_requests();
+    fn requests(
+        &mut self,
+        wol: &mut Option<WolVisit>,
+        frame: u32,
+    ) -> Result<Vec<WolServiceRequest>> {
+        let requests = wol.as_mut().context("WOL visit")?.take_service_requests();
         self.route.push(json!({"frame": frame,
             "requests": requests.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>()}));
         Ok(requests)
     }
 
-    fn page_settled(state: &AppState, kind: ShellSlideKind) -> bool {
-        MoviesCapture::slide_settled(state, kind)
-            && state.frontend.shell_exit.is_none()
-            && state.frontend.shell_page_title.is_terminal()
+    fn page_settled(frontend: &FrontendState, kind: ShellSlideKind) -> bool {
+        MoviesCapture::slide_settled(frontend, kind)
+            && frontend.shell_exit.is_none()
+            && frontend.shell_page_title.is_terminal()
     }
 
-    pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
-        self.target.in_match()
-            && self.phase == WolPhase::Loading
-            && state.frontend.screen == GameScreen::InGame
+    pub(super) fn owns_simulation_steps(&self, screen: &GameScreen) -> bool {
+        self.target.in_match() && self.phase == WolPhase::Loading && *screen == GameScreen::InGame
     }
 
-    pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+    pub(super) fn ready(&self, frontend: &FrontendState, match_state: &MatchState) -> Result<bool> {
         if self.phase == WolPhase::Loading {
             if self.target.in_match() {
                 return Ok(false);
             }
             ensure!(
-                state.match_state.session_mode() == SessionMode::Wol,
+                match_state.session_mode() == SessionMode::Wol,
                 "the WOL handoff became offline"
             );
-            return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
+            return Ok(frontend.screen == GameScreen::Loading
+                && crate::app::loading::pump::next_native_loading_frame(frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         // Behind a box `0x10E`/`0x10F` is gone, and with it the status line;
@@ -1132,16 +1138,15 @@ impl WolCapture {
         // family line belong to this check.
         // The Quick Match runner's lobby is never shown, but `0x117` over
         // it paints the status line unless a box or the wait covers it.
-        let quick_match_page =
-            crate::app::shell_wol::quick_match::dialog(state.frontend.wol.as_ref()).is_some()
-                && state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.lobby())
-                    .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
+        let quick_match_page = crate::app::shell_wol::quick_match::dialog(frontend.wol.as_ref())
+            .is_some()
+            && frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.lobby())
+                .is_some_and(|lobby| lobby.message().is_none() && lobby.wait.is_none());
         let backdrop = !quick_match_page
-            && state.frontend.wol.as_ref().is_some_and(|visit| {
+            && frontend.wol.as_ref().is_some_and(|visit| {
                 matches!(
                     visit.page,
                     crate::app::shell_wol::WolPage::Backdrop { .. }
@@ -1150,7 +1155,7 @@ impl WolCapture {
                     .lobby()
                     .is_some_and(|lobby| !lobby.shown || lobby.covered || lobby.ui.popup.is_some())
             })
-            || state.frontend.shell_route == ShellRoute::NetworkSetup;
+            || frontend.shell_route == ShellRoute::NetworkSetup;
         if let Some(menu) = match self.target {
             WolTarget::InternetMenu => Some(crate::ui::pause_menu::InGameMenuState::Menu),
             WolTarget::IngameConnectionLost | WolTarget::IngamePageCancel => {
@@ -1162,8 +1167,7 @@ impl WolCapture {
             _ => None,
         } {
             // The connection-lost row types itself out on the wall clock.
-            let revealed = state
-                .match_state
+            let revealed = match_state
                 .match_presentation
                 .message_list
                 .messages()
@@ -1175,15 +1179,14 @@ impl WolCapture {
                 });
             // State 7 keeps the match running (the modal pump's Main_Tick).
             let ran_on = self.page_tick.is_none_or(|sent| {
-                state
-                    .match_state
+                match_state
                     .sim_runtime
                     .runtime()
                     .is_some_and(|runtime| runtime.simulation.session().tick() > sent)
             });
             return Ok(self.phase == WolPhase::Settle(0)
-                && state.frontend.screen == GameScreen::InGame
-                && state.match_state.match_presentation.in_game_menu == menu
+                && frontend.screen == GameScreen::InGame
+                && match_state.match_presentation.in_game_menu == menu
                 && ran_on
                 && (!matches!(
                     self.target,
@@ -1195,35 +1198,38 @@ impl WolCapture {
         // The guest's badge help types itself out in the room's own status
         // line.
         let room_line = self.target != WolTarget::ModernSpectators
-            || state
-                .frontend
+            || frontend
                 .multiplayer_setup
                 .as_ref()
                 .is_some_and(|ui| ui.statics.is_terminal());
         Ok(self.phase == WolPhase::Settle(0)
-            && state.frontend.shell_exit.is_none()
-            && (backdrop || state.frontend.shell_status_line.is_terminal())
+            && frontend.shell_exit.is_none()
+            && (backdrop || frontend.shell_status_line.is_terminal())
             && room_line
-            && state.frontend.shell_first_paint_slide.is_none())
+            && frontend.shell_first_paint_slide.is_none())
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Value {
-        let visit = state.frontend.wol.as_ref();
+    pub(super) fn receipt(
+        &self,
+        game_config: &Option<GameConfig>,
+        frontend: &FrontendState,
+    ) -> Value {
+        let visit = frontend.wol.as_ref();
         json!({
             "target": format!("{:?}", self.target),
             "route": self.route,
             "service_boundary": if self.target.online_login() {
                 "ordinary online login page; visual capture only, no authenticated backend claim"
             } else { "controlled decoded WOL results; no WOLAPI, transport or backend claim" },
-            "shell_route": format!("{:?}", state.frontend.shell_route),
+            "shell_route": format!("{:?}", frontend.shell_route),
             "mode": visit.and_then(|visit| visit.mode()).map(|mode| mode.native()),
             "authenticated": visit.is_some_and(|visit| visit.authenticated()),
-            "wolinfo": state.platform.game_config.as_ref().and_then(|config| {
+            "wolinfo": game_config.as_ref().and_then(|config| {
                 std::fs::read_to_string(config.paths.settings_dir().join(WOLINFO_INI)).ok()
             }),
             "login": visit.and_then(|visit| visit.login()).map(|login| {
                 use crate::ui::wol_login::{FORGET, NICKNAME, PASSWORD, REMEMBER};
-                let ui = &state.frontend.shell_controller;
+                let ui = &frontend.shell_controller;
                 let flag = |id, prop, default| ui.flag(LOGIN_DIALOG, id, prop, default);
                 json!({
                     "nickname": ui.text(LOGIN_DIALOG, NICKNAME),
@@ -1242,15 +1248,13 @@ impl WolCapture {
 }
 
 /// The controlled guest's House.
-fn clan_peer_house(state: &AppState) -> Result<crate::sim::intern::InternedId> {
-    let sim = &state
-        .match_state
+fn clan_peer_house(match_state: &MatchState) -> Result<crate::sim::intern::InternedId> {
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("the clan match runtime")?
         .simulation;
-    state
-        .match_state
+    match_state
         .session
         .network_source_owner(1)
         .and_then(|owner| sim.interner().get(&owner))
@@ -1334,18 +1338,19 @@ fn games(hash: i32, map: &str) -> Vec<WolChannel> {
 }
 
 /// The games with the local hash, Alpha's naming the first scenario record.
-fn local_games(state: &AppState) -> Vec<WolChannel> {
+fn local_games(
+    scenario_catalog: &ScenarioCatalog,
+    process_assets: &ProcessAssets,
+) -> Vec<WolChannel> {
     games(
-        crate::app::shell_wol::lobby::local_ini_hash(&state.process_assets).unwrap_or(0),
-        &first_record(state).0,
+        crate::app::shell_wol::lobby::local_ini_hash(process_assets).unwrap_or(0),
+        &first_record(scenario_catalog).0,
     )
 }
 
 /// The first scenario record's file and description.
-fn first_record(state: &AppState) -> (String, String) {
-    state
-        .frontend
-        .scenario_catalog
+fn first_record(scenario_catalog: &ScenarioCatalog) -> (String, String) {
+    scenario_catalog
         .records()
         .first()
         .map(|record| (record.file_name.clone(), record.display_name.clone()))
@@ -1368,16 +1373,15 @@ fn join_lobby(state: &mut AppState) {
     );
 }
 
-fn wol_setup_settled(state: &AppState, host: bool) -> bool {
+fn wol_setup_settled(frontend: &FrontendState, host: bool) -> bool {
     MoviesCapture::slide_settled(
-        state,
+        frontend,
         ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::setup_dialog(
-            &state.frontend,
+            frontend,
             host,
             crate::ui::multiplayer_setup::SetupFlavor::Wol,
         )),
-    ) && state
-        .frontend
+    ) && frontend
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.statics.is_terminal())
@@ -1385,7 +1389,8 @@ fn wol_setup_settled(state: &AppState, host: bool) -> bool {
 
 /// A press on one `0x2BC` checkbox's 18x18 icon.
 fn options_checkbox(state: &mut AppState, id: u16) -> Result<()> {
-    let layout = crate::app::shell_wol::options::layout(state);
+    let layout =
+        crate::app::shell_wol::options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let rect = layout.checkbox_rect(id).context("0x2BC checkbox")?;
     welcome_click(
         state,
@@ -1395,24 +1400,21 @@ fn options_checkbox(state: &mut AppState, id: u16) -> Result<()> {
 }
 
 fn options_button(state: &mut AppState, id: u16) -> Result<()> {
-    let layout = crate::app::shell_wol::options::layout(state);
+    let layout =
+        crate::app::shell_wol::options::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     welcome_click(state, layout.page.button_rect(id).context("0x2BC button")?);
     Ok(())
 }
 
-fn settings_path(state: &AppState) -> Result<std::path::PathBuf> {
-    let config = state
-        .platform
-        .game_config
-        .as_ref()
-        .context("capture game config")?;
+fn settings_path(game_config: &Option<GameConfig>) -> Result<std::path::PathBuf> {
+    let config = game_config.as_ref().context("capture game config")?;
     Ok(crate::app::persistence::profile_file::path(
         config.paths.settings_dir(),
     ))
 }
 
-fn read_settings(state: &AppState) -> Result<Option<Vec<u8>>> {
-    let path = settings_path(state)?;
+fn read_settings(game_config: &Option<GameConfig>) -> Result<Option<Vec<u8>>> {
+    let path = settings_path(game_config)?;
     match std::fs::read(&path) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -1420,8 +1422,8 @@ fn read_settings(state: &AppState) -> Result<Option<Vec<u8>>> {
     }
 }
 
-fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
-    let path = settings_path(state)?;
+fn restore_settings(game_config: &Option<GameConfig>, bytes: Option<Vec<u8>>) -> Result<()> {
+    let path = settings_path(game_config)?;
     match bytes {
         Some(bytes) => std::fs::write(&path, bytes),
         None => std::fs::remove_file(&path),
@@ -1462,7 +1464,8 @@ fn show_lobby_chat(state: &mut AppState) -> Result<()> {
             .is_some_and(|lobby| lobby.ui.shows_chat())
     };
     if !shows_chat(state) {
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         lobby_button(state, &layout, lobby_ui::VIEW)?;
     }
     ensure!(shows_chat(state), "the view button did not show the chat");
@@ -1471,7 +1474,8 @@ fn show_lobby_chat(state: &mut AppState) -> Result<()> {
 
 /// A click on one visible game row.
 fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
-    let layout = crate::app::shell_wol::lobby::layout(state);
+    let layout =
+        crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let lobby = state
         .frontend
         .wol
@@ -1494,18 +1498,15 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
 /// A click on the player list's row of `name`, in the chat view.
 fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
     show_lobby_chat(state)?;
-    let rect = player_row_rect(state, name)?;
+    let rect = player_row_rect(&state.renderer.gpu, state.frontend.wol.as_ref(), name)?;
     welcome_click(state, rect);
     Ok(())
 }
 
 /// The modern player list's row of `name`.
-fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
-    let layout = crate::app::shell_wol::lobby::layout(state);
-    let lobby = state
-        .frontend
-        .wol
-        .as_ref()
+fn player_row_rect(gpu: &GpuContext, wol: Option<&WolVisit>, name: &str) -> Result<RectPx> {
+    let layout = crate::app::shell_wol::lobby::layout(wol, gpu);
+    let lobby = wol
         .and_then(|visit| visit.lobby())
         .context("the lobby runner")?;
     let row = lobby
@@ -1527,18 +1528,14 @@ fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
 /// `wolinfoMD.ini` beside the isolated VERA.INI.
-fn info_file(state: &AppState) -> Result<WolInfoFile> {
-    let config = state
-        .platform
-        .game_config
-        .as_ref()
-        .context("capture game config")?;
+fn info_file(game_config: &Option<GameConfig>) -> Result<WolInfoFile> {
+    let config = game_config.as_ref().context("capture game config")?;
     Ok(WolInfoFile::in_directory(config.paths.settings_dir()))
 }
 
 /// The target's persona file, only in the separately marked settings root.
-fn write_wolinfo(state: &AppState, target: WolTarget) -> Result<()> {
-    let root = super::lan::LanCapture::isolated_settings_root(state)?;
+fn write_wolinfo(game_config: &Option<GameConfig>, target: WolTarget) -> Result<()> {
+    let root = super::lan::LanCapture::isolated_settings_root(game_config)?;
     std::fs::write(root.join(WOLINFO_INI), target.wolinfo()).context("write wolinfoMD.ini")
 }
 
@@ -1567,21 +1564,25 @@ fn test_page_back(name: &str) -> String {
 /// A press and release through the window handlers' WOL routing; like the
 /// native helper, the pointer then returns to the neutral point.
 fn welcome_click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
+    set_window_pointer_to_rect_center(
+        &state.renderer,
+        &state.frontend.screen,
+        &mut state.match_state.input,
+        rect,
+    );
     App::handle_wol_mouse_move(state);
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
-    MoviesCapture::restore_neutral_pointer(state);
+    MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
 }
 
 /// The open `0x10F` and the shell's widgets it stands on.
 fn login_mut(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
 ) -> Result<(
     &mut crate::ui::wol_login::WolLoginState,
     &mut crate::ui::shell::controller::DialogController,
 )> {
-    let frontend = &mut state.frontend;
     match frontend.wol.as_mut().map(|visit| &mut visit.page) {
         Some(crate::app::shell_wol::WolPage::Login(login)) => {
             Ok((login, &mut frontend.shell_controller))
@@ -1606,8 +1607,13 @@ fn login_click(state: &mut AppState, rect: RectPx) {
     welcome_click(state, rect);
 }
 
-fn setup_view(state: &AppState) -> Result<crate::ui::multiplayer_setup::SetupView> {
-    setup::view(state).context("C2/C9 view")
+fn setup_view(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Result<crate::ui::multiplayer_setup::SetupView> {
+    setup::view(renderer, frontend, match_state, process_assets).context("C2/C9 view")
 }
 
 /// Row `row`'s combo in `column` and the page row it stands on: VERA's room
@@ -1626,18 +1632,18 @@ fn row_combo(
 
 /// The joined game's host options again, naming a version of its map this
 /// guest cannot verify (another digest).
-fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .context("C9 setup")?
-        .clone();
+fn unverified_host_options(
+    game_config: &Option<GameConfig>,
+    scenario_catalog: &ScenarioCatalog,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
+) -> Result<NetworkSetupEvent> {
+    let launch = session.network_setup().context("C9 setup")?.clone();
     let file = launch.selected_map_file.clone().context("host map")?;
     let mut map_metadata = crate::app::shell_network_setup::local_map_metadata(
-        state.platform.game_config.as_ref(),
-        &state.frontend.scenario_catalog,
-        &state.process_assets,
+        game_config.as_ref(),
+        scenario_catalog,
+        process_assets,
         &file,
     )?;
     map_metadata.digest = "another version".into();
@@ -1649,24 +1655,22 @@ fn unverified_host_options(state: &AppState) -> Result<NetworkSetupEvent> {
                 crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
             observer_row: None,
             cooperative_difficulty: 0,
-            seed: state.match_state.session.network_start_seed(),
+            seed: session.network_start_seed(),
         },
     ))
 }
 
-fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
-    state
-        .frontend
-        .network_setup_protocol
+fn setup_requests(
+    network_setup_protocol: &mut Option<NetworkSetupProtocol>,
+) -> Vec<NetworkSetupRequest> {
+    network_setup_protocol
         .as_mut()
         .map(|protocol| protocol.take_service_requests())
         .unwrap_or_default()
 }
 
-fn setup_chat_has(state: &AppState, text: &str) -> Result<bool> {
-    Ok(state
-        .frontend
-        .multiplayer_setup
+fn setup_chat_has(multiplayer_setup: &Option<MultiplayerSetupState>, text: &str) -> Result<bool> {
+    Ok(multiplayer_setup
         .as_ref()
         .context("C2/C9")?
         .chat
@@ -1680,25 +1684,42 @@ fn press_header(
     state: &mut AppState,
     group: crate::ui::multiplayer_setup::SetupGroup,
 ) -> Result<()> {
-    let view = setup_view(state)?;
+    let view = setup_view(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )?;
     let row = view
         .headers
         .iter()
         .position(|header| header.as_ref().is_some_and(|header| header.group == group))
         .with_context(|| format!("{group:?}'s header"))?;
-    let rect = crate::app::input::multiplayer_setup::layout(state).header_controls[row].0;
+    let rect = crate::app::input::multiplayer_setup::layout(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .header_controls[row]
+        .0;
     setup_click(state, rect);
     Ok(())
 }
 
 fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
-    let rect = crate::app::input::multiplayer_setup::layout(state)
-        .page
-        .buttons
-        .into_iter()
-        .find(|button| button.id == id)
-        .context("setup button")?
-        .rect;
+    let rect = crate::app::input::multiplayer_setup::layout(
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+    )
+    .page
+    .buttons
+    .into_iter()
+    .find(|button| button.id == id)
+    .context("setup button")?
+    .rect;
     setup_click(state, rect);
     Ok(())
 }
@@ -1717,12 +1738,12 @@ struct MyInfoShown {
     texts: Vec<(u16, String)>,
 }
 
-fn my_info_shown(state: &AppState) -> Result<MyInfoShown> {
+fn my_info_shown(frontend: &FrontendState) -> Result<MyInfoShown> {
     use crate::app::shell_wol::my_info;
     use crate::ui::wol_my_info::*;
-    let page = my_info::page(state.frontend.wol.as_ref()).context("0x114")?;
-    let root = my_info::root(&state.frontend.shell_controller).context("0x114's widgets")?;
-    let gui = state.frontend.shell_controller.gui();
+    let page = my_info::page(frontend.wol.as_ref()).context("0x114")?;
+    let root = my_info::root(&frontend.shell_controller).context("0x114's widgets")?;
+    let gui = frontend.shell_controller.gui();
     let flag = |id: u16, prop: Prop| {
         crate::ui::shell::page::get(gui, root, id, prop) != Some(&vera20k_gui::Value::Bool(false))
     };
@@ -1741,8 +1762,8 @@ fn my_info_shown(state: &AppState) -> Result<MyInfoShown> {
     })
 }
 
-fn layout_button(state: &AppState, id: u16) -> Result<RectPx> {
-    crate::app::shell_wol::my_info::layout(state)
+fn layout_button(gpu: &GpuContext, id: u16) -> Result<RectPx> {
+    crate::app::shell_wol::my_info::layout(gpu)
         .page
         .button_rect(id)
         .context("0x114 button")

@@ -1,8 +1,8 @@
 """The scale benchmark's client half: the game plays the battle, hidden.
 
-`tools.scale_bench` calls [`time_client`]. The game is the shipped one: built
-with the release workflow's command (`--profile shipping --no-default-features`)
-and started as a launcher starts it, `vera20k -SPAWN` in a folder holding
+`tools.scale_bench` calls [`time_client`]. The game uses the shipping profile
+and release features (`--profile shipping --no-default-features`). It starts as
+a launcher starts it, `vera20k -SPAWN` in a folder holding
 `spawn.ini` and the map (docs/spawn.md), one human against 29 computer houses.
 Three spawn-only test switches make it a benchmark (tools/spawn/README.md):
 `VERA20K_SPAWN_HIDDEN_WINDOW=1` keeps the window invisible,
@@ -28,8 +28,6 @@ ROOT = scale_bench.ROOT
 # battle scenario has them (`BATTLE_WARMUP`, `BATTLE_TICKS`).
 WARMUP_FRAMES = 300
 MEASURED_FRAMES = 2700
-# The picture the game draws: a 1080p window at the default zoom.
-SCREEN = (1920, 1080)
 # One human and 29 computer houses fill the map's 30 starts.
 COMPUTERS = 29
 # Seed and game speed of the launch. Speed 1 is the 45 frames a second the
@@ -64,18 +62,23 @@ def spawn_ini(computers: int = COMPUTERS, seed: int = SEED) -> str:
     )
 
 
-def launch_folder(folder: Path, map_path: Path) -> Path:
+def launch_folder(folder: Path, map_path: Path, *, computers: int = COMPUTERS, seed: int = SEED) -> Path:
     """Write the folder a launcher starts the game in. Machine paths stay in
     it and never enter the repository."""
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
-    (folder / 'spawn.ini').write_text(spawn_ini(), encoding='ascii', newline='\n')
+    (folder / 'spawn.ini').write_text(spawn_ini(computers, seed), encoding='ascii', newline='\n')
     shutil.copyfile(map_path, folder / 'spawnmap.ini')
     (folder / 'config.toml').write_text(
         f'[paths]\nra2_dir = {json.dumps(os.environ["RA2_DIR"])}\nsettings_dir = "."\n',
         encoding='utf-8', newline='\n')
-    (folder / 'VERA.INI').write_text(
-        f'[Video]\nScreenWidth={SCREEN[0]}\nScreenHeight={SCREEN[1]}\n', encoding='ascii', newline='\n')
+    # An empty profile, so every option is its default: with none, the game
+    # would import the retail folder's RA2MD.INI (`profile_file::import_legacy`).
+    # The picture is the hidden window's, 1024x768 at the default zoom: the
+    # window opens at VERA's launch size (`VERA_LAUNCH_WINDOW_SIZE`) and a match
+    # draws at its window's size. `[Video]` `ScreenWidth` and `ScreenHeight` do
+    # not size the window.
+    (folder / 'VERA.INI').write_bytes(b'')
     return folder
 
 
@@ -101,6 +104,12 @@ def client_run(binary: Path, folder: Path, frames: tuple[int, int], timeout: flo
         raise scale_bench.BenchError(
             f'the game left no frame cost (exit {done.returncode}, {error!r}); '
             f'see {folder / "stdout.log"} and {folder / "logs"}') from None
+    # A win, loss or draw has its own exit code. A crash after writing a
+    # complete receipt must still fail the run.
+    if done.returncode != report.get('exit_code'):
+        raise scale_bench.BenchError(
+            f'the game exited with {done.returncode}, but reported {report.get("result")} '
+            f'with exit code {report.get("exit_code")}')
     if report.get('result') == 'failed' or cost.get('last_frame', 0) < last:
         raise scale_bench.BenchError(
             f'the match ended early ({report.get("result")}, frame {cost.get("last_frame")} of {last}): '

@@ -113,14 +113,16 @@ where
         // but still reaches the shared RemainingEC decrement at62CE86.
         ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
-            tick_smoke_particle(p, pt, sim.session.binary_frame(), &mut sim.scenario_rng);
+            // Scenario's stream, or a presentation particle's own.
+            let frame = sim.session.binary_frame();
+            tick_smoke_particle(p, pt, frame, sim.particle_stream());
             return Ok(()); // The Smoke arm's owner runs the lifetime tail.
         }
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
         // read the parent system's +FC source House regardless of its own
         // BehavesLike. Smoke, Fire and Spark retain that same reference.
-        // RESIDUAL: a Gas or Fire child of a host of another behaviour (mod
-        // data only) damages with the rules-only context below, not the
+        // RESIDUAL: a Gas, Fire or Web child of a host of another behaviour
+        // (mod data only) damages with the rules-only context below, not the
         // frame's: its kills' sounds wait for the next flush, and the overlay
         // table and extension callbacks (bounty text) are absent.
         ParticleBehavesLike::Gas => super::gas::tick_particle(
@@ -155,6 +157,12 @@ where
             // Dispatch62CE81 -> AI_Railgun62C3A0, then the shared tail.
             super::railgun::tick_particle(p, pt, sim.particle_rng())?;
         }
+        // Firestorm 2.0 0x005A4400 (case 5) -> AI_Web 0x005A4310, then the
+        // same tail (0x005A444C). A Gas or Web system runs its own Web
+        // particles with its frame's context ([`super::gas::tick_system`]).
+        ParticleBehavesLike::Web => {
+            super::web::tick_particle(p, sim, rules, crate::sim::world::UninitContext::new(rules))
+        }
     }
     finish_lifetime(p);
     Ok(())
@@ -177,10 +185,10 @@ pub(super) fn tick_smoke_particle(
 
 /// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
 /// AI_Fire call for each particle, by the particle's own behavior: Gas
-/// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark and
-/// Railgun particles do not move here. A refused move leaves the particle
-/// where it is and marks it; like a move's own bridge-deck mark, the next
-/// destroy walk removes it.
+/// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark,
+/// Railgun and Web particles do not move here. A refused move leaves the
+/// particle where it is and marks it; like a move's own bridge-deck mark, the
+/// next destroy walk removes it.
 pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &RuleSet) {
     let pt = rules.particle_type(p.type_id);
     let moved = match pt.behaves_like {
@@ -192,8 +200,11 @@ pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &R
             super::fire::move_fire(p, sim);
             Ok(())
         }
+        // Firestorm 2.0's move dispatch (0x005A4B30) leaves a Web particle
+        // where it is, as it does Spark and Railgun.
         ParticleBehavesLike::Spark
         | ParticleBehavesLike::Railgun
+        | ParticleBehavesLike::Web
         | ParticleBehavesLike::Unknown => Ok(()),
     };
     if let Err(error) = moved {
@@ -230,7 +241,12 @@ pub(crate) fn tick_particle_system(
         finish_system_visit(sim, id, context);
         return true;
     }
-    if behavior == ParticleSystemBehavesLike::Gas {
+    // Firestorm 2.0 `ParticleSystemClass::AI_Web` 0x005A7170 walks its
+    // particles as the Gas system does (see `super::web`).
+    if matches!(
+        behavior,
+        ParticleSystemBehavesLike::Gas | ParticleSystemBehavesLike::Web
+    ) {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
         super::gas::tick_system(sim, rules, id, context.reborrow());
@@ -302,7 +318,9 @@ fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleS
         // then still reaches its lifetime and retirement tail.
         ParticleSystemBehavesLike::Unknown => {}
         ParticleSystemBehavesLike::Smoke => unreachable!("Smoke retains its body during callbacks"),
-        ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
+        ParticleSystemBehavesLike::Gas | ParticleSystemBehavesLike::Web => {
+            unreachable!("Gas and Web retain their body during callbacks")
+        }
         ParticleSystemBehavesLike::Fire => unreachable!("Fire retains its body during callbacks"),
         ParticleSystemBehavesLike::Spark => tick_spark(sys, sim, rules),
         ParticleSystemBehavesLike::Railgun => super::railgun::tick_system(sys, sim, rules),

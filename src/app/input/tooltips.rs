@@ -7,9 +7,9 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
 use crate::app::PlatformState;
 use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::chrome_input::{
     ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
 };
@@ -105,36 +105,53 @@ pub(crate) fn now_ms(diag: &DiagnosticsState, match_state: &MatchState) -> u64 {
 }
 
 /// CursorMoved feed (all screens).
-pub(crate) fn on_mouse_move(state: &mut AppState) {
-    let now = now_ms(&state.diag, &state.match_state);
-    if state.match_state.paused() || state.frontend.keyboard_dialog.is_some() {
-        state.match_state.match_presentation.tooltips.on_button(now);
+pub(crate) fn on_mouse_move(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    let now = now_ms(diag, match_state);
+    if match_state.paused() || frontend.keyboard_dialog.is_some() {
+        match_state.match_presentation.tooltips.on_button(now);
         return;
     }
-    let (x, y) = state.match_state.input.cursor_px();
-    let in_game = state.frontend.screen == GameScreen::InGame;
-    if in_game && state.match_state.input.cursor_coordinates {
+    let (x, y) = match_state.input.cursor_px();
+    let in_game = frontend.screen == GameScreen::InGame;
+    if in_game && match_state.input.cursor_coordinates {
         // Native724200 resolves the current region/text at the mouse move,
         // including ordinary sidebar tips while the coordinate toggle is on.
-        sync_in_game_regions(state, TextDemand::At(x, y));
-        state
-            .match_state
+        sync_in_game_regions(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            TextDemand::At(x, y),
+        );
+        match_state
             .match_presentation
             .tooltips
             .on_mouse_move_immediate(x, y, now);
     } else {
         // A zero delay (a highlighted cameo) takes the same immediate path:
         // the region the move enters shows its text resolved at the move.
-        if in_game
-            && state
-                .match_state
-                .match_presentation
-                .tooltips
-                .shows_on_move()
-        {
-            sync_in_game_regions(state, TextDemand::At(x, y));
+        if in_game && match_state.match_presentation.tooltips.shows_on_move() {
+            sync_in_game_regions(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                persistence,
+                TextDemand::At(x, y),
+            );
         }
-        let tips = &mut state.match_state.match_presentation.tooltips;
+        let tips = &mut match_state.match_presentation.tooltips;
         tips.on_mouse_move(x, y, now);
     }
 }
@@ -169,21 +186,33 @@ pub(crate) fn on_button_event(diag: &DiagnosticsState, match_state: &mut MatchSt
 
 /// Per-frame update: refresh regions for the live in-game surface, then pump
 /// the delayed-tooltip timer.
-pub(crate) fn update(state: &mut AppState) -> u64 {
-    let now = now_ms(&state.diag, &state.match_state);
-    if state.frontend.screen == GameScreen::InGame
-        && !state.match_state.paused()
-        && state.frontend.keyboard_dialog.is_none()
+pub(crate) fn update(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> u64 {
+    let now = now_ms(diag, match_state);
+    if frontend.screen == GameScreen::InGame
+        && !match_state.paused()
+        && frontend.keyboard_dialog.is_none()
     {
-        sync_in_game_regions(state, TextDemand::Pass(now));
+        sync_in_game_regions(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+            TextDemand::Pass(now),
+        );
     } else {
-        state
-            .match_state
-            .match_presentation
-            .tooltips
-            .sync_regions(&[]);
+        match_state.match_presentation.tooltips.sync_regions(&[]);
     }
-    state.match_state.match_presentation.tooltips.poll(now);
+    match_state.match_presentation.tooltips.poll(now);
     now
 }
 
@@ -267,7 +296,7 @@ fn tactical_world_tip_text_for_viewer(
     let sim = view.simulation();
     let own_order;
     let order = match frame {
-        Some(frame) => frame.display_order(sim).ordered(),
+        Some(frame) => frame.display_order().ordered(),
         None => {
             own_order = sim.display_draw_order(Some(rules));
             &own_order
@@ -466,9 +495,14 @@ fn unit_turret_tip_text(
     format!("{word} {own}")
 }
 
-fn tactical_tip_text(state: &AppState) -> String {
-    let input = &state.match_state.input;
-    let Some(view) = state.sim_view() else {
+fn tactical_tip_text(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> String {
+    let input = &match_state.input;
+    let Some(view) = match_state.sim_view() else {
         return String::new();
     };
     // Actual Mouse vtable7E1964+68 ->693060 runs before CursorCheat too.
@@ -480,18 +514,18 @@ fn tactical_tip_text(state: &AppState) -> String {
     }
     // CursorCheat returns coordinates before reaching the entity picker.
     if input.cursor_coordinates {
-        return tactical_tip_at_cursor(state, view);
+        return tactical_tip_at_cursor(platform, frontend, match_state, process_assets, view);
     }
     tactical_hover_text(
-        &state.match_state.sim_runtime,
+        &match_state.sim_runtime,
         &input.tactical_tip_seen,
         input.cursor_px(),
-        || tactical_tip_at_cursor(state, view),
+        || tactical_tip_at_cursor(platform, frontend, match_state, process_assets, view),
     )
 }
 
 /// The last tactical tip answered with the world home (`sim_host::home_answer`),
-/// in a cell because the tooltip draw asks through `&AppState`.
+/// in a cell because the tooltip draw asks through `&MatchState`.
 pub(crate) type TacticalTipAnswer = std::cell::RefCell<((i32, i32), String)>;
 
 /// Display::GetTooltipText (0x004AE4F0) picks live entities. The answer
@@ -507,51 +541,67 @@ fn tactical_hover_text(
     if at == cursor { text } else { String::new() }
 }
 
-fn tactical_tip_at_cursor(state: &AppState, view: crate::sim::runtime::SimView<'_>) -> String {
-    let input = &state.match_state.input;
-    let Some(rules) = state.rules() else {
+fn tactical_tip_at_cursor(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    view: crate::sim::runtime::SimView<'_>,
+) -> String {
+    let input = &match_state.input;
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return String::new();
     };
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        &state.match_state.input,
+        &match_state.input,
         input.cursor_x,
         input.cursor_y,
     );
-    let translucent_viewer =
-        crate::app::presentation::instances::translucent_fog_viewer(state, view.simulation());
+    let translucent_viewer = crate::app::presentation::instances::translucent_fog_viewer(
+        platform,
+        match_state,
+        view.simulation(),
+    );
     tactical_world_tip_text_for_viewer(
         view,
         rules,
-        state.process_assets.csf.as_ref(),
+        process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
         translucent_viewer,
-        state.match_state.sim_runtime.frame(),
+        match_state.sim_runtime.frame(),
     )
 }
 
-pub(crate) fn answer_kept_tactical_tip(state: &AppState) {
-    let input = &state.match_state.input;
-    let tips = &state.match_state.match_presentation.tooltips;
-    if state.frontend.screen == GameScreen::InGame
-        && !state.match_state.paused()
-        && state.frontend.keyboard_dialog.is_none()
+pub(crate) fn answer_kept_tactical_tip(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) {
+    let input = &match_state.input;
+    let tips = &match_state.match_presentation.tooltips;
+    if frontend.screen == GameScreen::InGame
+        && !match_state.paused()
+        && frontend.keyboard_dialog.is_none()
         && input.cursor_visibility.is_visible()
         && !input.cursor_coordinates
         && tips.may_read_text(
             ID_TACTICAL_TIP,
             tactical_tip_rect(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state.match_presentation,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation,
+                persistence,
             ),
         )
     {
         // Prepare during the show delay as well. It can expire while the
         // tick owns the world, before the next opportunity to pick.
-        let text = tactical_tip_text(state);
+        let text = tactical_tip_text(platform, frontend, match_state, process_assets);
         *input.tactical_tip_seen.borrow_mut() = (input.cursor_px(), text);
     } else {
         input.tactical_tip_seen.borrow_mut().1.clear();
@@ -662,6 +712,37 @@ fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> 
     formatted.replace(' ', "\n")
 }
 
+/// A client module's `ItemTooltips` text for the type of the cameo at
+/// `slot`, on a line after its tip (RFC 0001 appendix 7.10): the line the
+/// module wrote on the grid the cameo is in, the sidebar's own included. A
+/// super weapon is named by its section, any other cameo by its type.
+fn with_item_tooltip(
+    match_state: &MatchState,
+    view: &SidebarView,
+    slot: usize,
+    item: &crate::ui::sidebar::SidebarItem,
+    tip: String,
+) -> String {
+    let Some(ui) = match_state.ui_modules.as_ref() else {
+        return tip;
+    };
+    let type_name = item
+        .super_weapon_section
+        .as_deref()
+        .unwrap_or(&item.type_id);
+    let extra = crate::app::input::chrome_input::cameo_grid_node(
+        &match_state.match_presentation,
+        view,
+        slot,
+    )
+    .and_then(|grid| ui.item_tooltip(grid, type_name));
+    match extra {
+        Some(extra) if tip.is_empty() => extra,
+        Some(extra) => format!("{tip}\n{extra}"),
+        None => tip,
+    }
+}
+
 fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) -> String {
     if amount < 0 {
         cameo_tip_text(money_format, name, Some(-i64::from(amount)))
@@ -676,11 +757,15 @@ fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) ->
 /// the description line last; the stock text never carries it because the
 /// hooks (`0x6A9316`, `0x4AE51E`) return before `HelpText_*` when
 /// `ExtendedToolTips` is off.
-fn ui_description(state: &AppState, label: Option<&str>) -> Option<String> {
-    if !state.match_state.match_presentation.tool_tip_descriptions {
+fn ui_description(
+    process_assets: &ProcessAssets,
+    presentation: &MatchPresentationState,
+    label: Option<&str>,
+) -> Option<String> {
+    if !presentation.tool_tip_descriptions {
         return None;
     }
-    label.map(|label| state.csf_text(label))
+    label.map(|label| process_assets.csf_text(label))
 }
 
 /// Phobos `PhobosToolTip::TickTimeToSeconds` (`Misc/PhobosToolTip.cpp:115-134`).
@@ -699,8 +784,10 @@ struct TooltipClock {
 }
 
 impl TooltipClock {
-    fn for_state(state: &AppState, sim: &crate::sim::world::Simulation) -> Self {
-        let presentation = &state.match_state.match_presentation;
+    fn for_presentation(
+        presentation: &MatchPresentationState,
+        sim: &crate::sim::world::Simulation,
+    ) -> Self {
         Self {
             real_time: presentation.real_time_timers,
             adaptive: presentation.real_time_timers_adaptive,
@@ -766,18 +853,13 @@ fn extended_techno_tip(
 /// The building arm of Phobos' `GetPower` for the local owner
 /// ([`Simulation::cameo_power_delta`]). `None` when the value is zero, which
 /// prints no line, or while the simulation view is unavailable.
-fn extended_techno_power(state: &AppState, type_id: &str) -> Option<i32> {
-    let view = state.sim_view()?;
-    let sim = view.simulation();
-    let (Some(rules), Some(owner)) = (
-        state.rules(),
-        state
-            .match_state
-            .local_player_owner()
-            .and_then(|name| sim.interner().get(name)),
-    ) else {
-        return None;
-    };
+fn extended_techno_power(match_state: &MatchState, type_id: &str) -> Option<i32> {
+    let runtime = match_state.sim_runtime.runtime()?;
+    let sim = &runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let owner = match_state
+        .local_player_owner()
+        .and_then(|name| sim.interner().get(name))?;
     let object = rules.object(type_id)?;
     let power = sim.cameo_power_delta(rules, owner, object);
     (power != 0).then_some(power)
@@ -839,41 +921,40 @@ fn extended_super_tip(
 /// [`tooltip_build_time`](crate::sim::production::tooltip_build_time) for the
 /// local owner, in printed seconds. `54` (the native minimum) stands in while
 /// the simulation view is unavailable.
-fn extended_techno_seconds(state: &AppState, type_id: &str) -> i32 {
-    let Some(view) = state.sim_view() else {
+fn extended_techno_seconds(match_state: &MatchState, type_id: &str) -> i32 {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return 54 / 15;
     };
-    let sim = view.simulation();
-    let (Some(rules), Some(owner)) = (
-        state.rules(),
-        state
-            .match_state
-            .local_player_owner()
-            .and_then(|name| sim.interner().get(name)),
-    ) else {
+    let sim = &runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let Some(owner) = match_state
+        .local_player_owner()
+        .and_then(|name| sim.interner().get(name))
+    else {
         return 54 / 15;
     };
     let Some(object) = rules.object(type_id) else {
         return 54 / 15;
     };
     let frames = crate::sim::production::tooltip_build_time(sim, rules, owner, object);
-    tooltip_seconds(frames, &TooltipClock::for_state(state, sim))
+    tooltip_seconds(
+        frames,
+        &TooltipClock::for_presentation(&match_state.match_presentation, sim),
+    )
 }
 
 /// The super tooltip's recharge seconds and `SW.Shots` pair for the local
 /// owner ([`super_tooltip_facts`](crate::sim::superweapon::super_tooltip_facts)).
-fn extended_super_facts(state: &AppState, section: &str) -> (i32, Option<(i32, i32)>) {
-    let Some(view) = state.sim_view() else {
+fn extended_super_facts(match_state: &MatchState, section: &str) -> (i32, Option<(i32, i32)>) {
+    let Some(runtime) = match_state.sim_runtime.runtime() else {
         return (0, None);
     };
-    let sim = view.simulation();
-    let (Some(rules), Some(owner)) = (
-        state.rules(),
-        state
-            .match_state
-            .local_player_owner()
-            .and_then(|name| sim.interner().get(name)),
-    ) else {
+    let sim = &runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let Some(owner) = match_state
+        .local_player_owner()
+        .and_then(|name| sim.interner().get(name))
+    else {
         return (0, None);
     };
     let Some(facts) = crate::sim::superweapon::super_tooltip_facts(sim, rules, &owner, section)
@@ -881,7 +962,10 @@ fn extended_super_facts(state: &AppState, section: &str) -> (i32, Option<(i32, i
         return (0, None);
     };
     (
-        tooltip_seconds(facts.recharge_frames, &TooltipClock::for_state(state, sim)),
+        tooltip_seconds(
+            facts.recharge_frames,
+            &TooltipClock::for_presentation(&match_state.match_presentation, sim),
+        ),
         facts.shots,
     )
 }
@@ -909,10 +993,25 @@ fn radar_button_tip_labels(game_mode_nonzero: bool) -> [(u16, &'static str); 2] 
     [(ID_DIPLOMACY, diplomacy), (ID_OPTIONS, "Tip:OptionsButton")]
 }
 
-fn sync_in_game_regions(state: &mut AppState, demand: TextDemand) {
-    let regions = in_game_regions(state, demand);
-    state
-        .match_state
+fn sync_in_game_regions(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    demand: TextDemand,
+) {
+    let regions = in_game_regions(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        demand,
+    );
+    match_state
         .match_presentation
         .tooltips
         .sync_regions(&regions);
@@ -922,11 +1021,19 @@ fn sync_in_game_regions(state: &mut AppState, demand: TextDemand) {
 /// arrows from their `Tip:*` labels (with the disabled suffix), repair/sell
 /// from direct CSF keys, cameos through the money format. Only the text
 /// `demand` reads is resolved.
-fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
-    let Some(view) = current_sidebar_view(&state.match_state.match_presentation) else {
+fn in_game_regions(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    demand: TextDemand,
+) -> Vec<TipRegion> {
+    let Some(view) = current_sidebar_view(&match_state.match_presentation) else {
         return Vec::new();
     };
-    let tips = &state.match_state.match_presentation.tooltips;
+    let tips = &match_state.match_presentation.tooltips;
     let region = |id: u32, rect: TipRect, text: &dyn Fn() -> String| TipRegion {
         id,
         rect,
@@ -936,8 +1043,14 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
             String::new()
         },
     };
-    let frame = state.sidebar_frame();
-    let cursor = state.match_state.input.cursor_visibility;
+    let frame = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    );
+    let cursor = match_state.input.cursor_visibility;
     let mut regions: Vec<TipRegion> = Vec::with_capacity(9 + view.items.len());
     // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
@@ -945,25 +1058,28 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     regions.push(region(
         ID_TACTICAL_TIP,
         tactical_tip_rect(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
         ),
-        &|| dynamic_tip_text(cursor, || tactical_tip_text(state)),
+        &|| {
+            dynamic_tip_text(cursor, || {
+                tactical_tip_text(platform, frontend, match_state, process_assets)
+            })
+        },
     ));
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
     // Each unlocked frame pass republishes these retained House values.
     let power_rect = crate::ui::sidebar::power_bar_rect(
         &view.layout,
-        state.match_state.match_presentation.sidebar_layout_spec,
+        match_state.match_presentation.sidebar_layout_spec,
     );
     regions.push(region(ID_POWER_TIP, tip_rect(frame, power_rect), &|| {
         dynamic_tip_text(cursor, || {
-            state
-                .process_assets
+            process_assets
                 .csf
                 .as_ref()
                 .map(|csf| {
@@ -981,55 +1097,54 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     for (i, tab) in view.tabs.iter().enumerate() {
         let id = ID_TAB_BASE + i as u16;
         regions.push(region(u32::from(id), tip_rect(frame, tab.rect), &|| {
-            sidebar_button_tip_text(&state.process_assets, cursor, view, id)
+            sidebar_button_tip_text(process_assets, cursor, view, id)
         }));
     }
     regions.push(region(
         crate::app::input::chrome_input::ID_REPAIR as u32,
         tip_rect(frame, view.repair_button.rect),
-        &|| state.csf_text("TXT_REPAIR_MODE"),
+        &|| process_assets.csf_text("TXT_REPAIR_MODE"),
     ));
     regions.push(region(
         crate::app::input::chrome_input::ID_SELL as u32,
         tip_rect(frame, view.sell_button.rect),
-        &|| state.csf_text("TXT_SELL_MODE"),
+        &|| process_assets.csf_text("TXT_SELL_MODE"),
     ));
     for (id, button) in [
         (ID_SCROLL_DOWN, &view.scroll_down_button),
         (ID_SCROLL_UP, &view.scroll_up_button),
     ] {
         regions.push(region(u32::from(id), tip_rect(frame, button.rect), &|| {
-            sidebar_button_tip_text(&state.process_assets, cursor, view, id)
+            sidebar_button_tip_text(process_assets, cursor, view, id)
         }));
     }
-    let game_mode_nonzero = state.match_state.session_mode().is_nonzero();
+    let game_mode_nonzero = match_state.session_mode().is_nonzero();
     for ((id, label), button) in radar_button_tip_labels(game_mode_nonzero)
         .into_iter()
         .zip(&view.top_buttons)
     {
         regions.push(region(u32::from(id), tip_rect(frame, button.rect), &|| {
-            state.csf_text(label)
+            process_assets.csf_text(label)
         }));
     }
     for (slot, item) in view.items.iter().enumerate() {
         let text = || {
             dynamic_tip_text(cursor, || {
-                if item.is_superweapon {
+                let tip = if item.is_superweapon {
                     // The retained view carries the same native UIName used for
                     // ordering. Only explicitly paid Supers add a localized cost.
                     let amount = item
                         .super_weapon_section
                         .as_deref()
                         .and_then(|name| {
-                            let rules = state.rules()?;
+                            let rules = crate::app::state::active_rules(frontend, match_state)?;
                             Some(crate::sim::superweapon::financial_type(
                                 rules,
                                 rules.super_weapon(name)?,
                             ))
                         })
                         .map_or(0, |sw| sw.money_amount);
-                    let money_format = state
-                        .process_assets
+                    let money_format = process_assets
                         .csf
                         .as_ref()
                         .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
@@ -1038,18 +1153,18 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                     // `ExtendedToolTips` switches the whole cameo tip to the
                     // Phobos text (`Misc/PhobosToolTip.cpp:19-21`); the stock
                     // text never carries the description.
-                    let tip = if state.process_assets.phobos_tooltips_ui.extended_tooltips {
+                    let tip = if process_assets.phobos_tooltips_ui.extended_tooltips {
                         let section = item.super_weapon_section.as_deref().unwrap_or_default();
-                        let (seconds, shots) = extended_super_facts(state, section);
+                        let (seconds, shots) = extended_super_facts(match_state, section);
                         let description = ui_description(
-                            state,
-                            state
-                                .rules()
+                            process_assets,
+                            &match_state.match_presentation,
+                            crate::app::state::active_rules(frontend, match_state)
                                 .and_then(|rules| rules.super_weapon(section))
                                 .and_then(|sw| sw.ui_description.as_deref()),
                         );
                         extended_super_tip(
-                            &state.process_assets.phobos_tooltips_ui,
+                            &process_assets.phobos_tooltips_ui,
                             &item.display_name,
                             amount,
                             seconds,
@@ -1061,8 +1176,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                     };
                     tip
                 } else {
-                    let money_format = state
-                        .process_assets
+                    let money_format = process_assets
                         .csf
                         .as_ref()
                         .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
@@ -1071,27 +1185,26 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         &item.display_name,
                         item.cost.map(i64::from),
                     );
-                    let tip = if state.process_assets.phobos_tooltips_ui.extended_tooltips {
+                    let tip = if process_assets.phobos_tooltips_ui.extended_tooltips {
                         match item.cost {
                             Some(cost) => {
                                 let description = ui_description(
-                                    state,
-                                    state
-                                        .rules()
+                                    process_assets,
+                                    &match_state.match_presentation,
+                                    crate::app::state::active_rules(frontend, match_state)
                                         .and_then(|rules| rules.object(&item.type_id))
                                         .and_then(|object| object.ui_description.as_deref()),
                                 );
                                 extended_techno_tip(
-                                    &state.process_assets.phobos_tooltips_ui,
-                                    &state
-                                        .match_state
+                                    &process_assets.phobos_tooltips_ui,
+                                    &match_state
                                         .match_presentation
                                         .sidebar_indicators
                                         .power_label,
-                                    extended_techno_power(state, &item.type_id),
+                                    extended_techno_power(match_state, &item.type_id),
                                     &item.display_name,
                                     i64::from(cost),
-                                    extended_techno_seconds(state, &item.type_id),
+                                    extended_techno_seconds(match_state, &item.type_id),
                                     description.as_deref(),
                                 )
                             }
@@ -1103,7 +1216,8 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         tip
                     };
                     tip
-                }
+                };
+                with_item_tooltip(match_state, view, slot, item, tip)
             })
         };
         regions.push(region(
@@ -1115,31 +1229,35 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // TabClass::ToggleSidebar 0x006D04F0 registers the command bar's tips
     // after SidebarClass's own; a labelled tip reads its CSF text directly.
     for (id, rect, label) in crate::app::input::chrome_input::command_bar_tooltips(
-        &crate::app::input::chrome_input::command_bar_places(state),
+        &crate::app::input::chrome_input::command_bar_places(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        ),
     ) {
         regions.push(region(
             u32::from(id),
             TipRect::new(rect.x, rect.y, rect.w, rect.h),
-            &|| state.csf_text(label),
+            &|| process_assets.csf_text(label),
         ));
     }
     // Phobos left superweapon sidebar: `SWButtonClass` shows the same super
     // weapon name/cost tip as the right cameo.
     {
-        let presentation = &state.match_state.match_presentation;
+        let presentation = &match_state.match_presentation;
         let sw = &presentation.sw_sidebar;
         if sw.ui.enabled && presentation.sidebar_projection.model.sw_sidebar_expanded() {
             for (index, entry) in sw.entries.iter().enumerate() {
                 let text = dynamic_tip_text(cursor, || {
-                    let amount = state
-                        .rules()
+                    let amount = crate::app::state::active_rules(frontend, match_state)
                         .and_then(|rules| {
                             let super_type = rules.super_weapon(&entry.type_id)?;
                             Some(crate::sim::superweapon::financial_type(rules, super_type))
                         })
                         .map_or(0, |super_type| super_type.money_amount);
-                    let money_format = state
-                        .process_assets
+                    let money_format = process_assets
                         .csf
                         .as_ref()
                         .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
@@ -1148,17 +1266,17 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         &entry.view.display_name,
                         amount,
                     );
-                    if state.process_assets.phobos_tooltips_ui.extended_tooltips {
-                        let (seconds, shots) = extended_super_facts(state, &entry.type_id);
+                    if process_assets.phobos_tooltips_ui.extended_tooltips {
+                        let (seconds, shots) = extended_super_facts(match_state, &entry.type_id);
                         let description = ui_description(
-                            state,
-                            state
-                                .rules()
+                            process_assets,
+                            &match_state.match_presentation,
+                            crate::app::state::active_rules(frontend, match_state)
                                 .and_then(|rules| rules.super_weapon(&entry.type_id))
                                 .and_then(|super_type| super_type.ui_description.as_deref()),
                         );
                         extended_super_tip(
-                            &state.process_assets.phobos_tooltips_ui,
+                            &process_assets.phobos_tooltips_ui,
                             &entry.view.display_name,
                             amount,
                             seconds,
@@ -1213,53 +1331,65 @@ fn tooltip_background(rules: &crate::rules::ruleset::RuleSet, side: i32) -> ([f3
 }
 
 pub(crate) fn build_tooltip_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     hud: &mut TextHud,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
 ) {
-    let Some(tip) = state.match_state.match_presentation.tooltips.active() else {
+    let Some(tip) = match_state.match_presentation.tooltips.active() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
-    if state.frontend.screen != GameScreen::InGame {
+    if frontend.screen != GameScreen::InGame {
         return (Vec::new(), Vec::new(), Vec::new());
     }
     // gamemd draws the tip in the current sidebar text colour, so the same
     // side-dependent colour the cameo labels use — not a fixed yellow. Ares
     // `[Side] ToolTipColor=` (`SideExt+80`, applied by
     // `Game_InitializeToolTipColor @ 0x1002F360`) replaces it.
-    let tint = state
-        .match_state
+    let tint = match_state
         .sim_runtime
         .runtime()
         .and_then(|runtime| {
             runtime
                 .resources
                 .rules
-                .side_tooltip_color(current_sidebar_side(state))
+                .side_tooltip_color(current_sidebar_side(frontend, match_state))
         })
         .map(|rgb| rgb.map(|channel| f32::from(channel) / 255.0))
         .unwrap_or_else(|| {
             crate::render::sidebar_text::side_text_tint(
-                state
-                    .match_state
-                    .match_presentation
-                    .sidebar_layout_spec
-                    .side_text,
+                match_state.match_presentation.sidebar_layout_spec.side_text,
             )
         });
-    let fill = state
-        .match_state
+    let fill = match_state
         .sim_runtime
         .runtime()
-        .map(|runtime| tooltip_background(&runtime.resources.rules, current_sidebar_side(state)))
+        .map(|runtime| {
+            tooltip_background(
+                &runtime.resources.rules,
+                current_sidebar_side(frontend, match_state),
+            )
+        })
         // Without a live Rules the stock opaque black stays.
         .unwrap_or(([0.0; 3], 1.0));
-    let cameo = cameo_tip_draw(state, tip.id);
+    let cameo = cameo_tip_draw(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        tip.id,
+    );
     draw_tooltip(
-        &state.renderer.bit_font,
+        &renderer.bit_font,
         &tip.text,
         [tip.x, tip.y],
         // The whole render surface, not the tactical viewport: gamemd lets the
@@ -1268,8 +1398,8 @@ pub(crate) fn build_tooltip_instances(
         [
             0.0,
             0.0,
-            state.render_width() as f32,
-            state.render_height() as f32,
+            renderer.render_width(&frontend.screen) as f32,
+            renderer.render_height(&frontend.screen) as f32,
         ],
         tint,
         // All three tooltip lanes are drawn by `draw_pooled_ui`, which binds
@@ -1279,22 +1409,13 @@ pub(crate) fn build_tooltip_instances(
         // both do. `tip.x/y` are cursor coordinates, already screen space, so
         // without this the popup is displaced by the whole camera offset and
         // leaves the screen as soon as the player scrolls.
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        [match_state.input.camera_x, match_state.input.camera_y],
         // The darken strip is only the "a real FNT loaded" sentinel here (the
         // 5x7 fallback builds none); the pop-up itself no longer draws with it.
-        state
-            .renderer
-            .bit_font
-            .darken_texture()
-            .is_some()
-            .then_some(fill),
+        renderer.bit_font.darken_texture().is_some().then_some(fill),
         cameo,
-        state.renderer.bit_font.darken_texture().is_some(),
-        crate::app::presentation::field_parts::layout(&state.match_state.match_presentation)
-            .tooltip,
+        renderer.bit_font.darken_texture().is_some(),
+        crate::app::presentation::field_parts::layout(&match_state.match_presentation).tooltip,
         hud,
     )
 }
@@ -1332,28 +1453,35 @@ fn cameo_wrap_width(max_width: i32, view_width: u32) -> u32 {
 }
 
 /// The cameo draw overrides for tip id `id`, or `None` for every other tip.
-fn cameo_tip_draw(state: &AppState, id: u32) -> Option<CameoTipDraw> {
+fn cameo_tip_draw(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+    id: u32,
+) -> Option<CameoTipDraw> {
     let in_cameo = (CAMEO_TIP_ID_BASE..CAMEO_TIP_ID_BASE + 1000).contains(&id)
         || (id >= SW_SIDEBAR_TIP_ID_BASE && id < SW_SIDEBAR_TIP_ID_BASE + 1000);
     if !in_cameo {
         return None;
     }
-    let ui = &state.process_assets.phobos_tooltips_ui;
+    let ui = &process_assets.phobos_tooltips_ui;
     let (_, _, view_width, _) = crate::app::input::camera::tactical_viewport_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     let wrap_width = cameo_wrap_width(ui.max_width, view_width.max(0) as u32);
     let anchor = if ui.anchored_tooltips
         && ui.extended_tooltips
-        && state.match_state.match_presentation.tool_tip_descriptions
+        && match_state.match_presentation.tool_tip_descriptions
     {
         if id >= SW_SIDEBAR_TIP_ID_BASE {
-            state
-                .match_state
+            match_state
                 .match_presentation
                 .sw_sidebar
                 .entries
@@ -1363,8 +1491,16 @@ fn cameo_tip_draw(state: &AppState, id: u32) -> Option<CameoTipDraw> {
                     top: entry.rect.y,
                 })
         } else {
+            let sidebar = crate::app::state::sidebar_frame(
+                platform,
+                persistence,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation.sidebar_layout_spec,
+            );
             Some(TipAnchor::Sidebar {
-                left: state.render_width() as f32 - state.sidebar_frame().width_in_frame() as f32,
+                left: renderer.render_width(&frontend.screen) as f32
+                    - sidebar.width_in_frame() as f32,
             })
         }
     } else {

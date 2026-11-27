@@ -25,7 +25,7 @@ Launch
 ├─ Startup failure card (game files not found / menu failed to load / config.toml unreadable / settings folder unusable)
 │   ├─ Quit
 │   └─ Import Game Files (Android only) → Choose Folder / Cancel / Close
-├─ Update offer (desktop only, appears once the main menu is idle): Update or Download / Skip Version【[VERA] SkipUpdate】/ Later
+├─ Update offer (desktop only, appears before the main menu at startup, or once it is idle): Update or Download / Skip Version【[VERA] SkipUpdate】/ Later
 │
 └─ Main Menu
     ├─ Single Player
@@ -72,7 +72,6 @@ Launch
     │       ├─ Games list, players list (click opens the player card), Name/Ping sort, Refresh, Observe checkbox, chat, Emote
     │       ├─ Create Game: room name, password, max players, allow spectators, limit screen resolution, ranked game, lobby watching (Delayed/Off/Live) (all this run only)
     │       ├─ Join Game (a password-protected room opens the channel password box)
-    │       ├─ Join Any Game: joins the first listed game with a free seat and no password, else opens Create Game
     │       ├─ Under the games: search (game name or map), Hide full, Hide locked (this run only)
     │       ├─ Quick Match: progress and Cancel only, no preferences
     │       ├─ WOL Options: Play Music【[WOnline] LobMusic】, Translate chat into【[VERA] TranslateChat】,
@@ -152,7 +151,7 @@ In a match
 │   Ctrl+Alt+F Performance Stats, Alt+Enter Full Screen, Ctrl+Alt+L Lock Cursor, Ctrl+Alt+K Show String Keys,
 │   Ctrl+Alt+H Convenience Help,
 │   Ctrl+Alt+T superweapon building timers【[VERA] SuperweaponBuildingTimers; no Options control】,
-│   Alt+A relation colours; /pause and /resume in chat drive the shared pause
+│   Alt+A relation colours, Alt+T team colours; /pause and /resume in chat drive the shared pause
 └─ Result screens
     ├─ Skirmish / multiplayer score, campaign score: Continue only
     ├─ Co-op campaign results: Continue / Quit, chat

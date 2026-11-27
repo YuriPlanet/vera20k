@@ -37,11 +37,24 @@ pub(crate) struct ElectricBolts {
 
 impl ElectricBolts {
     pub(crate) fn create(&mut self, mut birth: ElectricBoltBirth) {
-        // Stock SpawnElectricBoltEffect (`0x006FD5F2..0x006FD606`) links a
-        // bolt only into an empty Unit `+0x6DC`; the slot holds the Unit's
-        // live owned bolt until that bolt's last pass (`0x004C29A9`). The
+        // SpawnElectricBoltEffect (`0x006FD5F2..0x006FD606`) links a bolt
+        // only into an empty Unit `+0x6DC`; the slot holds the Unit's live
+        // owned bolt until that bolt's last pass (`0x004C29A9`). The
         // Phobos `TechnoClass_InitEBolt` hook skips the whole slot test and
         // stores every bolt in `TechnoExt::ElectricBolts` instead.
+        if let Some(owner) = birth.owner
+            && self
+                .live
+                .iter()
+                .any(|bolt| bolt.birth.owner.is_some_and(|held| held.unit == owner.unit))
+        {
+            birth.owner = None;
+        }
+        self.live.push(Bolt {
+            phase: birth.phase,
+            birth,
+            decay: 0x10000,
+        });
     }
 
     /// Manager4C2830's owner arm, ahead of each bolt's draw: an owned bolt's

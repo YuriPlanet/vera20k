@@ -118,6 +118,12 @@ impl PathsConfig {
         self.mod_name.as_deref().filter(|name| !name.is_empty())
     }
 
+    /// Client extension modules' local key-value stores, one folder per mod
+    /// or map (RFC 0001 section 10, "Storage"; `app::ui_modules::storage`).
+    pub fn wasm_storage_dir(&self) -> PathBuf {
+        self.settings_dir.join("wasm-storage")
+    }
+
     /// VERA's own pictures of maps for the setup screens' previews, by each
     /// map's SHA-256 (`app::map_picture`).
     pub fn map_pictures_dir(&self) -> PathBuf {
@@ -370,7 +376,7 @@ impl GameConfig {
     }
 
     /// VERA: RA2 mode for this launch, once VERA.INI has been read: the
-    /// `-ra2` switch already recorded, or the player's saved Options choice
+    /// `-ra2` switch already recorded, or the player's saved edition
     /// (`[VERA] RA2Mode=`, `saved_choice`). Either turns it on for the whole
     /// process (`util::ra2_launch`) and selects its INI roots.
     pub fn use_ra2_mode(&mut self, saved_choice: bool) {

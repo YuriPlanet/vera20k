@@ -2,7 +2,6 @@
 //! Simulation owns the suspended frame; this owner keeps only its local input
 //! result. The shared shell controller owns button capture and keyboard routing.
 
-use crate::app::AppState;
 use crate::app::input::dialog_page;
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::DialogController;
@@ -63,9 +62,13 @@ pub(crate) fn labels(
 /// VERA-only: a frame that failed (`frame_stopped`, in any match) is an
 /// error, not a desync, so the box says so and points at the log instead of
 /// the checksum box's own out-of-sync text.
-pub(crate) fn vera_body(state: &AppState) -> Option<String> {
-    let mut body = reason(state)?;
-    if state.match_state.frame_stopped
+pub(crate) fn vera_body(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<String> {
+    let mut body = reason(frontend, match_state, process_assets)?;
+    if match_state.frame_stopped
         && let Some(path) = crate::util::logging::log_file()
     {
         body.push_str("\n\n");
@@ -77,20 +80,26 @@ pub(crate) fn vera_body(state: &AppState) -> Option<String> {
     Some(body)
 }
 
-fn reason(state: &AppState) -> Option<String> {
-    if state.match_state.frame_stopped {
+fn reason(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<String> {
+    if match_state.frame_stopped {
         return Some(crate::i18n::tr("VERA:MatchInternalError"));
     }
-    match interruption(&state.match_state.sim_runtime)? {
+    match interruption(&match_state.sim_runtime)? {
         NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
             "VERA:MatchNeedsNewerVera",
             &[("url", &crate::app::web_link::DOWNLOAD_PAGE)],
         )),
-        NetworkInterruption::ConnectionFailed if online(&state.match_state) => {
+        NetworkInterruption::ConnectionFailed if online(match_state) => {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
         NetworkInterruption::FederationLost => Some(crate::i18n::tr("VERA:FederationLost")),
-        NetworkInterruption::StartMismatch => Some(start_mismatch_text(state)),
+        NetworkInterruption::StartMismatch => {
+            Some(start_mismatch_text(frontend, match_state, process_assets))
+        }
         NetworkInterruption::StartCancelled => Some(crate::i18n::tr("VERA:MatchStartCancelled")),
         _ => None,
     }
@@ -104,24 +113,24 @@ fn reason(state: &AppState) -> Option<String> {
 /// (docs/spawn.md). Those parts leave the terrain files, the picture and
 /// model files and that Ares answer out, so a match that read such files or
 /// has that answer does not point there.
-fn start_mismatch_text(state: &AppState) -> String {
+fn start_mismatch_text(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> String {
     use crate::app::shell_network_setup::agreement::{
         match_keeps_ares_off, match_picture_files, start_changes_text,
     };
     let mut text = crate::i18n::tr("VERA:MatchStartMismatch");
     text.push_str("\n\n");
     text.push_str(
-        &start_changes_text(
-            &state.frontend.mods,
-            &state.match_state.sim_runtime,
-            &state.process_assets,
-        )
-        .unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
+        &start_changes_text(&frontend.mods, &match_state.sim_runtime, process_assets)
+            .unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
     );
-    if state.frontend.external_launch
-        && !state.process_assets.match_reads_folder_terrain()
-        && !match_keeps_ares_off(&state.match_state.sim_runtime)
-        && match_picture_files(&state.match_state.sim_runtime, &state.process_assets).is_empty()
+    if frontend.external_launch
+        && !process_assets.match_reads_folder_terrain()
+        && !match_keeps_ares_off(&match_state.sim_runtime)
+        && match_picture_files(&match_state.sim_runtime, process_assets).is_empty()
     {
         text.push('\n');
         text.push_str(&crate::i18n::tr("VERA:LauncherShowsMismatch"));
@@ -135,17 +144,21 @@ fn online(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
 
 /// VERA: the box closes with the match, so its reason also waits for the
 /// chat the player lands in.
-fn hold_chat_line(state: &mut AppState) {
-    if !online(&state.match_state) {
+fn hold_chat_line(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) {
+    if !online(match_state) {
         return;
     }
-    let line = reason(state).or_else(|| {
-        let ((key, _), _) = labels(&state.match_state.sim_runtime);
-        let csf = state.process_assets.csf.as_ref()?;
+    let line = reason(frontend, match_state, process_assets).or_else(|| {
+        let ((key, _), _) = labels(&match_state.sim_runtime);
+        let csf = process_assets.csf.as_ref()?;
         Some(csf.get(key)?.to_string())
     });
     if let Some(line) = line {
-        crate::app::shell_wol::hold_problem_line(state.frontend.wol.as_mut(), line);
+        crate::app::shell_wol::hold_problem_line(frontend.wol.as_mut(), line);
     }
 }
 
@@ -227,46 +240,51 @@ pub(crate) fn pending(
 
 /// Also used for a restored suspended frame: no second mismatch record or
 /// independent simulation gate is kept in the app.
-pub(crate) fn show(state: &mut AppState) {
-    if state.match_state.network_failure.is_none() {
-        if let Some(failure) = state
-            .match_state
+pub(crate) fn show(
+    platform: &crate::app::PlatformState,
+    shell_controller: &mut DialogController,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    if match_state.network_failure.is_none() {
+        if let Some(failure) = match_state
             .sim_runtime
             .runtime()
             .and_then(|rt| rt.simulation.pending_network_failure())
         {
             log::error!("{failure}");
         }
-        if let Some(failure) = state
-            .match_state
+        if let Some(failure) = match_state
             .sim_runtime
             .runtime()
             .and_then(|rt| rt.simulation.pending_network_interruption())
         {
             log::error!("{failure}");
         }
-        state.match_state.network_failure = Some(NetworkFailureModal::default());
-        state.match_state.input.cancel_tactical_drag();
-        state.match_state.input.keys_held.clear();
-        crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
+        match_state.network_failure = Some(NetworkFailureModal::default());
+        match_state.input.cancel_tactical_drag();
+        match_state.input.keys_held.clear();
+        crate::app::input::chrome_input::cancel(&mut match_state.match_presentation);
     }
-    state.frontend.shell_controller.ensure_active(DIALOG);
-    state.platform.window.request_redraw();
+    shell_controller.ensure_active(DIALOG);
+    platform.window.request_redraw();
 }
 
-pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
-    if !state
-        .match_state
+pub(crate) fn take_acknowledged(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> bool {
+    if !match_state
         .network_failure
         .as_ref()
         .is_some_and(|modal| modal.acknowledged)
     {
         return false;
     }
-    hold_chat_line(state);
-    state.match_state.network_failure = None;
-    if state.frontend.shell_controller.top_id() == Some(DIALOG) {
-        state.frontend.shell_controller.pop();
+    hold_chat_line(frontend, match_state, process_assets);
+    match_state.network_failure = None;
+    if frontend.shell_controller.top_id() == Some(DIALOG) {
+        frontend.shell_controller.pop();
     }
     true
 }
@@ -281,46 +299,117 @@ pub(crate) fn ok_pressed(shell_controller: &DialogController) -> bool {
     shell_controller.top_id() == Some(DIALOG) && dialog_page::pressed(shell_controller, control::OK)
 }
 
-pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
-    show(state);
+pub(crate) fn key(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    event: &KeyEvent,
+) {
+    show(platform, &mut frontend.shell_controller, match_state);
     if let PhysicalKey::Code(code) = event.physical_key {
         if !event.state.is_pressed() {
-            state.match_state.input.keys_held.remove(&code);
+            match_state.input.keys_held.remove(&code);
         } else if !event.repeat
             && let Some(key) = crate::ui::shell::controller::gui_key(code, false)
         {
-            route(state, InputEvent::Key(key));
+            route(
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                InputEvent::Key(key),
+            );
         }
     }
 }
 
-fn pointer(state: &mut AppState, down: Option<bool>) {
-    show(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    route(state, dialog_page::event_at(x, y, down));
+fn pointer(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    down: Option<bool>,
+) {
+    show(platform, &mut frontend.shell_controller, match_state);
+    let (x, y) = match_state.input.cursor_px();
+    route(
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        dialog_page::event_at(x, y, down),
+    );
 }
 
-fn route(state: &mut AppState, event: InputEvent) {
-    let ok = ok_rect(state.render_width() as i32, state.render_height() as i32);
-    let events = state
-        .match_state
+fn route(
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    event: InputEvent,
+) {
+    let ok = ok_rect(
+        renderer.render_width(&frontend.screen) as i32,
+        renderer.render_height(&frontend.screen) as i32,
+    );
+    let events = match_state
         .network_failure
         .as_mut()
         .expect("shown modal")
-        .input(&mut state.frontend.shell_controller, event, ok);
+        .input(&mut frontend.shell_controller, event, ok);
     // The box's owner-draw OK plays GUIMainButtonSound (0x0061376B).
-    dialog_page::play_cues(state, events);
+    dialog_page::play_cues(frontend, match_state, process_assets, sfx_player, events);
 }
 
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    pointer(state, None);
+pub(crate) fn cursor_moved(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+) {
+    pointer(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        None,
+    );
 }
 
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
+pub(crate) fn mouse(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+    button: MouseButton,
+    pressed: bool,
+) {
     if button == MouseButton::Left {
-        pointer(state, Some(pressed));
+        pointer(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            Some(pressed),
+        );
     } else {
-        show(state);
+        show(platform, &mut frontend.shell_controller, match_state);
     }
 }
 

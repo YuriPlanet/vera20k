@@ -10,7 +10,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::assets::{
     asset_manager::AssetManager, pal_file::Palette, pcx_file::PcxFile, shp_file::ShpFile,
 };
@@ -232,12 +237,16 @@ fn build_shp(
 /// (`BannerClass::Render`). The shapes sample the shared banner atlas; the
 /// texts bind the game font.
 pub(crate) fn build_banner_instances(
-    state: &mut AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     // The read-only phase gathers everything the tick loop needs; the loop
     // then borrows the presentation's blink store mutably on its own.
-    let banners: Vec<crate::sim::banner::RuntimeBanner> = state
-        .match_state
+    let banners: Vec<crate::sim::banner::RuntimeBanner> = match_state
         .sim_runtime
         .runtime()
         .map(|sim| sim.simulation.session().banners().to_vec())
@@ -245,11 +254,11 @@ pub(crate) fn build_banner_instances(
     if banners.is_empty() {
         return Default::default();
     }
-    let banner_types = state.rules().map(|rules| rules.banner_types().clone());
+    let banner_types = crate::app::state::active_rules(frontend, match_state)
+        .map(|rules| rules.banner_types().clone());
     // `CSF.VariableFormat` prints the variable's extended `Value`
     // (`BannerClass.cpp:146-155`); `None` renders no text at all.
-    let variables_values: Vec<Option<i32>> = state
-        .match_state
+    let variables_values: Vec<Option<i32>> = match_state
         .sim_runtime
         .runtime()
         .map(|sim| {
@@ -263,25 +272,22 @@ pub(crate) fn build_banner_instances(
         })
         .unwrap_or_default();
     let fallback_tint = crate::render::sidebar_text::credits_tint(
-        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+        crate::app::presentation::sidebar_render::current_sidebar_theme(frontend, match_state),
     )
     .map(|channel| (channel * 255.0).round() as u8);
-    let csf = state.process_assets.csf.as_ref();
+    let csf = process_assets.csf.as_ref();
     let (view_width, view_height) = crate::app::input::camera::tactical_viewport_size(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     let view = [view_width as i32, view_height as i32];
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let font = &state.renderer.bit_font;
+    let camera = [match_state.input.camera_x, match_state.input.camera_y];
+    let font = &renderer.bit_font;
 
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     reconcile_displays(&mut presentation.banners, &banners);
 
     let mut fills = Vec::new();
@@ -492,16 +498,6 @@ fn csf_resolved(csf: Option<&crate::assets::csf_file::CsfFile>, label: &str) -> 
 /// text lanes (the outcome draw sits at 0.00022, the message fills at
 /// 0.00023).
 const BANNER_DEPTH: f32 = 0.0002;
-
-/// The atlas the banner shape pool binds.
-pub(crate) fn texture(state: &AppState) -> Option<&BatchTexture> {
-    state
-        .match_state
-        .match_presentation
-        .banner_art
-        .as_ref()
-        .map(BannerArtSet::texture)
-}
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {

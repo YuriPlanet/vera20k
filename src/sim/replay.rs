@@ -25,6 +25,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{COMMAND_RECORD_LEN, CommandEnvelope, CommandRecord};
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::scenario_session::ScenarioPauseChange;
 use crate::sim::skirmish_cheats::SkirmishCheat;
 use crate::sim::world::Simulation;
 #[cfg(any(test, feature = "test-support"))]
@@ -709,13 +710,47 @@ pub enum ScenarioServiceInput {
 
 impl ScenarioServiceInput {
     pub fn apply(self, sim: &mut Simulation) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+        match self {
+            Self::Pause => ScenarioPauseInput::Pause.apply(sim).into(),
+            Self::Resume => ScenarioPauseInput::Resume.apply(sim).into(),
+            Self::ExpireTimedPause => ScenarioPauseInput::ExpireTimedPause.apply(sim).into(),
+            Self::StepChronoScreen => {
+                // These write the world outside a frame step.
+                sim.note_revision();
+                sim.step_chrono_screen()
+            }
+        }
+    }
+}
+
+/// The three [`ScenarioServiceInput`]s that change only the ScenarioPause
+/// 684060/684180 owner; [`Self::apply`] returns its typed change. Each
+/// records as the [`ScenarioServiceInput`] of the same name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenarioPauseInput {
+    Pause,
+    Resume,
+    ExpireTimedPause,
+}
+
+impl ScenarioPauseInput {
+    pub fn apply(self, sim: &mut Simulation) -> ScenarioPauseChange {
         // These write the world outside a frame step.
         sim.note_revision();
         match self {
             Self::Pause => sim.session.pause_scenario(0),
             Self::Resume => sim.session.resume_scenario(),
             Self::ExpireTimedPause => sim.session.expire_scenario_pause(),
-            Self::StepChronoScreen => sim.step_chrono_screen(),
+        }
+    }
+}
+
+impl From<ScenarioPauseInput> for ScenarioServiceInput {
+    fn from(input: ScenarioPauseInput) -> Self {
+        match input {
+            ScenarioPauseInput::Pause => Self::Pause,
+            ScenarioPauseInput::Resume => Self::Resume,
+            ScenarioPauseInput::ExpireTimedPause => Self::ExpireTimedPause,
         }
     }
 }
@@ -889,9 +924,10 @@ impl ReplayStartup {
         anyhow::ensure!(
             sim.path_batch_stats().is_some()
                 && sim.target_scans_batched()
-                && sim.effect_anims_presented(),
-            "standalone replay requires the normal App's batched paths, target scans and \
-             presentation effect anims"
+                && sim.effect_anims_presented()
+                && sim.turn_streams_separate(),
+            "standalone replay requires the normal App's batched paths, target scans, \
+             presentation effect anims and turn streams"
         );
         let map_name = match launch {
             ReplayLaunchInput::Slots(session) => crate::map::source::portable_map_name(
@@ -1064,6 +1100,18 @@ impl ReplayLog {
             self.record_service(RecordedServiceInput::Scenario(input));
         }
         effects
+    }
+
+    /// [`Self::apply_scenario_service`] for a pause service, with its typed
+    /// change: it records the same input at the same boundary.
+    pub fn apply_scenario_pause(
+        &mut self,
+        sim: &mut Simulation,
+        input: ScenarioPauseInput,
+    ) -> ScenarioPauseChange {
+        let change = input.apply(sim);
+        self.record_service(RecordedServiceInput::Scenario(input.into()));
+        change
     }
 
     /// Record every admitted cheat at the boundary where it changed the world.
@@ -1477,6 +1525,7 @@ fn prepare_authored_replay_world(sim: &mut Simulation) {
     sim.batch_path_searches();
     sim.batch_target_scans();
     sim.present_effect_anims();
+    sim.separate_turn_streams(true);
     sim.sleep_idle_objects_in_match();
 }
 
@@ -1537,9 +1586,10 @@ impl ReplayRunner {
         playback.verification(&loaded.runtime)
     }
 
-    pub(crate) fn record_campaign_stage(
+    /// Record an authored match from frame zero for the standalone verifier.
+    pub fn record_authored_match(
         scene: &mut crate::headless_scenario::HeadlessScenario,
-        start: &crate::sim::scenario_bootstrap::AuthoredCampaignStart,
+        launch: ReplayLaunchInput<'_>,
         frames: u32,
     ) -> Result<ReplayLog> {
         let sim = &mut scene.runtime.simulation;
@@ -1557,7 +1607,7 @@ impl ReplayRunner {
         });
         log.startup = Some(Box::new(ReplayStartup::capture(
             &scene.runtime,
-            ReplayLaunchInput::MapHouses(start),
+            launch,
             &scene.source,
             scene.map.ini.content_hash(),
             tick_ms,
@@ -1579,7 +1629,7 @@ impl ReplayRunner {
             )?;
             anyhow::ensure!(
                 frame.tick.frame_committed && frame.tick.state_hash.is_some(),
-                "campaign stopped before frame {}; reduce the requested frame count or inspect the stage's trigger holds",
+                "match stopped before frame {}; reduce the requested frame count or inspect the map's trigger holds",
                 index + 1
             );
             log.record_tick(
@@ -1970,6 +2020,7 @@ mod tests {
         sim.batch_path_searches();
         sim.batch_target_scans();
         sim.present_effect_anims();
+        sim.separate_turn_streams(true);
         assert_eq!(
             sim.houses()[&sim.session().current_house().unwrap()].native_scenario_name(),
             Some("ReplayGuest")

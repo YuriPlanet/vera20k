@@ -274,19 +274,20 @@ impl BattleOpening {
             host == state.match_state.session.host(),
             "Battle input role differs from admitted Session"
         );
-        self.observe_fighters(state)?;
-        self.observe_commands(state, frame)?;
-        self.observe_due_orders(state, frame)?;
-        self.observe_repair(state, frame)?;
+        self.observe_fighters(&state.match_state)?;
+        self.observe_commands(&state.frontend, &state.match_state, frame)?;
+        self.observe_due_orders(&state.match_state.sim_runtime, frame)?;
+        self.observe_repair(&state.frontend, &state.match_state, frame)?;
         if self.sale_enabled {
-            self.observe_sale(state, frame)?;
+            self.observe_sale(&state.frontend, &state.match_state, frame)?;
         }
-        self.observe_infantry(state, frame, actions)?;
-        self.observe_hit(state, frame, actions)?;
+        self.observe_infantry(&state.match_state, frame, actions)?;
+        self.observe_hit(&state.match_state.sim_runtime, frame, actions)?;
         let mut action = None;
         match self.step {
             Step::Select if frame >= 10 => {
-                let (id, _) = live_type(state, "AMCV")?.context("local retail AMCV")?;
+                let (id, _) =
+                    live_type(&state.match_state, "AMCV")?.context("local retail AMCV")?;
                 self.mcv = Some(id);
                 click_entity(state, id)?;
                 action = Some("select local AMCV with tactical mouse");
@@ -294,7 +295,7 @@ impl BattleOpening {
             }
             Step::Deploy => {
                 let id = self.mcv.context("selected MCV")?;
-                if simulation(state)?
+                if simulation(&state.match_state.sim_runtime)?
                     .entities()
                     .get(id)
                     .is_some_and(|e| e.seldom.selection.is_selected())
@@ -310,33 +311,55 @@ impl BattleOpening {
                 }
             }
             Step::Yard => {
-                if let Some((id, _)) = live_type(state, "GACNST")?
-                    && !simulation(state)?
+                if let Some((id, _)) = live_type(&state.match_state, "GACNST")?
+                    && !simulation(&state.match_state.sim_runtime)?
                         .entities()
                         .get(id)
                         .context("yard")?
                         .in_construction_bstate()
                 {
                     self.yard = Some(id);
-                    self.starting_credits = Some(credits(state)?);
-                    cameo(state, "GAPOWR", false)?;
+                    self.starting_credits = Some(credits(&state.match_state)?);
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     action = Some("GAPOWR cameo: Produce");
                     self.step = Step::Started;
                 }
             }
             Step::Started => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && factory.running
                     && factory.progress >= 2
                 {
                     self.first_product = factory.id;
-                    cameo(state, "GAPOWR", true)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        true,
+                    )?;
                     action = Some("running GAPOWR right-click: Suspend");
                     self.step = Step::Holding;
                 }
             }
             Step::Holding => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && !factory.running
                 {
                     ensure!(
@@ -354,55 +377,99 @@ impl BattleOpening {
                 frame: held_at,
                 progress,
             } => {
-                let factory =
-                    factory(state, ProductionCategory::Building)?.context("held Factory")?;
+                let factory = factory(&state.match_state, ProductionCategory::Building)?
+                    .context("held Factory")?;
                 ensure!(
                     factory.progress == progress && factory.id == self.first_product,
                     "held Factory changed progress or identity"
                 );
                 if frame >= held_at + 30 {
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     action = Some("held GAPOWR left-click: resume Produce");
                     self.step = Step::Resumed { progress };
                 }
             }
             Step::Resumed { progress } => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && factory.progress > progress
                 {
                     ensure!(
                         factory.id == self.first_product,
                         "resume replaced the paid product"
                     );
-                    cameo(state, "GAPOWR", true)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        true,
+                    )?;
                     action = Some("resumed Factory advanced; Suspend before cancellation");
                     self.step = Step::CancelHold;
                 }
             }
             Step::CancelHold => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && !factory.running
                 {
-                    cameo(state, "GAPOWR", true)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        true,
+                    )?;
                     action = Some("held GAPOWR right-click: Abandon");
                     self.step = Step::Cancelling;
                 }
             }
             Step::Cancelling => {
-                if factory(state, ProductionCategory::Building)?
+                if factory(&state.match_state, ProductionCategory::Building)?
                     .is_none_or(|factory| factory.id.is_none())
                 {
                     ensure!(
-                        Some(credits(state)?) == self.starting_credits,
+                        Some(credits(&state.match_state)?) == self.starting_credits,
                         "Abandon did not refund the paid production cost"
                     );
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     action = Some("observed full refund; restart GAPOWR");
                     self.step = Step::Completing;
                 }
             }
             Step::Completing => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && factory.complete
                 {
                     ensure!(
@@ -410,7 +477,18 @@ impl BattleOpening {
                         "cancelled product was reused"
                     );
                     self.placed_product = factory.id;
-                    cameo(state, "GAPOWR", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPOWR",
+                        false,
+                    )?;
                     ensure!(
                         state
                             .match_state
@@ -419,15 +497,31 @@ impl BattleOpening {
                             .is_some(),
                         "completed cameo did not enter manual placement"
                     );
-                    let cursor = placement_cursor(state, self.yard.context("yard")?, "GAPOWR")?;
-                    commands::place_ready_building_at_cell(state, "GAPOWR", cursor);
+                    let cursor = placement_cursor(
+                        &state.frontend,
+                        &state.match_state,
+                        self.yard.context("yard")?,
+                        "GAPOWR",
+                    )?;
+                    commands::place_ready_building_at_cell(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                        "GAPOWR",
+                        cursor,
+                    );
                     action = Some("complete GAPOWR cameo and tactical PLACE");
                     self.step = Step::Placing;
                 }
             }
             Step::Placing => {
-                if let Some((id, _)) = live_type(state, "GAPOWR")?
-                    && !simulation(state)?
+                if let Some((id, _)) = live_type(&state.match_state, "GAPOWR")?
+                    && !simulation(&state.match_state.sim_runtime)?
                         .entities()
                         .get(id)
                         .context("power plant")?
@@ -437,13 +531,24 @@ impl BattleOpening {
                         Some(id) == self.placed_product,
                         "PLACE replaced the paid product identity"
                     );
-                    cameo(state, "GAPILE", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPILE",
+                        false,
+                    )?;
                     self.step = Step::BarracksStarted;
                     action = Some("same paid GAPOWR completed; GAPILE cameo: Produce");
                 }
             }
             Step::BarracksStarted => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && let Some(id) = factory.id
                 {
                     self.barracks_product = Some(id);
@@ -452,14 +557,25 @@ impl BattleOpening {
                 }
             }
             Step::BarracksCompleting => {
-                if let Some(factory) = factory(state, ProductionCategory::Building)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Building)?
                     && factory.complete
                 {
                     ensure!(
                         factory.id == self.barracks_product,
                         "GAPILE completion replaced its paid identity"
                     );
-                    cameo(state, "GAPILE", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "GAPILE",
+                        false,
+                    )?;
                     ensure!(
                         state
                             .match_state
@@ -468,15 +584,31 @@ impl BattleOpening {
                             .is_some(),
                         "ready GAPILE did not enter placement"
                     );
-                    let cursor = placement_cursor(state, self.yard.context("yard")?, "GAPILE")?;
-                    commands::place_ready_building_at_cell(state, "GAPILE", cursor);
+                    let cursor = placement_cursor(
+                        &state.frontend,
+                        &state.match_state,
+                        self.yard.context("yard")?,
+                        "GAPILE",
+                    )?;
+                    commands::place_ready_building_at_cell(
+                        &state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                        "GAPILE",
+                        cursor,
+                    );
                     self.step = Step::BarracksPlacing;
                     action = Some("ready GAPILE cameo and tactical PLACE");
                 }
             }
             Step::BarracksPlacing => {
-                if let Some((id, _)) = live_type(state, "GAPILE")?
-                    && !simulation(state)?
+                if let Some((id, _)) = live_type(&state.match_state, "GAPILE")?
+                    && !simulation(&state.match_state.sim_runtime)?
                         .entities()
                         .get(id)
                         .context("barracks")?
@@ -486,10 +618,11 @@ impl BattleOpening {
                         Some(id) == self.barracks_product,
                         "GAPILE PLACE replaced its paid identity"
                     );
-                    let (clicked, prepared) = rally_click(state, id)?;
+                    let (clicked, prepared) =
+                        rally_click(&state.platform, &state.frontend, &state.match_state, id)?;
                     let eva_requests_added = planning_rally_with_mouse(state, id, clicked)?;
                     ensure!(
-                        simulation(state)?
+                        simulation(&state.match_state.sim_runtime)?
                             .entities()
                             .get(id)
                             .context("rallied GAPILE")?
@@ -516,22 +649,35 @@ impl BattleOpening {
                 if self.rally_executions[index].is_some()
                     && self.rally_planning_commits[index].is_some()
                 {
-                    let sim = simulation(state)?;
-                    let rules = state.rules().context("retail rules")?;
+                    let sim = simulation(&state.match_state.sim_runtime)?;
+                    let rules =
+                        crate::app::state::active_rules(&state.frontend, &state.match_state)
+                            .context("retail rules")?;
                     let owner = sim
                         .interner()
-                        .get(&local_owner(state)?)
+                        .get(&local_owner(&state.match_state.session)?)
                         .context("local House")?;
                     self.gi_cost =
                         Some(sim.cost_of(owner, rules.object("E1").context("retail E1")?, rules));
-                    self.gi_wallet = Some(wallet(state)?);
-                    cameo(state, "E1", false)?;
+                    self.gi_wallet = Some(wallet(&state.match_state)?);
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "E1",
+                        false,
+                    )?;
                     self.step = Step::GiStarted;
                     action = Some("raw ARCHIVE executed on GAPILE; E1 cameo: Produce");
                 }
             }
             Step::GiStarted => {
-                if let Some(factory) = factory(state, ProductionCategory::Infantry)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Infantry)?
                     && factory.running
                     && factory.id.is_some()
                 {
@@ -539,13 +685,24 @@ impl BattleOpening {
                         self.gi_products.len() == 1 && factory.id == Some(self.gi_products[0].id),
                         "first E1 was not retained before queueing successor"
                     );
-                    cameo(state, "E1", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "E1",
+                        false,
+                    )?;
                     self.step = Step::GiQueued;
                     action = Some("running paid E1 retained; second E1 cameo: Produce");
                 }
             }
             Step::GiQueued => {
-                if let Some(factory) = factory(state, ProductionCategory::Infantry)?
+                if let Some(factory) = factory(&state.match_state, ProductionCategory::Infantry)?
                     && factory.queue_len != 0
                 {
                     ensure!(
@@ -562,10 +719,10 @@ impl BattleOpening {
                         .gi_products
                         .iter()
                         .all(|product| product.rally_arrival.is_some())
-                    && factory(state, ProductionCategory::Infantry)?
+                    && factory(&state.match_state, ProductionCategory::Infantry)?
                         .is_none_or(|factory| factory.id.is_none() && factory.queue_len == 0)
                 {
-                    self.check_gi_payment(state)?;
+                    self.check_gi_payment(&state.match_state)?;
                     self.step = Step::GiSettling { frame };
                     action = Some(
                         "both original paid E1 identities followed rally and settled; empty Factory and FIFO",
@@ -573,22 +730,23 @@ impl BattleOpening {
                 }
             }
             Step::GiSettling { frame: delivered } if frame >= delivered + 60 => {
-                self.check_gi_payment(state)?;
+                self.check_gi_payment(&state.match_state)?;
                 ensure!(
-                    factory(state, ProductionCategory::Infantry)?
+                    factory(&state.match_state, ProductionCategory::Infantry)?
                         .is_none_or(|factory| factory.id.is_none() && factory.queue_len == 0),
                     "empty GI Factory constructed a third product"
                 );
-                self.final_credits = Some(credits(state)?);
-                if self.all_gi_orders_admitted(state)? {
-                    let desired = staging_centres(state)?;
+                self.final_credits = Some(credits(&state.match_state)?);
+                if self.all_gi_orders_admitted(&state.match_state.sim_runtime)? {
+                    let desired = staging_centres(&state.match_state)?;
                     let index = usize::from(!host);
                     let id = self.fighter_ids()?[index];
                     ensure!(
                         Some(id) == self.gi_products.first().map(|product| product.id),
                         "encounter actor is not the first original local paid GI"
                     );
-                    let cell = legal_move_cell(state, id, desired[index])?;
+                    let cell =
+                        legal_move_cell(&state.frontend, &state.match_state, id, desired[index])?;
                     ground_order_with_mouse(state, id, cell)?;
                     self.step = Step::Rendezvous;
                     action = Some("paid E1 delivery stable; tactical Move to encounter staging");
@@ -598,7 +756,7 @@ impl BattleOpening {
                 let ids = self.fighter_ids()?;
                 if let [Some(host_cell), Some(guest_cell)] = self.staging
                     && ids.iter().zip([host_cell, guest_cell]).all(|(&id, cell)| {
-                        simulation(state)
+                        simulation(&state.match_state.sim_runtime)
                             .ok()
                             .and_then(|sim| sim.entities().get(id))
                             .is_some_and(|entity| {
@@ -608,13 +766,14 @@ impl BattleOpening {
                             })
                     })
                 {
-                    let target = simulation(state)?
+                    let target = simulation(&state.match_state.sim_runtime)?
                         .entities()
                         .get(ids[1])
                         .context("opposing paid GI")?;
                     let target_cell = (target.position.rx(), target.position.ry());
                     let approach = offset_toward(target_cell, host_cell, 3);
-                    let approach = legal_move_cell(state, ids[0], approach)?;
+                    let approach =
+                        legal_move_cell(&state.frontend, &state.match_state, ids[0], approach)?;
                     ground_order_with_mouse(state, ids[0], approach)?;
                     self.step = Step::Approaching;
                     action = Some("both paid GIs staged; Host approaches through tactical Move");
@@ -622,7 +781,7 @@ impl BattleOpening {
             }
             Step::Approaching if host => {
                 let [actor, target] = self.fighter_ids()?;
-                if mouse_can_pick(state, target)? {
+                if mouse_can_pick(&state.platform, &state.frontend, &state.match_state, target)? {
                     select_entity(state, actor)?;
                     click_entity(state, target)?;
                     self.attack_input_frame = Some(frame);
@@ -654,7 +813,7 @@ impl BattleOpening {
                 } else {
                     offset_toward(staging[1], staging[0], -6)
                 };
-                let cell = legal_move_cell(state, id, cell)?;
+                let cell = legal_move_cell(&state.frontend, &state.match_state, id, cell)?;
                 if !host {
                     select_entity(state, id)?;
                     chat_key(state, KeyCode::KeyS, &Key::Character("s".into()), Some("s"));
@@ -665,7 +824,7 @@ impl BattleOpening {
             }
             Step::Disengaging { frame: stopped } if frame >= stopped + 180 => {
                 let [actor, target] = self.fighter_ids()?;
-                let sim = simulation(state)?;
+                let sim = simulation(&state.match_state.sim_runtime)?;
                 let actor = sim.entities().get(actor).context("surviving attacker")?;
                 let target = sim.entities().get(target).context("surviving target")?;
                 if actor
@@ -691,7 +850,7 @@ impl BattleOpening {
                         (gi.position.rx(), gi.position.ry()),
                         4,
                     );
-                    let goal = legal_move_cell(state, id, desired)?;
+                    let goal = legal_move_cell(&state.frontend, &state.match_state, id, desired)?;
                     ground_order_with_mouse(state, id, goal)?;
                     self.step = Step::RepairReturning;
                     action =
@@ -700,7 +859,7 @@ impl BattleOpening {
             }
             Step::RepairReturning => {
                 let id = self.fighter_ids()?[usize::from(!host)];
-                let sim = simulation(state)?;
+                let sim = simulation(&state.match_state.sim_runtime)?;
                 let gi = sim.entities().get(id).context("returned paid GI")?;
                 let producer = self.barracks_product.context("paid repair GAPILE")?;
                 let building = sim.entities().get(producer).context("paid repair GAPILE")?;
@@ -720,9 +879,10 @@ impl BattleOpening {
             }
             Step::RepairDamaging => {
                 let index = usize::from(!host);
-                let rules = state.rules().context("retail repair rules")?;
+                let rules = crate::app::state::active_rules(&state.frontend, &state.match_state)
+                    .context("retail repair rules")?;
                 let strength = rules.object("GAPILE").context("retail GAPILE")?.strength;
-                let damaged = simulation(state)?
+                let damaged = simulation(&state.match_state.sim_runtime)?
                     .entities()
                     .get(self.barracks_product.context("paid repair GAPILE")?)
                     .context("paid repair GAPILE")?
@@ -739,7 +899,7 @@ impl BattleOpening {
             }
             Step::RepairStopping => {
                 let observation = &self.repair[usize::from(!host)];
-                let period = repair_period(state)?;
+                let period = repair_period(&state.frontend, &state.match_state)?;
                 if observation.stop_execution.is_some()
                     && let Some(stop) = observation.stop
                     && frame >= u32::try_from(stop.frame)? + 1 + 2 * period
@@ -766,7 +926,18 @@ impl BattleOpening {
             Step::RepairFinishing if self.repair[usize::from(!host)].full.is_some() => {
                 if self.sale_enabled {
                     repair_mode_key(state, false)?;
-                    cameo(state, "E1", false)?;
+                    cameo(
+                        &mut state.platform,
+                        &state.renderer,
+                        &state.diag,
+                        &mut state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence,
+                        "E1",
+                        false,
+                    )?;
                     self.step = Step::SaleStarting;
                     action = Some(
                         "paid repair reached full health; Repair key off and real E1 sale-head Produce",
@@ -781,7 +952,18 @@ impl BattleOpening {
             }
             Step::SaleStarting if self.sale[usize::from(!host)].first_charge.is_some() => {
                 let producer = self.barracks_product.context("original paid sale GAPILE")?;
-                cameo(state, "E1", false)?;
+                cameo(
+                    &mut state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    "E1",
+                    false,
+                )?;
                 sell_mode_key(state, true)?;
                 click_entity(state, producer)?;
                 ensure!(
@@ -796,7 +978,7 @@ impl BattleOpening {
                 select_entity(state, producer)?;
                 self.sale_local_input = Some(json!({"native_frame":frame,"producer":producer,
                     "sell_mode_after_click":true,"sell_mode_after_key_release":false,
-                    "selected_before_execution":projected_selection(state)==[producer]}));
+                    "selected_before_execution":projected_selection(&state.frontend, &state.match_state)==[producer]}));
                 self.step = Step::SalePending;
                 action = Some(
                     "real E1 successor then Sell key/GAPILE click; leave mode and select pending seller",
@@ -809,8 +991,10 @@ impl BattleOpening {
                     && sale.crew_settled.len() == sale.crew_count.context("sale crew count")?
                 {
                     let id = self.fighter_ids()?[index];
-                    let sim = simulation(state)?;
-                    let rules = state.rules().context("retail reentry rules")?;
+                    let sim = simulation(&state.match_state.sim_runtime)?;
+                    let rules =
+                        crate::app::state::active_rules(&state.frontend, &state.match_state)
+                            .context("retail reentry rules")?;
                     let owner = sim.entities().get(id).context("paid reentry GI")?.owner();
                     let goal = sale
                         .cells
@@ -846,8 +1030,8 @@ impl BattleOpening {
         }
         if let Some(action) = action {
             actions.push(json!({"native_frame":frame,"input":action,
-                "credits":credits(state)?,"factory":factory(state, ProductionCategory::Building)?.as_ref().map(factory_json),
-                "infantry_factory":factory(state, ProductionCategory::Infantry)?.as_ref().map(factory_json)}));
+                "credits":credits(&state.match_state)?,"factory":factory(&state.match_state, ProductionCategory::Building)?.as_ref().map(factory_json),
+                "infantry_factory":factory(&state.match_state, ProductionCategory::Infantry)?.as_ref().map(factory_json)}));
         }
         Ok(())
     }
@@ -859,9 +1043,9 @@ impl BattleOpening {
         ])
     }
 
-    fn observe_fighters(&mut self, state: &AppState) -> Result<()> {
-        let sim = simulation(state)?;
-        for (index, owner) in battle_owners(&state.match_state.session, sim)?
+    fn observe_fighters(&mut self, match_state: &MatchState) -> Result<()> {
+        let sim = simulation(&match_state.sim_runtime)?;
+        for (index, owner) in battle_owners(&match_state.session, sim)?
             .into_iter()
             .enumerate()
         {
@@ -889,7 +1073,7 @@ impl BattleOpening {
 
     fn observe_hit(
         &mut self,
-        state: &AppState,
+        sim_runtime: &SimHost,
         frame: u32,
         actions: &mut Vec<Value>,
     ) -> Result<()> {
@@ -900,7 +1084,7 @@ impl BattleOpening {
             return Ok(());
         };
         let [actor, target] = self.fighter_ids()?;
-        let sim = simulation(state)?;
+        let sim = simulation(sim_runtime)?;
         let actor = sim.entities().get(actor).context("firing paid GI")?;
         let target = sim.entities().get(target).context("shot paid GI")?;
         if target.health.current() < self.attack_health.context("Attack health baseline")?
@@ -911,7 +1095,7 @@ impl BattleOpening {
                 actor.attack_target.target() == Some(TargetKind::Entity(target.stable_id())),
                 "observed damage after the attacker lost its manual target"
             );
-            let snapshot = combat_snapshot(state, self.fighter_ids()?, frame)?;
+            let snapshot = combat_snapshot(sim_runtime, self.fighter_ids()?, frame)?;
             actions.push(json!({"native_frame":frame,"observation":"post-manual-Attack rearm and opposing GI health reduction",
                 "combat":snapshot}));
             self.hit_observation = Some(snapshot);
@@ -927,7 +1111,7 @@ impl BattleOpening {
     /// committed frame is observed. If a failed presentation ever
     /// skips the required boundary, refuse the capture instead of labelling a
     /// later mutable state as the command's immediate effect.
-    fn observe_due_orders(&mut self, state: &AppState, frame: u32) -> Result<()> {
+    fn observe_due_orders(&mut self, sim_runtime: &SimHost, frame: u32) -> Result<()> {
         for index in 0..2 {
             // The canonical full-repair marker closes this earlier producer
             // observation before subsequent authorized sale can remove it.
@@ -940,7 +1124,7 @@ impl BattleOpening {
             let after_execution = u32::try_from(record.frame)?
                 .checked_add(1)
                 .context("ARCHIVE frame")?;
-            let sim = simulation(state)?;
+            let sim = simulation(sim_runtime)?;
             let source = sim
                 .entities()
                 .get(u64::try_from(record.entity_id)?)
@@ -986,7 +1170,7 @@ impl BattleOpening {
                     "capture missed Attack execution boundary: expected{after_execution}, observed{frame}"
                 );
                 let [actor, target] = self.fighter_ids()?;
-                let sim = simulation(state)?;
+                let sim = simulation(sim_runtime)?;
                 let entity = sim.entities().get(actor).context("manual Attack actor")?;
                 ensure!(
                     !entity.is_deployed() && !entity.infantry_deploy_doing(),
@@ -1006,7 +1190,8 @@ impl BattleOpening {
                         .health
                         .current(),
                 );
-                self.attack_observation = Some(combat_snapshot(state, [actor, target], frame)?);
+                self.attack_observation =
+                    Some(combat_snapshot(sim_runtime, [actor, target], frame)?);
                 self.pending_attack = None;
                 self.step = Step::Attacking;
             }
@@ -1025,7 +1210,7 @@ impl BattleOpening {
                     self.hit_observation.is_some(),
                     "Host Stop executed before the manual Attack's shot"
                 );
-                let entity = simulation(state)?
+                let entity = simulation(sim_runtime)?
                     .entities()
                     .get(actor)
                     .context("stopped GI")?;
@@ -1037,15 +1222,15 @@ impl BattleOpening {
                         && entity.navigation.nav_queue().is_empty(),
                     "executed raw Stop did not clear the ordinary GI's target/navigation references"
                 );
-                self.stop_observation = Some(combat_snapshot(state, [actor, target], frame)?);
+                self.stop_observation = Some(combat_snapshot(sim_runtime, [actor, target], frame)?);
                 self.pending_stop = None;
             }
         }
         Ok(())
     }
 
-    fn all_gi_orders_admitted(&self, state: &AppState) -> Result<bool> {
-        let sim = simulation(state)?;
+    fn all_gi_orders_admitted(&self, sim_runtime: &SimHost) -> Result<bool> {
+        let sim = simulation(sim_runtime)?;
         Ok(sim
             .houses()
             .order()
@@ -1074,12 +1259,18 @@ impl BattleOpening {
     /// Repair450821..4508D0 runs in Logic before Event15's4C6ED2 tail
     /// dispatch. A paid Logic frameN is therefore observed at binary frameN+1;
     /// the preceding snapshot must already have its repair byte enabled.
-    fn observe_repair(&mut self, state: &AppState, frame: u32) -> Result<()> {
-        let sim = simulation(state)?;
-        let rules = state.rules().context("retail repair rules")?;
+    fn observe_repair(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        frame: u32,
+    ) -> Result<()> {
+        let sim = simulation(&match_state.sim_runtime)?;
+        let rules = crate::app::state::active_rules(frontend, match_state)
+            .context("retail repair rules")?;
         let object = rules.object("GAPILE").context("retail GAPILE")?;
         let cost = crate::sim::production::repair_step_cost(rules, object);
-        let period = repair_period(state)?;
+        let period = repair_period(frontend, match_state)?;
         for index in 0..2 {
             let observation = &mut self.repair[index];
             if observation.full.is_some() {
@@ -1097,7 +1288,7 @@ impl BattleOpening {
                 .entities()
                 .get(u64::try_from(attack.source_id)?)
                 .context("friendly-fire GI")?;
-            let current = repair_snapshot(state, producer, frame)?;
+            let current = repair_snapshot(&match_state.sim_runtime, producer, frame)?;
             ensure!(
                 current.health > 0 && gi.is_alive(),
                 "repair episode destroyed a paid object"
@@ -1117,7 +1308,7 @@ impl BattleOpening {
                 );
                 observation.attack_health = Some(current.health);
                 observation.attack_execution = Some(json!({"event_frame":attack.frame,
-                    "state":current,"combat":combat_snapshot(state,[gi.stable_id(),producer],frame)?}));
+                    "state":current,"combat":combat_snapshot(&match_state.sim_runtime,[gi.stable_id(),producer],frame)?}));
             }
             if observation.damage.is_none()
                 && observation
@@ -1131,7 +1322,7 @@ impl BattleOpening {
                     "GAPILE damage observed after losing friendly force-fire target"
                 );
                 observation.damage = Some(json!({"state":current,
-                    "combat":combat_snapshot(state,[gi.stable_id(),producer],frame)?}));
+                    "combat":combat_snapshot(&match_state.sim_runtime,[gi.stable_id(),producer],frame)?}));
             }
             if observation.stop_execution.is_none()
                 && let Some(stop) = observation.stop
@@ -1157,7 +1348,7 @@ impl BattleOpening {
                         "executed friendly-fire Stop retained target/navigation references"
                     );
                     observation.stop_execution = Some(json!({"event_frame":stop.frame,
-                        "state":current,"combat":combat_snapshot(state,[gi.stable_id(),producer],frame)?}));
+                        "state":current,"combat":combat_snapshot(&match_state.sim_runtime,[gi.stable_id(),producer],frame)?}));
                 }
             }
             if let Some(record) = observation.records.get(observation.executions.len()) {
@@ -1258,9 +1449,15 @@ impl BattleOpening {
         Ok(())
     }
 
-    fn observe_sale(&mut self, state: &AppState, frame: u32) -> Result<()> {
-        let sim = simulation(state)?;
-        let rules = state.rules().context("retail sale rules")?;
+    fn observe_sale(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        frame: u32,
+    ) -> Result<()> {
+        let sim = simulation(&match_state.sim_runtime)?;
+        let rules =
+            crate::app::state::active_rules(frontend, match_state).context("retail sale rules")?;
         let object = rules.object("GAPILE").context("retail GAPILE")?;
         let crew_type = rules
             .general
@@ -1285,7 +1482,7 @@ impl BattleOpening {
                     .context("original paid seller")?
                     .entity_id,
             )?;
-            let owner = battle_owners(&state.match_state.session, sim)?[index];
+            let owner = battle_owners(&match_state.session, sim)?[index];
             if observation.cells.is_empty() {
                 let entity = sim
                     .entities()
@@ -1297,7 +1494,14 @@ impl BattleOpening {
                     &object.foundation,
                 );
             }
-            let current = sale_snapshot(state, index, producer, &observation.cells, frame)?;
+            let current = sale_snapshot(
+                frontend,
+                match_state,
+                index,
+                producer,
+                &observation.cells,
+                frame,
+            )?;
             let first_frame = u32::try_from(first.frame)?;
             if observation.baseline.is_none() && frame >= first_frame {
                 ensure!(
@@ -1543,9 +1747,11 @@ impl BattleOpening {
                                     ),
                                 "sale crew did not enter normally at full health"
                             );
-                            observation
-                                .crew_birth
-                                .push(sale_crew_snapshot(state, id, frame)?);
+                            observation.crew_birth.push(sale_crew_snapshot(
+                                &match_state.sim_runtime,
+                                id,
+                                frame,
+                            )?);
                         }
                     }
                 }
@@ -1641,16 +1847,14 @@ impl BattleOpening {
                 if sim.session().current_house() == Some(owner) && self.sale_local_cleanup.is_none()
                 {
                     let e1 = sim.interner().get("E1").context("sale E1")?;
-                    let input = &state.match_state.input;
-                    let linked = state
-                        .match_state
+                    let input = &match_state.input;
+                    let linked = match_state
                         .match_presentation
                         .sidebar_projection
                         .model
                         .cameo_factory(sim, owner, e1)
                         .is_some();
-                    let cameo_present = state
-                        .match_state
+                    let cameo_present = match_state
                         .match_presentation
                         .sidebar_projection
                         .model
@@ -1661,11 +1865,10 @@ impl BattleOpening {
                         .iter()
                         .any(|cameo| cameo.id == CameoId::Object(e1));
                     ensure!(
-                        !projected_selection(state).contains(&producer)
+                        !projected_selection(frontend, match_state).contains(&producer)
                             && !input.selection_order.contains(&producer)
                             && !linked
-                            && !state
-                                .match_state
+                            && !match_state
                                 .match_presentation
                                 .sidebar_gadget_state
                                 .sell_mode_on,
@@ -1676,7 +1879,7 @@ impl BattleOpening {
                     if !cameo_present {
                         self.sale_local_cleanup = Some(
                             json!({"native_frame":frame,"producer":producer,
-                            "selected":projected_selection(state),"selection_ledger":input.selection_order,
+                            "selected":projected_selection(frontend, match_state),"selection_ledger":input.selection_order,
                             "cameo_factory":linked,"cameo_present":cameo_present,"sell_mode":false}),
                         );
                     }
@@ -1702,9 +1905,11 @@ impl BattleOpening {
                         .as_ref()
                         .is_some_and(|walk| walk.walk_is_moving() == Some(true))
                 {
-                    observation
-                        .crew_walk
-                        .push(sale_crew_snapshot(state, id, frame)?);
+                    observation.crew_walk.push(sale_crew_snapshot(
+                        &match_state.sim_runtime,
+                        id,
+                        frame,
+                    )?);
                 }
                 if observation
                     .crew_walk
@@ -1720,9 +1925,11 @@ impl BattleOpening {
                         .as_ref()
                         .is_some_and(|walk| walk.walk_is_moving() == Some(false))
                 {
-                    observation
-                        .crew_settled
-                        .push(sale_crew_snapshot(state, id, frame)?);
+                    observation.crew_settled.push(sale_crew_snapshot(
+                        &match_state.sim_runtime,
+                        id,
+                        frame,
+                    )?);
                 }
             }
             if observation.reentry_arrival.is_none()
@@ -1738,8 +1945,11 @@ impl BattleOpening {
                     && (gi.position.rx(), gi.position.ry())
                         == (u16::try_from(target_x)?, u16::try_from(target_y)?)
                 {
-                    observation.reentry_arrival =
-                        Some(sale_crew_snapshot(state, gi.stable_id(), frame)?);
+                    observation.reentry_arrival = Some(sale_crew_snapshot(
+                        &match_state.sim_runtime,
+                        gi.stable_id(),
+                        frame,
+                    )?);
                 }
             }
             if observation.stable.is_none()
@@ -1755,15 +1965,21 @@ impl BattleOpening {
         Ok(())
     }
 
-    fn observe_commands(&mut self, state: &AppState, frame: u32) -> Result<()> {
-        let Some(log) = &state.match_state.match_diagnostics.replay_log else {
+    fn observe_commands(
+        &mut self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+        frame: u32,
+    ) -> Result<()> {
+        let Some(log) = &match_state.match_diagnostics.replay_log else {
             return Ok(());
         };
         ensure!(
             log.ticks.len() >= self.replay_cursor,
             "Battle diagnostic replay timeline replaced"
         );
-        let rules = state.rules().context("retail rules")?;
+        let rules =
+            crate::app::state::active_rules(frontend, match_state).context("retail rules")?;
         let gi = ProductionSelection::for_type(rules, rules.object("E1").context("retail E1")?)
             .context("E1 production selector")?;
         for tick in &log.ticks[self.replay_cursor..] {
@@ -1810,7 +2026,7 @@ impl BattleOpening {
                     && (produce.type_index == gi.type_index || produce.type_index == -1)
                 {
                     ensure!(produce.naval == 0, "GI PRODUCE carried Naval");
-                    let index = human_index_for_house(state, produce.house_id)?;
+                    let index = human_index_for_house(match_state, produce.house_id)?;
                     // Admission can precede this peer's observation of the
                     // completed repair. The first two PRODUCE events belong
                     // to the opening; later ones start the sale queue.
@@ -1859,7 +2075,7 @@ impl BattleOpening {
                     && let Some(sell) = ObjectActionRecord::decode(record)
                         .filter(|event| event.action == ObjectAction::Sell)
                 {
-                    let index = human_index_for_house(state, sell.house_id)?;
+                    let index = human_index_for_house(match_state, sell.house_id)?;
                     ensure!(
                         self.rally_records[index]
                             .is_some_and(|archive| archive.entity_id == sell.entity_id),
@@ -1881,16 +2097,16 @@ impl BattleOpening {
                         "bytes":record.as_bytes().as_slice()}));
                 }
                 if let Some(archive) = ArchiveRecord::decode(record) {
-                    let sim = simulation(state)?;
+                    let sim = simulation(&match_state.sim_runtime)?;
                     let source = sim
                         .entities()
                         .get(u64::try_from(archive.entity_id)?)
                         .context("admitted ARCHIVE source")?;
                     if sim.interner().resolve(source.type_ref()) == "GAPILE" {
-                        let index =
-                            battle_human_index(&state.match_state.session, sim, source.owner())?;
+                        let index = battle_human_index(&match_state.session, sim, source.owner())?;
                         ensure!(
-                            archive.house_id == house_id_for_owner(state, source.owner())?,
+                            archive.house_id
+                                == house_id_for_owner(&match_state.sim_runtime, source.owner())?,
                             "raw GAPILE ARCHIVE issuing House differs from producer"
                         );
                         ensure!(
@@ -1918,13 +2134,13 @@ impl BattleOpening {
                 // encode_plan_commit_record. Keep its ordinary raw2B after
                 // this House's raw1E; an empty commit must still cross LAN.
                 if record.opcode() == 0x2b {
-                    let sim = simulation(state)?;
+                    let sim = simulation(&match_state.sim_runtime)?;
                     let owner = *sim
                         .houses()
                         .order()
                         .get(usize::try_from(record.house_id())?)
                         .context("PLAN_COMMIT issuing House")?;
-                    let index = battle_human_index(&state.match_state.session, sim, owner)?;
+                    let index = battle_human_index(&match_state.session, sim, owner)?;
                     let archive = self.rally_records[index]
                         .context("PLAN_COMMIT admitted before its House's manual ARCHIVE")?;
                     ensure!(
@@ -1974,12 +2190,13 @@ impl BattleOpening {
                     && [actor, target].contains(&(mission.source_id as u64))
                 {
                     let index = usize::from(mission.source_id == i32::try_from(target)?);
-                    let entity = simulation(state)?
+                    let entity = simulation(&match_state.sim_runtime)?
                         .entities()
                         .get([actor, target][index])
                         .context("ordinary GI Move/Attack source")?;
                     ensure!(
-                        mission.house_id == house_id_for_owner(state, entity.owner())?,
+                        mission.house_id
+                            == house_id_for_owner(&match_state.sim_runtime, entity.owner())?,
                         "raw GI Move/Attack issuing House differs from its source"
                     );
                     if self.staging[index].is_none()
@@ -1997,7 +2214,7 @@ impl BattleOpening {
                                 && self.sale[index].cells.contains(&goal),
                             "extra Move or reentry destination outside the sold foundation"
                         );
-                        if mission.house_id == local_house_id(state)? {
+                        if mission.house_id == local_house_id(match_state)? {
                             ensure!(
                                 self.sale_local_move == Some(goal),
                                 "raw reentry differs from actual local Cell click"
@@ -2049,13 +2266,14 @@ impl BattleOpening {
                             self.attack_observation.is_none() && self.pending_attack.is_none(),
                             "duplicate manual GI Attack"
                         );
-                        let sim = simulation(state)?;
+                        let sim = simulation(&match_state.sim_runtime)?;
                         let entity = sim.entities().get(actor).context("manual Attack actor")?;
                         ensure!(
-                            mission.house_id == house_id_for_owner(state, entity.owner())?,
+                            mission.house_id
+                                == house_id_for_owner(&match_state.sim_runtime, entity.owner())?,
                             "raw Attack issuing House differs from the Host"
                         );
-                        if state.match_state.session.host() {
+                        if match_state.session.host() {
                             ensure!(
                                 self.attack_input_frame
                                     .is_some_and(|issued| mission.frame >= issued as i32),
@@ -2072,12 +2290,13 @@ impl BattleOpening {
                     if let Some(index) = index
                         && self.repair[index].attack.is_some()
                     {
-                        let entity = simulation(state)?
+                        let entity = simulation(&match_state.sim_runtime)?
                             .entities()
                             .get([actor, target][index])
                             .context("friendly-fire GI")?;
                         ensure!(
-                            stop.house_id == house_id_for_owner(state, entity.owner())?,
+                            stop.house_id
+                                == house_id_for_owner(&match_state.sim_runtime, entity.owner())?,
                             "friendly-fire Stop House differs from its GI"
                         );
                         let observation = &mut self.repair[index];
@@ -2096,12 +2315,13 @@ impl BattleOpening {
                         self.stop_observation.is_none() && self.pending_stop.is_none(),
                         "duplicate Host GI Stop"
                     );
-                    let entity = simulation(state)?
+                    let entity = simulation(&match_state.sim_runtime)?
                         .entities()
                         .get(actor)
                         .context("stopped GI")?;
                     ensure!(
-                        stop.house_id == house_id_for_owner(state, entity.owner())?,
+                        stop.house_id
+                            == house_id_for_owner(&match_state.sim_runtime, entity.owner())?,
                         "raw Stop issuing House differs from the Host"
                     );
                     self.combat_events.push(
@@ -2120,7 +2340,7 @@ impl BattleOpening {
 
     fn observe_infantry(
         &mut self,
-        state: &AppState,
+        match_state: &MatchState,
         frame: u32,
         actions: &mut Vec<Value>,
     ) -> Result<()> {
@@ -2134,10 +2354,10 @@ impl BattleOpening {
                 .iter()
                 .all(|product| product.rally_arrival.is_some())
         {
-            let sim = simulation(state)?;
+            let sim = simulation(&match_state.sim_runtime)?;
             let owner = sim
                 .interner()
-                .get(&local_owner(state)?)
+                .get(&local_owner(&match_state.session)?)
                 .context("original paid-GI House")?;
             for product in &self.gi_products {
                 let entity = sim
@@ -2154,11 +2374,11 @@ impl BattleOpening {
             }
             return Ok(());
         }
-        let factory = factory(state, ProductionCategory::Infantry)?;
-        let sim = simulation(state)?;
+        let factory = factory(match_state, ProductionCategory::Infantry)?;
+        let sim = simulation(&match_state.sim_runtime)?;
         let owner = sim
             .interner()
-            .get(&local_owner(state)?)
+            .get(&local_owner(&match_state.session)?)
             .context("local House")?;
         let rally = self.rally_prepared.context("executed local rally")?;
         ensure!(
@@ -2285,14 +2505,14 @@ impl BattleOpening {
         Ok(())
     }
 
-    fn check_gi_payment(&self, state: &AppState) -> Result<()> {
+    fn check_gi_payment(&self, match_state: &MatchState) -> Result<()> {
         let (before_credits, before_spent) = self.gi_wallet.context("GI wallet baseline")?;
         let cost = self
             .gi_cost
             .context("GI resolved cost")?
             .checked_mul(2)
             .context("two GI costs")?;
-        let (credits, spent) = wallet(state)?;
+        let (credits, spent) = wallet(match_state)?;
         ensure!(
             Some(credits) == before_credits.checked_sub(cost)
                 && Some(spent) == before_spent.checked_add(cost),
@@ -2302,7 +2522,7 @@ impl BattleOpening {
             self.successor_promotions == 1,
             "GI FIFO successor did not promote exactly once"
         );
-        let house = local_house_id(state)?;
+        let house = local_house_id(match_state)?;
         ensure!(
             self.gi_places
                 .iter()
@@ -2321,8 +2541,8 @@ impl BattleOpening {
     }
 
     /// The end checks this run has not met, by name; empty once it is done.
-    pub(super) fn missing(&self, state: &AppState) -> Result<Vec<&'static str>> {
-        let sim = simulation(state)?;
+    pub(super) fn missing(&self, sim_runtime: &SimHost) -> Result<Vec<&'static str>> {
+        let sim = simulation(sim_runtime)?;
         let standing = |type_id: &str| {
             sim.entities()
                 .values_sorted()
@@ -2391,7 +2611,10 @@ impl BattleOpening {
                 "GAPILE count",
                 standing("GAPILE") == if self.sale_enabled { 0 } else { 2 },
             ),
-            ("GI orders admitted", self.all_gi_orders_admitted(state)?),
+            (
+                "GI orders admitted",
+                self.all_gi_orders_admitted(sim_runtime)?,
+            ),
         ];
         Ok(checks
             .into_iter()
@@ -2400,11 +2623,15 @@ impl BattleOpening {
             .collect())
     }
 
-    pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
-        let sim = simulation(state)?;
+    pub(super) fn receipt(
+        &self,
+        frontend: &FrontendState,
+        match_state: &MatchState,
+    ) -> Result<Value> {
+        let sim = simulation(&match_state.sim_runtime)?;
         let mut receipt = json!({"phase":self.phase(),"mcv":self.mcv,"yard":self.yard,
             "cancelled_product":self.first_product,"placed_product":self.placed_product,
-            "owner":local_owner(state)?,"barracks_product":self.barracks_product,
+            "owner":local_owner(&match_state.session)?,"barracks_product":self.barracks_product,
             "starting_credits":self.starting_credits,"final_credits":self.final_credits,
             "gi_wallet_before":self.gi_wallet,"gi_cost":self.gi_cost,"gi_factory_order":self.gi_factory_order,
             "gi_products":self.gi_products.iter().map(|product| json!({"id":product.id,"first_progress":product.first_progress,
@@ -2417,8 +2644,8 @@ impl BattleOpening {
             "combat":{"fighters":self.fighters,"staging":self.staging,
                 "attack_input_frame":self.attack_input_frame,"attack":self.attack_observation,
                 "hit":self.hit_observation,"stop":self.stop_observation,"native_events":self.combat_events,
-                "final":combat_snapshot(state,self.fighter_ids()?,sim.session().binary_frame())?},
-            "repair":{"period":repair_period(state)?,"episodes":self.repair.iter().map(|observation|
+                "final":combat_snapshot(&match_state.sim_runtime,self.fighter_ids()?,sim.session().binary_frame())?},
+            "repair":{"period":repair_period(frontend, match_state)?,"episodes":self.repair.iter().map(|observation|
                 json!({"native_events":observation.events,"attack":observation.attack_execution,
                     "damage":observation.damage,"stop":observation.stop_execution,
                     "executions":observation.executions,"payments":observation.payments,
@@ -2445,31 +2672,27 @@ impl BattleOpening {
     }
 }
 
-fn simulation(state: &AppState) -> Result<&Simulation> {
-    Ok(&state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .context("live simulation")?
-        .simulation)
+fn simulation(sim_runtime: &SimHost) -> Result<&Simulation> {
+    Ok(&sim_runtime.runtime().context("live simulation")?.simulation)
 }
 
-fn credits(state: &AppState) -> Result<i32> {
-    Ok(wallet(state)?.0)
+fn credits(match_state: &MatchState) -> Result<i32> {
+    Ok(wallet(match_state)?.0)
 }
 
-fn wallet(state: &AppState) -> Result<(i32, i32)> {
-    let sim = simulation(state)?;
+fn wallet(match_state: &MatchState) -> Result<(i32, i32)> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let owner = sim
         .interner()
-        .get(&local_owner(state)?)
+        .get(&local_owner(&match_state.session)?)
         .context("local House")?;
     let economy = sim.houses().get(&owner).context("local House")?.economy();
     Ok((economy.credits(), economy.spent_credits()))
 }
 
-fn repair_period(state: &AppState) -> Result<u32> {
-    let rules = state.rules().context("retail repair rules")?;
+fn repair_period(frontend: &FrontendState, match_state: &MatchState) -> Result<u32> {
+    let rules =
+        crate::app::state::active_rules(frontend, match_state).context("retail repair rules")?;
     let period = u32::try_from(crate::sim::combat::veterancy::self_heal_interval_frames(
         rules.general.repair_rate_minutes,
     ))?;
@@ -2477,8 +2700,8 @@ fn repair_period(state: &AppState) -> Result<u32> {
     Ok(period)
 }
 
-fn repair_snapshot(state: &AppState, id: u64, frame: u32) -> Result<RepairSnapshot> {
-    let sim = simulation(state)?;
+fn repair_snapshot(sim_runtime: &SimHost, id: u64, frame: u32) -> Result<RepairSnapshot> {
+    let sim = simulation(sim_runtime)?;
     let building = sim
         .entities()
         .get(id)
@@ -2500,26 +2723,28 @@ fn repair_snapshot(state: &AppState, id: u64, frame: u32) -> Result<RepairSnapsh
     })
 }
 
-fn human_index_for_house(state: &AppState, house: i8) -> Result<usize> {
-    let sim = simulation(state)?;
+fn human_index_for_house(match_state: &MatchState, house: i8) -> Result<usize> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let owner = *sim
         .houses()
         .order()
         .get(usize::try_from(house)?)
         .context("record Human House")?;
-    battle_human_index(&state.match_state.session, sim, owner)
+    battle_human_index(&match_state.session, sim, owner)
 }
 
 fn sale_snapshot(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     index: usize,
     producer: u64,
     cells: &[(u16, u16)],
     frame: u32,
 ) -> Result<SaleSnapshot> {
-    let sim = simulation(state)?;
-    let rules = state.rules().context("retail sale rules")?;
-    let owner = battle_owners(&state.match_state.session, sim)?[index];
+    let sim = simulation(&match_state.sim_runtime)?;
+    let rules =
+        crate::app::state::active_rules(frontend, match_state).context("retail sale rules")?;
+    let owner = battle_owners(&match_state.session, sim)?[index];
     let name = sim.interner().resolve(owner);
     let house = sim.houses().get(&owner).context("sale House")?;
     if let Some(entity) = sim.entities().get(producer) {
@@ -2621,8 +2846,8 @@ fn sale_snapshot(
     })
 }
 
-fn sale_crew_snapshot(state: &AppState, id: u64, frame: u32) -> Result<Value> {
-    let sim = simulation(state)?;
+fn sale_crew_snapshot(sim_runtime: &SimHost, id: u64, frame: u32) -> Result<Value> {
+    let sim = simulation(sim_runtime)?;
     let entity = sim.entities().get(id).context("sale crew")?;
     Ok(
         json!({"native_frame":frame,"id":id,"owner":sim.interner().resolve(entity.owner()),
@@ -2682,17 +2907,17 @@ fn battle_human_index(
         .context("command belongs to an unrepresented Battle Human")
 }
 
-fn local_house_id(state: &AppState) -> Result<i8> {
-    let sim = simulation(state)?;
+fn local_house_id(match_state: &MatchState) -> Result<i8> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let owner = sim
         .interner()
-        .get(&local_owner(state)?)
+        .get(&local_owner(&match_state.session)?)
         .context("local House")?;
-    house_id_for_owner(state, owner)
+    house_id_for_owner(&match_state.sim_runtime, owner)
 }
 
-fn house_id_for_owner(state: &AppState, owner: crate::sim::intern::InternedId) -> Result<i8> {
-    let sim = simulation(state)?;
+fn house_id_for_owner(sim_runtime: &SimHost, owner: crate::sim::intern::InternedId) -> Result<i8> {
+    let sim = simulation(sim_runtime)?;
     Ok(i8::try_from(
         sim.houses()
             .order()
@@ -2702,8 +2927,8 @@ fn house_id_for_owner(state: &AppState, owner: crate::sim::intern::InternedId) -
     )?)
 }
 
-fn combat_snapshot(state: &AppState, ids: [u64; 2], frame: u32) -> Result<Value> {
-    let sim = simulation(state)?;
+fn combat_snapshot(sim_runtime: &SimHost, ids: [u64; 2], frame: u32) -> Result<Value> {
+    let sim = simulation(sim_runtime)?;
     let mut entities = Vec::new();
     for id in ids {
         let entity = sim.entities().get(id).context("paid encounter GI")?;
@@ -2731,10 +2956,8 @@ fn gi_rally_snapshot(entity: &crate::sim::game_entity::GameEntity, frame: u32) -
         "step_head":walk.and_then(|walk| walk.step_head())})
 }
 
-fn rally_eva_requests(state: &AppState) -> usize {
-    state
-        .match_state
-        .match_audio
+fn rally_eva_requests(match_audio: &MatchAudioState) -> usize {
+    match_audio
         .sound_events
         .iter()
         .filter(|event| {
@@ -2745,8 +2968,13 @@ fn rally_eva_requests(state: &AppState) -> usize {
         .count()
 }
 
-fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16))> {
-    let sim = simulation(state)?;
+fn rally_click(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    producer: u64,
+) -> Result<((u16, u16), (u16, u16))> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let source = sim
         .entities()
         .get(producer)
@@ -2756,7 +2984,7 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         "diagnostic attempted a remote House's rally input query"
     );
     let origin = (source.position.rx(), source.position.ry());
-    let rules = state.rules().context("retail rules")?;
+    let rules = crate::app::state::active_rules(frontend, match_state).context("retail rules")?;
     for (dx, dy) in [
         (6, 0),
         (0, 6),
@@ -2773,7 +3001,7 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         ) else {
             continue;
         };
-        let Some(cell) = state
+        let Some(cell) = match_state
             .resolved_terrain()
             .and_then(|terrain| terrain.cell(x, y))
         else {
@@ -2781,10 +3009,10 @@ fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16
         };
         let world = crate::app::input::camera::cell_centre_world_point(x, y, cell.level);
         if crate::app::input::entity_pick::hover_object_at_point(
-            crate::app::input::entity_pick::presented(state, sim),
+            crate::app::input::entity_pick::presented(platform, frontend, match_state, sim),
             world.0,
             world.1,
-            &local_owner(state)?,
+            &local_owner(&match_state.session)?,
             false,
         )
         .is_some()
@@ -2824,10 +3052,10 @@ fn offset_toward(from: (u16, u16), toward: (u16, u16), cells: i32) -> (u16, u16)
     )
 }
 
-fn staging_centres(state: &AppState) -> Result<[(u16, u16); 2]> {
-    let sim = simulation(state)?;
+fn staging_centres(match_state: &MatchState) -> Result<[(u16, u16); 2]> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let mut yards = [(0, 0); 2];
-    for (index, owner) in battle_owners(&state.match_state.session, sim)?
+    for (index, owner) in battle_owners(&match_state.session, sim)?
         .into_iter()
         .enumerate()
     {
@@ -2853,14 +3081,19 @@ fn staging_centres(state: &AppState) -> Result<[(u16, u16); 2]> {
     ])
 }
 
-fn legal_move_cell(state: &AppState, actor: u64, desired: (u16, u16)) -> Result<(u16, u16)> {
-    let sim = simulation(state)?;
+fn legal_move_cell(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    actor: u64,
+    desired: (u16, u16),
+) -> Result<(u16, u16)> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let owner = sim.entities().get(actor).context("moving GI")?.owner();
     ensure!(
         sim.session().current_house() == Some(owner),
         "diagnostic attempted a remote House's local Move query"
     );
-    let rules = state.rules().context("retail rules")?;
+    let rules = crate::app::state::active_rules(frontend, match_state).context("retail rules")?;
     for (dx, dy) in [
         (0, 0),
         (2, 0),
@@ -2888,16 +3121,21 @@ fn legal_move_cell(state: &AppState, actor: u64, desired: (u16, u16)) -> Result<
     anyhow::bail!("no ordinary GI Move goal near {desired:?}")
 }
 
-fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
-    let sim = simulation(state)?;
+fn mouse_can_pick(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    id: u64,
+) -> Result<bool> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let entity = sim.entities().get(id).context("opposing GI")?;
-    let presented = crate::app::input::entity_pick::presented(state, sim);
+    let presented = crate::app::input::entity_pick::presented(platform, frontend, match_state, sim);
     let world = presented.screen_position(entity);
     Ok(crate::app::input::entity_pick::hover_object_at_point(
         presented,
         world.0,
         world.1,
-        &local_owner(state)?,
+        &local_owner(&match_state.session)?,
         false,
     )
     .and_then(|object| object.techno())
@@ -2994,7 +3232,7 @@ fn latency_input_admission(
 /// Select and show the measured actor before readiness sampling. No Move/Stop
 /// is issued, and later measured inputs must retain this view and selection.
 pub(super) fn prepare_latency_view(state: &mut AppState) -> Result<(u64, (u16, u16))> {
-    let sim = simulation(state)?;
+    let sim = simulation(&state.match_state.sim_runtime)?;
     let owner = sim
         .session()
         .current_house()
@@ -3023,7 +3261,7 @@ pub(super) fn prepare_latency_view(state: &mut AppState) -> Result<(u64, (u16, u
         from.0,
         from.1,
     );
-    let world = ground_world_point(state, from)?;
+    let world = ground_world_point(&state.match_state, from)?;
     point_at_world(state, world);
     Ok((id, from))
 }
@@ -3037,16 +3275,16 @@ pub(super) fn latency_move_with_mouse(
     direction: usize,
 ) -> Result<((u16, u16), LatencyInput)> {
     ensure!(
-        projected_selection(state) == [actor],
+        projected_selection(&state.frontend, &state.match_state) == [actor],
         "latency actor selection changed"
     );
-    let sim = simulation(state)?;
+    let sim = simulation(&state.match_state.sim_runtime)?;
     let entity = sim
         .entities()
         .get(actor)
         .context("latency actor disappeared")?;
     let from = (entity.position.rx(), entity.position.ry());
-    let owner_name = local_owner(state)?;
+    let owner_name = local_owner(&state.match_state.session)?;
     let input = &state.match_state.input;
     let camera = (input.camera_x, input.camera_y);
     let zoom = input.zoom_level;
@@ -3067,11 +3305,12 @@ pub(super) fn latency_move_with_mouse(
             // Offsets from the partially stopped actor made this route drift
             // out of view. The prepared origin keeps every waypoint bounded.
             let desired = latency_waypoint(origin, (dx, dy))?;
-            legal_move_cell(state, actor, desired)
+            legal_move_cell(&state.frontend, &state.match_state, actor, desired)
                 .ok()
                 .filter(|cell| *cell != from)
                 .filter(|cell| {
                     state
+                        .match_state
                         .resolved_terrain()
                         .and_then(|terrain| terrain.cell(cell.0, cell.1))
                         .is_some_and(|terrain| {
@@ -3082,7 +3321,12 @@ pub(super) fn latency_move_with_mouse(
                             );
                             fixed_view_cursor(world, camera, zoom, viewport).is_ok()
                                 && empty_ground_point(
-                                    crate::app::input::entity_pick::presented(state, sim),
+                                    crate::app::input::entity_pick::presented(
+                                        &state.platform,
+                                        &state.frontend,
+                                        &state.match_state,
+                                        sim,
+                                    ),
                                     world,
                                     &owner_name,
                                 )
@@ -3090,7 +3334,7 @@ pub(super) fn latency_move_with_mouse(
                 })
         })
         .context("latency capture has no legal nearby Move goal")?;
-    let world = ground_world_point(state, to)?;
+    let world = ground_world_point(&state.match_state, to)?;
     let input = &state.match_state.input;
     let cursor = fixed_view_cursor(
         world,
@@ -3105,7 +3349,7 @@ pub(super) fn latency_move_with_mouse(
         ),
     )?;
     point_at_cursor(state, cursor);
-    let before = simulation(state)?.pending_local_command_count();
+    let before = simulation(&state.match_state.sim_runtime)?.pending_local_command_count();
     let at = left_click_timed(state);
     let admission = latency_input_admission(
         &mut state
@@ -3133,7 +3377,7 @@ fn latency_waypoint(origin: (u16, u16), offset: (i32, i32)) -> Option<(u16, u16)
 pub(super) fn mobile_move_with_mouse(
     state: &mut AppState,
 ) -> Result<(u64, (u16, u16), (u16, u16))> {
-    let sim = simulation(state)?;
+    let sim = simulation(&state.match_state.sim_runtime)?;
     let owner = sim.session().current_house().context("local House")?;
     let entity = sim
         .entities()
@@ -3162,9 +3406,17 @@ pub(super) fn mobile_move_with_mouse(
                 u16::try_from(i32::from(from.0) + dx).ok()?,
                 u16::try_from(i32::from(from.1) + dy).ok()?,
             );
-            legal_move_cell(state, id, desired)
+            legal_move_cell(&state.frontend, &state.match_state, id, desired)
                 .ok()
-                .filter(|cell| *cell != from && clicks_own_cell(state, *cell))
+                .filter(|cell| {
+                    *cell != from
+                        && clicks_own_cell(
+                            &state.platform,
+                            &state.frontend,
+                            &state.match_state,
+                            *cell,
+                        )
+                })
         })
         .context("reachable tactical Move target")?;
     ground_order_with_mouse(state, id, to)?;
@@ -3174,11 +3426,16 @@ pub(super) fn mobile_move_with_mouse(
 /// A click on a cell's centre orders that cell only when no taller cell or
 /// object covers the point: random Quick Match maps put some candidates
 /// behind a cliff.
-fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
+fn clicks_own_cell(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    cell: (u16, u16),
+) -> bool {
     let (Ok(world), Ok(sim), Ok(owner)) = (
-        ground_world_point(state, cell),
-        simulation(state),
-        local_owner(state),
+        ground_world_point(match_state, cell),
+        simulation(&match_state.sim_runtime),
+        local_owner(&match_state.session),
     ) else {
         return false;
     };
@@ -3188,7 +3445,7 @@ fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
         crate::app::match_runtime::sim_tick::tactical_cells(sim),
     ) == cell
         && empty_ground_point(
-            crate::app::input::entity_pick::presented(state, sim),
+            crate::app::input::entity_pick::presented(platform, frontend, match_state, sim),
             world,
             &owner,
         )
@@ -3205,10 +3462,10 @@ pub(super) fn selected_stop_with_keyboard(state: &mut AppState) -> Result<()> {
 
 pub(super) fn latency_stop_with_keyboard(state: &mut AppState, actor: u64) -> Result<LatencyInput> {
     ensure!(
-        projected_selection(state) == [actor],
+        projected_selection(&state.frontend, &state.match_state) == [actor],
         "latency actor selection changed"
     );
-    let before = simulation(state)?.pending_local_command_count();
+    let before = simulation(&state.match_state.sim_runtime)?.pending_local_command_count();
     let at = selected_stop_with_keyboard_timed(state)?;
     let admission = latency_input_admission(
         &mut state
@@ -3264,7 +3521,7 @@ pub(super) fn selected_move_with_mouse(
     actor: u64,
     direction: usize,
 ) -> Result<()> {
-    let sim = simulation(state)?;
+    let sim = simulation(&state.match_state.sim_runtime)?;
     let entity = sim.entities().get(actor).context("mass leader")?;
     let from = (entity.position.rx(), entity.position.ry());
     let mut chosen = None;
@@ -3288,10 +3545,12 @@ pub(super) fn selected_move_with_mouse(
             ) else {
                 continue;
             };
-            let Ok(cell) = legal_move_cell(state, actor, (x, y)) else {
+            let Ok(cell) = legal_move_cell(&state.frontend, &state.match_state, actor, (x, y))
+            else {
                 continue;
             };
             let Some(terrain) = state
+                .match_state
                 .resolved_terrain()
                 .and_then(|terrain| terrain.cell(cell.0, cell.1))
             else {
@@ -3300,9 +3559,14 @@ pub(super) fn selected_move_with_mouse(
             let world =
                 crate::app::input::camera::cell_centre_world_point(cell.0, cell.1, terrain.level);
             if empty_ground_point(
-                crate::app::input::entity_pick::presented(state, sim),
+                crate::app::input::entity_pick::presented(
+                    &state.platform,
+                    &state.frontend,
+                    &state.match_state,
+                    sim,
+                ),
                 world,
-                &local_owner(state)?,
+                &local_owner(&state.match_state.session)?,
             ) {
                 chosen = Some(cell);
                 break;
@@ -3381,7 +3645,7 @@ fn repair_mode_key(state: &mut AppState, enabled: bool) -> Result<()> {
     );
     if enabled {
         ensure!(
-            projected_selection(state).is_empty(),
+            projected_selection(&state.frontend, &state.match_state).is_empty(),
             "Repair cursor did not clear projected selection"
         );
     }
@@ -3420,7 +3684,7 @@ fn sell_mode_key(state: &mut AppState, enabled: bool) -> Result<()> {
     );
     if enabled {
         ensure!(
-            projected_selection(state).is_empty(),
+            projected_selection(&state.frontend, &state.match_state).is_empty(),
             "Sell cursor did not clear projected selection"
         );
     }
@@ -3446,7 +3710,7 @@ fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) ->
         !state.match_state.input.planning.active(),
         "rally gesture began with Planning active"
     );
-    let sim = simulation(state)?;
+    let sim = simulation(&state.match_state.sim_runtime)?;
     let owner = sim.entities().get(id).context("rally GAPILE")?.owner();
     ensure!(
         sim.planning_paths(owner).is_empty(),
@@ -3489,19 +3753,21 @@ fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) ->
         state.match_state.input.planning.active(),
         "real Planning key press did not enter Planning"
     );
-    let before = rally_eva_requests(state);
+    let before = rally_eva_requests(&state.match_state.match_audio);
     dispatch::handle_mouse_input(state, MouseButton::Left, ElementState::Released);
     ensure!(
         state.match_state.input.planning.active(),
         "Planning was inactive at the rally mouse release/EVA observation"
     );
-    let after = rally_eva_requests(state);
+    let after = rally_eva_requests(&state.match_state.match_audio);
     ensure!(
         after == before + 1,
         "Planning-active GAPILE rally did not synchronously announce NewRallyPoint"
     );
     ensure!(
-        simulation(state)?.planning_paths(owner).is_empty(),
+        simulation(&state.match_state.sim_runtime)?
+            .planning_paths(owner)
+            .is_empty(),
         "direct Planning-active GAPILE rally created a Building path"
     );
     key_edge(state, ElementState::Released);
@@ -3513,7 +3779,7 @@ fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) ->
 }
 
 fn point_at_ground(state: &mut AppState, cell: (u16, u16)) -> Result<()> {
-    let world = ground_world_point(state, cell)?;
+    let world = ground_world_point(&state.match_state, cell)?;
     crate::app::input::camera::center_camera_on_cell(
         &state.platform,
         &state.renderer,
@@ -3527,8 +3793,8 @@ fn point_at_ground(state: &mut AppState, cell: (u16, u16)) -> Result<()> {
     Ok(())
 }
 
-fn ground_world_point(state: &AppState, cell: (u16, u16)) -> Result<(f32, f32)> {
-    let z = state
+fn ground_world_point(match_state: &MatchState, cell: (u16, u16)) -> Result<(f32, f32)> {
+    let z = match_state
         .resolved_terrain()
         .and_then(|terrain| terrain.cell(cell.0, cell.1))
         .context("ground input terrain cell")?
@@ -3580,7 +3846,7 @@ fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
     // Preserve the actual
     // input selection, including its pending frame-ingress projection, which
     // is also what the following Move/Attack/Stop input consumes.
-    if projected_selection(state) != [id] {
+    if projected_selection(&state.frontend, &state.match_state) != [id] {
         // The prior command may have left a building selected; clear it through
         // the tactical cancel ladder before a GI click can mean Building Rally.
         // Point first: a right-click over the last E1 cameo is production input.
@@ -3589,20 +3855,20 @@ fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
             dispatch::handle_mouse_input(state, MouseButton::Right, edge);
         }
         ensure!(
-            projected_selection(state).is_empty(),
+            projected_selection(&state.frontend, &state.match_state).is_empty(),
             "tactical cancel did not clear selection before object{id}: projected={:?}, pending={}, targeting={:?}",
-            projected_selection(state),
+            projected_selection(&state.frontend, &state.match_state),
             state.match_state.input.selection_order_pending,
             state.match_state.input.targeting_mode
         );
         click_entity(state, id)?;
     }
     ensure!(
-        projected_selection(state) == [id],
+        projected_selection(&state.frontend, &state.match_state) == [id],
         "tactical input did not retain object{id}: projected={:?}, pending={}, position={:?}",
-        projected_selection(state),
+        projected_selection(&state.frontend, &state.match_state),
         state.match_state.input.selection_order_pending,
-        simulation(state)?
+        simulation(&state.match_state.sim_runtime)?
             .entities()
             .get(id)
             .map(|entity| entity.position)
@@ -3610,24 +3876,26 @@ fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn projected_selection(state: &AppState) -> Vec<u64> {
+pub(super) fn projected_selection(frontend: &FrontendState, match_state: &MatchState) -> Vec<u64> {
     dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
+        match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     )
 }
 
-fn factory(state: &AppState, category: ProductionCategory) -> Result<Option<FactorySnapshot>> {
-    let sim = simulation(state)?;
+fn factory(
+    match_state: &MatchState,
+    category: ProductionCategory,
+) -> Result<Option<FactorySnapshot>> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let owner = sim
         .interner()
-        .get(&local_owner(state)?)
+        .get(&local_owner(&match_state.session)?)
         .context("local House")?;
     Ok(sim
         .production()
@@ -3648,11 +3916,11 @@ fn factory_json(factory: &FactorySnapshot) -> Value {
         "complete":factory.complete,"queue_len":factory.queue_len,"construction_order":factory.construction_order})
 }
 
-fn live_type(state: &AppState, type_id: &str) -> Result<Option<(u64, (u16, u16))>> {
-    let sim = simulation(state)?;
+fn live_type(match_state: &MatchState, type_id: &str) -> Result<Option<(u64, (u16, u16))>> {
+    let sim = simulation(&match_state.sim_runtime)?;
     let owner = sim
         .interner()
-        .get(&local_owner(state)?)
+        .get(&local_owner(&match_state.session)?)
         .context("local House")?;
     Ok(sim
         .entities()
@@ -3671,25 +3939,44 @@ fn live_type(state: &AppState, type_id: &str) -> Result<Option<(u64, (u16, u16))
         }))
 }
 
-fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
-    let id = simulation(state)?
+fn cameo(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    type_id: &str,
+    right: bool,
+) -> Result<()> {
+    let id = simulation(&match_state.sim_runtime)?
         .interner()
         .get(type_id)
         .context("retail cameo type")?;
     ensure!(
-        crate::ui::sidebar::SidebarTab::all().iter().any(|tab| state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .model
-            .cameo_strips()
-            .items(*tab)
+        crate::ui::sidebar::SidebarTab::all()
             .iter()
-            .any(|cameo| cameo.id == CameoId::Object(id))),
+            .any(|tab| match_state
+                .match_presentation
+                .sidebar_projection
+                .model
+                .cameo_strips()
+                .items(*tab)
+                .iter()
+                .any(|cameo| cameo.id == CameoId::Object(id))),
         "{type_id} is absent from the actual retained local sidebar"
     );
     dispatch::apply_sidebar_action(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
         SidebarAction::CameoPress {
             type_id: type_id.into(),
             right,
@@ -3705,9 +3992,9 @@ fn click_entity(state: &mut AppState, id: u64) -> Result<()> {
     ensure!(
         picked == Some(id),
         "tactical pointer missed object{id}: picked={picked:?}, projected={:?}, pending={}, position={:?}",
-        projected_selection(state),
+        projected_selection(&state.frontend, &state.match_state),
         state.match_state.input.selection_order_pending,
-        simulation(state)?
+        simulation(&state.match_state.sim_runtime)?
             .entities()
             .get(id)
             .map(|entity| entity.position)
@@ -3717,13 +4004,18 @@ fn click_entity(state: &mut AppState, id: u64) -> Result<()> {
 }
 
 fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
-    let entity = simulation(state)?
+    let entity = simulation(&state.match_state.sim_runtime)?
         .entities()
         .get(id)
         .context("mouse actor")?;
     let cell = (entity.position.rx(), entity.position.ry());
-    let world = crate::app::input::entity_pick::presented(state, simulation(state)?)
-        .screen_position(entity);
+    let world = crate::app::input::entity_pick::presented(
+        &state.platform,
+        &state.frontend,
+        &state.match_state,
+        simulation(&state.match_state.sim_runtime)?,
+    )
+    .screen_position(entity);
     crate::app::input::camera::center_camera_on_cell(
         &state.platform,
         &state.renderer,
@@ -3734,22 +4026,32 @@ fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
         cell.1,
     );
     point_at_world(state, world);
-    let sim = simulation(state)?;
+    let sim = simulation(&state.match_state.sim_runtime)?;
     Ok(crate::app::input::entity_pick::hover_object_at_point(
-        crate::app::input::entity_pick::presented(state, sim),
+        crate::app::input::entity_pick::presented(
+            &state.platform,
+            &state.frontend,
+            &state.match_state,
+            sim,
+        ),
         world.0,
         world.1,
-        &local_owner(state)?,
+        &local_owner(&state.match_state.session)?,
         false,
     )
     .map(|object| object.id()))
 }
 
-fn placement_cursor(state: &AppState, yard: u64, type_id: &str) -> Result<(u16, u16)> {
-    let sim = simulation(state)?;
-    let rules = state.rules().context("loaded rules")?;
+fn placement_cursor(
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    yard: u64,
+    type_id: &str,
+) -> Result<(u16, u16)> {
+    let sim = simulation(&match_state.sim_runtime)?;
+    let rules = crate::app::state::active_rules(frontend, match_state).context("loaded rules")?;
     let yard = sim.entities().get(yard).context("yard")?;
-    let owner = local_owner(state)?;
+    let owner = local_owner(&match_state.session)?;
     let object = rules
         .object(type_id)
         .with_context(|| format!("retail {type_id}"))?;
@@ -3768,7 +4070,7 @@ fn placement_cursor(state: &AppState, yard: u64, type_id: &str) -> Result<(u16, 
                 type_id,
                 origin.0,
                 origin.1,
-                state.overlay_registry(),
+                crate::app::state::active_overlay_registry(frontend, match_state),
             );
             if preview.is_some_and(|preview| {
                 preview.valid && preview.in_build_area && preview.foundation_visible

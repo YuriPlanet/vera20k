@@ -8,7 +8,7 @@ use crate::sim::world::Simulation;
 
 use super::{
     AttachAnimState, AttachEffectInstance, AttachEffectWeaponShot, affects_house, cpp_i32,
-    range_modifier_source, range_with_attach_effects, scale_i32,
+    scale_i32, weapon_range_with_modifiers,
 };
 
 /// The per-frame target facts `AttachEffectClass::ShouldBeDiscardedNow`
@@ -321,17 +321,12 @@ impl Simulation {
                     Some(&self.house_alliances),
                 )?;
                 let range = selected.map_or(-1, |selected| {
-                    let source = range_modifier_source(
-                        entity,
-                        Some(&self.substrate.entities),
+                    weapon_range_with_modifiers(
                         rules,
                         &self.interner,
-                    );
-                    range_with_attach_effects(
-                        source,
-                        &selected.weapon.id,
-                        selected.weapon.range_leptons,
-                        rules,
+                        Some(&self.substrate.entities),
+                        entity,
+                        &selected.weapon,
                     )
                 });
                 Some((distance, range))

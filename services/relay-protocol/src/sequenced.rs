@@ -118,19 +118,44 @@ const PACE_RAISE_MAX_MS: u64 = 300_000;
 // when drawing and copying the world leave it too little of each second
 // (2026-11-21, match 1e9fac21: 8 ms ticks, 55 frames a second at 60 Hz).
 const SUSTAINED_BEHIND_MS: u64 = 2_000;
-// Continuous pacing raises the clock towards this share of what a player ran
-// while behind, leaving it a margin to keep up with.
-const CONTINUOUS_HOLD_PERCENT: u32 = 95;
-// Continuous pacing: a player with frames waiting on it this long, though it
-// runs as many as the clock seals, keeps a standing backlog its orders wait
-// behind; the clock slows a twentieth to drain it.
-const STANDING_BACKLOG_MS: u64 = 10_000;
-// Continuous pacing slows at most this share of the rate at a time, so a
-// hitch of a few seconds (loading pictures) costs a quarter, not the match.
-const CONTINUOUS_STEP_DOWN_PERCENT: u32 = 25;
-// Continuous pacing's raises are small, so it waits this fraction of the
-// rows' raise wait (30 seconds, doubled after a relapse).
-const CONTINUOUS_RAISE_WAIT_DIVISOR: u64 = 3;
+// Continuous pacing is one loop (`OrderingRoom::continuous_change`): each
+// player's capacity is what it ran while frames waited on it, the clock seals
+// this share of the slowest capacity, less what waits on that player...
+const CONTINUOUS_HOLD_PERCENT: u32 = 90;
+// ...over this long, so its backlog drains in about that time...
+const DRAIN_MS: u64 = 10_000;
+// ...but by no more than this share of its capacity, so a long stall's
+// backlog takes longer instead of halting everyone else.
+const DRAIN_PERCENT: u32 = 40;
+// A capacity measured while lagging speaks alone for its player until it has
+// kept up for its raise wait; then it grows once by `RAISE_PERCENT`, and once
+// more after each further wait it keeps up, never a little at a time: the
+// speed changes seldom, and only after the player held the last one. The
+// wait starts at `RAISE_AFTER_MS` and doubles, up to `RAISE_AFTER_MAX_MS`,
+// each time the player lags again after a raise (it could not hold it); a
+// raise that held `RAISE_HELD_MS` starts it over. A PC that is steadily
+// slow, or slow in a fight every minute, is raised less and less often; one
+// that recovers climbs.
+const RAISE_AFTER_MS: u64 = 30_000;
+const RAISE_AFTER_MAX_MS: u64 = 120_000;
+const RAISE_PERCENT: u32 = 20;
+const RAISE_HELD_MS: u64 = 60_000;
+// Continuous pacing moves the clock a step at most this often: every change
+// reaches every player, so few...
+const CONTINUOUS_STEP_MS: u64 = 5_000;
+// ...down by at most this share of its rate, so a hitch of a few seconds
+// (loading pictures) slows the others for its seconds, as native lockstep
+// stops them for it, while a PC that drops for good is reached in two
+// steps...
+const CONTINUOUS_STEP_DOWN_PERCENT: u32 = 50;
+// ...and up by at most this share...
+const CONTINUOUS_STEP_PERCENT: u32 = 25;
+// ...and either way only for at least this share of its rate, so a noisy
+// estimate does not wobble the game's speed.
+const CONTINUOUS_CHANGE_MIN_PERCENT: u32 = 5;
+// A report this share under what the clock runs for its player is a new low
+// point (`PaceReport::hold`).
+const CONTINUOUS_RAISE_MIN_PERCENT: u32 = 3;
 const PUSH_WINDOW: u64 = 64;
 const PUSH_LEASE_MS: u64 = 3_000;
 const PUSH_STATUS_MS: u64 = 250;
@@ -1161,13 +1186,14 @@ struct PaceReport {
     capacity: Option<(u16, u64, u32)>,
     // When its unbroken run of behind or catching-up reports began.
     lagging_since: Option<u64>,
-    // Frames run, time and tick cost at the latest standing backlog
-    // (`STANDING_BACKLOG_MS`), for continuous pacing's raise ceiling.
-    standing: Option<(u16, u64, u32)>,
-    // A sustained shortfall that repeats an earlier one within the longest
-    // raise wait: the player relapsed, so what it ran is its capacity, not a
-    // hitch. Continuous pacing's raise ceiling.
-    relapse: Option<(u16, u64, u32)>,
+    // Continuous pacing's hold on this player: the low point of what its
+    // reports say the clock may run for it (`PaceReport::evidence`), and
+    // when it was last confirmed...
+    low: Option<(u32, u64)>,
+    // ...the most frames it ran in a report since...
+    ran_since: u16,
+    // ...and how long the low point speaks alone before a raise.
+    raise_after_ms: u64,
 }
 
 impl PaceReport {
@@ -1178,6 +1204,7 @@ impl PaceReport {
         sample: crate::link::PaceSegment,
         at_ms: u64,
         rate: u16,
+        tick_hz: u16,
     ) -> Self {
         let tick_micros = (sample.tick_micros != 0).then_some(sample.tick_micros);
         let running_behind = sample.pace == OrderPace::Behind
@@ -1204,23 +1231,14 @@ impl PaceReport {
             behind_since,
             capacity: previous.and_then(|p| p.capacity),
             lagging_since,
-            standing: previous.and_then(|p| p.standing),
-            relapse: previous.and_then(|p| p.relapse),
+            low: previous.and_then(|p| p.low),
+            ran_since: previous.map_or(0, |p| p.ran_since),
+            raise_after_ms: previous.map_or(RAISE_AFTER_MS, |p| p.raise_after_ms),
         };
         if report.measured_rate(rate).is_some() {
-            let sample = Some((sample.frames_per_second, at_ms, sample.tick_micros));
-            // An earlier run of behind reports measured it too.
-            if report.capacity.is_some_and(|(_, at, _)| {
-                report.behind_since.is_some_and(|since| at < since)
-                    && at_ms.saturating_sub(at) < PACE_RAISE_MAX_MS
-            }) {
-                report.relapse = sample;
-            }
-            report.capacity = sample;
+            report.capacity = Some((sample.frames_per_second, at_ms, sample.tick_micros));
         }
-        if report.standing_backlog() && sample.frames_per_second > 0 {
-            report.standing = Some((sample.frames_per_second, at_ms, sample.tick_micros));
-        }
+        report.hold(previous, at_ms, tick_hz);
         report
     }
 
@@ -1255,7 +1273,8 @@ impl PaceReport {
         self.fresh(self.capacity, now_ms)
     }
 
-    /// A sample's frames run while it still speaks for this reporter.
+    /// A sample's frames run while it still speaks for this reporter:
+    /// within the longest raise wait, with ticks no quicker by a tenth since.
     fn fresh(&self, sample: Option<(u16, u64, u32)>, now_ms: u64) -> Option<u16> {
         let micros = self.tick_micros?;
         let (ran, at, then) = sample?;
@@ -1264,28 +1283,86 @@ impl PaceReport {
             .then_some(ran)
     }
 
-    /// Frames have waited on this tick-cost reporter for
-    /// `STANDING_BACKLOG_MS` without a break.
-    fn standing_backlog(&self) -> bool {
-        self.lagging_since
-            .is_some_and(|since| self.at_ms.saturating_sub(since) >= STANDING_BACKLOG_MS)
+    /// What this report says continuous pacing may run the clock at for
+    /// this player: what its tick cost holds, and while frames wait on it
+    /// (it ran all it could) no more than `CONTINUOUS_HOLD_PERCENT` of what
+    /// it ran.
+    fn evidence(&self) -> u32 {
+        let sustainable = self.sustainable_rate();
+        if self.lagging() {
+            sustainable.min(u32::from(self.frames_per_second) * CONTINUOUS_HOLD_PERCENT / 100)
+        } else {
+            sustainable
+        }
     }
 
-    /// The fastest rate continuous pacing raises the clock to for this
-    /// reporter: what its tick cost holds, and no more than
-    /// `CONTINUOUS_HOLD_PERCENT` of what it ran in its last standing backlog
-    /// (`STANDING_BACKLOG_MS`) or relapse, so a single hitch of a few
-    /// seconds holds nothing back. A legacy reporter holds back raises only
-    /// by lagging.
-    fn raise_ceiling(&self, now_ms: u64) -> u32 {
-        if self.tick_micros.is_none() {
-            return u32::MAX;
+    /// Frames waited on it and it ran some: it ran all it could.
+    fn lagging(&self) -> bool {
+        self.pace != OrderPace::KeepingUp && self.frames_per_second > 0
+    }
+
+    /// Continuous pacing's hold: the clock runs for this player at the low
+    /// point of its evidence, one rule for every kind of it. A run of
+    /// lagging starts a new low point at what it shows and keeps its least
+    /// (a PC whose speed swings drains at its high ones); evidence
+    /// `CONTINUOUS_RAISE_MIN_PERCENT` under what the clock runs for it
+    /// (`Self::clock_estimate`), as a tick cost that jumps, is a new low
+    /// point too. A new low point after a raise failed it and doubles the
+    /// next wait, up to `RAISE_AFTER_MAX_MS`; one after a raise that held
+    /// `RAISE_HELD_MS` starts the wait over.
+    fn hold(&mut self, previous: Option<Self>, at_ms: u64, tick_hz: u16) {
+        let evidence = self.evidence();
+        let fresh = previous.filter(|p| at_ms.saturating_sub(p.at_ms) <= PACE_REPORT_MS);
+        let starts_lagging = self.lagging() && fresh.is_none_or(|p| !p.lagging());
+        let Some((low, then)) = self.low else {
+            self.low = Some((evidence, at_ms));
+            return;
+        };
+        let running = previous.map_or(low, |p| p.clock_estimate(at_ms));
+        let new_low = starts_lagging
+            || u64::from(evidence) * 100
+                < u64::from(running) * u64::from(100 - CONTINUOUS_RAISE_MIN_PERCENT);
+        // Only a low point under the match's own rate held the clock back,
+        // so only after one is there a raise to judge.
+        if new_low {
+            if low < u32::from(tick_hz)
+                && let Some(held) = at_ms.saturating_sub(then).checked_sub(self.raise_after_ms)
+            {
+                self.raise_after_ms = if held >= RAISE_HELD_MS {
+                    RAISE_AFTER_MS
+                } else {
+                    (self.raise_after_ms * 2).min(RAISE_AFTER_MAX_MS)
+                };
+            }
+            self.low = Some((evidence, at_ms));
+            self.ran_since = 0;
+        } else if self.lagging() {
+            self.low = Some((low.min(evidence), at_ms));
+            self.ran_since = 0;
+        } else {
+            self.ran_since = self.ran_since.max(self.frames_per_second);
         }
-        [self.standing, self.relapse]
-            .into_iter()
-            .filter_map(|sample| self.fresh(sample, now_ms))
-            .map(|ran| u32::from(ran) * CONTINUOUS_HOLD_PERCENT / 100)
-            .fold(self.sustainable_rate(), u32::min)
+    }
+
+    /// The rate continuous pacing may run the clock at for this player: its
+    /// low point (`Self::hold`) until it has kept up for its raise wait
+    /// since it was last confirmed, then more: what it has run since (a
+    /// hitch drained at once shows it runs far more), or the low point grown
+    /// by `RAISE_PERCENT` once for each whole wait it has kept up. A report
+    /// whose evidence is under it ends the raise (`Self::hold`).
+    fn clock_estimate(&self, now_ms: u64) -> u32 {
+        let Some((low, at)) = self.low else {
+            return self.sustainable_rate();
+        };
+        let raises = now_ms.saturating_sub(at) / self.raise_after_ms.max(1);
+        if raises == 0 {
+            return low;
+        }
+        let grown = (0..raises.min(64)).fold(u64::from(low), |held, _| {
+            held + (held * u64::from(RAISE_PERCENT)).div_ceil(100)
+        });
+        let ran = u64::from(self.ran_since) * u64::from(CONTINUOUS_HOLD_PERCENT) / 100;
+        grown.max(ran).min(u64::from(u32::MAX)) as u32
     }
 
     /// The fastest rate this reporter can hold while it keeps
@@ -1311,9 +1388,43 @@ struct Source {
     pace: Option<PaceReport>,
     // Coordinator only: last pace packet sequence and reported age at the follower.
     forwarded_pace: (u64, u32),
+    // How far behind the head its sampled checksums say it runs.
+    backlog: Backlog,
     // Last packet from this source that passed authentication and its rate
     // limits, keepalives included, or the latest a federated relay reported.
     heard_ms: u64,
+}
+
+/// How far a source runs behind the stream head, from its sampled checksums
+/// (`CHECKSUM_INTERVAL`): a client reports frame F's checksum once it has
+/// run F, so the head's frame when the report arrives, less F, is the frames
+/// waiting on it plus the turn, the path and any forwarding. The least such
+/// gap while it kept up is that part; the rest is its backlog. Continuous
+/// pacing sizes a slowdown by it.
+#[derive(Default, Clone)]
+struct Backlog {
+    // The latest gap and when it arrived.
+    latest: Option<(u32, u64)>,
+    // The least gap reported while its pace report said it kept up.
+    baseline: Option<u32>,
+}
+
+impl Backlog {
+    fn note(&mut self, gap: u32, now_ms: u64, keeping_up: bool) {
+        if keeping_up {
+            self.baseline = Some(self.baseline.map_or(gap, |least| least.min(gap)));
+        }
+        self.latest = Some((gap, now_ms));
+    }
+
+    /// Frames waiting on it at its latest report no older than
+    /// `PACE_REPORT_MS`; `turn` stands in for the baseline before one.
+    fn frames(&self, now_ms: u64, turn: u32) -> Option<u32> {
+        let (gap, _) = self
+            .latest
+            .filter(|&(_, at)| now_ms.saturating_sub(at) <= PACE_REPORT_MS)?;
+        Some(gap.saturating_sub(self.baseline.unwrap_or(turn)))
+    }
 }
 
 impl Source {
@@ -1372,13 +1483,13 @@ impl Pace {
     }
 
     /// Notes a player behind or catching up, and returns the last change's
-    /// due time once `PACE_STEP_MS` have passed since it.
-    fn step_due(&mut self, lagging: bool, now_ms: u64, start_ms: u64) -> Option<u64> {
+    /// due time once `step_ms` have passed since it.
+    fn step_due(&mut self, lagging: bool, now_ms: u64, start_ms: u64, step_ms: u64) -> Option<u64> {
         if lagging {
             self.lagging_at = now_ms;
         }
         let changed_at = self.anchor_at(start_ms).map_or(0, |(_, at)| at);
-        (self.anchor.is_none() || now_ms.saturating_sub(changed_at) >= PACE_STEP_MS)
+        (self.anchor.is_none() || now_ms.saturating_sub(changed_at) >= step_ms)
             .then_some(changed_at)
     }
 
@@ -1698,7 +1809,13 @@ impl OrderingRoom {
     fn report_pace(&mut self, source: u8, report: crate::link::PaceSegment, now_ms: u64) {
         let slot = &mut self.sources[usize::from(source)].pace;
         if slot.is_none_or(|previous| now_ms >= previous.at_ms) {
-            *slot = Some(PaceReport::new(*slot, report, now_ms, self.pace.rate));
+            *slot = Some(PaceReport::new(
+                *slot,
+                report,
+                now_ms,
+                self.pace.rate,
+                self.certificate.tick_hz,
+            ));
         }
     }
 
@@ -1795,7 +1912,9 @@ impl OrderingRoom {
                     && (report.holdable_rate(self.pace.rate) < u32::from(rates[step - 1])
                         || report.ran_below(rates[step - 1], now_ms))
             });
-        let changed_at = self.pace.step_due(lagging, now_ms, start_ms)?;
+        let changed_at = self
+            .pace
+            .step_due(lagging, now_ms, start_ms, PACE_STEP_MS)?;
         Some(match slowest {
             Some((sustainable, _, source)) if step + 1 < rates.len() => (
                 rates[step + 1..]
@@ -1816,67 +1935,65 @@ impl OrderingRoom {
         })
     }
 
-    /// [`Self::adjust_pace`] under continuous pacing. A player behind, by its
-    /// tick cost or for `SUSTAINED_BEHIND_MS` by what it ran, slows the clock
-    /// to the slowest such player's holdable rate, at least one frame slower,
-    /// at most `CONTINUOUS_STEP_DOWN_PERCENT` slower at a time and not below
-    /// `CONTINUOUS_FLOOR`. Otherwise a player with a standing
-    /// backlog (`STANDING_BACKLOG_MS`) that runs no more than a twentieth
-    /// over the clock slows it by a twentieth, at least one frame, so the
-    /// backlog drains. After the raise wait with nobody
-    /// behind or catching up, the clock goes half the way up to the slowest
-    /// raise ceiling (`PaceReport::raise_ceiling`), at least one frame and at
-    /// most a tenth of its rate, never past the certificate's rate.
+    /// [`Self::adjust_pace`] under continuous pacing: one loop on what each
+    /// player runs and what waits on it, with no rule for any one case.
+    ///
+    /// Each fresh reporter wants the clock at its estimate
+    /// (`PaceReport::clock_estimate`: the low point of what its reports say
+    /// it runs, raised a step after each wait it keeps up, a wait that grows
+    /// each time a raise fails)
+    /// less its backlog (`Backlog`) over `DRAIN_MS`, at most `DRAIN_PERCENT`
+    /// of the estimate. The clock moves towards the
+    /// least of these a step at a time (`CONTINUOUS_STEP_MS`), and only when
+    /// it is `CONTINUOUS_CHANGE_MIN_PERCENT` away: down at most
+    /// `CONTINUOUS_STEP_DOWN_PERCENT`, up all the way and at most
+    /// `CONTINUOUS_STEP_PERCENT`, between `CONTINUOUS_FLOOR` and the
+    /// certificate's rate. A player whose backlog stands is measured again
+    /// while it lags and pulls the target under what it runs, so no margin
+    /// leaves anyone behind for good; one that keeps up is raised a step at a
+    /// time, each after it held the last.
     fn continuous_change(&mut self, now_ms: u64, start_ms: u64) -> Option<(u16, u8)> {
-        let (ceiling, rate) = (self.certificate.tick_hz, self.pace.rate);
-        let floor = CONTINUOUS_FLOOR.min(ceiling);
-        let (slowest, mut lagging) = self.slowest_behind(now_ms);
-        let mut standing = None;
-        let mut hold = u32::from(ceiling);
+        let (ceiling, rate) = (
+            u32::from(self.certificate.tick_hz),
+            u32::from(self.pace.rate),
+        );
+        let floor = u32::from(CONTINUOUS_FLOOR).min(ceiling);
+        let turn = turn_frames(self.pace.rate);
+        let mut lagging = false;
+        let mut target = (ceiling, u8::MAX);
         for (source, report) in self.fresh_paces(now_ms) {
-            let standing_backlog = report.standing_backlog();
-            lagging |= report.pace != OrderPace::KeepingUp && standing_backlog;
-            // One that runs a twentieth more than the clock drains its
-            // backlog itself; slowing for it would not stop.
-            if standing_backlog
-                && standing.is_none()
-                && u32::from(report.frames_per_second) * 20 <= u32::from(rate) * 21
-            {
-                standing = Some(source);
+            lagging |= report.pace != OrderPace::KeepingUp;
+            let estimate = report.clock_estimate(now_ms);
+            let waiting = report
+                .lagging_since
+                .and(
+                    self.sources[usize::from(source)]
+                        .backlog
+                        .frames(now_ms, turn),
+                )
+                .map_or(0, u64::from);
+            let drain = (waiting * 1000 / DRAIN_MS)
+                .min(u64::from(estimate) * u64::from(DRAIN_PERCENT) / 100)
+                as u32;
+            let wanted = estimate.saturating_sub(drain);
+            if wanted < target.0 {
+                target = (wanted, source);
             }
-            hold = hold.min(report.raise_ceiling(now_ms));
         }
-        let changed_at = self.pace.step_due(lagging, now_ms, start_ms)?;
-        let deepest = u32::from(rate) - u32::from(rate) * CONTINUOUS_STEP_DOWN_PERCENT / 100;
-        match slowest {
-            Some((sustainable, _, source)) if rate > floor => Some((
-                sustainable
-                    .max(deepest)
-                    .clamp(u32::from(floor), u32::from(rate) - 1) as u16,
-                source,
-            )),
-            // A slowdown's own drain takes time: judge a standing backlog
-            // only once the last change has had as long.
-            None if let Some(source) = standing
-                && rate > floor
-                && now_ms.saturating_sub(changed_at) >= STANDING_BACKLOG_MS =>
-            {
-                Some(((rate * 19 / 20).clamp(floor, rate - 1), source))
-            }
-            None if rate < ceiling
-                && now_ms.saturating_sub(self.pace.lagging_at.max(changed_at))
-                    >= self.pace.raise_wait / CONTINUOUS_RAISE_WAIT_DIVISOR =>
-            {
-                // Half the way, as Spring's speed control smooths, and no
-                // more than a tenth: Age of Empires' clock "would slowly
-                // settle back" (Bettner and Terrano, 2001).
-                let hold = hold as u16;
-                (hold > rate).then(|| {
-                    let step = ((hold - rate) / 2).clamp(1, (rate / 10).max(1));
-                    (rate + step, u8::MAX)
-                })
-            }
-            _ => None,
+        self.pace
+            .step_due(lagging, now_ms, start_ms, CONTINUOUS_STEP_MS)?;
+        let (wanted, source) = (target.0.clamp(floor, ceiling), target.1);
+        let most = (rate * CONTINUOUS_STEP_PERCENT / 100).max(1);
+        let least = (rate * CONTINUOUS_CHANGE_MIN_PERCENT).div_ceil(100).max(1);
+        if wanted + least <= rate || (wanted < rate && wanted == floor) {
+            let down = (rate * CONTINUOUS_STEP_DOWN_PERCENT / 100).max(1);
+            Some(((rate - down).max(wanted) as u16, source))
+        } else if wanted >= rate + least {
+            // All the way, at most a quarter: Age of Empires' clock "would
+            // slowly settle back" (Bettner and Terrano, 2001).
+            Some(((rate + (wanted - rate).min(most)) as u16, u8::MAX))
+        } else {
+            None
         }
     }
 
@@ -2290,6 +2407,7 @@ impl OrderingRoom {
         ticket: Ticket,
         samples: &[(u32, u32)],
         federation: Option<&federation::Federation>,
+        now_ms: u64,
     ) {
         for &(frame, checksum) in samples {
             match federation {
@@ -2301,7 +2419,13 @@ impl OrderingRoom {
                             .push((ticket.source, frame, checksum));
                     }
                 }
-                _ => self.record_checksum(ticket.source, frame, checksum, federation.is_some()),
+                _ => self.record_checksum(
+                    ticket.source,
+                    frame,
+                    checksum,
+                    federation.is_some(),
+                    now_ms,
+                ),
             }
         }
     }
@@ -2326,7 +2450,16 @@ impl OrderingRoom {
         frame: u32,
         checksum: u32,
         federated: bool,
+        now_ms: u64,
     ) {
+        if self.reportable_checksum_frame(frame) && self.active & (1 << source) != 0 {
+            let slot = &mut self.sources[usize::from(source)];
+            let keeping_up = slot
+                .pace
+                .is_some_and(|report| report.pace == OrderPace::KeepingUp);
+            slot.backlog
+                .note(self.head.saturating_sub(frame), now_ms, keeping_up);
+        }
         if self.desync_found
             || self.storage_failed
             || self.finished_at.is_some()
@@ -3402,7 +3535,7 @@ impl RelayServer {
             }
         }
         if !uplink.checksums.is_empty() {
-            ordering.report_checksums(ticket, &uplink.checksums, room.federation.as_ref());
+            ordering.report_checksums(ticket, &uplink.checksums, room.federation.as_ref(), now_ms);
             ordering.count_changes(&mut self.ordering_counts);
         }
         if let Some(report) = uplink.pace {

@@ -73,7 +73,9 @@ pub(crate) enum FrameStep {
     TerrainNavigation,
     /// The local anims' AI (`0x0055B61B..0x0055B649`, AnimClass vt+0x5C):
     /// gamemd walks its local list (`0x00A83E00`) after the LogicClass
-    /// vector in LAN and online games, the only ones that fill it.
+    /// vector in LAN and online games, the only ones that fill it. VERA's
+    /// presentation particle systems, which no Logic slot holds, run here
+    /// too (`Simulation::advance_presented_particle_systems`).
     LocalAnims,
     /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
     /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
@@ -128,7 +130,10 @@ impl FrameStep {
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
             Self::IceGrowth | Self::OreGrowth | Self::IceSolidify => phase::ORE_GROWTH,
-            Self::BombList | Self::LocalAnims => return None,
+            Self::BombList => return None,
+            // The presentation anims and particle systems, timed with the
+            // shared effects the object pass runs.
+            Self::LocalAnims => phase::EFFECTS,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
@@ -342,6 +347,11 @@ impl Simulation {
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }
+                // The Wasm module phase (RFC 0001 section 5; its place in the
+                // frame is open question 8). Without modules it does nothing.
+                if !self.ext_modules.is_empty() {
+                    self.run_ext_module_phase(rules, overlay_registry, effects);
+                }
             }
             FrameStep::Shroud => {
                 self.tick_shroud_growth(UninitContext::new(rules).with_effects(effects));
@@ -508,6 +518,9 @@ impl Simulation {
                             )
                         })?;
                 }
+                // The presentation particle systems, which no Logic slot
+                // holds, run after it as the presentation anims do.
+                self.advance_presented_particle_systems(rules);
             }
             // Follows the object loop.
             FrameStep::IonBlasts => {
@@ -754,6 +767,11 @@ impl Simulation {
                 return Ok(FrameTailResult::Interrupted(reason));
             }
         };
+        // Wasm modules' house orders follow the player commands in the same
+        // step (RFC 0001 section 6g). Without modules this does nothing.
+        if failure.is_none() && pass != Some(NetworkQueuePass::SkipDispatch) {
+            frame.spawned_entities |= self.run_ext_module_orders(rules, effects);
+        }
         frame
             .commands
             .extend(std::mem::take(&mut *self.frame_command_admissions));

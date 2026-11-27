@@ -27,7 +27,7 @@ use rayon::prelude::*;
 /// `work` over every item, results in item order. Threads take the items a
 /// few at a time, so slower cores (efficiency cores, a busy host) take fewer.
 /// A worker's panic resumes on the caller.
-pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
+pub fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     if caller_takes() {
         return pulled(Takes::chunked(items.len()), (), |(), index| {
             Some(work(&items[index]))
@@ -189,6 +189,31 @@ pub fn drop_on_pool<T: Send + 'static>(value: T) {
     rayon::spawn(move || drop(value));
     #[cfg(target_arch = "wasm32")]
     drop(value);
+}
+
+/// rayon's global pool as the game starts it: each worker has the game's
+/// stack and a name. A helper's item runs on the calling thread or on a
+/// worker ([`side_by_side`]), so with rayon's default 2 MiB a deep item that
+/// fits the simulation thread could overflow a worker. A crash report then
+/// names the worker.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn worker_pool() -> rayon::ThreadPoolBuilder {
+    rayon::ThreadPoolBuilder::new()
+        .stack_size(crate::util::GAME_STACK_BYTES)
+        .thread_name(|index| format!("worker {index}"))
+}
+
+/// Start the global pool from [`worker_pool`], before anything uses it. A
+/// second call does nothing; a pool something else already started stays,
+/// with a warning.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn start_worker_pool() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        if let Err(error) = worker_pool().build_global() {
+            log::warn!("The worker pool keeps rayon's default stack: {error}");
+        }
+    });
 }
 
 /// Run a fixture on the pool's only worker so deferred drops stay queued until it yields.
@@ -449,6 +474,32 @@ fn enlist<'scope, S, T, L, P>(
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
+
+    /// Recursion whose frames together take at least `depth` half-KiB.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn nest(depth: usize) -> u8 {
+        let frame = std::hint::black_box([depth as u8; 512]);
+        if depth == 0 {
+            return frame[0];
+        }
+        frame[511].wrapping_add(nest(depth - 1))
+    }
+
+    /// A worker of the game's pool is named and holds an item of over 3 MiB,
+    /// more than rayon's default 2 MiB stack.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_game_pool_worker_has_the_game_stack_and_a_name() {
+        let pool = super::worker_pool()
+            .num_threads(1)
+            .build()
+            .expect("a worker pool");
+        let name = pool.install(|| {
+            std::hint::black_box(nest(6 * 1024));
+            std::thread::current().name().map(str::to_owned)
+        });
+        assert_eq!(name.as_deref(), Some("worker 0"));
+    }
 
     /// Every helper answers as a serial loop does, from an empty list to one
     /// handed out many indices at a time.

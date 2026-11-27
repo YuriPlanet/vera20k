@@ -3,7 +3,6 @@
 
 use anyhow::Result;
 
-use crate::app::AppState;
 use crate::app::frontend::credits_roll::CreditsRollSession;
 use crate::app::frontend::fullscreen_movie::FullscreenMovie;
 use crate::app::frontend::menu_page_render::{
@@ -14,7 +13,12 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
     GuiStyle, paint_gui_ids_into, paint_gui_styled_into,
 };
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::movies_credits_shell::{
@@ -65,35 +69,52 @@ fn movie_list_status_key(shell_controller: &DialogController) -> Option<&'static
 
 /// Paint dialog `0x129`. Returns `false` when the shell chrome is missing.
 pub(crate) fn render_movie_list(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if !family_art_ready(state) {
+    if !family_art_ready(
+        renderer,
+        frontend,
+        process_assets,
+        &persistence.options_profile,
+    ) {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::movie_list_layout(&state.renderer.gpu);
+    let layout = crate::app::frontend::shell_layout::movie_list_layout(&renderer.gpu);
     let (page, dialog) = (&layout.page, MOVIE_LIST_DIALOG);
     let rect_of = |id| layout.rect_of(id);
     let tree = page_tree(
-        &mut state.frontend.shell_controller,
+        &mut frontend.shell_controller,
         dialog,
         movie_list_nodes,
         rect_of,
         &[],
     );
-    let status = |state: &AppState| {
-        movie_list_status_key(&state.frontend.shell_controller).map(str::to_owned)
+    let status = |frontend: &FrontendState| {
+        movie_list_status_key(&frontend.shell_controller).map(str::to_owned)
     };
     let kind = ShellSlideKind::MovieList;
-    let panel = page_panel_state(state, kind, true, status, page.status_help);
+    let panel = page_panel_state(
+        frontend,
+        process_assets,
+        kind,
+        true,
+        status,
+        page.status_help,
+    );
     // The teardown slide covers every child with the dialog's own repaint
     // (`0x00622C4F`), and nothing repaints them before the dialog is gone:
     // the list box and the prompt stay blank.
     let leaving = panel.leaving;
     let title = MOVIE_LIST_PAGE.title_key;
     let mut frame = FamilyFrame::new("Movie List Shell", page, panel, title).on(
-        &state.frontend.shell_controller,
+        &frontend.shell_controller,
         dialog,
         &tree,
     );
@@ -101,10 +122,10 @@ pub(crate) fn render_movie_list(
     if !leaving {
         // The list over its widget, its rows the movies' captions: only the
         // rows it shows are named.
-        let controller = &state.frontend.shell_controller;
+        let controller = &frontend.shell_controller;
         let gui = controller.gui();
         let mut bar = None;
-        if let Some(list) = state.frontend.movie_list.as_ref()
+        if let Some(list) = frontend.movie_list.as_ref()
             && let Some(node) = find_family_list(controller, dialog)
             && let Some(geometry) = gui.list_geometry(node)
         {
@@ -115,7 +136,7 @@ pub(crate) fn render_movie_list(
                 (id == FAMILY_LIST_ID).then(|| {
                     let rows = list.iter().enumerate();
                     rows.map(|(row, movie)| match shown.contains(&row) {
-                        true => (state.csf_text(movie.label_key), u32::MAX),
+                        true => (process_assets.csf_text(movie.label_key), u32::MAX),
                         false => (String::new(), u32::MAX),
                     })
                     .collect()
@@ -128,11 +149,11 @@ pub(crate) fn render_movie_list(
             let over = &mut frame.over;
             paint_gui_styled_into(
                 over,
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 gui,
                 node,
                 page.scale,
@@ -147,11 +168,11 @@ pub(crate) fn render_movie_list(
             let over = &mut frame.over;
             paint_gui_ids_into(
                 over,
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 gui,
                 root,
                 prompt,
@@ -160,7 +181,17 @@ pub(crate) fn render_movie_list(
             );
         }
     }
-    encode_family_page(state, encoder, destination, frame);
+    encode_family_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        encoder,
+        destination,
+        frame,
+    );
     Ok(true)
 }
 

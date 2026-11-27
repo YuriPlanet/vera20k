@@ -413,6 +413,10 @@ impl RulesPassProcessor {
                 }
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.em_effect = raw.read_bool("EMEffect", current.em_effect);
+                // Firestorm's web keys (`docs/ts-webs.md`), which gamemd
+                // lacks: plain bool and int reads that allocate nothing, so
+                // their place among the YR keys changes no other read.
+                current.web = crate::rules::warhead_type::WarheadWeb::read_pass(current.web, &raw);
                 // The stock way reads DebrisTypes after EMEffect, allocating.
                 let debris_types = match ares_debris_types {
                     Some(types) => types,

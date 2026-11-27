@@ -9,6 +9,8 @@ pub use layout::{
     RIGHT_PANEL_TILE_H, RIGHT_PANEL_WIDTH, RectPx, SHELL_BASE_H, SHELL_BASE_W, compute_layout,
     movie_base_for_responsive_width, movie_base_for_screen_width,
 };
+pub(crate) use layout::{nodes, retail_column_fits};
+pub(crate) use state::HAS_EDITION_SWITCH;
 pub use state::{
     MAIN_MENU_DIALOG, MainMenuControlId, MainMenuShellAction, MainMenuShellState,
     action_for_control, hovered_control, pressed_control, return_code_for_action,

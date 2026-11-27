@@ -22,11 +22,11 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use anyhow::{Context, Result};
 
-use super::state::AppState;
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioKind, SkirmishScenarioRecord, SkirmishScenarioSource,
 };
 use crate::map::source::{KeptMap, KeptMapFiles};
+use crate::ui::skirmish_shell::online_map_folders::OnlineMapFolders;
 use crate::ui::skirmish_shell::{ChooseMapPrompt, ChooseMapPromptKind, ChooseMapSelection};
 use crate::util::time::{Duration, Instant};
 
@@ -47,19 +47,73 @@ pub(crate) struct OnlineMap {
     header: Arc<[u8]>,
 }
 
-#[derive(Default)]
-enum Phase {
+enum Phase<T> {
     /// Not read during this online visit: read on going online.
-    #[default]
     NotStarted,
     Fetching {
-        result: Receiver<Result<Vec<OnlineMap>>>,
+        result: Receiver<Result<T>>,
         retried: bool,
     },
     /// The read failed; `retry_at` is the visit's one more try.
     Failed { retry_at: Option<Instant> },
     /// The catalog arrived, or this run needs none: final.
     Ready,
+}
+
+impl<T> Default for Phase<T> {
+    fn default() -> Self {
+        Self::NotStarted
+    }
+}
+
+impl<T> Phase<T> {
+    /// The catalog and category feed share a retry policy but run independently.
+    fn poll(
+        &mut self,
+        online: bool,
+        start: impl FnOnce() -> Option<Receiver<Result<T>>>,
+    ) -> Option<Result<T>> {
+        let retried = match self {
+            Self::NotStarted if online => false,
+            Self::Failed { .. } if !online => {
+                *self = Self::NotStarted;
+                return None;
+            }
+            Self::Failed { retry_at: Some(at) } if Instant::now() >= *at => true,
+            Self::Fetching { result, retried } => {
+                let result = match result.try_recv() {
+                    Ok(result) => result,
+                    Err(TryRecvError::Empty) => return None,
+                    Err(TryRecvError::Disconnected) => {
+                        Err(anyhow::anyhow!("the library worker stopped"))
+                    }
+                };
+                *self = if result.is_ok() {
+                    Self::Ready
+                } else {
+                    Self::failed(*retried)
+                };
+                return Some(result);
+            }
+            _ => return None,
+        };
+        *self = start().map_or(Self::Ready, |result| Self::Fetching { result, retried });
+        None
+    }
+
+    fn failed(retried: bool) -> Self {
+        Self::Failed {
+            retry_at: (!retried).then(|| Instant::now() + CATALOG_RETRY),
+        }
+    }
+
+    fn next(&self, next_poll: Instant, online: bool) -> Option<Instant> {
+        match self {
+            Self::Fetching { .. } => Some(next_poll),
+            Self::Failed { retry_at } if online => *retry_at,
+            _ => None,
+        }
+    }
 }
 
 /// How long a failed catalog read waits before its one retry in a visit.
@@ -77,7 +131,9 @@ struct Download {
 /// The library's catalog and the one download Choose Map may run.
 #[derive(Default)]
 pub(crate) struct MapLibrary {
-    phase: Phase,
+    phase: Phase<Vec<OnlineMap>>,
+    categories: Phase<HashMap<String, Vec<String>>>,
+    folders: OnlineMapFolders,
     maps: Vec<OnlineMap>,
     download: Option<Download>,
     /// Starred maps by `favorite_key`, read when Choose Map opens.
@@ -87,6 +143,10 @@ pub(crate) struct MapLibrary {
 const FAVORITES_FILE: &str = "MapFavorites.txt";
 
 impl MapLibrary {
+    pub(crate) fn folders(&self) -> OnlineMapFolders {
+        self.folders.clone()
+    }
+
     /// The library entry behind an Online Choose Map row.
     pub(crate) fn online_map(&self, record: &SkirmishScenarioRecord) -> Option<&OnlineMap> {
         let SkirmishScenarioSource::Online(sha256) = &record.source else {
@@ -98,97 +158,89 @@ impl MapLibrary {
 
 /// Starts the catalog read once the player is online, then takes the
 /// catalog and a finished download.
-pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let online = in_online_play(&state.frontend);
-    let taken = std::mem::take(&mut state.frontend.map_library.phase);
-    let was_fetching = matches!(taken, Phase::Fetching { .. });
-    let phase = match taken {
-        // A launcher-started match has no Choose Map to fill.
-        Phase::NotStarted if state.frontend.external_launch => Phase::Ready,
-        Phase::NotStarted if online => fetch_catalog(&state.platform, false),
-        Phase::Fetching { result, retried } => match result.try_recv() {
-            Ok(Ok(maps)) => {
-                log::info!("The online map library lists {} maps", maps.len());
-                state.frontend.map_library.maps = maps;
-                append_online_records(&state.platform, &mut state.frontend, &state.process_assets);
-                Phase::Ready
-            }
-            Ok(Err(error)) => {
-                log::info!("The online map library is unavailable: {error:#}");
-                failed(retried)
-            }
-            Err(TryRecvError::Empty) => Phase::Fetching { result, retried },
-            Err(TryRecvError::Disconnected) => failed(retried),
-        },
-        // Each online visit tries again.
-        Phase::Failed { .. } if !online => Phase::NotStarted,
-        Phase::Failed { retry_at: Some(at) } if Instant::now() >= at => {
-            fetch_catalog(&state.platform, true)
+pub(crate) fn poll(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<Instant> {
+    let online = in_online_play(frontend) && !frontend.external_launch;
+    let catalog = frontend
+        .map_library
+        .phase
+        .poll(online, || start_catalog(platform));
+    let categories = frontend.map_library.categories.poll(online, || {
+        crate::app::worker::spawn(
+            "vera-map-categories",
+            Arc::new(AtomicBool::new(false)),
+            |_| fetch::categories(),
+        )
+    });
+    let refresh = catalog.is_some() || categories.is_some();
+    match catalog {
+        Some(Ok(maps)) => {
+            log::info!("The online map library lists {} maps", maps.len());
+            frontend.map_library.maps = maps;
+            append_online_records(platform, frontend, process_assets);
         }
-        phase => phase,
-    };
-    let ended = was_fetching && !matches!(phase, Phase::Fetching { .. });
-    state.frontend.map_library.phase = phase;
-    if ended {
-        // An open Choose Map shows the library's rows, or why it has none.
-        refresh_choose_map(state);
+        Some(Err(error)) => log::info!("The online map library is unavailable: {error:#}"),
+        None => {}
+    }
+    match categories {
+        Some(Ok(memberships)) => frontend.map_library.folders.set_memberships(memberships),
+        Some(Err(error)) => log::info!("The online map categories are unavailable: {error:#}"),
+        None => {}
+    }
+    if refresh {
+        refresh_choose_map(platform, renderer, frontend);
     }
     // A download belongs to Choose Map's box: it stops when the chooser
     // goes, however it went.
-    if state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .is_none()
-    {
-        cancel_download(&mut state.frontend);
+    if frontend.skirmish_shell_state.choose_map_modal.is_none() {
+        cancel_download(frontend);
     }
-    let library = &mut state.frontend.map_library;
+    let library = &mut frontend.map_library;
     if let Some(download) = library.download.as_ref() {
         match download.result.try_recv() {
             Ok(result) => {
                 let sha256 = library.download.take().map(|done| done.sha256);
-                finish_download(state, sha256.unwrap_or_default(), result);
+                finish_download(
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    sha256.unwrap_or_default(),
+                    result,
+                );
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 let sha256 = library.download.take().map(|done| done.sha256);
                 finish_download(
-                    state,
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
                     sha256.unwrap_or_default(),
                     Err(anyhow::anyhow!("the download stopped")),
                 );
             }
         }
     }
-    if state.frontend.map_library.download.is_some() {
+    if frontend.map_library.download.is_some() {
         // The download box's bar follows the bytes as they arrive.
-        state.platform.window.request_redraw();
+        platform.window.request_redraw();
     }
-    let library = &state.frontend.map_library;
+    let library = &frontend.map_library;
     let next = Instant::now() + POLL_INTERVAL;
-    match library.phase {
-        _ if library.download.is_some() => Some(next),
-        Phase::Fetching { .. } => Some(next),
-        Phase::NotStarted if online => Some(next),
-        Phase::Failed { retry_at } => retry_at.filter(|_| online),
-        _ => None,
-    }
-}
-
-/// A failed read: one more try this visit, unless this was it.
-fn failed(retried: bool) -> Phase {
-    Phase::Failed {
-        retry_at: (!retried).then(|| Instant::now() + CATALOG_RETRY),
-    }
-}
-
-fn fetch_catalog(platform: &crate::app::PlatformState, retried: bool) -> Phase {
-    match start_catalog(platform) {
-        Some(result) => Phase::Fetching { result, retried },
-        // No game folder, or no worker thread: no library this run.
-        None => Phase::Ready,
-    }
+    [
+        library.download.as_ref().map(|_| next),
+        library.phase.next(next, online),
+        library.categories.next(next, online),
+    ]
+    .into_iter()
+    .flatten()
+    .min()
 }
 
 /// What an empty Online Maps list says.
@@ -203,20 +255,21 @@ pub(crate) fn empty_online_maps_text(
 }
 
 /// An open Choose Map shows the catalog's rows as they are now.
-fn refresh_choose_map(state: &mut AppState) {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(
-        &state.renderer,
-        &state.frontend.screen,
-    );
-    let frontend = &mut state.frontend;
+fn refresh_choose_map(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+) {
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(renderer, &frontend.screen);
     if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
+        modal.set_online_categories(frontend.map_library.folders());
         modal.refresh(
             &frontend.skirmish_modes,
             frontend.scenario_catalog.records(),
             &layout,
         );
     }
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 
 /// Adds missing library rows and presents maps already on disk under their
@@ -245,6 +298,7 @@ pub(crate) fn append_online_records(
         &library.maps,
         &folders,
         &mut library.favorites,
+        &mut library.folders,
         process_assets.manager(),
     ) {
         save_favorites(platform, frontend);
@@ -256,8 +310,10 @@ fn append_rows(
     maps: &[OnlineMap],
     folders: &[&Path],
     favorites: &mut BTreeSet<String>,
+    categories: &mut OnlineMapFolders,
     assets: Option<&crate::assets::asset_manager::AssetManager>,
 ) -> bool {
+    categories.reset_installed();
     let files = KeptMapFiles::scan(folders);
     // A selected client install supplies its own scenario list. Only ordinary
     // map discovery adopts an unrelated loose file without a player choosing it.
@@ -290,6 +346,7 @@ fn append_rows(
             if let Some(&index) = taken.get(&key)
                 && !records[index].is_online()
             {
+                categories.record_installed(&records[index].file_name, &map.sha256);
                 starred |= carry_favorite(favorites, &map.sha256, &records[index]);
                 continue;
             }
@@ -586,10 +643,16 @@ fn set_prompt(
 
 /// A download ended: keep the map and say so, or say it failed. The box
 /// stays until the player answers it.
-fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>) {
+fn finish_download(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sha256: String,
+    result: Result<Vec<u8>>,
+) {
     // The box this download belongs to, unless the player closed it.
-    let Some(prompt) = state
-        .frontend
+    let Some(prompt) = frontend
         .skirmish_shell_state
         .choose_map_modal
         .as_ref()
@@ -603,8 +666,15 @@ fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>
     let result = result
         .map_err(|error| (ChooseMapPromptKind::DownloadFailed, error))
         .and_then(|bytes| {
-            keep_download(state, &sha256, &bytes)
-                .map_err(|error| (ChooseMapPromptKind::SaveFailed, error))
+            keep_download(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                &sha256,
+                &bytes,
+            )
+            .map_err(|error| (ChooseMapPromptKind::SaveFailed, error))
         });
     let mut selection = prompt.selection;
     let kind = match result {
@@ -617,13 +687,19 @@ fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>
             kind
         }
     };
-    set_prompt(&state.platform, &mut state.frontend, selection, kind);
+    set_prompt(platform, frontend, selection, kind);
 }
 
 /// Select the actual kept file, including an existing copy with a different name.
-fn keep_download(state: &mut AppState, sha256: &str, bytes: &[u8]) -> Result<usize> {
-    let map = state
-        .frontend
+fn keep_download(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    sha256: &str,
+    bytes: &[u8],
+) -> Result<usize> {
+    let map = frontend
         .map_library
         .maps
         .iter()
@@ -631,7 +707,14 @@ fn keep_download(state: &mut AppState, sha256: &str, bytes: &[u8]) -> Result<usi
         .context("the map left the library")?;
     let file_name = map.file_name.clone();
     let name = map.name.clone();
-    let (path, index) = keep_map_and_list(state, &file_name, bytes)?;
+    let (path, index) = keep_map_and_list(
+        platform,
+        renderer,
+        frontend,
+        process_assets,
+        &file_name,
+        bytes,
+    )?;
     log::info!("Downloaded the online map {name} as {}", path.display());
     Ok(index)
 }
@@ -641,20 +724,33 @@ fn keep_download(state: &mut AppState, sha256: &str, bytes: &[u8]) -> Result<usi
 /// the library row for these bytes becomes the kept file's row, and a file
 /// that no row names yet gets one. Returns the kept file's path.
 pub(crate) fn keep_map(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
     host_file: &str,
     bytes: &[u8],
 ) -> Result<std::path::PathBuf> {
-    keep_map_and_list(state, host_file, bytes).map(|(path, _)| path)
+    keep_map_and_list(
+        platform,
+        renderer,
+        frontend,
+        process_assets,
+        host_file,
+        bytes,
+    )
+    .map(|(path, _)| path)
 }
 
 fn keep_map_and_list(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
     host_file: &str,
     bytes: &[u8],
 ) -> Result<(std::path::PathBuf, usize)> {
-    let (ra2_dir, maps_dir) = state
-        .platform
+    let (ra2_dir, maps_dir) = platform
         .game_config
         .as_ref()
         .map(|config| {
@@ -665,13 +761,12 @@ fn keep_map_and_list(
         })
         .context("no game folder")?;
     let sha256 = crate::util::sha256::sha256_hex(bytes);
-    let records = state.frontend.scenario_catalog.records();
+    let records = frontend.scenario_catalog.records();
     let online = records.iter().position(
         |record| matches!(&record.source, SkirmishScenarioSource::Online(sha) if sha == &sha256),
     );
     let prompted = online.is_some_and(|index| {
-        state
-            .frontend
+        frontend
             .skirmish_shell_state
             .choose_map_modal
             .as_ref()
@@ -696,11 +791,21 @@ fn keep_map_and_list(
             })
         },
     )?;
-    let mut records = state.frontend.scenario_catalog.records_mut();
-    let (index, removed) =
-        list_kept_file(&mut records, online, &kept, state.process_assets.manager())?;
+    let mut records = frontend.scenario_catalog.records_mut();
+    let (index, removed) = list_kept_file(&mut records, online, &kept, process_assets.manager())?;
+    if frontend
+        .map_library
+        .maps
+        .iter()
+        .any(|map| map.sha256 == sha256)
+    {
+        frontend
+            .map_library
+            .folders
+            .record_installed(&records[index].file_name, &sha256);
+    }
     let carried_star = carry_favorite(
-        &mut state.frontend.map_library.favorites,
+        &mut frontend.map_library.favorites,
         &sha256,
         &records[index],
     );
@@ -715,7 +820,6 @@ fn keep_map_and_list(
                 old - usize::from(old > removed)
             }
         };
-        let frontend = &mut state.frontend;
         let runtime = &mut frontend.multiplayer_shell_runtime;
         runtime.set_scenario_index(remap(runtime.scenario_index()));
         if let Some(page) = frontend.coop_score_page.as_mut() {
@@ -740,16 +844,15 @@ fn keep_map_and_list(
     if online.is_some() {
         // The same slot now has local briefing/preview data, or subsequent
         // slots shifted. The enlarged preview shares this index-keyed texture.
-        state.frontend.skirmish_preview_texture = None;
+        frontend.skirmish_preview_texture = None;
     }
     if carried_star {
-        save_favorites(&state.platform, &mut state.frontend);
+        save_favorites(platform, frontend);
     }
     // A room transfer can supply the bytes while the player is confirming
     // the download or waiting for it. Both prompts can now use the local row.
     if prompted
-        && let Some(prompt) = state
-            .frontend
+        && let Some(prompt) = frontend
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
@@ -757,9 +860,9 @@ fn keep_map_and_list(
     {
         prompt.kind = ChooseMapPromptKind::Downloaded;
         prompt.selection.record_index = Some(index);
-        cancel_download(&mut state.frontend);
+        cancel_download(frontend);
     }
-    refresh_choose_map(state);
+    refresh_choose_map(platform, renderer, frontend);
     Ok((kept.path, index))
 }
 
@@ -913,6 +1016,25 @@ mod fetch {
         }
     }
 
+    /// Optional presentation metadata from the owner of the website gallery.
+    pub(super) fn categories() -> Result<std::collections::HashMap<String, Vec<String>>> {
+        #[derive(serde::Deserialize)]
+        struct Feed {
+            categories: std::collections::HashMap<String, Vec<String>>,
+        }
+        let Some(answer) = crate::app::shell_wol::gallery_categories_get()? else {
+            return Ok(Default::default());
+        };
+        ensure!(
+            answer.status == 200,
+            "the map category feed answered {}",
+            answer.status
+        );
+        let bytes = read_limited(answer.body, 1024 * 1024, None)?;
+        let feed: Feed = serde_json::from_slice(&bytes).context("unreadable map categories")?;
+        Ok(feed.categories)
+    }
+
     /// `GET /v1/library/maps/<sha256>`: the whole map, checked against its
     /// catalog length and SHA-256.
     pub(super) fn map(
@@ -1026,8 +1148,14 @@ mod tests {
 
     #[test]
     fn a_failed_catalog_read_tries_once_more_in_the_visit() {
-        assert!(matches!(failed(false), Phase::Failed { retry_at: Some(_) }));
-        assert!(matches!(failed(true), Phase::Failed { retry_at: None }));
+        assert!(matches!(
+            Phase::<()>::failed(false),
+            Phase::Failed { retry_at: Some(_) }
+        ));
+        assert!(matches!(
+            Phase::<()>::failed(true),
+            Phase::Failed { retry_at: None }
+        ));
     }
 
     #[test]
@@ -1052,14 +1180,23 @@ mod tests {
         records[0].source = SkirmishScenarioSource::Synthetic;
         records[0].file_name = "Arctic.map".into();
         let mut favorites = BTreeSet::from([maps[1].sha256.clone()]);
+        let mut folders = OnlineMapFolders::default();
         assert!(append_rows(
             &mut records,
             &maps,
             &[&dir],
             &mut favorites,
+            &mut folders,
             None
         ));
         assert_eq!(favorites, BTreeSet::from(["renamed.mpr".to_string()]));
+        assert!(folders.includes(&records[2], None));
+        folders.set_memberships(HashMap::from([(
+            maps[1].sha256.clone(),
+            vec!["navalwar".into()],
+        )]));
+        assert!(folders.includes(&records[2], Some("navalwar")));
+        assert!(!folders.includes(&records[0], Some("navalwar")));
         assert_eq!(records[2].game_modes, ["navalwar"]);
         std::fs::remove_dir_all(&dir).unwrap();
         let rows: Vec<_> = records[1..]
@@ -1106,6 +1243,7 @@ mod tests {
             &maps,
             &[dir.path()],
             &mut BTreeSet::new(),
+            &mut OnlineMapFolders::default(),
             Some(&assets),
         );
         assert_eq!(records.len(), 1);

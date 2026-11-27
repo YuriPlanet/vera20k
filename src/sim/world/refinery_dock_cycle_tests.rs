@@ -314,14 +314,17 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
             frame(&mut s);
         }
         for _ in 0..2 {
-            assert!(enqueue_by_type(
-                &mut s.sim,
-                &s.rules,
-                "Americans",
-                "E1",
-                &mut Default::default(),
-                false,
-            ));
+            assert!(
+                enqueue_by_type(
+                    &mut s.sim,
+                    &s.rules,
+                    "Americans",
+                    "E1",
+                    &mut Default::default(),
+                    false,
+                )
+                .is_ok()
+            );
         }
         let factory = |s: &Scene| {
             s.sim

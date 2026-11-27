@@ -4,8 +4,11 @@
 //! player, and after the last to the observer's sidebar, which sees the whole
 //! map. Its mouse moves only the view.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::match_runtime::state::MatchState;
+use crate::audio::sfx::SfxPlayer;
 use crate::net::live_commands::NetworkRecoveryStatus;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
@@ -52,10 +55,18 @@ pub(crate) fn catching_up(
 /// A watcher's own keys, from the window (`App::window_event`) or a
 /// diagnostic's key adapter: Escape leaves the match, Tab moves to the next
 /// view ([`next_view`]). False for any other key.
-pub(crate) fn key(state: &mut AppState, code: KeyCode, pressed: bool, repeat: bool) -> bool {
+pub(crate) fn key(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    code: KeyCode,
+    pressed: bool,
+    repeat: bool,
+) -> bool {
     match code {
         KeyCode::Escape => {
-            if pressed && let Some(live) = state.match_state.live_network.as_mut() {
+            if pressed && let Some(live) = match_state.live_network.as_mut() {
                 // The next frame's network wait leaves the match
                 // (`exit_awaits_unreachable_relay`).
                 live.keep_running_for_exit();
@@ -64,7 +75,7 @@ pub(crate) fn key(state: &mut AppState, code: KeyCode, pressed: bool, repeat: bo
         }
         KeyCode::Tab => {
             if pressed && !repeat {
-                follow_next(state);
+                follow_next(platform, frontend, match_state, sfx_player);
             }
             true
         }
@@ -79,8 +90,16 @@ pub(crate) fn key(state: &mut AppState, code: KeyCode, pressed: bool, repeat: bo
 /// VERA's wheel zoom a middle press over the battlefield resets the view
 /// distance. Nothing selects or orders, so a right click that did not pan
 /// does nothing.
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    let tactical = &mut state.match_state.input.tactical_mouse;
+pub(crate) fn mouse(
+    platform: &PlatformState,
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &crate::app::persistence::PersistenceState,
+    button: MouseButton,
+    pressed: bool,
+) {
+    let tactical = &mut match_state.input.tactical_mouse;
     tactical.record_physical_button(button, pressed);
     if !pressed {
         if button == MouseButton::Right {
@@ -88,39 +107,44 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         }
         return;
     }
-    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) {
         if matches!(button, MouseButton::Left | MouseButton::Right) {
-            crate::app::input::radar::centre_view_at_cursor(state);
+            crate::app::input::radar::centre_view_at_cursor(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                persistence,
+            );
         }
         return;
     }
     match button {
         MouseButton::Right
             if crate::app::input::camera::cursor_over_battlefield(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence,
-            ) && state.match_state.input.tactical_mouse.press_may_arm() =>
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
+            ) && match_state.input.tactical_mouse.press_may_arm() =>
         {
-            let cursor = (
-                state.match_state.input.cursor_x,
-                state.match_state.input.cursor_y,
-            );
-            state
-                .match_state
-                .input
-                .tactical_mouse
-                .begin_right_drag(cursor);
+            let cursor = (match_state.input.cursor_x, match_state.input.cursor_y);
+            match_state.input.tactical_mouse.begin_right_drag(cursor);
         }
         MouseButton::Middle => {
             crate::app::input::camera::middle_press_resets_view_distance(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &mut state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             );
         }
         _ => {}
@@ -139,35 +163,46 @@ enum View {
 
 /// Tab: show the next view, its sidebar from scratch and its sight
 /// ([`show_sight`]).
-fn follow_next(state: &mut AppState) {
-    let Some(next) = state
-        .match_state
+fn follow_next(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    let Some(next) = match_state
         .sim_runtime
         .runtime()
         .and_then(|runtime| next_view(&runtime.simulation))
     else {
         return;
     };
-    switch_view(state, next);
+    switch_view(platform, frontend, match_state, sfx_player, next);
 }
 
 /// A launcher's watcher (docs/spawn.md "Watching") is none of the players: it
 /// starts on the observer's sidebar, with the whole map, as Tab's stop after
 /// the last player, and Tab goes on from there.
-pub(crate) fn begin_on_observers_view(state: &mut AppState) {
-    switch_view(state, View::Observer);
+pub(crate) fn begin_on_observers_view(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    switch_view(platform, frontend, match_state, sfx_player, View::Observer);
     log::info!(
         "Watching from the observer's view: whole map {}",
-        whole_map(&state.match_state)
+        whole_map(match_state)
     );
 }
 
-fn switch_view(state: &mut AppState, next: View) {
-    let Some(runtime) = state
-        .match_state
-        .sim_runtime
-        .write_sim(SimWrite::Presentation)
-    else {
+fn switch_view(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    sfx_player: &mut Option<SfxPlayer>,
+    next: View,
+) {
+    let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Presentation) else {
         return;
     };
     if !show(&mut runtime.simulation, next) {
@@ -175,23 +210,22 @@ fn switch_view(state: &mut AppState, next: View) {
     }
     // The strips are the new view's from scratch, as at a match's start; a
     // player's credits counter starts at their balance.
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .reset_cameo_seed();
-    state.match_state.refresh_relation_colors();
-    show_sight(&mut state.match_state);
+    match_state.refresh_relation_colors();
+    show_sight(match_state);
     // No House update reports the radar of the House now followed: its
     // housing opens or closes to that House's as a change there would.
-    let available = crate::app::presentation::building_anim::local_has_radar(state);
+    let available = crate::app::presentation::building_anim::local_has_radar(frontend, match_state);
     crate::app::presentation::building_anim::set_local_tactical_radar(
-        &mut state.match_state,
-        &mut state.audio.sfx_player,
+        match_state,
+        sfx_player,
         available,
     );
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 
 /// A watcher sees what the player it follows sees, and the whole map on the

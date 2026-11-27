@@ -104,12 +104,44 @@ Kratos runs it in `TechnoStatus::CanFire_CheckWeapon` at its `TechnoClass::CanFi
 `kratos_read` and answers them in `sim::combat::fire_error` beside the other arms of that
 hook. The AttachEffect that supplies a value is not ported: only the weapon's own key counts.
 
+## Frozen types
+
+`Wreck=yes` on a `[TechnoType]` marks a type as an unusable wreck: it never moves, never looks
+for a target and never spins its turret.
+
+```ini
+[HTNK_HULK]
+Wreck=yes
+```
+
+In Kratos the key is one of three sources of a per-techno `Freezing` byte
+(`src/Ext/TechnoType/Status/Freeze.cpp`), next to a live `Freeze` script and a
+`VectorFreezeActive` latch. `Freezing` then clears the techno's targets and stops it every
+update (`TechnoStatus::OnUpdate_Freeze`), answers yes to `TechnoClass::IsUnderEMP` (`0x70EFD0`),
+and makes the engine's locomotion and facing hooks refuse to advance it (`0x4CCBB3`, `0x54AED0`,
+`0x6622E0`, and the turret-spin arm at `0x736A95`).
+
+VERA derives the status from the type in `rules::kratos_freeze`, which is exact for `Wreck`: a
+wreck is frozen for as long as it exists, so no per-unit flag or save field is needed. The
+per-unit sources will arrive with their own owners and add a runtime input there rather than a
+second status. Three owners read it today:
+
+- `world::object_turn` — the ground and air locomotor Process return before doing any work, so
+  the object keeps its coordinate, heading and pending route;
+- `world::techno_ai::target_scan` — the object neither scans for a target nor retaliates;
+- `movement::turret::facing_update` — a `TurretSpins` type skips the spin arm, exactly as the
+  `0x736A95` hook's jump to `0x736AD5` does, so the ordinary idle path still runs.
+
+RESIDUAL: `TechnoClass::IsUnderEMP` is not gated, so code that asks that one predicate directly
+(EMP sparkles, deploy, navcom) still sees the object as operable. The movement arms above cover
+every place the original refuses to advance a frozen techno, which is what the key is for.
+
 ## Original project and authors
 
 VERA20K implements the behavior in Rust. It does not load `Kratos.dll` and does not redistribute
 Kratos binaries; each ported piece is translated from the Kratos source named beside it.
 
-This product includes software developed by the Kratos PP author.
+This product includes software developed by the Kratos Authors.
 
 [Kratos PP](https://github.com/ChrisLv-CN/KratosPP) is the C++ port of **DPKratos**, created by
 **双杀步枪 (ChrisLv_CN)** (developer), with **艾木魁 (M.Kenosis)** (design) and
@@ -127,6 +159,9 @@ The features ported here originate with:
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/Status/CanFireCheck.cpp`.
 - Weapon money gate (`NoMoneyNoTalk`) -
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/Status/CanFireCheck.cpp`.
+- Frozen types (`Wreck`) -
+  **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/Status/Freeze.cpp` and
+  `src/Hooks/TechnoExtHook.cpp`.
 
 ## VERA20K porting credits
 
@@ -134,7 +169,8 @@ The Rust ports are individual VERA20K contributions; GitHub usernames name the m
 requests that carried each chain:
 
 - **1372704087** — the Kratos switch, the prone firing offset (`CrawlingFLH`), the
-  anti-air-only projectile (`AAOnly`) and the weapon money gate (`NoMoneyNoTalk`).
+  anti-air-only projectile (`AAOnly`), the weapon money gate (`NoMoneyNoTalk`) and frozen types
+  (`Wreck`).
 
 简体中文：[Kratos 扩展支持](zh-CN/kratos.md) · [扩展支持与原作者](zh-CN/credits.md).
 

@@ -23,11 +23,12 @@ const VK_DELETE: u16 = 0x2e;
 /// Thread Stats Ctrl+Alt+G, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
 /// Edit Layout Ctrl+Alt+E, Super Weapon Building Timers Ctrl+Alt+T, Formation
-/// Line F, Formation Lock O, Ferry J and
-/// Rotate Primary I.
+/// Line F, Formation Lock O, Ferry J,
+/// Rotate Primary I, HD art Page Up, Relation Colours Alt+A and Team Colours
+/// Alt+T.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 14] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 16] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::ThreadStats, CTRL_BIT | ALT_BIT | 0x47),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
@@ -40,7 +41,11 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 14] = [
     (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
     (HotkeyCommand::RotatePrimary, 0x49),
+    (HotkeyCommand::ToggleHdArt, HD_2D_KEY),
     (HotkeyCommand::RelationColors, ALT_BIT | 0x41),
+    // Team Colours sits on Alt+T next to Relation Colours' Alt+A; Ctrl+Alt+T
+    // stays Super Weapon Building Timers.
+    (HotkeyCommand::TeamColours, ALT_BIT | 0x54),
     // Ctrl+D: the smart-command hotkey (AutoLoad and its extended actions).
     (HotkeyCommand::AutoLoad, CTRL_BIT | 0x44),
 ];
@@ -48,6 +53,9 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 14] = [
 const FORMATION_LINE_KEY: u16 = 0x46;
 /// V: where Follow goes when Formation Line takes F. Retail binds nothing to it.
 const FOLLOW_MOVED_KEY: u16 = 0x56;
+/// Page Up: the HD art key, HD art on and off. Retail binds
+/// nothing to it.
+const HD_2D_KEY: u16 = 0x21;
 
 fn vera_default_keys() -> impl Iterator<Item = (HotkeyCommand, u16)> {
     VERA_DEFAULT_KEYS.into_iter()
@@ -145,6 +153,15 @@ pub(crate) enum HotkeyCommand {
     /// neutral unchanged) to tell players apart in large melee matches. Pure
     /// presentation; works in a match only.
     RelationColors,
+    /// VERA: turn HD art (`render::hd_switch`, `[VERA] HdArt=`) on or off at once,
+    /// the same setting as the Options list, and save it. Page Up by default.
+    /// Pure presentation; match only.
+    ToggleHdArt,
+    /// VERA: toggle "team colours" — recolour every house by its launch team,
+    /// so one team shares one colour on the map and the radar. Alt+T by
+    /// default; it turns the relation toggle off and vice versa, since both
+    /// write the same override map. Pure presentation; match only.
+    TeamColours,
     /// Ctrl+D smart command: context-dependent convenience action on the
     /// selection (transport loading, garrison, engineer, sabotage, etc.).
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.
@@ -401,6 +418,12 @@ impl HotkeyBindings {
         {
             self.by_key.insert(FOLLOW_MOVED_KEY, HotkeyCommand::Follow);
         }
+    }
+
+    /// Every encoded key some command is bound to (client module hotkeys
+    /// yield to these: RFC 0001 section 10).
+    pub(crate) fn bound_keys(&self) -> impl Iterator<Item = u16> + '_ {
+        self.by_key.keys().copied()
     }
 
     pub(crate) fn command_at(&self, encoded: u16) -> Option<HotkeyCommand> {
@@ -1005,9 +1028,9 @@ mod tests {
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
         // The 87 retail rows, plus VERA's default keys (Ctrl+D's 0x244 merges
-        // with an existing row here) and the Formation/Ferry/RotatePrimary
-        // keys below 0x200.
-        assert_eq!(loaded.by_key.len(), 100);
+        // with an existing row here) and the Formation/Ferry/RotatePrimary/
+        // HD art keys below 0x200.
+        assert_eq!(loaded.by_key.len(), 102);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -1015,10 +1038,10 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n");
+        ini.push_str("FullScreen=1037\nRelationColors=1089\nTeamColours=1108\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
-            "[Hotkey]\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
+            "[Hotkey]\nToggleHdArt=33\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
             1,
         );
         assert_eq!(saved, ini);
@@ -1090,6 +1113,32 @@ mod tests {
         assert_eq!(cleared.first_key(HotkeyCommand::RelationColors), None);
     }
 
+    /// Team Colours sits on Alt+T and leaves Ctrl+Alt+T (Super Weapon Building
+    /// Timers) alone; it rebinds and clears like every VERA key.
+
+    #[test]
+    fn team_colours_default_key_can_be_rebound_and_cleared() {
+        let default = HotkeyBindings::reload_from_ini_bytes(None);
+        assert_eq!(
+            default.command_at(ALT_BIT | 0x54),
+            Some(HotkeyCommand::TeamColours)
+        );
+        assert_eq!(
+            default.command_at(CTRL_BIT | ALT_BIT | 0x54),
+            Some(HotkeyCommand::SuperweaponTimers)
+        );
+
+        let rebound = HotkeyBindings::reload_from_ini_bytes(Some(b"[Hotkey]\nTeamColours=121\n"));
+        assert_eq!(rebound.command_at(121), Some(HotkeyCommand::TeamColours));
+        assert_ne!(
+            rebound.command_at(ALT_BIT | 0x54),
+            Some(HotkeyCommand::TeamColours)
+        );
+
+        let cleared = HotkeyBindings::reload_from_ini_bytes(Some(b"[Hotkey]\nTeamColours=0\n"));
+        assert_eq!(cleared.first_key(HotkeyCommand::TeamColours), None);
+    }
+
     #[test]
     fn editable_bindings_match_original_assignment_execution() {
         let fixture = native_keyboard_fixture();
@@ -1147,7 +1196,7 @@ mod tests {
             HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nDelete=110\nStopObject=83\n"));
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nToggleHdArt=33\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nTeamColours=1108\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1379,6 +1428,8 @@ mod tests {
         let taken = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nFollow=70\nStopObject=86\n"));
         assert_eq!(taken.command_at(70), Some(HotkeyCommand::FormationLine));
         assert_eq!(taken.command_at(86), Some(HotkeyCommand::StopObject));
+        // Page Up is the HD art key by default.
+        assert_eq!(taken.command_at(0x21), Some(HotkeyCommand::ToggleHdArt));
     }
 
     /// VERA's built-in keys keep their defaults beside the retail
@@ -1589,13 +1640,17 @@ mod tests {
                 bindings.resolve(&key, KeyLocation::Standard, modifiers(true, true, false)),
                 Some(command),
             );
-            assert_eq!(
+            // Ctrl and Alt alone must not admit the retail command. Alt+T does
+            // resolve — VERA's Team Colours owns it — so the assertion is that
+            // the retail command is not the one admitted, not that the chord is
+            // empty.
+            assert_ne!(
                 bindings.resolve(&key, KeyLocation::Standard, modifiers(false, true, false)),
-                None,
+                Some(command),
             );
-            assert_eq!(
+            assert_ne!(
                 bindings.resolve(&key, KeyLocation::Standard, modifiers(false, false, true)),
-                None,
+                Some(command),
             );
         }
 

@@ -183,7 +183,7 @@ pub fn owner_current_speed(
     owner_current_speed_from_native_fraction(
         adjusted_speed(entity, object, rules, interner, veteran_speed, houses),
         entity.foot_speed.native_applied_fraction(),
-        entity.phobos_speed_multiplier(),
+        entity.effect_speed_multiplier(),
     )
 }
 

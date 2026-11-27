@@ -740,6 +740,26 @@ impl Simulation {
                 }
             }
         };
+        // A Wasm module's `PathFound` (`ext_modules::paths`) at the adoption,
+        // whichever search answered: it may replace the route or refuse one.
+        let searched = if request.retain_head {
+            searched
+        } else {
+            use super::movement_path::MovePathFailure as Failure;
+            use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
+            let native = match &searched {
+                Ok(directions) => Some(Some(directions.as_slice())),
+                Err(Failure::Search(Search::NativeEntryRejected | Search::CellSearchExhausted)) => {
+                    Some(None)
+                }
+                Err(_) => None,
+            };
+            match native.and_then(|native| self.module_path_found(rules, id, goal, native)) {
+                Some(Some(directions)) => Ok(directions),
+                Some(None) => Err(Failure::Search(Search::CellSearchExhausted)),
+                None => searched,
+            }
+        };
         //4D3E82..3E9F copies a successful route before Mark1's callbacks.
         if let Ok(directions) = &searched {
             let actor = self
@@ -1377,8 +1397,19 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Find_Path FNPC requires the mover type")?;
-        let zone = find_path_search_zone(object.movement_zone)
-            .ok_or("Find_Path FNPC requires a valid MovementZone")?;
+        let Some(zone) = find_path_search_zone(object.movement_zone) else {
+            // Find_Path indexes table 0x7E8BF0 with the raw MovementZone row
+            // (0x4D3AC3). Row -1 reads the dword before the table instead of
+            // a search row; gamemd has no defined answer there and VERA will
+            // not emulate that out-of-bounds read. Treat it as FNPC finding no
+            // cell: Find_Path's callers already handle the zero answer, so an
+            // invalid MovementZone from external data cannot abort the frame.
+            log::debug!(
+                "Find_Path FNPC: entity {id} has invalid MovementZone {:?}; no nearby cell",
+                object.movement_zone
+            );
+            return Ok(None);
+        };
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -1840,6 +1871,52 @@ mod tests {
             assert_eq!(find_path_search_zone(zone), Some(row), "{zone:?}");
         }
         assert_eq!(find_path_search_zone(MovementZone::Invalid), None);
+    }
+
+    /// The original indexes table 0x7E8BF0 with the raw MovementZone row. An
+    /// invalid parser result is row -1 there, which reads the dword before the
+    /// table rather than producing a search row. VERA has no
+    /// native answer to reproduce, so FNPC treats that as finding no cell and
+    /// Find_Path's redirect continues instead of aborting the frame.
+    #[test]
+    fn fnpc_treats_an_invalid_movement_zone_as_no_nearby_cell() {
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=SAPCX\n[SAPCX]\nStrength=100\nSpeed=6\nSpeedType=Track\nMovementZone=Subterrannean\nLocomotor={4A582743-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let id = sim
+            .spawn_object("SAPCX", "Americans", 3, 3, 0, &rules)
+            .unwrap();
+        // 10 cells east and 7 south is beyond CloseEnough, so the code-6 arm
+        // reaches FNPC.
+        let destination = DriveCoord::cell(13, 10, 0);
+        let answer = sim.find_path_redirect(id, destination, 6, &rules);
+        assert!(
+            answer.is_ok(),
+            "an invalid MovementZone must not abort Find_Path: {answer:?}"
+        );
+        assert_eq!(
+            answer.unwrap(),
+            None,
+            "FNPC's no-cell answer keeps the original target"
+        );
+        let request = FootPathRequest::track(
+            &sim.substrate.entities,
+            id,
+            destination,
+            0,
+            sim.playfield_bounds(),
+        )
+        .expect("track request");
+        let found = sim.foot_find_path(
+            &request,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        assert!(
+            found.is_ok(),
+            "an invalid MovementZone must not abort foot_find_path: {found:?}"
+        );
     }
 
     /// `AStar @ 0x0042CAD6` takes the zone hierarchy only for a mover in the

@@ -10,12 +10,17 @@ use winit::keyboard::KeyCode;
 
 use super::leaf::{self, Pointer};
 use super::service::WolServiceRequest;
+use crate::app::App;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
-use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::lan_shell::{LanChatLine, append_wrapped};
 use crate::ui::pause_menu::InGameMenuState;
@@ -76,6 +81,12 @@ pub(crate) fn page_received(wol: Option<&WolVisit>) -> Option<&WolPageReceived> 
 /// `0xCF` or `0x11E` takes the input.
 pub(crate) fn open(wol: Option<&WolVisit>) -> bool {
     top(wol).is_some()
+}
+
+/// Android: the dialog whose edits take keys, for `app::input::ime::gui_armed`.
+#[cfg(target_os = "android")]
+pub(crate) fn armed_dialog(wol: Option<&WolVisit>) -> Option<u16> {
+    top(wol).map(|dialog| dialog.0)
 }
 
 /// The open dialog that takes the input, `0xCF` first.
@@ -178,17 +189,22 @@ pub(crate) fn close_stale(frontend: &mut FrontendState) {
 /// `0xCF` built over the stack and opened by `open` on its widgets with
 /// the page globals.
 fn begin(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     open: impl FnOnce(
         &mut DialogController,
         &mut super::lobby::WolLobbyGlobals,
     ) -> (WolPageDialog, Vec<WolPageAction>),
 ) {
-    if state.frontend.wol.is_none() {
+    if frontend.wol.is_none() {
         return;
     }
-    push_fresh(&mut state.frontend, &state.renderer, PAGE_DIALOG);
-    let frontend = &mut state.frontend;
+    push_fresh(frontend, renderer, PAGE_DIALOG);
     let (page, actions) = open(
         &mut frontend.shell_controller,
         &mut frontend.wol_lobby_globals,
@@ -196,65 +212,150 @@ fn begin(
     if let Some(visit) = frontend.wol.as_mut() {
         visit.page_dialog = Some(Box::new(page));
     }
-    apply(state, actions);
+    apply(
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        audio,
+        persistence,
+        actions,
+    );
 }
 
 /// `0x0078BA3E`, `0x00790C8D`, `0x0079235F` and, in a match, `0x0077D840`:
 /// `UI__BeginDialog(0xCF)` and its modal loop. The input lock `[0xA8ED9C]`
 /// and the keyboard clears around it have nothing to hold here: the dialog
 /// takes every key while it exists.
-pub(crate) fn open_page_dialog(state: &mut AppState) {
-    let last_pager = state
-        .frontend
+pub(crate) fn open_page_dialog(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    let last_pager = frontend
         .wol
         .as_ref()
         .and_then(|visit| visit.last_pager.clone());
     let now = reply_window_now(crate::app::match_runtime::frame_pacer::wall_clock_ms());
-    begin(state, |c, globals| {
-        WolPageDialog::open(
-            c,
-            &mut globals.page_reply_window,
-            now,
-            last_pager.as_deref(),
-            &mut globals.page_last_control,
-        )
-    });
+    begin(
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        audio,
+        persistence,
+        |c, globals| {
+            WolPageDialog::open(
+                c,
+                &mut globals.page_reply_window,
+                now,
+                last_pager.as_deref(),
+                &mut globals.page_last_control,
+            )
+        },
+    );
 }
 
 /// VERA's player card's Message: `0xCF` opened on its player, addressed as
 /// `0x497` addresses the last pager. The reply window stays for a later open.
-pub(crate) fn open_page_dialog_to(state: &mut AppState, name: &str) {
-    begin(state, |c, globals| {
-        let mut page = WolPageDialog::default();
-        let actions = page.address(c, name, &mut globals.page_last_control);
-        (page, actions)
-    });
+pub(crate) fn open_page_dialog_to(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    name: &str,
+) {
+    begin(
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        audio,
+        persistence,
+        |c, globals| {
+            let mut page = WolPageDialog::default();
+            let actions = page.address(c, name, &mut globals.page_last_control);
+            (page, actions)
+        },
+    );
 }
 
 /// State 7 (`State_Machine 0x0048CC2C`): the PageUser event's dialog over
 /// the running match. The state machine's admission runs first; Cancel
 /// ends the state (`0x0048CC31`).
-pub(crate) fn open_in_match(state: &mut AppState) {
-    if state.frontend.wol.is_none() {
+pub(crate) fn open_in_match(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    if frontend.wol.is_none() {
         return;
     }
-    App::enter_in_game_menu_state(state, InGameMenuState::Page);
-    if state.match_state.match_presentation.in_game_menu == InGameMenuState::Page {
+    App::enter_in_game_menu_state(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        InGameMenuState::Page,
+    );
+    if match_state.match_presentation.in_game_menu == InGameMenuState::Page {
         // KeyboardClear 0x0054F720 at 0x0077D861 (and 0x0077D895 on close).
-        state.match_state.input.clear_command_latches();
-        open_page_dialog(state);
+        match_state.input.clear_command_latches();
+        open_page_dialog(
+            frontend,
+            platform,
+            match_state,
+            process_assets,
+            renderer,
+            audio,
+            persistence,
+        );
     }
 }
 
 /// `0xCF` closes; in a match its state ends with it.
-pub(crate) fn close_page_dialog(state: &mut AppState) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
+pub(crate) fn close_page_dialog(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+) {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page_dialog = None;
     }
-    close_stale(&mut state.frontend);
-    if state.match_state.match_presentation.in_game_menu == InGameMenuState::Page {
-        state.match_state.input.clear_command_latches();
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+    close_stale(frontend);
+    if match_state.match_presentation.in_game_menu == InGameMenuState::Page {
+        match_state.input.clear_command_latches();
+        App::enter_in_game_menu_state(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            InGameMenuState::Closed,
+        );
     }
 }
 
@@ -335,26 +436,46 @@ pub(super) fn append_received_line(
 /// `0xCF`'s list, `0x11E`'s, or the lobby's or C2/C9's transcript; with
 /// neither, in a match (Session+0x30D8, `0x0069BBE0`), a Grey MessageList
 /// row. Returns false when nothing took the line.
-pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bool {
-    if page_dialog(state.frontend.wol.as_ref()).is_some() {
-        return append_page_line(&mut state.frontend, &state.renderer, line);
+pub(super) fn current_window_line(
+    frontend: &mut FrontendState,
+    platform: &PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    line: LanChatLine,
+) -> bool {
+    if page_dialog(frontend.wol.as_ref()).is_some() {
+        return append_page_line(frontend, renderer, line);
     }
-    if page_received(state.frontend.wol.as_ref()).is_some() {
-        append_received_line(&mut state.frontend, &state.renderer, line);
+    if page_received(frontend.wol.as_ref()).is_some() {
+        append_received_line(frontend, renderer, line);
         return true;
     }
-    let Some(in_game) = state.frontend.wol.as_ref().map(|visit| visit.in_game) else {
+    let Some(in_game) = frontend.wol.as_ref().map(|visit| visit.in_game) else {
         return false;
     };
     if in_game {
         let text = String::from_utf16_lossy(&line.text);
-        crate::app::input::messages::post_wol_result_row(state, &text);
+        crate::app::input::messages::post_wol_result_row(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            &text,
+        );
         return true;
     }
-    if state.frontend.shell_route == ShellRoute::NetworkSetup
-        || App::wol_page_is_lobby(state.frontend.wol.as_ref())
+    if frontend.shell_route == ShellRoute::NetworkSetup
+        || App::wol_page_is_lobby(frontend.wol.as_ref())
     {
-        crate::app::shell_lan::append_chat(state, line);
+        crate::app::shell_lan::append_chat(renderer, frontend, match_state, process_assets, line);
         return true;
     }
     false
@@ -503,43 +624,50 @@ fn send_page(
     );
 }
 
-fn apply(state: &mut AppState, actions: Vec<WolPageAction>) {
+fn apply(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    actions: Vec<WolPageAction>,
+) {
     for action in actions {
         match action {
-            WolPageAction::Locate(name) => locate(state.frontend.wol.as_mut(), name),
+            WolPageAction::Locate(name) => locate(frontend.wol.as_mut(), name),
             WolPageAction::Send { name, text } => {
                 // 0x0078D48F: no WOLAPI object, nothing past the clear.
-                if !state.frontend.wol.as_ref().is_some_and(|visit| visit.api) {
+                if !frontend.wol.as_ref().is_some_and(|visit| visit.api) {
                     continue;
                 }
-                if observer_cannot_page(&state.match_state, &name) {
-                    notice(
-                        &mut state.frontend,
-                        &state.renderer,
-                        &state.process_assets,
-                        "TXT_OBSERVER_CANT_PAGE",
-                    );
+                if observer_cannot_page(match_state, &name) {
+                    notice(frontend, renderer, process_assets, "TXT_OBSERVER_CANT_PAGE");
                     continue;
                 }
                 send_page(
-                    &mut state.frontend,
-                    &state.renderer,
+                    frontend,
+                    renderer,
                     PAGE_DIALOG,
                     &name,
                     text,
                     wol_chat::SAY_COLOR,
                 );
             }
-            WolPageAction::Notice(key) => notice(
-                &mut state.frontend,
-                &state.renderer,
-                &state.process_assets,
-                key,
+            WolPageAction::Notice(key) => notice(frontend, renderer, process_assets, key),
+            WolPageAction::Close => close_page_dialog(
+                frontend,
+                platform,
+                match_state,
+                process_assets,
+                renderer,
+                audio,
+                persistence,
             ),
-            WolPageAction::Close => close_page_dialog(state),
         }
     }
-    state.platform.window.request_redraw();
+    platform.window.request_redraw();
 }
 
 /// A white (-1) CSF line through `0x005E2790`.
@@ -603,30 +731,67 @@ fn with_received<R>(
     Some(f(received, &mut frontend.shell_controller))
 }
 
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    if let Some(dialog) = top(state.frontend.wol.as_ref())
-        && sync(&mut state.frontend, &state.renderer, dialog).is_some()
+pub(crate) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    if let Some(dialog) = top(frontend.wol.as_ref())
+        && sync(frontend, renderer, dialog).is_some()
     {
         // The boxes' hit tests leave the status line under them alone.
-        leaf::pointer_quiet(state, Pointer::Move);
+        leaf::pointer_quiet(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            sfx_player,
+            Pointer::Move,
+        );
     }
 }
 
 /// A press on an edit takes the focus with its notifications; a press on
 /// `0xCF`'s transcript row hands it back; a released button acts. A row of
 /// `0x11E`'s selectable owner-draw list clicks like the lobby's.
-pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
-    let Some(dialog) = top(state.frontend.wol.as_ref()) else {
+pub(crate) fn mouse(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    pressed: bool,
+) {
+    let Some(dialog) = top(frontend.wol.as_ref()) else {
         return;
     };
-    if sync(&mut state.frontend, &state.renderer, dialog).is_none() {
+    if sync(frontend, renderer, dialog).is_none() {
         return;
     }
-    let before = leaf::focused(&state.frontend.shell_controller);
-    let events = leaf::pointer_quiet(state, if pressed { Pointer::Down } else { Pointer::Up });
+    let before = leaf::focused(&frontend.shell_controller);
+    let events = leaf::pointer_quiet(
+        frontend,
+        &platform.window,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    );
+    // Android: a press that lands on one of the page's edits arms the keyboard
+    // for this dialog, the tree those edits live in.
+    #[cfg(target_os = "android")]
+    if pressed && frontend.shell_controller.gui().pressed_edit() {
+        crate::util::android_ime::arm(dialog.0);
+        crate::util::android_ime::request_show();
+    }
     if dialog == PAGE_DIALOG {
-        let after = leaf::focused(&state.frontend.shell_controller);
-        let actions = with_last(&mut state.frontend, |page, c, last| {
+        let after = leaf::focused(&frontend.shell_controller);
+        let actions = with_last(frontend, |page, c, last| {
             let mut actions = page.focus_moved(c, before, after, last);
             for event in events {
                 match event {
@@ -639,11 +804,20 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
             }
             actions
         });
-        apply(state, actions.unwrap_or_default());
+        apply(
+            frontend,
+            platform,
+            match_state,
+            process_assets,
+            renderer,
+            audio,
+            persistence,
+            actions.unwrap_or_default(),
+        );
         return;
     }
     for event in events {
-        let action = with_received(&mut state.frontend, |received, c| match event {
+        let action = with_received(frontend, |received, c| match event {
             PageEvent::Selected(RECEIVED_TRANSCRIPT, row) => {
                 received.select(c, row as usize);
                 None
@@ -653,54 +827,57 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
         });
         if matches!(event, PageEvent::Selected(..)) {
             App::play_page_cue(
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
-                &mut state.audio.sfx_player,
+                frontend,
+                match_state,
+                process_assets,
+                &mut audio.sfx_player,
                 PageCue::ListClick,
             );
         }
-        apply_received(
-            &mut state.frontend,
-            &state.platform.window,
-            &state.renderer,
-            action.flatten(),
-        );
+        apply_received(frontend, &platform.window, renderer, action.flatten());
     }
 }
 
-pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    let shift = state.platform.live_modifiers.shift_key();
+pub(crate) fn key_press(
+    frontend: &mut FrontendState,
+    platform: &mut PlatformState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
+    code: Option<KeyCode>,
+    text: Option<&str>,
+) {
+    let shift = platform.live_modifiers.shift_key();
     let event = crate::ui::shell::controller::gui_input(code, shift, text);
-    let (Some(dialog), Some(event)) = (top(state.frontend.wol.as_ref()), event) else {
+    let (Some(dialog), Some(event)) = (top(frontend.wol.as_ref()), event) else {
         return;
     };
-    if sync(&mut state.frontend, &state.renderer, dialog).is_none() {
+    if sync(frontend, renderer, dialog).is_none() {
         return;
     }
     if dialog == RECEIVED_DIALOG {
-        let action = with_received(&mut state.frontend, |received, c| received.input(c, event));
-        return apply_received(
-            &mut state.frontend,
-            &state.platform.window,
-            &state.renderer,
-            action.flatten(),
-        );
+        let action = with_received(frontend, |received, c| received.input(c, event));
+        return apply_received(frontend, &platform.window, renderer, action.flatten());
     }
-    let actions = with_last(&mut state.frontend, |page, c, last| {
-        page.input(c, event, last)
-    });
-    apply(state, actions.unwrap_or_default());
+    let actions = with_last(frontend, |page, c, last| page.input(c, event, last));
+    apply(
+        frontend,
+        platform,
+        match_state,
+        process_assets,
+        renderer,
+        audio,
+        persistence,
+        actions.unwrap_or_default(),
+    );
     // 0xCF's focused NewEdit keeps its caret in view: 0x00623880 paints
     // from the first visible unit, at the popup's retail scale.
-    if let Some(node) = leaf::root(&state.frontend.shell_controller, PAGE_DIALOG)
-        .and(state.frontend.shell_controller.gui().focus())
+    if let Some(node) = leaf::root(&frontend.shell_controller, PAGE_DIALOG)
+        .and(frontend.shell_controller.gui().focus())
     {
-        leaf::scroll_edit(
-            &mut state.frontend.shell_controller,
-            &state.renderer.bit_font,
-            node,
-        );
+        leaf::scroll_edit(&mut frontend.shell_controller, &renderer.bit_font, node);
     }
 }
 

@@ -19,8 +19,8 @@ use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
 use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup;
 use crate::skirmish_launch::{
-    AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
-    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+    AiDifficulty, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchMode,
+    SkirmishLaunchOptions,
 };
 
 pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
@@ -147,8 +147,14 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
                     .match_state
                     .session
                     .accept_campaign_room(Some(room), game_speed)?;
-                super::maps::clear_campaign_transfer(state);
-                campaign_room::report_local_files(state, true)?;
+                super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state);
+                campaign_room::report_local_files(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    true,
+                )?;
             }
         }
     }
@@ -417,7 +423,13 @@ fn apply_host_room(
             if let Err(error) = &verified {
                 log::info!("Campaign room files refused: {error:#}");
             }
-            campaign_room::report_local_files(state, verified.is_ok())?;
+            campaign_room::report_local_files(
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                verified.is_ok(),
+            )?;
         }
         _ => anyhow::bail!("LAN host setup projection does not match its options body"),
     }
@@ -512,10 +524,14 @@ pub(super) fn receive_extended(
                 .map_err(anyhow::Error::from)
                 .and_then(|options| receive_host_options(state, scope, options, host));
             if result.is_err() {
-                super::reject_setup_compatibility(
-                    state,
+                let step = super::reject_setup_compatibility(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
                     &crate::i18n::tr("VERA:LanOptionsInvalid"),
                 );
+                super::App::apply_step(state, step);
             }
             result
         }
@@ -573,7 +589,9 @@ fn receive_host_options(
         TaggedOptionsBody::Stock { random_map, .. } => {
             super::maps::received_options(state, scope, random_map.clone())?
         }
-        TaggedOptionsBody::Campaign { .. } => super::maps::clear_campaign_transfer(state),
+        TaggedOptionsBody::Campaign { .. } => {
+            super::maps::clear_campaign_transfer(&mut state.frontend, &mut state.match_state)
+        }
     }
     state
         .match_state
@@ -808,7 +826,7 @@ fn host_options(
             .iter_mut()
             .find(|human| human.name.eq_ignore_ascii_case(&choices.name))
         {
-            human.slot = decoded_choices(
+            human.slot = super::picks::decoded_pick(
                 &human.slot,
                 choices.country,
                 choices.color,
@@ -826,7 +844,7 @@ fn host_options(
         let old = session
             .network_row_choices(row)
             .ok_or_else(|| anyhow!("no setup row {row}"))?;
-        let choices = decoded_choices(&old, ai.country, ai.color, ai.start, ai.team)?;
+        let choices = super::picks::decoded_pick(&old, ai.country, ai.color, ai.start, ai.team)?;
         opponents.push(SkirmishAiSlot {
             raw_slot_index: row,
             country: choices.country,
@@ -853,53 +871,6 @@ fn host_options(
         cooperative_difficulty: room.cooperative_difficulty,
         seed: Some(room.seed),
     })
-}
-
-pub(super) fn decoded_choices(
-    old: &SkirmishLocalSlot,
-    country: i32,
-    color: i32,
-    start: i32,
-    team: i32,
-) -> Result<SkirmishLocalSlot> {
-    let mut slot = old.clone();
-    ensure!(
-        country == -3 || country == -2 || (0..=i32::from(u16::MAX)).contains(&country),
-        "country outside native registry domain"
-    );
-    slot.country_random = country == -2;
-    if country >= 0 {
-        slot.country = LaunchCountry::from_country_index(country as u32);
-    } else if country == -2 {
-        //696F99 clears the concrete country when SetCountry receives Random.
-        //The AI-array parser5E5BAB..5E5C3C likewise replaces its word with -2; there
-        //is no previous display-row country to retain in that representation.
-        slot.country = LaunchCountry::America;
-    }
-    ensure!(
-        color == -2 || (0..=i32::from(u8::MAX)).contains(&color),
-        "color outside native slot domain"
-    );
-    slot.color_random = color == -2;
-    if color >= 0 {
-        slot.color_index = color as u8;
-    } else {
-        //696FC9 sets the concrete color to -1 for Random. The Rust slot
-        //represents that sentinel with color_random; its unused u8 payload
-        //has canonical value0, independent of whichever row was displayed.
-        slot.color_index = 0;
-    }
-    slot.start_position = match start {
-        -2 | -1 => LaunchStartPosition::Auto,
-        0..=29 => LaunchStartPosition::Position(start as u8),
-        _ => anyhow::bail!("start outside supported waypoint domain"),
-    };
-    slot.team = match team {
-        -2 | -1 => LaunchTeam::None,
-        0..=255 => LaunchTeam::Team(team as u8),
-        _ => anyhow::bail!("team outside native slot domain"),
-    };
-    Ok(slot)
 }
 
 pub(super) fn decoded_difficulty(value: i32) -> Result<AiDifficulty> {
@@ -981,7 +952,9 @@ fn parsed_roster(
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{NetworkReturnContext, NetworkRowKind};
-    use crate::skirmish_launch::SkirmishLaunchSession;
+    use crate::skirmish_launch::{
+        LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishLaunchSession,
+    };
     use std::net::Ipv4Addr;
 
     fn fixture(host: bool) -> MatchSession {

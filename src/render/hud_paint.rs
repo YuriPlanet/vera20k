@@ -85,7 +85,8 @@ pub(crate) struct NodeDraw {
     /// own size.
     pub(crate) reveal: Option<u32>,
     /// The tint a fill or a plain text draws in, where the host's colour
-    /// is not whole 255ths; otherwise the node's colour.
+    /// is not whole 255ths; otherwise the node's colour. A picture is
+    /// multiplied by it (none: as it is).
     pub(crate) tint: Option<[f32; 3]>,
 }
 
@@ -168,7 +169,7 @@ impl HudPaint {
                         node.position.unwrap_or_else(|| space.point(rect.x, rect.y)),
                         picture.pixel_size.map(|length| length * space.scale),
                         (picture.uv_origin, picture.uv_size),
-                        [1.0; 3],
+                        node.tint.unwrap_or([1.0; 3]),
                         1.0,
                         node.depth,
                     ));

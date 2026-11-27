@@ -89,9 +89,17 @@ impl FacingClass {
     /// The raw native ROT word (`+0x10`, `FacingClass`'s `ROT.Raw`): signed
     /// when read as `i16`. Phobos' `GetTurningRadius`
     /// (`Ext/Aircraft/Hooks.cpp:492-500`) reads it from `PrimaryFacing`, and
-    /// the facing corpora record it; every other reader is a test.
-    pub(crate) fn rot_per_frame(&self) -> u16 {
+    /// the facing corpora record it; every other reader is a test. This is
+    /// the raw rate word `Set_ROT` writes.
+    pub fn rot_per_frame(&self) -> u16 {
         self.rot_per_frame
+    }
+
+    /// Writes the raw rate word as `set_rot` does after its shift: the timer
+    /// and the directions stay. The module `ROTMultiplier`
+    /// (`ext_modules::modifiers`) scales a body's native word through it.
+    pub(crate) fn set_rate_word(&mut self, rate: u16) {
+        self.rot_per_frame = rate;
     }
 
     #[cfg(any(test, feature = "test-support"))]

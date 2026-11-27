@@ -3,29 +3,27 @@ use super::*;
 /// A frame is captured for every object before each lent tick: its record
 /// copies what drawing reads, not whole components. A new field that pushes
 /// it past the ceiling copies more than drawing needs.
-#[cfg(all(
-    target_pointer_width = "64",
-    not(feature = "debug-tools")
-))]
+#[cfg(all(target_pointer_width = "64", not(feature = "debug-tools")))]
 #[test]
 fn the_draw_record_stays_under_its_ceiling() {
     let size = std::mem::size_of::<ObjectRecord>();
     assert!(size <= CEILING, "ObjectRecord is {size} bytes");
 }
 
-#[cfg(all(
-    target_pointer_width = "64",
-    not(feature = "debug-tools")
-))]
+#[cfg(all(target_pointer_width = "64", not(feature = "debug-tools")))]
 // 824 since an SHP Unit's draw reads three more of its fields: the body's
 // current facing (`shp_body_facing`), the Foot occupation enable and
 // IsOnCarryall. Four bytes of state, one alignment step of the record.
-const CEILING: usize = 824;
+// 832 since the modules' looks and status amounts (`ModuleFacts`):
+// one pointer, the facts themselves boxed for the few objects that have any.
+// 960 since Phobos draw state is present in every build: shields are boxed
+// because few objects have one, and JumpjetTilt retains only its speed,
+// acceleration, facing and grounded bit rather than the movement runtime.
+const CEILING: usize = 960;
 
-/// A record is found by its stable id and a missing id is not, and the
-/// frame's Display order is built once: a second ask returns the first.
+/// A record is found by its stable id and a missing id is not.
 #[test]
-fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
+fn a_frame_finds_records_by_id() {
     use crate::map::entities::EntityCategory;
     use crate::sim::{combat::Health, game_entity::GameEntity};
 
@@ -54,8 +52,22 @@ fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
         assert_eq!(frame.object(id).map(|record| record.stable_id()), Some(id));
     }
     assert!(frame.object(8).is_none() && frame.object(21).is_none());
-    let order = frame.display_order(&sim);
-    assert!(std::ptr::eq(order, frame.display_order(&sim)));
+}
+
+/// The slot index answers as a search of every id does: for ids in a dense
+/// run and far apart, and for ids before, between and past them.
+#[test]
+fn the_slot_index_answers_as_a_search_of_every_id() {
+    let ids = [5, 6, 7, 8, 300, 301, 4_000, 1_000_000];
+    let index = SlotIndex::of(&ids);
+    for id in [
+        0, 4, 5, 8, 9, 300, 302, 4_000, 999_999, 1_000_000, 1_000_001,
+    ] {
+        assert_eq!(index.slot(&ids, id), ids.binary_search(&id).ok(), "id {id}");
+    }
+    assert_eq!(index.slot(&ids, u64::MAX), None);
+    assert_eq!(SlotIndex::of(&[]).slot(&[], 5), None);
+    assert_eq!(SlotIndex::of(&[9]).slot(&[9], 9), Some(0));
 }
 
 /// The building walk lists exactly the Structure records, in stable-id

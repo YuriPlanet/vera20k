@@ -59,8 +59,9 @@ tick. `python -m tools.run_test_map battle` plays the same battle in small
 
 ## What is timed
 
-Both programs are built with the `shipping` profile, as released games are
-(`cargo build --profile shipping`; the game with `--no-default-features`).
+The benchmark builds both programs with the `shipping` profile and the game with
+`--no-default-features`. The release workflow also applies a gameplay profile
+collected on each installer’s target to its final game binary.
 
 - **The simulation tick.** `sim-bench --scenario battle` plays 3,000 frames at
   the client's 22 ms step and times each `SimRuntime` frame. The first 300
@@ -75,7 +76,9 @@ Both programs are built with the `shipping` profile, as released games are
   costs, and what the match service of one simulation frame costs (the tick's
   tail and the frame and world copy the next tick leaves for drawing, without
   the tick itself). Their sum is the client frame: one picture of one
-  simulation frame, whatever the picture and tick rates were.
+  simulation frame, whatever the picture and tick rates were. The picture is
+  1024x768 at the default zoom: the hidden window opens at VERA's launch size
+  (`VERA_LAUNCH_WINDOW_SIZE`), and a match draws at its window's size.
 
 Each figure is taken three times, each run under the build lock
 `tools.cargo_run` uses, so no cooperating Cargo build runs beside it. The
@@ -130,7 +133,10 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   target once every `[AI] PatrolScan=` (14 frames with the retail rules), as
   in the original, but each team on its own frame of that period, its id
   modulo the period, where the original has every team look on the same
-  frame. A team so turns on a threat up to 13 frames sooner or later.
+  frame. A team so turns on a threat up to 13 frames sooner or later, and,
+  as it looks on its first own turn from that frame (below), up to 16 later.
+  With a modded `PatrolScan=` of fewer than four frames a team looks on every
+  own turn, once every four frames.
 - **Patrol scans answered side by side**
   ([scan_batch.rs](../src/sim/world/techno_ai/scan_batch.rs)). The scans of
   the leaders due in a frame are made side by side as the team step begins,
@@ -138,3 +144,73 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   while the leader and the answer's target stand as the scan saw them. What
   an earlier team's update in the same step changes, such as an order to its
   members, a leader's scan sees a period later.
+- **Picture-only particle systems**
+  ([particles/spawn.rs](../src/sim/particles/spawn.rs),
+  `Simulation::spawn_effect_particle_system`). In a match, an electric bolt's
+  sparks and a damaged object's smoke whose system and particle types change
+  nothing but the picture (`RuleSet::particle_system_presentation_only`) run
+  outside the lockstep state, as the picture-only effect anims do: each frame
+  runs and draws them, but they take no Logic or Display place, unique id or
+  Scenario draw, announce no particle's end, are neither hashed nor saved, and
+  leave the object's damage-smoke slot (`TechnoClass+0x310`) empty. A smoke
+  still stops when its owner dies, crashes, sinks or cloaks, as a shared one
+  does. Later objects' unique ids and draws and the state hash so differ from
+  gamemd's. A player sees the same sparks and smoke, except after a load: a
+  hit makes smoke only as it makes the object yellow or red, so a damaged
+  object then has none until a hit makes it red, or yellow again after a
+  repair.
+- **Teams update on their own turns**
+  ([team_ai.rs](../src/sim/team_script_vm/team_ai.rs), `run_team_ai_pass`).
+  The original updates every team every frame. Here a team updates one frame
+  in four, its own turn (the frame plus its id is a multiple of four), and on
+  the other frames only for what cannot wait, on the frame it happens as in
+  the original: a team forming, recruiting or regrouping, a member joining or
+  leaving, a script action finished or `Coordinate_Attack` restarting, the
+  end of a suspension or of a guard action's time, and a moving or attacking
+  team whose target is gone. A team that is moving or attacking (actions 0,
+  1, 3, 4, 15, 16, 22, 46 to 48, 53, 54, 58 and 59), guarding (5), doing a
+  mission (11) or nothing (2) waits for its turn; every other action runs
+  every frame. A waiting team so gives its members their next orders, sees
+  them arrive and finds its centre up to three frames late, and the members
+  a `Carryall=` aircraft's Move or an aircraft's Patrol sends to Guard by
+  setting the team's target (which neither the retail rules nor the retail AI
+  do) wait as long for the team to send them on. Its patrol scan
+  and `Coordinate_Attack`'s every-eighth-frame check of its leader run on its
+  first own turn from their frame, so each still runs once a period (but a
+  patrol scan of fewer than four frames, above), and no timer a script counts
+  runs longer. In the battle this takes the team step from about 14% of the
+  simulation thread to about 7%.
+- **Each object's turn draws its own random numbers**
+  ([turn_streams.rs](../src/sim/world/turn_streams.rs), with the generator in
+  [rng.rs](../src/sim/rng.rs)). The original gives every object's turn its
+  random numbers from the one Scenario stream, in the order of the object
+  list (`LogicClass::AI`), so the numbers a turn gets depend on how many every
+  turn before it took. Here the object pass takes one number from the
+  Scenario stream as it begins, on every frame, whether or not any turn then
+  draws, and each object's turn, with all it does to others, draws from a
+  generator of its own (SplitMix64), started from that number, the frame and
+  the object's id. Ranges are made from its numbers as from the Scenario
+  stream's, so a mission delay, a targeting delay, ROF jitter, scatter or gas
+  drift spreads as before, but takes other values than the original's for
+  the same seed. The draws outside the turns stay on the Scenario stream:
+  about 96% of them a computer player's choice of what to build next, the
+  rest its strategy timer and ore growth. The pass's number comes before
+  each of them every frame and the turns' numbers no longer do, so they take
+  other values too. Nothing new is saved; a loaded match draws this way
+  again. In the battle the turns draw about 5,500 numbers a frame, in one
+  turn in ten, and the draws outside them 11; on Death.mmx, 47 and 2.4.
+  `sim-bench --shared-stream` draws every turn from the Scenario stream. A
+  turn that draws so no longer depends on the turns before it, as an object
+  pass that runs turns side by side needs. The battle comes out about 0.2%
+  bloodier: on 14 seeds (battle30-v1.map, 1,200 frames, each seed run with
+  and without `--shared-stream` and the two compared), 38 more units lost of
+  about 17,400 (paired t 2.6), the houses' own tallies 41 more (t 2.3), 34
+  more kills (t 1.8), 48 more losses (2%, t 4.2) in frames 701-800, and the
+  running total 31 to 36 higher from frame 1,100 on (t about 2.1). Death.mmx
+  on 20 seeds and GoldSt.mmx on 10 build and form teams as before. No draw
+  changes its range or how often it is made, and no number several objects
+  shared is drawn apart now; no cause was found beyond the Scenario table's
+  own structure: each number is the XOR of the ones 147 and 250 draws before
+  it (x(n) = x(n-250) xor x(n-147), an R250 table), which every frame ties
+  three objects' draws together at fixed distances in the object list, and
+  the turns' own streams do not.

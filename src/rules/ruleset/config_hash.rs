@@ -132,6 +132,25 @@ impl RuleSet {
             b"infantry-theft-flags-v1".hash(&mut hasher);
             theft_flags.hash(&mut hasher);
         }
+        // Firestorm's web keys (docs/ts-webs.md) keep their values across
+        // passes (WarheadWeb::read_pass), as the theft bytes do. Left out
+        // while no rules set them.
+        let webs = Self::by_upper_id(
+            self.warhead_entries()
+                .filter_map(|(id, warhead)| warhead.web.map(|web| (id, web))),
+        );
+        let web_immune = Self::by_upper_id(
+            self.object_list
+                .iter()
+                .filter(|object| object.is_web_immune)
+                .map(|object| (&object.id, object.category)),
+        );
+        if !webs.is_empty() || !web_immune.is_empty() || self.general.webbed_infantry.is_some() {
+            b"ts-webs-v1".hash(&mut hasher);
+            webs.hash(&mut hasher);
+            web_immune.hash(&mut hasher);
+            self.general.webbed_infantry.hash(&mut hasher);
+        }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
@@ -243,7 +262,7 @@ impl RuleSet {
             )
             .hash(&mut hasher);
         }
-            {
+        {
             b"phobos-super-availability-v1".hash(&mut hasher);
             self.phobos_super_weapon_metadata.hash(&mut hasher);
         }
@@ -261,6 +280,8 @@ impl RuleSet {
         }
         if self.phobos {
             self.parallel_ai_queues.hash_into(&mut hasher);
+            b"phobos-super-influence-v1".hash(&mut hasher);
+            self.super_weapon_influence.hash(&mut hasher);
         }
         if self.ares {
             b"ares-side-defaults-v1".hash(&mut hasher);
@@ -281,11 +302,11 @@ impl RuleSet {
             self.side_ids.hash(&mut hasher);
             self.side_extensions.hash(&mut hasher);
         }
-            {
+        {
             b"phobos-sidebar-gdi-positions-v1".hash(&mut hasher);
             self.side_gdi_positions.hash(&mut hasher);
         }
-            {
+        {
             b"phobos-radiation-types-v1".hash(&mut hasher);
             self.radiation.radiation_types.hash(&mut hasher);
             // Bound weapon `RadType=` names, by weapon ID: the map's
@@ -511,7 +532,7 @@ impl RuleSet {
                 .map(|(name, terrain)| (name, terrain.armor_id())),
         )
         .hash(&mut hasher);
-            {
+        {
             // TerrainTypeExt::LoadFromINI retains these across Process calls.
             // They change spawner placement, particle births and RNG draws.
             b"phobos-retained-ore-spawners-v1".hash(&mut hasher);
@@ -1035,7 +1056,7 @@ impl RuleSet {
         }
         // Phobos airburst/splits inputs. Defaults leave the stock hash
         // unchanged; any authored value must invalidate a save.
-            {
+        {
             let phobos_projectiles =
                 Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
                     let value = &projectile.phobos_airburst;
@@ -1200,7 +1221,7 @@ impl RuleSet {
                 .map(|(id, warhead)| (id, &warhead.debris_types)),
         )
         .hash(&mut hasher);
-            {
+        {
             let jumpjet_overrides = Self::by_upper_id(
                 self.warhead_entries()
                     .filter(|(_, warhead)| !warhead.jumpjet_override.is_empty())
@@ -1293,7 +1314,7 @@ impl RuleSet {
             &self.general.empulse_warhead,
         )
             .hash(&mut hasher);
-            {
+        {
             if !self.mind_control.mind_control_ignore_size
                 || self.mind_control.mind_control_link_visible_to_house
                     != crate::rules::phobos_shields::AffectedHouse::ALL
@@ -1328,7 +1349,7 @@ impl RuleSet {
         }
         let general = &self.general;
         general.bomb_parachute.hash(&mut hasher);
-        if crate::rules::NPATCH_ENABLED {
+        if self.npatch() {
             general.vehicle_parachute.hash(&mut hasher);
         }
         (
@@ -1432,6 +1453,7 @@ impl RuleSet {
             self.general.ai_fire_sale_delay.hash(&mut hasher);
             self.general.ai_all_to_hunt.hash(&mut hasher);
             self.general.gather_when_mcv_deploy.hash(&mut hasher);
+            self.general.art_image_swap.hash(&mut hasher);
             b"phobos-power-surplus-v1".hash(&mut hasher);
             self.general.enable_power_surplus.hash(&mut hasher);
             self.general.power_surplus.hash(&mut hasher);
@@ -1457,7 +1479,7 @@ impl RuleSet {
             )
         }))
         .hash(&mut hasher);
-            {
+        {
             let warhead_anims =
                 Self::by_upper_id(self.warhead_entries().filter_map(|(name, warhead)| {
                     (warhead.phobos_anim
@@ -1473,7 +1495,7 @@ impl RuleSet {
                 self.phobos_warhead_anim.hash(&mut hasher);
             }
         }
-            {
+        {
             let control_anims =
                 Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
                     wh.mind_control_anim

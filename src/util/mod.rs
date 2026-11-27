@@ -7,9 +7,13 @@
 //! - util/ has NO dependencies on other game modules.
 //! - Any module may depend on util/.
 
+/// Stack size shared by the native game and simulation worker threads.
+pub const GAME_STACK_BYTES: usize = 8 << 20;
+
 pub mod ares_launch;
 pub mod archive_names;
 pub mod base64;
+pub mod android_ime;
 pub mod kratos_launch;
 #[cfg(target_os = "android")]
 pub mod app_icon;
@@ -21,6 +25,8 @@ pub mod cjk;
 pub mod config;
 pub mod direction;
 pub mod direction_tables;
+pub mod display_insets;
+pub mod mod_actions;
 pub mod device_identity;
 pub mod fixed_math;
 pub mod flh_transform;
@@ -49,6 +55,7 @@ pub mod native_string;
 pub mod native_trig;
 pub mod native_x87;
 pub mod pixel_conversion;
+pub mod prefetch;
 pub mod platform_dir;
 pub mod read_helpers;
 pub mod rect;
@@ -74,6 +81,7 @@ pub mod native_affine;
 // Platform services retain the standard-library types on native targets.
 pub mod file_system;
 pub mod sync;
+pub mod thread_stack;
 pub mod time;
 
 pub mod debug_checks;

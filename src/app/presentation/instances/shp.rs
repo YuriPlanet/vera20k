@@ -12,13 +12,16 @@ use super::helpers::{
     compute_sprite_depth_params_lifted, depth_axis, ground_sort_row, in_view, lifted_z_adjust,
     tactical_entity_admission,
 };
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedBuildingPieceInstance,
     PlannedObjects,
 };
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::map::entities::EntityCategory;
 use crate::render::batch::{DepthAxis, SpriteInstance};
 use crate::render::draw_state::DrawState;
@@ -105,37 +108,48 @@ fn shp_body_tint(
 
 /// The production inputs; `local_owner` is the preferred local owner's name.
 pub(crate) fn shp_inputs<'a>(
-    state: &'a AppState,
+    platform: &PlatformState,
+    renderer: &'a RendererState,
+    frontend: &'a FrontendState,
+    match_state: &'a MatchState,
+    process_assets: &'a ProcessAssets,
+    persistence: &PersistenceState,
     local_owner: Option<&'a str>,
 ) -> Option<ShpInputs<'a>> {
-    let runtime = state.match_state.sim_runtime.presentation()?;
-    let presentation = &state.match_state.match_presentation;
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let building_viewport = crate::app::presentation::render::tactical_world_view(state);
+    let runtime = match_state.sim_runtime.presentation()?;
+    let presentation = &match_state.match_presentation;
+    let camera = [match_state.input.camera_x, match_state.input.camera_y];
+    let building_viewport = crate::app::presentation::render::tactical_world_view(
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
+    );
     Some(ShpInputs {
         runtime,
-        frame: state.match_state.sim_runtime.frame()?,
+        frame: match_state.sim_runtime.frame()?,
         atlas: presentation.sprite_atlas.as_ref(),
         overlay_atlas: presentation.overlay_atlas.as_ref(),
         unit_atlas: presentation.unit_atlas.as_ref(),
         voxel_images: &presentation.voxel_images,
         zshape_skips: &presentation.zshape_skips,
         depth_tested_images: super::units::DepthTestedImages::of(
-            &state.renderer.vxl_pose_frame_cache,
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
+            &renderer.vxl_pose_frame_cache,
+            frontend,
+            match_state,
+            process_assets,
         ),
         camera,
-        render_size: [state.render_width(), state.render_height()],
-        zoom: state.match_state.input.zoom_level,
+        render_size: [
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        ],
+        zoom: match_state.input.zoom_level,
         building_viewport,
-        axis: depth_axis(&state.match_state.match_presentation),
+        axis: depth_axis(&match_state.match_presentation),
         local_owner,
-        ignore_visibility: state.match_state.sandbox_full_visibility,
+        ignore_visibility: match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
         building_zshape: presentation
@@ -171,9 +185,7 @@ pub(crate) fn build_shp_instances_from_inputs(
     ground_order: &NativeDisplayOrder,
 ) {
     let mut visit = shp_visitor(input, ground_order);
-    for (entity, _) in
-        super::helpers::drawn_display_entities(&input.runtime.simulation, input.frame)
-    {
+    for (entity, _) in super::helpers::drawn_display_entities(input.frame) {
         visit(ShpDraw::Member(ground_objects), entity);
     }
 }
@@ -332,7 +344,11 @@ pub(crate) fn shp_visitor<'a>(
                 active_disguise
                     .and_then(|state| state.type_id())
                     .map(|id| sim.interner().resolve(id))
-                    .unwrap_or_else(|| sim.interner().resolve(entity.type_ref())),
+                    // VERA: a module's `ImageOverride` image.
+                    .unwrap_or_else(|| {
+                        sim.interner()
+                            .resolve(entity.module_image().unwrap_or(entity.type_ref()))
+                    }),
             )
         };
         if super::helpers::drawn_type_uses_voxel(entity, type_name.as_ref(), sim.interner(), rules)
@@ -599,7 +615,12 @@ pub(crate) fn shp_visitor<'a>(
                 palette_context: *palette,
                 type_id: name.clone(),
                 facing: 0,
-                frame: shp_frame.min(*half),
+                // A door a module holds open shows its last opening frame.
+                frame: if entity.place.structure.and_then(|art| art.module_door) == Some(true) {
+                    half.saturating_sub(1)
+                } else {
+                    shp_frame.min(*half)
+                },
                 house_color: hc,
             },
             None => ShpSpriteKey {
@@ -711,7 +732,6 @@ pub(crate) fn shp_visitor<'a>(
             palette_light,
             sim,
             rules,
-            entity.place.airstrike_tint_active,
             crate::app::presentation::lighting::TechnoDraw::Shape,
         );
         let colour_word = match rules {
@@ -745,7 +765,7 @@ pub(crate) fn shp_visitor<'a>(
                     Some((_, _, z_adjust, _)) => *z_adjust,
                     None => structure_entry.map_or(0, |a| a.normal_z_adjust),
                 };
-                let point_move = building_zshape_point_move(entity, structure_entry);
+                let point_move = building_zshape_point_move(entity, structure_entry, rules);
                 let foundation: (u16, u16) = object_type
                     .map(|o| o.foundation.dimensions())
                     .unwrap_or((1, 1));
@@ -1150,7 +1170,6 @@ pub(crate) fn shp_visitor<'a>(
                         selected_palette_light(),
                         sim,
                         rules,
-                        entity.place.airstrike_tint_active,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
                     );
                 emit_building_turret_vxl(
@@ -1748,7 +1767,12 @@ fn factory_unload_art<'a>(
     entity: &crate::app::presentation::frame::ObjectRecord,
     art: &'a crate::rules::art_data::ArtEntry,
 ) -> Option<FactoryUnloadArt<'a>> {
-    if entity.mission.effective().known() != Some(crate::sim::mission::MissionType::Unload) {
+    // VERA: a Wasm module's `DoorOpen` write holds the door drawn open or
+    // shut (`ext_modules::held`), whatever the mission.
+    let held = entity.place.structure.and_then(|art| art.module_door);
+    let unloading =
+        entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Unload);
+    if !held.unwrap_or(unloading) {
         return None;
     }
     // `contact0` is radio slot 0's object.
@@ -1757,7 +1781,17 @@ fn factory_unload_art<'a>(
         .contact0
         .as_ref()
         .and_then(|product| sim.interner().object_type(product.type_ref, rules))
-        .is_some_and(|object| object.jumpjet || object.balloon_hover);
+        .is_some_and(|object| {
+            // Phobos `BuildingClass_DrawUnderDoorAnim_ExitThroughRoof`
+            // @ 0x43D363 (`Ext/Building/Hooks.cpp:1051-1075`): the produced
+            // unit's `ExitThroughRoof=` overrides the vanilla
+            // `JumpJet || BalloonHover` gate for the roof art pair.
+            if rules.phobos() {
+                object.exits_through_roof()
+            } else {
+                object.jumpjet || object.balloon_hover
+            }
+        });
     let door = &art.factory_door;
     let (body, under_door) = if roof {
         (
@@ -1995,24 +2029,26 @@ fn building_slot_window(
 }
 
 pub(crate) fn build_building_anim_instances(
-    state: &AppState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     admission: super::helpers::TacticalAdmission,
     objects: &mut PlannedObjects,
     order: &NativeDisplayOrder,
 ) {
     let (Some(runtime), Some(atlas), Some(rules)) = (
-        state.match_state.sim_runtime.presentation(),
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
-        state.rules(),
+        match_state.sim_runtime.presentation(),
+        match_state.match_presentation.sprite_atlas.as_ref(),
+        crate::app::state::active_rules(frontend, match_state),
     ) else {
         return;
     };
     let sim = &runtime.simulation;
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return;
     };
-    let grid = state.match_state.match_presentation.lighting.grid();
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state);
+    let grid = match_state.match_presentation.lighting.grid();
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
     let local_owner_id = local_owner
         .as_deref()
         .and_then(|name| sim.interner().get(name));
@@ -2020,20 +2056,20 @@ pub(crate) fn build_building_anim_instances(
         .resolved_terrain()
         .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     let shrouded = |cell| {
-        !state.match_state.sandbox_full_visibility
+        !match_state.sandbox_full_visibility
             && local_owner_id
                 .zip(cells.as_ref())
                 .is_some_and(|(viewer, cells)| {
                     crate::sim::vision::cell_is_shrouded(sim.fog(), cells, viewer, cell)
                 })
     };
-    let axis = depth_axis(&state.match_state.match_presentation);
-    let zoom = state.match_state.input.zoom_level;
+    let axis = depth_axis(&match_state.match_presentation);
+    let zoom = match_state.input.zoom_level;
     let viewport = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / zoom,
-        state.render_height() as f32 / zoom,
+        match_state.input.camera_x,
+        match_state.input.camera_y,
+        renderer.render_width(&frontend.screen) as f32 / zoom,
+        renderer.render_height(&frontend.screen) as f32 / zoom,
     ];
     let admitted_slots = |building| admitted_slot_anims(sim, frame, building, admission);
     // A slot Anim stands on or beside its building, so a building far off
@@ -2055,8 +2091,7 @@ pub(crate) fn build_building_anim_instances(
             continue;
         }
         let owner = sim.interner().resolve(building.owner());
-        let house_color = state
-            .match_state
+        let house_color = match_state
             .match_presentation
             .effective_house_color_map()
             .get(owner)
@@ -2111,8 +2146,8 @@ pub(crate) fn build_building_anim_instances(
             &mut anim_types,
             &|id| {
                 anim_colour_word(
-                    &state.frontend,
-                    &state.match_state,
+                    frontend,
+                    match_state,
                     sim,
                     frame,
                     cells.as_ref(),
@@ -2125,11 +2160,7 @@ pub(crate) fn build_building_anim_instances(
             viewport,
             draw_state,
             fade_ramp,
-            state
-                .match_state
-                .match_presentation
-                .in_game_options
-                .detail_level as i32,
+            match_state.match_presentation.in_game_options.detail_level as i32,
         );
     }
 }
@@ -2139,9 +2170,16 @@ pub(crate) fn build_building_anim_instances(
 fn building_zshape_point_move(
     entity: &crate::app::presentation::frame::ObjectRecord,
     art: Option<&crate::rules::art_data::ArtEntry>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> (i32, i32) {
     if entity.building_up() || entity.building_down() {
-        (0, 0)
+        if rules.is_some_and(crate::rules::ruleset::RuleSet::phobos) {
+            // `0x43D6E5`: Mission Construction (`0x12`) and Selling (`0x13`)
+            // skip the move unless the type sets `ZShapePointMove.OnBuildup=`.
+            art.map_or((0, 0), |art| art.z_shape_point_move_while_buildup())
+        } else {
+            (0, 0)
+        }
     } else {
         art.map_or((0, 0), |art| art.z_shape_point_move)
     }
@@ -2514,7 +2552,6 @@ fn emit_unit_terrain_body(
         palette_light,
         sim,
         Some(&runtime.resources.rules),
-        entity.place.airstrike_tint_active,
         crate::app::presentation::lighting::TechnoDraw::Shape,
     );
     let depth = compute_sprite_depth_params(

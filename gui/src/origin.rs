@@ -16,7 +16,9 @@ pub(crate) fn others_share(limit: usize) -> usize {
 }
 
 impl Origin {
-    pub(crate) fn share(self, limit: usize) -> usize {
+    /// What of `limit` this origin may hold: all of it for the host,
+    /// [`others_share`] (three quarters) for any other.
+    pub fn share(self, limit: usize) -> usize {
         if self == Origin::Host {
             limit
         } else {

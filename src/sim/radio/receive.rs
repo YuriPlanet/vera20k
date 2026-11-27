@@ -3355,6 +3355,101 @@ mod tests {
         );
     }
 
+    /// An ORCA already in its `Enter` mission next to a helipad that has one
+    /// free contact slot.  `health` decides whether it is still alive.
+    fn docking_fixture(health: i32) -> (Simulation, crate::rules::ruleset::RuleSet) {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=ORCA\n[BuildingTypes]\n0=GAAIRC\n\
+             [ORCA]\nAirportBound=yes\nAmmo=1\nPrimary=Maverick\n\
+             [GAAIRC]\nHelipad=yes\nNumberOfDocks=4\nStrength=600\n\
+             [Maverick]\nDamage=40\nRange=6\nROF=20\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        spawn_refinery(&mut sim, 2, "Americans", 1);
+        {
+            let dock = sim.substrate.entities.get_mut(2).unwrap();
+            dock.set_type_ref_for_test(sim.interner.intern("GAAIRC"));
+            dock.position.set_rx_for_test(10);
+            dock.position.set_ry_for_test(10);
+        }
+        spawn_miner(&mut sim, 1, "Americans");
+        {
+            let plane = sim.substrate.entities.get_mut(1).unwrap();
+            plane.set_category_for_test(EntityCategory::Aircraft);
+            plane.set_type_ref_for_test(sim.interner.intern("ORCA"));
+            plane.position.set_rx_for_test(30);
+            plane.position.set_ry_for_test(30);
+            plane.seldom.radio_contacts.set_capacity(1);
+            plane.health.set_for_test(health);
+            plane.mission.set_current_for_test(
+                crate::sim::mission::MissionId::from_known(
+                    crate::sim::mission::MissionType::Enter,
+                ),
+                0,
+            );
+        }
+        (sim, rules)
+    }
+
+    /// A dead aircraft (health 0, not yet removed) must not run the dock
+    /// handshake.  The dock's HELLO is refused by the dead receiver
+    /// (`radio_hello`: "a dead receiver answers 0"), so the link can never be
+    /// established; CAN_DOCK -> MOVE_HERE -> class setter -> CAN_DOCK then
+    /// repeats until the 8 MiB worker stack is gone.
+    ///
+    /// Evidence: `vera20k.exe.4676.dmp` (0xC00000FD) and the 2026-11-26 mass
+    /// skirmish stress capture, where the temporary bound reported
+    /// `ORCA hp=0 alive=false contacts=[-]` sending DOCKING to a helipad with
+    /// one free slot, which answered HELLO/NEED_TO_MOVE/MOVE_HERE every round.
+    #[test]
+    fn dead_aircraft_does_not_send_docking() {
+        use crate::sim::world::FrameEffects;
+        let (mut sim, rules) = docking_fixture(0);
+        let mut effects = FrameEffects::default();
+        crate::sim::radio::take_transmit_log();
+        let _ = sim.assign_aircraft_destination(
+            1,
+            Some(crate::sim::components::NavTargetRef::object(2)),
+            &rules,
+            &mut effects,
+        );
+        let sent: Vec<u8> = crate::sim::radio::take_transmit_log()
+            .into_iter()
+            .map(|record| record.msg)
+            .collect();
+        assert!(
+            !sent.contains(&0x0E),
+            "a dead aircraft sent DOCKING: {sent:?}"
+        );
+    }
+
+    /// The same state with a live aircraft still opens the handshake, so the
+    /// test above cannot pass just by never sending radio.
+    #[test]
+    fn live_aircraft_opens_the_dock_handshake() {
+        use crate::sim::world::FrameEffects;
+        let (mut sim, rules) = docking_fixture(200);
+        let mut effects = FrameEffects::default();
+        crate::sim::radio::take_transmit_log();
+        let _ = sim.assign_aircraft_destination(
+            1,
+            Some(crate::sim::components::NavTargetRef::object(2)),
+            &rules,
+            &mut effects,
+        );
+        let sent: Vec<u8> = crate::sim::radio::take_transmit_log()
+            .into_iter()
+            .map(|record| record.msg)
+            .collect();
+        assert!(
+            sent.contains(&0x0E),
+            "a live aircraft did not send DOCKING: {sent:?}"
+        );
+    }
+
     #[test]
     fn lifecycle_authority_limbo_break_uses_sparse_slot_order() {
         let mut sim = Simulation::new();

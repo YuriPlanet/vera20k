@@ -1,0 +1,12 @@
+# A mixed-room test for client modules (RFC 0001 section 10): each player's
+# ui.wasm sends one message by itself, the mod's rules.wasm answers with a
+# credit and a notification. `cargo build --release` builds both for wasm32.
+[workspace]
+members = ["rules", "ui"]
+resolver = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true

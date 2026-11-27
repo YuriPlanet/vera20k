@@ -30,7 +30,7 @@ const OBSERVER_HOUSES: usize = 8;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ObserverHouse {
     pub(crate) house: InternedId,
-    /// Both 20-entry kill tables (`+0x53E4`, `+0x5438`).
+    /// The Kills total (`0x00658330`), counting every victim House.
     pub(crate) kills: i32,
     /// [`crate::sim::house_tracking::HouseTracking::observer_units`].
     pub(crate) units: i32,

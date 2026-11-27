@@ -2,27 +2,15 @@
 //! lookup, the owner-draw button label clip, the software cursor sprite and
 //! one RGB565-presented composition pass.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::RectPx;
-
-impl AppState {
-    /// [`Self::csf_label`] with the key itself standing in while no table is
-    /// loaded (a missing label resolves to the CSF's `MISSING:'key'` text).
-    pub(crate) fn csf_text(&self, key: &str) -> String {
-        self.csf_label(key, key)
-    }
-
-    /// A label in the language in use ([`crate::i18n::label`]): VERA's own
-    /// (`VERA:`) come from its language files, the game's from the loaded
-    /// table, and `fallback` stands in while none is loaded.
-    pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
-        crate::i18n::label(self.process_assets.csf.as_ref(), key, fallback)
-    }
-}
 
 /// Native owner-draw button label clip: unpressed `(x, y+1, w-2, h-1)`,
 /// pressed `(x+2, y+5, w-4, h-5)`.
@@ -38,62 +26,80 @@ pub(crate) fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectP
 
 /// The cursor a page draws. A message box over the page draws it above itself
 /// instead ([`top_software_cursor`]).
-pub(crate) fn software_cursor(
-    state: &AppState,
+pub(crate) fn software_cursor<'a>(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &'a mut MatchState,
+    persistence: &PersistenceState,
     depth: f32,
-) -> Option<(&BatchTexture, SpriteInstance)> {
+) -> Option<(&'a BatchTexture, SpriteInstance)> {
     use crate::app::input::precedence::{ModalPage, modal_page};
-    if modal_page(state) == Some(ModalPage::ShellMessageBox) {
+    if modal_page(platform, renderer, frontend, match_state, persistence)
+        == Some(ModalPage::ShellMessageBox)
+    {
         return None;
     }
-    top_software_cursor(state, depth)
+    top_software_cursor(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        depth,
+    )
 }
 
 /// Default software cursor in screen space (camera at the origin): the raw
 /// pointer minus the hotspot, sized to the current animation frame and grown
 /// with a fitted menu's art, drawn from the sequence's frame-0 texture. `None`
 /// without a software cursor.
-pub(crate) fn top_software_cursor(
-    state: &AppState,
+pub(crate) fn top_software_cursor<'a>(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &'a mut MatchState,
+    persistence: &PersistenceState,
     depth: f32,
-) -> Option<(&BatchTexture, SpriteInstance)> {
+) -> Option<(&'a BatchTexture, SpriteInstance)> {
     // Outside the client area, or over an inactive window, the system arrow
     // owns the pointer; mouse.shp would otherwise stay painted next to it.
-    if !state.platform.owns_pointer() {
+    if !platform.owns_pointer() {
         return None;
     }
-    let cursor = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()?;
+    let cursor = match_state.match_presentation.software_cursor.as_ref()?;
     // Shell screens (menu, skirmish setup, score) only ever show the default
     // arrow, which is a single static frame.
     let sequence = cursor.get(crate::app::types::CursorId::Default)?;
     let frame = sequence.frames.get(
-        state
-            .match_state
+        match_state
             .input
             .software_cursor_frame_index(crate::app::types::CursorId::Default, sequence)?,
     )?;
     if crate::app::input::hardware_cursor::takes_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.input,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.input,
         crate::app::types::CursorId::Default,
         0,
     ) {
         return None;
     }
     let texture = &sequence.frames.first()?.texture;
-    let scale = crate::app::frontend::shell_layout::menu_cursor_scale(state);
+    let scale = crate::app::frontend::shell_layout::menu_cursor_scale(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    );
     Some((
         texture,
         SpriteInstance {
             position: [
-                state.match_state.input.cursor_x - sequence.hotspot[0] * scale,
-                state.match_state.input.cursor_y - sequence.hotspot[1] * scale,
+                match_state.input.cursor_x - sequence.hotspot[0] * scale,
+                match_state.input.cursor_y - sequence.hotspot[1] * scale,
             ],
             size: [frame.width * scale, frame.height * scale],
             uv_origin: [0.0, 0.0],

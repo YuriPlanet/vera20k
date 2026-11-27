@@ -48,17 +48,18 @@ pub(crate) fn mission_eaten(
     // building whose type refuses this foot, clear it and take the
     // missing-destination arm (LoseDestination `0x4D4D43`) without the
     // TarCom restore below.
-    let refused_destination = matches!(
-        nav_com,
-        Some(NavTargetRef::Object { id: building })
-            if sim.substrate.entities.get(building).is_some_and(|target| {
-                target.category() == EntityCategory::Structure
-                    && sim
-                        .object_type(target.type_ref(), rules)
-                        .is_some_and(|object| object.grinding)
-                    && !sim.can_grind_techno(building, id, rules)
-            })
-    );
+    let refused_destination = rules.phobos()
+        && matches!(
+            nav_com,
+            Some(NavTargetRef::Object { id: building })
+                if sim.substrate.entities.get(building).is_some_and(|target| {
+                    target.category() == EntityCategory::Structure
+                        && sim
+                            .object_type(target.type_ref(), rules)
+                            .is_some_and(|object| object.grinding)
+                        && !sim.can_grind_techno(building, id, rules)
+                })
+        );
     if refused_destination {
         sim.assign_null_destination(id, rules, registry, effects);
     }

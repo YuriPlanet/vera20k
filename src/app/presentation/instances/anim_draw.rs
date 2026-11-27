@@ -38,6 +38,7 @@ pub(crate) fn deploy_unit_drawer_light(
     anim: &crate::sim::anim_class::AnimObject,
     stable_id: u64,
     sim: &crate::sim::world::Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     rules: &crate::rules::ruleset::RuleSet,
     tint: [f32; 3],
     light: PaletteLight,
@@ -50,14 +51,14 @@ pub(crate) fn deploy_unit_drawer_light(
     if entity.deploy_anim() != Some(stable_id) {
         return None;
     }
-    let word = crate::app::presentation::lighting::custom_tint(entity, sim, rules).0;
+    let record = frame.object(owner)?;
+    let word = crate::app::presentation::lighting::custom_tint(record, sim, rules).0;
     let (tint, light) = crate::app::presentation::lighting::techno_effect_light(
-        entity,
+        record,
         tint,
         light,
         sim,
         Some(rules),
-        sim.airstrike_tint_active(entity.stable_id()),
         crate::app::presentation::lighting::TechnoDraw::Shape,
     );
     Some((tint, light.with_colour_word(light.colour_word() | word)))
@@ -490,6 +491,71 @@ pub(super) fn phobos_bracket_draw_point(
 /// bracket overwrite, before the caller adds `AEDrawOffset`. The hook reads
 /// `pThis->OwnerObject`; a building slot animation has none, so only attached
 /// animations reach these arms.
+pub(super) fn phobos_draw_offset_point(
+    sim: &crate::sim::world::Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
+    rules: &crate::rules::ruleset::RuleSet,
+    anim: &crate::sim::anim_class::AnimObject,
+    config: Option<&AnimTypeRuntimeConfig>,
+    point: [f32; 2],
+) -> [f32; 2] {
+    let Some(settings) = config.map(|config| &config.phobos_draw_offset) else {
+        return point;
+    };
+    if !settings.applies_bracket() {
+        return point;
+    }
+    let Some(owner) = anim.owner_entity().and_then(|id| sim.entities().get(id)) else {
+        return point;
+    };
+    let Some(object) = sim.interner().object_type(owner.type_ref(), rules) else {
+        return point;
+    };
+    let Some(record) = frame.object(owner.stable_id()) else {
+        return point;
+    };
+    let shield_bracket_delta =
+        shield_type_bracket_delta(owner, rules, sim.session().binary_frame() as i32);
+    if owner.category() == crate::map::entities::EntityCategory::Structure {
+        let anchor = crate::app::presentation::digital_display::building_bracket(
+            record,
+            object,
+            rules,
+            crate::rules::building_select_bracket::BuildingSelectBracketPosition::Top,
+        );
+        phobos_bracket_draw_point(
+            point,
+            [anchor.0, anchor.1],
+            settings,
+            PhobosBracketOwner::Building {
+                art_height: rules.building_dimensions(object)[2]
+                    / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+                foundation_width: i32::from(object.foundation.dimensions().0),
+            },
+            shield_bracket_delta,
+        )
+    } else {
+        let (sx, sy) = crate::app::presentation::digital_display::screen_point(record);
+        let infantry = owner.category() == crate::map::entities::EntityCategory::Infantry;
+        let rect = crate::app::presentation::ui_overlays::foot_select_bracket(sx, sy, infantry);
+        // `Anchor(invertX ? Left : Right, Top).OffsetPosition(rect)`: the
+        // Top vertical offset is zero, so the right side is `rect` + width.
+        let anchor_x = if settings.x_invert_bracket_shift {
+            rect[0]
+        } else {
+            rect[0] + rect[2]
+        };
+        phobos_bracket_draw_point(
+            point,
+            [anchor_x, rect[1]],
+            settings,
+            PhobosBracketOwner::Foot {
+                pixel_selection_bracket_delta: object.pixel_selection_bracket_delta,
+            },
+            shield_bracket_delta,
+        )
+    }
+}
 
 /// The owner shield type's `BracketDelta` while the shared shield-bar
 /// admission draws it: `!IsBrokenAndNonRespawning && (HealthRatio > 0 ||
@@ -506,7 +572,6 @@ fn shield_type_bracket_delta(
     .then(|| ty.bracket_delta())
 }
 
-#[cfg(all(test, tests_app_presentation_instances))]
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "anim_draw_tests.rs"]
 mod tests;

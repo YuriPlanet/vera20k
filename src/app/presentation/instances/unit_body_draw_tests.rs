@@ -26,12 +26,14 @@ use crate::sim::world::Simulation;
 fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[AudioVisual]\nJumpjetTilt=yes\n\
+         [GlobalControls]\nForbidParallelAIQueues.Building=yes\n\
          [VehicleTypes]\n0=TILT\n1=NOTILT\n\
          [TILT]\nStrength=100\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n\
          [NOTILT]\nStrength=100\nJumpjetTilt=no\n\
          Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n",
     ))
     .expect("jumpjet tilt rules");
+    assert!(rules.phobos(), "the fixture enables Phobos");
     let mut sim = Simulation::new();
     let spawn = |sim: &mut Simulation, type_id: &str| {
         sim.spawn_object_limbo_at_height(type_id, "Americans", 10, 10, 0, 100, &rules)
@@ -88,6 +90,7 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
                 jumpjet_tilt: object
                     .phobos_jumpjet_tilt
                     .resolve(&rules.phobos_jumpjet_tilt),
+                phobos: rules.phobos(),
                 binary_frame: sim.session().binary_frame(),
             },
         )
@@ -132,7 +135,7 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
         .get_mut_for_test(tilted)
         .unwrap()
         .rocking = Some(crate::sim::rocking::RockingState::default());
-    let live_pose = |sim: &Simulation| {
+    let live_pose = |sim: &Simulation, phobos: bool| {
         let entity = ObjectRecord::of_test_sim(&sim, &rules, tilted);
         let object = rules
             .object(sim.interner().resolve(entity.type_ref()))
@@ -147,14 +150,20 @@ fn phobos_jumpjet_tilt_poses_only_an_airborne_enabled_unit() {
                 object_type: Some(object),
                 bank_direction: None,
                 jumpjet_tilt: None,
+                phobos,
                 binary_frame: 0,
             },
         )
     };
     set_runtime(&mut sim, tilted, 1, 32.0);
-    assert_eq!(live_pose(&sim), Some(PoseTilt::JumpjetTilt([0.4, 0.3])));
+    assert_eq!(
+        live_pose(&sim, true),
+        Some(PoseTilt::JumpjetTilt([0.4, 0.3]))
+    );
     set_runtime(&mut sim, tilted, 0, 32.0);
-    assert_eq!(live_pose(&sim), Some(PoseTilt::Jumpjet([0.4, 0.3])));
+    assert_eq!(live_pose(&sim, true), Some(PoseTilt::Jumpjet([0.4, 0.3])));
+    set_runtime(&mut sim, tilted, 1, 32.0);
+    assert_eq!(live_pose(&sim, false), None, "stock keeps the type's gate");
 }
 
 /// Phobos `UnitClass_DrawAsVXL_Shadow` (hook `0x73C47A`,
@@ -170,6 +179,7 @@ fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
 
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[AudioVisual]\nJumpjetTilt=yes\n\
+         [GlobalControls]\nForbidParallelAIQueues.Building=yes\n\
          [VehicleTypes]\n0=TILT\n\
          [TILT]\nStrength=100\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n",
     ))
@@ -216,6 +226,7 @@ fn jumpjet_tilt_shadow_uses_the_body_tilt_pose() {
             jumpjet_tilt: object
                 .phobos_jumpjet_tilt
                 .resolve(&rules.phobos_jumpjet_tilt),
+            phobos: rules.phobos(),
             binary_frame: sim.session().binary_frame(),
         },
     )
@@ -271,12 +282,14 @@ fn jumpjet_tilt_shadow_stays_stock_when_the_body_does_not_tilt() {
 
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[AudioVisual]\nJumpjetTilt=yes\n\
+         [GlobalControls]\nForbidParallelAIQueues.Building=yes\n\
          [VehicleTypes]\n0=TILT\n1=NOTILT\n\
          [TILT]\nStrength=100\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n\
          [NOTILT]\nStrength=100\nJumpjetTilt=no\n\
          Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n",
     ))
     .expect("jumpjet tilt rules");
+    assert!(rules.phobos(), "the fixture enables Phobos");
     let mut sim = Simulation::new();
     let spawn = |sim: &mut Simulation, type_id: &str| {
         sim.spawn_object_limbo_at_height(type_id, "Americans", 10, 10, 0, 100, &rules)
@@ -329,6 +342,7 @@ fn jumpjet_tilt_shadow_stays_stock_when_the_body_does_not_tilt() {
                 jumpjet_tilt: object
                     .phobos_jumpjet_tilt
                     .resolve(&rules.phobos_jumpjet_tilt),
+                phobos: rules.phobos(),
                 binary_frame: sim.session().binary_frame(),
             },
         )
@@ -531,6 +545,7 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
                 object_type: Some(object),
                 bank_direction: direction,
                 jumpjet_tilt: None,
+                phobos: retail.rules.phobos(),
                 binary_frame: sim.session().binary_frame(),
             },
         );

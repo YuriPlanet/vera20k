@@ -510,6 +510,18 @@ class CacheTests(unittest.TestCase):
         registry = json.loads((self.store / 'cache-roots.json').read_text())
         self.assertNotIn(str(gone), registry['roots'])
 
+    def test_abandoned_host_builds_of_other_profiles_are_reclaimed(self):
+        # tools/scale_bench.py builds the `shipping` profile into the cache root.
+        gone = self.abandoned()
+        outputs = [self.put(gone, relative) for relative in (
+            'shipping/.cargo-lock',
+            'shipping/.fingerprint/vera20k-core-0123/lib-vera20k_core',
+            'shipping/deps/libvera20k_core-0123456789abcdef.rlib',
+            'shipping/sim-bench', 'shipping/sim-bench.d')]
+        result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(set(result['removed_files']), set(map(str, outputs)), result)
+        self.assertFalse(gone.exists())
+
     def test_target_build_left_by_a_stopped_pass_still_goes(self):
         # A pass unlinks files first and directories last, so a stopped pass
         # leaves the emptied .fingerprint directory but maybe not the tag.
@@ -584,6 +596,22 @@ class CacheTests(unittest.TestCase):
         self.assertFalse(old.exists())
         for path in (recent, other, Path(result['receipt_path'])):
             self.assertTrue(path.exists(), path)
+
+    def test_an_applied_pass_drops_inspections_of_executables_that_are_gone(self):
+        binary, _ = self.label()
+        inspections = self.store / 'inspections'
+        inspections.mkdir(parents=True)
+        def record(executable):
+            path = inspections / (hashlib.sha256(str(executable).encode()).hexdigest() + '.json')
+            path.write_text(json.dumps({'binary': str(executable), 'references': []}))
+            return path
+        live, stale = record(binary), record(self.target / 'debug/deps/retired-test-hash')
+        self.trim(dry_run=True)
+        self.assertTrue(stale.exists())
+        result = self.trim()
+        self.assertFalse(stale.exists())
+        self.assertTrue(live.exists())
+        self.assertEqual(result['removed_inspection_records'], 1, result)
 
     def test_incremental_budget_keeps_hottest_if_it_fits_after_cold_eviction(self):
         cold = [self.write('debug/incremental/crate-123/s-old/object.o', age=10),

@@ -83,10 +83,35 @@ impl Action {
             // A startup failure must not write defaults over the retail profile.
             Self::Quit => event_loop.exit(),
             Self::BackToMenu => App::leave_mission_result_screen(state),
-            Self::Resume => App::enter_in_game_menu_state(state, InGameMenuState::Closed),
-            Self::Abort => App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm),
+            Self::Resume => App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::Closed,
+            ),
+            Self::Abort => App::enter_in_game_menu_state(
+                &mut state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
+                InGameMenuState::AbortConfirm,
+            ),
             Self::Leave => App::apply_in_game_modal_outcome(
-                state,
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence,
                 ModalOutcome::LeaveMatch { destruct: false },
             ),
             // The import dialog is self-contained: it owns the step, and the
@@ -133,17 +158,28 @@ impl Buttons {
 
     /// The card that takes input now: render draws the same card from the
     /// same decision (`input::precedence`).
-    fn for_state(state: &AppState) -> Option<Self> {
-        match crate::app::input::precedence::input_layer(state) {
+    fn for_state(
+        platform: &crate::app::PlatformState,
+        renderer: &RendererState,
+        frontend: &FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        process_assets: &ProcessAssets,
+        persistence: &crate::app::persistence::PersistenceState,
+    ) -> Option<Self> {
+        match crate::app::input::precedence::input_layer(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            persistence,
+        ) {
             InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(
-                &state.frontend.asset_import,
-                &state.process_assets,
+                &frontend.asset_import,
+                process_assets,
             )),
             InputLayer::Screen(ScreenPage::ResultCard) => Some(Self::BACK_TO_MENU),
             InputLayer::Screen(ScreenPage::InGameCard) => Some(
-                if state.match_state.match_presentation.in_game_menu
-                    == InGameMenuState::AbortConfirm
-                {
+                if match_state.match_presentation.in_game_menu == InGameMenuState::AbortConfirm {
                     Self::ABORT_CONFIRM
                 } else {
                     Self::MISSING_MENU
@@ -426,14 +462,28 @@ pub(crate) fn handle_event(
     event: &WindowEvent,
     event_loop: &ActiveEventLoop,
 ) -> bool {
-    let Some(buttons) = Buttons::for_state(state) else {
+    let Some(buttons) = Buttons::for_state(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
+    ) else {
         return false;
     };
     let input = match event {
         WindowEvent::CursorMoved { position, .. } => {
             // Match input keeps source pixels even while a card covers a
             // zoomed match; the card maps back through `window_cursor_position`.
-            state.set_cursor_from_window(position.x as f32, position.y as f32);
+            crate::app::state::set_cursor_from_window(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state.input,
+                position.x as f32,
+                position.y as f32,
+            );
             None
         }
         WindowEvent::MouseInput {
@@ -441,7 +491,10 @@ pub(crate) fn handle_event(
             button: MouseButton::Left,
             ..
         } => {
-            let (x, y) = state.window_cursor_position();
+            let (x, y) = state
+                .match_state
+                .input
+                .window_cursor_position(state.renderer.tactical_zoom(&state.frontend.screen));
             let (x, y) = (x as i32, y as i32);
             Some(match pressed {
                 ElementState::Pressed => InputEvent::PointerDown {
@@ -475,7 +528,10 @@ pub(crate) fn handle_event(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
     );
-    let (x, y) = state.window_cursor_position();
+    let (x, y) = state
+        .match_state
+        .input
+        .window_cursor_position(state.renderer.tactical_zoom(&state.frontend.screen));
     let card = &mut state.frontend.status_card;
     card.sync(&buttons.actions(), &layout, (x as i32, y as i32));
     let activated = input.map_or_else(Vec::new, |input| card.input(input));

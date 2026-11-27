@@ -544,8 +544,8 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         .unwrap()
         .cell(at.0, at.1)
         .overlay_data;
-    assert!(s.sim.apply_command_with_overlays(
-        None,
+    assert!((s.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::clicked_mission(
             s.miner,
@@ -555,7 +555,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         &s.rules,
         Some(registry()),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     for _ in 0..1600 {
         frame(&mut s);
         if !s
@@ -597,8 +597,8 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     );
     let owner = s.sim.interner.get("Americans").unwrap();
     let balance = s.sim.houses[&owner].economy().credits();
-    assert!(s.sim.apply_command_with_overlays(
-        None,
+    assert!((s.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::clicked_mission(
             s.miner,
@@ -608,7 +608,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         &s.rules,
         Some(registry()),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     for _ in 0..1800 {
         frame(&mut s);
         if s.sim.houses[&owner].economy().credits() > balance {

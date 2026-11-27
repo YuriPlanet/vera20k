@@ -691,7 +691,10 @@ pub(crate) fn can_affect_target(
 
 /// `WarheadTypeExt::GetCritChance` (`Detonate.cpp:745..791`): zero for a
 /// warhead that cannot crit, else its `Crit.Chance`, the `CRITCHANCE` rank
-/// ability's `VeteranCritChance` and the AttachEffect fold.
+/// ability's `VeteranCritChance` and the AttachEffect fold. The owner's
+/// Wasm module `CritMultiplier` and `CritExtraChance` modifiers
+/// (`ext_modules::modifiers`) join that fold as one more effect for every
+/// warhead: the multiplier on the chance, the extra beside the effects'.
 fn get_crit_chance(
     world: &Simulation,
     rules: &RuleSet,
@@ -722,7 +725,15 @@ fn get_crit_chance(
     // block is more than the identity multiplies the chance and adds its
     // extra chance, gated by the Allow/Disallow warhead lists.
     if !owner.phobos_stat_multipliers().has_crit_modifiers {
-        return chance;
+        let chance = owner.with_module_modifiers(
+            crate::sim::ext_modules::modifiers::Stat::CritMultiplier,
+            chance,
+        );
+        let extra = owner.with_module_modifiers(
+            crate::sim::ext_modules::modifiers::Stat::CritExtraChance,
+            0.0,
+        );
+        return chance + extra;
     }
     let effects = rules.attach_effect_types().types();
     let mut extra_chance = 0.0;
@@ -748,7 +759,15 @@ fn get_crit_chance(
         chance *= effect.crit_multiplier.max(0.0);
         extra_chance += effect.crit_extra_chance;
     }
-    chance + extra_chance
+    let chance = owner.with_module_modifiers(
+        crate::sim::ext_modules::modifiers::Stat::CritMultiplier,
+        chance,
+    );
+    let extra = owner.with_module_modifiers(
+        crate::sim::ext_modules::modifiers::Stat::CritExtraChance,
+        0.0,
+    );
+    chance + (extra_chance + extra)
 }
 
 pub(crate) fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> bool {

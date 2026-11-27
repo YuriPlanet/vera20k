@@ -106,7 +106,7 @@ VERA 的 include/inheritance 遍历还改编自 baixiong443 的 ra2-mono `IniFil
 
 技术细节：[Kratos 扩展支持](kratos.md)
 
-This product includes software developed by the Kratos PP author.
+This product includes software developed by the Kratos Authors.
 
 Kratos PP 是 **DPKratos** 的 C++ 移植版，作者 **双杀步枪（ChrisLv_CN）**，策划
 **艾木魁（M.Kenosis）**，测试 **冲冲冲14782**。它构建在 **Xkein** 的

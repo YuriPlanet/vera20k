@@ -44,6 +44,10 @@ name: Release
 # `toolchain: stable` in place of its @stable branch. Refresh the pins about
 # once a year, to releases that have been out for a few weeks.
 #
+# Each native runner instruments the shipping game and sim-bench, trains on headless
+# retail gameplay and uses its own merged Rust LLVM profile to rebuild the game before
+# packaging (.github/release/pgo.py). Stable promotion keeps those exact bytes.
+#
 # Each installer holds the game program, its license (LICENSE-GPL), the
 # third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. Each
@@ -189,18 +193,21 @@ jobs:
     name: build (${{ matrix.target }})
     needs: prepare
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Two full shipping passes and the gameplay that trains this native target.
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             target: windows-x64
+            rust-target: x86_64-pc-windows-msvc
             program: vera20k.exe
           # The oldest supported Ubuntu runner, so the build also runs on
           # distributions with an older glibc.
           - os: ubuntu-22.04
             target: linux-x64
+            rust-target: x86_64-unknown-linux-gnu
             program: vera20k
           # Apple Silicon jobs here use macos-15, not macos-latest (macOS 26),
           # which dropped this job unstarted ("not acquired by Runner of type
@@ -208,11 +215,13 @@ jobs:
           # supported macOS stays MACOSX_DEPLOYMENT_TARGET on either image.
           - os: macos-15
             target: macos-arm64
+            rust-target: aarch64-apple-darwin
             program: vera20k
           # Intel Macs, built and started on GitHub's last Intel image, which
           # it supports until about August 2027.
           - os: macos-15-intel
             target: macos-x64
+            rust-target: x86_64-apple-darwin
             program: vera20k
     steps:
       # The program embeds text files (shaders, the capture contract); keep
@@ -221,15 +230,26 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Both Mac runners default to Xcode 16.4. AppKit uses the linked SDK
+      # to choose the appearance of the game's window controls on newer Macs.
+      - name: Select Xcode 26.3 for the Mac build
+        if: runner.os == 'macOS'
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
+          components: llvm-tools-preview
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
       # The third-party notices the prepare job wrote, for the Package step.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: third-party-licenses
           path: dist
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-targets: false
       # The AppImage step also needs desktop-file-validate.
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -240,7 +260,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: .github/release/windows/install-inno.ps1
-      - name: Build the game
+      - name: Fetch the Windows shader compiler for packaging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/release/windows/fetch-dxc.ps1 -Package dist
+      - name: Fetch retail data for gameplay training
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: python -m tools.ci_retail_data
+      - name: Train and build the PGO game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml). The splash's
         # license notice names the commit built, and the installers bring every
@@ -248,7 +276,7 @@ jobs:
         env:
           VERA20K_COMMIT: ${{ needs.prepare.outputs.sha }}
           VERA20K_LANGUAGE_FOLDER: '1'
-        run: cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
+        run: python .github/release/pgo.py ${{ matrix.rust-target }}
       - name: Package
         id: package
         shell: bash
@@ -266,7 +294,7 @@ jobs:
           mkdir -p "dist/$name/Maps" "dist/$name/Terrain"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           # The files the platform's installer takes from this folder.
-          cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
+          cp "dist/pgo-optimized/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
           cp maps/Arctic_Circle_16_Ice_Passages.map "dist/$name/Maps/"
           cp Terrain/vera_ice.mix Terrain/vera_ice_tiles.ini "dist/$name/Terrain/"
@@ -281,7 +309,7 @@ jobs:
           bash .github/release/languages.sh "dist/$name"
           # Windows also gets Microsoft's DirectX Shader Compiler beside the game.
           if [ "$RUNNER_OS" = Windows ]; then
-            pwsh -File .github/release/windows/fetch-dxc.ps1 -Package "dist/$name"
+            cp dist/dxcompiler.dll dist/LICENSE-DXC.txt "dist/$name/"
           fi
           # The README names the version, build and commit, which stay true when
           # a release republishes this installer.
@@ -422,6 +450,9 @@ jobs:
                          'LICENSE-DXC.txt', 'languages\vera20k.vi.ini',
                          'languages\NotoSansThai-VF.ttf') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
+          }
+          if ((Get-FileHash (Join-Path $app 'vera20k.exe')).Hash -ne (Get-FileHash 'dist/pgo-optimized/vera20k.exe').Hash) {
+            throw 'setup installed a different executable from the PGO build'
           }
           foreach ($file in 'vera_ice.mix', 'vera_ice_tiles.ini') {
             $path = "Terrain\$file"
@@ -595,12 +626,19 @@ jobs:
           test -f "$app/Contents/Resources/VERA20K.icns"
           test -f "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
           codesign --verify --strict --verbose=2 "$app"
+          # Signing the bundle changes its signature but preserves the Mach-O build UUID.
+          pgo_uuid=$(dwarfdump --uuid dist/pgo-optimized/vera20k | awk '{print $2}')
+          app_uuid=$(dwarfdump --uuid "$app/Contents/MacOS/VERA20K" | awk '{print $2}')
+          test -n "$pgo_uuid" && test "$app_uuid" = "$pgo_uuid" || { echo 'unexpected app executable' >&2; exit 1; }
           # About VERA20K tells builds apart, and the program and its
           # Info.plist name the same oldest macOS.
           build="$(plutil -extract CFBundleVersion raw "$plist")"
           test "$build" = "${STAMP/-/.}" || { echo "CFBundleVersion is $build" >&2; exit 1; }
+          build_info="$(vtool -show-build "$app/Contents/MacOS/VERA20K")"
+          sdk="$(awk '$1 == "sdk" { print $2 }' <<< "$build_info")"
+          test "${sdk%%.*}" -ge 26 || { echo "Game linked against macOS SDK '$sdk', need 26 or newer" >&2; exit 1; }
           for minimum in "$(plutil -extract LSMinimumSystemVersion raw "$plist")" \
-            "$(vtool -show-build "$app/Contents/MacOS/VERA20K" | awk '$1 == "minos" { print $2 }')"; do
+            "$(awk '$1 == "minos" { print $2 }' <<< "$build_info")"; do
             test "$minimum" = "$MACOSX_DEPLOYMENT_TARGET" \
               || { echo "oldest macOS $minimum, not $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
           done
@@ -638,7 +676,7 @@ jobs:
           (cd "$work" && "$image" --appimage-extract > /dev/null)
           root="$work/squashfs-root"
           test "$(readlink "$root/AppRun")" = usr/bin/vera20k
-          cmp "$root/usr/bin/vera20k" "dist/$NAME/vera20k"
+          cmp "$root/usr/bin/vera20k" dist/pgo-optimized/vera20k
           map=Arctic_Circle_16_Ice_Passages.map
           cmp "maps/$map" "$root/usr/share/vera20k/Maps/$map"
           for file in vera_ice.mix vera_ice_tiles.ini; do

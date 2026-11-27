@@ -87,14 +87,14 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
         target_rx: 0,
         target_ry: 0,
     };
-    assert!(!sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &command,
         &rules,
         None,
         &mut FrameEffects::default(),
-    ));
+    )).is_err());
     assert!(
         matches!(sim.sound_events.iter().collect::<Vec<_>>().as_slice(),
             [crate::sim::world::SimSoundEvent::AresSuperWeaponRefused { owner: house, sw_type }]
@@ -120,14 +120,14 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
         .set_enemy_house_for_test(Some(enemy));
     sim.sound_events.clear_for_test();
     let health = sim.entities().get(target).unwrap().health.current();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &command,
         &rules,
         None,
         &mut FrameEffects::default(),
-    ));
+    )).is_ok());
     assert!(sim.sound_events.is_empty());
     assert!(!sim.super_weapons[&owner][&sw].is_ready());
     assert_eq!(sim.entities().get(target).unwrap().health.current(), health);
@@ -201,8 +201,8 @@ fn use_ai_place_ignores_click_and_keeps_first_eligible_maximum_after_invalid_lat
         Err(TargetReject::TargetHouseMismatch)
     );
     let rng = sim.scenario_rng.logical_state();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -212,7 +212,7 @@ fn use_ai_place_ignores_click_and_keeps_first_eligible_maximum_after_invalid_lat
         &rules,
         None,
         &mut FrameEffects::default()
-    ));
+    )).is_ok());
     assert_eq!(sim.entities().get(first).unwrap().health.current(), 75);
     assert_eq!(sim.entities().get(second).unwrap().health.current(), 100);
     assert_eq!(
@@ -264,8 +264,8 @@ fn no_target_selector_bypasses_designators_and_uses_empty_cell() {
         sim.super_weapon_target_check(&rules, owner, sw, (12, 15), false),
         Err(TargetReject::NoEligibleDesignator)
     );
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -275,7 +275,7 @@ fn no_target_selector_bypasses_designators_and_uses_empty_cell() {
         &rules,
         None,
         &mut FrameEffects::default()
-    ));
+    )).is_ok());
     assert!(sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::SuperWeaponLaunched { world, .. } if world.to_cell_sub_z().0 == 0 && world.to_cell_sub_z().1 == 0)));
     assert!(!sim.super_weapons[&owner][&sw].is_ready());

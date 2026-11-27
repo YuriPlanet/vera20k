@@ -6,7 +6,6 @@ use std::borrow::Cow;
 
 use anyhow::Result;
 
-use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
@@ -14,7 +13,12 @@ use crate::app::frontend::movies_credits_render::family_list_hovered;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_into};
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::mods::Listed;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::hud_paint::Material;
 use crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED;
 use crate::ui::mods_shell::{self, PAGE};
@@ -115,47 +119,68 @@ fn mods_status_key(shell_controller: &DialogController) -> Option<&'static str> 
 
 /// Paint the Mods page. Returns `false` when the shell chrome is missing.
 pub(crate) fn render_mods_page(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if !family_art_ready(state) {
+    if !family_art_ready(
+        renderer,
+        frontend,
+        process_assets,
+        &persistence.options_profile,
+    ) {
         return Ok(false);
     }
-    let layout = crate::app::frontend::shell_layout::mods_layout(&state.renderer.gpu);
+    let layout = crate::app::frontend::shell_layout::mods_layout(&renderer.gpu);
     let (scale, dialog) = (layout.page.scale, PAGE.dialog);
     // Use This Mod is dark while the selection is nothing to change to, Check
     // Files while it is the original game.
-    let mods = &state.frontend.mods;
-    let selected = family_list_selected(&state.frontend.shell_controller, dialog);
+    let mods = &frontend.mods;
+    let selected = family_list_selected(&frontend.shell_controller, dialog);
     let enabled = [
         (mods_shell::USE, mods.switch_to(selected).is_some()),
         (mods_shell::CHECK, mods.picked_is_mod(selected)),
     ];
     let rect_of = |id| layout.rect_of(id);
     let tree = page_tree(
-        &mut state.frontend.shell_controller,
+        &mut frontend.shell_controller,
         dialog,
         mods_shell::nodes,
         rect_of,
         &enabled,
     );
-    sync_texts(&mut state.frontend, selected);
+    // Android: the name dialog's widgets; the dialog itself is drawn after
+    // the page, in `App::draw_name_dialog_over`.
+    #[cfg(target_os = "android")]
+    crate::app::App::sync_name_dialog(&renderer.gpu, frontend);
+    sync_texts(frontend, selected);
     let status =
-        |state: &AppState| mods_status_key(&state.frontend.shell_controller).map(str::to_owned);
+        |frontend: &FrontendState| mods_status_key(&frontend.shell_controller).map(str::to_owned);
     let kind = ShellSlideKind::Mods;
-    let panel = page_panel_state(state, kind, true, status, layout.page.status_help);
+    let panel = page_panel_state(
+        frontend,
+        process_assets,
+        kind,
+        true,
+        status,
+        layout.page.status_help,
+    );
     // As for the movie list: the teardown slide repaints the dialog over its
     // children, and nothing draws them again before it is gone.
     let leaving = panel.leaving;
     let mut frame = FamilyFrame::new("Mods Shell", &layout.page, panel, PAGE.title_key).on(
-        &state.frontend.shell_controller,
+        &frontend.shell_controller,
         dialog,
         &tree,
     );
     frame.backdrop = true;
-    let mods = &state.frontend.mods;
-    let controller = &state.frontend.shell_controller;
+    let mods = &frontend.mods;
+    let controller = &frontend.shell_controller;
     let gui = controller.gui();
     if let Some(page) = mods.page.as_ref().filter(|_| !leaving)
         && let Some(node) = find_family_list(controller, dialog)
@@ -198,16 +223,16 @@ pub(crate) fn render_mods_page(
             ..Default::default()
         };
         // Without the control art none of it paints.
-        let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+        let atlas = frontend.skirmish_shell_chrome.as_ref();
         if let Some(atlas) = atlas {
             let over = &mut frame.over;
             paint_gui_into(
                 over,
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 Some(atlas),
                 gui,
                 node,
@@ -233,11 +258,11 @@ pub(crate) fn render_mods_page(
             let (over, style) = (&mut frame.over, GuiStyle::default());
             paint_gui_into(
                 over,
-                &state.platform.ime,
-                &state.renderer.bit_font,
-                &state.frontend,
-                &state.match_state,
-                &state.process_assets,
+                &platform.ime,
+                &renderer.bit_font,
+                frontend,
+                match_state,
+                process_assets,
                 Some(atlas),
                 gui,
                 root,
@@ -247,6 +272,20 @@ pub(crate) fn render_mods_page(
             );
         }
     }
-    encode_family_page(state, encoder, destination, frame);
+    encode_family_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        encoder,
+        destination,
+        frame,
+    );
+    // Android: New Mod's dialog goes over the finished page, as a message box
+    // would, so the page's own text cannot cover it.
+    #[cfg(target_os = "android")]
+    crate::app::App::draw_name_dialog_over(renderer, frontend, encoder, destination);
     Ok(true)
 }

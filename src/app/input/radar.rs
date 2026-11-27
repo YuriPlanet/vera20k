@@ -31,12 +31,19 @@
 //! the radar press it would need, so no release reaches both. Player effect:
 //! none known. Downstream risk: none.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::PlaceAction;
 use crate::app::input::cursor::ActionQuery;
 use crate::app::input::dispatch::LeftUp;
 use crate::app::input::entity_pick::HoverObject;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::types::{CursorFeedbackKind, CursorId};
+use crate::audio::sfx::SfxPlayer;
 use crate::render::radar::NativeRadarInputTarget;
 use winit::event::MouseButton;
 
@@ -335,10 +342,17 @@ pub(crate) fn with_minimap_beacon(
 /// Whether the radar pixel under the cursor answers the beacon action
 /// ([`with_minimap_beacon`]), which VERA's right-click scheme otherwise
 /// leaves the left press to the camera for.
-pub(crate) fn minimap_beacon_armed(state: &AppState) -> bool {
-    state.persistence.options_profile.minimap_beacons
-        && crate::app::input::beacon::mode_active(&state.match_state.match_presentation)
-        && hover(state).is_some_and(|hover| hover.action == Some(RadarAction::PlaceBeacon))
+pub(crate) fn minimap_beacon_armed(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
+    persistence.options_profile.minimap_beacons
+        && crate::app::input::beacon::mode_active(&match_state.match_presentation)
+        && hover(platform, renderer, frontend, match_state, persistence)
+            .is_some_and(|hover| hover.action == Some(RadarAction::PlaceBeacon))
 }
 
 /// The radar action for the pixel under the cursor, as [`begin_context_press`],
@@ -354,44 +368,65 @@ struct Hover {
 
 /// The radar pixel under the cursor and its action; `None` off the radar
 /// image, with the radar offline, or on the empty Cell (0,0).
-fn hover(state: &AppState) -> Option<Hover> {
-    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+fn hover(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<Hover> {
+    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) {
         return None;
     }
-    let target = crate::app::presentation::sidebar_render::minimap_input_target(state)?;
+    let target = crate::app::presentation::sidebar_render::minimap_input_target(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    )?;
     if target.cell == (0, 0) {
         return None;
     }
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
+    let sim = &match_state.sim_runtime.runtime()?.simulation;
+    let owner = crate::app::input::commands::preferred_local_owner_name(match_state)?;
     let object = target
         .tracker_hit
         .and_then(|id| crate::app::input::entity_pick::hover_object_by_id(sim, id, &owner));
     let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
         Some(sim),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
+        crate::app::state::active_rules(frontend, match_state),
+        &match_state.input.selection_order,
+        match_state.input.selection_order_pending,
     );
     let selected = crate::app::input::context_order::projected_order_selection(
         sim,
-        state.rules(),
+        crate::app::state::active_rules(frontend, match_state),
         &selected,
         object
             .and_then(crate::app::input::entity_pick::HoverObject::techno)
             .map(|target| target.stable_id),
     );
     // The Cell's What_Action without mouse-over (`0x00653C9A`).
-    let query = ActionQuery::new(&state.frontend, &state.match_state, sim, &selected, false);
-    let armed = state
+    let query = ActionQuery::new(frontend, match_state, sim, &selected, false);
+    let armed = match_state
+        .input
         .armed_super_weapon_type()
-        .and_then(|section| state.rules()?.super_weapon_index(section));
+        .and_then(|section| {
+            crate::app::state::active_rules(frontend, match_state)?.super_weapon_index(section)
+        });
     let action = with_minimap_beacon(
         action(&query, armed, target.cell, object),
-        state.persistence.options_profile.minimap_beacons,
-        crate::app::input::beacon::mode_active(&state.match_state.match_presentation),
+        persistence.options_profile.minimap_beacons,
+        crate::app::input::beacon::mode_active(&match_state.match_presentation),
         selected.is_empty(),
-        state.armed_super_weapon_type().is_some(),
+        match_state.input.armed_super_weapon_type().is_some(),
     );
     Some(Hover {
         target,
@@ -418,17 +453,24 @@ pub(crate) enum RadarCursor {
 /// never sticks to the gadget (`GadgetClass::Action` gets flags 0,
 /// `0x00653ECB`), so a press dragged off it leaves the cursor to what lies
 /// there.
-pub(crate) fn cursor(state: &AppState) -> Option<RadarCursor> {
+pub(crate) fn cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<RadarCursor> {
     use crate::app::presentation::sidebar_render as sidebar;
-    if !sidebar::is_cursor_over_radar_gadget(state) {
+    if !sidebar::is_cursor_over_radar_gadget(platform, renderer, frontend, match_state, persistence)
+    {
         return None;
     }
     Some(written_cursor(
-        state.match_state.input.tactical_mouse.left_held(),
-        sidebar::minimap_shown(&state.match_state.match_presentation),
-        sidebar::is_cursor_over_minimap(state),
+        match_state.input.tactical_mouse.left_held(),
+        sidebar::minimap_shown(&match_state.match_presentation),
+        sidebar::is_cursor_over_minimap(platform, renderer, frontend, match_state, persistence),
         || {
-            hover(state).map(|hover| {
+            hover(platform, renderer, frontend, match_state, persistence).map(|hover| {
                 hover.action.map_or(CursorId::DefaultMini, |action| {
                     action.cursor(hover.shrouded, hover.lead_moves_to_shroud)
                 })
@@ -460,20 +502,46 @@ fn written_cursor(
 /// Retain an order press on the online radar image until the same button
 /// releases. Hit admission is Radar6539E6..653A83; MatchInputState owns the
 /// pending button and selection-drag cancellation.
-pub(crate) fn begin_order_press(state: &mut AppState, button: MouseButton) -> bool {
-    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+pub(crate) fn begin_order_press(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+    button: MouseButton,
+) -> bool {
+    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) {
         return false;
     }
-    state.match_state.input.begin_minimap_press(button)
+    match_state.input.begin_minimap_press(button)
 }
 
 /// Begin the retail left-button context action, centring the camera on press
 /// when there is no action. An admitted action waits for release.
-pub(crate) fn begin_context_press(state: &mut AppState) {
-    if begin_order_press(state, MouseButton::Left)
-        && hover(state).is_none_or(|hover| hover.action.is_none())
+pub(crate) fn begin_context_press(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    if begin_order_press(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        MouseButton::Left,
+    ) && hover(platform, renderer, frontend, match_state, persistence)
+        .is_none_or(|hover| hover.action.is_none())
     {
-        centre_view_on_pick(state);
+        centre_view_on_pick(platform, renderer, frontend, match_state, persistence);
     }
 }
 
@@ -485,15 +553,25 @@ pub(crate) fn begin_context_press(state: &mut AppState) {
 /// `Action=` is the listed index's action, not the armed type; with the Ares
 /// superweapons on, the armed type for an Ares action or its own `Action=`,
 /// else none ([`crate::app::input::commands::special_place_type`]).
-pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
-    if !state.match_state.input.finish_minimap_press(button) {
+pub(crate) fn finish_order_press(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    button: MouseButton,
+) {
+    if !match_state.input.finish_minimap_press(button) {
         return;
     }
     let Some(Hover {
         target,
         action: Some(action),
         ..
-    }) = hover(state)
+    }) = hover(platform, renderer, frontend, match_state, persistence)
     else {
         return;
     };
@@ -511,7 +589,14 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
         _ => None,
     };
     crate::app::input::dispatch::band_box_left_up(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         LeftUp::Radar {
             target,
             super_weapon,
@@ -522,23 +607,53 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
 
 /// Centre the camera immediately on the radar pixel under the cursor,
 /// independent of the selection's action. Retail binds this to right press.
-pub(crate) fn centre_view_at_cursor(state: &mut AppState) {
-    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
-        centre_view_on_pick(state);
+pub(crate) fn centre_view_at_cursor(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    ) {
+        centre_view_on_pick(platform, renderer, frontend, match_state, persistence);
     }
 }
 
 /// The view centres on the pick's clamped Cell (`0x00653D7A..0x00653EA0`),
 /// except on the empty Cell (0,0) (`0x00653D84..0x00653D8C`).
-fn centre_view_on_pick(state: &mut AppState) {
-    if crate::app::presentation::sidebar_render::minimap_input_target(state)
-        .is_some_and(|target| target.cell == (0, 0))
+fn centre_view_on_pick(
+    platform: &PlatformState,
+    renderer: &mut RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    if crate::app::presentation::sidebar_render::minimap_input_target(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    )
+    .is_some_and(|target| target.cell == (0, 0))
     {
         return;
     }
-    crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
+    crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    );
     // A complete redraw, and the Z seed back to DEFAULT_Z (`0x00653EA5..0x00653EBA`).
-    state.renderer.native_z_seed.reset();
+    renderer.native_z_seed.reset();
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

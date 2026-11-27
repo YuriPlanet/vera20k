@@ -347,7 +347,8 @@ class CargoRunTests(unittest.TestCase):
 
     def test_core_only_and_workspace_tests_resolve_core_dependencies_alike(self):
         # Any feature difference gives `-p vera20k-core` its own core test
-        # executable; src/Cargo.toml's dev-dependencies must then gain it.
+        # executable; src/Cargo.toml's dev-dependencies must then gain it, or
+        # its build-dependencies for a crate only proc macros use.
         def tree(*selection):
             try:
                 listing = subprocess.run(

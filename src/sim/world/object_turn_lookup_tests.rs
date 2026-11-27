@@ -83,7 +83,9 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
 /// pointer, so moving it into every build costs the seldom part 8 bytes.
 /// Tiberian Sun's limpets are another 8 there: every vehicle's speed query
 /// would read them each step, so a byte in the main part's padding
-/// (`FootSpeedState::limpeted`) says when to.
+/// (`FootSpeedState::limpeted`) says when to. Tiberian Sun's web timer sits
+/// there too, and a byte in `InfantryRuntime`'s padding says when to read it.
+/// The Wasm module modifier cache is another 8 in the seldom part.
 #[cfg(all(target_pointer_width = "64", not(feature = "debug-tools")))]
 #[test]
 fn the_object_record_stays_under_its_ceiling() {
@@ -93,7 +95,7 @@ fn the_object_record_stays_under_its_ceiling() {
         std::mem::size_of::<Seldom>(),
     );
     assert!(
-        main <= 1208 && seldom <= 832,
+        main <= 1208 && seldom <= 840,
         "GameEntity is {main} bytes and Seldom {seldom}"
     );
 }

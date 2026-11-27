@@ -76,6 +76,7 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             opening_view_cell: None,
             camera_anchor_x: 0.0,
             camera_anchor_y: 0.0,
+            ui_modules: Default::default(),
         },
         presentation: init::PresentationLoadAssets {
             tile_atlas: None,
@@ -139,27 +140,38 @@ pub(crate) struct MapPresentationInputs {
 /// The cameo status strip's labels and Ares hook 6CC2B0's, only when Ares
 /// plays in the game (`RuleSet::ares`): resolved with the incoming world and
 /// after the string table's labels change, instead of with every sidebar draw.
-pub(crate) fn resolve_status_texts(state: &mut AppState) {
-    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
-        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state.csf_text(label)
-        })
-    });
-    let status_texts = crate::app::presentation::state::StatusTexts::resolve(&state.process_assets);
-    let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn resolve_status_texts(
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+) {
+    let ares_status_texts = crate::app::state::active_rules(frontend, match_state)
+        .filter(|rules| rules.ares())
+        .map(|rules| {
+            crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
+                process_assets.csf_text(label)
+            })
+        });
+    let status_texts = crate::app::presentation::state::StatusTexts::resolve(process_assets);
+    let presentation = &mut match_state.match_presentation;
     presentation.ares_status_texts = ares_status_texts;
     presentation.status_texts = status_texts;
 }
 
 pub(crate) fn install_world_presentation(
-    state: &mut AppState,
+    platform: &crate::app::PlatformState,
+    renderer: &mut crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    persistence: &crate::app::persistence::PersistenceState,
     map: MapPresentationInputs,
     assets: init::PresentationLoadAssets,
 ) {
     if let Some(names) = map.campaign_names {
-        state.match_state.campaign_names = names;
+        match_state.campaign_names = names;
     }
-    state.match_state.map_basic = map.basic;
+    match_state.map_basic = map.basic;
     // Phobos `ScenarioExt::LoadFromINIFile` (`Ext/Scenario/Body.cpp:152-166`):
     // a campaign scenario re-reads MISSIONMD.INI under its own file name and
     // lets `Ranking.*` override the map's `[Ranking]` fields. Native applies
@@ -168,12 +180,12 @@ pub(crate) fn install_world_presentation(
     let ranking = {
         let mut ranking = map.ranking;
         if map.fresh_startup {
-            let campaign = state.match_state.sim_runtime.runtime().filter(|runtime| {
+            let campaign = match_state.sim_runtime.runtime().filter(|runtime| {
                 runtime.simulation.session().game_mode()
                     == crate::sim::scenario_session::ScenarioGameMode::Campaign
             });
             if let Some(runtime) = campaign
-                && let Some(manager) = state.process_assets.manager()
+                && let Some(manager) = process_assets.manager()
                 && let Ok(selected) =
                     crate::rules::retail_sources::select_ini(manager, "MISSIONMD.INI")
             {
@@ -183,146 +195,113 @@ pub(crate) fn install_world_presentation(
         }
         ranking
     };
-    state.match_state.map_ranking = ranking;
-    state.match_state.loaded_map_source = Some(map.source);
-    state.match_state.loaded_map_hash = map.map_hash;
-    state.match_state.match_presentation.terrain_grid = map.terrain_grid;
-    state.frontend.shell_preview_overlay_registry = state
-        .match_state
+    match_state.map_ranking = ranking;
+    match_state.loaded_map_source = Some(map.source);
+    match_state.loaded_map_hash = map.map_hash;
+    match_state.match_presentation.terrain_grid = map.terrain_grid;
+    frontend.shell_preview_overlay_registry = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| runtime.resources.rules.retain_overlay_registry());
 
-    state.match_state.match_presentation.combat_lights.clear();
-    state.renderer.performance_overlay.clear_simulation_rate();
-    state.match_state.match_presentation.lasers.clear_on_load();
+    match_state.match_presentation.combat_lights.clear();
+    renderer.performance_overlay.clear_simulation_rate();
+    match_state.match_presentation.lasers.clear_on_load();
     // Empty unless a bounty or ProduceCashDisplay queued labels, which only Ares does.
-    state
-        .match_state
+    match_state
         .match_presentation
         .flying_credits
         .borrow_mut()
         .clear_on_load();
-    state
-        .match_state
-        .match_presentation
-        .talk_bubble
-        .clear_on_load();
-    state
-        .match_state
+    match_state.match_presentation.talk_bubble.clear_on_load();
+    match_state
         .match_presentation
         .electric_bolts
         .clear_on_load();
-    state.match_state.match_presentation.airstrike_shades = Default::default();
-    state
-        .match_state
-        .match_presentation
-        .pixel_fx
-        .borrow_mut()
-        .clear_on_load();
-    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
-        state
-            .match_state
+    match_state.match_presentation.airstrike_shades = Default::default();
+    match_state.match_presentation.pixel_fx.clear_on_load();
+    if let Some(runtime) = match_state.sim_runtime.runtime() {
+        match_state
             .match_presentation
             .detail
             .borrow_mut()
             .configure_normal(&runtime.resources.rules.general.detail);
     }
-    state
-        .match_state
-        .match_presentation
-        .line_trails
-        .clear_on_load();
-    state
-        .match_state
-        .match_presentation
-        .hidden_super_anims
-        .clear();
-    state
-        .match_state
-        .match_presentation
-        .super_timer_blinks
-        .clear();
-    state
-        .match_state
-        .match_presentation
-        .super_timer_next_flip_ms = None;
-    state
-        .match_state
-        .match_presentation
-        .super_timer_dock
-        .reset();
-    sync_in_game_options_speed_from_sim(&mut state.match_state);
+    match_state.match_presentation.line_trails.clear_on_load();
+    match_state.match_presentation.hidden_super_anims.clear();
+    match_state.match_presentation.super_timer_blinks.clear();
+    match_state.match_presentation.super_timer_next_flip_ms = None;
+    match_state.match_presentation.super_timer_dock.reset();
+    sync_in_game_options_speed_from_sim(match_state);
 
-    state.match_state.match_presentation.tile_atlas = assets.tile_atlas;
-    state.match_state.match_presentation.building_zshape = assets.building_zshape;
+    match_state.match_presentation.tile_atlas = assets.tile_atlas;
+    match_state.match_presentation.building_zshape = assets.building_zshape;
     // Growths prepared against the outgoing atlases never publish into these,
     // and what was checked against them says nothing about these.
-    state.match_state.match_presentation.atlas_growth.cancel();
-    state.match_state.match_presentation.atlas_check = Default::default();
-    state.match_state.match_presentation.unit_atlas = assets.unit_atlas;
+    match_state.match_presentation.atlas_growth.cancel();
+    match_state.match_presentation.atlas_check = Default::default();
+    match_state.match_presentation.unit_atlas = assets.unit_atlas;
     // Both voxel caches resolve model images through the replaced RuleSet.
-    *state.renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
-    state.match_state.match_presentation.palette_set = assets.palette_set;
-    state.match_state.match_presentation.surface_palette = Default::default();
-    state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
+    *renderer.vxl_pose_frame_cache.borrow_mut() = Default::default();
+    match_state.match_presentation.palette_set = assets.palette_set;
+    match_state.match_presentation.surface_palette = Default::default();
+    match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
     // The skip table decoded its frames from the atlas just replaced.
-    state
-        .match_state
+    match_state
         .match_presentation
         .zshape_skips
         .get_mut()
         .forget_frames();
-    state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
-    state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
-    state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
-    state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
+    match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
+    match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
+    match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
+    match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
     // The side's layout, the mod's with the player's own over it, sizes the
     // sidebar, and with it the battlefield, from the world's first frame.
-    crate::app::presentation::player_layout::install(state, assets.match_layout_ini);
+    crate::app::presentation::player_layout::install(
+        platform,
+        frontend,
+        match_state,
+        persistence,
+        assets.match_layout_ini,
+    );
     {
-        state
-            .match_state
-            .match_presentation
-            .center_pause_menu_background = assets.center_pause_menu_background;
-        state.match_state.match_presentation.sw_sidebar_art = assets.sw_sidebar_art;
-        state.match_state.match_presentation.sidebar_indicators = assets.sidebar_indicators;
-        state.match_state.match_presentation.briefing_dialog = assets.briefing_dialog;
-        let significance = state
-            .match_state
+        match_state.match_presentation.center_pause_menu_background =
+            assets.center_pause_menu_background;
+        match_state.match_presentation.sw_sidebar_art = assets.sw_sidebar_art;
+        match_state.match_presentation.sidebar_indicators = assets.sidebar_indicators;
+        match_state.match_presentation.briefing_dialog = assets.briefing_dialog;
+        let significance = match_state
             .match_presentation
             .sw_sidebar
             .required_significance;
-        state
-            .match_state
+        match_state
             .match_presentation
             .sw_sidebar
             .configure(assets.sw_sidebar_ui, significance);
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_projection
             .model
             .reset_sw_sidebar();
     }
-    state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
-    resolve_status_texts(state);
-    state.match_state.match_presentation.end_game_banner = assets.end_game_banner;
+    match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
+    resolve_status_texts(frontend, match_state, process_assets);
+    match_state.match_presentation.end_game_banner = assets.end_game_banner;
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a
     // changed pair drops it and the next paint rebuilds with the side's art;
     // the process-lifetime slot 0 (`PUDLGBGN`) is not part of the hook, which
     // runs only when Ares plays in the game (`RuleSet::ares`).
-    if state.rules().is_some_and(|rules| rules.ares()) {
-        let side = state
-            .match_state
+    if crate::app::state::active_rules(frontend, match_state).is_some_and(|rules| rules.ares()) {
+        let side = match_state
             .sim_runtime
             .runtime()
             .map_or(-1, |runtime| runtime.simulation.session().scenario_side());
-        let pair = state.process_assets.side_dialog_background(side);
-        if state.frontend.shell_dialog_background != pair {
-            state.frontend.shell_dialog_background = pair;
-            state.frontend.skirmish_shell_chrome = None;
+        let pair = process_assets.side_dialog_background(side);
+        if frontend.shell_dialog_background != pair {
+            frontend.shell_dialog_background = pair;
+            frontend.skirmish_shell_chrome = None;
         }
     }
     // GAME.FNT is process artwork, so retain the established process fallback
@@ -332,12 +311,12 @@ pub(crate) fn install_world_presentation(
     // outline faces again (`FntFont::build`) and draw every glyph into an
     // empty atlas.
     if let Some(ref fnt) = assets.fnt_file
-        && !state.renderer.bit_font.is_built_from(fnt)
+        && !renderer.bit_font.is_built_from(fnt)
     {
-        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+        renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             fnt,
         );
     }
@@ -345,56 +324,51 @@ pub(crate) fn install_world_presentation(
     // The final sidebar projection resolves incoming side/radar authority.
     // `RadarClass::Init_Clear @ 0x00652DE0` starts each scenario offline at
     // frame 0, outside any movie mode, with TacticalMapAvailable clear.
-    state.match_state.match_presentation.radar_anim = None;
-    state.match_state.match_presentation.radar_animation_source = None;
-    state.match_state.match_presentation.radar_content_insets = None;
-    state.match_state.match_presentation.has_radar = false;
-    state.match_state.match_presentation.loaded_radar_housing = None;
-    state.match_state.match_presentation.software_cursor = assets.software_cursor;
-    state
-        .match_state
+    match_state.match_presentation.radar_anim = None;
+    match_state.match_presentation.radar_animation_source = None;
+    match_state.match_presentation.radar_content_insets = None;
+    match_state.match_presentation.has_radar = false;
+    match_state.match_presentation.loaded_radar_housing = None;
+    match_state.match_presentation.software_cursor = assets.software_cursor;
+    match_state
         .match_presentation
         .overlays
         .replace_from_source(map.overlays);
-    state.match_state.match_presentation.terrain_objects = map.terrain_objects;
-    state.match_state.match_presentation.overlay_names = assets.overlay_names;
-    state.match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
-    state.match_state.match_presentation.house_color_map = assets.house_color_map;
-    // VERA relation colours start each scenario off, in the player colours.
-    state.match_state.match_presentation.relation_colors = false;
-    state.match_state.match_presentation.relation_color_map = None;
+    match_state.match_presentation.terrain_objects = map.terrain_objects;
+    match_state.match_presentation.overlay_names = assets.overlay_names;
+    match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
+    match_state.match_presentation.house_color_map = assets.house_color_map;
+    // VERA relation and team colours start each scenario off, in the player
+    // colours; the launch team cache belongs to the match that just ended.
+    match_state.match_presentation.relation_colors = false;
+    match_state.match_presentation.team_colors = false;
+    match_state.match_presentation.team_by_owner = None;
+    match_state.match_presentation.relation_color_map = None;
     // VERA's Super Weapon Building Timers start from the saved switch; a
     // match's own hotkey flips it from there.
-    let saved_timers = state
-        .persistence
-        .options_profile
-        .superweapon_building_timers;
-    state
-        .match_state
-        .match_presentation
-        .superweapon_building_timers = saved_timers;
+    let saved_timers = persistence.options_profile.superweapon_building_timers;
+    match_state.match_presentation.superweapon_building_timers = saved_timers;
     // VERA's Convenience Help starts each scenario from the saved switch too;
     // Ctrl+Alt+H flips it from there and writes it back to the profile.
-    let help = state.persistence.options_profile.convenience_help;
-    state.match_state.match_presentation.convenience_help = help;
-    state.match_state.sim_runtime.show_status_rows(help);
-    state.match_state.match_presentation.house_roster = map.house_roster;
-    state.process_assets.csf = assets.csf;
-    state.match_state.match_presentation.theater_name = map.theater_name;
-    state.match_state.match_presentation.theater_ext = map.theater_ext;
+    let help = persistence.options_profile.convenience_help;
+    match_state.match_presentation.convenience_help = help;
+    match_state.sim_runtime.show_status_rows(help);
+    match_state.match_presentation.house_roster = map.house_roster;
+    process_assets.csf = assets.csf;
+    match_state.match_presentation.theater_name = map.theater_name;
+    match_state.match_presentation.theater_ext = map.theater_ext;
 
-    let live = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+    let live = match_state.sim_runtime.runtime().and_then(|runtime| {
         runtime
             .view()
             .resolved_terrain()
             .map(|terrain| (terrain, &runtime.simulation))
     });
-    let use_retint_fix = state
-        .match_state
+    let use_retint_fix = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.resources.rules.phobos_globals.use_retint_fix);
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.lighting.install(
         assets.lighting_grid,
         map.lighting_config,
@@ -406,89 +380,78 @@ pub(crate) fn install_world_presentation(
     // Current MapClass authority, including restored/triggered LocalSize,
     // reaches camera and minimap before either route positions its view.
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::playfield_presentation_authority(&state.match_state.sim_runtime);
-    let minimap = state
-        .match_state
+        crate::app::input::camera::playfield_presentation_authority(&match_state.sim_runtime);
+    let minimap = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
         .map(|grid| {
-            let runtime = state.match_state.sim_runtime.runtime();
+            let runtime = match_state.sim_runtime.runtime();
             let overlay_registry =
                 runtime.map(|runtime| runtime.resources.rules.overlay_registry());
             let rules = runtime.map(|runtime| &runtime.resources.rules);
             let overlay_data = build_minimap_overlay_data(
-                state.match_state.match_presentation.overlays.as_slice(),
-                &state.match_state.match_presentation.terrain_objects,
+                match_state.match_presentation.overlays.as_slice(),
+                &match_state.match_presentation.terrain_objects,
                 overlay_registry,
                 rules,
             );
             MinimapRenderer::new(
-                &state.renderer.gpu.device,
-                &state.renderer.gpu.queue,
-                &state.renderer.batch_renderer,
+                &renderer.gpu.device,
+                &renderer.gpu.queue,
+                &renderer.batch_renderer,
                 grid,
                 runtime,
                 &overlay_data,
-                &state.match_state.match_presentation.overlay_radar_colors,
-                &state.match_state.match_presentation.theater_name,
+                &match_state.match_presentation.overlay_radar_colors,
+                &match_state.match_presentation.theater_name,
                 playfield_bounds,
                 playfield_revision,
             )
         });
-    state.match_state.match_presentation.minimap = minimap;
-    state.match_state.match_presentation.selection_overlay = Some(SelectionOverlay::new(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        state.process_assets.manager(),
+    match_state.match_presentation.minimap = minimap;
+    match_state.match_presentation.selection_overlay = Some(SelectionOverlay::new(
+        &renderer.gpu,
+        &renderer.batch_renderer,
+        process_assets.manager(),
     ));
     // Phobos DigitalDisplay `Shape=`/`Palette=` assets, retained once per match
     // like `DigitalDisplayTypeClass`'s SHP pointers.
-    if let Some(assets) = state.process_assets.manager()
-        && let Some(rules) = state
-            .match_state
+    if let Some(assets) = process_assets.manager()
+        && let Some(rules) = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.resources.rules)
-        && let Some(overlay) = state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_mut()
+        && let Some(overlay) = match_state.match_presentation.selection_overlay.as_mut()
     {
         overlay.load_digital_display_shapes(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             assets,
             rules.digital_display_types().types(),
         );
     }
     // Ares/Phobos `Insignia` SHPs, retained once per match like the
     // TechnoTypeExt's SHPStruct pointers.
-    if let Some(assets) = state.process_assets.manager()
-        && let Some(rules) = state
-            .match_state
+    if let Some(assets) = process_assets.manager()
+        && let Some(rules) = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.resources.rules)
-        && let Some(overlay) = state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_mut()
+        && let Some(overlay) = match_state.match_presentation.selection_overlay.as_mut()
     {
         overlay.load_insignia_shapes(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             assets,
             rules,
         );
         overlay.load_select_box_shapes(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             assets,
             rules.select_box_types().types(),
         );
@@ -496,31 +459,25 @@ pub(crate) fn install_world_presentation(
     // Ares `IvanBomb.Image` SHPs, retained once per match like the
     // WeaponTypeExt's SHPStruct pointers, when the Rules were read the Ares
     // way: the bomb clock draws them then (`techno_extras_for_parent`).
-    if let Some(assets) = state.process_assets.manager()
-        && let Some(rules) = state
-            .match_state
+    if let Some(assets) = process_assets.manager()
+        && let Some(rules) = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.resources.rules)
         && rules.ares_form()
-        && let Some(overlay) = state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_mut()
+        && let Some(overlay) = match_state.match_presentation.selection_overlay.as_mut()
     {
         overlay.load_ares_bomb_images(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             assets,
             rules,
         );
     }
     // Phobos placement preview strips embed the active theater's palette and
     // the local house colour; a map load invalidates them.
-    state
-        .match_state
+    match_state
         .match_presentation
         .placement_preview_art
         .borrow_mut()
@@ -528,74 +485,73 @@ pub(crate) fn install_world_presentation(
     // Full_Init 687BB2 -> Init_BeaconArt 4309D0, after 68781F mounted the
     // side's MIX group; each row's ColorScheme is its House's (+0x16054),
     // whose Convert Init_Theater rebuilt from UNIT%s.PAL (534D77).
-    let beacon_side = crate::app::presentation::sidebar_render::current_sidebar_side(state);
-    let beacon_ares = state.rules().is_some_and(|rules| rules.ares());
-    state.match_state.match_presentation.beacon_art =
-        state.process_assets.manager().and_then(|assets| {
-            let runtime = state.match_state.sim_runtime.runtime()?;
-            let sim = &runtime.simulation;
-            let colors = &state.match_state.match_presentation.house_color_map;
-            let ramps: Vec<_> = sim
-                .houses()
-                .order()
-                .iter()
-                .map(|house| {
-                    let index = colors
-                        .get(sim.interner().resolve(*house))
-                        .copied()
-                        .unwrap_or(crate::rules::house_colors::NO_REMAP);
-                    *runtime.resources.rules.house_color_ramps.ramp(index)
-                })
-                .collect();
-            let unit_palette = crate::map::theater::load_theater_unit_and_iso_palettes(
-                assets,
-                &state.match_state.match_presentation.theater_name,
-            )
-            .map(|(unit, _)| unit);
-            Some(crate::render::beacon_art::BeaconArt::new(
-                &state.renderer.gpu.device,
-                &state.renderer.gpu.queue,
-                &state.renderer.batch_renderer,
-                assets,
-                beacon_side,
-                beacon_ares,
-                unit_palette.as_ref(),
-                &ramps,
-            ))
-        });
-    let shroud_buffer = state.process_assets.manager().and_then(|assets| {
-        let grid = state
-            .match_state
-            .sim_runtime
-            .runtime()?
-            .simulation
-            .path_grid()?;
+    let beacon_side =
+        crate::app::presentation::sidebar_render::current_sidebar_side(frontend, match_state);
+    let beacon_ares =
+        crate::app::state::active_rules(frontend, match_state).is_some_and(|rules| rules.ares());
+    match_state.match_presentation.beacon_art = process_assets.manager().and_then(|assets| {
+        let runtime = match_state.sim_runtime.runtime()?;
+        let sim = &runtime.simulation;
+        let colors = &match_state.match_presentation.house_color_map;
+        let ramps: Vec<_> = sim
+            .houses()
+            .order()
+            .iter()
+            .map(|house| {
+                let index = colors
+                    .get(sim.interner().resolve(*house))
+                    .copied()
+                    .unwrap_or(crate::rules::house_colors::NO_REMAP);
+                *runtime.resources.rules.house_color_ramps.ramp(index)
+            })
+            .collect();
+        let unit_palette = crate::map::theater::load_theater_unit_and_iso_palettes(
+            assets,
+            &match_state.match_presentation.theater_name,
+        )
+        .map(|(unit, _)| unit);
+        Some(crate::render::beacon_art::BeaconArt::new(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
+            assets,
+            beacon_side,
+            beacon_ares,
+            unit_palette.as_ref(),
+            &ramps,
+        ))
+    });
+    let shroud_buffer = process_assets.manager().and_then(|assets| {
+        let grid = match_state.sim_runtime.runtime()?.simulation.path_grid()?;
         let shp =
             crate::assets::shp_file::ShpFile::from_bytes(assets.get_ref("shroud.shp")?).ok()?;
         let (frame_pixels, cw, ch) = crate::render::shroud_buffer::extract_shp_brightness(&shp);
         let mut buffer = crate::render::shroud_buffer::ShroudBuffer::new(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            [state.render_width(), state.render_height()],
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            [
+                renderer.render_width(&frontend.screen),
+                renderer.render_height(&frontend.screen),
+            ],
             [grid.width(), grid.height()],
             frame_pixels,
             [cw, ch],
             crate::render::shroud_buffer::SHROUD_EDGE_LUT,
         );
-        buffer.set_translucent_fog(&state.renderer.gpu.queue, state.translucent_fog_enabled());
+        buffer.set_translucent_fog(&renderer.gpu.queue, platform.translucent_fog_enabled());
         // Cell47EFE0/47F250 use FOG.SHP's raw A bytes when Scenario0x1000
         // is set. It belongs to this same tactical source, not a sprite atlas.
         let fog = crate::assets::shp_file::ShpFile::from_bytes(assets.get_ref("fog.shp")?).ok()?;
         let (frames, width, height) = crate::render::shroud_buffer::extract_shp_brightness(&fog);
         buffer.install_fog_frames(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
             frames,
             [width, height],
         );
         Some(buffer)
     });
-    state.match_state.match_presentation.shroud_buffer = shroud_buffer;
+    match_state.match_presentation.shroud_buffer = shroud_buffer;
 }
 
 /// Complete StartScenario's successful ReadScenario boundary. Basic.Action
@@ -650,7 +606,17 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         &mut state.match_state.match_presentation,
     );
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+        wall_ms,
+    );
     crate::app::chrono_screen::retire(
         &state.frontend.screen,
         &mut state.match_state,
@@ -663,7 +629,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Start_Scenario 00683D21 completes Read_Scenario before switching video
     // mode at 00683DF3. VERA keeps the window the player gave it: the match
     // takes the zoom pass's source size, already current for this window.
-    crate::app::loading::pump::present_game_mode_blank(state);
+    crate::app::loading::pump::present_game_mode_blank(
+        &state.platform,
+        &state.renderer,
+        &state.match_state,
+    );
     // Only fresh startup cancels its outgoing scenario-owned request. Saved
     // loading preserves the process Theme state until ThemeLoad721040.
     state.audio.cancel_scenario_theme_request();
@@ -681,7 +651,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
-    crate::app::reset_scenario_exit_runtime(state);
+    crate::app::reset_scenario_exit_runtime(
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.audio,
+    );
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
@@ -720,6 +694,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             simulation.batch_path_searches();
             simulation.batch_target_scans();
             simulation.present_effect_anims();
+            simulation.separate_turn_streams(true);
             simulation.sleep_idle_objects_in_match();
             crate::sim::runtime::SimRuntime {
                 simulation,
@@ -751,7 +726,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .write_sim(SimWrite::Presentation)
         .map(|runtime| runtime.simulation.take_lighting_events());
     install_world_presentation(
-        state,
+        &state.platform,
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
+        &state.persistence,
         MapPresentationInputs {
             campaign_names: result.scenario.campaign_names,
             basic: result.scenario.basic,
@@ -770,7 +750,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         },
         result.presentation,
     );
-    if let Some(rules) = state.rules() {
+    if let Some(rules) = crate::app::state::active_rules(&state.frontend, &state.match_state) {
         state
             .match_state
             .match_presentation
@@ -792,7 +772,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // ClearScene685573 -> Mouse5BDF50 -> Sidebar6A5030 -> Power63F730:
     // fresh matches clear the retained Power fields. The saved-load route
     // shares install_world_presentation but has a distinct NoInit contract.
-    let wall_ms = state.radar_presentation_ms();
+    let wall_ms =
+        crate::app::diagnostics::state::radar_presentation_ms(&state.diag, &state.match_state);
     state
         .match_state
         .match_presentation
@@ -872,11 +853,24 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // that switch.
     let mut message_list = crate::ui::messages::MessageList::scenario();
     let shell = crate::app::persistence::options_profile::RETAIL_SHELL_SIZE;
-    if (state.render_width(), state.render_height()) != (shell.width, shell.height) {
+    if (
+        state.renderer.render_width(&state.frontend.screen),
+        state.renderer.render_height(&state.frontend.screen),
+    ) != (shell.width, shell.height)
+    {
         message_list.set_width(tactical_width as i32);
     }
     state.match_state.match_presentation.message_list = message_list;
-    crate::app::input::messages::post_layout_problem(state);
+    crate::app::input::messages::post_layout_problem(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+    );
     state.match_state.match_presentation.chat = Default::default();
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.
@@ -899,6 +893,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
     state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
+    // The match's client modules, now that the world, its rules modules and
+    // its chrome exist: loaded and `client_init` run here, `client_on_start`
+    // with the first frame the match draws (`ui_modules::render_frame`).
+    crate::app::ui_modules::install(state, result.scenario.ui_modules);
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
     // resolves through `From_Name` (`0x004758F0`); -1 -> `Stop(fade=1)` of the
@@ -968,9 +966,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
             }
-            let installed = crate::app::lan_service::install_gameplay(state);
+            let installed = crate::app::lan_service::install_gameplay(
+                &state.platform,
+                &mut state.match_state,
+                &mut state.process_assets,
+            );
             if installed.is_ok() {
-                install_watcher(state);
+                install_watcher(
+                    &state.platform,
+                    &state.frontend,
+                    &mut state.match_state,
+                    &mut state.audio.sfx_player,
+                );
             }
             installed.map_err(|error| error.to_string())
         }
@@ -1064,7 +1071,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             log::error!("Scenario installation rejected startup: {err}");
         }
     }
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &state.persistence,
+    );
 }
 
 /// VERA watching (docs/Networking.md "Watching"): the live session that
@@ -1075,15 +1091,25 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 /// A launcher's watcher (docs/spawn.md "Watching") stands in source 0's seat
 /// only because a world needs a current House: it starts on the observer's
 /// sidebar (`watching::begin_on_observers_view`).
-fn install_watcher(state: &mut AppState) {
-    if !crate::app::match_runtime::watching::active(&state.match_state) {
+fn install_watcher(
+    platform: &crate::app::PlatformState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    sfx_player: &mut Option<crate::audio::sfx::SfxPlayer>,
+) {
+    if !crate::app::match_runtime::watching::active(match_state) {
         return;
     }
-    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
+    if let Some(runtime) = match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime.simulation.install_watcher();
     }
-    if state.frontend.external_launch {
-        crate::app::match_runtime::watching::begin_on_observers_view(state);
+    if frontend.external_launch {
+        crate::app::match_runtime::watching::begin_on_observers_view(
+            platform,
+            frontend,
+            match_state,
+            sfx_player,
+        );
     }
 }
 

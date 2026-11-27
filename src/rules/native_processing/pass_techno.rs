@@ -121,6 +121,7 @@ impl RulesPassProcessor {
                 // section below; the later ART Image redirect is local to
                 // visual asset loading.
                 let theater = self.image_theater;
+                let art_image_swap = self.rules_art_image_swap;
                 let member = &mut self.family_mut(family)[index];
                 if ares_way {
                     member.object_image.read_ares_alternate_theater_art(&raw);
@@ -128,6 +129,11 @@ impl RulesPassProcessor {
                 member
                     .object_image
                     .read_ini(&raw, fixed_art, ObjectImageKind::Ordinary, theater);
+                // Phobos ArtImageSwap names a TechnoType's visuals from its
+                // own ART `Image=` while its flags stay on that section.
+                if art_image_swap && family != RulesTypeFamily::Building {
+                    member.object_image.apply_phobos_art_image_swap(fixed_art);
+                }
                 // TechnoRead7157B5..715825 loads current Image.SHP once
                 // for every RTTI except Building7, independently of Voxel.
                 // Its unconditional store clears a prior parent shape even
@@ -238,7 +244,7 @@ impl RulesPassProcessor {
                     member.object_image.load_voxel();
                     // TechnoType71609C: capture this read's fields, not final render metadata.
                     let input = super::voxel_model_plan::GenericLoadInput {
-                        image: member.object_image.image().to_owned(),
+                        image: member.object_image.visual_image().to_owned(),
                         unit: family == RulesTypeFamily::Vehicle,
                         apc: native_stored_id == "APC",
                         turret: effective.read_bool("Turret", false),
@@ -452,6 +458,23 @@ impl RulesPassProcessor {
                     self.family_mut(family)[index]
                         .production
                         .read_pass(&raw, cloned_at, cloned_as);
+                }
+                if !ares_way {
+                    let member = &mut self.family_mut(family)[index];
+                    member.super_weapon_techno.designator_range =
+                        crate::rules::ares_switch::not_ares_read(|| {
+                            raw.read_ares_nullable_int(
+                                "DesignatorRange",
+                                member.super_weapon_techno.designator_range,
+                            )
+                        });
+                    member.super_weapon_techno.inhibitor_range =
+                        crate::rules::ares_switch::not_ares_read(|| {
+                            raw.read_ares_nullable_int(
+                                "InhibitorRange",
+                                member.super_weapon_techno.inhibitor_range,
+                            )
+                        });
                 }
                 if ares_way
                     && let Some(target) =

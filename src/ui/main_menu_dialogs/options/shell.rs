@@ -275,6 +275,8 @@ pub(crate) const IN_GAME_KEYBOARD_HELP: &str = "STT:IGGameOptButtonKeyboard";
 /// What a greyed control says on the in-game menu: a setting the next game
 /// starts with ([`LauncherTrackbarId::fixed_in_match`]), or Check for Updates.
 const NOT_IN_MATCH_HELP: &str = "VERA:NotInMatchHelp";
+/// The HD art list's help while no HD art pack runs: what it needs.
+const HD_LOOK_NEEDS_PACK_HELP: &str = "VERA:HdLookNeedsPack";
 const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
 /// The in-game page's first row. 8 DLUs below the main menu's to clear the
 /// frame's top edge at 640x480, and a multiple of 8 so its sliders round to the
@@ -782,8 +784,8 @@ impl OptionsDialogState {
         Some(self.shell.gui.combo_drop_down(node)?.popup.rect)
     }
 
-    /// A page label's text and alignment: left, but a step name sits
-    /// right-aligned over its track's end.
+    /// The launcher volume captions center over their tracks. Slider step
+    /// names align to the right, and other labels align to the left.
     fn page_label(
         &self,
         layout: &LauncherOptionsLayout,
@@ -794,6 +796,11 @@ impl OptionsDialogState {
             PageLabel::Section(category) => self.text(category.heading()),
             PageLabel::Caption(Setting::Slider(LauncherTrackbarId::GameSpeed)) => {
                 self.game_speed_caption.as_str().into()
+            }
+            PageLabel::Caption(setting @ Setting::Slider(id))
+                if layout.category == Category::LauncherMain && id.is_audio() =>
+            {
+                return (self.text(setting.text().0), ShellAlign::H_CENTER);
             }
             PageLabel::Caption(setting) => self.text(setting.text().0),
             PageLabel::Localized(key) => tr(key).into(),
@@ -849,6 +856,7 @@ impl OptionsDialogState {
             LauncherButton::Exit(LauncherParentResult::Back) => "GUI:MainMenu",
             LauncherButton::Exit(LauncherParentResult::Mods) => crate::ui::mods_shell::TITLE_KEY,
             LauncherButton::Exit(LauncherParentResult::Terminal) => return Cow::Borrowed(""),
+            LauncherButton::Category(Category::LauncherMain) => "VERA:Previous",
             LauncherButton::Category(category) => category.heading(),
             LauncherButton::InGameOptions => "GUI:OptionsMenu",
             LauncherButton::InGameBack => "GUI:Back",
@@ -945,6 +953,18 @@ impl OptionsDialogState {
                 |m| m.label(),
                 E::ColorVisionModeSelected,
             ),
+            LauncherComboId::HdLook if !v.hd_look_available => LauncherList::new(
+                super::HdLook::choices_without_pack(),
+                &super::HdLook::Off,
+                |look| look.label(),
+                E::HdLookSelected,
+            ),
+            LauncherComboId::HdLook => LauncherList::new(
+                super::HdLook::choices(),
+                &v.hd_look,
+                |look| look.label(),
+                E::HdLookSelected,
+            ),
             LauncherComboId::Ares => LauncherList::new(
                 super::ares_choices(),
                 &v.ares,
@@ -1015,6 +1035,12 @@ impl OptionsDialogState {
             // A slider greyed for want of sound keeps its own help.
             Control::Setting(Setting::Slider(id)) if self.in_match && id.fixed_in_match() => {
                 return Some(NOT_IN_MATCH_HELP);
+            }
+            // Without an HD art pack the HD art list says what it needs.
+            Control::Setting(Setting::List(LauncherComboId::HdLook))
+                if !self.values.hd_look_available =>
+            {
+                return Some(HD_LOOK_NEEDS_PACK_HELP);
             }
             Control::Setting(setting) => return Some(setting.text().1),
             Control::Button(id) => id,
@@ -1545,6 +1571,111 @@ mod tests {
     }
 
     #[test]
+    fn launcher_main_aligns_display_columns_and_centers_the_volume_captions() {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as Combo;
+        use LauncherTrackbarId as Slider;
+
+        for (w, h) in [(800, 600), (1600, 1200)] {
+            let layout = LauncherOptionsLayout::responsive(w, h, Category::LauncherMain);
+            let mut dialog = state();
+            dialog.select_category(Category::LauncherMain);
+            let fullscreen = checkbox(&layout, Check::FullScreen);
+            let lock = checkbox(&layout, Check::LockCursor);
+            let shape = checkbox(&layout, Check::OriginalShape);
+            assert_eq!(fullscreen.x, lock.x);
+            assert_eq!(fullscreen.x, shape.x);
+            assert!(fullscreen.y + fullscreen.h <= lock.y && lock.y + lock.h <= shape.y);
+            if super::super::HAS_VSYNC {
+                let vsync = checkbox(&layout, Check::VSync);
+                assert_eq!(vsync.x, fullscreen.x);
+                assert!(fullscreen.y + fullscreen.h <= vsync.y && vsync.y + vsync.h <= lock.y);
+                dialog.shell_mouse_down(vsync.x + 2, vsync.y + 2, &layout);
+                dialog.shell_mouse_up(vsync.x + 2, vsync.y + 2, &layout);
+                assert!(matches!(
+                    dialog.drain_output().events.as_slice(),
+                    [LauncherOptionsEvent::Toggled(Check::VSync, _)]
+                ));
+            }
+
+            let labels = labels(&layout);
+            let gameplay = labels
+                .iter()
+                .find(|(_, label)| *label == PageLabel::Section(Category::Gameplay))
+                .unwrap()
+                .0;
+            let zoom = layout.combo_rect(Combo::Zoom).unwrap();
+            let mut previous = zoom;
+            for id in [Combo::Display, Combo::GraphicsApi] {
+                if let Some(rect) = layout.combo_rect(id) {
+                    assert_eq!((rect.x, rect.w), (zoom.x, zoom.w));
+                    assert!(previous.y + previous.h <= rect.y);
+                    previous = rect;
+                }
+            }
+            assert!(previous.y + previous.h < gameplay.y);
+            for id in [Slider::Difficulty, Slider::Scroll] {
+                assert_eq!(layout.trackbar_rect(id).unwrap().x, zoom.x);
+            }
+
+            let wanted = dialog.shell_wanted(&layout);
+            let [score, sound, voice] = [Slider::Score, Slider::Sound, Slider::Voice].map(|id| {
+                let setting = Setting::Slider(id);
+                let label = PageLabel::Caption(setting);
+                let track = layout.trackbar_rect(id).unwrap();
+                let caption = labels.iter().find(|(_, l)| *l == label).unwrap().0;
+                assert_eq!((caption.x, caption.w), (track.x, track.w));
+                assert_eq!(dialog.page_label(&layout, label).1, ShellAlign::H_CENTER);
+                let (_, node) = wanted
+                    .iter()
+                    .find(|(control, _)| *control == Control::Setting(setting))
+                    .unwrap();
+                assert!(node.props.contains(&(Prop::ShowValue, Value::Bool(true))));
+                track
+            });
+            assert_eq!((score.w, score.y), (sound.w, sound.y));
+            assert_eq!((score.w, score.y), (voice.w, voice.y));
+            assert_eq!(sound.x - score.x, voice.x - sound.x);
+            let thumb = dialog.shell_trackbar_thumb_left(Slider::Sound, sound, layout.scale);
+            dialog.shell_mouse_down(sound.x + thumb + 5, sound.y + sound.h - 3, &layout);
+            assert_eq!(dialog.shell_trackbar_hold(), Some((Slider::Sound, true)));
+            dialog.shell_mouse_up(sound.x + thumb + 5, sound.y + sound.h - 3, &layout);
+        }
+    }
+
+    #[test]
+    fn launcher_graphics_api_keeps_its_saved_choice_and_opens_from_its_new_face() {
+        use super::super::GraphicsApi;
+
+        for (w, h) in [(800, 600), (1600, 1200)] {
+            let layout = LauncherOptionsLayout::responsive(w, h, Category::LauncherMain);
+            let combo = LauncherComboId::GraphicsApi;
+            let face = layout.combo_rect(combo);
+            assert_eq!(face.is_some(), super::super::HAS_GRAPHICS_API);
+            let Some(face) = face else { continue };
+            let saved = GraphicsApi::choices()[1];
+            let mut dialog = state();
+            dialog.select_category(Category::LauncherMain);
+            dialog.values.graphics_api = saved;
+            let list = dialog.shell_list(combo, &layout);
+            assert_eq!(list.face, saved.label());
+            assert_eq!(list.rows.len(), GraphicsApi::choices().len());
+
+            dialog.shell_mouse_down(face.x + 4, face.y + face.h / 2, &layout);
+            let popup = dialog.shell_popup(&layout).unwrap();
+            assert_eq!((popup.combo, popup.selected), (combo, 1));
+            dialog.drain_output();
+            let auto = popup.row_rect(0);
+            dialog.shell_mouse_down(auto.x + 4, auto.y + auto.h / 2, &layout);
+            assert_eq!(dialog.values.graphics_api, GraphicsApi::Auto);
+            assert_eq!(
+                dialog.drain_output().events,
+                [LauncherOptionsEvent::GraphicsApiSelected(GraphicsApi::Auto)]
+            );
+        }
+    }
+
+    #[test]
     fn enhancements_give_both_slider_tracks_the_same_value_reserve() {
         use LauncherTrackbarId::{HouseColorStrength, SidebarColumns};
         let layout = page(Category::Enhancements);
@@ -2018,6 +2149,26 @@ mod tests {
             Some(LauncherParentResult::Back)
         );
         assert_eq!(state.pack(), before);
+    }
+
+    #[test]
+    fn launcher_subpages_show_previous_and_return_to_options() {
+        let previous = LauncherButton::Category(Category::LauncherMain);
+        for category in [Category::Enhancements, Category::Extensions] {
+            let mut dialog = state();
+            dialog.select_category(category);
+            let layout = page(category);
+            let back = button(&layout, previous);
+            assert_eq!(
+                dialog.shell_button_label(previous),
+                crate::i18n::tr("VERA:Previous")
+            );
+
+            dialog.shell_mouse_down(back.x + 5, back.y + 5, &layout);
+            dialog.shell_mouse_up(back.x + 5, back.y + 5, &layout);
+            assert_eq!(dialog.category(), Category::LauncherMain);
+            assert_eq!(dialog.drain_output().result, None);
+        }
     }
 
     /// Switching pages closes an open list: the next page starts clean.

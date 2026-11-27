@@ -45,7 +45,15 @@ pub(crate) fn admit_scenario_start_briefing(state: &mut AppState) {
     // `restate::open` re-reads MISSIONMD.INI and opens nothing when the file
     // or the scenario section is missing, exactly as
     // `ScenarioClass::ShowMissionRestateBriefing @ 0x0065F520` does.
-    crate::app::input::restate::open(state);
+    crate::app::input::restate::open(
+        &mut state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence,
+    );
     if state.match_state.match_presentation.in_game_menu
         == crate::ui::pause_menu::InGameMenuState::MissionBriefing
     {

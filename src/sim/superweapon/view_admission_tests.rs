@@ -198,8 +198,8 @@ mod layered_enum_history {
                 .any(|view| view.type_id == sw_type_id && view.can_fire)
         );
         assert!(!sim.fog.is_cell_revealed(owner, 20, 20));
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id,
@@ -209,7 +209,7 @@ mod layered_enum_history {
             &rules,
             None,
             &mut FrameEffects::default(),
-        ));
+        )).is_ok());
         assert!(sim.fog.is_cell_revealed(owner, 20, 20));
         assert!(!sim.super_weapons[&owner][&sw_type_id].is_ready());
     }
@@ -292,8 +292,8 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
         sim
     }
     fn fire(sim: &mut Simulation, rules: &RuleSet, id: InternedId) {
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,
@@ -303,7 +303,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
             rules,
             None,
             &mut FrameEffects::default()
-        ));
+        )).is_ok());
     }
 
     let art = IniFile::from_str("[POWER]\nFoundation=1x1\n[PROVIDER]\nFoundation=1x1\n");

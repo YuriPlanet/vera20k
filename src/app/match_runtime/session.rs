@@ -681,6 +681,12 @@ impl MatchSession {
             .opponents
             .sort_by_key(|opponent| opponent.raw_slot_index);
         launch.use_live_house_rows();
+        // A Teams count this build does not offer leaves Teams Off, so the
+        // session never holds a count the room cannot seat.
+        launch.options.teams = launch
+            .options
+            .teams
+            .filter(|teams| crate::skirmish_launch::ROOM_TEAMS.contains(teams));
         let network = self.network.as_mut().expect("network mode owns a visit");
         anyhow::ensure!(
             !matches!(network.phase, NetworkPhase::Frozen { .. }),

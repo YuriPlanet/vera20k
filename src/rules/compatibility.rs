@@ -6,15 +6,16 @@
 //! catalogs added later belong to the retained Rules registry, not a second
 //! mutable policy on RuleSet or Simulation.
 //!
-//! The capabilities are orthogonal: Phobos, NPatch, VeraX and the NPBUG
-//! bug-fix extension compile independently and combine freely, so every
-//! combination needs its own wire variant. A feature added under one capability
-//! must keep working when the others are compiled in — the modes differ in what
-//! they read, never in whether a feature is available.
+//! The capabilities are orthogonal: VeraX and the NPBUG bug-fix extension
+//! compile independently and combine freely, so every combination needs its
+//! own wire variant. A feature added under one capability must keep working
+//! when the others are compiled in — the modes differ in what they read,
+//! never in whether a feature is available.
 //!
-//! Ares was such a capability until every build played it (`RuleSet::ares`).
-//! Its variants stay, so a save from an `ares` build still reads and is
-//! refused; no build records them any more.
+//! Ares, Phobos and NPatch were such capabilities until every build played
+//! them (`RuleSet::ares`, `RuleSet::phobos`, `RuleSet::npatch`). Their variants
+//! stay for old saves; no new build records them, and the Phobos bit no longer
+//! makes a save incompatible.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum RulesCompatibility {
@@ -55,10 +56,13 @@ pub enum RulesCompatibility {
 
 impl Default for RulesCompatibility {
     fn default() -> Self {
+        // Phobos and NPatch are per-game switches now (`RuleSet::phobos`,
+        // `RuleSet::npatch`), like Ares: every build carries their code.
+        // Their variants stay for saves older builds wrote.
         Self::from_capabilities(
             false,
-            super::PHOBOS_ENABLED,
-            super::NPATCH_ENABLED,
+            false,
+            false,
             super::VERAX_ENABLED,
             super::NPBUG_ENABLED,
         )
@@ -110,7 +114,11 @@ impl RulesCompatibility {
     }
 
     pub(crate) fn matches_build(self) -> bool {
-        self == Self::default()
+        let expected = Self::default();
+        self.has_ares() == expected.has_ares()
+            && self.has_npatch() == expected.has_npatch()
+            && self.has_verax() == expected.has_verax()
+            && self.has_npbug() == expected.has_npbug()
     }
 
     /// Whether this recorded mode includes the Ares capability.
@@ -159,7 +167,8 @@ impl RulesCompatibility {
         )
     }
 
-    /// Whether this recorded mode includes the NPatch capability.
+    /// Whether this recorded mode includes the NPatch capability (only a
+    /// build from before NPatch became a per-game switch records it).
     pub const fn has_npatch(self) -> bool {
         matches!(
             self,

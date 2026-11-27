@@ -90,8 +90,9 @@ pub(crate) fn digital_display_instances(
         return out;
     }
     // `TechnoExt::ProcessDigitalDisplays` is called from DrawHealthBar, so the
-    // stock health-bar admission is the only lifecycle gate here.
-    if !health_bar_drawable(sim, entity, hovered_id, local_owner, rules.ares()) {
+    // shared health-bar admission (including the Phobos type switches) is the
+    // only lifecycle gate here.
+    if !health_bar_drawable(sim, entity, hovered_id, local_owner, Some(rules)) {
         return out;
     }
     let is_building = entity.category() == EntityCategory::Structure;

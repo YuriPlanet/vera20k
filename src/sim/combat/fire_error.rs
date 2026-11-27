@@ -286,9 +286,16 @@ pub(crate) struct FirerFacts {
     /// Ares TechnoExt+50 DisableWeaponTimer in progress (StartTime set and
     /// time left), read by hook 0x6FC0D3.
     pub weapons_disabled: bool,
+    /// A Wasm module `DisableWeapons` modifier holds
+    /// (`ext_modules::modifiers`), read where Phobos' DisableWeapons hook
+    /// 0x6FC0C5 answers.
+    pub module_weapons_disabled: bool,
     /// `+0x504` and, for a Unit, `+0x6D8` DeathFrameCounter (vt+0x37C).
     pub emp_remaining: i32,
     pub death_frame_counter: i32,
+    /// Firestorm 2.0 Infantry `+0x370`: the web timer runs
+    /// ([`GameEntity::is_webbed`](crate::sim::game_entity::GameEntity::is_webbed)).
+    pub webbed: bool,
     /// Live continuous effects: `+0x304` fire, `+0x308` spark and `+0x314`
     /// railgun particle systems, `+0x324` the Wave.
     pub fire_particles_live: bool,
@@ -396,8 +403,10 @@ impl Default for FirerFacts {
             on_bridge: false,
             z: 0,
             weapons_disabled: false,
+            module_weapons_disabled: false,
             emp_remaining: 0,
             death_frame_counter: -1,
+            webbed: false,
             fire_particles_live: false,
             spark_particles_live: false,
             railgun_particles_live: false,
@@ -1026,6 +1035,14 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     if kind == FireTargetKind::None || firer.enslaved {
         return Illegal;
     }
+    // Phobos TechnoClass_GetFireError_DisableWeapons (hook 0x6FC0C5) answers
+    // Rearm for its effects' `DisableWeapons`; VERA reads only the Wasm
+    // module modifier there (the Phobos flag's residual is in
+    // `attach_effect::stats`). Its `IsAttackedByLocomotor` exception has no
+    // producer in VERA, so it never applies.
+    if firer.module_weapons_disabled {
+        return Rearm;
+    }
     // Ares TechnoClass_CanFire_DisableWeapons (hook 0x6FC0D3, installed
     // 10049EA0): `DisableWeapons.Duration` answers Rearm (0x6FC0DF) ahead of
     // the warping test.
@@ -1084,11 +1101,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Illegal;
     }
     // T20 `0x006FC2E0`: EMP (vt+0x37C; a Unit also while its death frames
-    // run), except a visceroid.
+    // run), except a visceroid. Firestorm 2.0's `TechnoClass::Can_Fire`
+    // asks Is_Immobilized there (`0x0062F88B`), whose Infantry override
+    // (`0x004D5B10`) adds the web.
     let emp = crate::sim::game_entity::GameEntity::under_emp(
         firer.emp_remaining,
         (class == FirerClass::Unit).then_some(firer.death_frame_counter),
-    );
+    ) || firer.webbed;
     if emp
         && (class != FirerClass::Unit
             || !(firer_type.large_visceroid || firer_type.small_visceroid))

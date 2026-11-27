@@ -22,11 +22,17 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 
 /// SetPlaceBeaconMode's argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,62 +81,69 @@ pub(crate) fn place_beacon_mode_transition(
 /// the sidebar gadget state's, and entry runs Unselect_All (`0x004AC9EA`).
 /// A change also clears the power byte (`0x004AC9C7`). The cursor rows reset
 /// by vt+0x48/+0x50 follow from the bytes.
-pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeRequest) {
-    let gadgets = &state.match_state.match_presentation.sidebar_gadget_state;
+pub(crate) fn set_place_beacon_mode(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    request: BeaconModeRequest,
+) {
+    let gadgets = &match_state.match_presentation.sidebar_gadget_state;
     let modes = DisplayModes {
         repair: gadgets.repair_mode_on,
         sell: gadgets.sell_mode_on,
         beacon: gadgets.place_beacon_mode_on,
     };
-    let can_place =
-        beacons::local_house_index(&state.match_state.sim_runtime).is_some_and(|house| {
-            state
-                .match_state
-                .match_presentation
-                .beacons
-                .can_place(house)
-        });
+    let can_place = beacons::local_house_index(&match_state.sim_runtime)
+        .is_some_and(|house| match_state.match_presentation.beacons.can_place(house));
     // Phobos `MouseClass_ToggleBeaconMode_AllUsed` (`0x4AC9B2`,
     // `Ext/House/Hooks.cpp:874-903`): with every slot used and
     // `AutoRemoveEarliestBeacon`, select and delete the oldest own beacon
     // (the packet goes out because it is selected) and place over its slot.
-    let auto_remove_earliest = state
-        .rules()
+    let auto_remove_earliest = crate::app::state::active_rules(frontend, match_state)
         .is_some_and(|rules| rules.phobos_globals.auto_remove_earliest_beacon);
     let mut can_place = can_place;
     if !can_place
         && matches!(request, BeaconModeRequest::Toggle)
         && auto_remove_earliest
-        && let Some(house) = beacons::local_house_index(&state.match_state.sim_runtime)
-        && let Some(slot) = state.match_state.match_presentation.beacons.earliest(house)
+        && let Some(house) = beacons::local_house_index(&match_state.sim_runtime)
+        && let Some(slot) = match_state.match_presentation.beacons.earliest(house)
     {
-        state
-            .match_state
+        match_state
             .match_presentation
             .beacons
             .set_selected(house, slot);
-        beacons::delete_beacon(&mut state.match_state, BeaconTarget::Selected);
-        can_place = state
-            .match_state
-            .match_presentation
-            .beacons
-            .can_place(house);
+        beacons::delete_beacon(match_state, BeaconTarget::Selected);
+        can_place = match_state.match_presentation.beacons.can_place(house);
     }
     let Some(next) = place_beacon_mode_transition(
         request,
         modes,
-        state.armed_building_type().is_some(),
+        match_state.input.armed_building_type().is_some(),
         can_place,
     ) else {
         return;
     };
-    let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
+    let gadgets = &mut match_state.match_presentation.sidebar_gadget_state;
     gadgets.repair_mode_on = next.repair;
     gadgets.sell_mode_on = next.sell;
     gadgets.place_beacon_mode_on = next.beacon;
     gadgets.power_mode_on = false;
     if next.beacon {
-        crate::app::input::dispatch::unselect_all(state);
+        crate::app::input::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
     }
 }
 
@@ -138,25 +151,60 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
 /// GameMode 0 and 5. Phobos `AllowBeaconHotKeyInSinglePlayer`
 /// (`Ext/Beacon/Hooks.cpp:3-9`) jumps over that refusal, so the command
 /// enters placement in every mode.
-pub(crate) fn execute_command(state: &mut AppState) {
-    let single_player_hotkey = state
-        .rules()
+pub(crate) fn execute_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let single_player_hotkey = crate::app::state::active_rules(frontend, match_state)
         .is_some_and(|rules| rules.phobos_globals.allow_beacon_hotkey_in_single_player);
-    if beacons::feedback_mode(state.match_state.session_mode()) || single_player_hotkey {
-        enter_placement_mode(state);
+    if beacons::feedback_mode(match_state.session_mode()) || single_player_hotkey {
+        enter_placement_mode(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
     }
 }
 
 /// `Enter_Beacon_Placement_Mode 0x00731A30`, the button's whole action:
 /// refused once the local player is out (`[0x00A8B538]`).
-pub(crate) fn enter_placement_mode(state: &mut AppState) {
-    let defeated = state
-        .match_state
+pub(crate) fn enter_placement_mode(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let defeated = match_state
         .sim_runtime
         .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
     if !defeated {
-        set_place_beacon_mode(state, BeaconModeRequest::Toggle);
+        set_place_beacon_mode(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            BeaconModeRequest::Toggle,
+        );
     }
 }
 
@@ -191,26 +239,75 @@ pub(crate) fn beacon_at_cell(match_state: &MatchState, cell: (u16, u16)) -> bool
 
 /// BandBox_LeftUp's action 0x3C: PlaceBeacon for PlayerPtr unless the
 /// player is out, then the mode is left whatever happened.
-pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
-    let defeated = state
-        .match_state
+pub(crate) fn place_at_cell(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    cell: (u16, u16),
+) {
+    let defeated = match_state
         .sim_runtime
         .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
-    if !defeated && let Some(house) = beacons::local_house_index(&state.match_state.sim_runtime) {
-        let coord = cell_coord(&state.match_state.sim_runtime, cell);
-        beacons::place_beacon(state, house, coord, None);
+    if !defeated && let Some(house) = beacons::local_house_index(&match_state.sim_runtime) {
+        let coord = cell_coord(&match_state.sim_runtime, cell);
+        beacons::place_beacon(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            house,
+            coord,
+            None,
+        );
     }
-    set_place_beacon_mode(state, BeaconModeRequest::Off);
+    set_place_beacon_mode(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
+        BeaconModeRequest::Off,
+    );
 }
 
 /// BandBox_LeftUp's action 0x3D: `SelectBeacon 0x00430F70` at the Cell.
-pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
-    let coord = cell_coord(&state.match_state.sim_runtime, cell);
-    if let Some((house, slot)) = state.match_state.match_presentation.beacons.find_at(coord) {
-        crate::app::input::dispatch::unselect_all(state);
-        state
-            .match_state
+pub(crate) fn select_at_cell(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    cell: (u16, u16),
+) {
+    let coord = cell_coord(&match_state.sim_runtime, cell);
+    if let Some((house, slot)) = match_state.match_presentation.beacons.find_at(coord) {
+        crate::app::input::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
+        match_state
             .match_presentation
             .beacons
             .set_selected(house, slot);
@@ -219,8 +316,8 @@ pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
 
 /// `DeleteCommand 0x00731A10`'s beacon arm: with no planning node to delete,
 /// `DeleteBeacon(-1, -1)` (`0x00731A24`).
-pub(crate) fn delete_selected(state: &mut AppState) {
-    beacons::delete_beacon(&mut state.match_state, BeaconTarget::Selected);
+pub(crate) fn delete_selected(match_state: &mut MatchState) {
+    beacons::delete_beacon(match_state, BeaconTarget::Selected);
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

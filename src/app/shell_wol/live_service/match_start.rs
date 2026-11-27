@@ -7,16 +7,25 @@ use super::{
     WolProvider, decode_relay_grant, decode_watch_grant, end_room, http, local_agreement,
     local_map_status, put_service, wire,
 };
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
 use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_wol::WolVisit;
+use crate::app::{AppState, PlatformState};
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+use crate::util::config::GameConfig;
 use crate::util::time::Instant;
 use anyhow::{Result, anyhow, ensure};
 use serde_json::json;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use winit::window::Window;
 
 /// The agreed timing is known and the current grant is fresh: leave the online
 /// barriers for the loading that follows `Negotiated`.
@@ -78,7 +87,13 @@ pub(super) fn begin_start(
                 .is_some_and(|request| request.submitted_request.is_some()),
         "host start was not submitted for this preparation"
     );
-    let agreement = local_agreement(state, service.revision)?;
+    let agreement = local_agreement(
+        &state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+        service.revision,
+    )?;
     ensure!(
         agreement["version"].as_str() == Some(&start.version),
         StartDataMismatch("client version differs")
@@ -179,7 +194,11 @@ pub(super) fn begin_start(
 /// [`followed_user`] picks. The match's map then arrives as a guest's would,
 /// and [`poll_watch`] asks the relay to let this game in.
 pub(super) fn prepare_watch(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
     started: wire::WatchStarted,
 ) -> Result<WatchStart> {
     let grant = decode_watch_grant(&started.relay, &started.match_id)?;
@@ -202,33 +221,25 @@ pub(super) fn prepare_watch(
     let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
     let room = started.options.campaign.clone();
     if let Some(room) = &room {
-        campaign_room::verify_current(
-            state.platform.game_config.as_ref(),
-            &state.process_assets,
-            room,
-        )?;
+        campaign_room::verify_current(game_config, process_assets, room)?;
     }
     let options = started.options.into_options(&followed)?;
     let speed = options.launch.options.game_speed;
     crate::app::shell_network_setup::install_watch_setup(
-        &mut state.frontend,
-        &mut state.match_state,
+        frontend,
+        match_state,
         options,
         crate::app::match_runtime::session::NetworkRoom {
             tournament: started.tournament != 0,
             clan: false,
         },
     )?;
-    state
-        .match_state
-        .session
-        .canonicalize_online_roster(&names)?;
+    match_state.session.canonicalize_online_roster(&names)?;
     if let Some(room) = room {
-        state
-            .match_state
+        match_state
             .session
             .accept_campaign_room(Some(room), speed)?;
-        campaign_room::report_local_files(state, true)?;
+        campaign_room::report_local_files(renderer, frontend, match_state, process_assets, true)?;
     }
     Ok(WatchStart {
         version: started.version,
@@ -329,18 +340,28 @@ pub(super) fn poll_watch(state: &mut AppState, service: &mut LiveService) -> Res
 
 /// A watch that could not begin: the lobby frees its place, the setup and
 /// any relay route close, and the lobby says why.
-pub(super) fn fail_watch(state: &mut AppState, service: &mut LiveService, key: &str) {
-    cancel_watch_start(state, service);
-    super::lobby::watch_failed(&mut state.frontend, &state.process_assets, key);
+pub(super) fn fail_watch(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    service: &mut LiveService,
+    key: &str,
+) {
+    cancel_watch_start(frontend, window, match_state, service);
+    super::lobby::watch_failed(frontend, process_assets, key);
 }
 
-pub(super) fn cancel_watch_start(state: &mut AppState, service: &mut LiveService) {
+pub(super) fn cancel_watch_start(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    service: &mut LiveService,
+) {
     service.stop_watching();
-    end_room(state, service);
-    if state.match_state.session.network_setup().is_some()
-        || state.frontend.network_setup_protocol.is_some()
-    {
-        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    end_room(frontend, window, match_state, service);
+    if match_state.session.network_setup().is_some() || frontend.network_setup_protocol.is_some() {
+        crate::app::shell_network_setup::abandon_for_wol_runner(frontend, match_state);
     }
 }
 
@@ -563,11 +584,21 @@ pub(crate) fn end_spawned_match(wol: Option<&mut WolVisit>) -> bool {
 
 /// `finish` with the result after a match, else `leave` for a failed
 /// admission; the process quits on its acknowledgement or the deadline.
-pub(super) fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService) {
-    let result = crate::app::App::match_result(&state.frontend)
+pub(super) fn poll_spawned_exit(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    service: &mut LiveService,
+) {
+    let result = crate::app::App::match_result(frontend)
         .unwrap_or(crate::app::cncnet::ExternalMatchResult::Quit);
-    let opponents_left = state.frontend.external_progress.opponents_left;
-    let Some(spawned) = spawned_visit_mut(state.frontend.wol.as_mut()) else {
+    let opponents_left = frontend.external_progress.opponents_left;
+    let Some(spawned) = spawned_visit_mut(frontend.wol.as_mut()) else {
         return;
     };
     let Some(deadline) = spawned.exit_deadline.filter(|_| !spawned.quit) else {
@@ -588,7 +619,16 @@ pub(super) fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService)
     }
     if (service.finishing.is_none() && service.leaving.is_none()) || now >= deadline {
         spawned.quit = true;
-        crate::app::App::start_quit_cascade(state);
+        crate::app::App::start_quit_cascade(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
 }
 
@@ -611,7 +651,14 @@ fn enter_restored_start(
         }
         Err(error) => {
             log::warn!("Could not start the watched match: {error:#}");
-            fail_watch(state, service, "VERA:WatchCouldNotStart");
+            fail_watch(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                service,
+                "VERA:WatchCouldNotStart",
+            );
         }
     }
     Ok(())

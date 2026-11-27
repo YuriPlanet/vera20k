@@ -223,6 +223,11 @@ pub(crate) enum TargetFacts<'a> {
         tile_in_water_set: bool,
         /// `CellClass+0x140 Flags & 0x100` (structural bridge cell).
         bridge_flag: bool,
+        /// Firestorm 2.0's web test of a cell (`What_Weapon_Should_I_Use`
+        /// `0x0062A089..0x0062A0D2`): not one of the bridge set's first two
+        /// tiles, not a bridge cell and no standing low bridge overlay
+        /// (74..=99).
+        webbable: bool,
     },
     /// Any `TechnoClass` target.
     Techno {
@@ -240,6 +245,10 @@ pub(crate) enum TargetFacts<'a> {
         /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` of the attacker's
         /// owner against this target.
         is_ally: bool,
+        /// Firestorm 2.0's web test of an object (`What_Weapon_Should_I_Use`
+        /// `0x0062A0D6..0x0062A137`): an infantryman whose type is not
+        /// `IsWebImmune=` and who is not Is_Immobilized (EMP or a web).
+        webbable: bool,
     },
 }
 
@@ -311,6 +320,15 @@ impl TargetFacts<'_> {
         match self {
             TargetFacts::Techno { kind, .. } => Some(*kind),
             TargetFacts::Cell { .. } | TargetFacts::Terrain => None,
+        }
+    }
+
+    /// Firestorm 2.0's webbable target (`0x0062A083..0x0062A137`); a Terrain
+    /// object is not one.
+    fn webbable(&self) -> bool {
+        match self {
+            TargetFacts::Techno { webbable, .. } | TargetFacts::Cell { webbable, .. } => *webbable,
+            TargetFacts::Terrain => false,
         }
     }
 }
@@ -888,7 +906,7 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
 
 /// Native `FCOMP Verses[armor], 0.0` (`0x006F3705` / `0x006F3738`): the
 /// double is compared for exact equality with zero.
-fn verses_is_zero(warhead: Option<&WarheadType>, armor: ArmorId) -> bool {
+pub(crate) fn verses_is_zero(warhead: Option<&WarheadType>, armor: ArmorId) -> bool {
     warhead.is_some_and(|warhead| {
         // Ares 3.0 hook10054360 retains numeric zero and secondary-first
         // ordering. Its independent fire/acquisition flags do not select slots.
@@ -1155,12 +1173,30 @@ fn techno_what_weapon_should_i_use<'r>(
         land_type,
         tile_in_water_set,
         bridge_flag,
+        ..
     } = *target
     {
         let on_land = land_type != LandType::Water.as_index() && !tile_in_water_set;
         if (on_land || (bridge_flag && obj.naval)) && obj.land_targeting == 2 {
             return 1;
         }
+    }
+    // Firestorm 2.0 `TechnoClass::What_Weapon_Should_I_Use` 0x00629F20: when
+    // either slot's warhead is `Webby=` (`0x00629FB5`, `0x0062A028`), it
+    // picks the secondary exactly when the target's webbability equals the
+    // secondary's (`0x0062A13A..0x0062A145`): a web gun webs what it can,
+    // the other gun takes the rest. gamemd's ladder has no such arm; it sits
+    // here, after the arms gamemd adds. Residuals: Firestorm first drops a
+    // slot whose Can_Fire answers CANT, ILLEGAL or REARM, which this ladder
+    // does not ask. It has no arms C/D either: an empty slot's Can_Fire
+    // answers CANT (`0x0062F8D6`), so a unit whose only weapon webs picks
+    // the empty slot for what it cannot web and holds its fire
+    // (`UnitClass::Firing_AI` `0x0064E7CD`), where C/D here answer slot 0
+    // and it fires the web gun at everything.
+    let webs = |warhead: Option<&WarheadType>| warhead.is_some_and(|w| w.webby().is_some());
+    let secondary_webs = webs(secondary_warhead);
+    if secondary_webs || webs(primary_warhead) {
+        return i32::from(target.webbable() == secondary_webs);
     }
     // Q @ 0x006F36DB: Phobos `TechnoClass_WhatWeaponShouldIUse`
     // (`Ext/Techno/Hooks.Firing.cpp:121-165`) asks
@@ -1343,6 +1379,20 @@ pub(crate) fn techno_target_facts<'a>(
     rules: &'a RuleSet,
     interner: &'a StringInterner,
 ) -> TargetFacts<'a> {
+    techno_target_facts_at(target, target_obj, terrain, is_ally, 0, rules, interner)
+}
+
+/// Target facts for a Techno target at game frame `frame`. `terrain == None`
+/// (headless fixtures) reads the occupied cell as clear land.
+pub(crate) fn techno_target_facts_at<'a>(
+    target: &'a GameEntity,
+    target_obj: &'a ObjectType,
+    terrain: Option<&'a ResolvedTerrainGrid>,
+    is_ally: bool,
+    frame: i32,
+    rules: &'a RuleSet,
+    interner: &'a StringInterner,
+) -> TargetFacts<'a> {
     let cell = terrain.and_then(|grid| grid.cell(target.position.rx(), target.position.ry()));
     let cell_land_type = cell
         .map(|cell| cell.land_type)
@@ -1363,6 +1413,11 @@ pub(crate) fn techno_target_facts<'a>(
             .as_ref()
             .is_some_and(|cloak| cloak.state() != 0),
         is_ally,
+        // `0x0062A0D8` (Foot), `0x0062A0F0` (InfantryClass), `0x0062A102`
+        // (Is_Immobilized), `0x0062A112` (InfantryType `+0x4B7`).
+        webbable: target.category() == EntityCategory::Infantry
+            && !target_obj.is_web_immune
+            && !target.is_immobilized(frame),
     }
 }
 
@@ -1372,16 +1427,44 @@ pub(crate) fn cell_target_facts(
     ry: u16,
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> TargetFacts<'static> {
+    cell_target_facts_at(rx, ry, terrain, None)
+}
+
+/// Target facts for a force-fire cell holding overlay `overlay` (Cell
+/// `+0x44`).
+pub(crate) fn cell_target_facts_at(
+    rx: u16,
+    ry: u16,
+    terrain: Option<&ResolvedTerrainGrid>,
+    overlay: Option<u8>,
+) -> TargetFacts<'static> {
+    // `0x0062A0C5..0x0062A0D0`: a standing low bridge (overlay 74..=99).
+    let low_bridge = overlay.is_some_and(|overlay| {
+        crate::sim::bridge_state::ordinary::standing(
+            i32::from(overlay),
+            crate::sim::bridge_state::ramp_repair::Family::Low,
+        )
+    });
     match terrain.and_then(|grid| grid.cell(rx, ry).map(|cell| (grid, cell))) {
-        Some((grid, cell)) => TargetFacts::Cell {
-            land_type: cell.land_type,
-            tile_in_water_set: grid.tile_is_water_set(cell.final_tile_index),
-            bridge_flag: cell.bridge_facts.has_structural_bridge(),
-        },
+        Some((grid, cell)) => {
+            let bridge_flag = cell.bridge_facts.has_structural_bridge();
+            // `0x0062A0A6..0x0062A0B8`: ITType against the bridge set's
+            // first tile and the one after it.
+            let base = grid.concrete_bridge_set_base();
+            let tile = cell.final_tile_index;
+            let bridge_tile = base != -1 && (tile == base || tile == base.wrapping_add(1));
+            TargetFacts::Cell {
+                land_type: cell.land_type,
+                tile_in_water_set: grid.tile_is_water_set(cell.final_tile_index),
+                bridge_flag,
+                webbable: !bridge_tile && !bridge_flag && !low_bridge,
+            }
+        }
         None => TargetFacts::Cell {
             land_type: LandType::Clear.as_index(),
             tile_in_water_set: false,
             bridge_flag: false,
+            webbable: !low_bridge,
         },
     }
 }
@@ -1491,11 +1574,12 @@ pub(crate) fn select_weapon_index_against_in_query(
                     attacker_entity.owner(),
                     target_entity.owner(),
                 );
-                let mut facts = techno_target_facts(
+                let mut facts = techno_target_facts_at(
                     target_entity,
                     target_obj,
                     terrain,
                     is_ally,
+                    world.session.binary_frame() as i32,
                     rules,
                     interner,
                 );
@@ -1515,7 +1599,15 @@ pub(crate) fn select_weapon_index_against_in_query(
                 Some(TargetFacts::Terrain)
             }
         }
-        Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts(rx, ry, terrain)),
+        Some(TargetKind::Cell(rx, ry)) => Some(cell_target_facts_at(
+            rx,
+            ry,
+            terrain,
+            world
+                .overlay_grid
+                .as_ref()
+                .and_then(|grid| grid.cell(rx, ry).overlay_id),
+        )),
         None => None,
     };
     let forced = phobos_force_weapon_index(
@@ -2837,6 +2929,7 @@ mod tests {
                 land_type: 0,
                 tile_in_water_set: false,
                 bridge_flag: false,
+                webbable: true,
             }),
             &world.substrate.entities,
             &world.interner,
@@ -3113,6 +3206,7 @@ mod tests {
             cell_land_type: LandType::Clear.as_index(),
             submerged: false,
             is_ally: false,
+            webbable: false,
         }
     }
 
@@ -3125,6 +3219,7 @@ mod tests {
                 cell_land_type,
                 submerged,
                 is_ally,
+                webbable,
                 ..
             } => TargetFacts::Techno {
                 obj,
@@ -3134,6 +3229,7 @@ mod tests {
                 cell_land_type,
                 submerged,
                 is_ally,
+                webbable,
             },
             cell => cell,
         }
@@ -3302,6 +3398,7 @@ mod tests {
                     land_type: 0,
                     tile_in_water_set: false,
                     bridge_flag: false,
+                    webbable: true,
                 }),
                 "terrain" => Some(TargetFacts::Terrain),
                 kind => {

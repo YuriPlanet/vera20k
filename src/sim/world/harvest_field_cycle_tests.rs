@@ -138,14 +138,14 @@ fn until_first_bale(s: &mut Scene) {
 }
 
 fn order(s: &mut Scene, command: crate::sim::command::Command) {
-    assert!(s.sim.apply_command_with_overlays(
-        None,
+    assert!((s.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &command,
         &s.rules,
         Some(registry()),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
 }
 
 /// A player refinery order on a cutting miner: its mission becomes the
@@ -211,14 +211,14 @@ fn retail_war_miner_area_guard_returns_to_harvesting() {
         let command = s.sim.area_guard_key_command(s.miner, &s.rules).unwrap();
         let record = s.sim.encode_megamission_record(owner, &command).unwrap();
         let command = s.sim.decode_native_command_record(&record, 0).unwrap();
-        assert!(s.sim.apply_command_with_overlays(
-            None,
+        assert!((s.sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &command.payload,
             &s.rules,
             Some(&registry),
             &mut Default::default(),
-        ));
+        )).is_ok());
         let mut harvested = false;
         for _ in 0..180 {
             let grid = s.sim.path_grid_snapshot();
@@ -270,14 +270,14 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
         );
         *s.sim.ore_growth_config = OreGrowthConfig::disabled();
         let retail_order = |s: &mut Scene, command: Command| {
-            assert!(s.sim.apply_command_with_overlays(
-                None,
+            assert!((s.sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &command,
                 &s.rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default(),
-            ));
+            )).is_ok());
         };
         if on_ore {
             let ore = registry.id_for_name("TIB01").unwrap();

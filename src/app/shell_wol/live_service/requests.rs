@@ -8,12 +8,16 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_network_setup::NetworkSetupRequest;
 use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_wol::WolVisit;
 use crate::i18n::tr;
 use crate::ui::wol_chat::WolChatLine;
+use crate::util::config::GameConfig;
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use serde_json::{Value, json};
@@ -127,15 +131,25 @@ pub(super) fn request_service(
             }
         }
         WolServiceRequest::LeaveChannel => {
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             service.leave_room(Instant::now());
         }
         WolServiceRequest::MatchReturned => {
             service.back_to_room = state.match_state.session.awaiting_wol_room_return();
-            service.match_returned(match_report(state), Instant::now());
+            service.match_returned(match_report(&state.frontend), Instant::now());
         }
         WolServiceRequest::Logout => {
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             service.begin_logout(Instant::now());
             crate::app::lan_service::close(&state.frontend, &mut state.match_state);
@@ -171,7 +185,12 @@ pub(super) fn request_service(
         WolServiceRequest::LadderRecords(names) => service.look_up_ladder(names, false),
         WolServiceRequest::HighScores(names) => service.look_up_ladder(names, true),
         WolServiceRequest::CancelWait => {
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.authenticated = false;
@@ -296,8 +315,13 @@ pub(super) fn send_chat(
 /// status is 0, which proves nothing: the lobby checks only the shape, and a
 /// fixed impossible effective digest keeps it valid without claiming
 /// unverified expanded content.
-pub(super) fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
-    let session = &state.match_state.session;
+pub(super) fn local_agreement(
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    session: &MatchSession,
+    process_assets: &mut ProcessAssets,
+    revision: u64,
+) -> Result<Value> {
     let (map_digest, effective_map_digest, staging_digest) =
         if let Some(room) = session.campaign_room() {
             if campaign_room::local_map_verified(session) == Some(true) {
@@ -315,17 +339,14 @@ pub(super) fn local_agreement(state: &mut AppState, revision: u64) -> Result<Val
                 .network_local_map_effective_digest()
                 .map(str::to_owned);
             let staging = crate::app::shell_network_setup::maps::staging_digest(
-                &state.frontend.multiplayer_shell_runtime,
-                &state.match_state.session,
+                &frontend.multiplayer_shell_runtime,
+                session,
             );
             (map, effective, staging)
         };
     let effective_map_digest = effective_map_digest.unwrap_or_else(|| "0".repeat(64));
-    let agreement = crate::app::shell_network_setup::agreement::local(
-        state.platform.game_config.as_ref(),
-        &state.match_state.session,
-        &mut state.process_assets,
-    )?;
+    let agreement =
+        crate::app::shell_network_setup::agreement::local(game_config, session, process_assets)?;
     Ok(
         json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":staging_digest}),
     )
@@ -388,22 +409,21 @@ pub(super) fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSm
 
 /// The host's options for the lobby. The map is the one its session
 /// admitted when the host chose it, as LAN publishes it.
-pub(super) fn options(state: &AppState) -> Result<wire::Options> {
-    let session = &state.match_state.session;
+pub(super) fn options(
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+) -> Result<wire::Options> {
+    let session = &match_state.session;
     let mut launch = session
         .network_setup()
         .ok_or_else(|| anyhow!("no online setup"))?
         .clone();
-    let campaign = campaign_room::publication(
-        state.platform.game_config.as_ref(),
-        &state.match_state.session,
-    )?;
+    let campaign = campaign_room::publication(game_config, &match_state.session)?;
     let map_metadata = if let Some(room) = &campaign {
-        let (file, metadata) = campaign_room::online_map_metadata(
-            state.platform.game_config.as_ref(),
-            &state.process_assets,
-            room,
-        )?;
+        let (file, metadata) =
+            campaign_room::online_map_metadata(game_config, process_assets, room)?;
         launch.selected_map_file = Some(file);
         launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(
             crate::skirmish_launch::BATTLE_MODE_ID,
@@ -428,9 +448,9 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
         map_metadata,
         random_map: if campaign.is_none() {
             crate::app::shell_network_setup::maps::host_generated_manifest(
-                state.platform.game_config.as_ref(),
-                &state.frontend.multiplayer_shell_runtime,
-                &state.match_state.session,
+                game_config,
+                &frontend.multiplayer_shell_runtime,
+                &match_state.session,
             )?
         } else {
             None
@@ -441,30 +461,23 @@ pub(super) fn options(state: &AppState) -> Result<wire::Options> {
                 .unwrap_or(crate::app::match_runtime::session::NetworkVacancy::Closed)
         }),
         observer_row: session.network_observer_row(),
-        cooperative_difficulty: state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_difficulty(),
+        cooperative_difficulty: frontend.multiplayer_shell_runtime.cooperative_difficulty(),
         cooperative_campaign: campaign
             .is_none()
             .then(|| {
-                cooperative_campaign(
-                    &state.frontend.multiplayer_shell_runtime,
-                    &state.match_state.session,
-                )
+                cooperative_campaign(&frontend.multiplayer_shell_runtime, &match_state.session)
             })
             .flatten(),
         seed: Some(crate::app::shell_network_setup::resident_seed(
-            state.frontend.startup_rng_seed,
-            &state.match_state.sim_runtime,
+            frontend.startup_rng_seed,
+            &match_state.sim_runtime,
         )),
         // Only a host's VERA room has one; a guest publishes no options.
-        watching: state
-            .frontend
+        watching: frontend
             .network_setup_protocol
             .as_ref()
             .and_then(|protocol| {
-                protocol.published_watching(super::lobby_watches(state.frontend.wol.as_ref()))
+                protocol.published_watching(super::lobby_watches(frontend.wol.as_ref()))
             })
             .map(str::to_owned),
     };
@@ -551,7 +564,14 @@ pub(super) fn restore_accepted_options(state: &mut AppState, service: &LiveServi
                 .try_for_each(|event| crate::app::shell_network_setup::service_event(state, event))
         });
     if result.is_err() {
-        notice(state, &tr("VERA:HostSettingsUnavailable"));
+        notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:HostSettingsUnavailable"),
+        );
     }
 }
 
@@ -595,10 +615,21 @@ pub(super) fn poll_start_preparation(
         return Ok(());
     }
     ensure!(
-        canonical_options(&options(state)?)? == start.options,
+        canonical_options(&options(
+            &state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.match_state,
+            &state.process_assets
+        )?)? == start.options,
         "prepared options changed"
     );
-    let mut payload = local_agreement(state, service.revision)?;
+    let mut payload = local_agreement(
+        &state.frontend,
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+        service.revision,
+    )?;
     payload["users"] = json!(&start.users);
     start.submitted_request = Some(service.command_with_id("start", payload));
     start.deadline = Instant::now() + RELAY_TIMEOUT;
@@ -619,7 +650,12 @@ pub(super) fn request_setup(
         NetworkSetupRequest::PublishOptions
         | NetworkSetupRequest::PublishRoster
         | NetworkSetupRequest::PublishCooperativeCampaign(_) => {
-            service.publish_room_options(options(state)?);
+            service.publish_room_options(options(
+                &state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state,
+                &state.process_assets,
+            )?);
         }
         NetworkSetupRequest::PlayerChoices {
             row,
@@ -700,13 +736,25 @@ pub(super) fn request_setup(
                     .session
                     .set_network_player_ready(index, false)?;
             }
-            let mut payload = local_agreement(state, service.revision)?;
+            let mut payload = local_agreement(
+                &state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &mut state.process_assets,
+                service.revision,
+            )?;
             payload["ready"] = json!(ready);
             let id = service.command_with_id("ready", payload);
             service.room.last_ready_request = Some((id, service.revision));
         }
         NetworkSetupRequest::MapStatus(status) => {
-            let mut payload = local_agreement(state, service.revision)?;
+            let mut payload = local_agreement(
+                &state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &mut state.process_assets,
+                service.revision,
+            )?;
             // Native RandMap admission assumes the pending seed/image
             // receive. Online status1 requires both verified resources.
             payload["status"] = json!(status.min(local_map_status(
@@ -719,7 +767,12 @@ pub(super) fn request_setup(
         NetworkSetupRequest::StartGame { users } => {
             if service.start_preparation.is_none() {
                 service.room.published_options = None;
-                let snapshot = canonical_options(&options(state)?)?;
+                let snapshot = canonical_options(&options(
+                    &state.frontend,
+                    state.platform.game_config.as_ref(),
+                    &state.match_state,
+                    &state.process_assets,
+                )?)?;
                 let revision = (service.room.accepted_options.as_ref() == Some(&snapshot))
                     .then_some(service.revision);
                 let publication_request = if revision.is_none() {
@@ -742,11 +795,23 @@ pub(super) fn request_setup(
                     protocol
                         .set_start_phase(crate::app::shell_network_setup::StartPhase::Preparing);
                 }
-                notice(state, &tr("VERA:ConfirmingFinalSettings"));
+                notice(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &state.match_state,
+                    &state.process_assets,
+                    &state.renderer,
+                    &tr("VERA:ConfirmingFinalSettings"),
+                );
             }
         }
         NetworkSetupRequest::Leave => {
-            end_room(state, service);
+            end_room(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                service,
+            );
             service.leave_room(Instant::now());
         }
         // Older lobbies take no keep_out, so only a host's own kick sends it.
@@ -773,7 +838,14 @@ pub(super) fn request_setup(
             json!({"text":String::from_utf16_lossy(&text),"to":[],"action":true}),
         ),
         NetworkSetupRequest::RequestAcceptance | NetworkSetupRequest::ObserverSlot { .. } => {}
-        _ => notice(state, &tr("VERA:SetupOperationUnavailable")),
+        _ => notice(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.match_state,
+            &state.process_assets,
+            &state.renderer,
+            &tr("VERA:SetupOperationUnavailable"),
+        ),
     }
     Ok(())
 }

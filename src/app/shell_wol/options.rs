@@ -12,8 +12,12 @@ use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::{options_profile::RetailOptionsProfile, profile_file};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_main_menu::ClientStep;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::render::gpu::GpuContext;
 use crate::ui::chat_translation::ChatTranslation;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::shell::sound::{self, SHELL_SOUND_PAGE, ShellSoundLayout};
@@ -36,13 +40,13 @@ pub(crate) struct WolOptionsPage {
     pub(crate) sound: Option<([u8; 3], bool)>,
 }
 
-pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
-    if modern(state.frontend.wol.as_ref()) {
-        shell_layout::on(&state.renderer.gpu, |width, height, _| {
+pub(crate) fn layout(wol: Option<&WolVisit>, gpu: &GpuContext) -> WolOptionsLayout {
+    if modern(wol) {
+        shell_layout::on(gpu, |width, height, _| {
             WolOptionsLayout::modern(width, height)
         })
     } else {
-        shell_layout::on(&state.renderer.gpu, WolOptionsLayout::new)
+        shell_layout::on(gpu, WolOptionsLayout::new)
     }
 }
 
@@ -60,8 +64,8 @@ pub(crate) fn menu_spec(
     }
 }
 
-pub(crate) fn sound_layout(state: &AppState) -> ShellSoundLayout {
-    shell_layout::on(&state.renderer.gpu, ShellSoundLayout::new)
+pub(crate) fn sound_layout(gpu: &GpuContext) -> ShellSoundLayout {
+    shell_layout::on(gpu, ShellSoundLayout::new)
 }
 
 fn page_mut(wol: Option<&mut WolVisit>) -> Option<&mut WolOptionsPage> {
@@ -73,12 +77,15 @@ fn page_mut(wol: Option<&mut WolVisit>) -> Option<&mut WolOptionsPage> {
 
 /// `0x113` has slid out (`0x006071E0`) over the empty backdrop: the art,
 /// then `UI__BeginDialog(0x2BC)` and its init `0x497`.
-pub(crate) fn commit_open(state: &mut AppState) {
-    let shown = (
-        state.frontend.wol_preferences,
-        state.persistence.options_profile.chat_translation,
-    );
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(crate) fn commit_open(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    let shown = (frontend.wol_preferences, options_profile.chat_translation);
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     if let Some(lobby) = visit.lobby_mut() {
@@ -86,9 +93,20 @@ pub(crate) fn commit_open(state: &mut AppState) {
         lobby.ui.release_buttons();
     }
     visit.page = WolPage::Options(Box::new(WolOptionsPage { shown, sound: None }));
-    super::leaf::open_art(state, crate::ui::wol_options::DIALOG);
-    state.frontend.shell_controller.reset_to(DIALOG);
-    sync_gui(state);
+    super::leaf::open_art(
+        frontend,
+        process_assets,
+        renderer,
+        crate::ui::wol_options::DIALOG,
+    );
+    frontend.shell_controller.reset_to(DIALOG);
+    sync_gui(
+        frontend,
+        process_assets,
+        &renderer.gpu,
+        options_profile,
+        audio,
+    );
 }
 
 /// `0x2BC`'s teardown has run (`CloseAndPop`). The caller re-shows the
@@ -137,102 +155,133 @@ pub(crate) fn commit_close(
 
 /// `0x2BC` has slid out for Sound Options: the art, then `0x6B6230` runs
 /// `0xD6` because the handler cleared `g_GameActive` (`0x0078EEAD`).
-pub(crate) fn commit_open_sound(state: &mut AppState) {
-    let positions = crate::app::input::sound::volume_positions(&state.persistence.options_profile);
-    let sliders_enabled = state.audio.launcher_audio_available;
-    let Some(page) = page_mut(state.frontend.wol.as_mut()) else {
+pub(crate) fn commit_open_sound(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    let positions = crate::app::input::sound::volume_positions(options_profile);
+    let sliders_enabled = audio.launcher_audio_available;
+    let Some(page) = page_mut(frontend.wol.as_mut()) else {
         return;
     };
     // GameActive 0 skips the track list init (0x006B6485).
     page.sound = Some((positions, sliders_enabled));
-    super::leaf::open_art(state, SHELL_SOUND_PAGE.dialog);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(SHELL_SOUND_PAGE.dialog);
-    sync_gui(state);
+    super::leaf::open_art(frontend, process_assets, renderer, SHELL_SOUND_PAGE.dialog);
+    frontend.shell_controller.reset_to(SHELL_SOUND_PAGE.dialog);
+    sync_gui(
+        frontend,
+        process_assets,
+        &renderer.gpu,
+        options_profile,
+        audio,
+    );
 }
 
 /// `0xD6`'s teardown has run: `ShowWindow(0x2BC, 5)` (it slides in again)
 /// and `0x0072B930` frees the Sound Options art.
-pub(crate) fn commit_sound_back(state: &mut AppState) {
-    super::leaf::free_art(&mut state.frontend.wol_art, SHELL_SOUND_PAGE.dialog);
-    if let Some(page) = page_mut(state.frontend.wol.as_mut()) {
+pub(crate) fn commit_sound_back(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    super::leaf::free_art(&mut frontend.wol_art, SHELL_SOUND_PAGE.dialog);
+    if let Some(page) = page_mut(frontend.wol.as_mut()) {
         page.sound = None;
     }
-    state.frontend.shell_controller.reset_to(DIALOG);
-    sync_gui(state);
+    frontend.shell_controller.reset_to(DIALOG);
+    sync_gui(frontend, process_assets, gpu, options_profile, audio);
 }
 
-fn dispatch(state: &mut AppState, action: WolOptionsAction) {
+/// A control's action; a close or Sound Options' slide is the returned
+/// step.
+#[must_use]
+fn dispatch(
+    frontend: &mut FrontendState,
+    game_config: Option<&GameConfig>,
+    options_profile: &mut RetailOptionsProfile,
+    audio: &mut AppAudioRuntime,
+    action: WolOptionsAction,
+) -> Option<ClientStep> {
     match action {
-        WolOptionsAction::Ok(staged, translate) => App::leave_shell_dialog(
-            state,
-            crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
-            move |state| {
-                crate::app::shell_wol::options::commit_close(
-                    &mut state.frontend,
-                    state.platform.game_config.as_ref(),
-                    &mut state.persistence.options_profile,
-                    &mut state.audio,
-                    Some((staged, translate)),
-                )
-            },
-        ),
-        WolOptionsAction::Cancel | WolOptionsAction::Back => App::leave_shell_dialog(
-            state,
-            crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
-            move |state| {
-                crate::app::shell_wol::options::commit_close(
-                    &mut state.frontend,
-                    state.platform.game_config.as_ref(),
-                    &mut state.persistence.options_profile,
-                    &mut state.audio,
-                    None,
-                )
-            },
-        ),
+        WolOptionsAction::Ok(staged, translate) => {
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+                Box::new(move |state: &mut AppState| {
+                    crate::app::shell_wol::options::commit_close(
+                        &mut state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &mut state.persistence.options_profile,
+                        &mut state.audio,
+                        Some((staged, translate)),
+                    )
+                }),
+            ));
+        }
+        WolOptionsAction::Cancel | WolOptionsAction::Back => {
+            return Some(ClientStep::Leave(
+                crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+                Box::new(move |state: &mut AppState| {
+                    crate::app::shell_wol::options::commit_close(
+                        &mut state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &mut state.persistence.options_profile,
+                        &mut state.audio,
+                        None,
+                    )
+                }),
+            ));
+        }
         WolOptionsAction::SoundOptions => {
             // 0x2BC only hides under 0xD6: it shows the same states again.
-            if let Some(shown) = shown(&state.frontend)
-                && let Some(page) = page_mut(state.frontend.wol.as_mut())
+            if let Some(shown) = shown(frontend)
+                && let Some(page) = page_mut(frontend.wol.as_mut())
             {
                 page.shown = shown;
             }
-            App::leave_shell_dialog(
-                state,
+            return Some(ClientStep::Leave(
                 crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
-                crate::app::shell_wol::options::commit_open_sound,
-            )
+                Box::new(|state: &mut AppState| {
+                    crate::app::shell_wol::options::commit_open_sound(
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.renderer,
+                        &state.persistence.options_profile,
+                        &state.audio,
+                    )
+                }),
+            ));
         }
-        WolOptionsAction::MusicPreview(checked) => apply_lobby_music(&mut state.audio, checked),
+        WolOptionsAction::MusicPreview(checked) => apply_lobby_music(audio, checked),
         WolOptionsAction::LobbyMusic(checked) => {
-            let preferences = &mut state.frontend.wol_preferences;
+            let preferences = &mut frontend.wol_preferences;
             preferences.lobby_music = i32::from(checked);
-            let profile = &mut state.persistence.options_profile;
-            profile.wol_preferences.lobby_music = preferences.lobby_music;
-            apply_lobby_music(&mut state.audio, checked);
-            if let Some(config) = state.platform.game_config.as_ref()
-                && let Err(error) = state
-                    .persistence
-                    .options_profile
-                    .commit_wol_preferences(config.paths.settings_dir())
+            options_profile.wol_preferences.lobby_music = preferences.lobby_music;
+            apply_lobby_music(audio, checked);
+            if let Some(config) = game_config
+                && let Err(error) =
+                    options_profile.commit_wol_preferences(config.paths.settings_dir())
             {
                 log::warn!("Could not save the WOL options: {error}");
             }
         }
         WolOptionsAction::Translation(translate) => {
-            let profile = &mut state.persistence.options_profile;
-            if profile.chat_translation != translate {
-                profile.chat_translation = translate;
-                if let Some(config) = state.platform.game_config.as_ref()
-                    && let Err(error) = profile.commit_chat_translation(config.paths.settings_dir())
+            if options_profile.chat_translation != translate {
+                options_profile.chat_translation = translate;
+                if let Some(config) = game_config
+                    && let Err(error) =
+                        options_profile.commit_chat_translation(config.paths.settings_dir())
                 {
                     log::warn!("Could not save the chat translation settings: {error}");
                 }
             }
         }
     }
+    None
 }
 
 fn apply_lobby_music(audio: &mut AppAudioRuntime, enabled: bool) {
@@ -280,23 +329,28 @@ pub(crate) fn sound_positions(frontend: &FrontendState) -> Option<[u8; 3]> {
 
 /// Builds the shown page's widgets (`0x2BC`'s or `0xD6`'s) under its dialog
 /// once, and puts them on the current layout.
-pub(crate) fn sync_gui(state: &mut AppState) {
-    let options = layout(state);
-    let sound = sound_layout(state);
-    let off = state.process_assets.csf.as_ref().map_or_else(
+pub(crate) fn sync_gui(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    gpu: &GpuContext,
+    options_profile: &RetailOptionsProfile,
+    audio: &AppAudioRuntime,
+) {
+    let options = layout(frontend.wol.as_ref(), gpu);
+    let sound = sound_layout(gpu);
+    let off = process_assets.csf.as_ref().map_or_else(
         || TRANSLATE_OFF_KEY.to_owned(),
         |csf| csf.text(TRANSLATE_OFF_KEY).into_owned(),
     );
-    let Some((root, _)) = shown_root(&state.frontend) else {
+    let Some((root, _)) = shown_root(frontend) else {
         return;
     };
-    let audio = modern(state.frontend.wol.as_ref()).then(|| {
+    let audio = modern(frontend.wol.as_ref()).then(|| {
         (
-            crate::app::input::sound::volume_positions(&state.persistence.options_profile),
-            state.audio.launcher_audio_available,
+            crate::app::input::sound::volume_positions(options_profile),
+            audio.launcher_audio_available,
         )
     });
-    let frontend = &mut state.frontend;
     let Some(WolPage::Options(page)) = frontend.wol.as_ref().map(|visit| &visit.page) else {
         return;
     };
@@ -356,16 +410,39 @@ fn handle_events(state: &mut AppState) {
             }
             PageEvent::Activated(id) if on_sound && id == SHELL_SOUND_PAGE.back.id => {
                 let positions = sound::shell_sound_positions(gui, root);
-                crate::app::input::sound::apply_back_volumes(state, positions);
+                crate::app::input::sound::apply_back_volumes(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence.options_profile,
+                    positions,
+                );
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellSlideKind::WolSoundOptions,
-                    crate::app::shell_wol::options::commit_sound_back,
+                    |state| {
+                        crate::app::shell_wol::options::commit_sound_back(
+                            &mut state.frontend,
+                            &state.process_assets,
+                            &state.renderer.gpu,
+                            &state.persistence.options_profile,
+                            &state.audio,
+                        )
+                    },
                 );
             }
             _ if on_sound => {
                 if let Some((id, volume)) = sound::shell_sound_volume(&event) {
-                    crate::app::input::sound::apply_slider_volume(state, id, volume);
+                    crate::app::input::sound::apply_slider_volume(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence.options_profile,
+                        id,
+                        volume,
+                    );
                 }
             }
             _ => {
@@ -378,9 +455,26 @@ fn handle_events(state: &mut AppState) {
                 if let Some(action) =
                     wol_options::action(state.frontend.shell_controller.gui(), root, &event, modern)
                 {
-                    dispatch(state, action);
+                    let step = dispatch(
+                        &mut state.frontend,
+                        state.platform.game_config.as_ref(),
+                        &mut state.persistence.options_profile,
+                        &mut state.audio,
+                        action,
+                    );
+                    if let Some(step) = step {
+                        App::apply_step(state, step);
+                    }
                 } else if modern && let Some((id, volume)) = sound::shell_sound_volume(&event) {
-                    crate::app::input::sound::apply_slider_volume(state, id, volume);
+                    crate::app::input::sound::apply_slider_volume(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio,
+                        &mut state.persistence.options_profile,
+                        id,
+                        volume,
+                    );
                     if let Some(config) = state.platform.game_config.as_ref()
                         && let Err(error) =
                             profile_file::update(config.paths.settings_dir(), |input| {
@@ -397,7 +491,13 @@ fn handle_events(state: &mut AppState) {
 
 pub(super) fn cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
-    sync_gui(state);
+    sync_gui(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+        &state.audio,
+    );
     state.frontend.shell_controller.on_pointer_move(x, y);
     handle_events(state);
     state.frontend.shell_status_line.repaint();
@@ -405,7 +505,13 @@ pub(super) fn cursor_moved(state: &mut AppState) {
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     let (x, y) = state.match_state.input.cursor_px();
-    sync_gui(state);
+    sync_gui(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer.gpu,
+        &state.persistence.options_profile,
+        &state.audio,
+    );
     let controller = &mut state.frontend.shell_controller;
     if pressed {
         controller.on_pointer_down(x, y);

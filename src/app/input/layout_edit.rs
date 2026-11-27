@@ -23,13 +23,18 @@
 
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
-use crate::app::AppState;
 use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::presentation::{field_parts, layout_parts, sidebar_render};
+use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::render::batch::SpriteInstance;
 use crate::ui::added_parts::{AddedKind, Holder};
 use crate::ui::field_layout::{Along, FieldPart, Hold};
@@ -122,67 +127,152 @@ pub(crate) fn active(presentation: &MatchPresentationState) -> bool {
 
 /// The Edit Layout key: turn the mode on, or leave it without saving. It
 /// exists in a match only.
-pub(crate) fn toggle(state: &mut AppState) {
-    if active(&state.match_state.match_presentation) {
-        finish(state, false);
+pub(crate) fn toggle(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    if active(&match_state.match_presentation) {
+        finish(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            false,
+        );
     } else {
-        start(state);
+        start(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
     }
 }
 
 /// Turn the mode on, for the key or Options' Edit Layout button. A match only,
 /// and a mode already on stays as it is.
-pub(crate) fn start(state: &mut AppState) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
-        || active(&state.match_state.match_presentation)
+pub(crate) fn start(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if frontend.screen != crate::ui::game_screen::GameScreen::InGame
+        || active(&match_state.match_presentation)
     {
         return;
     }
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.layout_edit = Some(LayoutEditState {
         before: presentation.player_layout_text.clone(),
         ..Default::default()
     });
     // Whatever the mouse was doing in the match ends here; the mode's dialog
     // takes the pointer over the chrome.
-    state.match_state.input.cancel_tactical_drag();
-    crate::app::input::chrome_input::cancel(&mut state.match_state.match_presentation);
-    state
-        .match_state
+    match_state.input.cancel_tactical_drag();
+    crate::app::input::chrome_input::cancel(&mut match_state.match_presentation);
+    match_state
         .match_presentation
         .dialog_ui
         .push_modal(EDIT_DIALOG);
     crate::app::input::messages::post_layout_edit(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        sfx_player,
+        persistence,
         crate::app::input::messages::LayoutEditLine::On,
     );
 }
 
 /// Esc while the mode is on: leave it without saving.
-pub(crate) fn cancel(state: &mut AppState) {
-    finish(state, false);
+pub(crate) fn cancel(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    finish(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        false,
+    );
 }
 
 /// End the mode: Save writes what moved, anything else puts back the file
 /// the mode started from.
-fn finish(state: &mut AppState, save: bool) {
-    let presentation = &mut state.match_state.match_presentation;
+fn finish(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    save: bool,
+) {
+    let presentation = &mut match_state.match_presentation;
     let Some(edit) = presentation.layout_edit.take() else {
         return;
     };
     presentation.dialog_ui.close(EDIT_DIALOG);
     let changed = presentation.player_layout_text != edit.before;
     if edit.leave(&mut presentation.player_layout_text, save) {
-        crate::app::presentation::player_layout::write(
-            &state.platform,
-            &state.match_state.match_presentation,
-        );
+        crate::app::presentation::player_layout::write(platform, &match_state.match_presentation);
     } else if changed {
         // The parts go back where the mode found them.
-        relayout(state);
+        relayout(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        );
     }
     crate::app::input::messages::post_layout_edit(
-        state,
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        &mut audio.sfx_player,
+        persistence,
         if save {
             crate::app::input::messages::LayoutEditLine::Saved
         } else {
@@ -193,11 +283,21 @@ fn finish(state: &mut AppState, save: bool) {
 
 /// Reset: the side's layout leaves the player's file, so its parts stand as
 /// the mod, or the original, has them. Save keeps it.
-fn reset(state: &mut AppState) {
-    let Some(side) = sidebar_render::local_side_name(state).map(str::to_owned) else {
+fn reset(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    let Some(side) = sidebar_render::local_side_name(frontend, match_state).map(str::to_owned)
+    else {
         return;
     };
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     let Some(layout) = presentation.match_layouts.layout_name_for_side(Some(&side)) else {
         return;
     };
@@ -205,14 +305,47 @@ fn reset(state: &mut AppState) {
         &presentation.player_layout_text,
         layout,
     );
-    relayout(state);
+    relayout(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// Read the layouts again from the player's text and lay the match out by
 /// them.
-fn relayout(state: &mut AppState) {
-    crate::app::presentation::player_layout::rebuild(state, false);
-    sidebar_render::refresh_sidebar_projection(state);
+fn relayout(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    crate::app::presentation::player_layout::rebuild(
+        platform,
+        frontend,
+        match_state,
+        persistence,
+        false,
+    );
+    sidebar_render::refresh_sidebar_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// How `X` and `Y` change for a frame pixel: by the holder's scale, and
@@ -230,10 +363,23 @@ fn dragged(start: [i32; 2], per_pixel: [f32; 2], delta: [i32; 2]) -> [i32; 2] {
 /// Every part the mode can move, the ones drawn on top last: the sidebar's
 /// panels, the battlefield's pieces by a handle each, then what the layout
 /// added.
-pub(crate) fn targets(state: &AppState) -> Vec<Target> {
-    let presentation = &state.match_state.match_presentation;
+pub(crate) fn targets(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<Target> {
+    let presentation = &match_state.match_presentation;
     let spec = presentation.sidebar_layout_spec;
-    let frame = state.sidebar_frame();
+    let frame = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    );
     let scale = frame.scale();
     let to_frame = |x: f32, y: f32, w: f32, h: f32| frame.rect_to_frame_px(Rect { x, y, w, h });
     let mut out = Vec::new();
@@ -243,14 +389,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     // as its picture. A part after its panel lies over it, so it is grabbed
     // first.
     let layout = sidebar_render::current_sidebar_layout(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
-    let atlas = sidebar_render::current_sidebar_chrome(state);
-    let view = sidebar_render::current_sidebar_view(&state.match_state.match_presentation);
+    let atlas = sidebar_render::current_sidebar_chrome(frontend, match_state);
+    let view = sidebar_render::current_sidebar_view(&match_state.match_presentation);
     let size = |part, key| {
         atlas
             .and_then(|atlas| atlas.art(part, key, 0))
@@ -288,7 +434,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
 
     // The battlefield's pieces have a box each, most often the whole
     // battlefield: a handle shows where the piece sits in it.
-    let field = field_parts::layout(&state.match_state.match_presentation);
+    let field = field_parts::layout(&match_state.match_presentation);
     for (part, part_box) in [
         (FieldPart::Messages, field.messages),
         (FieldPart::Timers, field.timers),
@@ -297,7 +443,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
         if !field.shows(part) {
             continue;
         }
-        let [x, y, w, h] = field_parts::rect(state, part);
+        let [x, y, w, h] = field_parts::rect(
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
+            part,
+        );
         let rect = match part {
             FieldPart::Messages => [x, y, w.min(220), h.min(19)],
             FieldPart::Timers => {
@@ -324,8 +477,15 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
 
     // What the layout added: buttons, texts, rows and columns as a whole,
     // and grids of build pictures.
-    let placed = layout_parts::placed(state);
-    let view = sidebar_render::current_sidebar_view(&state.match_state.match_presentation);
+    let placed = layout_parts::placed(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    );
+    let view = sidebar_render::current_sidebar_view(&match_state.match_presentation);
     for (index, part) in presentation.added_parts.iter().enumerate() {
         let part_scale = match part.holder {
             Holder::Side => scale,
@@ -339,11 +499,11 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
                 .map(|grid| to_frame(grid.rect.x, grid.rect.y, grid.rect.w, grid.rect.h)),
             _ => placed.get(index).map(|placed| {
                 layout_parts::click_rect(
-                    &state.platform,
-                    &state.renderer,
-                    &state.frontend.screen,
-                    &state.match_state.match_presentation,
-                    &state.persistence,
+                    platform,
+                    renderer,
+                    &frontend.screen,
+                    &match_state.match_presentation,
+                    persistence,
                     placed,
                 )
             }),
@@ -412,16 +572,30 @@ fn buttons(
 /// first and the parts drawn on top before the ones under them, so the
 /// dialog's press finds the button, else the topmost part. Returns the
 /// parts by their node's `id - ID_TARGET_BASE`.
-fn sync_nodes(state: &mut AppState) -> Vec<Target> {
-    let targets = targets(state);
-    let buttons = buttons(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+fn sync_nodes(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<Target> {
+    let targets = targets(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
     );
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let buttons = buttons(
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
+    );
+    let ui = &mut match_state.match_presentation.dialog_ui;
     if ui.root_in(EDIT_DIALOG).is_none() {
         ui.push_modal(EDIT_DIALOG);
     }
@@ -471,14 +645,32 @@ fn pressed_button(presentation: &MatchPresentationState) -> Option<EditButton> {
 
 /// A left press on a button holds it; one elsewhere grabs the topmost part
 /// under the cursor. Letting go over the held button runs it.
-pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pressed: bool) {
+pub(crate) fn mouse(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    button: winit::event::MouseButton,
+    pressed: bool,
+) {
     if button != winit::event::MouseButton::Left {
         return;
     }
-    let cursor = state.match_state.input.cursor_px();
+    let cursor = match_state.input.cursor_px();
     if pressed {
-        let targets = sync_nodes(state);
-        let ui = &mut state.match_state.match_presentation.dialog_ui;
+        let targets = sync_nodes(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            persistence,
+        );
+        let ui = &mut match_state.match_presentation.dialog_ui;
         ui.on_pointer_move(cursor.0, cursor.1);
         ui.on_pointer_down(cursor.0, cursor.1);
         let _ = ui.drain_events();
@@ -496,33 +688,61 @@ pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pre
                 per_pixel: target.per_pixel,
                 at: target.xy,
             });
-        if let Some(edit) = &mut state.match_state.match_presentation.layout_edit {
+        if let Some(edit) = &mut match_state.match_presentation.layout_edit {
             edit.grab = grab;
         }
         return;
     }
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let ui = &mut match_state.match_presentation.dialog_ui;
     ui.on_pointer_up(cursor.0, cursor.1);
     let events = ui.drain_events();
     let ran = events.iter().find_map(|event| match event {
         vera20k_gui::UiEvent::Activated { node } => EditButton::of(ui.gui().id_of(*node)?),
         _ => None,
     });
-    let Some(edit) = &mut state.match_state.match_presentation.layout_edit else {
+    let Some(edit) = &mut match_state.match_presentation.layout_edit else {
         return;
     };
     edit.grab = None;
     match ran {
-        Some(EditButton::Save) => finish(state, true),
-        Some(EditButton::Reset) => reset(state),
+        Some(EditButton::Save) => finish(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            true,
+        ),
+        Some(EditButton::Reset) => reset(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+        ),
         None => {}
     }
 }
 
 /// A grabbed part follows the cursor.
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    let cursor = state.match_state.input.cursor_px();
-    let Some(edit) = &mut state.match_state.match_presentation.layout_edit else {
+pub(crate) fn cursor_moved(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    let cursor = match_state.input.cursor_px();
+    let Some(edit) = &mut match_state.match_presentation.layout_edit else {
         return;
     };
     let Some(grab) = &mut edit.grab else {
@@ -538,10 +758,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     }
     grab.at = at;
     let name = grab.name.clone();
-    let Some(side) = sidebar_render::local_side_name(state).map(str::to_owned) else {
+    let Some(side) = sidebar_render::local_side_name(frontend, match_state).map(str::to_owned)
+    else {
         return;
     };
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     presentation.player_layout_text = placed_in_text(
         &presentation.player_layout_text,
         presentation.match_layouts.layout_name_for_side(Some(&side)),
@@ -549,7 +770,16 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         &name,
         at,
     );
-    relayout(state);
+    relayout(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
 }
 
 /// The player's file with part `name` of the side's layout at `at`: `X` and
@@ -587,19 +817,28 @@ fn placed_in_text(
 /// The edit mode's overlay drawn through `hud`: the name boxes, the
 /// outlines and the texts, each lane in drawing order.
 pub(crate) fn instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     hud: &mut TextHud,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
 ) {
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let pieces = pieces(state);
-    draw_pieces(&state.renderer.bit_font, &pieces, camera, hud)
+    let camera = [match_state.input.camera_x, match_state.input.camera_y];
+    let pieces = pieces(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    );
+    draw_pieces(&renderer.bit_font, &pieces, camera, hud)
 }
 
 /// One piece of the overlay in the frame's pixels: a box filled black, an
@@ -614,19 +853,22 @@ pub(crate) enum EditPiece {
 /// The overlay's pieces: each target's outline, name box and name, then
 /// each button's box, outline and label. A name moves down past names
 /// already standing at its corner.
-fn pieces(state: &AppState) -> Vec<EditPiece> {
-    let Some(edit) = &state.match_state.match_presentation.layout_edit else {
+fn pieces(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<EditPiece> {
+    let Some(edit) = &match_state.match_presentation.layout_edit else {
         return Vec::new();
     };
     // The side's text colour as its layout gives it.
     let tint = crate::render::sidebar_text::native_outline_from(
-        state
-            .match_state
-            .match_presentation
-            .sidebar_layout_spec
-            .side_text,
+        match_state.match_presentation.sidebar_layout_spec.side_text,
     );
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     let grabbed = edit.grab.as_ref().map(|grab| grab.name.as_str());
     let outline = |[x, y, w, h]: [f32; 4], colour: [f32; 3]| {
         [
@@ -642,7 +884,14 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
     // their names one under the other.
     let mut named: Vec<[f32; 2]> = Vec::new();
     let line = font.cell_height() + 2.0;
-    for target in targets(state) {
+    for target in targets(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+    ) {
         let rect = target.rect.map(|v| v as f32);
         let colour = if grabbed == Some(target.name.as_str()) {
             [1.0; 3]
@@ -671,14 +920,14 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
         ));
     }
     for (button, label, rect) in buttons(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     ) {
         let [x, y, w, h] = rect.map(|v| v as f32);
-        let colour = if pressed_button(&state.match_state.match_presentation) == Some(button) {
+        let colour = if pressed_button(&match_state.match_presentation) == Some(button) {
             [1.0; 3]
         } else {
             tint

@@ -42,7 +42,9 @@ pub(crate) mod crit;
 mod crit_tests;
 pub(crate) mod damage;
 pub(crate) mod damage_multiplier;
+mod damage_incoming;
 pub(crate) mod destruction_effects;
+mod death_plan;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
@@ -51,6 +53,7 @@ pub(crate) mod extra_threat;
 pub mod fire_coord;
 pub mod fire_error;
 pub(crate) mod fire_error_world;
+mod fire_plan;
 pub mod gattling;
 pub(crate) mod greatest_threat;
 pub mod in_range;
@@ -199,6 +202,8 @@ mod railgun_tests;
 mod screen_shake_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod shrapnel_chain_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod ts_web_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]

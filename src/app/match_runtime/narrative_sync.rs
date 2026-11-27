@@ -4,13 +4,20 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn};
+use crate::app::frontend::state::FrontendState;
 use crate::app::lan_service::CampaignControlSend;
-use crate::app::{App, AppState, GameScreen};
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::{App, AppState, GameScreen, PlatformState};
 use crate::net::global::GlobalBatch;
 use crate::net::lan_messages::extended_setup::campaign::Signal;
 use crate::net::live_commands::NarrativeHold;
-use crate::sim::replay::ScenarioServiceInput;
+use crate::sim::replay::ScenarioPauseInput;
 
 use super::network_match;
 use super::scenario_pause;
@@ -240,7 +247,17 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         state.match_state.scenario_elapsed_clock.pause(wall_ms);
         super::sim_tick::prepare_replay_recording(&mut state.match_state, &state.process_assets);
         if movie_pause {
-            scenario_pause::apply_service(state, ScenarioServiceInput::Pause);
+            scenario_pause::apply_pause_service(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                ScenarioPauseInput::Pause,
+            );
         }
     }
     if !state
@@ -255,14 +272,24 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         let bucket = super::frame_pacer::frame_bucket(wall_ms);
         let sync = &mut state.match_state.match_presentation.narrative_sync;
         if sync.last_chrono_step.replace(bucket) != Some(bucket) {
-            scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
+            scenario_pause::apply_chrono_screen_step(state);
         }
     }
     if state.match_state.session.local_connection_watches() {
         // A viewer projects the same services at this boundary, while the
         // ordered stream supplies the live relay hold and resume markers.
         if !chrono {
-            release(state, wall_ms);
+            release(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                wall_ms,
+            );
         }
         return;
     }
@@ -350,7 +377,11 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
                 },
             );
         }
-        App::finish_fullscreen_movie(state);
+        let step =
+            App::finish_fullscreen_movie(&mut state.frontend.fullscreen_movie, &mut state.audio);
+        if let Some(step) = step {
+            App::apply_step(state, step);
+        }
         App::return_disconnected_to_main_menu(state);
         App::open_shell_notice(
             &state.platform.window,
@@ -405,7 +436,17 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
             .is_some_and(|batch| live.is_some_and(|live| live.global().batch_delivered(batch)));
         match sync.host_release(delivered) {
             HostRelease::Wait => {}
-            HostRelease::Complete => release(state, wall_ms),
+            HostRelease::Complete => release(
+                &mut state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &state.persistence,
+                wall_ms,
+            ),
             HostRelease::Send => {
                 if let Some(CampaignControlSend::Queued(batch)) =
                     crate::app::lan_service::send_campaign_control(
@@ -430,18 +471,48 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
                             barrier.release_batch = Some(batch);
                         }
                     } else {
-                        release(state, wall_ms);
+                        release(
+                            &mut state.platform,
+                            &state.renderer,
+                            &state.diag,
+                            &state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &state.persistence,
+                            wall_ms,
+                        );
                     }
                 }
             }
         }
     } else if ready && sync.release == Some(point) {
-        release(state, wall_ms);
+        release(
+            &mut state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &state.persistence,
+            wall_ms,
+        );
     }
 }
 
-fn release(state: &mut AppState, wall_ms: u64) {
-    let sync = &mut state.match_state.match_presentation.narrative_sync;
+fn release(
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    wall_ms: u64,
+) {
+    let sync = &mut match_state.match_presentation.narrative_sync;
     let Some(barrier) = sync.barrier.take() else {
         return;
     };
@@ -452,22 +523,37 @@ fn release(state: &mut AppState, wall_ms: u64) {
     sync.clips.clear();
     sync.last_chrono_step = None;
     if barrier.movie_pause {
-        scenario_pause::apply_service(state, ScenarioServiceInput::Resume);
+        scenario_pause::apply_pause_service(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            ScenarioPauseInput::Resume,
+        );
     }
     if barrier.timed {
-        scenario_pause::apply_service(state, ScenarioServiceInput::ExpireTimedPause);
+        scenario_pause::apply_pause_service(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            ScenarioPauseInput::ExpireTimedPause,
+        );
     }
-    if let Some(live) = state.match_state.live_network.as_mut() {
+    if let Some(live) = match_state.live_network.as_mut() {
         live.set_narrative_hold(None);
     }
-    scenario_pause::resume(
-        &state.frontend.screen,
-        &mut state.match_state,
-        &mut state.audio,
-        wall_ms,
-    );
-    state.platform.frame_pacer.reanchor(wall_ms);
-    state.platform.window.request_redraw();
+    scenario_pause::resume(&frontend.screen, match_state, audio, wall_ms);
+    platform.frame_pacer.reanchor(wall_ms);
+    platform.window.request_redraw();
 }
 
 #[cfg(all(test, tests_app_match))]

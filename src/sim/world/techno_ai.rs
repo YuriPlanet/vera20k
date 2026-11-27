@@ -55,6 +55,11 @@ use common_body::techno_after_acquisition;
 use common_body::techno_common_post;
 use common_body::techno_common_steps;
 use common_body::unit_techno_bracket;
+pub(super) use common_body::{
+    allied_target_drops, behind_indicator_cell, behind_indicator_coord, combat_damage_heals,
+    house_heal_frame, house_heals, illegal_target_drop_frame, off_mission_clear_drops, stage_step,
+    target_reach_asks,
+};
 pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
@@ -487,6 +492,39 @@ impl Simulation {
                 0,
             );
         }
+        // Wasm module flight (RFC 0001 section 9): `ProjectileFrame` or a
+        // `Launch` path, asked here, after the head, the Trailer, target
+        // resolution and the frame fuse, before the candidate step. The
+        // handler only reads, so nothing moves between this and the flight.
+        let module_motion = if self.module_flight_active() {
+            let shared_cell_dummy = self.effective_shared_cell_dummy();
+            let reaches = {
+                let world = super::projectile_collision::ProjectileCollisionWorld {
+                    terrain: self.resolved_terrain.as_ref(),
+                    dummy: shared_cell_dummy,
+                    occupancy: &self.substrate.occupancy,
+                    entities: &self.substrate.entities,
+                    terrain_objects: self.terrain_objects.objects(),
+                    interner: &self.interner,
+                    alliances: &self.house_alliances,
+                    overlays: self.overlay_grid.as_ref(),
+                    rules,
+                    map_size: self.map_size_diamond(),
+                    ares_firestorm: &self.ares_firestorm,
+                };
+                self.projectiles
+                    .reaches_candidate_step(&head, |target, query| {
+                        world.target_coordinate(target, query)
+                    })
+            };
+            if reaches {
+                self.module_projectile_motion(rules, id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let projectile = self
             .projectiles
             .get(id)
@@ -611,6 +649,7 @@ impl Simulation {
                     collision_world.collide(projectile, candidate, phase)
                 },
                 nuke.as_ref(),
+                module_motion,
             )
             .expect("projectile remained present for its Logic slot");
         let terminal = !result.expired.is_empty() || !result.detonations.is_empty();

@@ -57,7 +57,33 @@ The `8d55b4a73` writer's layout `0xF6127DC1` predates Tiberian Sun's
 BounceSound and ExpireSound; its animation types convert with neither sound.
 The `8852f7a76` writer's layout `0x9441E8D8` predates the Kratos infantry firing
 offsets. Its saves convert with Kratos off, as those matches played. The
-`bc55c35e7` writer covers direct loading of layout `0x9F1BD701`.
+`bc55c35e7` writer's layout `0x9F1BD701` predates Tiberian Sun webs and
+the processed rules' NPatch key reads; its saves convert with no web and the
+switch off, as those matches played. The `30e9a0f38` writer's layout
+`0xF215BF3A` predates the Wasm extension modules, Phobos ArtImageSwap and the
+NPatch reads; its saves convert with no module, no swapped image and the
+switch off. Later writers each stored part of the current layout: the
+`a33fcac81` writer's layout `0xE18EA373` holds the modules, main's writer from
+#5205, layout `0x8C73B1B3`, the swap, the `2e39b88dd` writer's layout
+`0xB65C0664` the modules and the swap, the `2e67ebaa8` writer's layout
+`0xE5279FB2` only the NPatch reads, the `fb29ff473` writer's layout
+`0xBA51A42C` all three without the modules' control points, and the
+`d17e45e42` writer's layout `0x919AB3CD` the modules with their control points.
+Each converts with its missing parts empty: no projectile path, push or
+immunity modifier, no swapped image, and without the reads the switch stays
+off, as those matches played. No frozen save holds `0x8C73B1B3`. The
+`b268ba798` writer's layout `0xC66CE753` holds everything but the client
+modules' state of layout `0x9909B4E7` (RFC 0001 section 10: the
+messages waiting for `on_message` and the room's `AutomationAllowed`); its
+saves convert with no message waiting and automation not allowed. The
+`0b918d053` writer predates the module visuals. Later writers retained module
+animations (`0xED16B100`), doors (`0x9593BB1E`) and image overrides
+(`0xAA201352`). Conversion keeps each saved collection and starts the
+missing ones empty. The `c3609b58a` writer covers layout `0xD5A96CCA`,
+which holds the former external AI controller flag and economy settings.
+On load, those computer houses resume ordinary AI with their saved money,
+units and production queues. Any saved Wasm control claims still apply.
+The next save clears the retired settings.
 
 Run the menu and compatibility tests with this command.
 

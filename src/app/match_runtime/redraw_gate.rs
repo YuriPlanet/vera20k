@@ -40,9 +40,14 @@
 //! and no recovery line, which reads the wall clock, shows.
 
 use super::frame_pacer::{FRAME_BUCKET, SERVICE_WAKE};
-use crate::app::AppState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::precedence::ScreenPage;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::util::time::{Duration, Instant};
@@ -115,42 +120,51 @@ impl PictureClock {
 /// input, a page switch, a world change, a tooltip, the Save page's blinking
 /// caret or the screen shake (`shake_px`, the offset this pass draws). The
 /// offline battlefield also changes with the camera, the sidebar view, the
-/// message rows, the published detail frame rate, the talk bubble and each
-/// published atlas growth, and stands only while none of its self-moving
-/// owners runs (module docs). The shown performance panel changes it once a
-/// second, when it has new figures.
+/// message rows, the published detail frame rate, the talk bubble, each
+/// published atlas growth and the client modules' nodes, and stands only
+/// while none of its self-moving owners runs (module docs). The shown
+/// performance panel changes it once a second, when it has new figures.
 /// `None` keeps drawing within the limits: captures, modals, other screens,
 /// replay matches, a network match's moving composite, recovery line or
 /// in-game menu, exits and loads, a held mouse button (gadgets repeat on it)
 /// and a shake still decaying.
 pub(crate) fn still_frame(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     capture: bool,
     shake_px: Option<[i32; 2]>,
     clock: PictureClock,
 ) -> Option<StillFrame> {
-    let (modal, page) = crate::app::input::precedence::presented(state);
-    let presentation = &state.match_state.match_presentation;
-    let input = &state.match_state.input;
-    let simulation = state
-        .match_state
+    let (modal, page) = crate::app::input::precedence::presented(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    );
+    let presentation = &match_state.match_presentation;
+    let input = &match_state.input;
+    let simulation = match_state
         .sim_runtime
         .runtime()
         .map(|runtime| &runtime.simulation);
     let still = !capture
         && modal.is_none()
-        && state.frontend.screen == GameScreen::InGame
-        && !network_picture_moves(&state.match_state, simulation, clock)
-        && !state.match_state.match_diagnostics.is_replay_playback()
-        && !state
-            .match_state
+        && frontend.screen == GameScreen::InGame
+        && !network_picture_moves(match_state, simulation, clock)
+        && !match_state.match_diagnostics.is_replay_playback()
+        && !match_state
             .match_diagnostics
             .actor_presentation_observer_active()
-        && state.persistence.pending_load.is_none()
-        && state.frontend.quit_cascade.is_none()
-        && state.match_state.scenario_exit.is_none()
-        && state.match_state.scenario_outcome.is_none()
-        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
+        && persistence.pending_load.is_none()
+        && frontend.quit_cascade.is_none()
+        && match_state.scenario_exit.is_none()
+        && match_state.scenario_outcome.is_none()
+        && !crate::app::App::house_outcome_wait_pending(&match_state.sim_runtime)
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {
@@ -166,10 +180,10 @@ pub(crate) fn still_frame(
         .tooltips
         .active()
         .map(|tip| (tip.id, tip.x, tip.y));
-    let panel_due = state.renderer.performance_overlay.readings_due(clock.at);
+    let panel_due = renderer.performance_overlay.readings_due(clock.at);
     let fonts = crate::render::text_engine::fetched_fonts();
     match page {
-        ScreenPage::InGameShell(menu) if state.match_state.live_network.is_none() => {
+        ScreenPage::InGameShell(menu) if match_state.live_network.is_none() => {
             Some(StillFrame::Menu {
                 menu,
                 revision,
@@ -186,22 +200,22 @@ pub(crate) fn still_frame(
         }
         ScreenPage::Battlefield => {
             let detail = presentation.detail.borrow();
-            let moving = state.match_state.paused()
-                || !crate::app::input::camera::zoom_settled(&state.match_state.input)
+            let moving = match_state.paused()
+                || !crate::app::input::camera::zoom_settled(&match_state.input)
                 || presentation
                     .radar_anim
                     .as_ref()
                     .is_some_and(|radar| radar.housing_moving())
-                || crate::app::radar_movie::has_pending(&state.match_state.match_presentation)
+                || crate::app::radar_movie::has_pending(&match_state.match_presentation)
                 || presentation.chrono_screen.active()
                 || presentation.power_bar_anim.in_motion()
                 || presentation.message_list.revealing()
                 || detail.threshold_wraps()
                 // Ares' FPS counter line shows each new sample's average.
                 || (presentation.ares_fps_counter
-                    && state.rules().is_some_and(crate::rules::ruleset::RuleSet::ares))
-                || (state.use_software_cursor() && input.software_cursor_step_due())
-                || crate::app::presentation::super_timers::blink_due(state);
+                    && crate::app::state::active_rules(frontend, match_state).is_some_and(crate::rules::ruleset::RuleSet::ares))
+                || (crate::app::state::use_software_cursor(platform, renderer, frontend, match_state, persistence) && input.software_cursor_step_due())
+                || crate::app::presentation::super_timers::blink_due(diag, match_state);
             (!moving).then(|| StillFrame::Battlefield {
                 revision,
                 composite: presentation.tactical_composite.ticks(),
@@ -213,6 +227,9 @@ pub(crate) fn still_frame(
                 detail_fps: detail.frame_rate(),
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
                 atlas_growths: presentation.atlas_growth.published(),
+                modules: match_state.ui_modules.as_ref().map(|ui| {
+                    crate::app::ui_modules::paint::layers_key(presentation.dialog_ui.gui(), ui)
+                }),
                 panel_due,
                 fonts,
             })
@@ -233,21 +250,28 @@ pub(crate) struct DrawLimits {
 
 /// The limits the picture just presented sets. `status_step` says it showed a
 /// new step of a status-line reveal.
-pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
-    let (_, page) = crate::app::input::precedence::presented(state);
+pub(crate) fn draw_limits(
+    platform: &crate::app::PlatformState,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    persistence: &crate::app::persistence::PersistenceState,
+    status_step: bool,
+) -> DrawLimits {
+    let (_, page) = crate::app::input::precedence::presented(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    );
     let picture_interval =
-        if page == ScreenPage::Battlefield && state.platform.capture_client_size.is_none() {
+        if page == ScreenPage::Battlefield && platform.capture_client_size.is_none() {
             screen_picture_interval(
-                &state.persistence.options_profile,
-                crate::app::input::camera::scrolling(&state.match_state.input),
-                state.platform.frame_pacer.draw_work(),
-                || {
-                    state
-                        .platform
-                        .window
-                        .current_monitor()?
-                        .refresh_rate_millihertz()
-                },
+                &persistence.options_profile,
+                crate::app::input::camera::scrolling(&match_state.input),
+                platform.frame_pacer.draw_work(),
+                || platform.window.current_monitor()?.refresh_rate_millihertz(),
             )
         } else {
             PICTURE_INTERVAL
@@ -255,8 +279,8 @@ pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
     page_limits(
         page,
         status_step,
-        state.platform.hardware_cursor.on_cursor_plane(),
-        super::network_match::game_frame_ms(&state.platform, &state.match_state),
+        platform.hardware_cursor.on_cursor_plane(),
+        super::network_match::game_frame_ms(platform, match_state),
         picture_interval,
     )
 }
@@ -378,6 +402,13 @@ pub(crate) enum StillFrame {
         /// Atlas growths published; each draws sprites the last picture
         /// lacked.
         atlas_growths: u64,
+        /// The client modules' and the map's layers while the match has
+        /// them (`ui_modules::paint::layers_key`): a node a module
+        /// made, removed, moved or rewrote changes it, and so does the
+        /// layout their drawing gives them, which the picture judged after
+        /// the draw already holds, and a button the pointer came over,
+        /// left, held down or let go.
+        modules: Option<((usize, u64), u64, u64)>,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
         fonts: usize,
@@ -661,6 +692,7 @@ mod tests {
             detail_fps: 15,
             talk_bubble: bubble,
             atlas_growths: 0,
+            modules: None,
             panel_due: false,
             fonts: 0,
         }
@@ -714,6 +746,11 @@ mod tests {
         if let StillFrame::Battlefield { panel_due, .. } = &mut new_figures {
             *panel_due = true;
         }
+        // A client module's node changed the match GUI.
+        let mut module_nodes = shown;
+        if let StillFrame::Battlefield { modules, .. } = &mut module_nodes {
+            *modules = Some(((1, 1), 0, 0));
+        }
         let mut gate = RedrawGate::default();
         gate.record_presented(Some(shown), t, LIMITS);
         assert_eq!(gate.next_pass(after_limit), NextPass::Probe);
@@ -728,6 +765,7 @@ mod tests {
             battlefield(120, 480.0, 7, false),
             menu(120, false, [0, 0]),
             new_figures,
+            module_nodes,
         ] {
             assert_eq!(
                 gate.probe_verdict(Some(changed), after_limit),

@@ -35,7 +35,11 @@ fn a_sale_hides_slot_anims_in_its_build_down_and_drops_the_zshape_move() {
                 building.building_down(),
                 building.in_construction_bstate(),
                 slot_anims_hidden_by_sale(&ObjectRecord::of_test_sim(sim, rules, factory)),
-                building_zshape_point_move(&ObjectRecord::of_test_sim(sim, rules, factory), art),
+                building_zshape_point_move(
+                    &ObjectRecord::of_test_sim(sim, rules, factory),
+                    art,
+                    Some(rules),
+                ),
             )
         })
     };
@@ -354,9 +358,13 @@ fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
 /// `ZShapePointMove` applied through the whole Selling mission.
 #[test]
 fn phobos_keeps_the_zshape_move_during_a_sale_when_the_type_asks() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &crate::rules::ini_parser::IniFile::from_str("[General]\nAIFireSale=yes\n"),
+    ) else {
         return;
     };
+    assert!(retail.rules.phobos());
     let mut rules = retail.rules.clone();
     rules.set_buildup_control_for_test("GAWEAP", [0, 25, 2]);
     let rules = &rules;
@@ -387,7 +395,7 @@ fn phobos_keeps_the_zshape_move_during_a_sale_when_the_type_asks() {
     let building =
         crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, factory);
     assert_eq!(
-        building_zshape_point_move(&building, art.as_ref()),
+        building_zshape_point_move(&building, art.as_ref(), Some(rules)),
         (30, 15),
         "the key keeps the move during the sale"
     );

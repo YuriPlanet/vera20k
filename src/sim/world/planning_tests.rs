@@ -448,14 +448,14 @@ fn retired_planning_sources_acknowledge_in_flight_orders_and_skip_unstarted_work
     assert!(sim.planning.paths[&1].executing);
 
     generated.set_frame_stamp(generated.frame_stamp() + 5);
-    assert!(!sim.apply_command_with_overlays(
-        Some(1),
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(Some(1)),
         "Americans",
         &Command::PlanningRecord { record: generated },
         &rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_err());
     assert!(!sim.planning.paths[&1].executing);
     assert!(!sim.planning_start_actor(1, &rules));
     assert!(sim.planning.paths[&1].nodes.is_empty());
@@ -584,14 +584,14 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         _ => unreachable!(),
     };
     assert!(
-        sim.apply_command_with_overlays(
-            None,
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &command,
             &rules,
             Some(&registry),
             &mut crate::sim::world::FrameEffects::default()
-        ),
+        )).is_ok(),
         "accepted {kind} order"
     );
     assert!(

@@ -12,7 +12,7 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
 
 use super::{
-    AppState, LOBBY_RETRY_TIMING, LanService, PeerAdmission, PeerAdmissionRecord,
+    AppState, ClientStep, LOBBY_RETRY_TIMING, LanService, PeerAdmission, PeerAdmissionRecord,
     online_retirement_pending,
 };
 
@@ -229,13 +229,16 @@ impl LanService {
 /// gameplay. Desktop only.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) fn begin_direct_spawn(
-    state: &mut AppState,
+    game_config: Option<&crate::util::config::GameConfig>,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
     launch: crate::skirmish_launch::SkirmishLaunchSession,
     direct: crate::app::frontend::cncnet_spawn::DirectSpawn,
     seed: u32,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        state.match_state.lan_service.is_none() && state.match_state.live_network.is_none(),
+        match_state.lan_service.is_none() && match_state.live_network.is_none(),
         "a network service is already open"
     );
     let map_file = launch
@@ -251,22 +254,19 @@ pub(crate) fn begin_direct_spawn(
         .map(|human| human.name.clone())
         .collect();
     super::shell_network_setup::install_external_setup(
-        state.platform.game_config.as_ref(),
-        &mut state.frontend,
-        &mut state.match_state,
-        &state.process_assets,
+        game_config,
+        frontend,
+        match_state,
+        process_assets,
         launch,
         super::match_runtime::session::NetworkReturnContext::LanLobby,
     )?;
     for (name, peer) in names.iter().zip(&direct.peers) {
         if let Some(endpoint) = peer {
-            state
-                .match_state
-                .session
-                .bind_network_endpoint(name, *endpoint)?;
+            match_state.session.bind_network_endpoint(name, *endpoint)?;
         }
     }
-    state.match_state.session.set_network_start_seed(seed)?;
+    match_state.session.set_network_start_seed(seed)?;
     let mut service = LanService::open_direct(direct.local_port, &admission).map_err(|error| {
         anyhow::anyhow!("could not open UDP port {}: {error}", direct.local_port)
     })?;
@@ -274,38 +274,44 @@ pub(crate) fn begin_direct_spawn(
     // The agreement reads the installed setup, not the service, so it is
     // made first and installed with the service.
     service.setup_agreement = Some(super::shell_network_setup::agreement::local(
-        state.platform.game_config.as_ref(),
-        &state.match_state.session,
-        &mut state.process_assets,
+        game_config,
+        &match_state.session,
+        process_assets,
     )?);
-    state.match_state.lan_service = Some(service);
+    match_state.lan_service = Some(service);
     Ok(())
 }
 
 /// The direct spawn host starts the ordinary LAN GO once every guest is up.
 /// A failed launch never does: the participant that ended it is retired, so
-/// the rest may all have answered.
-pub(super) fn poll_direct_start(state: &mut AppState) {
-    if !state.match_state.session.host()
-        || state.frontend.external_launch_error.is_some()
-        || !super::shell_network_setup::external(state.frontend.network_setup_protocol.as_ref())
-        || !state
-            .frontend
+/// the rest may all have answered. A GO that cannot start returns the step
+/// that fails the launch.
+#[must_use]
+pub(super) fn poll_direct_start(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) -> Option<ClientStep> {
+    if !match_state.session.host()
+        || frontend.external_launch_error.is_some()
+        || !super::shell_network_setup::external(frontend.network_setup_protocol.as_ref())
+        || !frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| protocol.editable())
-        || !state
-            .match_state
+        || !match_state
             .lan_service
             .as_ref()
             .is_some_and(LanService::direct_peers_heard)
     {
-        return;
+        return None;
     }
-    if let Err(error) = super::shell_network_setup::begin_external_lan_go(state) {
+    if let Err(error) = super::shell_network_setup::begin_external_lan_go(frontend, match_state) {
         log::warn!("Direct LAN start failed: {error:#}");
-        super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
+        return Some(ClientStep::Now(Box::new(|state: &mut AppState| {
+            super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"))
+        })));
     }
+    None
 }
 
 pub(crate) fn begin_online_latency_probe(

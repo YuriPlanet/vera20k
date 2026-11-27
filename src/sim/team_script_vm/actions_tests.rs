@@ -233,14 +233,17 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         state.zone = sold;
         teams.push((team, expected_target, expected_focus, id));
     }
-    assert!(sim.apply_command_with_overlays(
-        None,
-        "Receiver",
-        &Command::SellWallAtCell { x: 4, y: 4 },
-        &rules,
-        Some(&overlays),
-        &mut FrameEffects::default(),
-    ));
+    assert!(
+        (sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
+            "Receiver",
+            &Command::SellWallAtCell { x: 4, y: 4 },
+            &rules,
+            Some(&overlays),
+            &mut FrameEffects::default(),
+        ))
+        .is_ok()
+    );
     for (team, expected_target, expected_focus, id) in teams {
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.mission_target, expected_target);
@@ -461,7 +464,7 @@ fn patrol_scan_retains_across_type_reset_and_changes_configuration_identity() {
     assert_ne!(hashes[0].1, hashes[1].1);
 }
 
-fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
+fn patrol_team_fixture(armed: bool, waypoint: i32) -> (Simulation, RuleSet, u64, Vec<u64>) {
     let text = if armed {
         let base = RULES.replace(
             "Strength=125\n",
@@ -483,12 +486,13 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
     .unwrap();
     let mut sim = Simulation::with_seed(0x6ECCE0);
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    let (team, members, _) = building_team(&mut sim, &rules, &[(16, 11), (2, 0)], &[]);
+    let (team, members, _) = building_team(&mut sim, &rules, &[(16, waypoint), (2, 0)], &[]);
+    let index = waypoint as u32;
     sim.session.install_waypoints(
         &[(
-            11,
+            index,
             crate::map::waypoints::Waypoint {
-                index: 11,
+                index,
                 rx: 30,
                 ry: 20,
             },
@@ -506,7 +510,7 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
 
 #[test]
 fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() {
-    let (mut sim, rules, team, members) = patrol_team_fixture(false);
+    let (mut sim, rules, team, members) = patrol_team_fixture(false, 18277);
     let old = sim
         .spawn_object_at_height("GAPOWR", "Americans", 20, 10, 0, 0, &rules)
         .unwrap();
@@ -559,7 +563,7 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
 
 #[test]
 fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
-    let (mut sim, rules, team, members) = patrol_team_fixture(true);
+    let (mut sim, rules, team, members) = patrol_team_fixture(true, 11);
     let enemy = sim
         .spawn_object_at_height("E1", "Americans", 14, 10, 0, 0, &rules)
         .unwrap();
@@ -594,7 +598,7 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
 /// four rows apart, each with an American E1 at (14, its row) that its scan
 /// finds. Answers the teams.
 fn patrol_scene(teams: u16) -> (Simulation, RuleSet, Vec<u64>) {
-    let (mut sim, rules, first, _) = patrol_team_fixture(true);
+    let (mut sim, rules, first, _) = patrol_team_fixture(true, 11);
     let russians = sim.interner.get("Russians").unwrap();
     let script = sim.interner.get("BUILDING SCRIPT").unwrap();
     let rows: Vec<u16> = (0..teams).map(|index| 10 + 4 * index).collect();
@@ -623,7 +627,8 @@ fn patrol_scene(teams: u16) -> (Simulation, RuleSet, Vec<u64>) {
 
 /// Unbatched, every patrol team scans on the frames the period divides
 /// (`0x006ECD59..0x006ECD63`); batched, each scans once a period at its own
-/// phase.
+/// phase, on its own turn: less than the frames between its turns off the
+/// period apart.
 #[test]
 fn batched_scans_spread_the_patrol_scans_over_the_period() {
     for batched in [false, true] {
@@ -633,27 +638,35 @@ fn batched_scans_spread_the_patrol_scans_over_the_period() {
         }
         let period = rules.general.patrol_scan_frames() as u32;
         let mut scans = vec![Vec::new(); teams.len()];
-        for frame in period..3 * period {
+        for frame in period..4 * period {
             sim.session.set_binary_frame_for_test(frame);
-            for (scanned, &team) in scans.iter_mut().zip(&teams) {
-                let mut effects = FrameEffects::default();
+            let mut effects = FrameEffects::default();
+            for &team in &teams {
                 let waypoint = Some(TeamTarget::Cell { x: 30, y: 20 });
                 sim.team_assign_mission_target(team, waypoint, &rules, &mut effects);
-                sim.team_step_script(team, &rules, None, &mut effects);
+            }
+            sim.run_team_ai_pass(&rules, None, &mut effects);
+            for (scanned, &team) in scans.iter_mut().zip(&teams) {
                 let target = sim.team_script_vm.team(team).unwrap().mission_target;
                 if matches!(target, Some(TeamTarget::Object(_))) {
                     scanned.push(frame);
                 }
             }
         }
-        if batched {
+        if let Some(turns) = sim.team_update_period() {
             for frames in &scans {
-                assert_eq!(frames.len(), 2, "{frames:?}");
-                assert_eq!(frames[1] - frames[0], period);
+                assert!(frames.len() >= 2, "{frames:?}");
+                assert!(
+                    frames
+                        .windows(2)
+                        .all(|pair| (pair[1] - pair[0]).abs_diff(period) < turns),
+                    "{frames:?}"
+                );
             }
             assert_ne!(scans[0], scans[1]);
         } else {
-            assert_eq!(scans, vec![vec![period, 2 * period]; 2]);
+            assert!(!batched);
+            assert_eq!(scans, vec![vec![period, 2 * period, 3 * period]; 2]);
         }
     }
 }
@@ -684,9 +697,9 @@ fn a_patrol_takes_its_batched_answer_while_its_leader_stands() {
             let team = teams[0];
             sim.batch_target_scans();
             let period = rules.general.patrol_scan_frames() as u32;
-            assert!((100..100 + period).any(|frame| {
+            assert!((100..100 + 2 * period).any(|frame| {
                 sim.session.set_binary_frame_for_test(frame);
-                sim.patrol_scan_remainder(team, &rules) == Some(0)
+                sim.patrol_scan_due(team, &rules) == Some(true)
             }));
             let leader = sim.team_leader(team, &rules).unwrap();
             if answered {
@@ -704,9 +717,9 @@ fn a_patrol_takes_its_batched_answer_while_its_leader_stands() {
     }
 }
 
-/// Four patrol teams through the team step for a period: each frame's state
-/// hash, and the batched answers their scans took, are the same on one
-/// worker thread as on four.
+/// Four patrol teams through the team step for two periods: each frame's
+/// state hash, and the batched answers their scans took, are the same on one
+/// worker thread as on four, and every answer made is taken.
 #[test]
 fn batched_patrol_answers_do_not_depend_on_the_thread_count() {
     let run = |threads: usize| {
@@ -718,18 +731,21 @@ fn batched_patrol_answers_do_not_depend_on_the_thread_count() {
             let (mut sim, rules, _) = patrol_scene(4);
             sim.batch_target_scans();
             let period = rules.general.patrol_scan_frames() as u32;
-            let hashes: Vec<u64> = (100..100 + period)
+            let mut due = 0;
+            let hashes: Vec<u64> = (100..100 + 2 * period)
                 .map(|frame| {
                     sim.session.set_binary_frame_for_test(frame);
+                    due += sim.due_patrol_leaders(&rules).len();
                     sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
                     sim.state_hash()
                 })
                 .collect();
-            (hashes, sim.batched_scans_used())
+            (hashes, sim.batched_scans_used(), due)
         })
     };
     let four = run(4);
-    assert_eq!(four.1, 4, "each team's scan takes its answer once");
+    assert!(four.2 >= 4, "each team's scan is due at least once");
+    assert_eq!(four.1, four.2, "each due scan takes its answer");
     assert_eq!(run(1), four);
 }
 

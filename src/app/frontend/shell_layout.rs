@@ -6,11 +6,14 @@
 //! here; a render path computing one layout and an input handler the other
 //! misaligns clicks by the scale factor.
 
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::app::shell_wol::WolPage;
+use crate::app::state::PlatformState;
 use crate::render::gpu::GpuContext;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout};
@@ -45,18 +48,32 @@ pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
 
 /// The fitted shell sets the cursor scale. VERA's visible online lobby and
 /// rooms use a compact cursor. In-game shell cursors follow the match zoom.
-pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
-    if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
+pub(crate) fn menu_cursor_scale(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> f32 {
+    if frontend.screen == crate::ui::game_screen::GameScreen::InGame {
         return 1.0;
     }
-    let fitted = shell_scale_for_screen(shell_screen_size(&state.renderer.gpu)).factor();
-    if crate::app::input::precedence::modal_page(state).is_some() {
+    let fitted = shell_scale_for_screen(shell_screen_size(&renderer.gpu)).factor();
+    if crate::app::input::precedence::modal_page(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+    )
+    .is_some()
+    {
         return fitted;
     }
 
-    let route = state.frontend.shell_route;
+    let route = frontend.shell_route;
     if route == ShellRoute::WolLobby
-        && let Some(visit) = state.frontend.wol.as_ref()
+        && let Some(visit) = frontend.wol.as_ref()
     {
         // The visit keeps the lobby route while a separate page or dialog owns the screen.
         let visible = visit
@@ -64,12 +81,12 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
             .is_some_and(|lobby| lobby.ui.is_modern() && lobby.shown && !lobby.covered);
         let dialog = visit.message().is_some()
             || visit.wait_box().is_some_and(|wait| wait.shown)
-            || crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref()).is_some()
-            || crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref()).is_some();
+            || crate::app::shell_wol::page::page_dialog(frontend.wol.as_ref()).is_some()
+            || crate::app::shell_wol::page::page_received(frontend.wol.as_ref()).is_some();
         return wol_lobby_cursor_scale(fitted, &visit.page, visible, dialog);
     }
     if route == ShellRoute::NetworkSetup {
-        let dialog = crate::app::shell_network_setup::dialog(&state.frontend, &state.match_state);
+        let dialog = crate::app::shell_network_setup::dialog(frontend, match_state);
         if dialog.wol() && dialog.modern {
             return fitted * 0.5;
         }
@@ -126,7 +143,10 @@ pub(crate) fn on<L>(gpu: &GpuContext, layout: impl FnOnce(i32, i32, ShellScale) 
 
 /// Main menu dialog `0xE2`.
 pub(crate) fn main_menu_layout(gpu: &GpuContext) -> MainMenuShellLayout {
-    pick(gpu, compute_layout)
+    let (w, h) = shell_screen_size(gpu);
+    let fitted =
+        fills_window(gpu) || !crate::ui::main_menu_shell::retail_column_fits(w as i32, h as i32);
+    pick_at(fitted, (w, h), compute_layout)
 }
 
 /// A front-end box's rects on the window's mapping.
@@ -263,17 +283,23 @@ pub(crate) fn score_layout(gpu: &GpuContext) -> crate::ui::score_shell::ScoreLay
 
 /// Launcher Options `0xD5`, showing `category`'s page.
 pub(crate) fn launcher_options_layout(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    options_profile: &RetailOptionsProfile,
     category: crate::ui::main_menu_dialogs::options::Category,
 ) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
-    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
-    let layout = if fills_window(&state.renderer.gpu) {
+    let (width, height) = (
+        renderer.render_width(screen) as i32,
+        renderer.render_height(screen) as i32,
+    );
+    let layout = if fills_window(&renderer.gpu) {
         LauncherOptionsLayout::responsive(width, height, category)
     } else {
         LauncherOptionsLayout::new(width, height, category)
     };
-    let battle = crate::app::App::match_zoom_geometry(state);
+    let battle = crate::app::App::match_zoom_geometry(platform, &renderer.gpu, options_profile);
     layout.with_battle_frame((battle.src_width, battle.src_height))
 }
 

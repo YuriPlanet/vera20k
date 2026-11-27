@@ -18,15 +18,19 @@ pub(crate) fn open(state: &mut AppState, outcome: HouseOutcomeKind) {
         App::return_to_main_menu(state);
         return;
     }
-    let captured = capture(state, outcome)
-        .and_then(|result| state.match_state.session.open_campaign_result(result));
+    let captured = capture(
+        state.platform.game_config.as_ref(),
+        &state.match_state,
+        outcome,
+    )
+    .and_then(|result| state.match_state.session.open_campaign_result(result));
     if let Err(error) = captured {
         log::warn!("Cannot open campaign stage result: {error:#}");
         abort(state, Some("VERA:CampaignStageUnavailable"));
         return;
     }
     super::sim_tick::flush_replay_log(state);
-    App::destroy_current_shell_dialog(state);
+    App::destroy_current_shell_dialog(&mut state.frontend);
     state.frontend.screen = GameScreen::MainMenu;
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
     let initial = usize::from(
@@ -37,18 +41,29 @@ pub(crate) fn open(state: &mut AppState, outcome: HouseOutcomeKind) {
                 .campaign_result()
                 .is_some_and(|result| result.plans().len() > 1),
     );
-    present(state, initial);
+    present(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state.session,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        initial,
+    );
 }
 
-fn capture(state: &AppState, outcome: HouseOutcomeKind) -> anyhow::Result<CampaignResult> {
+fn capture(
+    game_config: Option<&crate::util::config::GameConfig>,
+    match_state: &crate::app::match_runtime::state::MatchState,
+    outcome: HouseOutcomeKind,
+) -> anyhow::Result<CampaignResult> {
     use anyhow::Context;
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let room = session
         .campaign_room()
         .context("campaign room disappeared")?;
-    let manifest = campaign_room::load_manifest(state.platform.game_config.as_ref(), room)?;
-    let sim = &state
-        .match_state
+    let manifest = campaign_room::load_manifest(game_config, room)?;
+    let sim = &match_state
         .sim_runtime
         .runtime()
         .context("finished campaign world disappeared")?
@@ -63,8 +78,16 @@ fn capture(state: &AppState, outcome: HouseOutcomeKind) -> anyhow::Result<Campai
     )
 }
 
-fn present(state: &mut AppState, index: usize) {
-    let Some(result) = state.match_state.session.campaign_result() else {
+fn present(
+    window: &winit::window::Window,
+    renderer: &crate::app::renderer_state::RendererState,
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    session: &super::session::MatchSession,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    options_profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+    index: usize,
+) {
+    let Some(result) = session.campaign_result() else {
         return;
     };
     let Some(plan) = result.plans().get(index) else {
@@ -86,11 +109,11 @@ fn present(state: &mut AppState, index: usize) {
         },
     );
     App::open_shell_message_box(
-        &state.platform.window,
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
+        window,
+        renderer,
+        frontend,
+        process_assets,
+        options_profile,
         shell_box,
         ShellMessageBoxPurpose::AuthoredCampaignResult(Some(index)),
     );
@@ -105,7 +128,15 @@ pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: usize
     let tr = crate::i18n::tr;
     match (index, response) {
         (Some(index), 2) => {
-            present(state, (index + 1) % result.plans().len());
+            present(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state.session,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                (index + 1) % result.plans().len(),
+            );
         }
         (Some(index), 0) => {
             let Some(plan) = result.plans().get(index) else {

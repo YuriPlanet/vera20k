@@ -4,9 +4,8 @@
 //! `Phobos::VersionDescription` (`src/Phobos.cpp`) on the Composite surface:
 //! a black box starting `marginX` (10) pixels in from the view's right edge
 //! at `y = 0`, and the text in red five pixels inside it. Retail's own
-//! `GScreenClass::DrawText` body draws the optional `ShowGameTime` clock,
-//! which VERA20K does not implement, so this module is that site's first
-//! VERA writer and carries the version description instead.
+//! `GScreenClass::DrawText` body draws the optional `ShowGameTime` clock below
+//! it; this module carries both boards.
 //!
 //! The text is the native product name, version and build warning from
 //! [`crate::app::phobos_version`], drawn only in Phobos builds; every other
@@ -15,8 +14,11 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::phobos_version;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
@@ -49,34 +51,39 @@ pub(crate) fn place(view_width: i32, text_width: i32, text_height: i32) -> ([i32
 
 /// The description's fill box and text instances, or empty pairs outside a
 /// Phobos build's in-game screen and in a map picture.
-pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+pub(crate) fn build_instances(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     // `GScreenClass_DrawText @ 0x4F4583` owns two independent boards: the
     // TESTING_BUILD version description and the `ShowGameTime` clock. Only the
     // common on-screen admission is shared; each board has its own switch.
     if !crate::rules::PHOBOS_ENABLED
-        || state.frontend.screen != GameScreen::InGame
-        || (state.platform.capture_client_size.is_some()
-            && state.platform.capture_presentation.map_picture)
+        || *screen != GameScreen::InGame
+        || (platform.capture_client_size.is_some() && platform.capture_presentation.map_picture)
     {
         return (Vec::new(), Vec::new());
     }
     let (view_width, _) = crate::app::input::camera::tactical_viewport_size(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        &match_state.match_presentation,
+        persistence,
     );
     // Screen-space lanes add back the world camera the UI shader subtracts,
     // and the battlefield's corner: `place` works in the view's own pixels.
     let camera = crate::app::input::camera::battlefield_lane_camera(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        screen,
+        match_state,
+        persistence,
     );
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     let mut fills = Vec::new();
     let mut texts = Vec::new();
 
@@ -106,15 +113,14 @@ pub(crate) fn build_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<Spr
     // below the version description. VERA's wall-clock scenario timer is the
     // local equivalent; the native TimeLeft/SystemTimer blend is a residual.
     {
-        let boards = state.match_state.match_presentation.hud_boards;
+        let boards = match_state.match_presentation.hud_boards;
         if boards.show_game_time {
             let coord_y = if phobos_version::SHOWS_DESCRIPTION {
                 font.cell_height() as i32 + BOX_PAD
             } else {
                 0
             };
-            let seconds = state
-                .match_state
+            let seconds = match_state
                 .scenario_elapsed_clock
                 .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms());
             let label = super::hud_boards::game_time_text(seconds);

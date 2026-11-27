@@ -34,6 +34,21 @@ fn main() {
     // Logs go to stderr; stdout is reserved for the JSON payload.
     let _ = vera20k::util::logging::init_stderr_logger("warn");
 
+    // Wasm module verbs take their own arguments and need no retail install.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some((verb, rest)) = argv.split_first()
+        && let Some(result) = vera20k::asset_tools::verb_wasm::run(verb, rest)
+    {
+        match result {
+            Ok(report) => println!("{report}"),
+            Err(error) => {
+                print_error(&error, Some("run `asset --help` for the verb list"));
+                std::process::exit(EXIT_FAILED);
+            }
+        }
+        return;
+    }
+
     let cli = match args::parse(std::env::args().skip(1)) {
         Ok(cli) => cli,
         Err(message) => {

@@ -5,21 +5,37 @@
 //! (`presentation::sidebar_surface`); its gadgets take it in frame pixels.
 
 use super::*;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::picture_hud::{ChromePieces, covering};
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::ui::sidebar::command_bar::{CommandBarLayout, spacer_pieces};
 
-pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Vec<Option<usize>>)> {
-    let art = &current_sidebar_chrome(state)?.command_bar;
+pub(crate) fn layout_and_slots(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> Option<(CommandBarLayout, Vec<Option<usize>>)> {
+    let art = &current_sidebar_chrome(frontend, match_state)?.command_bar;
     let layout = layout_on_frame(
         art,
-        state.sidebar_frame(),
-        state
-            .match_state
+        crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        ),
+        match_state
             .match_presentation
             .sidebar_gadget_state
             .command_bar_closed,
     )?;
-    let multiplayer = !state.match_state.session_mode().is_single_player();
+    let multiplayer = !match_state.session_mode().is_single_player();
     Some((layout, art.slots[usize::from(multiplayer)].clone()))
 }
 

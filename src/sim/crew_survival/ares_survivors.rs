@@ -219,10 +219,13 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) {
-        self.record_the_kill(
+        // A pilot never placed: no Wasm module `FatalDamage`
+        // (`record_the_kill`).
+        self.record_the_kill_by_warhead(
             id,
             KillSource::Techno(dying.attacker),
             KillCallback::Terminal,
+            -1,
             UninitContext::new(rules).with_effects(effects),
         );
         self.discard_constructed_limbo(id, rules, effects);
@@ -409,6 +412,8 @@ impl Simulation {
                             effects,
                         ) {
                             self.trigger_runtime.transfer_object_tag(unit_id, id);
+                            // Wasm module `Birth`, the vehicle as `other`.
+                            self.raise_module_birth(rules, effects, id, Some(unit_id));
                         } else {
                             self.discard_ares_pilot(id, dying, rules, effects);
                         }

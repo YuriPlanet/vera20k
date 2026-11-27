@@ -11,7 +11,8 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::sidebar_projection::SidebarViewInputs;
 use crate::sim::production;
@@ -79,15 +80,18 @@ pub(crate) fn counter_credits(sim: &crate::sim::world::Simulation, owner: &str) 
 /// pass ends with. Residual: Input runs before Logic (Main_Tick 0x0055D8AB),
 /// so gamemd counts toward the balance one frame older; the counter starts
 /// moving one frame later there, which a player cannot see.
-pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
+pub(crate) fn advance_sidebar_credits(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    visits: u64,
+) {
     if visits == 0 {
         return;
     }
-    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -100,12 +104,10 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
         // The observer's counter shows the time the match has run
         // (`0x004A2614..0x004A2678`): Scenario +0x61C plus the running span
         // since +0x614, over 60, set at once and silent.
-        let seconds = state
-            .match_state
+        let seconds = match_state
             .scenario_elapsed_clock
             .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms());
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_projection
             .model
@@ -114,10 +116,10 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     }
     let credits = counter_credits(sim, &owner_name);
     let (max_step, smooth) = {
-        let ui = &state.match_state.match_presentation.sidebar_indicators;
+        let ui = &match_state.match_presentation.sidebar_indicators;
         (ui.credits_max_step, ui.credits_smooth)
     };
-    let projection = &mut state.match_state.match_presentation.sidebar_projection;
+    let projection = &mut match_state.match_presentation.sidebar_projection;
     let mut last_step = None;
     for _ in 0..visits {
         let Some(step) = projection
@@ -136,14 +138,13 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     // down — at volume `0.5f`, centre pan, for the local player's counter
     // only (the observer branch draws elapsed time instead). Draw plays it
     // once per picture and clears the latch, so a pass plays at most one.
-    let Some(sound_id) = state.rules().and_then(|rules| {
+    let Some(sound_id) = crate::app::state::active_rules(frontend, match_state).and_then(|rules| {
         crate::app::sidebar_projection::credit_tick_sound(&rules.general.credit_ticks, tick)
             .map(|name| rules.sound_name(name))
     }) else {
         return;
     };
-    state
-        .match_state
+    match_state
         .match_audio
         .sound_events
         .push(crate::audio::events::GameSoundEvent::CreditTick { sound_id });
@@ -178,33 +179,74 @@ fn apply_cameo_transitions(
 /// transitions, never from a view consumer. It derives the simulation's
 /// inputs afresh, so a transition that wrote the world outside a frame needs
 /// no revision of its own.
-pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
-    refresh_projection(state, false);
+pub(crate) fn refresh_sidebar_projection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    refresh_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        false,
+    );
 }
 
 /// The frame pass's republish on every unlocked presentation pass: the same
 /// refresh, reusing the simulation inputs kept for the world's revision
 /// ([`crate::app::sidebar_projection::SidebarSimInputs`]).
-pub(crate) fn republish_sidebar_projection(state: &mut AppState) {
-    refresh_projection(state, true);
+pub(crate) fn republish_sidebar_projection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    refresh_projection(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+        true,
+    );
 }
 
 /// The local side's sidebar table: the original's for its theme and position
 /// set, with the loaded art's heights and whatever the side's `veraui.ini`
 /// layout changes. Its width decides the battlefield's, so a new world takes
 /// it before its first frame (`loading::transitions`).
-pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::SidebarChromeLayoutSpec {
-    let theme = current_sidebar_theme(state);
+pub(crate) fn sidebar_layout_spec(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> crate::ui::sidebar::SidebarChromeLayoutSpec {
+    let theme = current_sidebar_theme(frontend, match_state);
     // VERA-only: a map picture is taken with the original interface, whose
     // battlefield its tiles are cut for.
-    let map_picture = state.platform.capture_presentation.map_picture;
-    let gdi_positions = state.rules().map_or(
-        theme == crate::render::sidebar_chrome::SidebarTheme::Allied,
-        |rules| rules.side_gdi_positions(current_sidebar_side(state)),
+    let map_picture = platform.capture_presentation.map_picture;
+    let mut spec = crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(
+        theme,
+        gdi_positions(frontend, match_state),
     );
-    let mut spec =
-        crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
-    if let Some(atlas) = current_sidebar_chrome(state) {
+    if let Some(atlas) = current_sidebar_chrome(frontend, match_state) {
         let height = |key| {
             atlas
                 .art(SidebarPart::Cameos, key, 0)
@@ -214,46 +256,51 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
         spec.side3_height = height(ArtKey::EndArt).unwrap_or(spec.side3_height);
     }
     // A mod's `veraui.ini` layout for this side changes the original's numbers.
-    if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
+    if let Some(layout) = side_layout(frontend, match_state).filter(|_| !map_picture) {
         layout.apply_to_sidebar(&mut spec);
     }
     // VERA's own: the player's cameo columns, laid inside the width the
     // layout leaves. After the layout, so the player's choice draws; a
     // capture keeps the original's two so its pictures stay reproducible.
-    let columns = if state.platform.capture_client_size.is_some() {
+    let columns = if platform.capture_client_size.is_some() {
         2
     } else {
-        state.persistence.options_profile.sidebar_columns.count()
+        persistence.options_profile.sidebar_columns.count()
     };
     spec.apply_player_columns(columns);
     spec
 }
 
 /// The local player's side by its `[Sides]` name, as `[Layouts]` names it.
-pub(crate) fn local_side_name(state: &AppState) -> Option<&str> {
-    let rules = state.rules()?;
-    let side = u8::try_from(current_sidebar_side(state)).ok()?;
+pub(crate) fn local_side_name<'a>(
+    frontend: &'a FrontendState,
+    match_state: &'a MatchState,
+) -> Option<&'a str> {
+    let rules = crate::app::state::active_rules(frontend, match_state)?;
+    let side = u8::try_from(current_sidebar_side(frontend, match_state)).ok()?;
     rules.side_name(crate::rules::ruleset::SideIdx(side))
 }
 
 /// Whether the local side uses the allied position table: Phobos'
 /// `Sidebar.GDIPositions=`, else whether its pictures are the Allies'.
-fn gdi_positions(state: &AppState) -> bool {
-    let allied =
-        current_sidebar_theme(state) == crate::render::sidebar_chrome::SidebarTheme::Allied;
-    return state.rules().map_or(allied, |rules| {
-        rules.side_gdi_positions(current_sidebar_side(state))
-    });
+fn gdi_positions(frontend: &FrontendState, match_state: &MatchState) -> bool {
+    let allied = current_sidebar_theme(frontend, match_state)
+        == crate::render::sidebar_chrome::SidebarTheme::Allied;
+    crate::app::state::active_rules(frontend, match_state).map_or(allied, |rules| {
+        rules.side_gdi_positions(current_sidebar_side(frontend, match_state))
+    })
 }
 
 /// The `veraui.ini` layout of the local player's side, if the file gives it
 /// one.
-fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout> {
-    state
-        .match_state
-        .match_presentation
-        .match_layouts
-        .for_side(local_side_name(state), gdi_positions(state))
+fn side_layout<'a>(
+    frontend: &FrontendState,
+    match_state: &'a MatchState,
+) -> Option<&'a crate::ui::match_layout::MatchLayout> {
+    match_state.match_presentation.match_layouts.for_side(
+        local_side_name(frontend, match_state),
+        gdi_positions(frontend, match_state),
+    )
 }
 
 /// The grids of build pictures the local side's layout adds to the sidebar,
@@ -309,12 +356,16 @@ fn added_grids(
 
 /// Keep the buttons and texts the local side's layout adds; none in a map
 /// picture, which is taken with the original interface.
-pub(crate) fn refresh_added_parts(state: &mut AppState) {
-    let map_picture = state.platform.capture_presentation.map_picture;
-    let added = side_layout(state)
+pub(crate) fn refresh_added_parts(
+    platform: &PlatformState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+) {
+    let map_picture = platform.capture_presentation.map_picture;
+    let added = side_layout(frontend, match_state)
         .filter(|_| !map_picture)
         .map(|layout| layout.added().clone());
-    let kept = &mut state.match_state.match_presentation.added_parts;
+    let kept = &mut match_state.match_presentation.added_parts;
     match added {
         Some(added) if !std::sync::Arc::ptr_eq(&added, kept) => *kept = added,
         None if !kept.is_empty() => *kept = Default::default(),
@@ -323,64 +374,81 @@ pub(crate) fn refresh_added_parts(state: &mut AppState) {
     // What the layout gives the built-in parts, read again only when the
     // layout or the side's pictures change.
     use crate::app::presentation::layout_parts::StockParts;
-    let theme = current_sidebar_theme(state);
-    let original = crate::ui::match_layout::MatchLayout::original(gdi_positions(state));
-    let kept = &state.match_state.match_presentation.stock_parts;
-    let stock = match side_layout(state).filter(|_| !map_picture) {
+    let theme = current_sidebar_theme(frontend, match_state);
+    let original =
+        crate::ui::match_layout::MatchLayout::original(gdi_positions(frontend, match_state));
+    let kept = &match_state.match_presentation.stock_parts;
+    let stock = match side_layout(frontend, match_state).filter(|_| !map_picture) {
         Some(layout) if kept.is_read_from(layout.added(), theme) => None,
         Some(layout) => Some(StockParts::read(layout, original, theme)),
         None if kept.is_original() => None,
         None => Some(StockParts::default()),
     };
     if let Some(stock) = stock {
-        state.match_state.match_presentation.stock_parts = stock;
+        match_state.match_presentation.stock_parts = stock;
     }
 }
 
-fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
-    refresh_radar_animation_source(state);
-    let spec = sidebar_layout_spec(state);
-    state.match_state.match_presentation.sidebar_layout_spec = spec;
-    refresh_added_parts(state);
+fn refresh_projection(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+    reuse_sim_inputs: bool,
+) {
+    refresh_radar_animation_source(
+        platform,
+        renderer,
+        diag,
+        frontend,
+        match_state,
+        process_assets,
+        audio,
+        persistence,
+    );
+    let spec = sidebar_layout_spec(platform, frontend, match_state, persistence);
+    match_state.match_presentation.sidebar_layout_spec = spec;
+    refresh_added_parts(platform, frontend, match_state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
-    let sidebar_frame = state.sidebar_frame();
+    let sidebar_frame = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    );
     let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
-    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .clear();
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
+        match_state.match_presentation.sidebar_projection.clear();
         return;
     };
-    let Some(owner) = state.match_state.sim_runtime.presentation().map(|runtime| {
+    let Some(owner) = match_state.sim_runtime.presentation().map(|runtime| {
         runtime
             .simulation
             .interner()
             .get(&owner_name)
             .unwrap_or_default()
     }) else {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_projection
-            .clear();
+        match_state.match_presentation.sidebar_projection.clear();
         return;
     };
     // A scenario's first projection seeds its strips from every building's
     // construction options (`UpdateConstructionOptions`), once: a query of
     // the live world, which waits for a pass that holds it.
-    let seed_additions = if state
-        .match_state
+    let seed_additions = if match_state
         .match_presentation
         .sidebar_projection
         .model
         .needs_cameo_seed(owner)
     {
-        if state.match_state.sim_runtime.is_lent() {
+        if match_state.sim_runtime.is_lent() {
             return;
         }
-        let Some(live) = state.match_state.sim_runtime.runtime() else {
+        let Some(live) = match_state.sim_runtime.runtime() else {
             return;
         };
         production::initial_construction_options(&live.simulation, &live.resources.rules)
@@ -390,16 +458,14 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // What the sidebar reads of the objects is the frame's
     // (`presentation::frame`), captured for the local player with the types
     // its strips hold and are about to add.
-    let asked = state
-        .match_state
+    let asked = match_state
         .match_presentation
         .sidebar_projection
         .model
         .asked_types(&seed_additions);
-    state.match_state.sim_runtime.ask_sidebar_types(&asked);
-    state.match_state.sim_runtime.ensure_frame();
+    match_state.sim_runtime.ask_sidebar_types(&asked);
+    match_state.sim_runtime.ensure_frame();
     let inputs = {
-        let match_state = &mut state.match_state;
         let Some(frame) = match_state.sim_runtime.frame() else {
             match_state.match_presentation.sidebar_projection.clear();
             return;
@@ -416,15 +482,23 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         std::sync::Arc::clone(inputs)
     };
 
-    let runtime = state
-        .match_state
+    let runtime = match_state
         .sim_runtime
         .presentation()
         .expect("sidebar runtime");
     let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
     // Phobos adds a superweapon to the left sidebar first and skips its right
     // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
-    let sw_plan = crate::app::presentation::sw_sidebar::plan(state, owner, &inputs.sw_views);
+    let sw_plan = crate::app::presentation::sw_sidebar::plan(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        process_assets,
+        persistence,
+        owner,
+        &inputs.sw_views,
+    );
     let right_sw_views: Vec<crate::sim::superweapon::SuperWeaponView> = {
         let left: std::collections::HashSet<&str> = sw_plan
             .1
@@ -438,57 +512,50 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .cloned()
             .collect()
     };
-    let cameos = state
-        .match_state
+    let cameos = match_state
         .match_presentation
         .sidebar_projection
         .cameo_candidates(
             sim,
             rules,
-            state.process_assets.csf.as_ref(),
+            process_assets.csf.as_ref(),
             owner,
             &inputs,
             &right_sw_views,
             reuse_sim_inputs,
         );
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .set_cameo_columns(spec.columns());
-    let reconciled = state
-        .match_state
+    let reconciled = match_state
         .match_presentation
         .sidebar_projection
         .model
         .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .set_cameo_frame(sim.session().binary_frame() as i32);
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .reconcile_factory_links(sim, owner);
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_projection
         .model
         .advance_cameo_requests(sim, owner);
     {
-        let presentation = &mut state.match_state.match_presentation;
+        let presentation = &mut match_state.match_presentation;
         apply_cameo_transitions(
             reconciled.transitions(),
             &mut presentation.active_sidebar_tab,
@@ -497,14 +564,22 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     }
     if reconciled.build_inserted() {
         crate::app::input::dispatch::push_local_eva(
-            &mut state.match_state.match_audio,
+            &mut match_state.match_audio,
             crate::app::input::sidebar_eva::EVA_NEW_CONSTRUCTION_OPTIONS,
         );
-        crate::app::input::messages::post_eva_new_construction(state);
+        crate::app::input::messages::post_eva_new_construction(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            &mut audio.sfx_player,
+            persistence,
+        );
     }
 
-    let display_credits = state
-        .match_state
+    let display_credits = match_state
         .match_presentation
         .sidebar_projection
         .model
@@ -517,7 +592,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         scroll_up_btn_size,
         top_btn_sizes,
     ) = {
-        let atlas = current_sidebar_chrome(state);
+        let atlas = current_sidebar_chrome(frontend, match_state);
         let size = |part| {
             atlas
                 .and_then(|atlas| atlas.art(part, ArtKey::Art, 0))
@@ -536,8 +611,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // lifecycle facts. A missing Ready row alone is not pointer expiry:
     // Dispatch7258D0 can clear product while retaining type/foundation.
     // App targeting state -> the sidebar-owned armed projection (F06 seam).
-    let armed_entry = state
-        .match_state
+    let armed_entry = match_state
         .input
         .targeting_mode
         .as_ref()
@@ -550,9 +624,9 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             }
         });
     let view_inputs = SidebarViewInputs {
-        spec: state.match_state.match_presentation.sidebar_layout_spec,
+        spec: match_state.match_presentation.sidebar_layout_spec,
         frame: sidebar_frame,
-        tab: state.match_state.match_presentation.active_sidebar_tab,
+        tab: match_state.match_presentation.active_sidebar_tab,
         credits: display_credits,
         sim: inputs,
         button_sizes: [
@@ -566,37 +640,26 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         ],
         armed: armed_entry,
         supers: right_sw_views,
-        gadgets: state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .clone(),
+        gadgets: match_state.match_presentation.sidebar_gadget_state.clone(),
         grids: added_grids(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
         ),
     };
     // The gadget refresh runs this on every service pass, several per game
     // frame; while the inputs, strips and Factory links all hold, the view
     // it would build equals the retained one. Debug builds build it anyway
     // and compare.
-    let holds = state
-        .match_state
+    let holds = match_state
         .match_presentation
         .sidebar_projection
         .view_holds_for(&view_inputs);
     if !holds || crate::sim::live_read_check_enabled() {
-        let view = build_view(
-            &state.frontend,
-            &mut state.match_state,
-            &state.process_assets,
-            &view_inputs,
-            owner,
-        );
-        let projection = &mut state.match_state.match_presentation.sidebar_projection;
+        let view = build_view(frontend, match_state, process_assets, &view_inputs, owner);
+        let projection = &mut match_state.match_presentation.sidebar_projection;
         if holds {
             assert_eq!(
                 projection.view(),
@@ -607,7 +670,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         projection.replace_built_view(view, view_inputs);
     }
     {
-        let sw = &mut state.match_state.match_presentation.sw_sidebar;
+        let sw = &mut match_state.match_presentation.sw_sidebar;
         sw.layout = sw_plan.0;
         sw.entries = sw_plan.1;
     }
@@ -784,13 +847,12 @@ fn build_view(
 /// RepaintForRemovedObject 6A5F20, RepaintSidebar 6A60A0 and
 /// RepaintSidebarFor2Frames 6A60E0 only set redraw flags and RedrawUntilFrame;
 /// VERA draws the sidebar every frame, so they have no port.
-pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
-    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
+pub(crate) fn refresh_sidebar_cameo_draw_state(match_state: &mut MatchState) {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
     // The entries' availability is the frame's (`presentation::frame`).
-    state.match_state.sim_runtime.ensure_frame();
-    let AppState { match_state, .. } = state;
+    match_state.sim_runtime.ensure_frame();
     let (Some(runtime), Some(frame)) = (
         match_state.sim_runtime.presentation(),
         match_state.sim_runtime.frame(),
@@ -826,7 +888,7 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// additionally admits the current Country's retained lists.
 /// An undeploying Building uses the Unit-list branch, comparing its own
 /// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
-/// UnitType list. Phobos fixes that arm (see
+/// UnitType list. Phobos fixes that arm before extension dispatch (see
 /// [`undeploying_building_is_veteran`]). The spy arms read HouseState's
 /// stock flags and the Ares SpyEffect veterancy (`sim::spy_infiltration`);
 /// new Ares SpyEffect.Custom House gains are a separate chain.
@@ -843,9 +905,11 @@ fn shows_alt_cameo(
     if !has_alternate {
         return false;
     }
+    if rules.phobos() && obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
+        return undeploying_building_is_veteran(house, obj, rules, country);
+    }
     if rules.ares() {
         if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
-            return undeploying_building_is_veteran(house, obj, rules, country);
             return false;
         }
         if rules.country_starts_veteran(country, obj) {
@@ -887,20 +951,26 @@ pub(crate) fn minimap_shown(presentation: &MatchPresentationState) -> bool {
 
 /// Whether the cursor is over the radar's map gadget (`0x00B04A10`): the
 /// aperture, online or not. [`is_cursor_over_minimap`] is its image.
-pub(crate) fn is_cursor_over_radar_gadget(state: &AppState) -> bool {
+pub(crate) fn is_cursor_over_radar_gadget(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
     let (x, y) = sidebar_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
-    state
-        .match_state
+    match_state
         .match_presentation
         .sidebar_layout_spec
         .shows(crate::ui::sidebar::SidebarPart::Radar)
-        && active_minimap_screen_rect(state).contains(x, y)
+        && active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence)
+            .contains(x, y)
 }
 
 /// that undeploys answers with its unit, so a `Factory=UnitType` infiltration
@@ -926,40 +996,50 @@ fn undeploying_building_is_veteran(
         .is_some_and(|unit| rules.country_starts_veteran(country, unit))
 }
 
-pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
+pub(crate) fn is_cursor_over_minimap(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> bool {
     // Minimap interaction disabled when radar is not online.
-    if !minimap_shown(&state.match_state.match_presentation) {
+    if !minimap_shown(&match_state.match_presentation) {
         return false;
     }
-    let Some(minimap) = &state.match_state.match_presentation.minimap else {
+    let Some(minimap) = &match_state.match_presentation.minimap else {
         return false;
     };
-    let rect = active_minimap_screen_rect(state);
+    let rect = active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence);
     let (x, y) = sidebar_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
     minimap.contains_screen_point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h)
 }
 
 pub(crate) fn minimap_camera_target(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
 ) -> Option<crate::render::radar::NativeRadarCameraTarget> {
-    let rect = active_minimap_screen_rect(state);
+    let rect = active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence);
     let (cursor_x, cursor_y) = sidebar_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
-    let minimap = state.match_state.match_presentation.minimap.as_ref()?;
+    let minimap = match_state.match_presentation.minimap.as_ref()?;
     // Input may run before any render: the frame of the current world.
-    let frame = state.match_state.sim_runtime.frame()?;
-    let runtime = state.match_state.sim_runtime.presentation();
+    let frame = match_state.sim_runtime.frame()?;
+    let runtime = match_state.sim_runtime.presentation();
     let native_facts = runtime.and_then(|runtime| {
         let view = runtime.view();
         Some((
@@ -968,22 +1048,22 @@ pub(crate) fn minimap_camera_target(
         ))
     });
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     native_facts.and_then(|(terrain, map_size)| {
         minimap.native_click_target_in_rect(
             cursor_x,
             cursor_y,
             sidebar_cursor_centre(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             ),
             rect.x,
             rect.y,
@@ -1000,72 +1080,94 @@ pub(crate) fn minimap_camera_target(
 /// The order/cursor target precedes the camera branch's viewport clamp in
 /// RadarClass::Input (`0x00653ABC` versus `0x00653D7A`).
 pub(crate) fn minimap_input_target(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
 ) -> Option<crate::render::radar::NativeRadarInputTarget> {
-    let rect = active_minimap_screen_rect(state);
+    let rect = active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence);
     // Input may run before any render: the frame of the current world.
-    let frame = state.match_state.sim_runtime.frame()?;
-    state
-        .match_state
+    let frame = match_state.sim_runtime.frame()?;
+    match_state
         .match_presentation
         .minimap
         .as_ref()?
         .native_input_target_in_rect(
             sidebar_cursor(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             ),
             sidebar_cursor_centre(
-                &state.platform,
-                &state.renderer,
-                &state.frontend.screen,
-                &state.match_state,
-                &state.persistence,
+                platform,
+                renderer,
+                &frontend.screen,
+                match_state,
+                persistence,
             ),
             [rect.x, rect.y, rect.w, rect.h],
             frame,
         )
 }
 
-pub(crate) fn minimap_object_click_position(state: &AppState, id: u64) -> Option<[u32; 2]> {
-    let rect = active_minimap_screen_rect(state);
-    let minimap = state.match_state.match_presentation.minimap.as_ref()?;
+pub(crate) fn minimap_object_click_position(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+    id: u64,
+) -> Option<[u32; 2]> {
+    let rect = active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence);
+    let minimap = match_state.match_presentation.minimap.as_ref()?;
     let (x, y) = minimap.native_object_click_point_in_rect(id, [rect.x, rect.y, rect.w, rect.h])?;
-    let [x, y, ..] = state
-        .sidebar_frame()
-        .rect_to_frame_px(crate::ui::sidebar::Rect {
-            x,
-            y,
-            w: 1.0,
-            h: 1.0,
-        });
+    let [x, y, ..] = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    )
+    .rect_to_frame_px(crate::ui::sidebar::Rect {
+        x,
+        y,
+        w: 1.0,
+        h: 1.0,
+    });
     Some([x.max(0) as u32, y.max(0) as u32])
 }
 
-pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
-    let native_target = minimap_camera_target(state);
+pub(crate) fn update_camera_from_minimap_cursor(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    let native_target =
+        minimap_camera_target(platform, renderer, frontend, match_state, persistence);
     if let Some(target) = native_target {
         // `0x00653EA0 -> FUN_006D6070` writes current and desired viewport
         // together from the complete CellClass center XYZ. The camera owner
         // discards any pending scroll request when setting the absolute view.
         let (x, y, z) = target.world_leptons;
         crate::app::input::camera::center_camera_on_lepton_point(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &mut state.match_state,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            match_state,
+            persistence,
             x,
             y,
             z,
         );
         return;
     }
-    let rect = active_minimap_screen_rect(state);
-    let Some(minimap) = state.match_state.match_presentation.minimap.as_ref() else {
+    let rect = active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence);
+    let Some(minimap) = match_state.match_presentation.minimap.as_ref() else {
         return;
     };
     if minimap.has_playfield_authority() {
@@ -1076,23 +1178,23 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
 
     // Mapless/headless presentation fixture adapter only.
     let (cursor_x, cursor_y) = sidebar_cursor(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        match_state,
+        persistence,
     );
-    let sw = state.render_width() as f32;
-    let sh = state.render_height() as f32;
+    let sw = renderer.render_width(&frontend.screen) as f32;
+    let sh = renderer.render_height(&frontend.screen) as f32;
     // A view centre becomes a camera position through the centring size.
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_centring_size(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
-    let z = state.match_state.input.zoom_level;
+    let z = match_state.input.zoom_level;
     let (cx, cy) = minimap.camera_top_left_for_screen_point_in_rect(
         cursor_x,
         cursor_y,
@@ -1103,12 +1205,12 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
         rect.w,
         rect.h,
     );
-    crate::app::input::camera::set_camera_position(&mut state.match_state.input, (cx, cy));
+    crate::app::input::camera::set_camera_position(&mut match_state.input, (cx, cy));
     crate::app::input::camera::clamp_camera_to_playable_area(
-        &state.platform,
-        &state.renderer,
-        &mut state.match_state,
-        &state.persistence,
+        platform,
+        renderer,
+        match_state,
+        persistence,
         sw,
         sh,
     );
@@ -1116,9 +1218,16 @@ pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
 
 /// Live generated-primary screen rectangle used by the retained input region.
 /// Centered letterbox margins are not part of RadarClass's click surface.
-pub(crate) fn active_minimap_content_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
-    let aperture = active_minimap_screen_rect(state);
-    let Some(minimap) = state.match_state.match_presentation.minimap.as_ref() else {
+pub(crate) fn active_minimap_content_screen_rect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> crate::ui::sidebar::Rect {
+    let aperture =
+        active_minimap_screen_rect(platform, renderer, frontend, match_state, persistence);
+    let Some(minimap) = match_state.match_presentation.minimap.as_ref() else {
         return crate::ui::sidebar::Rect {
             x: aperture.x,
             y: aperture.y,
@@ -1186,20 +1295,33 @@ fn sidebar_cursor_centre(
 
 /// The radar aperture in the sidebar's layout space. Input regions take it in
 /// frame pixels through [`crate::ui::sidebar::SidebarFrame::rect_to_frame`].
-pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
-    if current_sidebar_chrome(state).is_some() {
+pub(crate) fn active_minimap_screen_rect(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
+) -> crate::ui::sidebar::Rect {
+    if current_sidebar_chrome(frontend, match_state).is_some() {
         current_sidebar_layout(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
         )
-        .minimap_rect(&state.match_state.match_presentation.sidebar_layout_spec)
+        .minimap_rect(&match_state.match_presentation.sidebar_layout_spec)
     } else {
         // Archives without any sidebar art (`build_sidebar_chrome_set`'s
         // `None`) still draw the map, in the battlefield's corner.
-        let (_, sh) = state.sidebar_frame().layout_screen();
+        let (_, sh) = crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation.sidebar_layout_spec,
+        )
+        .layout_screen();
         let (x, y, w, h) = crate::render::radar::minimap::default_minimap_rect(sh);
         crate::ui::sidebar::Rect { x, y, w, h }
     }
@@ -1209,19 +1331,15 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 /// the sidebar text lane. gamemd's hook runs inside the credits tick, so the
 /// caller is the per-frame pass that also ticks the power bar
 /// (`match_runtime::sim_tick`), not the cameo-driven projection refresh.
-pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
+pub(crate) fn refresh_sidebar_indicators(frontend: &FrontendState, match_state: &mut MatchState) {
     let resolved = (|| {
-        let sim = state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|rt| &rt.simulation)?;
-        let rules = state.rules()?;
-        let owner_name = preferred_local_owner_name(&state.match_state)?;
+        let sim = match_state.sim_runtime.runtime().map(|rt| &rt.simulation)?;
+        let rules = crate::app::state::active_rules(frontend, match_state)?;
+        let owner_name = preferred_local_owner_name(match_state)?;
         let owner = sim.interner().get(&owner_name).unwrap_or_default();
         let (produced, drained) = production::power_balance_for_owner(sim, rules, &owner_name);
-        let presentation = &state.match_state.match_presentation;
-        let side = current_sidebar_side(state);
+        let presentation = &match_state.match_presentation;
+        let side = current_sidebar_side(frontend, match_state);
         // HouseExt's two counts, walked over the store once per frame.
         let (harvesters_active, harvesters_total) = sim.harvester_counts(rules, owner);
         // Native draws the harvester counter before the power delta, and this is
@@ -1234,7 +1352,10 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
                 owner,
                 &presentation.sidebar_indicators,
                 presentation.show_harvester_counter,
-                crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(state)),
+                crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(
+                    frontend,
+                    match_state,
+                )),
                 harvesters_active,
                 harvesters_total,
             ),
@@ -1255,7 +1376,10 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
                 owner,
                 &presentation.sidebar_indicators,
                 presentation.show_weeds_counter,
-                crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(state)),
+                crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(
+                    frontend,
+                    match_state,
+                )),
             ),
         ]
         .into_iter()
@@ -1269,11 +1393,14 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
             producing_progress_columns(sim, owner),
             rules.side_gdi_positions(side),
             presentation.sidebar_layout_spec.sidebar_width.round() as i32,
-            crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(state)),
+            crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(
+                frontend,
+                match_state,
+            )),
         ));
         Some(indicators)
     })();
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     match resolved {
         Some(resolved) => presentation.sidebar_indicator_text = resolved,
         // No local house: the hook never runs for this player.
@@ -1288,33 +1415,49 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
 /// Build the sidebar chrome of the side the local player draws this frame
 /// when the set lacks it (`SidebarChromeSet::ensure_side`): a stock match
 /// builds the local side's at load, and a change of local house asks here.
-pub(crate) fn ensure_current_sidebar_chrome(state: &mut AppState) {
-    let side = current_sidebar_side(state);
-    let Some(assets) = state.process_assets.manager() else {
+pub(crate) fn ensure_current_sidebar_chrome(
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+) {
+    let side = current_sidebar_side(frontend, match_state);
+    let Some(assets) = process_assets.manager() else {
         return;
     };
-    if let Some(set) = state.match_state.match_presentation.sidebar_chrome.as_mut() {
-        set.ensure_side(
-            side,
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            assets,
-        );
+    if let Some(set) = match_state.match_presentation.sidebar_chrome.as_mut() {
+        set.ensure_side(side, &renderer.gpu, &renderer.batch_renderer, assets);
     }
 }
 
 /// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
 /// draw scale, or drop its copies when the option is off, the sidebar draws
 /// at its own pixels, or the scale is not a whole one (xBR has no 1.5x).
-pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
-    let scale = state
-        .smooth_sidebar()
-        .then(|| state.sidebar_frame().draw_scale())
+/// HD art (`render::hd_switch`) turns it on too: its HD pictures come through it.
+pub(crate) fn prepare_smooth_sidebar(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    persistence: &PersistenceState,
+) {
+    let scale = (persistence.smooth_sidebar(platform.capture_choices())
+        || crate::app::state::hd_art_on(persistence).0)
+        .then(|| {
+            crate::app::state::sidebar_frame(
+                platform,
+                persistence,
+                renderer,
+                &frontend.screen,
+                &match_state.match_presentation.sidebar_layout_spec,
+            )
+            .draw_scale()
+        })
         .filter(|scale| *scale >= 2.0 && scale.fract() == 0.0)
         .map(|scale| scale as u32);
-    let side = current_sidebar_side(state);
-    let (gpu, batch) = (&state.renderer.gpu, &state.renderer.batch_renderer);
-    let presentation = &mut state.match_state.match_presentation;
+    let side = current_sidebar_side(frontend, match_state);
+    let (gpu, batch) = (&renderer.gpu, &renderer.batch_renderer);
+    let presentation = &mut match_state.match_presentation;
     if let Some(atlas) = presentation.sidebar_cameo_atlas.as_mut() {
         atlas.set_smooth_scale(gpu, batch, scale);
     }
@@ -1598,29 +1741,35 @@ fn producing_progress_indicators(
 }
 
 pub(crate) fn current_sidebar_theme(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {
-    let ares = match state.match_state.match_presentation.sidebar_chrome.as_ref() {
+    let ares = match match_state.match_presentation.sidebar_chrome.as_ref() {
         Some(set) => set.ares(),
-        None => state.rules().is_some_and(|rules| rules.ares()),
+        None => {
+            crate::app::state::active_rules(frontend, match_state).is_some_and(|rules| rules.ares())
+        }
     };
-    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state), ares)
+    crate::render::sidebar_chrome::sidebar_theme_for_side(
+        current_sidebar_side(frontend, match_state),
+        ares,
+    )
 }
 
 /// When Ares plays in the game (`RuleSet::ares`), the active native
 /// Scenario.Side owns Ares MIX selection. Otherwise the retail sandbox retains
 /// its development owner switch. Neither path rewrites House identity.
-pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
-    let ares = state.rules().is_some_and(|rules| rules.ares());
-    let sim = state
-        .match_state
+pub(crate) fn current_sidebar_side(frontend: &FrontendState, match_state: &MatchState) -> i32 {
+    let ares =
+        crate::app::state::active_rules(frontend, match_state).is_some_and(|rules| rules.ares());
+    let sim = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation);
     let owner = if ares {
         None
     } else {
-        preferred_local_owner_name(&state.match_state)
+        preferred_local_owner_name(match_state)
     };
     project_sidebar_side(sim, owner.as_deref(), ares)
 }
@@ -1646,40 +1795,56 @@ pub(crate) fn project_sidebar_side(
         .unwrap_or(0)
 }
 
-fn current_sidebar_resolution(
-    state: &AppState,
-) -> Option<crate::render::sidebar_chrome::ResolvedSidebarChrome<'_>> {
-    let set = state
-        .match_state
-        .match_presentation
-        .sidebar_chrome
-        .as_ref()?;
-    set.resolve_side(current_sidebar_side(state))
+fn current_sidebar_resolution<'a>(
+    frontend: &FrontendState,
+    match_state: &'a MatchState,
+) -> Option<crate::render::sidebar_chrome::ResolvedSidebarChrome<'a>> {
+    let set = match_state.match_presentation.sidebar_chrome.as_ref()?;
+    set.resolve_side(current_sidebar_side(frontend, match_state))
 }
 
-pub(crate) fn current_sidebar_chrome(
-    state: &AppState,
-) -> Option<&crate::render::sidebar_chrome::SidebarChromeAtlas> {
-    current_sidebar_resolution(state).map(|resolved| resolved.atlas)
+pub(crate) fn current_sidebar_chrome<'a>(
+    frontend: &FrontendState,
+    match_state: &'a MatchState,
+) -> Option<&'a crate::render::sidebar_chrome::SidebarChromeAtlas> {
+    current_sidebar_resolution(frontend, match_state).map(|resolved| resolved.atlas)
 }
 
 /// 652E90 installs radar shape/palette from the current scenario side, without
 /// resetting frame/time. VERA's unpinned sandbox owner switch uses a forced
 /// source redraw; this development interaction has no native lifecycle claim.
-fn refresh_radar_animation_source(state: &mut AppState) {
-    let Some(resolved) = current_sidebar_resolution(state) else {
+fn refresh_radar_animation_source(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &PersistenceState,
+) {
+    let Some(resolved) = current_sidebar_resolution(frontend, match_state) else {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::radar_movie::retire(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            wall_ms,
+        );
         // No housing is left to settle and end the radar's static.
-        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
-        let presentation = &mut state.match_state.match_presentation;
+        crate::app::radar_movie::end_radar_sound_loop(audio);
+        let presentation = &mut match_state.match_presentation;
         presentation.radar_anim = None;
         presentation.radar_animation_source = None;
         presentation.radar_content_insets = None;
         return;
     };
-    if state
-        .match_state
+    if match_state
         .match_presentation
         .radar_animation_source
         .as_ref()
@@ -1695,12 +1860,12 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     let frames = resolved.atlas.radar_frames.clone();
     let [width, height] = resolved.atlas.radar_frame_size;
     let insets = resolved.atlas.radar_content_insets;
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     if let Some(radar) = presentation.radar_anim.as_mut() {
         if !radar.replace_frames(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             frames,
             width,
             height,
@@ -1709,9 +1874,9 @@ fn refresh_radar_animation_source(state: &mut AppState) {
         }
     } else {
         presentation.radar_anim = crate::render::radar::anim::RadarAnimState::new(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
             frames,
             width,
             height,
@@ -1731,8 +1896,18 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     presentation.radar_content_insets = Some(insets);
     if presentation.radar_anim.is_none() {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
+        crate::app::radar_movie::retire(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
+            wall_ms,
+        );
+        crate::app::radar_movie::end_radar_sound_loop(audio);
     }
 }
 
@@ -2116,7 +2291,7 @@ mod tests {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::ruleset::RuleSet;
         RuleSet::from_ini(&IniFile::from_str(
-            "[Countries]\n0=Americans\n1=Russians\n\
+            "[General]\nAIFireSale=yes\n[Countries]\n0=Americans\n1=Russians\n\
              [Americans]\nVeteranUnits=AMCV\n[Russians]\n\
              [VehicleTypes]\n0=AMCV\n\
              [BuildingTypes]\n0=GACNST\n1=PLANT\n\
