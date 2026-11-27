@@ -55,6 +55,9 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionId;
 
+/// One object's published resting decisions: id, sleep, quiet, steady.
+type RestMark = (u64, super::idle_sleep::SleepDecision, bool, bool);
+
 impl Simulation {
     /// Whether `id` is steady now: its AI visit may be counted while nothing
     /// [`Self::steady_ai_visit`] asks acts.
@@ -143,9 +146,10 @@ impl Simulation {
         self.sleep_check("steady AI", id, expected, hash)
     }
 
-    /// `id`'s turn is over: mark it steady if [`ai_rests`] holds and no
-    /// trigger has given it a sound.
-    pub(super) fn steady_after_turn(&mut self, id: u64, rules: &RuleSet) {
+    /// Whether `id`'s end-of-turn state satisfies the steady gates and
+    /// [`ai_rests`]. Read-only, so the rest pass may ask every object side by
+    /// side before it publishes the marks.
+    pub(super) fn steady_candidate(&self, id: u64, rules: &RuleSet) -> bool {
         if !self.idle_sleep.is_on()
             || !matches!(
                 self.substrate.entities.category_of(id),
@@ -157,10 +161,10 @@ impl Simulation {
             || self.session.uses_local_player_shroud()
             || !self.session.rule_policy().allows_idle_object_sleep()
         {
-            return;
+            return false;
         }
         let frame = self.session.binary_frame();
-        let steady = self.substrate.entities.get(id).is_some_and(|entity| {
+        self.substrate.entities.get(id).is_some_and(|entity| {
             self.interner
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| {
@@ -177,9 +181,65 @@ impl Simulation {
                                 self.substrate.hidden_occupation.count(rx, ry) == 0
                             })
                 })
-        });
+        })
+    }
+
+    /// The resting decisions of the object at `index` in the live Logic
+    /// order, or `None` when it has no mark to publish. Read-only, so a
+    /// parallel pass may ask it beside its other work.
+    fn resting_candidate_at(
+        &self,
+        index: usize,
+        rules: &RuleSet,
+        speed: super::super::movement::SpeedRules,
+    ) -> Option<RestMark> {
+        if !self.idle_sleep.is_on() {
+            return None;
+        }
+        let id = *self.substrate.logic.as_slice().get(index)?;
+        let sleep = self.sleep_candidate(id, rules);
+        let quiet = self.quiet_candidate(id, rules, speed);
+        let steady = self.steady_candidate(id, rules);
+        (quiet || steady || !matches!(sleep, super::idle_sleep::SleepDecision::NotApplicable))
+            .then_some((id, sleep, quiet, steady))
+    }
+
+    /// Publish one [`Self::resting_candidate_at`] answer, sleep first as a
+    /// turn's own end did (`idle_sleep::sleep_after_turn`).
+    fn apply_rest_mark(&mut self, mark: RestMark) {
+        let (id, sleep, quiet, steady) = mark;
+        self.apply_sleep_decision(id, sleep);
+        if quiet {
+            self.substrate.entities.set_quiet(id);
+        }
         if steady {
             self.substrate.entities.set_steady(id);
+        }
+    }
+
+    /// Publish every object's end-of-turn resting marks after the live pass
+    /// has run. Candidates are read side by side against the pass's final
+    /// world; the marks only let the object's own next visit skip steps whose
+    /// state still satisfies them, and any later write clears the mark.
+    ///
+    /// Sim-scale: native asks at the end of each object's own turn, VERA
+    /// asks once for all of them after the pass. A later object can write one
+    /// this pass already visited, which clears its mark; the final world is
+    /// what the next visit reads, so the set it sees is the same.
+    pub(super) fn mark_resting_after_pass(&mut self, rules: &RuleSet) {
+        if !self.idle_sleep.is_on() {
+            return;
+        }
+        let candidates = {
+            let ids = self.substrate.logic.as_slice();
+            let speed =
+                super::super::movement::SpeedRules::new(rules, &self.interner, &self.houses);
+            crate::sim::parallel::filter_map_indices(ids.len(), |index| {
+                self.resting_candidate_at(index, rules, speed)
+            })
+        };
+        for mark in candidates {
+            self.apply_rest_mark(mark);
         }
     }
 }

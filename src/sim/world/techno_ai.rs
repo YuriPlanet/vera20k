@@ -811,7 +811,7 @@ impl Simulation {
                 crate::sim::credit_income::drain_unit_ai_step(self, id, rules);
             }
         }
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some((entity, quiet)) = self.substrate.entities.get_and_quiet(id) else {
             return ObjectAiOutcome::default();
         };
         // A member past its UnInit (`+0x90` clear) that Logic still holds: a
@@ -863,14 +863,14 @@ impl Simulation {
         if matches!(
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
-        ) && !self.quiet(id)
+        ) && !quiet
             && entity.active_tube().is_some()
         {
             return outcome;
         }
 
         let category = entity.category();
-        techno_ai_shell(self, id, category, rules, ctx, &mut outcome);
+        techno_ai_shell(self, id, category, quiet, rules, ctx, &mut outcome);
         outcome
     }
 
@@ -967,6 +967,7 @@ fn techno_ai_shell(
     sim: &mut Simulation,
     id: u64,
     category: EntityCategory,
+    quiet: bool,
     rules: &RuleSet,
     ctx: &mut ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
@@ -993,8 +994,8 @@ fn techno_ai_shell(
         turret_rotate_sample = sim.sample_building_turret_rotation(id, rules);
     }
     // A quiet unit is neither warped nor warping (`world::quiet_units`).
-    let temporal_frozen = !sim.quiet(id)
-        && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
+    let temporal_frozen =
+        !quiet && sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
     // Phobos `ShieldClass::AI_Temporal` pauses recovery during the Temporal
     // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
     // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused

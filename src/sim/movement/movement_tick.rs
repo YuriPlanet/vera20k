@@ -1025,6 +1025,29 @@ pub(crate) fn begin_movement(
         playfield_bounds,
     };
     let mut effects = MovementPassEffects::default();
+    // Drive/Ship enter the pass only to hand Process_Movement or its retained
+    // track to the Simulation. Ask their locomotor once here instead of
+    // running Walk's idle-tail preparation and the ordinary-mover dispatch,
+    // which would look the same entity up twice more and find no Walk work.
+    if let Some(actor) = entities.get(entity_id)
+        && let Some(family) = actor
+            .locomotor
+            .as_ref()
+            .and_then(|loco| super::track_process::TrackFamily::from_kind(loco.active_kind()))
+    {
+        effects.stats.movers_total = effects.stats.movers_total.saturating_add(1);
+        if super::track_head::active_track_family(actor).is_some() {
+            effects.native_track = Some(super::track_process::TrackInvocation {
+                entity_id,
+                family,
+                active_gate: true,
+                retry: false,
+            });
+        } else {
+            effects.track_movement = Some((entity_id, family));
+        }
+        return PendingMovementPass { effects };
+    }
     let ordinary_mover = prepare_movement_visit(entities, entity_id);
     if ordinary_mover {
         advance_ordinary_mover(

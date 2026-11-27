@@ -39,25 +39,23 @@ impl Simulation {
         self.substrate.entities.is_quiet(id)
     }
 
-    /// `id`'s turn is over: mark it quiet if [`rests`] holds.
-    pub(super) fn quiet_after_turn(&mut self, id: u64, rules: &RuleSet) {
+    /// Whether `id`'s end-of-turn state satisfies the quiet gates and
+    /// [`rests`]. Read-only, so the rest pass may ask every object side by
+    /// side before it publishes the marks.
+    pub(super) fn quiet_candidate(&self, id: u64, rules: &RuleSet, speed: SpeedRules<'_>) -> bool {
         if self.extension_steps_unsorted(rules)
             || !self.idle_sleep.is_on()
             || self.substrate.entities.category_of(id) != Some(EntityCategory::Unit)
             || self.quiet(id)
         {
-            return;
+            return false;
         }
         let frame = self.session.binary_frame();
-        let speed = SpeedRules::new(rules, &self.interner, &self.houses);
-        let quiet = self.substrate.entities.get(id).is_some_and(|entity| {
+        self.substrate.entities.get(id).is_some_and(|entity| {
             self.interner
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| rests(entity, object, speed, frame, rules.ares()))
-        });
-        if quiet {
-            self.substrate.entities.set_quiet(id);
-        }
+        })
     }
 
     /// Debug builds: a quiet unit still rests as [`rests`] asks.

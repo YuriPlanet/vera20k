@@ -75,6 +75,17 @@ pub(super) enum SleepVisit {
     Check(Box<SleepCheck>),
 }
 
+/// Whether an object sleeps after its turn ([`Simulation::sleep_candidate`]).
+#[derive(Clone, Copy)]
+pub(super) enum SleepDecision {
+    /// A category that never sleeps.
+    NotApplicable,
+    /// It stays awake.
+    Wake,
+    /// It sleeps until `wake_at`, with the owner note.
+    Sleep { wake_at: u32, note: u8 },
+}
+
 /// An object's state before a checked turn or visit
 /// ([`Simulation::sleep_check`]).
 pub(super) struct SleepCheck {
@@ -287,28 +298,42 @@ impl Simulation {
         }
     }
 
-    /// `id`'s full turn is over: mark it asleep if its next turns can change
-    /// nothing until a timer of its own.
-    pub(super) fn sleep_after_turn(&mut self, id: u64, rules: &RuleSet) {
-        if !self.idle_sleep.on {
-            return;
+    /// Whether `id`'s full turn ends asleep. Read-only, so the rest pass may
+    /// ask every object side by side before it publishes the sleep marks.
+    /// [`SleepDecision::NotApplicable`] for a category that never sleeps.
+    pub(super) fn sleep_candidate(&self, id: u64, rules: &RuleSet) -> SleepDecision {
+        if !self.idle_sleep.on || self.substrate.entities.sleeps_until(id).is_some() {
+            return SleepDecision::NotApplicable;
         }
-        let sleep = match self.substrate.entities.category_of(id) {
-            Some(EntityCategory::Structure) => self.building_sleep(id, rules),
-            Some(EntityCategory::Infantry) => self.infantry_sleep(id, rules),
-            _ => return,
-        };
-        let Some((wake_at, note)) = sleep else {
-            self.substrate.entities.unfit_to_sleep(id);
-            return;
-        };
-        // The rule reads the state this turn ended in, but the turn's
-        // samplers ran before its later steps (a repair's last step follows
-        // the power health sample). A second resting turn in a row has
-        // sampled the resting state.
-        let frame = self.session.binary_frame();
-        if self.substrate.entities.fit_to_sleep(id, frame) {
-            self.substrate.entities.sleep_until(id, wake_at, note);
+        match self.substrate.entities.category_of(id) {
+            Some(EntityCategory::Structure) => self
+                .building_sleep(id, rules)
+                .map_or(SleepDecision::Wake, |(wake_at, note)| {
+                    SleepDecision::Sleep { wake_at, note }
+                }),
+            Some(EntityCategory::Infantry) => self
+                .infantry_sleep(id, rules)
+                .map_or(SleepDecision::Wake, |(wake_at, note)| {
+                    SleepDecision::Sleep { wake_at, note }
+                }),
+            _ => SleepDecision::NotApplicable,
+        }
+    }
+
+    /// Publish [`Self::sleep_candidate`]'s answer. The rule reads the state
+    /// this turn ended in, but the turn's samplers ran before its later steps
+    /// (a repair's last step follows the power health sample). A second
+    /// resting turn in a row has sampled the resting state.
+    pub(super) fn apply_sleep_decision(&mut self, id: u64, decision: SleepDecision) {
+        match decision {
+            SleepDecision::NotApplicable => {}
+            SleepDecision::Wake => self.substrate.entities.unfit_to_sleep(id),
+            SleepDecision::Sleep { wake_at, note } => {
+                let frame = self.session.binary_frame();
+                if self.substrate.entities.fit_to_sleep(id, frame) {
+                    self.substrate.entities.sleep_until(id, wake_at, note);
+                }
+            }
         }
     }
 

@@ -594,6 +594,15 @@ impl Simulation {
     }
 }
 
+/// One post-order read of the ground mover: the active kind, whether it is a
+/// Walk piggyback, and the containing cell the slope sample reads.
+#[derive(Clone, Copy)]
+struct GroundMoverFacts {
+    kind: Option<crate::rules::locomotor_type::LocomotorKind>,
+    walk_piggyback: bool,
+    cell: (u16, u16),
+}
+
 impl Simulation {
     /// Component-based movement fixtures enter the same Process corridor as
     /// live object turns, or the tube turn that replaces it. This exposes no
@@ -665,21 +674,38 @@ impl Simulation {
         self.complete_pending_order(stable_id, rules, effects);
         // Walk75AC80..75AC93 keeps the walking controller installed for its
         // whole Process, including arrival and new-destination callbacks.
-        let guard_walk = self
+        // One post-order read answers the three guards the corridor would
+        // otherwise look up separately: the Walk piggyback latch, Mech's head,
+        // and the Drive/Ship slope sample.
+        let facts = self
             .substrate
             .entities
-            .get_mut_if(stable_id, |entity| {
-                entity.locomotor.as_ref().is_some_and(|loco| {
+            .get(stable_id)
+            .map(|entity| GroundMoverFacts {
+                kind: entity.locomotor.as_ref().map(|loco| loco.active_kind()),
+                walk_piggyback: entity.locomotor.as_ref().is_some_and(|loco| {
                     loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
                         && loco.piggyback().is_some()
-                })
-            })
-            .and_then(|entity| entity.locomotor.as_mut())
-            .is_some_and(|loco| {
-                loco.set_walk_processing(true);
-                true
+                }),
+                cell: (entity.position.rx(), entity.position.ry()),
             });
-        let result = self.process_ground_movement(stable_id, rules, overlay_registry, effects);
+        let guard_walk = facts.is_some_and(|facts| facts.walk_piggyback)
+            && self
+                .substrate
+                .entities
+                .get_mut_if(stable_id, |entity| {
+                    entity.locomotor.as_ref().is_some_and(|loco| {
+                        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
+                            && loco.piggyback().is_some()
+                    })
+                })
+                .and_then(|entity| entity.locomotor.as_mut())
+                .is_some_and(|loco| {
+                    loco.set_walk_processing(true);
+                    true
+                });
+        let result =
+            self.process_ground_movement(stable_id, facts, rules, overlay_registry, effects);
         if guard_walk
             && let Some(loco) = self
                 .substrate
@@ -695,23 +721,28 @@ impl Simulation {
     fn process_ground_movement(
         &mut self,
         stable_id: u64,
+        facts: Option<GroundMoverFacts>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
         let sim = self;
         let mut outcome = GroundLocomotorOutcome::default();
-        if let Some(changed) = sim.process_mech_head(stable_id, rules, overlay_registry, effects)? {
+        if facts.is_some_and(|facts| {
+            facts.kind == Some(crate::rules::locomotor_type::LocomotorKind::Mech)
+        }) && let Some(changed) =
+            sim.process_mech_head(stable_id, rules, overlay_registry, effects)?
+        {
             outcome.bridge_state_changed |= changed;
             outcome.movement.movers_total += 1;
             return Ok(outcome);
         }
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
-        let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
+        let slope = facts.and_then(|facts| {
             sim.resolved_terrain
                 .as_ref()?
-                .cell(entity.position.rx(), entity.position.ry())
+                .cell(facts.cell.0, facts.cell.1)
                 .map(|cell| cell.slope_type)
         });
         if let Some(slope) = slope
@@ -1070,9 +1101,6 @@ impl Simulation {
             if let Some(check) = check {
                 sim.finish_sleep_check(stable_id, *check);
             }
-            sim.sleep_after_turn(stable_id, rules);
-            sim.quiet_after_turn(stable_id, rules);
-            sim.steady_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -1102,6 +1130,7 @@ impl Simulation {
         self.finish_batched_scans();
         self.end_turn_streams();
         walked?;
+        self.mark_resting_after_pass(rules);
         Ok(outcome)
     }
 
