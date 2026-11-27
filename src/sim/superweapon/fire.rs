@@ -427,7 +427,7 @@ fn click_fire(
             super::deactivate_ares_handler(sim, rules, owner, sw_type_id, sw, human, frame_effects);
         }
         if called_launch {
-            let effect_launched = launch(
+            let launched_by = launch(
                 sim,
                 rules,
                 owner,
@@ -438,7 +438,7 @@ fn click_fire(
                 frame_effects,
             );
             // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3).
-            if effect_launched {
+            if launched_by.is_some() {
                 sim.raise_module_super_weapon_launched(
                     rules,
                     frame_effects,
@@ -450,7 +450,7 @@ fn click_fire(
             // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
             // type here too. Its money step never settles: Fire_SW refuses a
             // charge-drain type with Money.Amount before this click.
-            if ares && effect_launched && sw.kind.has_ares_handler() {
+            if launched_by == Some(LaunchRoute::Ares) {
                 super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
                 super::raise_ares_activation_events(
                     sim,
@@ -492,7 +492,7 @@ fn click_fire(
     {
         return false;
     }
-    let effect_launched = launch(
+    let launched_by = launch(
         sim,
         rules,
         owner,
@@ -504,14 +504,14 @@ fn click_fire(
     );
     // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3), after
     // SuperClass::Launch (`0x006CC390`).
-    if effect_launched {
+    if launched_by.is_some() {
         sim.raise_module_super_weapon_launched(rules, frame_effects, owner, sw_type_id, cell);
     }
     // Installed Ares SWTypeExt::Launch10032ED0 calls Activate first and only
     // reaches money10032FDF after success. In particular a HunterSeeker with
     // no usable launch building still spends its charge, but never its fee.
     // Keep one wallet/settlement owner shared with the other extension kinds.
-    if extension_effect && effect_launched {
+    if launched_by == Some(LaunchRoute::Ares) {
         // 10032FDF: skipped when the handler's Flags hold NoMoney.
         if let Some((money_type, money_sw)) = payment
             && money_sw.money_amount != 0
@@ -604,9 +604,19 @@ fn click_fire_admission(
     true
 }
 
+/// A refused Ares redirect resumes the stock switch (hook 6CC390,
+/// Ares.dll 100355F1..100355FE). Either route can fire the weapon. Only
+/// an accepted Ares handler reaches its fee and activation callbacks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LaunchRoute {
+    Engine,
+    Ares,
+}
+
 /// `SuperClass::Launch @ 0x006CC390`: the case of the type's `Type=`
 /// (`+0xB4`, jump table `0x006CDE44`). Stock Launch returns nothing; the
-/// extension Activate result gates successful-effect bookkeeping and money.
+/// returned route distinguishes an effect that fired from an accepted
+/// ClickFire order and from a successful Ares handler's settlement.
 fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -616,7 +626,7 @@ fn launch(
     (rx, ry): (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: &mut FrameEffects<'_>,
-) -> bool {
+) -> Option<LaunchRoute> {
     use super::paradrop::ParaDropKind;
     let ares = rules.ares_form();
     let launch_kind = if ares {
@@ -704,7 +714,7 @@ fn launch(
         };
         if activated {
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
-            return true;
+            return Some(LaunchRoute::Ares);
         }
         true
     } else {
@@ -719,7 +729,7 @@ fn launch(
         && native_kind != 4
         && !super::is_charged(sim, owner, sw_type_id)
     {
-        return false;
+        return None;
     }
     match launch_kind {
         // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
@@ -750,7 +760,7 @@ fn launch(
             if activated {
                 super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
-            return activated;
+            return activated.then_some(LaunchRoute::Ares);
         }
         // SW_DropPod::Activate (10070E40) refuses only an empty type list.
         SuperWeaponKind::DropPod => {
@@ -766,7 +776,7 @@ fn launch(
             if activated {
                 super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
-            return activated;
+            return activated.then_some(LaunchRoute::Ares);
         }
         SuperWeaponKind::UnitDelivery => {
             let activated = super::unit_delivery::launch(
@@ -782,10 +792,12 @@ fn launch(
             if activated {
                 super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
-            return activated;
+            return activated.then_some(LaunchRoute::Ares);
         }
         SuperWeaponKind::MultiMissile => {
-            super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+            // 6CDD44 reaches local cleanup without launching a missile.
+            return super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
+                .then_some(LaunchRoute::Engine);
         }
         SuperWeaponKind::LightningStorm => {
             super::lightning_storm::launch(sim, rules, owner, sw_type_id, (rx, ry));
@@ -882,7 +894,7 @@ fn launch(
             if activated {
                 super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
-            return activated;
+            return activated.then_some(LaunchRoute::Ares);
         }
         SuperWeaponKind::Protect => {
             super::protect::launch(
@@ -896,17 +908,17 @@ fn launch(
                 frame_effects,
             );
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
-            return true;
+            return Some(LaunchRoute::Ares);
         }
         SuperWeaponKind::SonarPulse => {
             super::sonar_pulse::launch(sim, rules, owner, sw, (rx, ry));
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
-            return true;
+            return Some(LaunchRoute::Ares);
         }
         SuperWeaponKind::Battery => {
             super::battery::activate(sim, rules, owner, sw);
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
-            return true;
+            return Some(LaunchRoute::Ares);
         }
         SuperWeaponKind::Firestorm => {
             // ClickFire's isPlayer (Fire_SW passes `this == PlayerPtr`),
@@ -924,7 +936,7 @@ fn launch(
                 frame_effects,
             );
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
-            return true;
+            return Some(LaunchRoute::Ares);
         }
         SuperWeaponKind::EMPulse => {
             super::emp_pulse::launch(
@@ -938,13 +950,10 @@ fn launch(
                 frame_effects,
             );
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
-            return true;
+            return Some(LaunchRoute::Ares);
         }
     }
-    if redirect_refused {
-        return false;
-    }
-    true
+    (!redirect_refused).then_some(LaunchRoute::Engine)
 }
 
 /// The retained Super constructed by the scenario House owner. Native valid
