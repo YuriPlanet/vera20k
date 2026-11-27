@@ -371,6 +371,10 @@ the native edit's own filter does with units from `0x100` up — and
 so a Chinese name cannot reach the single-byte roster row whichever path the text
 arrived by.
 
+When an edit refuses input, the game sends its accepted text and caret back to
+the keyboard after composition ends. Chat can keep supplementary characters,
+including emoji. Android counts the caret in UTF-16 units.
+
 The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
 links `-Wl,--wrap=pthread_create` and the wrapper raises a smaller requested
 stack to 8 MiB (`util::thread_stack::android_stack`). It never lowers one: a

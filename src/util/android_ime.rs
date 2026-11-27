@@ -19,10 +19,22 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TextState {
     pub text: String,
+    /// Selection start in UTF-16 units, as reported by Android.
     pub cursor: usize,
     /// The composing range within `text`, in UTF-16 units. The input method
     /// owns it until it commits.
     pub compose: Option<(usize, usize)>,
+}
+
+impl TextState {
+    /// Seed the keyboard from an edit whose caret counts characters.
+    pub fn from_edit(text: &str, cursor: usize) -> Self {
+        Self {
+            text: text.to_owned(),
+            cursor: text.chars().take(cursor).map(char::len_utf16).sum(),
+            compose: None,
+        }
+    }
 }
 
 /// Split the platform's buffer into the text that is committed and the open
@@ -179,9 +191,20 @@ pub fn edit_of(old: &str, new: &str) -> (usize, String) {
     (removed, inserted)
 }
 
+/// The platform buffer must follow the edit when a replay left the two
+/// disagreeing: the edit refused a character (a byte-only name box, a length
+/// cap) or a screen's filter dropped one. Returns the edit's text to re-seed
+/// with, or `None` when they already agree.
+///
+/// Without this the baseline stays the platform's text, so the next Backspace
+/// removes the character before the one the player meant.
+pub fn resync_to(edit: &str, platform: &str) -> Option<String> {
+    (edit != platform).then(|| edit.to_owned())
+}
+
 #[cfg(all(test, tests_util))]
 mod tests {
-    use super::edit_of;
+    use super::{TextState, edit_of, resync_to};
 
     #[test]
     fn typing_at_the_end_commits_the_added_characters() {
@@ -192,6 +215,25 @@ mod tests {
     #[test]
     fn a_backspace_deletes_one_character_and_commits_nothing() {
         assert_eq!(edit_of("abcd", "abc"), (1, String::new()));
+    }
+
+    #[test]
+    fn keyboard_keeps_supplementary_text_and_uses_a_utf16_caret() {
+        let state = TextState::from_edit("a𠀀🙂b", 3);
+        assert_eq!(state.text, "a𠀀🙂b");
+        assert_eq!(state.cursor, 5);
+    }
+
+    #[test]
+    fn a_character_the_edit_refused_makes_the_platform_follow_it() {
+        // The LAN name box keeps ASCII, so the platform can hold a character
+        // the edit dropped. Replaying a Backspace from the platform's text
+        // would remove the character before it; the edit's text is what the
+        // platform must show instead.
+        let corrected = resync_to("ab", "ab你").unwrap();
+        assert_eq!(corrected, "ab");
+        assert_eq!(edit_of(&corrected, "ab"), (0, String::new()));
+        assert_eq!(resync_to("ab", &corrected), None);
     }
 
     #[test]

@@ -292,14 +292,19 @@ fn ime_state() -> vera20k::util::android_ime::TextState {
 }
 
 /// Replace the input method's buffer, with the caret at `cursor` characters.
+///
+/// The platform counts selection offsets in UTF-16 units while the game counts
+/// characters, so a caret after an emoji must be converted before it reaches
+/// the platform: `abc👿` is 4 characters but 5 units.
 fn ime_set_state(text: &str, cursor: usize) {
     use android_activity::input::{TextInputState, TextSpan};
     if let Some(app) = ACTIVITY.get() {
+        let state = vera20k::util::android_ime::TextState::from_edit(text, cursor);
         app.set_text_input_state(TextInputState {
-            text: text.to_owned(),
+            text: state.text,
             selection: TextSpan {
-                start: cursor,
-                end: cursor,
+                start: state.cursor,
+                end: state.cursor,
             },
             compose_region: None,
         });
