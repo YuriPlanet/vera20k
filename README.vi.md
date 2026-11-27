@@ -42,8 +42,6 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 
 **Các PR được đánh giá cao** — tái cấu trúc mã, hiệu năng, tìm đường, UI/UX, trình tạo bản đồ ngẫu nhiên.
 
-Chỉ sau vài PR chất lượng, bạn có thể gia nhập đội ngũ quản trị với vai trò ngang hàng với các thành viên khác.
-
 Người đóng góp có thể nhận phụ trách các phần của engine, với nhiều tự do để thực hiện những thay
 đổi giúp VERA20K tiến lên.
 

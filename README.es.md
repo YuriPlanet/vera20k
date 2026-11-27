@@ -43,8 +43,6 @@ palabra sobre su rumbo.
 
 **PR que valoramos** — refactorización, rendimiento, búsqueda de rutas, UI/UX, generador de mapas aleatorios.
 
-Con solo unos pocos PR de calidad, puedes unirte al equipo de administración en igualdad de condiciones.
-
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
 cambios que hagan avanzar VERA20K.
 
