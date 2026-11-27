@@ -744,7 +744,7 @@ pub(super) fn time_to_build_inputs(
     let country_multiplier = sim.houses.get(&owner).map_or(NativeF32Bits::ONE, |house| {
         let country = rules
             .country_build_time_mult_for_type(sim.interner.resolve(house.house_type_id()), obj);
-        let Some(scale) = house.driver_policy().and_then(|p| p.build_time_scale) else {
+        let Some(scale) = house.native_build_time_scale() else {
             return country;
         };
         let scale = f32::from_bits(scale.bits());

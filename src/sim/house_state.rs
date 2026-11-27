@@ -1235,6 +1235,14 @@ impl HouseState {
         }
     }
 
+    /// Optional scale an external controller contributes to production.
+    pub const fn native_build_time_scale(&self) -> Option<NativeF32Bits> {
+        match self.driver_policy() {
+            Some(policy) => policy.build_time_scale,
+            None => None,
+        }
+    }
+
     pub(super) fn apply_driver_credit_support(&mut self, frame: u32) {
         if self.command_driven {
             self.driver_policy

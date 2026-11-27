@@ -133,4 +133,21 @@ mod tests {
         assert_eq!(restored.houses[&floored].economy().credits(), i32::MAX);
         assert_eq!(restored.houses[&dripping].economy().credits(), 9);
     }
+
+    #[test]
+    fn driven_computer_executes_orders_and_leaves_its_strategy_timer_alone() {
+        use crate::sim::command::{Command, CommandEnvelope};
+
+        let mut sim = Simulation::with_seed(1);
+        let owner = sim.interner.intern("Computer1");
+        let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+        house.make_command_driven(DriverPolicy::neutral());
+        let timer = *house.strategy_timer();
+        sim.houses.register(house);
+        let command = CommandEnvelope::new(owner, 1, Command::LiveGameSpeed { speed: 4 });
+        let result = sim.advance_tick(&[command], None, None, None, 67);
+        assert_eq!(result.executed_commands, 1);
+        assert_eq!(sim.session.game_options().game_speed, 4);
+        assert_eq!(*sim.houses[&owner].strategy_timer(), timer);
+    }
 }
