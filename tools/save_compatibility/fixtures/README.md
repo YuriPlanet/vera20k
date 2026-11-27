@@ -35,6 +35,7 @@ and executes the saved command before it accepts the fixture.
 | `main-b268ba798.sav` | `b268ba798` (Wasm module control points, ArtImageSwap and NPatch) | `skirmish` |
 | `main-0b918d053.sav` | `0b918d053` (Wasm client modules on the control points) | `skirmish` |
 | `main-c3609b58a.sav` | `c3609b58a` (per-house driver policy, PR #4576) | `skirmish` |
+| `main-a17a144ca.sav` | `a17a144ca` (shared Chronosphere and Temporal warp-out flag) | `temporal` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
 `git fetch origin pull/5080/head` before checking out `bc55c35e7`. The Wasm
@@ -69,6 +70,12 @@ The image-states scenario registers the authored `COMPATGLOW` animation and
 a `POST` overlay using the same picture. The writer at `eb05f451e` included
 both types' image state in the rules digest before the alternate-theater ART
 flag existed. Its test checks both registries after conversion.
+
+The `a17a144ca` fixture represents a unit after Chronosphere arrival with a live
+erase head and a clear warp-out flag. The shooter still holds its Attack order.
+Loading and applying the queued tick-92 speed change leaves the unit able to act
+and advances the shooter's erase progress from 1000 to 992. Both sides of the
+link survive the next ordinary save and cold reload.
 
 To reproduce a fixture, create a detached worktree at its writer commit. Run
 the following from that worktree with your current checkout available at

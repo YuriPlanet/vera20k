@@ -58,6 +58,7 @@ pub(super) fn controls(
             }
             check(&mut row, Check::LockCursor, x, 176);
             check(&mut row, Check::OriginalShape, x, 200);
+            check_with_width(&mut row, Check::RenderInterpolation, x, 222, 390);
 
             section(&mut row, Category::Gameplay, 243);
             check(&mut row, Check::ShiftQueue, x, 271);

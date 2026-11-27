@@ -80,7 +80,7 @@ fn first_shot(
         }
         let frame = PresentationFrame::of_test(sim, rules);
         let record = frame.object(firer).unwrap();
-        assert!(target_laser_draws(record, sim, rules, || Some(&palette), view()).is_empty());
+        assert!(target_laser_draws(None, record, sim, rules, || Some(&palette), view()).is_empty());
     }
     panic!("{shooter}'s {firer} never fired");
 }
@@ -107,9 +107,10 @@ fn the_players_apocalypse_marks_its_target_for_fourteen_frames() {
     let record = presentation.object(apoc).unwrap();
     // The first render after the shot reads the committed frame.
     assert_eq!(sim.session().binary_frame(), shot + 1);
-    let at = |frame| target_laser_draws_at(record, &sim, rules, || Some(&palette), view(), frame);
+    let at =
+        |frame| target_laser_draws_at(None, record, &sim, rules, || Some(&palette), view(), frame);
     assert_eq!(
-        target_laser_draws(record, &sim, rules, || Some(&palette), view()),
+        target_laser_draws(None, record, &sim, rules, || Some(&palette), view()),
         at(shot + 1)
     );
 
@@ -155,7 +156,16 @@ fn the_players_apocalypse_marks_its_target_for_fourteen_frames() {
     let presentation = PresentationFrame::of_test(&sim, rules);
     let record = presentation.object(apoc).unwrap();
     assert!(
-        target_laser_draws_at(record, &sim, rules, || Some(&palette), view(), shot + 1).is_empty(),
+        target_laser_draws_at(
+            None,
+            record,
+            &sim,
+            rules,
+            || Some(&palette),
+            view(),
+            shot + 1
+        )
+        .is_empty(),
         "6FF960 needs a Target"
     );
 }
@@ -177,7 +187,7 @@ fn neither_a_computer_apocalypse_nor_the_players_rhino_draws_a_laser() {
         let presentation = PresentationFrame::of_test(&sim, rules);
         let record = presentation.object(firer).unwrap();
         assert!(
-            target_laser_draws(record, &sim, rules, || Some(&palette), view()).is_empty(),
+            target_laser_draws(None, record, &sim, rules, || Some(&palette), view()).is_empty(),
             "{shooter}'s {kind}"
         );
     }

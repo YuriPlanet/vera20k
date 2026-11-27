@@ -262,12 +262,9 @@ fn chain(
             .temporal
             .link = Some(Box::new(link));
     }
-    sim.substrate
-        .entities
-        .get_mut(target)
-        .unwrap()
-        .temporal
-        .head = attackers.first().copied();
+    let victim = sim.substrate.entities.get_mut(target).unwrap();
+    victim.temporal.head = attackers.first().copied();
+    victim.set_warped_out(!attackers.is_empty());
     sim.substrate
         .set_building_online_for_temporal(target, attackers.is_empty(), rules.ares_form());
 }
@@ -2005,6 +2002,94 @@ fn moving_releases_the_target() {
     assert_eq!(entity(&sim, tank).health.current(), 400);
 }
 
+// When a preceding Inviso bullet leaves Logic (55BAE0), the next bullet
+// can lose its first visit (55B616). Its already-admitted Temporal shot
+// then detonates after a frame-tail Chronosphere placement has armed the tank.
+fn chronosphere_under_beam() -> (RuleSet, Simulation, u64, u64) {
+    let rules = rules();
+    let mut sim = sim(95);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let legionnaire = spawn(&mut sim, &rules, "CLEG", "Russians", 11, 13);
+    let mut ctx = crate::sim::world::ObjectAiCtx::default();
+    let destination = crate::sim::components::DriveCoord::cell(14, 10, 0);
+    assert!(
+        sim.foot_chrono_warp_to(tank, destination, &rules, None, &mut ctx.effects)
+            .unwrap()
+    );
+    sim.process_chrono_warp(tank, &rules, &mut ctx).unwrap();
+    assert!(entity(&sim, tank).is_warped_out());
+    sim.temporal_detonation(
+        legionnaire,
+        TemporalShotTarget::Object(tank),
+        &rules,
+        None,
+        &mut ctx.effects,
+    );
+    assert_eq!(head_of(&sim, tank), Some(legionnaire));
+    (rules, sim, tank, legionnaire)
+}
+
+#[test]
+fn chronosphere_state_two_clears_warp_out_under_a_living_erase_head() {
+    let (rules, mut sim, tank, legionnaire) = chronosphere_under_beam();
+    let mut ctx = crate::sim::world::ObjectAiCtx::default();
+    let end = sim.session.binary_frame() + 60;
+    sim.session.set_binary_frame_for_test(end);
+    sim.process_chrono_warp(tank, &rules, &mut ctx).unwrap(); // state 1 timer expires
+    sim.process_chrono_warp(tank, &rules, &mut ctx).unwrap(); // state 2 writes +270
+    let landed = entity(&sim, tank);
+    assert!(landed.is_warping_in() && landed.ai_frozen()); // Unit +271 && +278
+    assert!(!landed.is_warped_out());
+    assert_eq!(landed.temporal.chain_head(), Some(legionnaire));
+    // Preserve the precise override in both the lockstep digest and the save.
+    let cleared = sim.state_hash();
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .set_warped_out(true);
+    assert_ne!(sim.state_hash(), cleared);
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .set_warped_out(false);
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "overlapping warp", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .restore_references_for_test()
+        .unwrap();
+    assert!(!entity(&restored, tank).is_warped_out());
+    assert_eq!(head_of(&restored, tank), Some(legionnaire));
+
+    // Landing, arrival, the zero-length warp-in timer, and state 7.
+    for _ in 0..4 {
+        sim.process_chrono_warp(tank, &rules, &mut ctx).unwrap();
+    }
+    assert!(!entity(&sim, tank).ai_frozen());
+    assert_eq!(head_of(&sim, tank), Some(legionnaire));
+    let second = spawn(&mut sim, &rules, "CLEG", "Russians", 13, 13);
+    sim.temporal_initiate_warp(second, Some(tank), &rules, None, &mut ctx.effects);
+    assert!(entity(&sim, tank).is_warped_out()); // 71B0EA also runs on insert
+    assert_eq!(head_of(&sim, tank), Some(legionnaire));
+}
+
+#[test]
+fn releasing_the_only_erase_beam_thaws_a_departing_chronosphere_tank() {
+    let (rules, mut sim, tank, legionnaire) = chronosphere_under_beam();
+    Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        legionnaire,
+        rules.ares_form(),
+    );
+    assert_eq!(head_of(&sim, tank), None);
+    assert!(entity(&sim, tank).chrono_warp_latch());
+    assert!(!entity(&sim, tank).is_warped_out()); // lone-head LetGo 71AC17
+    assert!(!entity(&sim, tank).ai_frozen());
+}
+
 /// A snapshot taken mid-warp restores the chain and the head.
 #[test]
 fn a_warp_in_progress_survives_a_snapshot() {
@@ -2812,12 +2897,9 @@ fn native_initiate_warp_corpus() {
             .map(|n| spawn(&mut sim, &rules, "CLEG", "Russians", 2 + n as u16, 2))
             .collect();
         if input["attackers"][0]["warped"].as_bool() == Some(true) {
-            sim.substrate
-                .entities
-                .get_mut(attackers[0])
-                .unwrap()
-                .temporal
-                .head = Some(u64::MAX);
+            let attacker = sim.substrate.entities.get_mut(attackers[0]).unwrap();
+            attacker.temporal.head = Some(u64::MAX);
+            attacker.set_warped_out(true);
         }
         if let Some(order) = input["chain"].as_array() {
             let order: Vec<u64> = order

@@ -17,8 +17,9 @@ use crate::app::PlatformState;
 use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::state::MatchState;
-use crate::app::movie_playback::MoviePlayback;
+use crate::app::movie_playback::{MovieActivity, MoviePlayback};
 use crate::app::movie_subtitles::{self, SubtitleTrack};
 use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
@@ -86,16 +87,29 @@ fn play_radar_sound_loop(
     }
 }
 
-/// The head clip runs only while the window is active (`0x00432E40`'s
-/// BinkPause) and no in-game modal is open: `StateMachine__EnterPause`
-/// pauses it (`0x00683F4D` -> `0x005BF500(1)`) and `ExitPause` resumes it
-/// (`0x0068403C`). Not `MatchState::paused`, which holds the clip's own
-/// action-117 pause.
-pub(crate) fn playback_active(
-    platform: &crate::app::PlatformState,
+/// The radar modal parks the clip (EnterPause 0x00683F4D and ExitPause
+/// 0x0068403C). Its own action-117 scenario hold leaves playback running.
+fn activity(
+    platform: &PlatformState,
+    session: SessionMode,
     presentation: &MatchPresentationState,
-) -> bool {
-    platform.window_active && !presentation.in_game_menu.is_open()
+) -> MovieActivity {
+    if presentation.in_game_menu.is_open() {
+        MovieActivity::Paused
+    } else {
+        platform.movie_activity(Some(session))
+    }
+}
+
+pub(crate) fn sync_activity(
+    platform: &PlatformState,
+    session: SessionMode,
+    presentation: &mut MatchPresentationState,
+) {
+    let activity = activity(platform, session, presentation);
+    if let Some(player) = presentation.radar_movies.playing.as_mut() {
+        player.set_activity(activity);
+    }
 }
 
 struct QueuedMovie {
@@ -143,11 +157,6 @@ impl RadarMovies {
             self.set_scenario_pause(false)
         };
         (has_next, service)
-    }
-    pub(crate) fn set_active(&mut self, active: bool) {
-        if let Some(player) = self.playing.as_mut() {
-            player.set_active(active);
-        }
     }
 }
 
@@ -566,7 +575,11 @@ fn play_head(
     }
     reconcile_pause_clock(&frontend.screen, match_state, wall_ms);
     let voice_volume = persistence.options_profile.voice_volume.clamp(0.0, 1.0);
-    let active = playback_active(platform, &match_state.match_presentation);
+    let activity = activity(
+        platform,
+        match_state.session_mode(),
+        &match_state.match_presentation,
+    );
     if match_state
         .match_presentation
         .radar_movies
@@ -584,7 +597,8 @@ fn play_head(
             .expect("unstarted head owns video");
         // Radar's 0x005BF360 callback posts HUD rows instead of a movie overlay.
         // Its cue cursor stays with the FIFO head and advances only while active.
-        let playback = MoviePlayback::new(surface, audio.movie_mixer(), voice_volume, None, active);
+        let playback =
+            MoviePlayback::new(surface, audio.movie_mixer(), voice_volume, None, activity);
         match_state.match_presentation.radar_movies.playing = Some(playback);
     }
     let playback = match_state
@@ -594,7 +608,7 @@ fn play_head(
         .as_mut()
         .expect("started head");
     // Both pauses are separate from scenario pause and the audio service gate.
-    playback.set_active(active);
+    playback.set_activity(activity);
     playback.set_voice_volume(voice_volume);
     let completed = match playback.step(&renderer.gpu) {
         Ok(completed) => completed,
@@ -619,7 +633,7 @@ fn play_head(
                 .radar_movie_origin(),
         );
     let mut due = Vec::new();
-    if active
+    if activity.runs()
         && let Some(subtitles) = match_state
             .match_presentation
             .radar_movies

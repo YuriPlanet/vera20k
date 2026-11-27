@@ -195,6 +195,8 @@ fn assert_shp_light_on_frame(
     let mut draws = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
+            motion: None,
+            diagnostics: None,
             runtime,
             frame,
             atlas: Some(&atlas),

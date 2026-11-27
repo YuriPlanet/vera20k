@@ -24,7 +24,7 @@
 
 use vera20k_gui::status::{Amount, WorldCmd, WorldOp};
 
-use crate::app::presentation::frame::PresentationFrame;
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::app::presentation::ui_overlays::{self, StatusViewport};
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
@@ -50,11 +50,22 @@ pub(crate) struct FieldInstances {
 pub(crate) struct FieldView<'a> {
     pub(crate) sim: &'a Simulation,
     pub(crate) frame: &'a PresentationFrame,
+    pub(crate) unit_motion: &'a crate::app::presentation::unit_motion::UnitMotion,
     pub(crate) rules: Option<&'a RuleSet>,
     /// The local player; `None` for a spectator.
     pub(crate) player: Option<InternedId>,
     pub(crate) hovered: Option<u64>,
     pub(crate) viewport: StatusViewport,
+}
+
+impl FieldView<'_> {
+    fn anchor(&self, entity: &ObjectRecord) -> Option<(f32, f32)> {
+        let (x, y) = ui_overlays::module_status_anchor(
+            self.sim, entity, self.rules, self.player, self.viewport.ignore_visibility,
+        )?;
+        let [dx, dy] = self.unit_motion.offset(entity.stable_id());
+        Some((x + dx, y + dy))
+    }
 }
 
 /// Pixels past the view an anchor may be and still draw: a template's
@@ -162,13 +173,7 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
     view.frame
         .objects()
         .filter_map(|entity| {
-            let anchor = ui_overlays::module_status_anchor(
-                sim,
-                entity,
-                view.rules,
-                view.player,
-                view.viewport.ignore_visibility,
-            )?;
+            let anchor = view.anchor(entity)?;
             if !(left..right).contains(&anchor.0) || !(top..bottom).contains(&anchor.1) {
                 return None;
             }
@@ -270,13 +275,7 @@ fn zoom_of(view: &FieldView<'_>) -> f32 {
 /// A seen object's anchor ([`ui_overlays::module_status_anchor`]).
 fn object_anchor(view: &FieldView<'_>, id: u64) -> Option<((f32, f32), (u16, u16))> {
     let entity = view.frame.object(id)?;
-    let point = ui_overlays::module_status_anchor(
-        view.sim,
-        entity,
-        view.rules,
-        view.player,
-        view.viewport.ignore_visibility,
-    )?;
+    let point = view.anchor(entity)?;
     Some((point, (entity.position.rx(), entity.position.ry())))
 }
 

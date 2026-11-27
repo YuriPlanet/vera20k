@@ -27,6 +27,7 @@ use crate::rules::house_colors::{HouseColorIndex, RELATION_ALLY, RELATION_ENEMY,
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
+    pub(crate) unit_motion: super::unit_motion::UnitMotion,
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     /// A `RefCell`: the unit visitor writes it while the Display-order

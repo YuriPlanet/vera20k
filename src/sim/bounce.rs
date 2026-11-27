@@ -634,42 +634,25 @@ impl BounceState {
     /// (`0x0C`/`0x1C`/`0x2C`) is never touched, so `M2 ≡ M1ᵀ` here and the block
     /// is a rotate-into-surface-space, reflect, rotate-back round trip.
     ///
-    /// RESIDUAL (GSI-05.14) — only the FLAT ramp is modelled. On ramp 0 the
-    /// table entry is the identity, so both transforms drop out and the whole
-    /// block collapses to `Velocity = (e·Vx, e·Vy, -e·Vz)` — which this
-    /// function computes directly rather than through two identity matrices.
-    /// - Trigger: debris bouncing on a sloped cell.
-    /// - Player effect: it would rebound along the slope's normal in retail and
-    ///   rebounds vertically here, so a chunk landing on a hillside runs
-    ///   downhill in retail and hops in place here.
-    /// - Frequency: `[TIRE]` is the only stock `[VoxelAnims]` entry with a
-    ///   non-zero `Elasticity` (0.8), and `Elasticity = 0` zeroes the velocity
-    ///   whatever the matrix — but all 36 stock `DebrisTypes=` lines name
-    ///   `TIRE`, so every stock section that throws VOXEL debris throws exactly
-    ///   the bouncing type. (Most stock vehicles throw SHP debris instead and
-    ///   never reach this code.) The remaining bound is terrain alone: debris
-    ///   lands on flat ground far more often than on a ramp.
-    /// - Downstream risk: closing it needs the runtime contents of
-    ///   `MATRIX_TABLE_0x00B45188`, which `VXL_MasterLighting_Init` builds from
-    ///   `Matrix3x4_BuildFromRotateXAndFacing` — the eight facings and two
-    ///   slope constants are known, the matrices themselves are UNCHECKED. The
-    ///   `FUN_005AF4D0` row associations differ per row (row 0 pairs the y/z
-    ///   terms first, rows 1 and 2 pair y/x first), so they must be read from
-    ///   disassembly rather than written naturally.
-    ///
-    /// Returns the reflected velocity, or `None` for a ramp this does not
-    /// model.
+    /// The flat matrix reduces to three scalar products. Other stock ramps
+    /// use the same original matrix and f32 transform as Spark and Bullet.
+    /// An out-of-range terrain index has no captured native matrix.
     pub fn reflect_off_ground(
         velocity: [NativeF32Bits; 3],
         elasticity: NativeF64Bits,
         ramp: u8,
     ) -> Result<Option<[NativeF32Bits; 3]>, NativeX87Error> {
+        let scale = X87Chop53::store_f32(X87Chop53::load_f64(elasticity)?)?;
         if ramp != FLAT_RAMP {
-            return Ok(None);
+            let Some(matrix) = crate::map::voxel_slope::slope_matrix(ramp) else {
+                return Ok(None);
+            };
+            return crate::sim::particles::spark::reflect_slope_vector_with_elasticity(
+                velocity, matrix, scale,
+            )
+            .map(Some);
         }
-        // The elasticity multiplier is the f32 narrowing of the stored double,
-        // not the double itself — `FLD double [ESP+0x64]` / `FSTP float [ESP]`.
-        let scale = X87Chop53::load_f32(X87Chop53::store_f32(X87Chop53::load_f64(elasticity)?)?)?;
+        let scale = X87Chop53::load_f32(scale)?;
 
         let mut out = [NativeF32Bits::POSITIVE_ZERO; 3];
         for (axis, component) in velocity.iter().enumerate() {
@@ -685,9 +668,7 @@ impl BounceState {
         Ok(Some(out))
     }
 
-    /// Pre-existing GSI-05.14 slope response remains a flat approximation.
-    /// Ordinary slopes were already selected before the Phase 3 query repair;
-    /// their reflection is separate physics work, not completed by this slice.
+    /// Retain the flat fallback for an invalid slope read from outside data.
     fn reflect_off_ground_or_flat(
         velocity: [NativeF32Bits; 3],
         elasticity: NativeF64Bits,
@@ -1069,19 +1050,14 @@ mod tests {
     }
 
     #[test]
-    fn gsi_05_14_sloped_ramps_are_refused_rather_than_approximated() {
-        // The matrix table's runtime contents are UNCHECKED, so a sloped ramp
-        // returns None instead of silently reusing the flat collapse. A caller
-        // that ignored this would rebound vertically off a hillside.
-        let v = [f32bits(3.0), f32bits(-4.0), f32bits(12.0)];
-        for ramp in 1..=16u8 {
-            assert!(
-                BounceState::reflect_off_ground(v, f64bits(0.8), ramp)
-                    .expect("in domain")
-                    .is_none(),
-                "ramp {ramp} must be refused, not approximated by the flat case"
-            );
-        }
+    fn a_tire_rebounds_down_a_sloped_cell() {
+        // BounceClass::Update 439D91..439E89, executed on ramp 1 with a
+        // stock TIRE moving at (5, 4, -25) before gravity.
+        let velocity = [f32bits(5.0), f32bits(4.0), f32bits(-26.4)];
+        let reflected = BounceState::reflect_off_ground(velocity, f64bits(f64::from(0.8_f32)), 1)
+            .unwrap()
+            .expect("stock ramp");
+        assert_eq!(raw(reflected), [0xc17f_2e14, 0x404c_cccb, 0x4166_958a]);
     }
 
     #[test]

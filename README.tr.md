@@ -40,6 +40,8 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
 ## Katkıda bulunma
 
+**Değer verdiğimiz PR’lar** — kodun yeniden düzenlenmesi, performans, yol bulma, UI/UX, rastgele harita üreteci.
+
 Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi
 ileriye taşıyan değişiklikleri geniş bir özgürlükle yapabilir.
 

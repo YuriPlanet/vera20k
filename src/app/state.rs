@@ -76,6 +76,16 @@ pub(crate) fn color_vision_matrix_for(
     }
 }
 
+/// The shell and offline matches honor the focus-pause setting. Network matches
+/// keep running when another window takes focus.
+pub(crate) fn focus_freeze_from_flags(
+    pause_on_focus_loss: bool,
+    window_active: bool,
+    session: Option<crate::app::match_runtime::session::SessionMode>,
+) -> bool {
+    pause_on_focus_loss && !window_active && session.is_none_or(|mode| mode.is_single_player())
+}
+
 /// Is the match frozen because the window is not the foreground? Only the
 /// configured freeze, and only offline: `Main_Tick` (`0x0055D38D`) sleeps
 /// until reactivated in GameMode 0 or 5, but a network game sleeps 10 ms
@@ -84,7 +94,11 @@ pub(crate) fn focus_freeze_active(
     platform: &PlatformState,
     match_state: &crate::app::match_runtime::state::MatchState,
 ) -> bool {
-    platform.focus_freeze_configured() && match_state.session_mode().is_single_player()
+    focus_freeze_from_flags(
+        platform.pause_on_focus_loss,
+        platform.window_active,
+        Some(match_state.session_mode()),
+    )
 }
 
 /// Store a pointer position given in window pixels, in the space this

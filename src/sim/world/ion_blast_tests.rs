@@ -273,6 +273,9 @@ fn retail_loaded_tank_uses_the_shared_numeric_kernel_and_frame_table() {
 
 #[test]
 fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::util::save_codec;
+
     // deserialize_scenario_rng_reset intentionally reseeds to0 on native load.
     // Start this unrelated persistence comparison on the same cursor.
     let mut sim = Simulation::with_seed(0);
@@ -287,16 +290,29 @@ fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
     });
     let hash = sim.state_hash();
     assert_ne!(hash, default_hash);
-    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
-    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
+    let bytes = GameSnapshot::save(&sim, 0, 0, "", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), hash);
     assert_eq!(
         restored.ion_blasts().collect::<Vec<_>>(),
         [([128, 128, 0], 8)]
     );
+    // Put the live vector, including its visual, into the player file.
+    let saved_blasts = save_codec::serialize(&sim.ion_blasts[1..]).unwrap();
+    let at = bytes
+        .windows(saved_blasts.len())
+        .position(|window| window == saved_blasts)
+        .expect("the pending damaging blast is saved");
+    let mut noncanonical = bytes;
+    let raw_blasts = save_codec::serialize(sim.ion_blasts.as_slice()).unwrap();
+    noncanonical.splice(at..at + saved_blasts.len(), raw_blasts);
+    let admitted = GameSnapshot::load_validated(&noncanonical, 0, 0, "").unwrap();
+    assert_eq!(
+        admitted.sim.ion_blasts.as_slice(),
+        restored.ion_blasts.as_slice()
+    );
+
     let rules = rules();
     sim.update_ion_blasts(&rules, None, &mut FrameEffects::default());
     restored.update_ion_blasts(&rules, None, &mut FrameEffects::default());
@@ -305,9 +321,37 @@ fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
         crate::sim::game_entity::GameEntity::test_default(1, "TANK", "Americans", 20, 20);
     entity.lift_by_ion_blast(7);
     let restored: crate::sim::game_entity::GameEntity =
-        crate::util::save_codec::deserialize(&crate::util::save_codec::serialize(&entity).unwrap())
-            .unwrap();
+        save_codec::deserialize(&save_codec::serialize(&entity).unwrap()).unwrap();
     assert_eq!(restored.ion_blast_lift_pixels(), 7);
+}
+
+#[test]
+fn world_replacement_leaves_damaging_and_warhead_mapped_blasts_with_their_world() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Warheads]\n0=RIPPLE\n[RIPPLE]\nRipple.Radius=5\n",
+    ))
+    .unwrap();
+    let mut outgoing = Simulation::new();
+    outgoing.add_dominator_ion_blast([10, 20, 0]);
+    outgoing.add_ion_cannon_blast([30, 40, 0]);
+    outgoing.ares_apply_ripples([50, 60, 0], rules.warhead("RIPPLE").unwrap());
+    let mut incoming = Simulation::new();
+    incoming.add_ion_cannon_blast([70, 80, 0]);
+    let incoming_hash = incoming.state_hash();
+
+    let mut ripples = RetainedDominatorRipples::default();
+    ripples.take_from(&mut outgoing);
+    ripples.resume_in(&mut incoming);
+    assert_eq!(
+        outgoing.ion_blasts().collect::<Vec<_>>(),
+        [([30, 40, 0], 0), ([50, 60, 0], 0)]
+    );
+    assert_eq!(
+        incoming.ion_blasts().collect::<Vec<_>>(),
+        [([10, 20, 0], 0), ([70, 80, 0], 0)]
+    );
+    assert_eq!(incoming.state_hash(), incoming_hash);
 }
 
 #[test]

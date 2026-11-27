@@ -94,17 +94,59 @@ impl Soundtrack {
     }
 }
 
+/// A visible background movie keeps its PCM cursor in step with the picture,
+/// while the activation edge silences its independent rodio player.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MovieActivity {
+    Paused,
+    Muted,
+    Playing,
+}
+
+impl MovieActivity {
+    pub(crate) fn for_window(
+        window_active: bool,
+        window_hidden: bool,
+        pause_on_focus_loss: bool,
+        session: Option<crate::app::match_runtime::session::SessionMode>,
+    ) -> Self {
+        if window_hidden
+            || crate::app::state::focus_freeze_from_flags(
+                pause_on_focus_loss,
+                window_active,
+                session,
+            )
+        {
+            Self::Paused
+        } else if window_active {
+            Self::Playing
+        } else {
+            Self::Muted
+        }
+    }
+
+    pub(crate) fn runs(self) -> bool {
+        self != Self::Paused
+    }
+
+    fn output_volume(self, voice_volume: f32) -> f32 {
+        if self == Self::Playing {
+            voice_volume
+        } else {
+            0.0
+        }
+    }
+}
+
 pub(crate) struct MoviePlayback {
     surface: BinkMovieSurface,
     soundtrack: Option<Soundtrack>,
     /// None until the first serviced frame after a resume.
     last_step: Option<Instant>,
     ended: bool,
-    /// The VoiceVolume last given to the soundtrack.
+    /// The player's VoiceVolume, restored when the movie becomes audible.
     voice_volume: f32,
-    /// `BinkPause(1)`: the window is inactive, or (radar clips) an in-game
-    /// modal is open.
-    paused: bool,
+    activity: MovieActivity,
     /// Diagnostic shell capture only: playback is pinned at one frame.
     capture_hold: bool,
     /// The movie's `subtitlemd.txt` cues, when it has any.
@@ -117,10 +159,16 @@ impl MoviePlayback {
         mixer: Option<&rodio::mixer::Mixer>,
         voice_volume: f32,
         mut subtitles: Option<SubtitleTrack>,
-        active: bool,
+        activity: MovieActivity,
     ) -> Self {
-        let mut soundtrack =
-            mixer.and_then(|mixer| Soundtrack::open(surface.file(), mixer, voice_volume, active));
+        let mut soundtrack = mixer.and_then(|mixer| {
+            Soundtrack::open(
+                surface.file(),
+                mixer,
+                activity.output_volume(voice_volume),
+                activity.runs(),
+            )
+        });
         // Frame 0 is decoded on construction; queue its audio (the preload).
         if let Some(soundtrack) = soundtrack.as_mut() {
             soundtrack.feed(surface.file(), surface.next_frame());
@@ -131,10 +179,10 @@ impl MoviePlayback {
         Self {
             surface,
             soundtrack,
-            last_step: active.then(Instant::now),
+            last_step: activity.runs().then(Instant::now),
             ended: false,
             voice_volume,
-            paused: !active,
+            activity,
             capture_hold: false,
             subtitles,
         }
@@ -155,17 +203,24 @@ impl MoviePlayback {
         self.subtitles.as_ref()?.shown()
     }
 
-    /// `BinkPause` while the application is inactive (`[0xA8ED80]`): the
-    /// clock and the soundtrack stop, and reactivation resumes where it left
-    /// off. Idempotent per state.
-    pub(crate) fn set_active(&mut self, active: bool) {
-        if self.paused != active {
+    /// The retail Bink service at 0x00432E80 reads the activation byte and
+    /// calls BinkPause(1) at 0x00432EAB or BinkPause(0) at 0x00432ED1.
+    /// VERA keeps the timer and PCM cursor running for a visible muted movie.
+    pub(crate) fn set_activity(&mut self, activity: MovieActivity) {
+        if self.activity == activity {
             return;
         }
-        self.paused = !active;
-        self.last_step = None;
-        if !active && let Some(soundtrack) = self.soundtrack.as_ref() {
-            soundtrack.stream.pause();
+        if self.activity.runs() != activity.runs() {
+            self.last_step = None;
+        }
+        self.activity = activity;
+        if let Some(soundtrack) = self.soundtrack.as_ref() {
+            soundtrack
+                .stream
+                .set_volume(activity.output_volume(self.voice_volume));
+            if !activity.runs() {
+                soundtrack.stream.pause();
+            }
         }
     }
 
@@ -181,7 +236,9 @@ impl MoviePlayback {
         }
         self.voice_volume = volume;
         if let Some(soundtrack) = self.soundtrack.as_ref() {
-            soundtrack.stream.set_volume(volume);
+            soundtrack
+                .stream
+                .set_volume(self.activity.output_volume(volume));
         }
     }
 
@@ -190,7 +247,7 @@ impl MoviePlayback {
         if self.ended {
             return Ok(true);
         }
-        if self.paused || self.capture_hold {
+        if !self.activity.runs() || self.capture_hold {
             return Ok(false);
         }
         let now = Instant::now();
@@ -199,7 +256,9 @@ impl MoviePlayback {
         } else {
             // BinkPause(0) 0x1000A5DA clears the DLL timer origin. BinkWait
             // initializes it on its next call (0x10009B90). Keep the audio
-            // paused through any wait for a drawable surface, too.
+            // paused through any wait for a drawable surface, too. Re-anchor
+            // after a parked stretch rather than charging that span to the
+            // movie clock.
             self.surface.resume_clock();
             if let Some(soundtrack) = self.soundtrack.as_ref() {
                 soundtrack.stream.resume();
@@ -258,6 +317,25 @@ mod tests {
     use super::*;
     use rodio::Source;
     use std::num::NonZero;
+
+    #[test]
+    fn background_playback_mutes_the_track_and_honors_the_session_freeze() {
+        use crate::app::match_runtime::session::SessionMode;
+        let visible = MovieActivity::for_window(false, false, false, Some(SessionMode::Campaign));
+        assert!(visible.runs());
+        assert_eq!(visible.output_volume(0.6), 0.0);
+        assert!(!MovieActivity::for_window(false, false, true, None).runs());
+        assert!(!MovieActivity::for_window(false, false, true, Some(SessionMode::Campaign)).runs());
+        assert_eq!(
+            MovieActivity::for_window(false, false, true, Some(SessionMode::Wol)),
+            visible
+        );
+        assert!(!MovieActivity::for_window(true, true, false, None).runs());
+        assert_eq!(
+            MovieActivity::for_window(true, false, true, None).output_volume(0.6),
+            0.6
+        );
+    }
 
     /// Optional end-to-end device route. On Linux ALSA's file PCM can
     /// capture this output with ALSA_CONFIG_PATH, without physical hardware.

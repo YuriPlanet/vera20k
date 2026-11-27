@@ -174,6 +174,11 @@ impl ActorPresentation {
 }
 struct ActorPresentationProbe {
     actor: u64,
+    /// A passive trace of this actor in real-time replay playback. Capture
+    /// drivers instead request an exact observation with GPU completion.
+    replay_start: Option<crate::util::time::Instant>,
+    committed_screen: [f32; 2],
+    shp_frame: Option<u16>,
     pending: Option<(u32, [f32; 2], u16, ActorMotionObservation)>,
     submitted: Option<ActorPresentation>,
 }
@@ -239,13 +244,27 @@ pub(crate) struct ReplayLogFlush {
 }
 
 impl MatchDiagnosticsState {
-    pub(crate) fn actor_presentation_observer_active(&self) -> bool {
+    /// An actor trace is armed for this picture, including passive replay logging.
+    pub(crate) fn traces_actor_draws(&self) -> bool {
         self.actor_presentation.borrow().is_some()
     }
 
+    pub(crate) fn actor_presentation_observer_active(&self) -> bool {
+        self.actor_presentation
+            .borrow()
+            .as_ref()
+            .is_some_and(|probe| probe.replay_start.is_none())
+    }
+
     pub(crate) fn observe_actor_presentation(&self, actor: u64) {
+        self.start_actor_probe(actor, None);
+    }
+    fn start_actor_probe(&self, actor: u64, replay_start: Option<crate::util::time::Instant>) {
         *self.actor_presentation.borrow_mut() = Some(ActorPresentationProbe {
             actor,
+            replay_start,
+            committed_screen: [0.0; 2],
+            shp_frame: None,
             pending: None,
             submitted: None,
         });
@@ -262,11 +281,15 @@ impl MatchDiagnosticsState {
         entity: &crate::app::presentation::frame::ObjectRecord,
         frame: u32,
         screen: [f32; 2],
+        committed_screen: [f32; 2],
         body: u16,
+        shp_frame: Option<u16>,
     ) {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
             && probe.actor == entity.stable_id()
         {
+            probe.committed_screen = committed_screen;
+            probe.shp_frame = shp_frame;
             probe.pending = Some((
                 frame,
                 screen,
@@ -275,8 +298,36 @@ impl MatchDiagnosticsState {
             ));
         }
     }
+    /// A later visibility pass removed this actor from the candidate picture.
+    pub(crate) fn discard_actor_draw(&self, id: u64) {
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
+            && probe.actor == id
+        {
+            probe.pending = None;
+        }
+    }
+
     pub(crate) fn commit_presentation_observation(&self) -> Option<GpuCompletion> {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut() {
+            if let Some(start) = probe.replay_start {
+                if let Some((tick, screen, body, motion)) = probe.pending.take() {
+                    log::info!(
+                        "Replay actor {} {}: us={} tick={} drawn={:.3},{:.3} committed={:.3},{:.3} facing={} moving={:?} shp_frame={:?}",
+                        probe.actor,
+                        motion.actor_type,
+                        start.elapsed().as_micros(),
+                        tick,
+                        screen[0],
+                        screen[1],
+                        probe.committed_screen[0],
+                        probe.committed_screen[1],
+                        body,
+                        motion.moving,
+                        probe.shp_frame,
+                    );
+                }
+                return None;
+            }
             probe.submitted =
                 probe
                     .pending
@@ -309,6 +360,13 @@ impl MatchDiagnosticsState {
         capture_output: Option<PathBuf>,
         replay_sha256: String,
     ) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(actor) = std::env::var("VERA20K_REPLAY_ACTOR")
+            .ok()
+            .and_then(|id| id.parse().ok())
+        {
+            self.start_actor_probe(actor, Some(crate::util::time::Instant::now()));
+        }
         self.replay_playback = Some(ReplayPlaybackState::Loading(replay));
         self.replay_capture_output = capture_output;
         self.replay_artifact_sha256 = Some(replay_sha256);
@@ -445,7 +503,9 @@ impl MatchDiagnosticsState {
         if let Some(verified) = &verification {
             log::info!(
                 "Rendered replay verified {} checkpoints through frame {}, final state {:016x}",
-                verified.checked_hashes, verified.final_tick, verified.final_state_hash
+                verified.checked_hashes,
+                verified.final_tick,
+                verified.final_state_hash
             );
         }
         let receipt = serde_json::json!({
@@ -784,6 +844,11 @@ mod tests {
         diagnostics.begin_presentation_observation();
         assert!(diagnostics.actor_presentation_observer_active());
         diagnostics.end_presentation_observation();
+        assert!(!diagnostics.actor_presentation_observer_active());
+        assert!(!diagnostics.traces_actor_draws());
+
+        diagnostics.start_actor_probe(7, Some(crate::util::time::Instant::now()));
+        assert!(diagnostics.traces_actor_draws());
         assert!(!diagnostics.actor_presentation_observer_active());
     }
 
