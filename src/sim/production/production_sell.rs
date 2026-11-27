@@ -859,12 +859,10 @@ fn sale_survivors(
     // Both read NoSurvivor (`0x0044A4CA`, How_Many_Survivors), clear on a
     // building alive to sell.
     let count = sim.building_survivor_count(rules, id);
-    // Ares 3.0 100173E0 (hook 0x44A37F), before the absorbed passengers: a
+    // Ares 3.0p1 0x10017AD0 (hook 0x44A37F), before the absorbed passengers: a
     // sold last tunnel entrance puts its owner's network out
     // (`sim::ares_tunnel`).
-    if rules.ares_form() {
-        sim.ares_sell_tunnel(id, rules, registry, frame_effects);
-    }
+    sim.ares_sell_tunnel(id, rules, registry, frame_effects);
     let passengers =
         sim.eject_absorbed_passengers(rules, registry, id, None, &cells, frame_effects);
     let garrison = crate::sim::passenger::garrison_eject::sell_building_occupants(

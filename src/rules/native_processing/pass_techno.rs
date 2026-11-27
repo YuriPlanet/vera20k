@@ -110,6 +110,8 @@ impl RulesPassProcessor {
                     let member = read_member(&mut self.families, family, index);
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
+                    // 0x005245E6..0x00524600 retains the existing Doggie byte.
+                    member.infantry_doggie = raw.read_bool("Doggie", member.infantry_doggie);
                     // `effective` holds every pass so far, so its `Cyborg` is
                     // the retained +EAC; `0x005243E5..0x005243E7` only sets.
                     member.infantry_damage_sparks |= effective.read_bool("Cyborg", false);
@@ -457,10 +459,15 @@ impl RulesPassProcessor {
                             // still match before none rejection, no allocation.
                             self.family_mut(family)[index].additional_super_weapons = supers;
                         }
-                        // BuildingTypeExt 1000DD40+0x201..0x271: the
-                        // SpyEffect.SuperWeapon pointer is Find-only
-                        // (1000CA80); blank clears, unknown retains.
+                        // BuildingTypeExt 1000DD40 Tunnel (INI_EX::ReadString,
+                        // 2048): an index in this pass's [TunnelTypes] list.
+                        let tunnel = raw
+                            .read_name("Tunnel", 0x800)
+                            .map(|name| self.ares_global_controls.building.tunnel_index(name));
                         if ares_way {
+                            // BuildingTypeExt 1000DD40+0x201..0x271: the
+                            // SpyEffect.SuperWeapon pointer is Find-only
+                            // (1000CA80); blank clears, unknown retains.
                             let super_weapon = self.resolve_existing_type_from(
                                 &raw,
                                 "SpyEffect.SuperWeapon",
@@ -495,11 +502,6 @@ impl RulesPassProcessor {
                                 RulesTypeFamily::Infantry,
                                 2048,
                             );
-                            // 1000DD40 Tunnel (INI_EX::ReadString, 2048):
-                            // its index in this pass's [TunnelTypes] list.
-                            let tunnel = raw
-                                .read_name("Tunnel", 0x800)
-                                .map(|name| self.ares_global_controls.building.tunnel_index(name));
                             // 1000DD40 SecretLab.PossibleBoons: the
                             // NullableVector<TechnoTypeClass*> reader 1000EA30
                             // over Find 10007EA0, unknown names skipped.
@@ -545,6 +547,9 @@ impl RulesPassProcessor {
                                 .read_building_pass(&raw, &self.ares_mouse_cursors);
                         } else {
                             let ext = &mut self.family_mut(family)[index].building_type_ext;
+                            if let Some(tunnel) = tunnel {
+                                ext.tunnel = tunnel;
+                            }
                             ext.read_dock_art(fixed_art.section_or_empty(&image));
                             let _builtin = crate::rules::ares_switch::not_ares_reads();
                             ext.read_firestorm_wall(raw);

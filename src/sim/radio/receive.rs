@@ -263,11 +263,7 @@ pub(crate) fn can_load(
     let ares = rules.ares_form();
     // Ares 3.0 100174E0 (hook 0x43C326) skips the contact-capacity gate for
     // a `Tunnel=` building as for an absorber.
-    let tunnel: Option<usize> = if ares {
-        sim.ares_tunnel_type(building_id, rules)
-    } else {
-        None
-    };
+    let tunnel = sim.ares_tunnel_type(building_id, rules);
     if matches!(
         building.mission.effective().known(),
         Some(MissionType::Construction | MissionType::Selling)
@@ -307,7 +303,7 @@ pub(crate) fn can_load(
     // or mind-controlled while it holds a capture manager, is refused; with
     // room in the building owner's network (`sim::ares_tunnel`) and the
     // sender's Size= within SizeLimit= it answers ROGER; otherwise the later
-    // arms decide (`0x0043C4F8`). `tunnel` is `None` without Ares.
+    // arms decide (`0x0043C4F8`).
     if let Some(tunnel) = tunnel {
         if let Some(manager) = unit.capture_manager.as_ref()
             && (manager.has_any() || unit.seldom.mind_control.is_mind_controlled())
@@ -807,7 +803,7 @@ fn building_dock_now(
     };
     // 0x0043C710..0x0043C72C: UnitAbsorb/InfantryAbsorb answer ROGER, and
     // with Ares 3.0 a `Tunnel=` building too (100176B0, hook 0x43C716).
-    let tunnel = rules.ares_form() && sim.ares_tunnel_type(building_id, rules).is_some();
+    let tunnel = sim.ares_tunnel_type(building_id, rules).is_some();
     if object.absorbs_passengers() || tunnel {
         return RadioResponse::Roger;
     }

@@ -1079,8 +1079,8 @@ impl Simulation {
     ///   [`can_load_query`]): ROGER is Enter, NEGATORY NoEnter, any other
     ///   answer leaves the base action (`None`).
     ///
-    /// Ares refuses a `NoManualEnter` target with the Passengers test; its
-    /// Infantry hook also admits Ares tunnels, which VERA does not port.
+    /// Ares refuses a `NoManualEnter` target with the Passengers test;
+    /// the built-in Infantry hook also admits configured building tunnels.
     ///
     /// [`can_load_query`]: crate::sim::radio::receive::can_load_query
     fn passenger_click_action(
@@ -1097,9 +1097,9 @@ impl Simulation {
             EntityCategory::Unit => false,
             _ => return None,
         };
-        // Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) also lets him enter a
+        // Ares 3.0p1 Infantry 0x10017DD0 (hook 0x51ED8E) also lets him enter a
         // `Tunnel=` building, whatever its Passengers= (`sim::ares_tunnel`).
-        let tunnel = rules.ares() && infantry && self.ares_tunnel_type(target_id, rules).is_some();
+        let tunnel = infantry && self.ares_tunnel_type(target_id, rules).is_some();
         if !combat::combat_weapon::is_ally_by_object(
             Some(&self.house_alliances),
             &self.interner,

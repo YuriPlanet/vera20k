@@ -864,16 +864,14 @@ impl Simulation {
             return;
         };
         if category == EntityCategory::Structure {
-            // Ares 3.0 100177B0 (hook 0x71A995): an erased last tunnel
+            // Ares 3.0p1 0x10017EA0 (hook 0x71A995): an erased last tunnel
             // entrance kills its owner's network, credited to the eraser
             // (`sim::ares_tunnel`).
-            if ares {
-                self.ares_kill_tunnel_feet_if_last(
-                    target,
-                    Some(head),
-                    UninitContext::new(rules).with_effects(effects),
-                );
-            }
+            self.ares_kill_tunnel_feet_if_last(
+                target,
+                Some(head),
+                UninitContext::new(rules).with_effects(effects),
+            );
             // Temporal71A9A0..71A9A7: only positive true Occupants count
             // calls KillOccupants(NULL), ahead of Cargo disposal/bunker release.
             if self

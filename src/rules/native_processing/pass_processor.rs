@@ -326,6 +326,9 @@ impl RulesPassProcessor {
         if ares_way {
             self.allocate_explicit_family(pass, "WeaponTypes", RulesTypeFamily::Weapon, 0x800);
             self.ares_global_controls.read_before_type_data(pass);
+        } else {
+            let _builtin = crate::rules::ares_switch::not_ares_reads();
+            self.ares_global_controls.building.read_tunnel_types(pass);
         }
         self.ares_global_controls.read_chrono_infantry_crush(pass);
         // The same 1002AB60 reads the tiberium globals after CanMakeStuffUp;

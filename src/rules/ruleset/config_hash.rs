@@ -113,6 +113,17 @@ impl RuleSet {
             b"infantry-civilian-v1".hash(&mut hasher);
             civilian_types.hash(&mut hasher);
         }
+        let mut doggie_types: Vec<_> = self
+            .object_list
+            .iter()
+            .filter(|object| object.doggie)
+            .map(|object| object.id.to_ascii_uppercase())
+            .collect();
+        if !doggie_types.is_empty() {
+            doggie_types.sort_unstable();
+            b"infantry-doggie-v1".hash(&mut hasher);
+            doggie_types.hash(&mut hasher);
+        }
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self
@@ -302,6 +313,18 @@ impl RuleSet {
                     object.id.hash(&mut hasher);
                     object.additional_super_weapons().hash(&mut hasher);
                 }
+            }
+        }
+        if !self.ares {
+            let tunnel_entrances =
+                Self::by_upper_id(self.object_list.iter().filter_map(|object| {
+                    let index = object.building_type_ext().tunnel?;
+                    let capacity = self.ares_building_globals().tunnel_max_cap(index)?;
+                    Some((&object.id, (index, capacity, object.size_limit.to_bits())))
+                }));
+            if !tunnel_entrances.is_empty() {
+                b"builtin-building-tunnels-v1".hash(&mut hasher);
+                tunnel_entrances.hash(&mut hasher);
             }
         }
         if !self.ares && self.has_builtin_firestorm() {
@@ -1553,6 +1576,11 @@ impl RuleSet {
             .collect::<Vec<_>>()
             .hash(&mut hasher);
         general.on_fire.hash(&mut hasher);
+        if general.small_fire.is_some() || general.large_fire.is_some() {
+            b"anim-fire-spread-v1".hash(&mut hasher);
+            general.small_fire.hash(&mut hasher);
+            general.large_fire.hash(&mut hasher);
+        }
         (
             &general.dead_bodies,
             &general.base_unit_types,
@@ -1726,6 +1754,20 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>();
         smudge_anim_inputs.hash(&mut hasher);
+        let flamer_anims = self
+            .art_registry
+            .iter_entries()
+            .filter_map(|(name, _)| {
+                self.art_registry
+                    .anim_runtime_config(name)
+                    .is_some_and(|config| config.flamer)
+                    .then_some(name)
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        if !flamer_anims.is_empty() {
+            b"art-flamer-anims-v1".hash(&mut hasher);
+            flamer_anims.hash(&mut hasher);
+        }
         // These effective Bullet values feed FireAt and drawing after load. Hash
         // consumed values in canonical type order, not ART insertion order,
         // authored-key presence, or unrelated presentation metadata.

@@ -124,7 +124,7 @@ pub(crate) fn render_movie_list(
             {
                 let row = geometry.row(visible);
                 frame.labels.push(PaintLabel {
-                    text: state.csf_text(movie.label_key).into(),
+                    text: state.csf_text(&movie.label_key).into(),
                     rect: RectPx::new(row.x + 2, row.y, row.w - 2, row.h),
                     align: ShellAlign::NONE,
                     rgb: SHELL_TEXT_RGB_ENABLED,

@@ -739,7 +739,7 @@ impl BuildingGlobalRules {
     /// appended when no entry has that name (`_strcmpi`); then every entry
     /// of the list reads `Passengers` (ReadInteger) and `MaxSize`
     /// (ReadDouble) from its own section when the pass has one (`10009340`).
-    fn read_tunnel_types(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+    pub(crate) fn read_tunnel_types(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         let _ares = crate::rules::ares_switch::ares_reads();
         let list = pass.section_or_empty("TunnelTypes");
         for key in list.keys() {

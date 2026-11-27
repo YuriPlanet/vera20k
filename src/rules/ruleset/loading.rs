@@ -612,13 +612,14 @@ impl RuleSet {
                 object.project_infantry_pips(pips);
             }
         }
-        for (name, civilian) in processed.infantry_civilian_states() {
+        for (name, civilian, doggie) in processed.infantry_civilian_and_doggie_states() {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
             {
                 object.civilian = civilian;
+                object.doggie = doggie;
             }
         }
         for (name, sparks) in processed.infantry_damage_spark_states() {

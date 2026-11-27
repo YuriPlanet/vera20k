@@ -745,7 +745,8 @@ impl RulesPassProcessor {
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         for key in ["SmallFire", "LargeFire"] {
-            let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+            let resolved = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+            self.rules_type_references.read_pointer(key, resolved);
         }
     }
 

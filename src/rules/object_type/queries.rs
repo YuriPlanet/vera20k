@@ -497,6 +497,7 @@ impl ObjectType {
             self.building_type_ext.firestorm_wall = ext.firestorm_wall;
             self.building_type_ext.lightning_rod = ext.lightning_rod;
             self.building_type_ext.lightning_rod_modifier = ext.lightning_rod_modifier;
+            self.building_type_ext.tunnel = ext.tunnel;
         }
     }
 

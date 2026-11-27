@@ -568,6 +568,7 @@ impl Simulation {
             return Err("Infantry destination requires available class inputs".into());
         }
         let speed_type = object.speed_type;
+        let doggie = object.doggie;
         let type_allows_up = !object.fraidycat && !object.cyborg;
         let moving = super::motion_query::is_moving(actor) == Some(true);
         // 51ABA2 invokes the shared Cell leaf BEFORE the JumpJet and
@@ -591,10 +592,15 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("destination lost infantry after Stop_Driver")?;
-        if human
+        // P1 0x10026620 (hook 0x0051ABD7) sends a prone Doggie with a
+        // non-null requested destination straight to DoAction at 0x0051AC16.
+        let stock_up = human
             && type_allows_up
-            // Infantry51ABEA compares the same allocation before DoAction.
-            && actor.navigation.nav_com().is_some_and(|nav| nav.same_pointer(requested, self.resolved_terrain.as_ref()))
+            && actor
+                .navigation
+                .nav_com()
+                .is_some_and(|nav| nav.same_pointer(requested, self.resolved_terrain.as_ref()));
+        if (doggie || stock_up)
             && actor
                 .infantry
                 .as_ref()

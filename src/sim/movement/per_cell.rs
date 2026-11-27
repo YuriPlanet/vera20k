@@ -1364,9 +1364,7 @@ impl Simulation {
             // him into its owner's network (`sim::ares_tunnel`) instead,
             // through CAN_LOAD; a refusal takes the transport arm's refusal
             // (`0x0051A488`).
-            if rules.ares_form()
-                && let Some(tunnel) = self.ares_tunnel_type(candidate, rules)
-            {
+            if let Some(tunnel) = self.ares_tunnel_type(candidate, rules) {
                 if self.ares_can_enter_tunnel(id, candidate, tunnel, rules, registry, effects) {
                     return Ok(Some(false));
                 }
@@ -1472,8 +1470,7 @@ impl Simulation {
         // on Enter with a `Tunnel=` building as its NavCom, the unit asks it
         // CAN_LOAD and enters the entrance owner's network (`sim::ares_tunnel`);
         // a refusal takes the refusal below (`0x0073A796`).
-        if rules.ares_form()
-            && let Some(tunnel) = self.ares_tunnel_type(building, rules)
+        if let Some(tunnel) = self.ares_tunnel_type(building, rules)
             && unit.mission.effective() == MissionId::from_known(MissionType::Enter)
             && nav_com_is(unit, building)
         {

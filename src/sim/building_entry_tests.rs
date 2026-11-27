@@ -1023,6 +1023,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
             &sim.interner,
             &mut expected_rng,
             crate::sim::components::DriveCoord::cell(exit.0, exit.1, 0),
+            false,
         )
         .is_some()
     );
@@ -1131,6 +1132,7 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
             &sim.interner,
             &mut expected_rng,
             crate::sim::components::DriveCoord::cell(exit.0, exit.1, 0),
+            false,
         )
         .is_some()
     );
@@ -1369,6 +1371,7 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
             &sim.interner,
             &mut expected_rng,
             crate::sim::components::DriveCoord::cell(north.0, north.1, 0),
+            false,
         )
         .is_some()
     );

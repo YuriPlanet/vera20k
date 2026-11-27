@@ -442,9 +442,9 @@ fn self_action(
             transport_id: target.stable_id,
         });
     }
-    // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
-    // owner's network loaded offers the unload action. Only the Ares-form sim
-    // fills a network, so this runs in every game.
+    // Ares 3.0p1 0x10017A90 (hook 0x44731C): an entrance with a
+    // loaded network offers the self-click action. 0x100179E0 (hook
+    // 0x44351A) resumes at 0x443534, which sends the building Unload (0x10).
     if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
         return Some(Command::UnloadPassengers {
             transport_id: target.stable_id,

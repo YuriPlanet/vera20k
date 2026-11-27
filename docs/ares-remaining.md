@@ -93,8 +93,7 @@ data.
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | A repacked MCV that is still unplaced skips the conversion tail | `0x449FF8` | [ares-bugfixes.md](ares-bugfixes.md) |
 | UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
-| Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
-| Dormant on retail data: Doggie, the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51F628`, `0x518CB3`, `0x51ABD7`, `0x5200C1`, `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
+| Dormant on retail data: the `DeathAnims=` owner, Mission_Guard's superweapon gate, the ICBM crate's Ares Nuke type, a bullet damage anim's MakeInfantryOwner outside Phobos | `0x51849A`, `0x449716`, `0x6CEEB0`, `0x469C4E` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | AttachEffect airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |

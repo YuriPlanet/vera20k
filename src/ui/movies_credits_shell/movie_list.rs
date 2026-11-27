@@ -8,13 +8,16 @@
 //! obfuscated `[Network] NetID` (owned by the options profile), and are raised
 //! by `0x005FBF80` whenever Play_Movie resolves a campaign movie name.
 
-use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashSet};
 
+use crate::rules::ini_parser::IniFile;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use vera20k_gui::shell::list::list_box_rect;
+use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 pub const MOVIE_LIST_DIALOG: DialogResourceId = DialogResourceId(0x0129);
 
@@ -149,21 +152,21 @@ pub fn retained_movie_row(rows: &[MovieEntry], retained_selection: i32) -> Optio
         .filter(|index| *index < rows.len())
 }
 
-/// One row of the retail movie table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One row of the movie list.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovieEntry {
     /// Movie stem; Play_Movie appends `.BIK`.
-    pub file: &'static str,
+    pub file: Cow<'static, str>,
     /// CSF key for the list caption.
-    pub label_key: &'static str,
+    pub label_key: Cow<'static, str>,
     /// CD index checked before playback (`-1` = any).
     pub cd: i32,
 }
 
 const fn entry(file: &'static str, label_key: &'static str, cd: i32) -> MovieEntry {
     MovieEntry {
-        file,
-        label_key,
+        file: Cow::Borrowed(file),
+        label_key: Cow::Borrowed(label_key),
         cd,
     }
 }
@@ -191,6 +194,72 @@ const ALLIED_MOVIES: [MovieEntry; 8] = [
     entry("A07_F00e", "Name:All07MD", 2),
     entry("A08_F00e", "Name:AllFinalMovie", 2),
 ];
+
+#[derive(Debug, Default)]
+pub(crate) struct CustomMovieCatalog {
+    entries: Vec<CustomMovieEntry>,
+}
+
+#[derive(Debug)]
+struct CustomMovieEntry {
+    row: MovieEntry,
+    unlockable: bool,
+}
+
+impl CustomMovieCatalog {
+    /// Ares 3.0p1 InitGame_MoviesList hooks 0x0052C939 with 0x1006B090,
+    /// then loads MOVIEMD.INI at 0x1006AA60. Read the [Movies] entries in
+    /// stored order (0x1006ABD0..0x1006ABF8), skipping equal stems
+    /// (0x1006A9D0). Both strings use 32-byte buffers. DiskRequired and
+    /// Unlockable (0x1006AD77/0x1006AD91) start at 2 and yes (0x1006A870).
+    pub(crate) fn read(ini: &IniFile) -> Self {
+        let movies = ini.section_or_empty("Movies");
+        let mut stems = HashSet::new();
+        let entries = movies
+            .physical_keys()
+            .filter_map(|key| movies.read_name(key, 32))
+            .filter(|stem| stems.insert(*stem))
+            .map(|stem| {
+                let settings = ini.section_or_empty(stem);
+                CustomMovieEntry {
+                    row: MovieEntry {
+                        file: Cow::Owned(stem.to_owned()),
+                        label_key: Cow::Owned(settings.read_string("Description", "", 32)),
+                        cd: settings.read_int("DiskRequired", 2),
+                    },
+                    unlockable: settings.read_bool("Unlockable", true),
+                }
+            })
+            .collect();
+        Self { entries }
+    }
+
+    /// Ares 3.0p1 GameOptionsClass_PopulateMovieList 0x1006AFE0 at
+    /// 0x005FC000 resumes at 0x005FC11C for a catalog with entries, even
+    /// when no rows are visible. With no entries the retail table runs.
+    pub(crate) fn visible_entries(&self, unlocked: &BTreeSet<String>) -> Option<MovieListState> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        Some(
+            self.entries
+                .iter()
+                .filter(|entry| !entry.unlockable || unlocked.contains(entry.row.file.as_ref()))
+                .map(|entry| entry.row.clone())
+                .collect(),
+        )
+    }
+
+    /// Ares 3.0p1 GameOptionsClass_UnlockMovieIfNeeded_MoviesList
+    /// 0x1006B070 (0x005FBF80) compares exact stems through 0x1006A9D0.
+    /// Options_SaveToINI_MoviesList 0x1006B0A0 writes only entries whose
+    /// Unlockable flag is set.
+    pub(crate) fn is_unlockable(&self, stem: &str) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.unlockable && entry.row.file == stem)
+    }
+}
 
 /// Campaign movie unlock progress (OptionsClass `+0x4C` Soviet, `+0x50`
 /// Allied). `-1` means none unlocked.
@@ -230,8 +299,8 @@ impl MovieProgress {
 pub fn active_movie_entries(progress: MovieProgress) -> Vec<MovieEntry> {
     let take = |progress: i32| usize::try_from(progress.saturating_add(1)).unwrap_or(0);
     std::iter::once(INTRO_MOVIE)
-        .chain(SOVIET_MOVIES.iter().copied().take(take(progress.soviet)))
-        .chain(ALLIED_MOVIES.iter().copied().take(take(progress.allied)))
+        .chain(SOVIET_MOVIES.into_iter().take(take(progress.soviet)))
+        .chain(ALLIED_MOVIES.into_iter().take(take(progress.allied)))
         .collect()
 }
 
@@ -301,9 +370,9 @@ mod tests {
         );
     }
 
-    fn files(progress: MovieProgress) -> Vec<&'static str> {
+    fn files(progress: MovieProgress) -> Vec<Cow<'static, str>> {
         active_movie_entries(progress)
-            .iter()
+            .into_iter()
             .map(|movie| movie.file)
             .collect()
     }

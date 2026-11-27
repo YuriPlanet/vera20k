@@ -831,6 +831,7 @@ mod tests {
                     y: 10 * 256 + y,
                     z: 0,
                 },
+                false,
             )
         };
         let rng = sim.scenario_rng.logical_state();

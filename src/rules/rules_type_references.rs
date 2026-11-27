@@ -129,6 +129,13 @@ fn kept_pointer(key: &str) -> bool {
 /// The kept pointers, by reader. Each Rules offset is the constructor's null
 /// store and the read's store.
 const POINTERS: &[(&str, PublishPointer)] = &[
+    // ReadAudioVisual retains the animation pointers used by P1 AnimClass::Middle.
+    ("SmallFire", |rules, id| {
+        rules.general.small_fire = named(id)
+    }),
+    ("LargeFire", |rules, id| {
+        rules.general.large_fire = named(id)
+    }),
     // ReadGeneral already resolves this pointer; EMP is its first consumer.
     ("EMPulseSparkles", |rules, id| {
         rules.bind_emp_sparkles(named(id))

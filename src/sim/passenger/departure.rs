@@ -90,16 +90,17 @@ pub fn depart_cargo_head(
     // (CargoClass::AddPassenger 0x004733A0 does not write it); only a
     // successful unload clears it (`0x0073DB98`). Departure never touches
     // Transporter (`+0x11C`, `PassengerRole::transporter`).
-    let prior = sim
-        .substrate
-        .entities
-        .get(passenger_id)
-        .and_then(|passenger| passenger.passenger_role().carrier_link());
+    let passenger = sim.substrate.entities.get(passenger_id);
+    let was_on_carryall = passenger.is_some_and(|passenger| passenger.is_on_carryall());
+    let prior = passenger.and_then(|passenger| passenger.passenger_role().carrier_link());
     let link = CarrierLink {
         transport_id,
         open_topped: prior.is_some_and(|link| link.open_topped),
     };
     let result = attempt(sim, passenger_id, effects);
+    if result.is_ok() && was_on_carryall && route != DepartureRoute::Carryall {
+        sim.team_script_vm.take_carryall_team(passenger_id);
+    }
     if let Err(failure) = result.as_ref()
         && route != DepartureRoute::Hospital
     {

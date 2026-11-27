@@ -1597,6 +1597,8 @@ pub struct ObjectType {
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
+    /// `Doggie=` (InfantryType+EC7) admits the built-in Ares stance and panic hooks.
+    pub(crate) doggie: bool,
     /// InfantryType+EC1, retained Civilian ReadINI52455F. The instance
     /// predicate413CD0 also excludes the separate nominal-survivor byte.
     /// Its type-CRC524840/report64DEA0 consumer remains a separate residual.

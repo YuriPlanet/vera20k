@@ -1246,13 +1246,10 @@ impl Simulation {
                     .filter(|t| t.category() == crate::map::entities::EntityCategory::Structure)
                     .and_then(|t| self.interner.object_type(t.type_ref(), rules))
                     .is_some_and(|object| object.gap_generator);
-                // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance
+                // Ares 3.0p1 0x10017A90 (hook 0x44731C): a tunnel entrance
                 // unloads its owner's network (`sim::ares_tunnel`).
-                let has_passengers = if rules.ares() {
-                    has_passengers || self.ares_tunnel_offers_unload(*transport_id, rules)
-                } else {
-                    has_passengers
-                };
+                let has_passengers =
+                    has_passengers || self.ares_tunnel_offers_unload(*transport_id, rules);
                 if !has_passengers && !gap_generator {
                     return false;
                 }

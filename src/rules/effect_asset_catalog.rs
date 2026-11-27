@@ -441,6 +441,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in &rules.general.on_fire {
         insert(name);
     }
+    for name in [&rules.general.small_fire, &rules.general.large_fire]
+        .into_iter()
+        .flatten()
+    {
+        insert(name);
+    }
     for name in &rules.general.metallic_debris {
         insert(name);
     }

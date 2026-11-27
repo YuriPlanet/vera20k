@@ -196,9 +196,16 @@ impl Simulation {
             }
             team.suspended = false;
         }
+        let altered = team.altered;
+        // Keep the built-in Carryall return possible when the team's last
+        // member is cargo. The empty team waits for landing or loss and
+        // receives no script orders. Explicit destruction still owns teardown.
+        if team.members.is_empty() && self.team_script_vm.has_carryall_return(team_id) {
+            return;
+        }
         // `0x006E917B`: a changed membership is recounted; an emptied team
         // that has been full is destroyed there.
-        if team.altered && !self.team_recalc(team_id, rules, registry, frame_effects) {
+        if altered && !self.team_recalc(team_id, rules, registry, frame_effects) {
             return;
         }
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {

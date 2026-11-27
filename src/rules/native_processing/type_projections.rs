@@ -320,15 +320,23 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.infantry_pips))
     }
 
-    /// InfantryType+EC1 after every admitted own-ID ReadINI52455F call.
-    pub(crate) fn infantry_civilian_states(&self) -> impl Iterator<Item = (&str, bool)> {
+    /// InfantryType+EC1 and +EC7 after the reached own-ID ReadINI calls.
+    pub(crate) fn infantry_civilian_and_doggie_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, bool, bool)> {
         self.native_type_construction_trace
             .registry_state()
             .families
             .get(&RulesTypeFamily::Infantry)
             .into_iter()
             .flatten()
-            .map(|member| (member.native_stored_id.as_str(), member.infantry_civilian))
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.infantry_civilian,
+                    member.infantry_doggie,
+                )
+            })
     }
 
     /// TechnoType+C8F of each InfantryType after the last pass.

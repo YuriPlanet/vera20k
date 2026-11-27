@@ -417,6 +417,7 @@ fn eject_head_passenger(
                     &sim.interner,
                     &mut sim.scenario_rng,
                     DriveCoord::cell(exit.0, exit.1, 0),
+                    false,
                 )
                 .map(|(spot, _)| spot);
                 (exit, spot)
@@ -717,6 +718,7 @@ pub(crate) fn building_mission_unload_absorber(
                 &sim.interner,
                 &mut sim.scenario_rng,
                 DriveCoord::cell(adjacent.0, adjacent.1, 0),
+                false,
             ) else {
                 return Err(DepartureFailure::Placement);
             };
@@ -913,6 +915,7 @@ fn ares_tunnel_unload_one(
                     &sim.interner,
                     &mut sim.scenario_rng,
                     DriveCoord::cell(near.0, near.1, 0),
+                    false,
                 ) else {
                     return false;
                 };
