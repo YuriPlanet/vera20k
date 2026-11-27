@@ -441,7 +441,6 @@ impl WolCapture {
                     | WolTarget::InternetMenu
                     | WolTarget::IngameConnectionLost
                     | WolTarget::IngamePage
-                    | WolTarget::IngamePageCancel
                     | WolTarget::AbortRelogin
                     | WolTarget::ClanLeaver
                     | WolTarget::ClanSurrender

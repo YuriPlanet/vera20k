@@ -2067,8 +2067,8 @@ pub(crate) use wol_lobby::{
 };
 pub(crate) use wol_login::{paint_wol_account_form, paint_wol_login_children};
 pub(crate) use wol_page::{
-    in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
-    paint_wol_verify,
+    paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received, paint_wol_verify,
+    surrender_draw,
 };
 pub(crate) use wol_quick_match::paint_wol_quick_match_children;
 mod coop_score;

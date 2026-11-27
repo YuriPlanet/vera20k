@@ -111,8 +111,6 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
                 &mut state.match_state,
                 &state.process_assets,
                 &state.renderer,
-                &mut state.audio,
-                &mut state.persistence,
                 id,
             ),
             WolLobbyEffect::CardCountry(row) => super::player_card::country_picked(
