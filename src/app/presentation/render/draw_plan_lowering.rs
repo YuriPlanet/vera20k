@@ -554,10 +554,10 @@ impl NativeDisplayOrder {
     /// Its first word is the sampled signed Ground key in ascending order.
     /// Exact ties preserve the committed order. On a committed picture every
     /// sort and lookup below is skipped.
-    pub(super) fn apply_vehicle_motion(
+    pub(super) fn apply_unit_motion(
         &self,
         plan: &mut PlannedObjects,
-        motion: &crate::app::presentation::vehicle_motion::VehicleMotion,
+        motion: &crate::app::presentation::unit_motion::UnitMotion,
         sim: &crate::sim::world::Simulation,
     ) {
         if !motion.ground_order_changed() || self.positions.len() > u32::MAX as usize {

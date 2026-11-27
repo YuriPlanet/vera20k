@@ -130,7 +130,7 @@ fn climbing_black_hawk_and_harrier_share_height_and_facing_with_their_ground_sha
         let id = sim
             .spawn_object(name, "Americans", 10, 10, 0, &rules)
             .unwrap();
-        let mut motion = VehicleMotion::default();
+        let mut motion = UnitMotion::default();
         let start = DriveCoord::cell(10, 10, 160);
         let end = DriveCoord {
             x: start.x + 96,
