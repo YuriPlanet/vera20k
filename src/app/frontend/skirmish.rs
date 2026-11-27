@@ -230,7 +230,6 @@ mod tests {
             }],
             0,
             vec![SkirmishAiSlot {
-                driver_policy: None,
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -1405,7 +1404,6 @@ mod tests {
         session.local_slot_mut().team = LaunchTeam::Team(0);
         session.opponents[0].team = LaunchTeam::Team(0);
         session.opponents.push(SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Cuba,
             country_random: false,
@@ -1442,7 +1440,6 @@ mod tests {
         let mut session = test_session();
         session.mode = test_cooperative_mode();
         session.opponents.push(SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Cuba,
             country_random: false,
@@ -1780,7 +1777,6 @@ mod tests {
         session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Auto;
         session.opponents.push(SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Cuba,
             country_random: false,

@@ -722,7 +722,6 @@ fn skirmish(
         active.push(raw_slot);
         rows.push(raw_slot as u8);
         opponents.push(SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: raw_slot as u8,
             country: country(ini.section_or_empty("HouseCountries"), &key)?,
             country_random: false,

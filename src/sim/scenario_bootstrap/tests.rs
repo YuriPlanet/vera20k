@@ -562,7 +562,6 @@ fn multiple_humans_including_observer_apply_layered_comp_easy_bonus_before_house
     session
         .opponents
         .push(crate::skirmish_launch::SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: 2,
             country: LaunchCountry::Russia,
             country_random: false,
@@ -682,7 +681,6 @@ fn observers_ahead_of_only_ai_leave_each_ai_a_start() {
         .collect();
     session.opponents = (2..4u8)
         .map(|row| crate::skirmish_launch::SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: row,
             country: LaunchCountry::Russia,
             country_random: false,
@@ -1998,7 +1996,6 @@ fn current_house_precedes_map_objects_and_survives_failed_starting_mcv() {
                 .session
                 .opponents
                 .push(crate::skirmish_launch::SkirmishAiSlot {
-                    driver_policy: None,
                     raw_slot_index: 1,
                     country: LaunchCountry::Russia,
                     country_random: false,
@@ -2422,7 +2419,6 @@ fn techno_constructor_extra_unit_selection_precedes_constructor_word() {
     house.set_base_center_for_test(Some((6, 5)));
     sim.houses.register(house);
     let slots = [NormalizedSkirmishSlot {
-        driver_policy: None,
         owner_name: "Americans".to_string(),
         country: LaunchCountry::America,
         color_index: 0,
@@ -2657,7 +2653,6 @@ fn scenario_prefix_runs_two_identical_house_passes_before_fill() {
     session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     session.opponents = (0..2)
         .map(|index| SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: (index + 1) as u8,
             country: LaunchCountry::Russia,
             country_random: false,
@@ -3735,7 +3730,6 @@ fn quick_coop_session(
         .enumerate()
         .map(
             |(index, start_position)| crate::skirmish_launch::SkirmishAiSlot {
-                driver_policy: None,
                 raw_slot_index: index as u8 + 2,
                 country: LaunchCountry::Russia,
                 country_random: false,

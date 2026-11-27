@@ -84,9 +84,9 @@ const CLIENT_MESSAGES: u32 = 0x9909_B4E7;
 const HELD_ANIMS: u32 = 0xED16_B100;
 const HELD_DOORS: u32 = 0x9593_BB1E;
 const HELD_IMAGES: u32 = 0xAA20_1352;
-// Each house keeps its external driver's economy settings. All earlier
-// writers stored only command_driven. Its saved value still owns control,
-// and four zero bytes restore the neutral policy for that house.
+// #4576 added four economy fields after the former controller flag.
+// Earlier saves gain their neutral encoding. The loader discards both
+// fields; see snapshot::retired_driver.
 const DRIVER_POLICY: u32 = 0xD5A9_6CCA;
 
 /// The rules digest a converted save carries: the loader takes the rules the
@@ -599,22 +599,52 @@ mod tests {
     }
 
     #[test]
-    fn old_command_driven_house_keeps_its_controller_and_gets_neutral_support() {
-        use crate::sim::driver::DriverPolicy;
+    fn retired_driver_saves_resume_with_ordinary_computer_control() {
         use crate::sim::house_state::HouseState;
 
-        let mut house = HouseState::new(Default::default(), 0, None, false, 500, 10);
-        house.make_command_driven(DriverPolicy {
-            wallet_floor: Some(2000),
-            ..DriverPolicy::neutral()
-        });
-        let old = previous_layout(HELD_IMAGES).unwrap();
-        let bytes = save_codec::serialize_previous(&house, &old).unwrap();
-        let (restored, rest) =
-            save_codec::deserialize_previous::<HouseState>(&bytes, old, &mut Vec::new()).unwrap();
+        let computer = HouseState::new(Default::default(), 0, None, false, 500, 10);
+        let neutral = save_codec::serialize(&computer).unwrap();
+        let mut old =
+            save_codec::serialize_previous(&computer, &previous_layout(HELD_IMAGES).unwrap())
+                .unwrap();
+        let mut added = Vec::new();
+        save_codec::deserialize_previous::<HouseState>(
+            &old,
+            previous_layout(HELD_IMAGES).unwrap(),
+            &mut added,
+        )
+        .unwrap();
+        let &[(policy_offset, 4)] = added.as_slice() else {
+            panic!("the old house lacks only its four neutral policy bytes");
+        };
+        // The preceding byte was the external controller's ownership flag.
+        old[policy_offset - 1] = 1;
+        let (before_policy, rest) = save_codec::deserialize_previous::<HouseState>(
+            &old,
+            previous_layout(HELD_IMAGES).unwrap(),
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(rest.is_empty());
-        assert_eq!(restored.driver_policy(), Some(&DriverPolicy::neutral()));
-        assert_eq!(restored.economy().credits(), 500);
+
+        // The #4576 writer added the Hard grant, drip, binary32 scale and floor.
+        let policy = save_codec::serialize(&(
+            true,
+            Some((75_i32, 12_u32)),
+            Some(0x3f00_0000_u32),
+            Some(2000_i32),
+        ))
+        .unwrap();
+        old.splice(policy_offset..policy_offset, policy);
+        let (with_policy, rest) =
+            save_codec::deserialize_with_remainder::<HouseState>(&old).unwrap();
+        assert!(rest.is_empty());
+
+        for restored in [before_policy, with_policy] {
+            assert!(!restored.event_dispatch_eligible());
+            assert_eq!(restored.economy().credits(), 500);
+            assert_eq!(save_codec::serialize(&restored).unwrap(), neutral);
+        }
     }
 
     #[test]

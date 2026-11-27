@@ -1126,7 +1126,6 @@ mod tests {
             }],
             0,
             vec![SkirmishAiSlot {
-                driver_policy: None,
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,

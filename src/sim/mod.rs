@@ -68,7 +68,6 @@ pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 #[cfg(feature = "debug-tools")]
 pub mod debug_event_log;
 pub mod dirty_cells;
-pub mod driver; // external controller settings for a computer house
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 pub mod entity_store;
 pub(crate) mod estimated_health;

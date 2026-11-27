@@ -26,7 +26,6 @@ fn generated_houses(rules: &RuleSet, native: &Value) -> Simulation {
         .map(|house| {
             let slot = house["slot"].as_u64().unwrap() as usize;
             NormalizedSkirmishSlot {
-                driver_policy: None,
                 owner_name: if slot == 0 {
                     "Computer".to_owned()
                 } else {

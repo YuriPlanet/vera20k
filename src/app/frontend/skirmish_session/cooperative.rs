@@ -850,7 +850,6 @@ pub(crate) fn prepare_ai(
             break;
         }
         opponents.push(SkirmishAiSlot {
-            driver_policy: None,
             raw_slot_index: row as u8,
             country: LaunchCountry::America,
             country_random: true,
@@ -1828,7 +1827,6 @@ mod tests {
         .unwrap();
         for case in corpus["preparation"].as_array().unwrap() {
             let existing = vec![SkirmishAiSlot {
-                driver_policy: None,
                 raw_slot_index: 5,
                 country: LaunchCountry::Yuri,
                 country_random: false,

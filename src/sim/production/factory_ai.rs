@@ -88,7 +88,7 @@ pub(crate) fn factory_ai(
     let production = sim
         .houses
         .get(&owner)
-        .is_some_and(|house| !house.command_driven() && house.ai_activation().production);
+        .is_some_and(|house| house.ai_activation().production);
     if !production || entity.constructing_or_selling() {
         return;
     }

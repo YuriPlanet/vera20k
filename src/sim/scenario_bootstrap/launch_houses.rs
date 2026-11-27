@@ -42,7 +42,6 @@ pub struct NormalizedSkirmishSlot {
     /// A human node's handle, CreateHouses' source for House+0x1602A.
     pub handle: Option<String>,
     pub(crate) difficulty: HouseDifficulty,
-    pub driver_policy: Option<crate::sim::driver::DriverPolicy>,
     /// The commander this house must get, if any.
     ///
     /// Reserved seam: no UI offers it yet, so every launch path passes `None`
@@ -810,7 +809,6 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
         }
         used_names.push(normalize_house_name(&owner_name));
         slots.push(NormalizedSkirmishSlot {
-            driver_policy: None,
             owner_name,
             country: if human.is_observer() {
                 LaunchCountry::America
@@ -838,7 +836,6 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
     }
     for (index, opponent) in session.opponents.iter().enumerate() {
         slots.push(NormalizedSkirmishSlot {
-            driver_policy: opponent.driver_policy,
             owner_name: crate::skirmish_launch::computer_house_name(index),
             country: opponent.country,
             color_index: opponent.color_index,
@@ -1002,11 +999,6 @@ pub fn populate_launch_houses(
                 sim.session.set_computer_slot_has_team();
             }
         }
-        if !slot.is_human
-            && let Some(policy) = slot.driver_policy
-        {
-            house.make_command_driven(policy);
-        }
         house.resolve_multiplay_passive(rules, Some(country_name));
         house.project_country_mults(rules, &sim.interner);
         // Product extension: a computer house may carry a commander
@@ -1064,7 +1056,7 @@ const NATIVE_AI_CM_PERCENT_MULTIPLIER_BITS: u64 = 0x3F84_7AE1_47AE_147B;
 /// differs (e.g. `3 * 0.01 * 100` chops to 2, not 3). `Math__ftol` returns the
 /// low dword of `FISTP qword`, so the i64 result is narrowed with `as i32`; an
 /// out-of-range operand stores the x87 integer indefinite (low dword 0).
-pub fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
+pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
     let percent = X87Chop53::load_f64(NativeF64Bits::from_bits(
         NATIVE_AI_CM_PERCENT_MULTIPLIER_BITS,
     ))
@@ -1095,17 +1087,10 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
         if house.is_human() || house.multiplay_passive() {
             continue;
         }
-        // External controllers opt in to the Hard grant. Read the same
-        // post-starting-unit wallet as the stock 0x00686A52 calculation.
-        let difficulty = match house.driver_policy() {
-            Some(policy) if policy.native_hard_grant => HouseDifficulty::Hard,
-            Some(_) => continue,
-            None => house.difficulty(),
-        };
         let coefficient = rules
             .general
             .multiplayer_ai_cm
-            .get(difficulty.table_index())
+            .get(house.difficulty().table_index())
             .copied()
             .unwrap_or(0);
         let grant = native_ai_opening_grant(coefficient, house.economy().available_money());

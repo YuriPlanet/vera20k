@@ -853,9 +853,6 @@ pub struct SkirmishAiSlot {
     pub start_position: LaunchStartPosition,
     pub team: LaunchTeam,
     pub difficulty: AiDifficulty,
-    /// External controller and economy for this offline computer seat.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub driver_policy: Option<crate::sim::driver::DriverPolicy>,
 }
 
 impl SkirmishAiSlot {
@@ -1787,7 +1784,6 @@ mod tests {
                     let index = raw.as_u64().unwrap() as usize;
                     let row = &case["initial"]["ai"][index];
                     SkirmishAiSlot {
-                        driver_policy: None,
                         raw_slot_index: index as u8,
                         country: LaunchCountry::from_country_index(
                             row[0].as_i64().unwrap().max(0) as u32
@@ -2072,7 +2068,6 @@ mod tests {
             0,
             vec![
                 SkirmishAiSlot {
-                    driver_policy: None,
                     raw_slot_index: 1,
                     country: LaunchCountry::Russia,
                     country_random: true,
@@ -2083,7 +2078,6 @@ mod tests {
                     difficulty: AiDifficulty::Easy,
                 },
                 SkirmishAiSlot {
-                    driver_policy: None,
                     raw_slot_index: 2,
                     country: LaunchCountry::Cuba,
                     country_random: false,

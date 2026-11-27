@@ -742,18 +742,7 @@ pub(super) fn time_to_build_inputs(
     obj: &ObjectType,
 ) -> TimeToBuildInputs {
     let country_multiplier = sim.houses.get(&owner).map_or(NativeF32Bits::ONE, |house| {
-        let country = rules
-            .country_build_time_mult_for_type(sim.interner.resolve(house.house_type_id()), obj);
-        let Some(scale) = house.native_build_time_scale() else {
-            return country;
-        };
-        let scale = f32::from_bits(scale.bits());
-        let scaled = f32::from_bits(country.bits()) * scale;
-        if scale >= 0.0 && scaled.is_finite() {
-            NativeF32Bits::from_bits(scaled.to_bits())
-        } else {
-            country
-        }
+        rules.country_build_time_mult_for_type(sim.interner.resolve(house.house_type_id()), obj)
     });
     let (power_output, power_drain) = sim
         .power_states
