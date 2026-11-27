@@ -381,14 +381,21 @@ impl App {
         );
     }
 
-    /// Fullscreen Play_Movie (0x00432E40) pauses the Bink handle on deactivation
-    /// and resumes it on activation. A hidden shell can get both edges between
+    /// Fullscreen Play_Movie (0x00432E40) parks the Bink handle on a configured
+    /// focus freeze and resumes it after, running through a plain deactivation
+    /// with the default policy. A hidden shell can get both edges between
     /// draws, so update its video and soundtrack here as well as on creation.
     fn sync_window_movies(
         platform: &crate::app::PlatformState,
         frontend: &mut crate::app::frontend::state::FrontendState,
     ) {
-        frontend.main_menu_movie_clock.pause();
+        // Only drop the menu clock's origin when its movie really stops — a
+        // configured focus freeze or a hidden surface. A plain deactivation
+        // with the default policy keeps the loop stepping, so resetting here
+        // would throw away a frame for no reason.
+        if platform.focus_freeze_configured() || platform.window_hidden {
+            frontend.main_menu_movie_clock.pause();
+        }
         let active = crate::app::frontend::fullscreen_movie::playback_active(platform);
         if let Some(movie) = frontend.fullscreen_movie.as_mut() {
             movie.set_active(active);

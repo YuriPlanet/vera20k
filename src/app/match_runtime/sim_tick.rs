@@ -1161,12 +1161,13 @@ pub(crate) struct RuntimePassDecision {
     /// Game frames are running, whatever this pass's timing. Only then do
     /// Follow and a cinematic pan rewrite the view.
     pub(crate) frames_running: bool,
-    /// GScreen Input 4F4320 reaches Sidebar Action 6A7780 this pass.
-    /// Main_Tick polls it (55D8AB) only with the window active (A8ED80) and no
-    /// in-game menu (A8EDA0), online too, and returns before it while the
-    /// scenario pauses (55D82E..55D877); Wait_For_Players polls it until
-    /// dialog 0xEA opens (6497EC). Unlike `scroll_input`, no VERA policy
-    /// widens it.
+    /// Sidebar Action 6A7780 visits this pass, driving the credits counter,
+    /// strip scroll, tab flash and power-bar animation. VERA runs these UI
+    /// clocks with the world: a deactivated window keeps them going unless the
+    /// configured focus freeze holds, so they follow production progress
+    /// instead of gamemd's unconditional `A8ED80` input poll (55D8AB). The
+    /// menu (A8EDA0), scenario pause (55D82E..55D877) and Wait_For_Players
+    /// dialog (6497EC) still stop them.
     pub(crate) sidebar_action: bool,
 }
 
@@ -1227,7 +1228,11 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         // stop that remains: Main_Tick returns before input (0x55D830..0x55D859).
         camera_scroll: input_gate && (!scenario_blocks || input_between_frames),
         frames_running: frame_gate && !inputs.paused,
-        sidebar_action: inputs.window_active
+        // The Sidebar Action UI clocks run with the world, not with input
+        // focus: only a configured focus freeze stops them on deactivation
+        // (the same gate as `frame_gate`). Production progress keeps counting
+        // in a visible background window, so credits must not stand still.
+        sidebar_action: !inputs.focus_frozen
             && inputs.startup_admitted
             && !inputs.menu_open
             && !inputs.network_dialog_open

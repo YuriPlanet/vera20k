@@ -76,6 +76,18 @@ pub(crate) fn color_vision_matrix_for(
     }
 }
 
+/// Pure form of the configured focus freeze, independent of the window
+/// object: a deactivated window freezes only when the player opted in. All UI
+/// clocks — the credits counter, full-screen/radar/menu Bink playback — read
+/// this same predicate, so they advance with the world in the default
+/// background case instead of parking on gamemd's raw `A8ED80` edge.
+pub(crate) const fn focus_freeze_from_flags(
+    pause_on_focus_loss: bool,
+    window_active: bool,
+) -> bool {
+    pause_on_focus_loss && !window_active
+}
+
 /// Is the match frozen because the window is not the foreground? Only the
 /// configured freeze, and only offline: `Main_Tick` (`0x0055D38D`) sleeps
 /// until reactivated in GameMode 0 or 5, but a network game sleeps 10 ms

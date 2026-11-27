@@ -190,11 +190,14 @@ impl PlatformState {
     /// True while the window is deactivated and `pause_on_focus_loss` is
     /// configured; [`super::focus_freeze_active`] adds the session
     /// gate and is the single gate for the simulation and the message clock.
-    /// The audio stop is deliberately not part of it: gamemd gates its primary
-    /// output on the activation edge itself, so that gate follows
-    /// [`Self::window_active`] alone.
+    /// The UI clocks (credits counter and Bink playback) use this configured
+    /// predicate too: they run with the world in a deactivated window unless
+    /// the player asked for a focus freeze, instead of gamemd's unconditional
+    /// `A8ED80` input/`BinkPause` gate. The audio stop is deliberately not part
+    /// of it: gamemd gates its primary output on the activation edge itself,
+    /// so that gate follows [`Self::window_active`] alone.
     pub(crate) fn focus_freeze_configured(&self) -> bool {
-        self.pause_on_focus_loss && !self.window_active
+        super::focus_freeze_from_flags(self.pause_on_focus_loss, self.window_active)
     }
 
     /// Whether the game owns the pointer and draws mouse.shp for it: the

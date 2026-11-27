@@ -103,9 +103,12 @@ pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i3
     [(screen_w - w) / 2, (screen_h - h) / 2, w, h]
 }
 
-/// Hidden windows park the fullscreen renderer even if the platform still reports focus.
+/// A configured focus freeze parks the movie clock; otherwise it runs with
+/// the world even while the window is deactivated, so a background match's
+/// cutscene keeps playing like its production progress. Hidden windows still
+/// park the renderer — there is no surface to present even with focus.
 pub(crate) fn playback_active(platform: &PlatformState) -> bool {
-    platform.window_active && !platform.window_hidden
+    !platform.focus_freeze_configured() && !platform.window_hidden
 }
 
 pub(crate) struct FullscreenMovie {
@@ -269,6 +272,21 @@ impl FullscreenMovie {
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn movie_clock_runs_in_a_visible_background_window_by_default() {
+        use crate::app::state::focus_freeze_from_flags;
+        let runs = |pause_on_focus_loss: bool, window_active: bool, window_hidden: bool| {
+            !focus_freeze_from_flags(pause_on_focus_loss, window_active) && !window_hidden
+        };
+        // Default policy: losing focus does not park the movie.
+        assert!(runs(false, false, false));
+        // A configured focus freeze parks it; an active window always runs.
+        assert!(!runs(true, false, false));
+        assert!(runs(true, true, false));
+        // A hidden surface has nothing to present, whatever the policy.
+        assert!(!runs(false, false, true));
+    }
 
     #[test]
     fn origin_centers_movies_and_clamps_negative_offsets() {

@@ -102,8 +102,9 @@ pub(crate) struct MoviePlayback {
     ended: bool,
     /// The VoiceVolume last given to the soundtrack.
     voice_volume: f32,
-    /// `BinkPause(1)`: the window is inactive, or (radar clips) an in-game
-    /// modal is open.
+    /// Bink's playback clock is parked: a configured focus freeze, a hidden
+    /// window, or (radar clips) an in-game modal. A bare deactivation with the
+    /// default policy does not park it.
     paused: bool,
     /// Diagnostic shell capture only: playback is pinned at one frame.
     capture_hold: bool,
@@ -155,9 +156,11 @@ impl MoviePlayback {
         self.subtitles.as_ref()?.shown()
     }
 
-    /// `BinkPause` while the application is inactive (`[0xA8ED80]`): the
-    /// clock and the soundtrack stop, and reactivation resumes where it left
-    /// off. Idempotent per state.
+    /// Park/resume the Bink clock and soundtrack. gamemd tied `BinkPause` to
+    /// the raw activation byte `[0xA8ED80]`; VERA parks on a configured focus
+    /// freeze (or a hidden surface / in-game modal) instead, so an ordinary
+    /// deactivation keeps the movie clock running with the world. Reactivation
+    /// resumes where it left off. Idempotent per state.
     pub(crate) fn set_active(&mut self, active: bool) {
         if self.paused != active {
             return;
@@ -199,7 +202,9 @@ impl MoviePlayback {
         } else {
             // BinkPause(0) 0x1000A5DA clears the DLL timer origin. BinkWait
             // initializes it on its next call (0x10009B90). Keep the audio
-            // paused through any wait for a drawable surface, too.
+            // paused through any wait for a drawable surface, too. Re-anchor
+            // after a parked stretch rather than charging that span to the
+            // movie clock.
             self.surface.resume_clock();
             if let Some(soundtrack) = self.soundtrack.as_ref() {
                 soundtrack.stream.resume();

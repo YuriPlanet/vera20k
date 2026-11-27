@@ -86,16 +86,18 @@ fn play_radar_sound_loop(
     }
 }
 
-/// The head clip runs only while the window is active (`0x00432E40`'s
-/// BinkPause) and no in-game modal is open: `StateMachine__EnterPause`
-/// pauses it (`0x00683F4D` -> `0x005BF500(1)`) and `ExitPause` resumes it
-/// (`0x0068403C`). Not `MatchState::paused`, which holds the clip's own
-/// action-117 pause.
+/// The head clip pauses on a configured focus freeze and while an in-game
+/// modal is open (`StateMachine__EnterPause` 0x00683F4D -> 0x005BF500(1),
+/// `ExitPause` 0x0068403C). Otherwise it runs with the world even when the
+/// window is deactivated, as gamemd's `BinkPause` at 0x00432E40 did only on
+/// activation — VERA folds that edge into the player's `pause_on_focus_loss`
+/// choice so a background match keeps playing. Not `MatchState::paused`,
+/// which holds the clip's own action-117 pause.
 pub(crate) fn playback_active(
     platform: &crate::app::PlatformState,
     presentation: &MatchPresentationState,
 ) -> bool {
-    platform.window_active && !presentation.in_game_menu.is_open()
+    !platform.focus_freeze_configured() && !presentation.in_game_menu.is_open()
 }
 
 struct QueuedMovie {
