@@ -1,6 +1,7 @@
 //! What the mod's and the map's additions draw over the battlefield
 //! (VERA, RFC 0001 section 10): the status templates ([`super::status`]) at
-//! every object the local player sees. Built with the world's instances
+//! every object the local player sees, the modules' `Decoration`s at their
+//! objects and their `MapMarker`s at their cells (appendix 7.10). Built with the world's instances
 //! each frame (`render::build_instances`), in world pixels, and drawn in the
 //! tactical pass after the objects, clipped to the view and zoomed with it:
 //! the fills from one white texel, the pictures from the modules' named
@@ -11,6 +12,15 @@
 //! fog's current sight under `FogOfWar`, not disguised to it). Each
 //! command's offset from its anchor is divided by the zoom, as the health
 //! strip keeps its pixel size.
+//!
+//! A decoration draws at its object's anchor moved by its `X`, `Y`: its
+//! `Art` from there, then its `Number` and `Label` on one line under the
+//! picture, in its `Tint` (white without one). An object the player does
+//! not see shows none of its decorations. A marker draws at its cell's
+//! centre on the ground (or its object, while seen): a dot in its `Tint`,
+//! a line through its `Items` cells, a circle of `Width` leptons on the
+//! ground, and its picture, number and label as a decoration's. Lines and
+//! circles are one-pixel dots a pixel apart, kept to the view.
 
 use vera20k_gui::status::{Amount, WorldCmd, WorldOp};
 
@@ -53,14 +63,14 @@ const MARGIN: f32 = 128.0;
 
 pub(crate) fn build(ui: &UiModules, view: &FieldView<'_>, font: &BitFont) -> FieldInstances {
     let mut out = FieldInstances::default();
+    let attached = ui.tree.attached();
+    if !attached.is_empty() {
+        attached_instances(ui, view, font, &attached, &mut out);
+    }
     if ui.status.is_empty() {
         return out;
     }
-    let zoom = if view.viewport.zoom.is_finite() && view.viewport.zoom > 0.0 {
-        view.viewport.zoom
-    } else {
-        1.0
-    };
+    let zoom = zoom_of(view);
     let objects = status_objects(view);
     let mut values: Vec<[Option<Amount>; SLOTS]> = Vec::new();
     let mut cmds: Vec<WorldCmd> = Vec::new();
@@ -212,4 +222,199 @@ fn shield(
         let _ = (entity, rules);
         None
     }
+}
+
+/// Zoom as the view gives it, 1.0 where it gives none.
+fn zoom_of(view: &FieldView<'_>) -> f32 {
+    if view.viewport.zoom.is_finite() && view.viewport.zoom > 0.0 {
+        view.viewport.zoom
+    } else {
+        1.0
+    }
+}
+
+/// A seen object's anchor ([`ui_overlays::module_status_anchor`]).
+fn object_anchor(view: &FieldView<'_>, id: u64) -> Option<(f32, f32)> {
+    let entity = view.frame.object(id)?;
+    ui_overlays::module_status_anchor(
+        view.sim,
+        entity,
+        view.rules,
+        view.player,
+        view.viewport.ignore_visibility,
+    )
+}
+
+/// The world-pixel point of a cell's centre on the ground, and of a point
+/// `(dx, dy)` leptons from it at the same height.
+fn ground_point(view: &FieldView<'_>, (x, y): (u16, u16), (dx, dy): (i32, i32)) -> (f32, f32) {
+    let level = view
+        .sim
+        .resolved_terrain()
+        .and_then(|terrain| terrain.cell(x, y))
+        .map_or(0, |cell| i32::from(cell.level));
+    crate::util::lepton::absolute_leptons_to_screen(
+        i32::from(x) * 256 + 128 + dx,
+        i32::from(y) * 256 + 128 + dy,
+        level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+    )
+}
+
+/// A cell reference's cell (kind 2, `x << 16 | y`).
+fn cell_of(reference: i64) -> Option<(u16, u16)> {
+    (reference >> 48 == 2).then(|| ((reference >> 16) as u16, reference as u16))
+}
+
+fn attached_instances(
+    ui: &UiModules,
+    view: &FieldView<'_>,
+    font: &BitFont,
+    attached: &[(bool, super::tree::Attached)],
+    out: &mut FieldInstances,
+) {
+    let zoom = zoom_of(view);
+    let camera = view.viewport.camera;
+    let size = view.viewport.size;
+    let shown = |(x, y): (f32, f32)| {
+        x >= camera[0] - MARGIN
+            && y >= camera[1] - MARGIN
+            && x <= camera[0] + size[0] / zoom + MARGIN
+            && y <= camera[1] + size[1] / zoom + MARGIN
+    };
+    let dot = |out: &mut FieldInstances, (x, y): (f32, f32), side: f32, tint: [f32; 3]| {
+        if shown((x, y)) {
+            out.fills.push(quad(
+                [x - side / 2.0, y - side / 2.0],
+                [side, side],
+                ([0.0, 0.0], [1.0, 1.0]),
+                tint,
+                1.0,
+                0.0,
+            ));
+        }
+    };
+    for (decoration, item) in attached {
+        let tint = item.tint.map_or([1.0; 3], |rgb| {
+            [
+                ((rgb >> 16) & 0xFF) as f32 / 255.0,
+                ((rgb >> 8) & 0xFF) as f32 / 255.0,
+                (rgb & 0xFF) as f32 / 255.0,
+            ]
+        });
+        let object = u64::try_from(item.anchor)
+            .ok()
+            .filter(|&id| id != 0 && item.anchor >> 46 == 0);
+        let anchor = match (decoration, object, cell_of(item.anchor)) {
+            (_, Some(id), _) => object_anchor(view, id),
+            (false, None, Some(cell)) => Some(ground_point(view, cell, (0, 0))),
+            _ => None,
+        };
+        let Some(anchor) = anchor else {
+            continue;
+        };
+        if !decoration {
+            // Hold 2: the radar alone.
+            if item.place == 2 {
+                continue;
+            }
+            dot(out, anchor, 3.0 / zoom, tint);
+            let mut last = anchor;
+            for &cell in &item.cells {
+                let next = ground_point(view, cell, (0, 0));
+                line(last, next, zoom, |point| dot(out, point, 1.0 / zoom, tint));
+                last = next;
+            }
+            if item.radius > 0
+                && let Some(cell) = cell_of(item.anchor)
+            {
+                circle(view, cell, item.radius, zoom, |point| {
+                    dot(out, point, 1.0 / zoom, tint)
+                });
+            }
+        }
+        if !shown(anchor) {
+            continue;
+        }
+        let at = [anchor.0 + item.x as f32 / zoom, anchor.1 + item.y as f32 / zoom];
+        let mut text_y = at[1];
+        if !item.art.is_empty()
+            && let Some([up, _]) = ui.art.art().frames(&item.art)
+        {
+            out.pictures.push(quad(
+                at,
+                [up.pixel_size[0] / zoom, up.pixel_size[1] / zoom],
+                (up.uv_origin, up.uv_size),
+                [1.0; 3],
+                1.0,
+                0.0,
+            ));
+            text_y += up.pixel_size[1] / zoom;
+        }
+        let mut text = item.number.map(|number| number.to_string()).unwrap_or_default();
+        if !item.label.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&item.label);
+        }
+        if !text.is_empty() {
+            out.text
+                .extend(font.build_text(&text, at[0], text_y, 1.0 / zoom, 0.0, tint, [0.0; 2]));
+        }
+    }
+}
+
+/// One point a screen pixel apart along `from..to` (world pixels).
+fn line(from: (f32, f32), to: (f32, f32), zoom: f32, mut point: impl FnMut((f32, f32))) {
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let steps = ((dx.abs().max(dy.abs()) * zoom).ceil() as usize).clamp(1, 4096);
+    for step in 0..=steps {
+        let t = step as f32 / steps as f32;
+        point((from.0 + dx * t, from.1 + dy * t));
+    }
+}
+
+/// A ground circle of `radius` leptons round a cell's centre, as points.
+fn circle(
+    view: &FieldView<'_>,
+    cell: (u16, u16),
+    radius: i32,
+    zoom: f32,
+    mut point: impl FnMut((f32, f32)),
+) {
+    // Its projected circumference in screen pixels bounds the points.
+    let around = (std::f32::consts::TAU * radius as f32 / 256.0 * 30.0 * zoom).ceil();
+    let count = (around as usize).clamp(16, 4096);
+    for index in 0..count {
+        let angle = std::f32::consts::TAU * index as f32 / count as f32;
+        let offset = (
+            (angle.cos() * radius as f32) as i32,
+            (angle.sin() * radius as f32) as i32,
+        );
+        point(ground_point(view, cell, offset));
+    }
+}
+
+/// The markers' radar dots: each marker held for the radar (`Hold` 0 or 2)
+/// at its cell and at its line's cells, in its tint.
+pub(crate) fn radar_markers(ui: &UiModules) -> Vec<((u16, u16), [f32; 3])> {
+    let mut dots = Vec::new();
+    for (decoration, item) in ui.tree.attached() {
+        if decoration || item.place == 1 {
+            continue;
+        }
+        let Some(cell) = cell_of(item.anchor) else {
+            continue;
+        };
+        let tint = item.tint.map_or([1.0; 3], |rgb| {
+            [
+                ((rgb >> 16) & 0xFF) as f32 / 255.0,
+                ((rgb >> 8) & 0xFF) as f32 / 255.0,
+                (rgb & 0xFF) as f32 / 255.0,
+            ]
+        });
+        dots.push((cell, tint));
+        dots.extend(item.cells.iter().map(|&cell| (cell, tint)));
+    }
+    dots
 }

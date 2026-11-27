@@ -1411,8 +1411,8 @@ Ares 和 Phobos 的键尚未分类。
 | 5 | `List` | `List`（本 RFC 新增） | v1 |
 | 6 | `Image` | `Image`（本 RFC 新增） | v1 |
 | 7 | `Bar`（进度条） | `Bar`（本 RFC 新增） | v1 |
-| — | `Decoration` | —：挂在一个对象上的显示属性 | later |
-| — | `MapMarker` | —：小地图或地图上的点、线、文字 | later |
+| 8 | `Decoration` | —：挂在一个对象上的显示属性：先画 `Art`，其下一行是 `Number` 和 `Label`，颜色为 `Tint`。本玩家看不见对象时不画 | preview |
+| 9 | `MapMarker` | —：锚点格子（或看得见的对象）上一个 `Tint` 色的点、经过 `Items` 各格的线、半径 `Width` lepton 的地面圆，以及它的 `Art`、`Number`、`Label`；画在战场上，并在雷达上画成点 | preview |
 
 **节点属性**（除注明外可写；`string`、`bytes` 用 `client_set_bytes` 写）：
 
@@ -1434,12 +1434,15 @@ Ares 和 Phobos 的键尚未分类。
 | `ItemTooltips` | string | `CameoGrid` | 每行 `类型名=附加文字`，附加在该类型的提示文字之后；原生网格也可写 |
 | `Fill` | int | `Bar` | 0..100 |
 | `Backdrop` | bool | `Text` | 战场上的文字是否垫黑底，默认 1；压在模块自己的图片上的文字可设为 0 |
-| `Anchor` | ref（对象） | `Decoration` | 所挂的对象；对象看不见时不显示 |
-| `Palette` | string | `Decoration` | |
-| `Tint`、`TintIntensity` | int | `Decoration` | 本机染色（模拟中的染色见 7.2） |
-| `Anim` | string | `Decoration` | 附加动画 |
-| `HideAnchor` | bool | `Decoration` | 在本机隐藏对象本身 |
-| `Number` | int | `Decoration` | 显示在对象上方的数字 |
+| `Anchor` | ref | `Decoration`、`MapMarker` | 装饰所挂的对象；标记的格子或对象。所属方等其他引用返回 `Refused`。对象看不见时不显示 |
+| `Palette` | string | `Decoration` | `later`：返回 `Unsupported` |
+| `Tint`、`TintIntensity` | int | `Decoration`、`MapMarker` | `0xRRGGBB`（−1 为无）和 `fixed`。装饰只在本机给对象染色，叠在模拟染色（7.2）之后；标记用它作颜色 |
+| `Anim` | string | `Decoration` | 只在本机播放的附加动画。`later`：保存但不画 |
+| `HideAnchor` | bool | `Decoration` | 在本机不画对象的主体；它仍在列表里，可以选中和点击，状态条照画 |
+| `Number` | int | `Decoration`、`MapMarker` | 显示在锚点处的数字 |
+| `Items` | string | `MapMarker` | 每行一个 `x,y` 格子：标记的线从锚点出发经过它们，最多 256 个。某行不是两个数时返回 `Refused` |
+| `Width` | int | `MapMarker` | 以锚点格子为中心的地面圆的半径（lepton），0 为无 |
+| `Hold` | int | `MapMarker` | 0 战场和雷达，1 只在战场，2 只在雷达 |
 
 **INI 布局键。** `Type` 取节点种类表中的 INI 名。`X`、`Y`、`Width`、`Height`、`Gap`、`Art` 与节点属性同义。`Hold` 取 [8.3](#83-枚举) 的九个位置；INI 的 `Label` 用于按钮和文本。
 

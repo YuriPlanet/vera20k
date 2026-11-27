@@ -1400,7 +1400,7 @@ Client access is `sim` for triggers, tags and teams, and `own` for superweapons.
 
 Client-only references, writable with `client_set` and `client_set_bytes`. They have no simulation representation.
 
-**Node kinds** (`NodeKind`). Version 1 can create `Text`, `Button`, `Row`, `Column`, `Image`, `Bar` and `List`. Only INI creates a `CameoGrid`: modules can find and read it and write its common properties and `ItemTooltips`, and `client_node_create(CameoGrid)` returns `Unsupported`. Coordinates are sidebar pixels in the sidebar and screen pixels in the battlefield and overlay.
+**Node kinds** (`NodeKind`). Version 1 can create `Text`, `Button`, `Row`, `Column`, `Image`, `Bar` and `List`; 0.2.0 adds `Decoration` and `MapMarker`, which are top level only and drawn over the battlefield rather than laid out (`X`, `Y` are pixels from their anchor; the battlefield layer draws after the objects, not at their depth). Only INI creates a `CameoGrid`: modules can find and read it and write its common properties and `ItemTooltips`, and `client_node_create(CameoGrid)` returns `Unsupported`. Coordinates are sidebar pixels in the sidebar and screen pixels in the battlefield and overlay.
 
 | # | Kind | `Type` in `veraui.ini` | Tier |
 | --- | --- | --- | --- |
@@ -1411,8 +1411,8 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | 5 | `List` | `List` (added by this RFC) | v1 |
 | 6 | `Image` | `Image` (added by this RFC) | v1 |
 | 7 | `Bar` (progress bar) | `Bar` (added by this RFC) | v1 |
-| — | `Decoration` | — Display properties attached to an object | later |
-| — | `MapMarker` | — Points, lines or text on the minimap or map | later |
+| 8 | `Decoration` | — Display properties attached to an object: its `Art`, then its `Number` and `Label` on one line under it, in its `Tint`. Not drawn while this player does not see the object | preview |
+| 9 | `MapMarker` | — A dot in its `Tint` at its anchor cell (or a seen object), a line through its `Items` cells, a ground circle of `Width` leptons, and its `Art`, `Number` and `Label`, on the battlefield and as dots on the radar | preview |
 
 **Node properties** are writable unless stated otherwise. Use `client_set_bytes` for `string` and `bytes`.
 
@@ -1434,12 +1434,15 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | `ItemTooltips` | string | `CameoGrid` | One `typeName=extra text` per line, appended to the type's tooltip. Also writable on native grids |
 | `Fill` | int | `Bar` | 0..100 |
 | `Backdrop` | bool | `Text` | Whether a text over the battlefield stands on black, 1 by default; 0 for a text on the module's own picture |
-| `Anchor` | ref (object) | `Decoration` | Attached object. Hide the decoration when the object is invisible |
-| `Palette` | string | `Decoration` | |
-| `Tint`, `TintIntensity` | int | `Decoration` | Local tint (see 7.2 for simulation tint) |
-| `Anim` | string | `Decoration` | Attached animation |
-| `HideAnchor` | bool | `Decoration` | Hides the object itself locally |
-| `Number` | int | `Decoration` | Number displayed above the object |
+| `Anchor` | ref | `Decoration`, `MapMarker` | A decoration's object; a marker's cell, or object. A house or other reference returns `Refused`. Hide the decoration when the object is invisible |
+| `Palette` | string | `Decoration` | `later`: answers `Unsupported` |
+| `Tint`, `TintIntensity` | int | `Decoration`, `MapMarker` | `0xRRGGBB` (−1 none) and `fixed`. A decoration tints its object on this screen alone, folded into the custom tint after the simulation's (7.2); a marker draws in it |
+| `Anim` | string | `Decoration` | Attached animation played on this screen alone. `later`: stored, not drawn |
+| `HideAnchor` | bool | `Decoration` | Hides the object's body on this screen; it is still listed, selected and clicked, and its status strip still draws |
+| `Number` | int | `Decoration`, `MapMarker` | Number displayed at the anchor |
+| `Items` | string | `MapMarker` | One `x,y` cell a line: the marker's line runs from its anchor through them, at most 256. A line that is not two numbers returns `Refused` |
+| `Width` | int | `MapMarker` | Radius in leptons of a ground circle round the anchor cell, 0 for none |
+| `Hold` | int | `MapMarker` | 0 battlefield and radar, 1 battlefield, 2 radar |
 
 **INI layout keys.** `Type` takes the INI name in the node kind table. `X`, `Y`, `Width`, `Height`, `Gap` and `Art` match their node properties. `Hold` takes one of the nine positions in [8.3](#83-enums). INI `Label` applies to buttons and text.
 

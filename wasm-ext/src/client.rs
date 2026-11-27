@@ -102,6 +102,11 @@ pub mod node_kind {
     pub const LIST: i32 = 5;
     pub const IMAGE: i32 = 6;
     pub const BAR: i32 = 7;
+    /// Display properties attached to an object, over the battlefield.
+    pub const DECORATION: i32 = 8;
+    /// Points, lines, circles and text at map cells, over the battlefield
+    /// and on the radar.
+    pub const MAP_MARKER: i32 = 9;
 }
 
 /// Client action kinds (appendix 5.4), the `kind` of `client_action`.

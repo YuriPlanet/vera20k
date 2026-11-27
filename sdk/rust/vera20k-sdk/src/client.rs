@@ -289,6 +289,14 @@ pub enum NodeKind {
     List = 5,
     Image = 6,
     Bar = 7,
+    /// Display properties attached to an object over the battlefield
+    /// (`Anchor`, `X`, `Y`, `Art`, `Label`, `Number`, `Tint`,
+    /// `TintIntensity`, `HideAnchor`); top level only.
+    Decoration = 8,
+    /// A point, line, circle and text at a cell, over the battlefield and
+    /// on the radar (`Anchor`, `Items`, `Width`, `Hold`, `Tint`, ...); top
+    /// level only.
+    MapMarker = 9,
 }
 
 /// The interface tree: finding, creating and removing nodes (RFC 10).

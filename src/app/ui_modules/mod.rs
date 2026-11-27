@@ -263,6 +263,9 @@ pub(crate) struct UiModules {
     art: crate::render::sidebar_chrome::NamedPictures,
     /// The status templates over the battlefield ([`status`]).
     pub(crate) status: status::ModuleStatus,
+    /// The decorations' revision the frames' local looks were last made
+    /// from ([`publish_local_looks`]).
+    published_looks: Option<u64>,
     local: LocalState,
     /// `client_on_start` given since load or the last catch-up.
     started: bool,
@@ -310,6 +313,7 @@ impl UiModules {
             huds: paint::ModuleHuds::default(),
             art: Default::default(),
             status: status::ModuleStatus::default(),
+            published_looks: None,
             local: LocalState::new(),
             started: false,
             outbox: ClientOutbox::default(),
@@ -660,6 +664,7 @@ pub(crate) fn drop_modules(match_state: &mut MatchState) {
     if match_state.ui_modules.take().is_none() {
         return;
     }
+    match_state.sim_runtime.set_local_looks(Default::default());
     let gui = match_state.match_presentation.dialog_ui.gui_mut();
     for origin in [tree::MOD_MODULE, tree::MAP_MODULE, tree::MAP_LAYOUT] {
         gui.remove_origin(origin);
@@ -768,6 +773,40 @@ pub(crate) fn render_frame(state: &mut AppState) {
     post_lines(state, out.lines);
     apply_effects(state, out.effects);
     run_map_part_commands(state);
+    publish_local_looks(&mut state.match_state);
+}
+
+/// The decorations' `Tint`, `TintIntensity` and `HideAnchor` on their
+/// objects, handed to the frames ([`crate::app::match_runtime::sim_host::SimHost::set_local_looks`]):
+/// a later decoration's tint replaces an earlier one's on the same object.
+/// Only when the decorations changed since the last frame.
+fn publish_local_looks(match_state: &mut MatchState) {
+    let Some(ui) = match_state.ui_modules.as_mut() else {
+        return;
+    };
+    let revision = ui.tree.attached_revision();
+    if ui.published_looks == Some(revision) {
+        return;
+    }
+    ui.published_looks = Some(revision);
+    let mut looks = crate::app::presentation::frame::LocalLooks::new();
+    for (decoration, attached) in ui.tree.attached() {
+        // An object reference (kind 0, neither house nor superweapon).
+        let Ok(id) = u64::try_from(attached.anchor) else {
+            continue;
+        };
+        if !decoration || id == 0 || attached.anchor >> 46 != 0 {
+            continue;
+        }
+        let look = looks.entry(id).or_default();
+        if let Some(rgb) = attached.tint {
+            let color = [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8];
+            look.tint = Some((color, attached.intensity as f64 / 65536.0));
+        }
+        look.hidden |= attached.hide_anchor;
+    }
+    looks.retain(|_, look| look.tint.is_some() || look.hidden);
+    match_state.sim_runtime.set_local_looks(looks);
 }
 
 /// The map's `[VeraUI]` buttons clicked this frame run their `Command=` as

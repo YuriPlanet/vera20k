@@ -42,6 +42,9 @@ pub(crate) struct Capture<'a> {
     /// Whether VERA's Convenience Help is on, so the observer's and its
     /// allies' objects capture their status rows (`HudFacts::capture`).
     pub(crate) status_rows: bool,
+    /// The client modules' local looks of objects (`Decoration` `Tint`,
+    /// `HideAnchor`), by object.
+    pub(crate) local_looks: &'a LocalLooks,
     /// The capture's isolated query of the live map: a miss stamps its own
     /// dummy, not the simulation's.
     pub(crate) cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
@@ -64,6 +67,19 @@ impl Capture<'_> {
             .object_type(entity.type_ref(), self.rules())
     }
 }
+
+/// How a client module's `Decoration` changes an object's look on this
+/// screen alone (appendix 7.10 `Tint`, `TintIntensity`, `HideAnchor`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct LocalLook {
+    /// `[R, G, B]` and the intensity (1.0 full) folded into the custom tint.
+    pub(crate) tint: Option<([u8; 3], f64)>,
+    /// The body is not drawn; the object is still selected and clicked.
+    pub(crate) hidden: bool,
+}
+
+/// Every object's [`LocalLook`], by stable id.
+pub(crate) type LocalLooks = std::collections::BTreeMap<u64, LocalLook>;
 
 /// One object's draw record: its state under [`GameEntity`]'s names.
 #[derive(Clone, Debug)]
@@ -150,6 +166,8 @@ pub(crate) struct ObjectRecord {
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
     /// What module status templates read of it (`ui_modules::status`).
     pub(crate) status: StatusFacts,
+    /// A client module's local look of it ([`LocalLook`]).
+    pub(crate) local_look: LocalLook,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
 }
@@ -755,6 +773,7 @@ impl ObjectRecord {
             seen,
             hud,
             status,
+            local_look: at.local_looks.get(&entity.stable_id()).copied().unwrap_or_default(),
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -1392,6 +1411,16 @@ impl PresentationFrame {
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
     ) -> Self {
+        Self::capture_with_looks(runtime, sidebar_types, status_rows, &LocalLooks::new())
+    }
+
+    /// [`Self::capture`] with the client modules' local looks of objects.
+    pub(crate) fn capture_with_looks(
+        runtime: &SimRuntime,
+        sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
+        status_rows: bool,
+        local_looks: &LocalLooks,
+    ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
         let observer = observer_id.map(|id| sim.interner().resolve(id));
@@ -1403,6 +1432,7 @@ impl PresentationFrame {
             observer_id,
             sidebar_types,
             status_rows,
+            local_looks,
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),

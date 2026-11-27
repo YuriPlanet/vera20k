@@ -1733,7 +1733,7 @@ pub(super) fn build_sidebar_instances(
                     .minimap_hud
                     .draw(MINIMAP_AREA, Some((area, quad)))
                     .to_vec();
-                let viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
+                let mut viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
                     mm.build_viewport_rect_in_rect(
                         match_state.input.camera_x,
                         match_state.input.camera_y,
@@ -1761,6 +1761,18 @@ pub(super) fn build_sidebar_instances(
                         sidebar_color,
                     )
                 });
+                // VERA: the client modules' map markers on the radar.
+                if let Some(ui) = match_state.ui_modules.as_ref() {
+                    viewport_rect.extend(mm.build_marker_dots_in_rect(
+                        match_state.input.camera_x,
+                        match_state.input.camera_y,
+                        minimap_rect.x,
+                        minimap_rect.y,
+                        minimap_rect.w,
+                        minimap_rect.h,
+                        crate::app::ui_modules::field::radar_markers(ui),
+                    ));
+                }
                 (minimap, viewport_rect, content_boundary)
             }
             None => {
