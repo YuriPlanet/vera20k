@@ -23,7 +23,7 @@ use crate::render::sidebar_chrome::SidebarChromeSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::tile_atlas::TileAtlas;
 use crate::render::unit_atlas::UnitAtlas;
-use crate::rules::house_colors::{RELATION_ALLY, RELATION_ENEMY, RELATION_SELF};
+use crate::rules::house_colors::{HouseColorIndex, RELATION_ALLY, RELATION_ENEMY, RELATION_SELF};
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
@@ -98,6 +98,17 @@ pub(crate) struct MatchPresentationState {
     /// Presentation only — never simulation input, so it cannot affect
     /// determinism, networking, or replays.
     pub(crate) relation_colors: bool,
+    /// VERA "team colours" toggle (Alt+T): when on, `relation_color_map`
+    /// instead draws each owner by its launch team, so one team shares one
+    /// colour on the map and the radar. Mutually exclusive with
+    /// [`Self::relation_colors`]; passive houses keep their colour.
+    /// Presentation only, exactly like the relation toggle.
+    pub(crate) team_colors: bool,
+    /// Owner name (upper case) → its launch team (`None`: no team, or an
+    /// observer). Filled once per match from the launch session, because
+    /// teams never change during a match — `house_alliances()` does, and must
+    /// not decide them. `None` until the first team-colour refresh.
+    pub(crate) team_by_owner: Option<HashMap<String, Option<u8>>>,
     /// VERA's Super Weapon Building Timers: draw each provider building's
     /// Super countdown above it. Started from `[VERA]
     /// SuperweaponBuildingTimers=` when a scenario loads and flipped in a
@@ -377,20 +388,33 @@ impl MatchPresentationState {
             .unwrap_or(&self.house_color_map)
     }
 
-    /// Bring the relation colours up to date with `sim`, as `local_owner`
-    /// sees it: when the toggle flips and after each committed frame, so an
-    /// alliance made or broken recolours that house. The generation moves
-    /// only when a colour changes.
-    pub(crate) fn rebuild_relation_color_map(
-        &mut self,
+    /// The colour override the current toggle asks for, as `local_owner`
+    /// sees it: the relation view while Alt+A is on, the same view with each
+    /// enemy team in its own colour while Alt+T is, and nothing while both
+    /// are off. `teams` is the match's cached [`Self::team_by_owner`] and
+    /// `enemy_teams` the rules' palette
+    /// ([`crate::rules::team_colors`]); without either, the team view falls
+    /// back to the plain relation view rather than guessing.
+    pub(crate) fn colour_override(
+        &self,
         sim: &crate::sim::world::Simulation,
         local_owner: Option<&str>,
-    ) {
-        let map = if self.relation_colors {
+        teams: Option<&HashMap<String, Option<u8>>>,
+        enemy_teams: &crate::rules::team_colors::EnemyTeamPalette,
+    ) -> Option<HouseColorMap> {
+        if self.team_colors {
+            team_house_colors(sim, &self.house_color_map, local_owner, teams, enemy_teams)
+        } else if self.relation_colors {
             relation_house_colors(sim, &self.house_color_map, local_owner)
         } else {
             None
-        };
+        }
+    }
+
+    /// Publish `map` as the override drawing reads. The generation moves only
+    /// when a colour changes, so a paused frame still repaints when the
+    /// toggle flips.
+    pub(crate) fn set_colour_override(&mut self, map: Option<HouseColorMap>) {
         if map != self.relation_color_map {
             self.relation_color_map = map;
             self.relation_color_generation = self.relation_color_generation.wrapping_add(1);
@@ -414,12 +438,7 @@ pub(crate) fn relation_house_colors(
         house_colors
             .iter()
             .map(|(owner, &color)| {
-                let passive = sim.interner().get(owner.as_str()).is_none_or(|id| {
-                    sim.houses()
-                        .get(&id)
-                        .is_some_and(|house| house.multiplay_passive())
-                }) || owner.eq_ignore_ascii_case("Neutral");
-                let color = if passive {
+                let color = if passive_house(sim, owner) {
                     color
                 } else if owner.eq_ignore_ascii_case(local) {
                     RELATION_SELF
@@ -432,6 +451,111 @@ pub(crate) fn relation_house_colors(
             })
             .collect(),
     )
+}
+
+/// Each owner's colour under the team-colours toggle, as `local_owner` sees
+/// it. The relation view comes first and is unchanged: your own house blue,
+/// your allies green. What changes is the enemy side, where every launch team
+/// takes its own colour from the rules' palette
+/// ([`crate::rules::team_colors`]) instead of the single hostile red, so a
+/// large battle shows which team a dot on the radar belongs to.
+///
+/// Enemy teams take the palette in rank order — lowest team first, the local
+/// team skipped — so the first enemy team is the red the relation view uses
+/// and a one-enemy match looks exactly like Relation Colours. An enemy the
+/// lobby left off every team then takes a colour no team holds, drawn from
+/// its own name so it stays put; once the palette is spent it shares, as the
+/// lobby's Random colour does. Passive houses keep their own colour, and an
+/// observer (`None` local house) keeps the player colours.
+pub(crate) fn team_house_colors(
+    sim: &crate::sim::world::Simulation,
+    house_colors: &HouseColorMap,
+    local_owner: Option<&str>,
+    teams: Option<&HashMap<String, Option<u8>>>,
+    palette: &crate::rules::team_colors::EnemyTeamPalette,
+) -> Option<HouseColorMap> {
+    let local = local_owner?;
+    let allied = crate::map::houses::ally_test(sim.house_alliances().as_map(), local);
+    let team_of_owner = |owner: &str| teams.and_then(|teams| team_of(teams, owner));
+
+    // Only the teams that will actually be painted rank: an enemy team's own
+    // number decides where it sits, so the lowest hostile team takes the first
+    // colour whatever its number is. The player's team and any team already on
+    // the player's side are skipped rather than consuming a slot, or the red
+    // would land on a house drawn blue.
+    let ranks = crate::rules::team_colors::enemy_team_ranks(
+        house_colors.keys().filter_map(|owner| {
+            (!passive_house(sim, owner)
+                && !owner.eq_ignore_ascii_case(local)
+                && !allied(owner.as_str()))
+            .then(|| team_of_owner(owner))
+            .flatten()
+        }),
+        None,
+    );
+
+    // Teamless enemies pick from what the teams did not take, in name order so
+    // the shrinking free list is handed out the same way on every frame.
+    let mut taken: Vec<HouseColorIndex> = ranks
+        .values()
+        .filter_map(|rank| palette.team_color(*rank))
+        .collect();
+    let mut teamless: Vec<&String> = house_colors
+        .keys()
+        .filter(|owner| {
+            !passive_house(sim, owner)
+                && !owner.eq_ignore_ascii_case(local)
+                && !allied(owner.as_str())
+                && team_of_owner(owner).is_none()
+        })
+        .collect();
+    teamless.sort();
+    let mut teamless_colors: HashMap<&str, HouseColorIndex> = HashMap::new();
+    for owner in teamless {
+        if let Some(color) = palette.teamless_color(owner, &taken) {
+            taken.push(color);
+            teamless_colors.insert(owner.as_str(), color);
+        }
+    }
+    Some(
+        house_colors
+            .iter()
+            .map(|(owner, &color)| {
+                let color = if passive_house(sim, owner) {
+                    color
+                } else if owner.eq_ignore_ascii_case(local) {
+                    RELATION_SELF
+                } else if allied(owner.as_str()) {
+                    RELATION_ALLY
+                } else if let Some(entry) = team_of_owner(owner)
+                    .and_then(|team| ranks.get(&team))
+                    .and_then(|rank| palette.team_color(*rank))
+                {
+                    entry
+                } else if let Some(&entry) = teamless_colors.get(owner.as_str()) {
+                    entry
+                } else {
+                    RELATION_ENEMY
+                };
+                (owner.clone(), color)
+            })
+            .collect(),
+    )
+}
+
+/// The launch team a house plays on, from the match's cached map.
+fn team_of(teams: &HashMap<String, Option<u8>>, owner: &str) -> Option<u8> {
+    teams.get(&owner.to_ascii_uppercase()).copied().flatten()
+}
+
+/// Whether `owner` is a passive house (civilians, tech buildings) or the
+/// literal Neutral, which keeps its own colour under every recolour toggle.
+fn passive_house(sim: &crate::sim::world::Simulation, owner: &str) -> bool {
+    sim.interner().get(owner).is_none_or(|id| {
+        sim.houses()
+            .get(&id)
+            .is_some_and(|house| house.multiplay_passive())
+    }) || owner.eq_ignore_ascii_case("Neutral")
 }
 
 #[cfg(all(test, tests_app_presentation))]
@@ -463,6 +587,104 @@ mod relation_colour_tests {
         assert_eq!(seen["Foe"], RELATION_ENEMY);
         assert_eq!(seen["Civ"], colors["Civ"]);
         assert_eq!(relation_house_colors(&sim, &colors, None), None);
+    }
+
+    /// Team colours keep the relation view's own side and allies, give each
+    /// enemy team the palette in rank order, and hand a teamless enemy a
+    /// colour no team holds before it shares.
+    #[test]
+    fn team_colours_keep_self_blue_and_split_enemies_by_team() {
+        let mut sim = Simulation::with_seed(2);
+        let mut colors = HouseColorMap::new();
+        for (index, name) in ["Player", "Mate", "Rival", "Other", "Stray", "Civ"]
+            .into_iter()
+            .enumerate()
+        {
+            let id = sim.intern(name);
+            let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+            house.set_multiplay_passive_for_test(name == "Civ");
+            sim.register_house(house);
+            colors.insert(name.to_owned(), HouseColorIndex(index as u8 + 3));
+        }
+        sim.house_alliances_mut_for_test()
+            .insert("PLAYER".into(), ["MATE".into()].into());
+
+        let mut teams: HashMap<String, Option<u8>> = HashMap::new();
+        teams.insert("PLAYER".into(), Some(0));
+        teams.insert("MATE".into(), Some(0));
+        teams.insert("RIVAL".into(), Some(1));
+        teams.insert("OTHER".into(), Some(2));
+        teams.insert("STRAY".into(), None);
+        teams.insert("CIV".into(), Some(1));
+
+        // Three warm colours from the rules' palette, as `[Colors]` entries.
+        let palette = crate::rules::team_colors::EnemyTeamPalette::with_entries(&[
+            HouseColorIndex(5),
+            HouseColorIndex(7),
+            HouseColorIndex(9),
+        ]);
+        let seen =
+            team_house_colors(&sim, &colors, Some("Player"), Some(&teams), &palette).unwrap();
+        assert_eq!(seen["Player"], RELATION_SELF, "your own house stays blue");
+        assert_eq!(seen["Mate"], RELATION_ALLY, "allies stay green");
+        assert_eq!(
+            seen["Rival"],
+            palette.entries()[0],
+            "first enemy team is red"
+        );
+        assert_eq!(
+            seen["Other"],
+            palette.entries()[1],
+            "the second enemy team takes the next colour"
+        );
+        assert_eq!(
+            seen["Stray"],
+            palette.entries()[2],
+            "a teamless enemy takes the colour no team holds"
+        );
+        // A passive house keeps its own colour even when its map team says
+        // otherwise.
+        assert_eq!(seen["Civ"], colors["Civ"]);
+
+        // No local house: an observer keeps the player colours.
+        assert_eq!(
+            team_house_colors(&sim, &colors, None, Some(&teams), &palette),
+            None
+        );
+
+        // A player with no team still sees the teams around them, ranked from
+        // the lowest team.
+        let mut teamless_player = teams.clone();
+        teamless_player.insert("PLAYER".into(), None);
+        let seen = team_house_colors(
+            &sim,
+            &colors,
+            Some("Player"),
+            Some(&teamless_player),
+            &palette,
+        )
+        .unwrap();
+        assert_eq!(seen["Player"], RELATION_SELF);
+        assert_eq!(seen["Rival"], palette.entries()[0]);
+
+        // No teams at all: every enemy is teamless and takes a palette colour,
+        // never the self blue or the ally green.
+        let seen = team_house_colors(&sim, &colors, Some("Player"), None, &palette).unwrap();
+        assert_eq!(seen["Player"], RELATION_SELF);
+        assert_eq!(seen["Mate"], RELATION_ALLY);
+        for enemy in ["Rival", "Other", "Stray"] {
+            assert!(
+                palette.entries().contains(&seen[enemy]),
+                "{enemy} takes a warm palette colour"
+            );
+        }
+
+        // No warm colour in the rules: the view falls back to the relation
+        // red rather than inventing one.
+        let empty = crate::rules::team_colors::EnemyTeamPalette::default();
+        let seen = team_house_colors(&sim, &colors, Some("Player"), Some(&teams), &empty).unwrap();
+        assert_eq!(seen["Rival"], RELATION_ENEMY);
+        assert_eq!(seen["Player"], RELATION_SELF);
     }
 }
 

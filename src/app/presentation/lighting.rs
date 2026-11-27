@@ -270,7 +270,6 @@ pub(crate) fn anim_palette_light(
 
 /// `Drawing::RGB_To_Int` (YRpp `Drawing::Color16bit`): the 16-bit RGB565 word
 /// `(B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11)`.
-#[cfg(feature = "phobos")]
 fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
     (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
 }
@@ -438,7 +437,9 @@ pub(crate) fn attach_effect_tint(
 }
 
 /// The custom tint `TechnoExt::UpdateTintValues` aggregates from every owner:
-/// Phobos shields and AttachEffects today.
+/// Phobos shields and AttachEffects, the simulation module's tint for every
+/// viewer, then client decorations on this screen (appendices 7.2 and 7.10). Each owner ORs in its RGB565
+/// word and adds its intensity, as one more AttachEffect would.
 pub(crate) fn custom_tint(
     entity: &crate::app::presentation::frame::ObjectRecord,
     simulation: &Simulation,
@@ -446,13 +447,21 @@ pub(crate) fn custom_tint(
 ) -> (u16, i32) {
     let base = shield_tint(entity, simulation, rules);
     #[cfg(feature = "phobos")]
-    {
+    let base = {
         let (effect_word, effect_intensity) = attach_effect_tint(entity, simulation, rules);
         (base.0 | effect_word, base.1 + effect_intensity)
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        base
+    };
+    let base = with_module_tint(base, entity.module_tint());
+    with_module_tint(base, entity.local_look().tint)
+}
+
+/// `tint` with a module's tint folded in: its colour's word ORed (black
+/// adds nothing) and its intensity added in thousandths, as Phobos scales
+/// `Tint.Intensity`.
+fn with_module_tint((word, intensity): (u16, i32), module: Option<([u8; 3], f64)>) -> (u16, i32) {
+    match module {
+        None => (word, intensity),
+        Some((color, extra)) => (word | rgb565_word(color), intensity + (extra * 1000.0) as i32),
     }
 }
 

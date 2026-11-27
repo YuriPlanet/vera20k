@@ -518,17 +518,18 @@ A lobby that turns on continuous pacing (certificate flags bit 2, below) lets th
 relay seal at any whole rate instead of Game Speed rows, as lockstep LAN play
 follows its slowest player. The relay estimates what each player can run: what
 its tick cost holds and, while frames wait on it, nine tenths of what it ran. It
-holds the low point of that estimate and, after a wait, tries more: a twentieth
-more every five seconds, or nine tenths of the most the player has run since. A
-try the player cannot hold doubles the wait, from 15 seconds up to two minutes;
-one that held a minute starts it over. The clock aims at the smallest estimate
+holds the low point of that estimate until the player has kept up for a wait,
+then raises it once: by a fifth, or to nine tenths of the most the player has run
+since, and by a fifth again after each further wait it keeps up. A raise the
+player cannot hold doubles the wait, from 30 seconds up to two minutes; one that
+held a minute starts it over. The clock aims at the smallest estimate
 less that player's backlog over ten seconds (at most four tenths of the
 estimate), so a backlog always drains. The backlog comes from the sampled
 checksums the games already send: the newest frame when a checksum arrives,
 less the checksum's frame, less the least such gap while the player kept up.
-Every two seconds the clock moves towards that aim: down by at most half, up
-half the way and at most a quarter, and only when that is three percent or
-more; never below 10 frames a second or above the match's own speed. Messages,
+Every five seconds the clock moves towards that aim, and only when it is a
+twentieth or more away: down by at most half, up all the way and at most a
+quarter; never below 10 frames a second or above the match's own speed. Messages,
 replays and saves are as above. These rules live in the relay alone: games of
 any version play under a relay with either set, and rolling the relay back
 brings back the earlier rules for matches it starts.

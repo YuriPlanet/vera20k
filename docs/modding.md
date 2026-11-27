@@ -106,6 +106,11 @@ Later parts replace files at the same path.
 **Install & Play** makes one ready-to-use folder in `Mods` and restarts into it.
 **Install Only** adds the mod to the list for later. Both keep the original downloads.
 
+To extend an installed mod, select it and choose **Add Mod → Add parts**.
+Pick the patch ZIPs or folders and confirm **Append**. Existing filenames match
+regardless of letter case. The mod keeps its own `mod.ini` and Android shortcut.
+If you are already playing that mod, restart the game to load the added files.
+
 You can also install a mod manually.
 
 1. Make a folder inside `Mods` and give it your mod's name, such as `Mods/MyMod`.

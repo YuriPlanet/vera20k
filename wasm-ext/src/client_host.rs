@@ -49,6 +49,7 @@ macro_rules! for_each_client_import {
         $wrap!(client_host, "client_send_message", send_message(ptr: i32, len: i32) -> i32);
         $wrap!(client_host, "client_storage_read", storage_read(key: i32, key_len: i32, out: i32, cap: i32, len_out: i32) -> i32);
         $wrap!(client_host, "client_storage_write", storage_write(key: i32, key_len: i32, data: i32, data_len: i32) -> i32);
+        $wrap!(client_host, "client_status", status_template(ptr: i32, len: i32) -> i32);
     };
 }
 pub(crate) use for_each_client_import;
@@ -223,7 +224,7 @@ pub(crate) fn node_create(
     len: i32,
     out: i32,
 ) -> R<i32> {
-    if !(node_kind::TEXT..=node_kind::BAR).contains(&kind) {
+    if !(node_kind::TEXT..=node_kind::MAP_MARKER).contains(&kind) {
         return Err(fail(g, Invalid(format!("unknown node kind {kind}"))));
     }
     let range = input_buffer(g, ptr, len)?;
@@ -386,6 +387,23 @@ pub(crate) fn storage_read(
     };
     write(g, len_out, &len.to_le_bytes())?;
     Ok(status as i32)
+}
+
+/// `client_status`: registers, replaces or (with no elements) removes one
+/// of this source's status templates, given as the text of its INI section
+/// (`Name=` first). Text that is not UTF-8 is invalid. Charged per byte.
+pub(crate) fn status_template(g: &mut dyn Guest, ptr: i32, len: i32) -> R<i32> {
+    input_buffer(g, ptr, len)?;
+    if in_init(g) {
+        return unsupported(g, None);
+    }
+    charge(g, HOST_CALL_COST)?;
+    let bytes = copy_input(g, ptr, len)?;
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Err(fail(g, Invalid("client_status text is not UTF-8".into())));
+    };
+    let result = client(g)?.status_template(&text);
+    status(g, result)
 }
 
 /// `client_storage_write`: `data_len` 0 deletes the key. The host checks the

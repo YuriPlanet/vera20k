@@ -218,7 +218,10 @@ pub(crate) fn build(state: &mut AppState) {
             &renderer.batch_renderer,
             assets,
             source,
-            ui.tree.take_named_art(),
+            ui.tree
+                .take_named_art()
+                .into_iter()
+                .chain(ui.status.take_new_art()),
         );
     }
     let art = Some(ui.art.art());
@@ -343,10 +346,11 @@ fn node_part(
 }
 
 /// What a picture of the layers is judged by
-/// (`match_runtime::redraw_gate`): their [`layers_revision`] and the tree's
-/// buttons' looks ([`UiTree::looks`]), which live beside the GUI.
-pub(crate) fn layers_key(gui: &Gui, ui: &UiModules) -> ((usize, u64), u64) {
-    (layers_revision(gui), ui.tree.looks())
+/// (`match_runtime::redraw_gate`): their [`layers_revision`], the tree's
+/// buttons' looks ([`UiTree::looks`]), which live beside the GUI, and the
+/// status templates' revision (`status::ModuleStatus::revision`).
+pub(crate) fn layers_key(gui: &Gui, ui: &UiModules) -> ((usize, u64), u64, u64) {
+    (layers_revision(gui), ui.tree.looks(), ui.status.revision())
 }
 
 /// How many top-level nodes the layers hold and the latest GUI revision any

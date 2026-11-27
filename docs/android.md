@@ -371,20 +371,27 @@ the native edit's own filter does with units from `0x100` up — and
 so a Chinese name cannot reach the single-byte roster row whichever path the text
 arrived by.
 
+When an edit refuses input, the game sends its accepted text and caret back to
+the keyboard after composition ends. Chat can keep supplementary characters,
+including emoji. Android counts the caret in UTF-16 units.
+
 The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
-links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
-`android-activity` stays the crates.io 0.6.0 release.
+links `-Wl,--wrap=pthread_create` and the wrapper raises a smaller requested
+stack to 8 MiB (`util::thread_stack::android_stack`). It never lowers one: a
+thread that asked for more keeps it, and a caller that brought its own stack
+(`pthread_attr_setstack`) is left alone. `android-activity` stays the crates.io
+0.6.0 release.
 
 ### Send keys on the LAN screens
 
-Neither the LAN lobby nor the LAN room has a native send button, and a phone has
-no Enter to press. Both put VERA's key where the online room's emote button sits,
+The LAN lobby and room show a send button on desktop and Android.
+Both put VERA's key where the online room's emote button sits,
 using that button's own square art: `atlas.wol_emote_images()`'s released frame
 (`wodact.pcx`, the `Picture::Emote` path), 26 x 23 authored pixels, six authored
 pixels right of the box and one pixel above it. A tap sends through the screen's
 own `Enter` path (`key_press`), so the chat, its length cap and its prefix behave
-as typed text does. The online room keeps its native emote button, so the key is
-LAN-only (`!view.dialog.wol()`). It is host-drawn rather than a GUI node, so it
+as typed text does. The online room keeps its native emote button. The LAN key
+is host-drawn rather than a GUI node, so it
 needs `!leaving` or it hangs over the next page's slide, and it answers the
 emote button's hint (`STT:EmoteButton`) in the status line while the pointer is
 on it.

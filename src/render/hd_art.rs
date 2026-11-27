@@ -22,17 +22,12 @@ use std::path::{Path, PathBuf};
 
 use bytemuck::{Pod, Zeroable};
 
+use super::atlas_growth::ShelfCursor;
+
 use super::sprite_atlas::{ShpSpriteKey, SpriteAtlas};
 
 /// Native pixels per side of the index page; the HD page is twice that.
 const PAGE: u32 = 2048;
-
-/// New pack files read in one frame, so a screen of new buildings arrives
-/// over a few frames instead of stalling one.
-const LOADS_PER_FRAME: usize = 24;
-
-/// The index page has no room left for a frame.
-struct PageFull;
 
 /// One visible atlas piece: where its frame is in the sprite atlas, and where
 /// the SHP blitter put it in the native composition.
@@ -157,21 +152,61 @@ struct Gpu {
     instance_capacity: usize,
 }
 
+/// Pictures asked of the readers and not yet back: a screen of new frames
+/// waits here instead of queueing every frame of every building.
+const MAX_IN_FLIGHT: usize = 256;
+
+/// RGBA bytes of finished pictures uploaded in one frame, so a burst of
+/// arrivals spreads over a few frames.
+const UPLOAD_BYTES_PER_FRAME: usize = 32 << 20;
+
+/// Frames after which a picture with no room is asked for again.
+const NO_ROOM_RETRY_FRAMES: u64 = 120;
+
+/// A frame's HD art.
+enum Art {
+    /// The readers have it.
+    Pending,
+    /// The pack has no picture for it (or it is larger than a page).
+    Missing,
+    /// On the pages: its native rectangle, and the last frame that showed it.
+    Ready { rect: [u32; 4], used: u64 },
+    /// Read, but even the frames on screen left no room; asked again later.
+    NoRoom { at: u64 },
+}
+
+/// A frame waiting for its picture: size and native palette indices, which
+/// go up with it.
+struct Waiting {
+    width: u32,
+    height: u32,
+    indices: Vec<u8>,
+}
+
 /// The pack's frames resident on the GPU, keyed by the atlas entries that
 /// show them.
 pub(crate) struct HdArt {
     dir: PathBuf,
     dump: Option<PathBuf>,
     reference: Vec<u8>,
+    /// The atlas the entries below describe ([`SpriteAtlas::instance`]).
+    atlas: u64,
     generation: (usize, usize, usize),
     /// Atlas entry (page, uv origin bits) of every building frame → its key.
     candidates: HashMap<(u8, u32, u32), ShpSpriteKey>,
-    /// Atlas entry → the frame's native rectangle in the index page, or
-    /// `None` when the pack has no art for it.
-    entries: HashMap<(u8, u32, u32), Option<[u32; 4]>>,
-    /// Frame hash → its rectangle, or `None` when the pack has no art for it.
-    frames: HashMap<u64, Option<[u32; 4]>>,
-    shelf: [u32; 3],
+    /// Atlas entry → its frame's hash, or `None` when the frame has no
+    /// indices to hash.
+    entries: HashMap<(u8, u32, u32), Option<u64>>,
+    /// Frame hash → its art. Kept across maps: a hash names the same art
+    /// whichever atlas shows it.
+    frames: HashMap<u64, Art>,
+    waiting: HashMap<u64, Waiting>,
+    loader: super::hd_loader::HdLoader,
+    /// Frames prepared so far, for [`Art::Ready`]'s `used`.
+    frame: u64,
+    shelf: ShelfCursor,
+    /// A full visible set can refuse several pictures in the same pass.
+    repacked_this_pass: bool,
     gpu: Option<Gpu>,
 }
 
@@ -186,11 +221,16 @@ impl HdArt {
             dir,
             dump: std::env::var("VERA20K_HD_DUMP").ok().map(PathBuf::from),
             reference,
+            atlas: 0,
             generation: (0, 0, 0),
             candidates: HashMap::new(),
             entries: HashMap::new(),
             frames: HashMap::new(),
-            shelf: [0, 0, 0],
+            waiting: HashMap::new(),
+            loader: super::hd_loader::HdLoader::new("HD art reader"),
+            frame: 0,
+            shelf: Self::empty_shelf(),
+            repacked_this_pass: false,
             gpu: None,
         })
     }
@@ -200,10 +240,12 @@ impl HdArt {
     }
 
     /// Bring the art of `pieces` (this frame's visible pieces) up: each
-    /// building frame among them that the pack has art for is read and
-    /// uploaded once, at most [`LOADS_PER_FRAME`] new files a frame. Only
-    /// frames on screen are kept, since the atlas holds every animation of
-    /// every building type, far more than one page; a full page starts over.
+    /// building frame among them is asked of the readers once, and the
+    /// pictures they finished go up at the start of a frame. Only frames on
+    /// screen are kept, since the atlas holds every animation of every
+    /// building type, far more than one page; a full page keeps the frames
+    /// shown in the last frames and lets the rest go. A capture reads every
+    /// picture at once, since it shows one frame.
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -211,7 +253,18 @@ impl HdArt {
         atlas: &SpriteAtlas,
         pieces: &[HdArtPiece],
     ) {
+        self.repacked_this_pass = false;
         self.ensure_gpu(device, queue);
+        self.frame += 1;
+        if self.atlas != atlas.instance() {
+            // A new map's atlas: its positions and palette rows are its own.
+            self.atlas = atlas.instance();
+            self.entries.clear();
+            self.generation = (usize::MAX, 0, 0);
+            if let Some(gpu) = self.gpu.as_mut() {
+                gpu.rows = None;
+            }
+        }
         if self.generation != atlas.generation() {
             self.generation = atlas.generation();
             self.candidates = atlas
@@ -219,132 +272,220 @@ impl HdArt {
                 .map(|(key, entry)| (Self::key(entry.page, entry.uv_origin), key.clone()))
                 .collect();
         }
-        let mut uploads = Vec::new();
-        let mut loads = 0;
+        let mut uploaded = 0;
+        while uploaded < UPLOAD_BYTES_PER_FRAME {
+            let Some(loaded) = self.loader.take() else {
+                break;
+            };
+            uploaded += self.finish(device, queue, loaded.key, loaded.rgba);
+        }
+        let capture = super::hd_switch::capture_zoom().is_some();
         for piece in pieces {
             let Ok(page) = u8::try_from(piece.page) else {
                 continue;
             };
             let entry_key = Self::key(page, piece.uv_origin);
-            if self.entries.contains_key(&entry_key) {
-                continue;
-            }
-            let Some(key) = self.candidates.get(&entry_key) else {
-                continue;
-            };
-            let Some(entry) = atlas.get(key) else {
-                continue;
-            };
-            let (width, height) = (entry.pixel_size[0] as u32, entry.pixel_size[1] as u32);
-            let indices = atlas.frame_indices(key).filter(|indices| {
-                width > 0 && height > 0 && indices.len() == (width * height) as usize
-            });
-            let Some(indices) = indices else {
-                self.entries.insert(entry_key, None);
-                continue;
-            };
-            let hash = frame_hash(width, height, &indices);
-            let rect = match self.frames.get(&hash) {
-                Some(rect) => *rect,
-                None => {
-                    if loads >= LOADS_PER_FRAME {
+            let mut fresh = None;
+            let hash = match self.entries.get(&entry_key) {
+                Some(None) => continue,
+                Some(Some(hash)) => *hash,
+                None => match self.frame_of(atlas, entry_key) {
+                    None => continue,
+                    Some(None) => {
+                        self.entries.insert(entry_key, None);
                         continue;
                     }
-                    loads += 1;
-                    match self.load_frame(hash, width, height, &indices, &mut uploads) {
-                        Ok(rect) => {
-                            self.frames.insert(hash, rect);
-                            rect
-                        }
-                        Err(PageFull) => {
-                            // Start the page over: what is on screen now
-                            // comes back over the next frames.
-                            log::info!("HD art page full; reloading the frames on screen");
-                            self.entries.retain(|_, rect| rect.is_none());
-                            self.frames.retain(|_, rect| rect.is_none());
-                            self.shelf = [0, 0, 0];
-                            uploads.clear();
-                            continue;
-                        }
+                    Some(Some(waiting)) => {
+                        let hash = frame_hash(waiting.width, waiting.height, &waiting.indices);
+                        self.entries.insert(entry_key, Some(hash));
+                        fresh = Some(waiting);
+                        hash
                     }
-                }
+                },
             };
-            self.entries.insert(entry_key, rect);
-        }
-        let gpu = self.gpu.as_ref().expect("HD art GPU resources");
-        for (rect, indices, art) in uploads {
-            super::atlas_growth::write_texels(
-                queue,
-                &gpu.indices,
-                [rect[0], rect[1]],
-                [rect[2], rect[3]],
-                1,
-                &indices,
-            );
-            super::atlas_growth::write_texels(
-                queue,
-                &gpu.art,
-                [rect[0] * 2, rect[1] * 2],
-                [rect[2] * 2, rect[3] * 2],
-                4,
-                &art,
-            );
+            let frame = self.frame;
+            let ask = match self.frames.get_mut(&hash) {
+                Some(Art::Ready { used, .. }) => {
+                    *used = frame;
+                    false
+                }
+                Some(Art::Pending | Art::Missing) => false,
+                Some(Art::NoRoom { at }) => frame > *at + NO_ROOM_RETRY_FRAMES,
+                None => true,
+            };
+            if !ask || (!capture && self.loader.in_flight() >= MAX_IN_FLIGHT) {
+                continue;
+            }
+            let waiting = match fresh {
+                Some(waiting) => waiting,
+                None => match self.frame_of(atlas, entry_key) {
+                    Some(Some(waiting)) => waiting,
+                    _ => continue,
+                },
+            };
+            self.request(device, queue, hash, waiting, capture);
         }
         self.upload_rows(device, queue, atlas);
     }
 
-    /// Read `<hash>.png` and place it: `Ok(None)` when the pack lacks it
-    /// (the frame is dumped then), `Err` when the page is full.
-    fn load_frame(
-        &mut self,
-        hash: u64,
-        width: u32,
-        height: u32,
-        indices: &[u8],
-        uploads: &mut Vec<([u32; 4], Vec<u8>, Vec<u8>)>,
-    ) -> Result<Option<[u32; 4]>, PageFull> {
-        let name = format!("{hash:016x}");
-        let art = std::fs::read(self.dir.join(format!("{name}.png")))
-            .ok()
-            .and_then(|bytes| {
-                image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()
-            })
-            .map(|image| image.into_rgba8());
-        let Some(art) = art.filter(|art| art.width() == width * 2 && art.height() == height * 2)
-        else {
-            if let Some(dump) = &self.dump {
-                let mut bytes = Vec::with_capacity(4 + indices.len());
-                bytes.extend_from_slice(&(width as u16).to_le_bytes());
-                bytes.extend_from_slice(&(height as u16).to_le_bytes());
-                bytes.extend_from_slice(indices);
-                let _ = std::fs::create_dir_all(dump);
-                let _ = std::fs::write(dump.join(format!("{name}.idx")), bytes);
-            }
-            return Ok(None);
-        };
-        if width >= PAGE || height >= PAGE {
-            return Ok(None);
-        }
-        let rect = self.place(width, height).ok_or(PageFull)?;
-        uploads.push((rect, indices.to_vec(), art.into_raw()));
-        Ok(Some(rect))
+    /// The size and indices of the building frame at `entry_key`: `None`
+    /// when no building frame is there, `Some(None)` when its indices are
+    /// not to be had.
+    fn frame_of(&self, atlas: &SpriteAtlas, entry_key: (u8, u32, u32)) -> Option<Option<Waiting>> {
+        let key = self.candidates.get(&entry_key)?;
+        let entry = atlas.get(key)?;
+        let (width, height) = (entry.pixel_size[0] as u32, entry.pixel_size[1] as u32);
+        Some(
+            atlas
+                .frame_indices(key)
+                .filter(|indices| {
+                    width > 0 && height > 0 && indices.len() == (width * height) as usize
+                })
+                .map(|indices| Waiting {
+                    width,
+                    height,
+                    indices,
+                }),
+        )
     }
 
-    /// Shelf placement in the native index page, one pixel apart.
+    /// Ask for `hash`'s picture: of the readers, or at once in a capture.
+    fn request(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        hash: u64,
+        waiting: Waiting,
+        capture: bool,
+    ) {
+        if waiting.width >= PAGE || waiting.height >= PAGE {
+            self.frames.insert(hash, Art::Missing);
+            return;
+        }
+        let path = self.dir.join(format!("{hash:016x}.png"));
+        let size = [waiting.width * 2, waiting.height * 2];
+        self.waiting.insert(hash, waiting);
+        if capture {
+            let rgba = super::hd_loader::read_picture(&path, size);
+            self.finish(device, queue, hash, rgba);
+        } else {
+            self.frames.insert(hash, Art::Pending);
+            self.loader.request(hash, path, size);
+        }
+    }
+
+    /// Place and upload a finished picture (or note the pack lacks it, and
+    /// dump the frame then). Returns the RGBA bytes uploaded.
+    fn finish(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        hash: u64,
+        rgba: Option<Vec<u8>>,
+    ) -> usize {
+        let Some(waiting) = self.waiting.remove(&hash) else {
+            return 0;
+        };
+        let Some(art) = rgba else {
+            if let Some(dump) = &self.dump {
+                let mut bytes = Vec::with_capacity(4 + waiting.indices.len());
+                bytes.extend_from_slice(&(waiting.width as u16).to_le_bytes());
+                bytes.extend_from_slice(&(waiting.height as u16).to_le_bytes());
+                bytes.extend_from_slice(&waiting.indices);
+                let _ = std::fs::create_dir_all(dump);
+                let _ = std::fs::write(dump.join(format!("{hash:016x}.idx")), bytes);
+            }
+            self.frames.insert(hash, Art::Missing);
+            return 0;
+        };
+        let (width, height) = (waiting.width, waiting.height);
+        let mut rect = self.place(width, height);
+        if rect.is_none() && !self.repacked_this_pass {
+            self.repacked_this_pass = true;
+            self.repack(device, queue);
+            rect = self.place(width, height);
+        }
+        let Some(rect) = rect else {
+            self.frames.insert(hash, Art::NoRoom { at: self.frame });
+            return 0;
+        };
+        let gpu = self.gpu.as_ref().expect("HD art GPU resources");
+        super::atlas_growth::write_texels(
+            queue,
+            &gpu.indices,
+            [rect[0], rect[1]],
+            [width, height],
+            1,
+            &waiting.indices,
+        );
+        super::atlas_growth::write_texels(
+            queue,
+            &gpu.art,
+            [rect[0] * 2, rect[1] * 2],
+            [width * 2, height * 2],
+            4,
+            &art,
+        );
+        self.frames.insert(
+            hash,
+            Art::Ready {
+                rect,
+                used: self.frame,
+            },
+        );
+        art.len()
+    }
+
+    /// The pages are full: copy the frames shown in the last two frames to
+    /// fresh pages, tallest first, and let the rest go (they are read again
+    /// when seen). Nothing is read from disk again, and nothing a draw
+    /// already recorded reads is overwritten: the old pages stay as they are
+    /// for it.
+    fn repack(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let keep_from = self.frame.saturating_sub(2);
+        let mut keep: Vec<(u64, [u32; 4], u64)> = self
+            .frames
+            .iter()
+            .filter_map(|(hash, art)| match art {
+                Art::Ready { rect, used } if *used >= keep_from => Some((*hash, *rect, *used)),
+                _ => None,
+            })
+            .collect();
+        keep.sort_by_key(|(hash, rect, _)| (std::cmp::Reverse(rect[3]), *hash));
+        self.frames
+            .retain(|_, art| !matches!(art, Art::Ready { used, .. } if *used < keep_from));
+        let (indices, art) = page_textures(device);
+        self.shelf = Self::empty_shelf();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("HD art repack"),
+        });
+        let mut kept = 0;
+        for (hash, old, used) in keep {
+            let Some(rect) = self.place(old[2], old[3]) else {
+                self.frames.remove(&hash);
+                continue;
+            };
+            let gpu = self.gpu.as_ref().expect("HD art GPU resources");
+            copy_rect(&mut encoder, &gpu.indices, &indices, old, rect, 1);
+            copy_rect(&mut encoder, &gpu.art, &art, old, rect, 2);
+            self.frames.insert(hash, Art::Ready { rect, used });
+            kept += 1;
+        }
+        queue.submit([encoder.finish()]);
+        let gpu = self.gpu.as_mut().expect("HD art GPU resources");
+        gpu.indices = indices;
+        gpu.art = art;
+        log::info!("HD art page full; kept the {kept} frames shown last");
+    }
+
+    fn empty_shelf() -> ShelfCursor {
+        let page = PAGE / super::hd_switch::page_shrink();
+        ShelfCursor::new(page, page)
+    }
+
     fn place(&mut self, width: u32, height: u32) -> Option<[u32; 4]> {
-        let [x, y, row] = &mut self.shelf;
-        if *x + width > PAGE {
-            *y += *row + 1;
-            *x = 0;
-            *row = 0;
-        }
-        if *y + height > PAGE {
-            return None;
-        }
-        let rect = [*x, *y, width, height];
-        *x += width + 1;
-        *row = (*row).max(height);
-        Some(rect)
+        let [x, y] = self.shelf.place(width, height)?;
+        Some([x, y, width, height])
     }
 
     fn upload_rows(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, atlas: &SpriteAtlas) {
@@ -389,24 +530,7 @@ impl HdArt {
         if self.gpu.is_some() {
             return;
         }
-        let texture = |label, size: u32, format| {
-            device.create_texture(&wgpu::TextureDescriptor {
-                label: Some(label),
-                size: wgpu::Extent3d {
-                    width: size,
-                    height: size,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            })
-        };
-        let indices = texture("HD art native indices", PAGE, wgpu::TextureFormat::R8Uint);
-        let art = texture("HD art", PAGE * 2, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let (indices, art) = page_textures(device);
         let reference = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("HD art reference palette"),
             size: wgpu::Extent3d {
@@ -499,7 +623,11 @@ impl HdArt {
     /// The HD draw for `piece`, or `None` when its frame has no resident art.
     pub(crate) fn placement(&self, piece: &HdArtPiece) -> Option<HdArtDraw> {
         let key = Self::key(u8::try_from(piece.page).ok()?, piece.uv_origin);
-        let rect = (*self.entries.get(&key)?)?;
+        let hash = (*self.entries.get(&key)?)?;
+        let Art::Ready { rect, .. } = self.frames.get(&hash)? else {
+            return None;
+        };
+        let rect = *rect;
         if piece.source_palette == 0 || piece.size != [rect[2] as f32, rect[3] as f32] {
             return None;
         }
@@ -642,6 +770,71 @@ impl HdArt {
         pass.set_vertex_buffer(0, gpu.instances.slice(..));
         pass.draw(0..4, 0..draws.len() as u32);
     }
+}
+
+/// The native index page and its 2x art page, empty.
+fn page_textures(device: &wgpu::Device) -> (wgpu::Texture, wgpu::Texture) {
+    let texture = |label, size: u32, format| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        })
+    };
+    (
+        texture("HD art native indices", PAGE, wgpu::TextureFormat::R8Uint),
+        texture("HD art", PAGE * 2, wgpu::TextureFormat::Rgba8UnormSrgb),
+    )
+}
+
+/// Copy native rectangle `from` of `source` to `to` of `target`, both
+/// scaled by `scale` (1 for the index page, 2 for the art page).
+fn copy_rect(
+    encoder: &mut wgpu::CommandEncoder,
+    source: &wgpu::Texture,
+    target: &wgpu::Texture,
+    from: [u32; 4],
+    to: [u32; 4],
+    scale: u32,
+) {
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: source,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: from[0] * scale,
+                y: from[1] * scale,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: target,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: to[0] * scale,
+                y: to[1] * scale,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::Extent3d {
+            width: from[2] * scale,
+            height: from[3] * scale,
+            depth_or_array_layers: 1,
+        },
+    );
 }
 
 fn shader_source() -> String {

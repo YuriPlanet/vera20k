@@ -55,6 +55,16 @@ pub(crate) fn exit_confirm(csf: &CsfLookup<'_>) -> ShellBox {
     message(csf, [body, OK, CANCEL, NONE])
 }
 
+/// Same art, slots and cancellation behavior as Exit Game.
+pub(crate) fn edition_confirm(csf: &CsfLookup<'_>, ra2: bool) -> ShellBox {
+    let body = if ra2 {
+        ("VERA:ConfirmSwitchToRA2", "Restart in Red Alert 2?")
+    } else {
+        ("VERA:ConfirmSwitchToYR", "Restart in Yuri's Revenge?")
+    };
+    message(csf, [body, OK, CANCEL, NONE])
+}
+
 /// VERA's Esc menu: the main menu's own Options (0), Cancel (1) and Exit
 /// Game (2), and no question, its buttons in a footer.
 pub(crate) fn shell_menu(csf: &CsfLookup<'_>) -> ShellBox {
@@ -86,6 +96,14 @@ mod tests {
         assert_eq!(
             captions(exit_confirm(&lookup)),
             ["GUI:ExitAreYouSure", "TXT_OK", "GUI:Cancel"]
+        );
+        assert_eq!(
+            captions(edition_confirm(&lookup, true)),
+            ["VERA:ConfirmSwitchToRA2", "TXT_OK", "GUI:Cancel"]
+        );
+        assert_eq!(
+            captions(edition_confirm(&lookup, false)),
+            ["VERA:ConfirmSwitchToYR", "TXT_OK", "GUI:Cancel"]
         );
         assert_eq!(
             captions(campaign_replay(&lookup)),

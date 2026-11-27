@@ -20,6 +20,10 @@ import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.text.InputType
+import android.graphics.Bitmap
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.view.PointerIcon
 import android.view.RoundedCorner
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
@@ -93,6 +97,20 @@ class VeraActivity : GameActivity() {
             insets
         }
         window.decorView.requestApplyInsets()
+        window.decorView.setOnHoverListener { _, event ->
+            if (isHardwarePointer(event)) {
+                forwardPointer(event)
+                true
+            } else {
+                false
+            }
+        }
+        // The engine draws its own pointer; the system one would trail it.
+        window.decorView.pointerIcon = PointerIcon.create(
+            Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888),
+            0f,
+            0f,
+        )
         pruneModShortcuts()
         clearPickedModParts()
     }
@@ -368,6 +386,65 @@ class VeraActivity : GameActivity() {
         }
         startActivityForResult(intent, REQUEST_PICK_FOLDER)
     }
+
+    /** Whether the event came from a hardware mouse or a touchpad. */
+    private fun isHardwarePointer(event: MotionEvent): Boolean {
+        val source = event.source
+        val mouse = source and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE
+        val touchpad = source and InputDevice.SOURCE_TOUCHPAD == InputDevice.SOURCE_TOUCHPAD
+        return mouse || touchpad || event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE
+    }
+
+    /**
+     * Hardware pointing devices bypass winit's Android backend, which reads
+     * every MotionEvent as a touch and drops hover, wheel and button actions.
+     * They go to Rust, which turns them back into cursor and mouse events.
+     */
+    private fun forwardPointer(event: MotionEvent) {
+        nativeMouseEvent(
+            event.deviceId,
+            event.actionMasked,
+            event.actionButton,
+            event.buttonState,
+            event.x,
+            event.y,
+            event.getAxisValue(MotionEvent.AXIS_VSCROLL),
+            event.getAxisValue(MotionEvent.AXIS_HSCROLL),
+            event.getAxisValue(MotionEvent.AXIS_SCROLL),
+            event.eventTime,
+            event.getToolType(0),
+        )
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
+        if (event != null && isHardwarePointer(event)) {
+            forwardPointer(event)
+            return true
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent?): Boolean {
+        if (event != null && isHardwarePointer(event)) {
+            forwardPointer(event)
+            return true
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    private external fun nativeMouseEvent(
+        deviceId: Int,
+        action: Int,
+        actionButton: Int,
+        buttons: Int,
+        x: Float,
+        y: Float,
+        vscroll: Float,
+        hscroll: Float,
+        scroll: Float,
+        eventTime: Long,
+        tool: Int,
+    )
 
     /**
      * Ends the process with the task.

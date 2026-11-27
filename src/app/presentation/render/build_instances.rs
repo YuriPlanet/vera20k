@@ -64,6 +64,9 @@ pub(super) struct WorldInstances {
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
     /// Empty when the live `[Options] DetailLevel` projection is zero.
     pub cell_sparkles: Vec<SpriteInstance>,
+    /// The mod's and the map's status templates over the battlefield
+    /// (`ui_modules::field`).
+    pub module_field: crate::app::ui_modules::field::FieldInstances,
     /// What the terrain tile walk and the Display object walk took, for the
     /// performance panel's Most CPU row (`RenderPhases::terrain`,
     /// `RenderPhases::objects`).
@@ -584,6 +587,12 @@ pub(super) fn build_world_instances(
         match_state.match_presentation.selection_overlay.as_ref(),
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+        // The original's families the mod's or map's status templates hide
+        // (`ui_modules::status`).
+        let hidden_native = match_state
+            .ui_modules
+            .as_ref()
+            .map_or(0, |ui| ui.status.hidden());
         // The text families' built-in templates (`health_templates`) may hide
         // or move them; asked once for the frame.
         let info_shift = crate::app::presentation::health_templates::family(
@@ -727,6 +736,7 @@ pub(super) fn build_world_instances(
                             });
                     }
                 }
+                status.hide_families(hidden_native);
                 status
             });
         }
@@ -871,7 +881,35 @@ pub(super) fn build_world_instances(
         );
     });
 
+    // The status templates' layer reads the frame the strips read.
+    let module_field = match (
+        match_state.ui_modules.as_ref(),
+        match_state.sim_runtime.presentation(),
+        match_state.sim_runtime.frame(),
+    ) {
+        (Some(ui), Some(runtime), Some(frame)) => {
+            let sim = &runtime.simulation;
+            let local_owner = crate::app::input::commands::preferred_local_owner_name(match_state);
+            let view = crate::app::ui_modules::field::FieldView {
+                sim,
+                frame,
+                rules: crate::app::state::active_rules(frontend, match_state),
+                player: local_owner.as_deref().and_then(|name| sim.interner().get(name)),
+                hovered: crate::app::presentation::ui_overlays::health_hover_target(hover),
+                viewport: crate::app::presentation::ui_overlays::StatusViewport {
+                    camera: [match_state.input.camera_x, match_state.input.camera_y],
+                    size: [sw, sh],
+                    zoom: match_state.input.zoom_level,
+                    ignore_visibility: match_state.sandbox_full_visibility,
+                },
+            };
+            crate::app::ui_modules::field::build(ui, &view, &renderer.bit_font)
+        }
+        _ => Default::default(),
+    };
+
     WorldInstances {
+        module_field,
         terrain,
         cell_bodies,
         cell_body_draws,
@@ -1672,6 +1710,20 @@ pub(super) fn build_sidebar_instances(
         crate::app::presentation::sidebar_render::minimap_shown(&match_state.match_presentation);
 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
+        let markers = match_state.ui_modules.as_ref().map(|ui| {
+            let sim = match_state.sim_runtime.presentation().map(|rt| &rt.simulation);
+            let frame = match_state.sim_runtime.frame();
+            let player = crate::app::input::commands::preferred_local_owner_name(match_state);
+            let player = sim.and_then(|sim| player.as_deref().and_then(|name| sim.interner().get(name)));
+            let rules = crate::app::state::active_rules(frontend, match_state);
+            crate::app::ui_modules::field::radar_markers(ui, |id| {
+                let entity = frame?.object(id)?;
+                crate::app::presentation::ui_overlays::module_status_anchor(
+                    sim?, entity, rules, player, match_state.sandbox_full_visibility,
+                )?;
+                Some((entity.position.rx(), entity.position.ry()))
+            })
+        });
         match &mut match_state.match_presentation.minimap {
             Some(mm) => {
                 let quad = mm.build_minimap_instance_in_rect(
@@ -1695,7 +1747,7 @@ pub(super) fn build_sidebar_instances(
                     .minimap_hud
                     .draw(MINIMAP_AREA, Some((area, quad)))
                     .to_vec();
-                let viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
+                let mut viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
                     mm.build_viewport_rect_in_rect(
                         match_state.input.camera_x,
                         match_state.input.camera_y,
@@ -1723,6 +1775,18 @@ pub(super) fn build_sidebar_instances(
                         sidebar_color,
                     )
                 });
+                // VERA: the client modules' map markers on the radar.
+                if let Some(markers) = markers {
+                    viewport_rect.extend(mm.build_marker_dots_in_rect(
+                        match_state.input.camera_x,
+                        match_state.input.camera_y,
+                        minimap_rect.x,
+                        minimap_rect.y,
+                        minimap_rect.w,
+                        minimap_rect.h,
+                        markers,
+                    ));
+                }
                 (minimap, viewport_rect, content_boundary)
             }
             None => {

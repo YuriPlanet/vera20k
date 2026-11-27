@@ -245,13 +245,35 @@ impl App {
                 target_os = "linux",
                 target_os = "android"
             ))]
-            Some(mods_shell::ADD) => Self::open_add_mod(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
-            ),
+            Some(mods_shell::ADD) => {
+                let selected =
+                    Self::mods_selected(&state.frontend.shell_controller).and_then(|row| {
+                        state
+                            .frontend
+                            .mods
+                            .page
+                            .as_ref()
+                            .and_then(|rows| rows.get(row))
+                            .and_then(|listed| listed.folder.clone())
+                    });
+                match selected {
+                    Some(folder) => Self::ask_add_or_append(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                        folder,
+                    ),
+                    None => Self::open_add_mod(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.persistence.options_profile,
+                    ),
+                }
+            }
             #[cfg(target_os = "android")]
             Some(mods_shell::NAME_OK) => Self::answer_name_dialog(state, true),
             #[cfg(target_os = "android")]
@@ -961,6 +983,42 @@ impl App {
         }
         let _ = gui.set(nodes.ok, Prop::Enabled, Value::Bool(open));
         let _ = gui.set(nodes.close, Prop::Enabled, Value::Bool(open));
+    }
+
+    /// Add Mod with a mod selected: a new mod, or parts for that folder
+    /// through the same picker.
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
+    fn ask_add_or_append(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: String,
+    ) {
+        let title = tr_fill("VERA:ModAddChoice", &[("mod", &folder)]);
+        let shell_box = ShellBox::message(
+            title,
+            tr("VERA:ModAddCreate"),
+            tr("VERA:Cancel"),
+            tr_fill("VERA:ModAppendTo", &[("mod", &folder)]),
+        );
+        let shell_box = crate::app::shell_mod_import::choice_box(shell_box);
+        let purpose = ShellMessageBoxPurpose::ModAddChoice(folder);
+        Self::open_shell_message_box(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            shell_box,
+            purpose,
+        );
     }
 
     /// Android: a key pressed while the name dialog is up.

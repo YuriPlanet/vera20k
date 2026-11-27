@@ -332,10 +332,7 @@ pub(crate) fn economy_state_machine(
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(policy)
-        || house.command_driven()
-        || !session.rule_policy().uses_managed_ai_base()
-    {
+    if house.is_controlled_by_human(policy) || !policy.uses_managed_ai_base() {
         return;
     }
     let mode = house.ai_production().mode;

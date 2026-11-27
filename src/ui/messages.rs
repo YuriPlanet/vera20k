@@ -329,12 +329,14 @@ impl MessageList {
         )
     }
 
-    /// The open edit's typed text and caret, for seeding Android's input
-    /// method: the prefix and the caller's name stay the game's own.
+    /// The open edit's typed text and end caret in characters, for Android.
+    /// The keyboard edits only the text after the prefix.
     pub fn edit_ime_state(&self) -> Option<(String, usize)> {
         self.edit.as_ref().map(|edit| {
             let typed = edit.buffer.get(edit.start..).unwrap_or(&[]);
-            (String::from_utf16_lossy(typed), typed.len())
+            let text = String::from_utf16_lossy(typed);
+            let caret = text.chars().count();
+            (text, caret)
         })
     }
 

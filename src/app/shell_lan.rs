@@ -1207,7 +1207,7 @@ pub(crate) fn ime_chat_rect(
         .filter(|runtime| {
             routed && runtime.modal.is_none() && !runtime.creating && runtime.lobby.enabled && chat
         })
-        .map(|_| layout(gpu).rect(CHAT).unwrap_or_default())
+        .map(|_| layout(gpu).chat_text().unwrap_or_default())
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -1282,8 +1282,8 @@ pub(crate) fn sync_gui(renderer: &RendererState, frontend: &mut FrontendState) {
     }
     let gui = controller.gui_mut();
     page::sync_rects(gui, root, |id| {
-        // Android: the chat edit takes the room's row, beside the send key.
-        #[cfg(target_os = "android")]
+        // The chat edit takes the room's row beside a touch send key, or its
+        // native place when the key is off (chat_text answers both).
         if id == CHAT
             && let Some(rect) = layout.chat_text()
         {
@@ -1382,11 +1382,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     sync_gui(&state.renderer, &mut state.frontend);
     let (x, y) = state.match_state.input.cursor_px();
-    // VERA's send key: a phone has no Enter to press, so the button on the
-    // chat box sends the line.
-    #[cfg(target_os = "android")]
+    // VERA's send key: a platform without Enter sends from the chat box.
     if pressed
         && layout(&state.renderer.gpu)
+            .with_touch_send(state.platform.touch_send)
             .chat_send()
             .is_some_and(|rect| rect.contains(x, y))
     {

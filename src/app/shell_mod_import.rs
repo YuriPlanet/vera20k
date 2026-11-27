@@ -18,7 +18,7 @@ use crate::i18n::{tr, tr_fill};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, control};
-use crate::util::mod_package::{ModImport, PreparedModImport};
+use crate::util::mod_package::{ModImport, PreparedModAppend, PreparedModImport};
 use crate::util::time::{Duration, Instant};
 use vera20k_gui::shell::list::ROW_HEIGHT;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
@@ -60,6 +60,8 @@ pub(crate) struct Selection {
     top: usize,
     can_browse: bool,
     choosing_kind: bool,
+    /// The selected installed mod when adding parts.
+    append: Option<String>,
     error: Option<String>,
 }
 
@@ -90,6 +92,7 @@ impl Selection {
             top: 0,
             can_browse: mod_import_picker::available(),
             choosing_kind: false,
+            append: None,
             error: None,
         }
     }
@@ -194,6 +197,14 @@ impl Selection {
             "VERA:Cancel"
         });
         let title = self.error.clone().unwrap_or_else(|| {
+            if let Some(mod_name) = self.append.as_deref() {
+                if self.previewing() {
+                    return tr_fill("VERA:ModAppendPrompt", &[("mod", &mod_name)]);
+                }
+                if self.can_browse {
+                    return tr_fill("VERA:ModAppendChoose", &[("mod", &mod_name)]);
+                }
+            }
             tr(if self.previewing() {
                 "VERA:ModImportOrder"
             } else if self.can_browse {
@@ -208,6 +219,8 @@ impl Selection {
                 tr("VERA:ModImportFolders"),
                 cancel,
             )
+        } else if self.previewing() && self.append.is_some() {
+            (tr("VERA:ModAppend"), String::new(), cancel)
         } else if self.previewing() {
             (tr("VERA:ModImportPlay"), tr("VERA:ModImportOnly"), cancel)
         } else if self.can_browse {
@@ -236,7 +249,14 @@ impl Selection {
     }
 }
 
-/// `shell_box` in Add Mod's arrangement, with room for the parts `list`.
+/// Add Mod's box arrangement for a box outside the picker (the Mods page's
+/// New-or-append question), so both share one layout: three buttons on the
+/// footer row, the same body area.
+pub(super) fn choice_box(shell_box: ShellBox) -> ShellBox {
+    import_box(shell_box, false)
+}
+
+/// Add Mod's footer, with room for the parts list when shown.
 fn import_box(shell_box: ShellBox, list: bool) -> ShellBox {
     shell_box.footer(Footer {
         list,
@@ -254,7 +274,16 @@ pub(crate) fn is_preview_button(id: u16) -> bool {
 pub(crate) struct Preparation {
     play: bool,
     stop: Arc<AtomicBool>,
-    result: Receiver<anyhow::Result<PreparedModImport>>,
+    result: Receiver<anyhow::Result<Prepared>>,
+}
+
+#[derive(Debug)]
+enum Prepared {
+    New(PreparedModImport),
+    Append {
+        folder: String,
+        files: PreparedModAppend,
+    },
 }
 
 impl Drop for Preparation {
@@ -580,6 +609,30 @@ impl App {
         );
     }
 
+    /// Add parts to an installed mod's folder: the Mods page's Add Mod asks
+    /// first when a mod is selected, since a file manager cannot extend a mod
+    /// inside the app's own storage on Android and a desktop mod's folder is
+    /// the same operation.
+    pub(super) fn open_append_import(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        folder: String,
+    ) {
+        let mut selection = Selection::new();
+        selection.append = Some(folder);
+        Self::show_import_selection(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            selection,
+        );
+    }
+
     /// Android: a ZIP or folder the system file manager copied in joins the
     /// selection, and its box is rebuilt with the preview's buttons. A part
     /// that arrives after Add Mod closed is deleted.
@@ -816,6 +869,7 @@ impl App {
                     options_profile,
                     plan,
                     action == 0,
+                    selection.append.clone(),
                 );
             }
             return;
@@ -924,6 +978,7 @@ impl App {
         options_profile: &RetailOptionsProfile,
         plan: ModImport,
         play: bool,
+        append: Option<String>,
     ) {
         let Some(config) = platform.game_config.as_ref() else {
             Self::mod_import_failed(
@@ -937,10 +992,19 @@ impl App {
             return;
         };
         let mods = config.paths.mods_dir();
-        let title = tr_fill("VERA:ModImportWorking", &[("mod", &plan.name())]);
+        let title = match append.as_deref() {
+            Some(mod_name) => tr_fill("VERA:ModAppendPrompt", &[("mod", &mod_name)]),
+            None => tr_fill("VERA:ModImportWorking", &[("mod", &plan.name())]),
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let Some(result) = crate::app::worker::spawn("mod-import", stop.clone(), move |stop| {
-            Ok(plan.prepare(&mods, stop)?)
+            Ok(match append {
+                Some(folder) => Prepared::Append {
+                    files: plan.prepare_append(&mods, &folder, stop)?,
+                    folder,
+                },
+                None => Prepared::New(plan.prepare(&mods, stop)?),
+            })
         }) else {
             Self::mod_import_failed(
                 &platform.window,
@@ -1006,8 +1070,25 @@ impl App {
         // are done with.
         #[cfg(target_os = "android")]
         crate::util::mod_actions::clear_picked();
-        match result.and_then(|prepared| Ok(prepared.install()?)) {
-            Ok(folder) => Self::mod_imported(
+        match result.and_then(|prepared| match prepared {
+            Prepared::New(files) => Ok((files.install()?, None)),
+            Prepared::Append { folder, files } => Ok((folder, Some(files.publish()?))),
+        }) {
+            Ok((folder, Some(count))) => {
+                Self::select_installed_mod(platform.game_config.as_ref(), frontend, &folder);
+                Self::mod_import_notice(
+                    &platform.window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    &persistence.options_profile,
+                    tr_fill(
+                        "VERA:ModAppended",
+                        &[("mod", &folder), ("count", &count.to_string())],
+                    ),
+                );
+            }
+            Ok((folder, None)) => Self::mod_imported(
                 platform,
                 renderer,
                 diag,

@@ -122,6 +122,14 @@ impl EntityAtlasCheck {
             .iter()
             .filter_map(|&id| sim.entities().get(id))
             .collect();
+        // A module's `ImageOverride` draws another type, which only the
+        // full check's coverage holds.
+        if objects
+            .iter()
+            .any(|object| sim.ext_module_image(object.stable_id()).is_some())
+        {
+            return true;
+        }
         let anims: Vec<_> = anims.iter().filter_map(|&id| sim.anim(id)).collect();
         let records = sim
             .fog()
