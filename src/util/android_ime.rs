@@ -190,9 +190,22 @@ pub fn resync_to(edit: &str, platform: &str) -> Option<String> {
     (edit != platform).then(|| edit.to_owned())
 }
 
+/// Whether `c` can cross the Android text bridge: it carries text as modified
+/// UTF-8, which cannot represent a character outside the BMP, and a lossy
+/// conversion leaves U+FFFD behind. Such a character would sit in an edit as a
+/// box no key removes (issue #5225).
+pub fn bridge_char(c: char) -> bool {
+    c.len_utf16() == 1 && c != '\u{FFFD}'
+}
+
+/// `text` without the characters the Android text bridge cannot carry.
+pub fn on_bridge(text: &str) -> String {
+    text.chars().filter(|c| bridge_char(*c)).collect()
+}
+
 #[cfg(all(test, tests_util))]
 mod tests {
-    use super::{edit_of, resync_to};
+    use super::{edit_of, on_bridge, resync_to};
 
     #[test]
     fn typing_at_the_end_commits_the_added_characters() {
@@ -203,6 +216,13 @@ mod tests {
     #[test]
     fn a_backspace_deletes_one_character_and_commits_nothing() {
         assert_eq!(edit_of("abcd", "abc"), (1, String::new()));
+    }
+
+    #[test]
+    fn only_characters_the_bridge_carries_reach_an_edit() {
+        assert_eq!(on_bridge("abc\u{1F47F}\u{4E2D}\u{6587}"), "abc\u{4E2D}\u{6587}");
+        assert_eq!(on_bridge("a\u{FFFD}b"), "ab");
+        assert_eq!(on_bridge("\u{4E2D}\u{6587}"), "\u{4E2D}\u{6587}");
     }
 
     #[test]

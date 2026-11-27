@@ -762,9 +762,19 @@ mod android {
             let (removed, inserted) =
                 crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
             state.platform.ime.android_text = committed;
-            for _ in 0..removed {
+            // The edit counts UTF-16 units, the platform code points: an emoji
+            // takes two backspaces, and stopping at one leaves half a surrogate
+            // pair, which no screen can store.
+            let want = text.chars().count().saturating_sub(removed);
+            for _ in 0..(removed * 2 + 1) {
+                let have = seed(state, focused).map_or(0, |(text, _, _)| text.chars().count());
+                if have <= want {
+                    break;
+                }
                 backspace(state, focused);
             }
+            // The bridge drops what it cannot carry (issue #5225).
+            let inserted = crate::util::android_ime::on_bridge(&inserted);
             if !inserted.is_empty() {
                 commit(state, &inserted);
             }
