@@ -95,7 +95,6 @@ pub(crate) enum HotkeyCommand {
     UnitTab,
     StopObject,
     TypeSelect,
-    PageUser,
     DefenseTab,
     ScatterObject,
     VeterancyNav,
@@ -990,12 +989,16 @@ mod tests {
     #[test]
     fn registered_catalog_matches_original_objects_and_metadata_getters() {
         let fixture = native_keyboard_fixture();
-        let native = fixture["catalog"].as_array().unwrap();
+        let native: Vec<_> = fixture["catalog"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["ini_name"] != "PageUser")
+            .collect();
         let catalog = catalog::retail_commands();
-        assert_eq!(catalog.len(), 87);
+        assert_eq!(catalog.len(), 86);
         assert_eq!(catalog.len(), native.len());
         for (index, (actual, expected)) in catalog.iter().zip(native).enumerate() {
-            assert_eq!(expected["index"].as_u64(), Some(index as u64));
             assert_eq!(actual.ini_name, expected["ini_name"].as_str().unwrap());
             assert_eq!(actual.name_key, expected["name_key"].as_str().unwrap());
             assert_eq!(
@@ -1020,19 +1023,25 @@ mod tests {
     }
 
     #[test]
-    fn every_original_registered_name_survives_reload_and_serialization() {
+    fn supported_retail_commands_survive_reload_and_serialization() {
         use std::fmt::Write;
         let fixture = native_keyboard_fixture();
         let mut ini = String::from("[Hotkey]\n");
-        for row in fixture["catalog"].as_array().unwrap() {
-            let key = 0x200 + row["index"].as_u64().unwrap();
+        for (index, row) in fixture["catalog"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["ini_name"] != "PageUser")
+            .enumerate()
+        {
+            let key = 0x200 + index;
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's default keys (Ctrl+D's 0x244 merges
+        // The 86 supported retail rows, plus VERA's default keys (Ctrl+D's 0x244 merges
         // with an existing row here) and the Formation/Ferry/RotatePrimary/
         // HD art keys below 0x200.
-        assert_eq!(loaded.by_key.len(), 102);
+        assert_eq!(loaded.by_key.len(), 101);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -1049,6 +1058,18 @@ mod tests {
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
         assert_eq!(reloaded.by_key, loaded.by_key);
+    }
+
+    #[test]
+    fn legacy_page_user_binding_leaves_the_key_available() {
+        let ini = b"[Hotkey]\nPageUser=85\n";
+        let bindings = HotkeyBindings::from_ini_bytes(Some(ini));
+        assert_eq!(bindings.command_at(85), None);
+        assert!(!bindings.to_ini_string().contains("PageUser"));
+
+        let mapped =
+            HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nStopObject=85\nPageUser=85\n"));
+        assert_eq!(mapped.command_at(85), Some(HotkeyCommand::StopObject));
     }
 
     #[test]

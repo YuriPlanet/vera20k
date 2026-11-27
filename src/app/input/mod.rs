@@ -39,7 +39,6 @@ pub(crate) mod radar;
 pub(crate) mod sidebar_eva;
 pub(crate) mod state;
 pub(crate) mod superweapon_cameo;
-pub(crate) mod page_user;
 pub(crate) mod taunt;
 pub(crate) mod beacon;
 pub(crate) mod power_mode;
