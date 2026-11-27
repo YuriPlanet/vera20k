@@ -179,6 +179,13 @@ pub(crate) fn render_mods_page(
         &tree,
     );
     frame.backdrop = true;
+    // Android: the name dialog is painted over the finished page, so the
+    // page's pass must not draw the cursor under the dialog's art; the
+    // dialog's own pass draws it last.
+    #[cfg(target_os = "android")]
+    {
+        frame.cursor = frontend.mods.name_dialog.is_none();
+    }
     let mods = &frontend.mods;
     let controller = &frontend.shell_controller;
     let gui = controller.gui();
@@ -286,6 +293,14 @@ pub(crate) fn render_mods_page(
     // Android: New Mod's dialog goes over the finished page, as a message box
     // would, so the page's own text cannot cover it.
     #[cfg(target_os = "android")]
-    crate::app::App::draw_name_dialog_over(renderer, frontend, encoder, destination);
+    crate::app::App::draw_name_dialog_over(
+        platform,
+        renderer,
+        frontend,
+        match_state,
+        persistence,
+        encoder,
+        destination,
+    );
     Ok(true)
 }

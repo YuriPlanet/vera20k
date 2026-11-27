@@ -968,6 +968,8 @@ pub(crate) enum LauncherCheckboxId {
     /// The online client's enlarged art draws lightly smoothed.
     SmoothOnlineMenus,
     VSync,
+    /// Moving tanks draw between two committed simulation poses.
+    RenderInterpolation,
     /// Battles draw at the monitor's refresh rate where draw time allows
     /// (`[VERA] HighRefreshRateInBattle=`), with either VSync setting.
     HighRefreshRateInBattle,
@@ -1201,6 +1203,7 @@ pub(crate) const ROWS: &[Row] = {
         // VERA's HD art switch; Display is full at 640x480.
         row!(General, List(HdLook), "HdLook"),
         row!(General, Checkbox(YrOriginalStyle), "YrOriginalStyle"),
+        row!(General, Checkbox(RenderInterpolation), "RenderInterpolation"),
         row!(General, Checkbox(SmoothOnlineMenus), "SmoothOnlineMenus"),
         row!(General, Checkbox(HdMapPreviews), "HdMapPreviews"),
         row!(General, Checkbox(VeraIcon), "VeraIcon"),
@@ -1410,6 +1413,7 @@ impl Default for LauncherOptionsValues {
             C::Tooltips,
             C::TargetLines,
             C::VSync,
+            C::RenderInterpolation,
             C::HdMapPreviews,
             C::CommanderFeedback,
         ] {

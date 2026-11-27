@@ -144,6 +144,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
         let mut parents = PlannedObjects::default();
         build_display_effect_instances(
             &DisplayEffectInputs {
+                unit_motion: None,
                 sim: &sim,
                 frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
                 rules: &rules,

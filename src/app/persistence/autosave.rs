@@ -5,7 +5,7 @@
 //! previous autosave through the repository's staged rename. The Load page
 //! lists it like any save. Network matches are left alone.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::game_screen::GameScreen;
 

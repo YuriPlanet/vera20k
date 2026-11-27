@@ -79,7 +79,7 @@ pub(crate) fn page_dialogs_paint(
     };
     use crate::app::shell_wol::page;
     if let Some(dialog) = page::page_dialog(frontend.wol.as_ref()) {
-        let layout = page::page_layout(renderer, &frontend.screen);
+        let layout = page::page_layout(renderer);
         return Some((
             layout.dialog,
             paint_wol_page_dialog(
@@ -94,7 +94,7 @@ pub(crate) fn page_dialogs_paint(
         ));
     }
     let received = page::page_received(frontend.wol.as_ref())?;
-    let layout = page::received_layout(renderer, &frontend.screen);
+    let layout = page::received_layout(renderer);
     Some((
         layout.dialog,
         paint_wol_page_received(

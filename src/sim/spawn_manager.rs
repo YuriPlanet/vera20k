@@ -260,6 +260,13 @@ pub struct SpawnManagerState {
 }
 
 impl SpawnManagerState {
+    /// SpawnManagerClass::Load 0x6B7F4A..0x6B7F5A restarts both manager
+    /// timers. The subsequent stream reads restore the individual spawn slots.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: i32) {
+        self.update_timer.start(frame, 0);
+        self.spawn_timer.start(frame, 0);
+    }
+
     /// Ares capture10045D76..10045D8B resumes the manager's +50 AI gate
     /// only from its -1 start sentinel, preserving the retained duration.
     pub(crate) fn resume_update_timer(&mut self, frame: i32) {

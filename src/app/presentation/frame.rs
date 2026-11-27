@@ -108,6 +108,7 @@ pub(crate) struct ObjectRecord {
     /// body lower, and its SHP shadows higher, by
     /// [`crate::app::presentation::instances::CARRIED_DROP_PIXELS`].
     pub(crate) on_carryall: bool,
+    pub(crate) parasite_infested: bool,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -750,6 +751,7 @@ impl ObjectRecord {
             unit_death_counter: entity.unit_death_counter,
             foot_occupation_enabled: entity.foot_occupation_enabled(),
             on_carryall: entity.is_on_carryall(),
+            parasite_infested: entity.parasite.is_infested(),
             turret_anim_frame: entity.turret_anim_frame,
             health: entity.health,
             veterancy: entity.veterancy,

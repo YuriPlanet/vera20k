@@ -226,6 +226,8 @@ impl Scene {
         let mut parents = PlannedObjects::default();
         build_shp_instances_from_inputs(
             &ShpInputs {
+                motion: None,
+                diagnostics: None,
                 runtime: &self.runtime,
                 frame: &presented,
                 atlas: Some(atlas),
@@ -267,6 +269,7 @@ impl Scene {
         let detail = RefCell::new(detail);
         let hidden = Default::default();
         let input = DisplayEffectInputs {
+            unit_motion: None,
             sim,
             frame: &presented,
             rules: &self.runtime.resources.rules,

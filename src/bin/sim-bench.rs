@@ -1366,7 +1366,10 @@ fn main() -> Result<(), String> {
     println!("final_hash={final_hash:016x}");
     let (asleep, counted) = runtime.simulation.idle_sleep_counts();
     let steady = runtime.simulation.steady_ai_visits();
-    println!("idle_sleep asleep_now={asleep} visits_counted={counted} steady_ai_visits={steady}");
+    let locomotor_rests = runtime.simulation.locomotor_rest_visits();
+    println!(
+        "idle_sleep asleep_now={asleep} visits_counted={counted} steady_ai_visits={steady} locomotor_rests={locomotor_rests}"
+    );
     if let Plan::Battle(battle) = &plan {
         println!(
             "battle fewest_mobile={} lost={} objects_made={}",

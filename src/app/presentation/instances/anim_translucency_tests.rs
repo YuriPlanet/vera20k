@@ -150,6 +150,7 @@ fn emit_with_lighting(
     let mut out = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
+            unit_motion: None,
             sim,
             frame: &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
             rules,

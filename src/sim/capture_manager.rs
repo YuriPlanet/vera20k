@@ -127,6 +127,14 @@ pub struct CaptureManagerState {
 }
 
 impl CaptureManagerState {
+    /// CaptureManagerClass::Load 0x47282E..0x472841 restores the two node
+    /// references and starts a zero-length line timer at the load frame.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: i32) {
+        for node in &mut self.nodes {
+            node.line_timer.start(frame, 0);
+        }
+    }
+
     fn constructed(max_control: i32, infinite: bool) -> Self {
         Self {
             max_control,

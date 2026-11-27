@@ -925,7 +925,6 @@ impl App {
                         &state.process_assets,
                         &state.renderer,
                         &mut state.audio,
-                        &mut state.persistence,
                         pressed,
                     )
                 },
@@ -1083,8 +1082,6 @@ impl App {
                     &mut state.match_state,
                     &state.process_assets,
                     &state.renderer,
-                    &mut state.audio,
-                    &mut state.persistence,
                     code,
                     text,
                 )

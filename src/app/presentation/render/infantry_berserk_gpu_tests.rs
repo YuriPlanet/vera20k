@@ -583,6 +583,8 @@ fn render_original_body_pixels(
                 let zshape_skips = std::cell::RefCell::default();
                 build_shp_instances_from_inputs(
                     &ShpInputs {
+                        motion: None,
+                        diagnostics: None,
                         runtime: &runtime,
                         frame: &presented,
                         atlas: Some(&atlas),

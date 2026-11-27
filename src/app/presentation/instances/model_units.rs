@@ -121,7 +121,7 @@ pub(super) enum ShadowDepth {
     Body,
     /// Its own bottom row's at the unit's height (a lifted Unit,
     /// `emit_lifted_unit_shadow`).
-    Own,
+    Own { lift_correction: f32 },
     /// Its own bottom row's on the ground (an aircraft,
     /// `emit_aircraft_shadow_sprite`).
     Ground,
@@ -175,6 +175,8 @@ pub(super) struct ModelUnitDraw<'a> {
     pub entity: &'a crate::app::presentation::frame::ObjectRecord,
     /// The body's draw point on screen, in world pixels.
     pub center: [f32; 2],
+    pub depth_xyz: [i32; 3],
+    pub lift_correction: f32,
     pub dock_depth_y_offset: f32,
     pub z: u8,
     pub tint: [f32; 3],
@@ -271,6 +273,7 @@ pub(super) fn emit_model_unit(
         draw.entity,
         bottom + draw.dock_depth_y_offset,
         draw.z,
+        draw.lift_correction,
     );
     if let Some(shadow) = shadow {
         emit_model_shadow(state, declared, draw.entity, shadow, depth, pieces);
@@ -299,9 +302,9 @@ pub(super) fn emit_model_unit(
         draw.draw_state,
         bounds,
     );
-    let split = super::foot_depth::unit_bridge_split(&state.match_state.sim_runtime, draw.entity, true);
+    let split = super::foot_depth::unit_bridge_split(&state.match_state.sim_runtime, draw.entity, true, draw.depth_xyz);
     let z_adjust =
-        super::foot_depth::unit_z_adjust(&state.match_state.sim_runtime, draw.entity, true, None);
+        super::foot_depth::unit_z_adjust(&state.match_state.sim_runtime, draw.entity, true, Some(draw.depth_xyz));
     for region in body_blits(native[1], height, z_adjust, split)
         .into_iter()
         .flatten()
@@ -369,11 +372,12 @@ fn emit_model_shadow(
     let bottom = anchor_y + y as f32 + height as f32;
     let depth = match shadow.depth {
         ShadowDepth::Body => body_depth,
-        ShadowDepth::Own => body_sort_depth(
+        ShadowDepth::Own { lift_correction } => body_sort_depth(
             &state.match_state.match_presentation,
             entity,
             bottom,
             entity.position.z(),
+            lift_correction,
         ),
         ShadowDepth::Ground => compute_sprite_depth(&state.match_state.match_presentation, bottom, 0),
     };

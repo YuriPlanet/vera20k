@@ -539,7 +539,7 @@ impl ColumnText {
 /// each surface pixel shows as one window pixel. Otherwise (the Large size,
 /// or a zoom between whole steps) the column's copy would resample it, so
 /// it goes over the copy: in the window after the zoom, or in the frame
-/// without one or under the in-match page, where the battlefield's text
+/// without one or under the Surrender box, where the battlefield's text
 /// stays too. Over the copy, the build clock (`0x006A9E97`) no longer blends
 /// over the queue counts gamemd draws before it.
 pub(crate) fn column_text(

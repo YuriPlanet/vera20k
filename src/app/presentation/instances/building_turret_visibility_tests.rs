@@ -120,6 +120,8 @@ impl Patriot {
             false,
         );
         let input = ShpInputs {
+            motion: None,
+            diagnostics: None,
             runtime: &self.runtime,
             frame: &frame,
             atlas: Some(&self.shp),

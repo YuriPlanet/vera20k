@@ -1466,54 +1466,10 @@ pub(crate) fn post_observer_refusal(
     );
 }
 
-/// The WOL page sinks in a match (`0x007A92F9..0x007A93B4`): the page line
-/// and, from the ANSI sink, `TXT_HOW_TO_REPLY` under it, each a Grey row
-/// with flags 0x16, `MessageDelay * 900` and silent 0.
-pub(crate) fn post_wol_page_rows(
-    platform: &PlatformState,
-    renderer: &RendererState,
-    diag: &DiagnosticsState,
-    frontend: &FrontendState,
-    match_state: &mut MatchState,
-    process_assets: &ProcessAssets,
-    sfx_player: &mut Option<SfxPlayer>,
-    persistence: &PersistenceState,
-    line: &str,
-    reply_hint: bool,
-) {
-    post_grey_row(
-        platform,
-        renderer,
-        diag,
-        frontend,
-        match_state,
-        process_assets,
-        sfx_player,
-        persistence,
-        line,
-        false,
-        false,
-    );
-    if reply_hint {
-        post_grey_row(
-            platform,
-            renderer,
-            diag,
-            frontend,
-            match_state,
-            process_assets,
-            sfx_player,
-            persistence,
-            "TXT_HOW_TO_REPLY",
-            true,
-            false,
-        );
-    }
-}
-
-/// A WOL find or page-result row in a match with no window to take it
-/// (`0x007AA5D5..`, `0x007A9800`): the same Grey row, silent 0.
-pub(crate) fn post_wol_result_row(
+/// The message row for a WOL page, locate or send result during a match
+/// (0x007A92F9, 0x007AA5D5, 0x007A9800). VERA omits the retail pager's
+/// reply hint because that dialog is only available outside the match.
+pub(crate) fn post_wol_row(
     platform: &PlatformState,
     renderer: &RendererState,
     diag: &DiagnosticsState,

@@ -198,6 +198,8 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
+    /// `[VERA] RenderInterpolation=`: draw moving units between logic frames.
+    pub(crate) render_interpolation: bool,
     /// `[VERA] HighRefreshRateInBattle=`: allow battlefield draws at the monitor's refresh rate.
     pub(crate) high_refresh_rate_in_battle: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
@@ -453,6 +455,7 @@ impl Default for RetailOptionsProfile {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            render_interpolation: true,
             high_refresh_rate_in_battle: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
@@ -504,7 +507,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 48],
+    pub(crate) vera: [(&'static str, String); 49],
 }
 
 impl RetailOptionsLoad {
@@ -731,6 +734,8 @@ impl RetailOptionsProfile {
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
+            self.render_interpolation =
+                vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.high_refresh_rate_in_battle =
                 vera.read_bool("HighRefreshRateInBattle", self.high_refresh_rate_in_battle);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
@@ -967,6 +972,10 @@ impl RetailOptionsProfile {
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
                 (
+                    "RenderInterpolation",
+                    format_bool(self.render_interpolation).to_string(),
+                ),
+                (
                     "HighRefreshRateInBattle",
                     format_bool(self.high_refresh_rate_in_battle).to_string(),
                 ),
@@ -1061,7 +1070,6 @@ impl RetailOptionsProfile {
             VERA_SECTION,
             &[
                 "RA2Look",
-                "RenderInterpolation",
                 "SoundDefaultsApplied",
                 "SkipStartupLogo",
                 "WindowX",
@@ -2386,23 +2394,30 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn original_yr_style_round_trips_and_retired_keys_are_dropped() {
+    fn original_yr_style_and_saved_tank_smoothing_round_trip_independently() {
         let startup = RetailStartupOptions::default();
+        assert!(
+            load_snapshot(&startup, b"")
+                .retained_profile
+                .render_interpolation
+        );
         for style in [false, true] {
             let input = format!(
-                "[VERA]\nYROriginalStyle={}\nRenderInterpolation=yes\nRA2Look=yes\nWolTestService=yes\nUnowned=keep\n",
+                "[VERA]\nYROriginalStyle={}\nRenderInterpolation={}\nRA2Look=yes\nWolTestService=yes\nUnowned=keep\n",
                 format_bool(style),
+                format_bool(!style),
             );
             let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
             assert_eq!(profile.yr_original_style, style);
             let written = profile.transform_settings(input.as_bytes());
             let text = String::from_utf8_lossy(&written);
             assert!(!text.contains("RA2Look="));
-            assert!(!text.contains("RenderInterpolation="));
+            assert_eq!(profile.render_interpolation, !style);
             assert!(!text.contains("WolTestService="), "{text}");
             assert!(text.contains("Unowned=keep"));
             let reloaded = load_snapshot(&startup, &written).retained_profile;
             assert_eq!(reloaded.yr_original_style, style);
+            assert_eq!(reloaded.render_interpolation, !style);
         }
     }
 

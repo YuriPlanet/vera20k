@@ -177,6 +177,7 @@ pub(crate) fn install_world_presentation(
         .runtime()
         .map(|runtime| runtime.resources.rules.retain_overlay_registry());
 
+    match_state.match_presentation.unit_motion.clear();
     match_state.match_presentation.combat_lights.clear();
     renderer.performance_overlay.clear_simulation_rate();
     match_state.match_presentation.lasers.clear_on_load();

@@ -1242,6 +1242,7 @@ impl App {
                     electric_bolts: Default::default(),
                     radiation_beams: Default::default(),
                     tactical_composite: Default::default(),
+                    unit_motion: Default::default(),
                     airstrike_shades: Default::default(),
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),

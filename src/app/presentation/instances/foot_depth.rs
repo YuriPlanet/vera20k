@@ -128,8 +128,14 @@ pub(crate) fn unit_bridge_split(
     sim_runtime: &SimHost,
     entity: &ObjectRecord,
     unloading_body: bool,
+    draw_coord: [i32; 3],
 ) -> bool {
-    unit_bridge_split_in(DepthWorld::of(sim_runtime), entity, unloading_body)
+    unit_bridge_split_in(
+        DepthWorld::of(sim_runtime),
+        entity,
+        unloading_body,
+        Some(draw_coord),
+    )
 }
 
 /// [`unit_bridge_split`] in a given world.
@@ -137,14 +143,19 @@ pub(super) fn unit_bridge_split_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,
+    draw_coord: Option<[i32; 3]>,
 ) -> bool {
-    unit_bridge_condition(world, entity, unloading_body, true)
+    unit_bridge_condition(world, entity, unloading_body, true, draw_coord)
 }
 
 /// Direct SHP Unit no-turret branch 0x73CE0D..0x73CE7F (stock SQD).
 /// It changes the whole body's a7 by -16 and a8 to gradient zero, with
 /// neither the composite's factory alternative nor its height > 16 test.
-pub(super) fn shp_unit_bridge_fudge(world: DepthWorld<'_>, entity: &ObjectRecord) -> bool {
+pub(super) fn shp_unit_bridge_fudge(
+    world: DepthWorld<'_>,
+    entity: &ObjectRecord,
+    draw_coord: Option<[i32; 3]>,
+) -> bool {
     if world
         .runtime
         .and_then(|rt| draw_type(rt, entity, true))
@@ -154,7 +165,7 @@ pub(super) fn shp_unit_bridge_fudge(world: DepthWorld<'_>, entity: &ObjectRecord
         // composition path is not replaced by the direct-body treatment.
         return false;
     }
-    unit_bridge_condition(world, entity, true, false)
+    unit_bridge_condition(world, entity, true, false, draw_coord)
 }
 
 fn unit_bridge_condition(
@@ -162,6 +173,7 @@ fn unit_bridge_condition(
     entity: &ObjectRecord,
     unloading_body: bool,
     allow_factory: bool,
+    draw_coord: Option<[i32; 3]>,
 ) -> bool {
     if entity.category() != EntityCategory::Unit {
         return false;
@@ -193,10 +205,12 @@ fn unit_bridge_condition(
     let Some(terrain) = view.resolved_terrain() else {
         return factory;
     };
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let [x, y] = draw_coord.map_or([entity.hud.location.x, entity.hud.location.y], |p| {
+        [p[0], p[1]]
+    });
     crate::render::foot_depth::unit_composite_split(
         FootDepthContext {
-            cell: [(xy[0] / 256) as i16, (xy[1] / 256) as i16],
+            cell: [(x / 256) as i16, (y / 256) as i16],
             on_bridge: entity.on_bridge(),
             bridge_set_base: terrain.concrete_bridge_set_base(),
             ..Default::default()
@@ -220,13 +234,21 @@ fn unit_bridge_condition(
 /// 00825500 at005195AF. TechnoClass::DrawSHP @00705E00 includes that caller
 /// input in both Foot (00706024) and height-only (0070603D) body depth before
 /// the common -2 (00706430); its separate shadow depth does not use it.
-pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 {
+pub(super) fn shp_z_adjust(
+    world: DepthWorld<'_>,
+    entity: &ObjectRecord,
+    draw_coord: Option<[i32; 3]>,
+) -> f32 {
     let caller_z_adjust: i32 = if entity.category() == EntityCategory::Infantry {
         -10
     } else {
         0
     };
-    let world_z = entity.place.world_z_leptons_off_map;
+    let [x, y, world_z] = draw_coord.unwrap_or([
+        entity.hud.location.x,
+        entity.hud.location.y,
+        entity.place.world_z_leptons_off_map,
+    ]);
     let height_only = caller_z_adjust
         .wrapping_sub(adjust_for_z_standard(world_z))
         .wrapping_sub(2);
@@ -239,7 +261,7 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
     let Some(terrain) = world.runtime.and_then(|rt| rt.view().resolved_terrain()) else {
         return height_only as f32;
     };
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let xy = [x, y];
     let cell = depth_cell(
         terrain,
         None,
@@ -268,7 +290,7 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
         )
     };
     if height_above_ground == 0 {
-        unit_z_adjust_in(world, entity, true, None)
+        unit_z_adjust_in(world, entity, true, draw_coord)
             .wrapping_add(caller_z_adjust)
             .wrapping_sub(2) as f32
     } else {
@@ -287,13 +309,13 @@ pub(crate) fn unit_z_adjust(
     sim_runtime: &SimHost,
     entity: &ObjectRecord,
     unloading_body: bool,
-    world_z_override: Option<i32>,
+    draw_coord: Option<[i32; 3]>,
 ) -> i32 {
     unit_z_adjust_in(
         DepthWorld::of(sim_runtime),
         entity,
         unloading_body,
-        world_z_override,
+        draw_coord,
     )
 }
 
@@ -301,9 +323,16 @@ pub(super) fn unit_z_adjust_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,
-    world_z_override: Option<i32>,
+    draw_coord: Option<[i32; 3]>,
 ) -> i32 {
-    let world_z = world_z_override.unwrap_or(entity.place.world_z_leptons_off_map);
+    // Shadows and bodies query the cell under the displayed world position.
+    let [x, y, world_z] = draw_coord.unwrap_or_else(|| {
+        [
+            entity.hud.location.x,
+            entity.hud.location.y,
+            entity.place.world_z_leptons_off_map,
+        ]
+    });
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -319,7 +348,7 @@ pub(super) fn unit_z_adjust_in(
     };
     let sim = &runtime.simulation;
     let object = draw_type(runtime, entity, unloading_body);
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let xy = [x, y];
     // ObjectClass cell getter 0x41BEA0 truncates signed coordinates toward zero.
     let coord = [(xy[0] / 256) as i16, (xy[1] / 256) as i16];
     let special = if entity.category() == EntityCategory::Unit {

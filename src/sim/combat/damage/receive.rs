@@ -4,9 +4,9 @@
 //! The represented order follows Techno701900 and Object5F5390.
 
 use super::gates::{evaluate_early_gates, evaluate_late_gates};
-use super::kernel::apply_warhead_damage;
+use super::kernel::{DamageWarhead, apply_warhead_damage};
 use super::{DamageGate, DamageOutcome, DefenceDivisors, ImmunityInputs, TargetDamageView};
-use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+use crate::util::native_x87::MaskedX87Chop53 as X;
 
 /// `TechnoClass::ReceiveDamage @ 0x00701900`'s defence divides for a
 /// defended, non-negative hit (`0x00701939..0x007019E3`), each an x87 divide
@@ -42,14 +42,12 @@ pub(crate) fn defence_divides_unfloored(damage: i32, divisors: &DefenceDivisors)
 }
 
 /// Prepare the receiver packet without committing HP or predicting its result.
-/// `cell_spread`/`percent_at_max`/`armor_multiplier` are the warhead's decoded kernel
-/// inputs (see kernel::apply_warhead_damage). `distance_leptons` is the impact
+/// A missing warhead takes the kernel's null-pointer exit at 4891A3.
+/// `distance_leptons` is the impact
 /// distance in the kernel lepton unit (256 leptons/cell).
 pub(crate) fn receive_damage(
     incoming: i32,
-    cell_spread: f64,
-    percent_at_max: f64,
-    armor_multiplier: NativeF64Bits,
+    warhead: Option<DamageWarhead>,
     target: &TargetDamageView,
     divisors: &DefenceDivisors,
     gates: &ImmunityInputs,
@@ -91,6 +89,19 @@ pub(crate) fn receive_damage(
         readiness_damage,
         ..unaffected
     };
+    let kernel_damage = |damage, distance| {
+        warhead.map_or(0, |warhead| {
+            apply_warhead_damage(
+                damage,
+                warhead.cell_spread,
+                warhead.percent_at_max,
+                warhead.armor_multiplier,
+                distance,
+                scenario_no_damage,
+                max_damage,
+            )
+        })
+    };
     match gate {
         DamageGate::Nullified { clear_damage } => {
             return DamageOutcome {
@@ -111,15 +122,7 @@ pub(crate) fn receive_damage(
             // Accepted Psychedelic is a separate Techno receiver transaction:
             // run the same signed kernel at literal distance zero, store its
             // result in Techno state, and return code 1 before Object HP.
-            let psychedelic_value = apply_warhead_damage(
-                dmg,
-                cell_spread,
-                percent_at_max,
-                armor_multiplier,
-                0,
-                scenario_no_damage,
-                max_damage,
-            );
+            let psychedelic_value = kernel_damage(dmg, 0);
             return DamageOutcome {
                 readiness_damage,
                 apply_object_damage: false,
@@ -172,15 +175,7 @@ pub(crate) fn receive_damage(
     let delta = if gates.ignore_defenses {
         dmg
     } else {
-        apply_warhead_damage(
-            dmg,
-            cell_spread,
-            percent_at_max,
-            armor_multiplier,
-            distance_leptons,
-            scenario_no_damage,
-            max_damage,
-        )
+        kernel_damage(dmg, distance_leptons)
     };
 
     // Object HP mutation, Building minimum, packet clamp and return-code
@@ -200,8 +195,17 @@ pub(crate) fn receive_damage(
 pub(crate) mod tests {
     use super::*;
     use crate::sim::combat::damage::{DefenceDivisors, ImmunityInputs, TargetDamageView};
+    use crate::util::native_x87::NativeF64Bits;
 
     const MAXD: i32 = 10000;
+
+    fn direct_warhead(verses: f64) -> Option<DamageWarhead> {
+        Some(DamageWarhead {
+            cell_spread: 0.0,
+            percent_at_max: 1.0,
+            armor_multiplier: multiplier(verses),
+        })
+    }
 
     /// Phobos `TechnoClass_ReceiveDamage_ArmorMultiplier` (`0x00701966`)
     /// divides the stock result by the AttachEffect armor product before the
@@ -416,9 +420,7 @@ pub(crate) mod tests {
         let target = tgt(300, 300);
         let unflagged = receive_damage(
             0,
-            0.0,
-            1.0,
-            multiplier(1.0),
+            direct_warhead(1.0),
             &target,
             &DefenceDivisors::default(),
             &allow(),
@@ -429,9 +431,7 @@ pub(crate) mod tests {
         assert_eq!(unflagged.post_object_damage, Some(1));
         let flagged = receive_damage(
             0,
-            0.0,
-            1.0,
-            multiplier(1.0),
+            direct_warhead(1.0),
             &target,
             &DefenceDivisors::default(),
             &ImmunityInputs {
@@ -453,9 +453,7 @@ pub(crate) mod tests {
     fn gsi_08_09_dead_target_skips_the_kernel_and_reports_pre_kernel_damage() {
         let dead = receive_damage(
             400,
-            0.0,
-            1.0,
-            multiplier(0.25),
+            direct_warhead(0.25),
             &tgt(300, 0),
             &DefenceDivisors::default(),
             &allow(),
@@ -483,9 +481,7 @@ pub(crate) mod tests {
         };
         let out = receive_damage(
             400,
-            0.0,
-            1.0,
-            multiplier(1.0),
+            direct_warhead(1.0),
             &tgt(300, 0),
             &DefenceDivisors::default(),
             &ignoring,
@@ -501,9 +497,7 @@ pub(crate) mod tests {
     fn gsi_08_09_hp_one_still_enters_the_kernel() {
         let alive = receive_damage(
             400,
-            0.0,
-            1.0,
-            multiplier(0.25),
+            direct_warhead(0.25),
             &tgt(300, 1),
             &DefenceDivisors::default(),
             &allow(),
@@ -519,9 +513,7 @@ pub(crate) mod tests {
         // Preparation retains500; the Object commit caps its mutable packet to50.
         let o = receive_damage(
             500,
-            0.0,
-            1.0,
-            multiplier(1.0),
+            direct_warhead(1.0),
             &tgt(300, 50),
             &DefenceDivisors::default(),
             &allow(),
@@ -537,9 +529,7 @@ pub(crate) mod tests {
         // A unit whose Verses collapses to 0 is genuinely unaffected (no floor).
         let o = receive_damage(
             10,
-            0.0,
-            1.0,
-            multiplier(0.0001),
+            direct_warhead(0.0001),
             &tgt(1000, 1000),
             &DefenceDivisors::default(),
             &allow(),
@@ -559,9 +549,7 @@ pub(crate) mod tests {
         };
         let o = receive_damage(
             100,
-            0.0,
-            1.0,
-            multiplier(1.0),
+            direct_warhead(1.0),
             &tgt(300, 300),
             &DefenceDivisors::default(),
             &g,
@@ -581,9 +569,7 @@ pub(crate) mod tests {
         };
         let o = receive_damage(
             100,
-            0.0,
-            1.0,
-            multiplier(1.0),
+            direct_warhead(1.0),
             &tgt(300, 300),
             &DefenceDivisors::default(),
             &g,
