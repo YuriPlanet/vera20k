@@ -35,7 +35,9 @@ import androidx.core.content.FileProvider
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -181,14 +183,8 @@ class VeraActivity : GameActivity() {
 
     /** The folder an export picker is waiting for; empty when none is. */
     private var pendingExport = ""
-    /** The ZIP's progress label and its dialog, while one is writing. */
-    private var exportProgress = ""
+    /** Owned by the UI thread until the ZIP worker has finished, even after Cancel. */
     private var zipDialog: ProgressDialog? = null
-    @Volatile
-    private var zipCancelled = false
-    private var zipCopied = 0L
-    private var zipTotal = 0L
-    private var zipLastReported = 0L
 
     /** The export's two toasts, in the player's language (`VERA:ModExported`). */
     private var exportDone = ""
@@ -280,10 +276,28 @@ class VeraActivity : GameActivity() {
 
     /** Packs `folder` into a cache ZIP, shows progress, then opens the share panel. */
     fun exportModZip(folder: String, done: String, failed: String, progress: String): Boolean {
-        exportDone = done
-        exportFailed = failed
-        exportProgress = progress
-        Thread { exportModZipFile(folder) }.start()
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            if (zipDialog != null) {
+                toast(failed)
+                return@runOnUiThread
+            }
+            val cancelled = AtomicBoolean(false)
+            val dialog = ProgressDialog(this).apply {
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                max = 1000
+                setMessage(progress)
+                setCancelable(true)
+                setCanceledOnTouchOutside(false)
+                setOnCancelListener { cancelled.set(true) }
+                setButton(DialogInterface.BUTTON_NEGATIVE, getString(android.R.string.cancel)) { _, _ ->
+                    cancel()
+                }
+            }
+            zipDialog = dialog
+            dialog.show()
+            Thread { writeAndShareMod(folder, done, failed, cancelled, dialog) }.start()
+        }
         return true
     }
 
@@ -484,6 +498,8 @@ class VeraActivity : GameActivity() {
      * means the activity is really going away.
      */
     override fun onDestroy() {
+        zipDialog?.cancel()
+        zipDialog = null
         super.onDestroy()
         if (isFinishing) {
             Process.killProcess(Process.myPid())
@@ -638,63 +654,82 @@ class VeraActivity : GameActivity() {
         }.start()
     }
 
-    /** Writes `filesDir/Mods/<folder>` into a cache ZIP, off the UI thread. */
-    private fun exportModZipFile(folder: String) {
-        zipCancelled = false
-        val source = File(File(filesDir, "Mods"), folder)
-        val total = source.walkTopDown().filter { it.isFile }.sumOf { it.length() }.coerceAtLeast(1)
-        zipCopied = 0
-        zipTotal = total
-        zipLastReported = 0
-        val cacheDir = File(cacheDir, "zip-exports").apply { mkdirs() }
-        // One export at a time: the previous ZIP is no longer referenced.
-        cacheDir.listFiles()?.forEach { it.delete() }
-        val target = File(cacheDir, "$folder.zip")
-        android.util.Log.i("Vera20k", "mod zip export start: $folder ($total bytes)")
-        runOnUiThread {
-            val dialog = ProgressDialog(this).apply {
-                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-                isIndeterminate = false
-                max = 1000
-                setMessage(exportProgress)
-                setCancelable(true)
-                setCanceledOnTouchOutside(false)
-                setButton(DialogInterface.BUTTON_NEGATIVE, getString(android.R.string.cancel)) { _, _ ->
-                    zipCancelled = true
-                    android.util.Log.i("Vera20k", "mod zip export cancel requested: $folder")
-                    dismiss()
-                }
-            }
-            dialog.show()
-            zipDialog = dialog
-        }
-        val ok = try {
+    private fun writeAndShareMod(
+        folder: String, done: String, failed: String, cancelled: AtomicBoolean, dialog: ProgressDialog,
+    ) {
+        var outputDir: File? = null
+        val archive = try {
+            require(folder.isNotEmpty() && folder != "." && folder != ".." && File(folder).name == folder)
+            val source = File(File(filesDir, "Mods"), folder)
             require(source.isDirectory) { "no such mod: $folder" }
-            target.outputStream().use { raw ->
-                ZipOutputStream(BufferedOutputStream(raw)).use { zip ->
-                    zip.setLevel(1)
-                    addZipEntries(zip, source, "")
+            val root = Files.createDirectories(File(cacheDir, "zip-exports").toPath())
+            // An earlier recipient can still hold its read grant. Each share gets its own URI.
+            val dir = Files.createTempDirectory(root, "mod-").toFile()
+            outputDir = dir
+            File(dir, "$folder.zip").also { target ->
+                writeModZip(source, target, cancelled) { progress ->
+                    runOnUiThread { if (dialog.isShowing) dialog.progress = progress }
                 }
             }
-            true
-        } catch (error: Throwable) {
-            if (error !is CancellationException) {
-                android.util.Log.w("Vera20k", "mod zip export failed: $error")
-            }
-            target.delete()
-            false
+        } catch (_: CancellationException) {
+            null
+        } catch (error: Exception) {
+            android.util.Log.w("Vera20k", "mod ZIP export failed", error)
+            null
         }
-        android.util.Log.i("Vera20k", "mod zip export done: $folder ok=$ok")
         runOnUiThread {
-            zipDialog?.dismiss()
-            zipDialog = null
-            toast(if (ok) exportDone else exportFailed)
-            if (ok) shareZip(target, folder)
+            if (zipDialog === dialog) zipDialog = null
+            val abandoned = cancelled.get() || !dialog.isShowing || isFinishing || isDestroyed
+            dialog.dismiss()
+            val shared = !abandoned && archive != null && shareZip(archive, folder)
+            if (!shared) outputDir?.deleteRecursively()
+            if (!abandoned) toast(if (shared) done else failed)
         }
     }
 
-    /** Opens the system share panel for the exported ZIP. */
-    private fun shareZip(file: File, folder: String) {
+    /** Streams files and empty directories without following links outside the selected mod. */
+    private fun writeModZip(source: File, target: File, cancelled: AtomicBoolean, report: (Int) -> Unit) {
+        fun checkCancelled() {
+            if (cancelled.get()) throw CancellationException()
+        }
+        fun entries() = source.walkTopDown().onFail { _, error -> throw error }.onEach { file ->
+            checkCancelled()
+            if (Files.isSymbolicLink(file.toPath())) throw IOException("symbolic link in mod: ${file.name}")
+        }
+
+        val total = entries().filter { it.isFile }.sumOf { it.length() }.coerceAtLeast(1)
+        var copied = 0L
+        var lastReported = -1
+        val buffer = ByteArray(64 * 1024)
+        ZipOutputStream(BufferedOutputStream(target.outputStream())).use { zip ->
+            zip.setLevel(1)
+            for (entry in entries()) {
+                if (entry == source) continue
+                val name = entry.relativeTo(source).invariantSeparatorsPath
+                val directory = entry.isDirectory
+                zip.putNextEntry(ZipEntry(if (directory) "$name/" else name))
+                if (!directory) entry.inputStream().use { input ->
+                    while (true) {
+                        checkCancelled()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        zip.write(buffer, 0, read)
+                        copied += read
+                        val progress = (1000.0 * copied / total).toInt().coerceIn(0, 1000)
+                        if (progress != lastReported) {
+                            lastReported = progress
+                            report(progress)
+                        }
+                    }
+                }
+                zip.closeEntry()
+            }
+            checkCancelled()
+        }
+    }
+
+    /** Keep the completed file in Android's cache while the receiving app reads its URI. */
+    private fun shareZip(file: File, folder: String): Boolean = try {
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
@@ -702,40 +737,11 @@ class VeraActivity : GameActivity() {
             putExtra(Intent.EXTRA_TITLE, "$folder.zip")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        runCatching { startActivity(Intent.createChooser(send, folder)) }
-            .onFailure { android.util.Log.w("Vera20k", "no share panel for $folder: $it") }
-    }
-
-    /** Adds `dir` under `prefix` with forward-slash entries, directories included. */
-    private fun addZipEntries(zip: ZipOutputStream, dir: File, prefix: String) {
-        if (zipCancelled) throw CancellationException("zip export cancelled")
-        for (child in dir.listFiles().orEmpty().sortedBy { it.name }) {
-            if (zipCancelled) throw CancellationException("zip export cancelled")
-            val name = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
-            if (child.isDirectory) {
-                zip.putNextEntry(ZipEntry("$name/"))
-                zip.closeEntry()
-                addZipEntries(zip, child, name)
-            } else {
-                zip.putNextEntry(ZipEntry(name))
-                val buffer = ByteArray(64 * 1024)
-                child.inputStream().use { input ->
-                    while (true) {
-                        if (zipCancelled) throw CancellationException("zip export cancelled")
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        zip.write(buffer, 0, read)
-                        zipCopied += read
-                        if (zipCopied - zipLastReported >= 1L shl 20 || zipCopied >= zipTotal) {
-                            zipLastReported = zipCopied
-                            val permille = (zipCopied * 1000 / zipTotal).toInt().coerceIn(0, 1000)
-                            runOnUiThread { zipDialog?.progress = permille }
-                        }
-                    }
-                }
-                zip.closeEntry()
-            }
-        }
+        startActivity(Intent.createChooser(send, folder))
+        true
+    } catch (error: Exception) {
+        android.util.Log.w("Vera20k", "cannot share ZIP for $folder", error)
+        false
     }
 
     private fun copyDirTo(source: File, tree: Uri, parentId: String) {
@@ -1077,3 +1083,6 @@ class VeraActivity : GameActivity() {
         } ?: throw IOException("cannot list $documentId")
     }
 }
+
+/** The manifest registers an app-specific FileProvider for mod ZIP share grants. */
+class ModZipFileProvider : FileProvider()
