@@ -21,6 +21,7 @@ use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionType;
 use crate::sim::movement::bump_crush::{CrushTarget, object_is_crushable_by};
+use crate::sim::pathfinding::zone_hierarchy::ThreatPrecheckMemo;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction::cell_delta_unchecked;
@@ -740,6 +741,9 @@ impl Simulation {
         // PlaceInfantryInCell picks in the radial cell for the Target's
         // coordinate; anyone else's is the cell centre (4D60FB..613A).
         let spots = category == EntityCategory::Infantry && close_range;
+        // Every candidate's EstimateZoneCost asks under this Foot's threat;
+        // nothing the search does here changes the House threat or zones.
+        let zone_costs = ThreatPrecheckMemo::default();
         'rings: while chosen.is_none() && radius > 204 {
             for offset in OFFSETS {
                 let direction = (i16::from(facing_byte).wrapping_add(offset) as u16) << 8;
@@ -848,6 +852,7 @@ impl Simulation {
                     candidate_bridge,
                     target_bridge,
                     rules,
+                    Some(&zone_costs),
                 )? <= chebyshev(candidate, target_cell) + 8
                 {
                     chosen = Some(candidate);
@@ -869,6 +874,7 @@ impl Simulation {
                     source_bridge,
                     candidate_bridge,
                     rules,
+                    Some(&zone_costs),
                 )? <= chebyshev(start, candidate) + 8
                 {
                     chosen = Some(candidate);
