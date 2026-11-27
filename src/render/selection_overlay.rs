@@ -83,23 +83,6 @@ pub struct SelectionOverlay {
     ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
 }
 
-/// VERA-only, experimental (`docs/picture-model-art.md`, "Interface art"):
-/// an interface strip the zoomed picture draw names
-/// (`render::picture_zoom::HdSource::Interface`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InterfaceStrip {
-    Placement,
-    Pipbrd,
-    Pips,
-    ScalePips,
-    BombClock,
-    TalkBubble,
-    Wrench,
-    PowerOff,
-    /// PBEACON.SHP in a beacon row's Convert (`BeaconArt::tactical_strip`).
-    Beacon(usize),
-}
-
 /// Every frame of one SHP packed side by side at its stored size, each with
 /// the offset `CC_Draw_Shape @ 0x004AED70` gives a centered draw (flag
 /// `0x200`): back by the integer canvas half, then on by the stored frame
@@ -118,6 +101,9 @@ pub struct CenteredShapeStrip {
     /// drawn from a picture above 1x, its twin at the picture's own
     /// resolution, at the same normalised coordinates (`render::picture_zoom`).
     hd: Option<crate::render::picture_zoom::PictureHdPage>,
+    /// The strip's own 1x binding while `texture` binds the twin
+    /// ([`Self::bind_one_pass_hd`]).
+    low_binding: Option<wgpu::BindGroup>,
 }
 
 struct CenteredShapeFrame {
@@ -135,9 +121,32 @@ impl CenteredShapeStrip {
         &self.texture
     }
 
-    /// VERA-only, experimental: the strip's HD twin, when it has one.
-    pub(crate) fn hd_page(&self) -> Option<&crate::render::picture_zoom::PictureHdPage> {
-        self.hd.as_ref()
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): whether the draws
+    /// that bind this strip's texture read its HD twin this frame. With `on`
+    /// (a camera zoomed in) `texture.bind_group` becomes the twin's binding
+    /// (`PictureHdPage::one_pass_binding`), as the sprite atlas's picture
+    /// pages do (`SpriteAtlas::bind_one_pass_hd`); without, the strip has its
+    /// own 1x binding back. A strip without a twin keeps its binding.
+    pub(crate) fn bind_one_pass_hd(
+        &mut self,
+        device: &wgpu::Device,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        if !on {
+            if let Some(low) = self.low_binding.take() {
+                self.texture.bind_group = low;
+            }
+            return;
+        }
+        if self.low_binding.is_some() {
+            return;
+        }
+        let Some(hd) = &self.hd else {
+            return;
+        };
+        let binding = hd.one_pass_binding(device, batch, &self.texture.view);
+        self.low_binding = Some(std::mem::replace(&mut self.texture.bind_group, binding));
     }
 
     /// Number of frames the source SHP carries.
@@ -340,6 +349,7 @@ impl CenteredShapeStrip {
             shape_h: u32::from(shp.height),
             frames,
             hd: None,
+            low_binding: None,
         })
     }
 
@@ -441,7 +451,7 @@ impl CenteredShapeStrip {
             });
             x += w + gap;
         }
-        // The WebGL2 fallback draws no HD pass (`render::picture_zoom`).
+        // The WebGL2 fallback builds no HD pages (`render::picture_zoom`).
         let hd = (scale > 1 && !crate::render::gpu::webgl_fallback(device)).then(|| {
             let page = crate::render::picture_atlas::HdPage {
                 scale,
@@ -467,6 +477,7 @@ impl CenteredShapeStrip {
             shape_h: canvas_h,
             frames,
             hd,
+            low_binding: None,
         })
     }
 
@@ -871,34 +882,35 @@ impl SelectionOverlay {
         self.insignia_shapes.get(name)
     }
 
-    /// VERA-only, experimental: the stock strip `strip` names; a beacon's
-    /// is `BeaconArt`'s.
-    pub(crate) fn interface_strip(&self, strip: InterfaceStrip) -> Option<&CenteredShapeStrip> {
-        match strip {
-            InterfaceStrip::Placement => self.placement_shape.as_ref(),
-            InterfaceStrip::Pipbrd => self.pipbrd.as_ref(),
-            InterfaceStrip::Pips => self.pips.as_ref(),
-            InterfaceStrip::ScalePips => self.scale_pips.as_ref(),
-            InterfaceStrip::BombClock => self.bomb_clock.as_ref(),
-            InterfaceStrip::TalkBubble => self.talk_bubble.as_ref(),
-            InterfaceStrip::Wrench => self.repair_wrench.as_ref(),
-            InterfaceStrip::PowerOff => self.power_off.as_ref(),
-            InterfaceStrip::Beacon(_) => None,
-        }
-    }
-
-    /// VERA-only, experimental: whether a stock strip has an HD twin, which
-    /// the zoomed draw needs.
-    pub(crate) fn has_hd_pages(&self) -> bool {
-        use InterfaceStrip::*;
-        [
-            Placement, Pipbrd, Pips, ScalePips, BombClock, TalkBubble, Wrench, PowerOff,
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): every strip's
+    /// [`CenteredShapeStrip::bind_one_pass_hd`], once per frame before the
+    /// world draws. A beacon's strip is `BeaconArt`'s.
+    pub(crate) fn bind_one_pass_hd(
+        &mut self,
+        device: &wgpu::Device,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        let strips = [
+            &mut self.placement_shape,
+            &mut self.pipbrd,
+            &mut self.pips,
+            &mut self.scale_pips,
+            &mut self.bomb_clock,
+            &mut self.talk_bubble,
+            &mut self.repair_wrench,
+            &mut self.power_off,
         ]
         .into_iter()
-        .any(|strip| {
-            self.interface_strip(strip)
-                .is_some_and(|strip| strip.hd.is_some())
-        })
+        .flatten();
+        #[cfg(feature = "phobos")]
+        let strips = strips.chain(self.digital_shapes.iter_mut().flatten());
+        for strip in strips
+            .chain(self.insignia_shapes.values_mut())
+            .chain(self.ares_bomb_images.values_mut())
+        {
+            strip.bind_one_pass_hd(device, batch, on);
+        }
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.

@@ -19,7 +19,7 @@ class SameAsBaseTests(unittest.TestCase):
             ('zoom100-wheel1.5', 100, 1.5), ('zoom100-wheel1', 100, 1)])
         self.assertEqual(pixel_runs('100', ''), [('zoom100', 100, None)])
         with self.assertRaises(ValueError):
-            pixel_runs('100', '2')
+            pixel_runs('100', '3')
 
     def test_a_base_without_wheel_zoom_skips_the_wheel_runs(self):
         runs = pixel_runs('100', '1.5')

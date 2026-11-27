@@ -8,18 +8,63 @@
 @group(1) @binding(0) var t_sprite: texture_2d<f32>;
 @group(1) @binding(1) var s_sprite: sampler;
 @group(1) @binding(3) var source_indices: texture_2d<u32>;
-// VERA-only, experimental (docs/zoom-one-pass.md): a picture page's HD
-// binding (`picture_house.wgsl`) binds the HD twin at 0 (premultiplied
-// encoded colour with mipmaps, a linear sampler at 1), the twin's level-0
-// index plane at 3, its house layer at 4 and the 1x page at 5. Every other
-// page binds 1x1 placeholders at 4 and 5.
+// VERA-only, experimental (docs/zoom-one-pass.md): an RGBA page's HD
+// binding (`picture_house.wgsl`; a picture page's twin, or the overlay
+// atlas's, `hd_terrain::RgbaTwin`) binds the HD twin at 0 (premultiplied
+// encoded colour with mipmaps, a linear sampler at 1), an index plane at 3
+// (the twin's level-0 indices, or the 1x page's own), its house layer at 4
+// and the 1x page at 5. An indexed SHP page's HD page (`hd_art::ShpHd`)
+// keeps the palette rows at 0 and its 1x indices at 3, and binds its 2x
+// twin at 4 (`shp_hd_color`) with a linear sampler at 1. Every other page
+// binds 1x1 placeholders at 4 and 5.
 @group(1) @binding(4) var source_house: texture_2d<f32>;
 @group(1) @binding(5) var source_low_page: texture_2d<f32>;
 
-// Whether the page bound is a picture page's HD twin: only an HD binding
+// Whether the page bound is an RGBA page's HD twin: only such a binding
 // binds a 1x page bigger than the 1x1 placeholder.
 fn source_hd() -> bool {
     return textureDimensions(source_low_page).x > 1u;
+}
+
+// Whether the page bound is an indexed SHP page with VERA's HD art twin at
+// binding 4: the 1x page placeholder beside a twin bigger than 1x1.
+fn source_shp_hd() -> bool {
+    return textureDimensions(source_low_page).x <= 1u && textureDimensions(source_house).x > 1u;
+}
+
+// An SHP HD twin texel `twin` (premultiplied by its coverage) at a pixel
+// whose 1x index is `index`, in `source_palette`'s row, as `indexed_color`
+// returns a 1x pixel: encoded colour. The twin holds the HD art as it
+// differs from the pack's reference palette at each texel's 1x index
+// (`hd_art::compose_shp_twin`): for house colours (16..31) the ratio of its
+// brightest channel to the reference's, over 2.5; otherwise the difference,
+// halved around 128/255. So the row's own colours (theater, house) come
+// through, and a texel with no HD art is the 1x colour exactly. A pixel less
+// than half covered is a hole.
+fn shp_hd_color(twin: vec4f, index: u32, source_palette: u32) -> vec4f {
+    if twin.a < 0.5 || index == 0u {
+        return vec4f(0.0);
+    }
+    let own = indexed_color(index, source_palette);
+    let stored = twin.rgb / twin.a;
+    var rgb: vec3f;
+    if index >= 16u && index < 32u {
+        rgb = own.rgb * (stored.r * 2.5);
+    } else {
+        rgb = own.rgb + (stored - 128.0 / 255.0) * 2.0;
+    }
+    return vec4f(clamp(rgb, vec3f(0.0), vec3f(1.0)), own.a);
+}
+
+// The level of an HD twin of `size` texels to sample for UV derivatives
+// `uv_dx`, `uv_dy`: log2 of the twin texels a target pixel spans, which in
+// the one-pass zoomed draw is the twin's scale over the camera zoom. The
+// sampler clamps it to the twin's last mip; textureNumLevels has no GLSL ES
+// form.
+fn twin_lod(size: vec2u, uv_dx: vec2f, uv_dy: vec2f) -> f32 {
+    let dims = vec2f(size);
+    let span = max(length(uv_dx * dims), length(uv_dy * dims));
+    return max(log2(max(span, 1e-6)), 0.0);
 }
 
 // An HD twin's `premultiplied` colour and `house` layer at a pixel whose
@@ -55,16 +100,42 @@ fn indexed_color(index: u32, source_palette: u32) -> vec4f {
     return vec4f(color.rgb, select(color.a, 0.0, index == 0u));
 }
 
-// The encoded colour of the source texel at `texel`, whose palette index is
-// `index`, for blitters that load texels instead of sampling them.
+// The encoded colour of the source texel at `texel` (of the index plane),
+// whose palette index is `index`, for blitters that load texels instead of
+// sampling them. An HD twin larger than the index plane gives the twin texel
+// at the index texel's top-left; `source_color_at` takes the one under a UV.
 fn source_color(texel: vec2i, index: u32, source_palette: u32) -> vec4f {
+    let planes = vec2i(textureDimensions(source_indices));
+    var twin = vec2i(textureDimensions(t_sprite));
+    if source_shp_hd() {
+        twin = vec2i(textureDimensions(source_house));
+    }
+    return loaded_source_color(texel, texel * twin / planes, index, source_palette);
+}
+
+// `source_color` for the texels under `uv`: the index plane's and, on an HD
+// twin, the twin's own.
+fn source_color_at(uv: vec2f, index: u32, source_palette: u32) -> vec4f {
+    var twin = vec2f(textureDimensions(t_sprite));
+    if source_shp_hd() {
+        twin = vec2f(textureDimensions(source_house));
+    }
+    let twin_texel = vec2i(clamp(uv * twin, vec2f(0.0), twin - 1.0));
+    return loaded_source_color(source_texel(uv), twin_texel, index, source_palette);
+}
+
+// `source_color` with the index plane's `texel` and an HD twin's `twin_texel`.
+fn loaded_source_color(texel: vec2i, twin_texel: vec2i, index: u32, source_palette: u32) -> vec4f {
     if source_palette != 0u && !picture_house(source_palette) {
+        if source_shp_hd() {
+            return shp_hd_color(textureLoad(source_house, twin_texel, 0), index, source_palette);
+        }
         return indexed_color(index, source_palette);
     }
     if source_hd() {
-        let house_texel = min(texel, vec2i(textureDimensions(source_house)) - 1);
+        let house_texel = min(twin_texel, vec2i(textureDimensions(source_house)) - 1);
         return hd_source_color(
-            textureLoad(t_sprite, texel, 0),
+            textureLoad(t_sprite, twin_texel, 0),
             textureLoad(source_house, house_texel, 0),
             index,
             source_palette,
@@ -85,23 +156,22 @@ fn rgba_source_color(color: vec4f, index: u32, source_palette: u32) -> vec4f {
 
 // `source_color` for blitters that sample `uv`. Every page has one mip and one
 // filter, so level 0 is the texel an ordinary sample reads. An HD twin
-// (`source_hd`) is sampled at the level whose texels match the target's
-// pixels: log2 of the twin texels a target pixel spans, which in the one-pass
-// zoomed draw is the twin's scale over the camera zoom, within its levels.
-// The UV's derivatives are taken first, in uniform control flow; callers call
-// this at the top of their fragment entry points.
+// (`source_hd`, `source_shp_hd`) is sampled at the level whose texels match
+// the target's pixels (`twin_lod`). The UV's derivatives are taken first, in
+// uniform control flow; callers call this at the top of their fragment entry
+// points.
 fn sampled_source_color(uv: vec2f, index: u32, source_palette: u32) -> vec4f {
     let uv_dx = dpdx(uv);
     let uv_dy = dpdy(uv);
     if source_palette != 0u && !picture_house(source_palette) {
+        if source_shp_hd() {
+            let lod = twin_lod(textureDimensions(source_house), uv_dx, uv_dy);
+            return shp_hd_color(textureSampleLevel(source_house, s_sprite, uv, lod), index, source_palette);
+        }
         return indexed_color(index, source_palette);
     }
     if source_hd() {
-        let dims = vec2f(textureDimensions(t_sprite));
-        let span = max(length(uv_dx * dims), length(uv_dy * dims));
-        // The sampler clamps the level to the twin's last mip (one texel per
-        // game pixel); textureNumLevels has no GLSL ES form.
-        let lod = max(log2(max(span, 1e-6)), 0.0);
+        let lod = twin_lod(textureDimensions(t_sprite), uv_dx, uv_dy);
         return hd_source_color(
             textureSampleLevel(t_sprite, s_sprite, uv, lod),
             textureSampleLevel(source_house, s_sprite, uv, lod),

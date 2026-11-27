@@ -234,7 +234,7 @@ impl ChronoScreenRenderer {
         target: &wgpu::Texture,
         draw: ChronoScreenDraw,
         tactical: [u32; 4],
-        bar_under: bool,
+        bar_rows: Option<u32>,
     ) {
         let (mode, weight, amplitude) = match draw {
             ChronoScreenDraw::Warp { step, duration } => {
@@ -263,7 +263,7 @@ impl ChronoScreenRenderer {
                 origin_x: self.origin[0],
                 origin_y: self.origin[1],
                 field_y: tactical[1],
-                rows: warp_rows(self.extent.height, tactical, bar_under),
+                rows: warp_rows(self.extent.height, tactical, bar_rows),
             }),
         );
         let view = target.create_view(&wgpu::TextureViewDescriptor {
@@ -324,15 +324,15 @@ pub(crate) fn shader_source(webgl: bool) -> String {
 }
 
 /// The rows the warp turns. The original's surface is the battlefield with
-/// the command bar under it, and `7F5BFC` leaves the bar's 32 rows at the
-/// foot of the surface alone. A layout with no bar under the battlefield has
-/// no rows to leave: the warp takes the battlefield's own.
-fn warp_rows(surface_height: u32, tactical: [u32; 4], bar_under: bool) -> u32 {
+/// the command bar under it, and `7F5BFC` leaves the bar's 32 rows
+/// (`bar_rows`, scaled with a zoomed match's composition) at the foot of the
+/// surface alone. A layout with no bar under the battlefield has no rows to
+/// leave: the warp takes the battlefield's own.
+fn warp_rows(surface_height: u32, tactical: [u32; 4], bar_rows: Option<u32>) -> u32 {
     let [_, top, _, height] = tactical;
-    if bar_under {
-        surface_height.saturating_sub(top).saturating_sub(32)
-    } else {
-        height
+    match bar_rows {
+        Some(bar) => surface_height.saturating_sub(top).saturating_sub(bar),
+        None => height,
     }
 }
 
@@ -360,10 +360,12 @@ mod tests {
     #[test]
     fn the_warp_leaves_only_a_bar_under_the_battlefield() {
         // The original: every surface row but the bar's 32, at any sidebar size.
-        assert_eq!(warp_rows(600, [0, 0, 632, 568], true), 568);
-        assert_eq!(warp_rows(1200, [0, 0, 1264, 1136], true), 1168);
+        assert_eq!(warp_rows(600, [0, 0, 632, 568], Some(32)), 568);
+        assert_eq!(warp_rows(1200, [0, 0, 1264, 1136], Some(32)), 1168);
+        // A 200% match composition: the bar's rows doubled.
+        assert_eq!(warp_rows(1200, [0, 0, 1264, 1136], Some(64)), 1136);
         // The bar on top, or left out: the battlefield's own rows.
-        assert_eq!(warp_rows(600, [168, 32, 632, 568], false), 568);
-        assert_eq!(warp_rows(600, [0, 0, 632, 600], false), 600);
+        assert_eq!(warp_rows(600, [168, 32, 632, 568], None), 568);
+        assert_eq!(warp_rows(600, [0, 0, 632, 600], None), 600);
     }
 }

@@ -316,16 +316,24 @@ impl Gpu {
                 &layer.z_bytes,
                 layer.source_size,
             );
+            // A voxel page's HD indices (`sprite_voxel_shader.wgsl`): none,
+            // the 1x1 placeholder production binds where a page has no HD.
+            let voxel_hd = self.texture(wgpu::TextureFormat::R8Uint, &[0], [1, 1]);
             let mut texture_entries = vec![wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(&color_source),
             }];
-            if !voxel {
-                texture_entries.push(wgpu::BindGroupEntry {
+            texture_entries.push(if voxel {
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&voxel_hd),
+                }
+            } else {
+                wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
-                });
-            }
+                }
+            });
             if matches!(layer.shader, Shader::Terrain) {
                 texture_entries.push(wgpu::BindGroupEntry {
                     binding: 2,

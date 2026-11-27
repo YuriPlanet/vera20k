@@ -29,7 +29,7 @@ import sys
 import time
 from pathlib import Path
 
-from tools.map_observation import WHEEL_ZOOMS
+from tools.map_observation import WHEEL_ZOOM_RANGE, wheel_zoom_in_range
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT = 'src/app/diagnostics/tactical_capture/contract.v2.json'
@@ -96,8 +96,8 @@ def pixel_runs(zooms, wheel_zooms):
     runs = [(f'zoom{zoom}', zoom, None) for zoom in map(int, filter(None, zooms.split(',')))]
     for text in filter(None, wheel_zooms.split(',')):
         wheel = float(text)
-        if wheel not in WHEEL_ZOOMS:
-            raise ValueError(f'wheel zoom {text} must be one of {WHEEL_ZOOMS}')
+        if not wheel_zoom_in_range(wheel):
+            raise ValueError(f'wheel zoom {text} must lie in {WHEEL_ZOOM_RANGE}')
         wheel = int(wheel) if wheel.is_integer() else wheel
         runs.append((f'zoom100-wheel{wheel:g}', 100, wheel))
     return runs
@@ -223,7 +223,7 @@ def main(argv=None):
     parser.add_argument('--steps', default='300,1200,2200', help='capture steps')
     parser.add_argument('--zooms', default='100,150', help='Options zoom percents')
     parser.add_argument('--wheel-zooms', default='1.5',
-                        help="mouse-wheel view distances (0.8, 1, 1.25 or 1.5) captured at "
+                        help="mouse-wheel view distances (any from 0.25 to 2) captured at "
                              "Options zoom 100; '' for none")
     parser.add_argument('--profile', type=Path, default=PROFILE, help='map_observation profile')
     parser.add_argument('--skip-sim', action='store_true')

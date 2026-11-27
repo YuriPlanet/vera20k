@@ -217,8 +217,10 @@ pub struct UnitAtlas {
     vpl: Option<VplFile>,
     /// The device's 2D texture limit, which bounds pages and pictures.
     max_texture_dim: u32,
-    /// VERA's HD art pages: each page's pictures at twice the resolution
-    /// (`render::hd_art`), made with the first HD picture placed on it.
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): each page's
+    /// pictures at twice the resolution ([`vxl_raster::VxlHd`]), made with
+    /// the first HD picture placed on it and bound beside the page, which
+    /// the voxel blitters read while the camera zooms in.
     hd_pages: Vec<Option<wgpu::TextureView>>,
 }
 
@@ -545,10 +547,18 @@ impl UnitAtlas {
             if self.hd_pages.len() <= texels.page {
                 self.hd_pages.resize_with(texels.page + 1, || None);
             }
-            let view = self.hd_pages[texels.page].get_or_insert_with(|| {
-                device
+            let slot = &mut self.hd_pages[texels.page];
+            if slot.is_none() {
+                // A cleared picture on a page with no HD page clears nothing.
+                if hd_texels.iter().all(|&texel| texel == 0) {
+                    continue;
+                }
+                let Some(page) = self.pages.get_mut(texels.page) else {
+                    continue;
+                };
+                let view = device
                     .create_texture(&wgpu::TextureDescriptor {
-                        label: Some("HD art unit atlas page"),
+                        label: Some("HD unit atlas page"),
                         size: wgpu::Extent3d {
                             width,
                             height,
@@ -561,8 +571,13 @@ impl UnitAtlas {
                         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                         view_formats: &[],
                     })
-                    .create_view(&Default::default())
-            });
+                    .create_view(&Default::default());
+                batch.bind_unit_atlas_hd(device, &mut page.texture, &view);
+                *slot = Some(view);
+            }
+            let Some(view) = slot.as_ref() else {
+                continue;
+            };
             atlas_growth::write_texels(
                 queue,
                 view.texture(),
@@ -572,12 +587,6 @@ impl UnitAtlas {
                 hd_texels,
             );
         }
-    }
-
-    /// VERA's HD art page of `page`: its pictures at twice the resolution,
-    /// 0 where a picture has none.
-    pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
-        self.hd_pages.get(page)?.as_ref()
     }
 
     /// Number of pictures drawn so far.
@@ -754,20 +763,19 @@ impl Resident {
         let Some(&[page_width, page_height]) = self.page_sizes.get(entry.page) else {
             return;
         };
-        // The HD picture no longer matches: clear it, so the native one shows.
+        // The HD picture no longer matches: clear it, so the native one shows
+        // (`UnitAtlas::upload` skips the clear on a page with no HD page).
         let origin = [
             (entry.uv_origin[0] * page_width as f32).round() as u32,
             (entry.uv_origin[1] * page_height as f32).round() as u32,
         ];
         let size = entry.pixel_size.map(|side| side as u32);
-        if vxl_raster::hd_voxels() {
-            self.hd_uploads.push(PendingTexels {
-                page: entry.page,
-                origin: origin.map(|v| v * 2),
-                size: size.map(|v| v * 2),
-                texels: StagedTexels::Written(vec![0; (size[0] * size[1] * 4) as usize]),
-            });
-        }
+        self.hd_uploads.push(PendingTexels {
+            page: entry.page,
+            origin: origin.map(|v| v * 2),
+            size: size.map(|v| v * 2),
+            texels: StagedTexels::Written(vec![0; (size[0] * size[1] * 4) as usize]),
+        });
         self.uploads.push(PendingTexels {
             page: entry.page,
             origin: [

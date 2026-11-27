@@ -67,8 +67,15 @@ KEYBOARD_GESTURE_POLICY = 'map-local-gesture-v3'
 COMMAND_BAR_GESTURE_POLICY = 'map-local-gesture-v4'
 RIGHT_BUTTON_GESTURE_POLICY = 'map-local-right-gesture-v5'
 SIDEBAR_POLICY = 'map-retained-sidebar-observation-v1'
-# The view distances a mouse-wheel notch selects (Rust `ViewDistanceTier::scale`).
-WHEEL_ZOOMS = (0.8, 1, 1.25, 1.5)
+# The mouse wheel's continuous view-distance range: 1 / the camera zoom, which the
+# wheel holds in Rust `camera::MIN_ZOOM`..=`camera::MAX_ZOOM` (0.5 to 4).
+WHEEL_ZOOM_RANGE = (0.25, 2)
+
+
+def wheel_zoom_in_range(value):
+    """Whether `value` is a view distance the wheel can reach (a number, not a bool)."""
+    return (type(value) in (int, float)
+            and WHEEL_ZOOM_RANGE[0] <= value <= WHEEL_ZOOM_RANGE[1])
 AUDIO_POLICY = 'map-device-pulled-player-pcm-v2'
 PRIOR_AUDIO_POLICY = 'map-device-pulled-player-pcm-v1'
 AUDIO_FINISH_FIELDS = ('event_serial', 'event_live_at_finish', 'channel_live_at_finish',
@@ -549,10 +556,8 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
         optional = tuple(key for key in ('hd_radar', 'smooth_sidebar', 'wheel_zoom')
                          if key in presentation)
         require_exact_keys(presentation, ('zoom', 'sidebar') + optional, 'profile.presentation')
-        if 'wheel_zoom' in presentation and (
-                type(presentation['wheel_zoom']) not in (int, float)
-                or presentation['wheel_zoom'] not in WHEEL_ZOOMS):
-            raise ValidationError('profile.presentation.wheel_zoom must be 0.8, 1, 1.25 or 1.5')
+        if 'wheel_zoom' in presentation and not wheel_zoom_in_range(presentation['wheel_zoom']):
+            raise ValidationError('profile.presentation.wheel_zoom must be a number from 0.25 to 2')
         for key in set(optional) - {'wheel_zoom'}:
             if type(presentation[key]) is not bool:
                 raise ValidationError(f'profile.presentation.{key} must be a boolean')

@@ -220,7 +220,6 @@ fn gate_piece(
         building_viewport: crate::app::presentation::render::tactical_world_viewport(
             [-1000.0; 2],
             [0, 0, 5000, 5000],
-            None,
         ),
         axis: DepthAxis::NONE,
         local_owner: None,

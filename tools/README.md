@@ -557,8 +557,8 @@ through `cargo_run`. Then:
   (`rules_hash`) and a short played fixture; both must match.
 - `map_observation` captures of the [barracks profile](map_observation.barracks-output.example.json)
   (units, building, construction and AI bases) at `--steps` and Options `--zooms`,
-  then at each mouse-wheel view distance in `--wheel-zooms` (default `1.5`, any of
-  0.8, 1, 1.25, 1.5; `''` for none) at Options zoom 100, through the profile's
+  then at each mouse-wheel view distance in `--wheel-zooms` (default `1.5`, any
+  from 0.25 to 2; `''` for none) at Options zoom 100, through the profile's
   `presentation.wheel_zoom`. Each pair is compared with `map_observation compare`; the
   first differing `frame.bgra` pixel is printed. The base is captured a second
   time to measure run-to-run noise (the ore field shimmers differently each run):

@@ -50,22 +50,38 @@ pub struct TileAtlas {
     /// Contains per-pixel Z-depth from TMP files for occlusion (cliffs, ramps).
     pub depth_texture_view: wgpu::TextureView,
     /// Pre-built bind group for the Z-depth pipeline (color + sampler + R8 depth).
-    /// Used by `draw_with_buffer_zdepth()` in the render pass.
+    /// Used by `draw_with_buffer_zdepth()` in the render pass. VERA-only,
+    /// experimental: the HD twin's binding while [`Self::bind_hd_twin`] has
+    /// it on.
     pub zdepth_bind_group: wgpu::BindGroup,
     /// Tile key → UV rectangle + rendering metadata. Lookup-only: the
     /// terrain instance build reads it for every visible cell each draw.
     uv_map: LookupMap<TileKey, TileUV>,
-    /// VERA's HD art terrain (`render::hd_terrain`): each tile's UV origin
-    /// bits → its [`crate::render::hd_terrain::tile_hash`], its atlas pixel
-    /// origin and size.
-    hd_tiles: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
+    /// VERA's HD art terrain (`render::hd_terrain::RgbaTwin`), when this
+    /// start has a pack with tiles.
+    hd: Option<crate::render::hd_terrain::RgbaTwin>,
 }
 
 impl TileAtlas {
-    /// The HD art lookup of the tile at `uv_origin`: its hash, atlas pixel
-    /// origin and size.
-    pub(crate) fn hd_tile(&self, uv_origin: [f32; 2]) -> Option<(u64, [u32; 2], [u32; 2])> {
-        self.hd_tiles.get(&uv_origin.map(f32::to_bits)).copied()
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): whether the tile
+    /// draws read the atlas's HD twin this frame (`on`: the camera zooms in
+    /// with HD art on, `render::hd_art::bind_hd_twins`), which
+    /// `zdepth_bind_group` then binds; the twin is made the first time and
+    /// takes a few more pack pictures each frame.
+    pub(crate) fn bind_hd_twin(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        let Some(twin) = self.hd.as_mut() else {
+            return;
+        };
+        let depth = &self.depth_texture_view;
+        twin.bind(device, queue, &mut self.zdepth_bind_group, on, |hd| {
+            batch.create_zdepth_hd_bind_group(device, hd, depth)
+        });
     }
 
     /// Look up UV and rendering data for a tile. Returns None if not in the atlas.
@@ -102,7 +118,7 @@ pub fn build_atlas(
             depth_texture_view,
             zdepth_bind_group,
             uv_map: LookupMap::default(),
-            hd_tiles: HashMap::new(),
+            hd: None,
         };
     }
 
@@ -145,7 +161,7 @@ pub fn build_atlas(
         LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
-    let mut hd_tiles = HashMap::with_capacity(plan.placements.len());
+    let mut pictures = Vec::with_capacity(plan.placements.len());
 
     for placed in &plan.placements {
         let [px, py] = placed.origin;
@@ -159,15 +175,9 @@ pub fn build_atlas(
         }
         blit_tile(&mut rgba, atlas_width, px, py, tile);
         blit_depth(&mut depth_buf, atlas_width, px, py, tile);
-        let uv_origin = [px as f32 / aw, py as f32 / ah];
-        hd_tiles.insert(
-            uv_origin.map(f32::to_bits),
-            (
-                crate::render::hd_terrain::tile_hash(tile.width, tile.height, &tile.rgba),
-                [px, py],
-                [tile.width, tile.height],
-            ),
-        );
+        if tile.rgba.len() == (tile.width * tile.height * 4) as usize {
+            pictures.push(([px, py], [tile.width, tile.height]));
+        }
 
         uv_map.insert(
             key,
@@ -205,12 +215,24 @@ pub fn build_atlas(
         atlas_height,
         (atlas_width as u64 * atlas_height as u64) as f64 / 1024.0,
     );
+    // The HD twin is made from the page itself (`hd_terrain::RgbaTwin`).
+    let hd = crate::render::hd_art::pack_available()
+        .then(|| {
+            crate::render::hd_terrain::RgbaTwin::new(
+                "tile atlas",
+                rgba,
+                [atlas_width, atlas_height],
+                pictures,
+                [255, 0, 255],
+            )
+        })
+        .flatten();
     TileAtlas {
         texture,
         depth_texture_view,
         zdepth_bind_group,
         uv_map,
-        hd_tiles,
+        hd,
     }
 }
 

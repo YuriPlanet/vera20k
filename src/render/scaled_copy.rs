@@ -1,5 +1,6 @@
-//! A surface drawn at its own size and shown scaled: resolution and wheel
-//! zoom (`upscale_pass`) and the sidebar's size (`sidebar_surface`).
+//! A surface drawn at its own size and shown scaled: the active-game shells'
+//! frame and the retained composition (`upscale_pass`) and the sidebar's size
+//! (`sidebar_surface`).
 //!
 //! The surface has its own colour and depth targets, so the batch pipelines
 //! draw into it as they draw into the frame. Its copy (`scaled_copy.wgsl`)
@@ -9,27 +10,12 @@
 //! straddles by how much of it each covers, so only the seams soften.
 //! Shrinking integrates all covered source texels after scene composition,
 //! retaining thin details without filtering palette indices or depth values.
-//! [`MaskedCopy`] draws the same copy into the window over a zoomed frame.
 
 const SHADER_SRC: &str = include_str!("scaled_copy.wgsl");
 
-/// The copy's source; `webgl` for the WebGL2 fallback. GLSL has no texelFetch
-/// for depth samplers, so the fallback loads the mask as an unfilterable float
-/// texture.
-pub(crate) fn shader_source(webgl: bool) -> String {
-    if !webgl {
-        return SHADER_SRC.to_owned();
-    }
-    let source = super::webgl::patch(
-        SHADER_SRC,
-        "var t_mask: texture_depth_2d;",
-        "var t_mask: texture_2d<f32>;",
-    );
-    super::webgl::patch(
-        &source,
-        "textureLoad(t_mask, clamp(at, vec2i(0), last), 0) < 1.0",
-        "textureLoad(t_mask, clamp(at, vec2i(0), last), 0).r < 1.0",
-    )
+/// The copy's source; the WebGL2 fallback takes it as it is.
+pub(crate) fn shader_source() -> String {
+    SHADER_SRC.to_owned()
 }
 
 /// A copy's placement: source pixel (0, 0) at target pixel `origin`, each
@@ -87,9 +73,9 @@ impl ScaledSurface {
         let (color_texture, color_view) = create_color_target(device, label, format, size);
         let (depth_texture, depth_view) = create_depth_target(device, label, size);
         let params_buffer = create_placement_buffer(device, label);
-        let bgl = create_bgl(device, label, None);
+        let bgl = create_bgl(device, label);
         let bind_group = create_bind_group(device, label, &bgl, &color_texture, &params_buffer);
-        let pipeline = create_pipeline(device, label, format, &bgl, target_depth, "fs_main");
+        let pipeline = create_pipeline(device, label, format, &bgl, target_depth);
         Self {
             label,
             format,
@@ -172,141 +158,6 @@ impl ScaledSurface {
     }
 }
 
-/// Which frame pixels a [`MaskedCopy`] keeps off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum WindowMask {
-    /// Those whose depth UI drawn after the surface's frame copy wrote.
-    Depth,
-    /// Those that differ from a copy of the frame taken before anything drew
-    /// over the surface's area there.
-    Changed,
-}
-
-/// The frame textures a [`MaskedCopy`] reads its [`WindowMask`] from.
-#[derive(Clone, Copy)]
-pub(crate) enum MaskSource<'a> {
-    Depth(&'a wgpu::TextureView),
-    Changed {
-        frame: &'a wgpu::TextureView,
-        before: &'a wgpu::TextureView,
-    },
-}
-
-/// A surface's copy into the window over a zoomed frame, at the window's own
-/// pixels: the sidebar's surfaces (`app::presentation::sidebar_surface`) and
-/// the wheel-zoomed world (`upscale_pass::WorldZoomPass`). It keeps off every
-/// window pixel over a frame pixel the [`WindowMask`] marks, so the zoomed
-/// frame shows what was drawn there over the surface as before. The sidebar
-/// uses depth: the UI over it (tooltips, the cursor) writes the frame's depth.
-pub(crate) struct MaskedCopy {
-    label: &'static str,
-    mask: WindowMask,
-    bgl: wgpu::BindGroupLayout,
-    pipeline: wgpu::RenderPipeline,
-    /// The frame's placement in the window.
-    mask_buffer: wgpu::Buffer,
-}
-
-impl MaskedCopy {
-    /// The copy into a `format` target in a pass without a depth attachment.
-    pub(crate) fn new(
-        device: &wgpu::Device,
-        label: &'static str,
-        format: wgpu::TextureFormat,
-        mask: WindowMask,
-    ) -> Self {
-        let bgl = create_bgl(device, label, Some(mask));
-        let fragment = match mask {
-            WindowMask::Depth => "fs_masked",
-            WindowMask::Changed => "fs_unchanged",
-        };
-        let pipeline = create_pipeline(device, label, format, &bgl, None, fragment);
-        Self {
-            label,
-            mask,
-            bgl,
-            pipeline,
-            mask_buffer: create_placement_buffer(device, label),
-        }
-    }
-
-    /// A buffer for one surface's placement in the window.
-    pub(crate) fn placement_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        create_placement_buffer(device, self.label)
-    }
-
-    /// Put a surface's pixel (0, 0) at window pixel `origin` in its
-    /// `placement`, each covering `scale` window pixels; `sharp` for a whole
-    /// scale.
-    pub(crate) fn place(
-        &self,
-        queue: &wgpu::Queue,
-        placement: &wgpu::Buffer,
-        origin: (f32, f32),
-        scale: f32,
-        sharp: bool,
-    ) {
-        write_placement(queue, placement, origin, scale, sharp);
-    }
-
-    /// Put frame pixel (0, 0) at window pixel `origin`, each frame pixel
-    /// covering `scale` window pixels, at least one.
-    pub(crate) fn place_frame(&self, queue: &wgpu::Queue, origin: (f32, f32), scale: f32) {
-        write_placement(queue, &self.mask_buffer, origin, scale, false);
-    }
-
-    /// Draw `source` at `placement` into `pass` over `scissor` (x, y,
-    /// width, height) of the window, off the pixels `mask` marks.
-    pub(crate) fn draw(
-        &self,
-        device: &wgpu::Device,
-        pass: &mut wgpu::RenderPass<'_>,
-        source: &wgpu::TextureView,
-        placement: &wgpu::Buffer,
-        mask: MaskSource<'_>,
-        scissor: [u32; 4],
-    ) {
-        let [x, y, width, height] = scissor;
-        if width == 0 || height == 0 {
-            return;
-        }
-        let view = |binding, view| wgpu::BindGroupEntry {
-            binding,
-            resource: wgpu::BindingResource::TextureView(view),
-        };
-        let mut entries = vec![
-            view(0, source),
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: placement.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: self.mask_buffer.as_entire_binding(),
-            },
-        ];
-        match (self.mask, mask) {
-            (WindowMask::Depth, MaskSource::Depth(depth)) => entries.push(view(2, depth)),
-            (WindowMask::Changed, MaskSource::Changed { frame, before }) => {
-                entries.extend([view(4, frame), view(5, before)]);
-            }
-            _ => {
-                debug_assert!(false, "{} drawn with another mask", self.label);
-                return;
-            }
-        }
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(self.label),
-            layout: &self.bgl,
-            entries: &entries,
-        });
-        pass.set_scissor_rect(x, y, width, height);
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.draw(0..3, 0..1);
-    }
-}
-
 pub(crate) fn create_color_target(
     device: &wgpu::Device,
     label: &str,
@@ -367,59 +218,33 @@ pub(crate) fn create_depth_target(
     (texture, view)
 }
 
-/// The copy's bindings; a `mask` adds the frame's placement and the textures
-/// the mask reads.
-fn create_bgl(
-    device: &wgpu::Device,
-    label: &str,
-    mask: Option<WindowMask>,
-) -> wgpu::BindGroupLayout {
-    let texture = |binding, sample_type| wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Texture {
-            sample_type,
-            view_dimension: wgpu::TextureViewDimension::D2,
-            multisampled: false,
-        },
-        count: None,
-    };
-    let uniform = |binding| wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    };
+/// The copy's bindings: the source and its placement.
+fn create_bgl(device: &wgpu::Device, label: &str) -> wgpu::BindGroupLayout {
     // Whole texels are loaded, never filtered.
-    let mut entries = vec![
-        texture(0, wgpu::TextureSampleType::Float { filterable: false }),
-        uniform(1),
-    ];
-    let colour = wgpu::TextureSampleType::Float { filterable: false };
-    match mask {
-        None => {}
-        Some(WindowMask::Depth) => entries.extend([
-            texture(
-                2,
-                if super::gpu::webgl_fallback(device) {
-                    colour
-                } else {
-                    wgpu::TextureSampleType::Depth
-                },
-            ),
-            uniform(3),
-        ]),
-        Some(WindowMask::Changed) => {
-            entries.extend([uniform(3), texture(4, colour), texture(5, colour)]);
-        }
-    }
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some(label),
-        entries: &entries,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
     })
 }
 
@@ -453,16 +278,13 @@ fn create_pipeline(
     format: wgpu::TextureFormat,
     bgl: &wgpu::BindGroupLayout,
     target_depth: Option<wgpu::TextureFormat>,
-    fragment: &str,
 ) -> wgpu::RenderPipeline {
     // Its box filter covers at most the frame pixels one window pixel spans.
     let shader = super::gpu::bounded_loop_module(
         device,
         wgpu::ShaderModuleDescriptor {
             label: Some(label),
-            source: wgpu::ShaderSource::Wgsl(
-                shader_source(super::gpu::webgl_fallback(device)).into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(shader_source().into()),
         },
     );
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -481,7 +303,7 @@ fn create_pipeline(
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
-            entry_point: Some(fragment),
+            entry_point: Some("fs_main"),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
                 blend: None, // opaque overwrite
@@ -510,23 +332,19 @@ fn create_pipeline(
 mod tests {
     use super::*;
 
-    /// Both variants validate, and the browser's (`webgl`) translates every
-    /// entry point to WebGL2's GLSL ES 3.00 as wgpu's GL backend does.
+    /// The shader validates and translates every entry point to WebGL2's
+    /// GLSL ES 3.00 as wgpu's GL backend does.
     #[test]
     fn scaled_copy_shader_compiles() {
-        for webgl in [false, true] {
-            let source = shader_source(webgl);
-            let module =
-                naga::front::wgsl::parse_str(&source).expect("the scaled-copy shader parses");
+        {
+            let module = naga::front::wgsl::parse_str(&shader_source())
+                .expect("the scaled-copy shader parses");
             let info = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
                 naga::valid::Capabilities::empty(),
             )
             .validate(&module)
             .expect("the scaled-copy shader validates");
-            if !webgl {
-                continue;
-            }
             for entry in &module.entry_points {
                 let options = naga::back::glsl::Options {
                     version: naga::back::glsl::Version::Embedded {

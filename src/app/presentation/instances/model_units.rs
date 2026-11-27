@@ -139,7 +139,8 @@ pub(crate) fn begin_model_frame(state: &mut AppState) {
     }
     // How much the view magnifies the world: the wheel zoom times the
     // Options zoom. Above 1 the model page gets an HD twin at about that
-    // multiple, which the zoomed draw takes (`render::picture_zoom`).
+    // multiple, which the world blitters sample while the camera zooms in
+    // (`SpriteAtlas::bind_one_pass_hd`, `docs/zoom-one-pass.md`).
     let options = state
         .renderer
         .tactical_zoom(&state.frontend.screen)

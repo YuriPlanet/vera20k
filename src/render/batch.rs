@@ -1538,20 +1538,23 @@ impl BatchRenderer {
         });
 
         // Bind group layout for the unit-atlas R8Uint texture (voxel sprite path).
-        // Single texture entry, no sampler — sampled via textureLoad with integer coords.
+        // No sampler — read via textureLoad with integer coords. Binding 1 is
+        // VERA's HD page beside it (`sprite_voxel_shader.wgsl` `voxel_byte_at`),
+        // a 1x1 placeholder on a page without one.
+        let unit_atlas_page_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Uint,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
         let unit_atlas_bind_group_layout: wgpu::BindGroupLayout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("unit_atlas_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Uint,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                }],
+                entries: &[unit_atlas_page_entry(0), unit_atlas_page_entry(1)],
             });
 
         // Bind group layout for the PaletteSet (palette texture + house_ramp
@@ -1699,7 +1702,7 @@ impl BatchRenderer {
             camera_buffer,
             uploaded_camera: std::cell::Cell::new(UploadedCameras {
                 world: camera_uniform,
-                ui: ui_camera(camera_uniform),
+                ui: ui_camera(camera_uniform, 1.0),
             }),
             camera_bind_group,
             surface_camera_bind_group,
@@ -1834,14 +1837,7 @@ impl BatchRenderer {
         });
 
         let view: wgpu::TextureView = texture.create_view(&Default::default());
-        let bind_group: wgpu::BindGroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("unit_atlas_bg"),
-            layout: &self.unit_atlas_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&view),
-            }],
-        });
+        let bind_group = self.unit_atlas_bind_group(device, &view, &self.default_source_indices);
 
         BatchTexture {
             bind_group,
@@ -1850,6 +1846,41 @@ impl BatchRenderer {
             width,
             height,
         }
+    }
+
+    fn unit_atlas_bind_group(
+        &self,
+        device: &wgpu::Device,
+        view: &wgpu::TextureView,
+        hd: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("unit_atlas_bg"),
+            layout: &self.unit_atlas_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(hd),
+                },
+            ],
+        })
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): bind `hd`, a unit
+    /// page's pictures at twice the resolution (`vxl_raster::VxlHd`), beside
+    /// `page`, so the voxel blitters read it while the camera zooms in
+    /// (`sprite_voxel_shader.wgsl` `voxel_byte_at`).
+    pub(crate) fn bind_unit_atlas_hd(
+        &self,
+        device: &wgpu::Device,
+        page: &mut BatchTexture,
+        hd: &wgpu::TextureView,
+    ) {
+        page.bind_group = self.unit_atlas_bind_group(device, &page.view, hd);
     }
 
     /// Upload RGBA pixel data to the GPU as a batch-renderable texture.
@@ -2092,18 +2123,51 @@ impl BatchRenderer {
         house: Option<&wgpu::TextureView>,
         low_page: &wgpu::TextureView,
     ) -> wgpu::BindGroup {
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Picture HD binding sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
+        self.hd_binding(
+            device,
+            "Picture HD binding",
+            color,
+            indices,
+            house.unwrap_or(&self.default_source_house),
+            low_page,
+        )
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): an indexed SHP HD
+    /// page's binding (`hd_art::ShpHd`): the atlas's `palette_rows` and the
+    /// page's 1x `indices` as an ordinary indexed page binds them, and its
+    /// premultiplied mipmapped 2x `twin` in the house layer's place, sampled
+    /// linearly between levels; the 1x page stays the 1x1 placeholder, which
+    /// tells `sprite_source.wgsl` (`source_shp_hd`) the twin is an SHP one.
+    pub(crate) fn create_shp_hd_binding(
+        &self,
+        device: &wgpu::Device,
+        palette_rows: &wgpu::TextureView,
+        indices: &wgpu::TextureView,
+        twin: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        self.hd_binding(
+            device,
+            "SHP HD binding",
+            palette_rows,
+            indices,
+            twin,
+            &self.default_source_low_page,
+        )
+    }
+
+    fn hd_binding(
+        &self,
+        device: &wgpu::Device,
+        label: &str,
+        color: &wgpu::TextureView,
+        indices: &wgpu::TextureView,
+        house: &wgpu::TextureView,
+        low_page: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        let sampler = hd_sampler(device);
         device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Picture HD binding"),
+            label: Some(label),
             layout: &self.texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -2120,9 +2184,7 @@ impl BatchRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(
-                        house.unwrap_or(&self.default_source_house),
-                    ),
+                    resource: wgpu::BindingResource::TextureView(house),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
@@ -2193,6 +2255,45 @@ impl BatchRenderer {
         zoom: f32,
         depth_axis: DepthAxis,
     ) {
+        self.update_cameras(
+            queue,
+            [screen_width, screen_height],
+            [camera_x, camera_y],
+            zoom,
+            1.0,
+            depth_axis,
+        );
+    }
+
+    /// [`Self::update_camera`] for a match frame drawn at the window's pixels
+    /// (`docs/zoom-one-pass.md`): `screen` is the composition, the frame's
+    /// rect in the window; `zoom` is the wheel zoom times the Options scale
+    /// `frame_scale`, and the UI camera scales frame pixels by `frame_scale`
+    /// (whole frame pixels, as the world camera snaps world pixels). With no
+    /// Options zoom (`frame_scale` 1) this is `update_camera`.
+    pub(crate) fn update_match_camera(
+        &self,
+        queue: &wgpu::Queue,
+        screen: [f32; 2],
+        camera: [f32; 2],
+        zoom: f32,
+        frame_scale: f32,
+        depth_axis: DepthAxis,
+    ) {
+        self.update_cameras(queue, screen, camera, zoom, frame_scale, depth_axis);
+    }
+
+    /// Upload the world camera, and its UI camera at `ui_zoom` target pixels
+    /// per UI pixel.
+    fn update_cameras(
+        &self,
+        queue: &wgpu::Queue,
+        [screen_width, screen_height]: [f32; 2],
+        [camera_x, camera_y]: [f32; 2],
+        zoom: f32,
+        ui_zoom: f32,
+        depth_axis: DepthAxis,
+    ) {
         // Round camera to integer pixels — sub-pixel camera offsets cause
         // visible seams between adjacent terrain tiles.
         let cam = [camera_x.round(), camera_y.round()];
@@ -2217,7 +2318,7 @@ impl BatchRenderer {
             native_z_origin_y: 0.0,
             native_z_pan: 0.0,
         };
-        self.write_camera(queue, uniform);
+        self.write_cameras(queue, uniform, ui_zoom);
     }
 
     /// Preserve the full tactical viewport origin separately from camera
@@ -2252,17 +2353,6 @@ impl BatchRenderer {
         self.uploaded_camera.get().ui
     }
 
-    /// Render the world at native texel resolution while UI keeps frame pixels.
-    /// These are distinct GPU buffers; no camera is rewritten between encoded
-    /// passes, since queue writes would otherwise affect every draw this frame.
-    pub(crate) fn set_native_world_resolution(&self, queue: &wgpu::Queue, size: [u32; 2]) {
-        let mut uploaded = self.uploaded_camera.get();
-        uploaded.world.screen_size = size.map(|v| v as f32);
-        uploaded.world.zoom = 1.0;
-        self.uploaded_camera.set(uploaded);
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uploaded.world));
-    }
-
     /// A UI camera of its own, for drawing the UI into a surface of its own
     /// (`presentation::sidebar_surface`): its uniform buffer, and its group-0
     /// bind group, which samples neutral A.
@@ -2288,13 +2378,12 @@ impl BatchRenderer {
         (buffer, group)
     }
 
-    /// A frame-sized world projection for fixed-pixel status sprites after
-    /// wheel resampling, or after a one-pass zoomed world
-    /// (`docs/zoom-one-pass.md`), whose world camera it then equals; they
-    /// draw through `vs_frame`, unsnapped. Separate bindings keep E00's live A
-    /// lookup and 600's neutral A; queue writes must not change the
-    /// native-world camera used by already encoded passes. Bind groups retain
-    /// their uniform buffer.
+    /// A world projection at `zoom` (the world camera's) for the zoomed
+    /// frame's health strips (`docs/zoom-one-pass.md`), already placed on the
+    /// frame's pixel lattice; they draw through `vs_frame`, unsnapped.
+    /// Separate bindings keep E00's live A lookup and 600's neutral A; queue
+    /// writes must not change the camera used by already encoded passes. Bind
+    /// groups retain their uniform buffer.
     pub(crate) fn create_frame_world_cameras(
         &self,
         device: &wgpu::Device,
@@ -2333,8 +2422,14 @@ impl BatchRenderer {
     }
 
     pub(crate) fn write_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform) {
+        self.write_cameras(queue, uniform, 1.0);
+    }
+
+    /// Upload `uniform` as the world camera, and its UI camera at `ui_zoom`
+    /// target pixels per UI pixel.
+    fn write_cameras(&self, queue: &wgpu::Queue, uniform: CameraUniform, ui_zoom: f32) {
         let mut uploaded = self.uploaded_camera.get();
-        let ui = ui_camera(uniform);
+        let ui = ui_camera(uniform, ui_zoom);
         // Each queue write costs a staging buffer; a camera that has not
         // moved is already in its buffer.
         for (buffer, held, camera) in [
@@ -2424,7 +2519,8 @@ impl BatchRenderer {
         &self.camera_bind_group_layout
     }
 
-    /// Access the UI camera bind group (zoom=1.0) for screen-fixed elements.
+    /// Access the UI camera bind group for screen-fixed elements: frame
+    /// pixels, scaled by the Options zoom in a match (`update_match_camera`).
     pub fn ui_camera_bind_group(&self) -> &wgpu::BindGroup {
         &self.ui_camera_bind_group
     }
@@ -2559,6 +2655,37 @@ impl BatchRenderer {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(color_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(depth_view),
+                },
+            ],
+        })
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): the tile atlas's
+    /// HD binding (`hd_terrain::RgbaTwin`): its premultiplied mipmapped 2x
+    /// `twin`, sampled linearly between levels, beside the 1x `depth_view`,
+    /// which `zdepth_shader.wgsl` reads by texel and tells the twin by.
+    pub(crate) fn create_zdepth_hd_bind_group(
+        &self,
+        device: &wgpu::Device,
+        twin: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        let sampler = hd_sampler(device);
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ZDepth HD Bind Group"),
+            layout: &self.zdepth_texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(twin),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -2992,9 +3119,27 @@ impl BatchRenderer {
 }
 
 /// The UI camera for a world camera: zoom 1, and never the debug depth view.
-fn ui_camera(world: CameraUniform) -> CameraUniform {
+/// The sampler of an HD twin (`docs/zoom-one-pass.md`): linear within and
+/// between its levels, clamped at its edges.
+fn hd_sampler(device: &wgpu::Device) -> wgpu::Sampler {
+    device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("HD twin sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        ..Default::default()
+    })
+}
+
+/// The UI camera for a world camera: `zoom` target pixels per UI pixel (1
+/// unless a match frame is drawn at the window's pixels,
+/// `update_match_camera`), and never the debug depth view.
+fn ui_camera(world: CameraUniform, zoom: f32) -> CameraUniform {
     CameraUniform {
-        zoom: 1.0,
+        zoom,
         _pad: 0.0,
         ..world
     }

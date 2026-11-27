@@ -1991,10 +1991,7 @@ mod webgl_shader_tests {
                 "ion blast",
                 tactical_shader::source(include_str!("terrain_ion_blast.wgsl")),
             ),
-            (
-                "scaled copy",
-                crate::render::scaled_copy::shader_source(true),
-            ),
+            ("scaled copy", crate::render::scaled_copy::shader_source()),
             (
                 "chrono screen",
                 crate::render::chrono_screen::shader_source(true),

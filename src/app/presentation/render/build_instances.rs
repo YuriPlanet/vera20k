@@ -1333,10 +1333,11 @@ pub(super) fn build_ui_instances(
     // pixels start at the frame's corner: the view's camera less the
     // battlefield's corner, which is the stored camera rounded as the view's.
     let camera = [input.camera_x, input.camera_y].map(|v| v.round() as i32);
-    // All path, planning and rally pixels go onto the native world surface.
-    // Its camera/clip and the final WorldZoomPass own the scale. Pre-scaling
-    // individual spans here would quantize them again on that smaller/larger
-    // attachment, distorting dash spacing and node borders at fractional zoom.
+    // All path, planning and rally pixels go onto the world surface in world
+    // pixels. Its camera owns the scale (each world pixel a block of the
+    // camera's zoom, `docs/zoom-one-pass.md`). Pre-scaling individual spans
+    // here would quantize them twice, distorting dash spacing and node
+    // borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
     if !match_state.input.planning.active()
         && let (Some(runtime), Some(frame)) = (
@@ -1456,16 +1457,13 @@ pub(crate) fn tactical_world_view(
         &match_state.match_presentation,
         persistence,
     );
-    let camera = [input.camera_x, input.camera_y];
-    let tactical = [x, y, width, height];
-    match renderer.world_zoom_pass.as_ref() {
-        Some(pass) => tactical_world_viewport(camera, tactical, Some(pass)),
-        // Without a world pass the world camera carries the wheel zoom
-        // (`docs/zoom-one-pass.md`), so the view is still in world pixels:
-        // the frame's battlefield divided by the zoom, as
-        // `WorldZoomPass::world_clip` divides it. At zoom 1 it is unchanged.
-        None => tactical_world_viewport(camera, world_pixels(tactical, input.zoom_level), None),
-    }
+    // The world camera carries the wheel zoom (`docs/zoom-one-pass.md`), so
+    // the view is in world pixels: the frame's battlefield divided by the
+    // zoom. At zoom 1 it is the frame's.
+    tactical_world_viewport(
+        [input.camera_x, input.camera_y],
+        world_pixels([x, y, width, height], input.zoom_level),
+    )
 }
 
 /// The frame rect `[x, y, width, height]` in the world pixels a world camera
@@ -1479,15 +1477,13 @@ fn world_pixels([x, y, width, height]: [u32; 4], zoom: f32) -> [u32; 4] {
     [left, top, right - left, bottom - top]
 }
 
-/// [`tactical_world_view`] of a stored `camera` and `tactical` rect.
+/// [`tactical_world_view`] of a stored `camera` and `tactical` rect in world
+/// pixels.
 pub(crate) fn tactical_world_viewport(
     camera: [f32; 2],
     tactical: [u32; 4],
-    zoom: Option<&crate::render::upscale_pass::WorldZoomPass>,
 ) -> crate::app::presentation::target_lines::TacticalViewport {
-    let clip = zoom
-        .map_or(tactical, |zoom| zoom.world_clip(tactical))
-        .map(|v| v as i32);
+    let clip = tactical.map(|v| v as i32);
     // The view is in the battlefield's own pixels: its camera is the world
     // point at the battlefield's corner, the stored camera (the frame
     // corner's) in by the clip's corner, and its clip starts at 0, 0.

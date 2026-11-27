@@ -598,7 +598,6 @@ fn render_original_body_pixels(
                             crate::app::presentation::render::tactical_world_viewport(
                                 view.camera_pos,
                                 [0, 0, size[0], size[1]],
-                                None,
                             ),
                         axis: crate::render::batch::DepthAxis::NONE,
                         local_owner: Some("PreparedHouse"),

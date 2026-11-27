@@ -8,14 +8,16 @@ use crate::render::selection_overlay::SelectionOverlay;
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::{PackedCompositePiece, PackedSpriteKind, TerrainDrawRenderer};
 
-/// Wheel zoom has no stock YR equivalent. Health strips rasterize after world
-/// resampling: mobile strips keep their pixel size; building strips follow the
-/// projected roof. Keep retained parent order and one upload;
-/// removing these ranges also suppresses the initial Building Extras visit.
-/// At native zoom the original interleaved Display replay stays authoritative.
-/// A one-pass zoomed frame (`docs/zoom-one-pass.md`) has no resampling, but
-/// defers them all the same: the strips are placed on the frame's lattice
-/// here, which the world blitters' whole-world-pixel snap would undo.
+/// Wheel zoom has no stock YR equivalent. Zoomed health strips draw after the
+/// world, on the frame's pixel lattice: mobile strips keep their pixel size;
+/// building strips follow the projected roof. Keep retained parent order and
+/// one upload; removing these ranges also suppresses the initial Building
+/// Extras visit. At wheel zoom 1 the original interleaved Display replay
+/// stays authoritative (an Options zoom scales it with the world camera).
+/// The strips are placed on the frame's lattice here, which the world
+/// blitters' whole-world-pixel snap would undo, so they draw through
+/// `vs_frame` with a camera at the world camera's zoom
+/// (`docs/zoom-one-pass.md`).
 pub(super) fn defer_health_to_frame(layer: &mut ObjectLayerPass, camera: [f32; 2], zoom: f32) {
     if zoom == 1.0 {
         return;
@@ -70,7 +72,7 @@ pub(super) fn defer_health_to_frame(layer: &mut ObjectLayerPass, camera: [f32; 2
 
 /// Final-frame health keeps the same PIPBRD/E00 and PIPS/600 material owner
 /// as native Extras. Zoomed health is UI above the completed battlefield,
-/// before timers/chrome; it never passes through the world filter twice.
+/// before timers/chrome.
 /// Its quads are not snapped to world pixels ([`draw_health_bar`]'s `on_frame`).
 pub(super) fn draw_frame_health<'a>(
     pass: &mut wgpu::RenderPass<'a>,

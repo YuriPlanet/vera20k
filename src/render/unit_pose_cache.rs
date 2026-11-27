@@ -68,9 +68,10 @@ struct PosePage {
     /// Holds stable raster-style variants for the whole match.
     retained: bool,
     texture: Option<BatchTexture>,
-    /// VERA's HD art page: the images' [`crate::render::vxl_raster::VxlHd`]
-    /// pictures at twice the resolution, 0 where an image has none. Made with
-    /// the first HD picture placed on the page.
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): the images'
+    /// [`crate::render::vxl_raster::VxlHd`] pictures at twice the resolution,
+    /// 0 where an image has none. Made with the first HD picture placed on
+    /// the page and bound beside it (`BatchRenderer::bind_unit_atlas_hd`).
     hd_texture: Option<wgpu::TextureView>,
     /// The images on the page: this frame's, or a retained page's.
     images: Vec<PageImage>,
@@ -569,7 +570,11 @@ impl VxlPoseFrameCache {
                     PagePixels::Gpu { .. } => true,
                 };
                 if fresh {
+                    let had_hd = page.hd_texture.is_some();
                     write_hd(device, queue, &mut page.hd_texture, image);
+                    if !had_hd && let Some(hd) = &page.hd_texture {
+                        batch.bind_unit_atlas_hd(device, texture, hd);
+                    }
                 }
             }
         }
@@ -601,11 +606,6 @@ impl VxlPoseFrameCache {
 
     pub fn page_texture(&self, page: usize) -> Option<&BatchTexture> {
         self.pages.get(page)?.texture.as_ref()
-    }
-
-    /// VERA's HD art page of `page` ([`PosePage::hd_texture`]).
-    pub(crate) fn hd_page(&self, page: usize) -> Option<&wgpu::TextureView> {
-        self.pages.get(page)?.hd_texture.as_ref()
     }
 
     /// [`Self::encode`] alone in a submission, for a test that reads the
@@ -684,7 +684,7 @@ fn write_padded(
     crate::render::atlas_growth::write_texels(queue, texture, [x, y], padded, 1, &texels);
 }
 
-/// VERA's HD art page for `image`: its HD picture, or zeros over its
+/// The HD page for `image`: its HD picture, or zeros over its
 /// rectangle where it has none, so an earlier image's picture never shows.
 /// Nothing until a page holds an HD picture.
 fn write_hd(

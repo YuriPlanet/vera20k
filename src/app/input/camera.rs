@@ -109,7 +109,9 @@ pub(crate) fn validate_saved_tactical_view(
         .iter()
         .any(|value| !value.is_finite())
         || !saved.zoom.is_finite()
-        || !(MIN_ZOOM..=MAX_ZOOM).contains(&saved.zoom)
+        // Any positive zoom the camera ever held (replays and the HD capture
+        // zoom reached 0.25); the restore clamps it into the wheel's range.
+        || !(saved.zoom > 0.0 && saved.zoom <= MAX_ZOOM)
     {
         return Err("nonfinite view or unsupported zoom".to_owned());
     }
@@ -179,7 +181,11 @@ fn restore_camera_input(
     viewport: (u32, u32),
     mouse_wheel_zoom: bool,
 ) {
-    let zoom = if mouse_wheel_zoom { saved.zoom } else { 1.0 };
+    let zoom = if mouse_wheel_zoom {
+        saved.zoom.clamp(MIN_ZOOM, MAX_ZOOM)
+    } else {
+        1.0
+    };
     input.zoom_level = zoom;
     input.zoom_target = zoom;
     let point = tactical_camera_top_left(
@@ -413,12 +419,14 @@ pub(crate) fn set_camera_position(
     input.pending_camera_scroll.clear();
 }
 
-/// Minimum zoom level — zoomed out enough to see a large portion of the map.
-const MIN_ZOOM: f32 = 0.25;
-/// Maximum zoom level — zoomed in close to pixel-level detail.
-const MAX_ZOOM: f32 = 4.0;
-/// Multiplicative zoom step per mouse wheel notch (smooth exponential zoom).
-const ZOOM_STEP: f32 = 1.15;
+/// The wheel zoom's playable range, continuous between the ends. At 0.5 the
+/// battlefield shows twice the stock view on each axis; `constrain_zoom_to_texture`
+/// can raise the minimum so the view fits one A texture.
+pub(crate) const MIN_ZOOM: f32 = 0.5;
+/// The closest wheel zoom: a world pixel four frame pixels wide.
+pub(crate) const MAX_ZOOM: f32 = 4.0;
+/// Wheel notches that double (or halve) the zoom: 2^(1/4) per notch.
+const NOTCHES_PER_DOUBLING: f32 = 4.0;
 
 // ---------------------------------------------------------------------------
 // Scroll clock — a deliberate difference from gamemd.
@@ -1854,138 +1862,31 @@ const ZOOM_EASE: f32 = 0.35;
 /// Snap threshold — when zoom_level is this close to zoom_target, jump to it.
 const ZOOM_SNAP: f32 = 0.002;
 
-/// Set zoom target, anchored on the cursor position.
+/// VERA wheel zoom, live match and replay alike: each notch multiplies the
+/// zoom target by 2^(1/4) (four notches double it), a wheel-up notch
+/// (`lines > 0`) zooming in. Trackpad pixel deltas arrive as fractional
+/// lines (`handler.rs`), so they zoom by the same factor per line.
 ///
-/// Records the world point under the cursor so `animate_zoom` can keep it
-/// pinned at that screen position during the smooth ease.
+/// Anchored on the cursor, as a 3D camera dollies toward the point it is
+/// aimed at: the world point under the cursor stays under it while
+/// `animate_zoom` eases the zoom. The cursor and the stored camera share the
+/// frame's corner (`tactical_centring_size`), so `cursor / zoom + camera` is
+/// that world point wherever the layout puts the battlefield.
 ///
-/// Only replay playback binds this: its presentation-only input routes the
-/// mouse wheel here (`handler.rs`). Stock YR has no world zoom, and in a live
-/// match the wheel is the sidebar strip scroll, as in gamemd. `animate_zoom`
-/// runs every frame and every camera path divides by `zoom_level`.
-pub(crate) fn apply_zoom(input: &mut MatchInputState, delta_lines: f32) {
-    let old_target = input.zoom_target;
-    let factor = ZOOM_STEP.powf(delta_lines);
-    let new_target = (old_target * factor).clamp(MIN_ZOOM, MAX_ZOOM);
-    if (new_target - old_target).abs() < 1e-6 {
-        return;
-    }
-
-    // Record the world point under the cursor — animate_zoom keeps it stable.
-    let z = input.zoom_level;
-    input.zoom_anchor_world = [
-        input.cursor_x / z + input.camera_x,
-        input.cursor_y / z + input.camera_y,
-    ];
-    input.zoom_anchor_screen = [input.cursor_x, input.cursor_y];
-    input.zoom_target = new_target;
-}
-
-/// Optional view-distance tiers. The window size never changes; the camera's
-/// world-per-pixel scale does, so the battlefield covers the tier's logical
-/// resolution at a 1280x800 reference frame while the frame stays the window's.
-///
-/// Wheel up selects the next smaller view distance (zoom in); wheel down
-/// selects the next larger one. Cycling clamps at both ends. VERA's HD art
-/// (`render::hd_switch`) adds Close (150%) and Closest (200%), where its art has
-/// the pixels to show.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum ViewDistanceTier {
-    Closest,
-    Close,
-    Small,
-    #[default]
-    Default,
-    Large,
-    Huge,
-}
-
-impl ViewDistanceTier {
-    pub(crate) const ALL: [Self; 6] = [
-        Self::Closest,
-        Self::Close,
-        Self::Small,
-        Self::Default,
-        Self::Large,
-        Self::Huge,
-    ];
-
-    /// Multiplier of the 1280x800 reference viewport.
-    pub(crate) const fn scale(self) -> f32 {
-        match self {
-            Self::Closest => 0.5,
-            Self::Close => 2.0 / 3.0,
-            Self::Small => 0.8,
-            Self::Default => 1.0,
-            Self::Large => 1.25,
-            Self::Huge => 1.5,
-        }
-    }
-
-    /// Camera zoom that makes the viewport span `scale` times the window.
-    pub(crate) const fn zoom(self) -> f32 {
-        1.0 / self.scale()
-    }
-
-    /// The tier whose zoom is closest to `zoom`; a save or a mid-animation
-    /// value keeps the cycle anchored to a known step.
-    fn nearest(zoom: f32) -> Self {
-        Self::ALL
-            .into_iter()
-            .min_by(|a, b| (a.zoom() - zoom).abs().total_cmp(&(b.zoom() - zoom).abs()))
-            .unwrap_or(Self::Default)
-    }
-
-    /// One step toward a larger view distance, clamped at `Huge`.
-    fn larger(self) -> Self {
-        match self {
-            Self::Closest => Self::Close,
-            Self::Close => Self::Small,
-            Self::Small => Self::Default,
-            Self::Default => Self::Large,
-            Self::Large => Self::Huge,
-            Self::Huge => Self::Huge,
-        }
-    }
-
-    /// One step toward a smaller view distance, clamped at `Closest`.
-    fn smaller(self) -> Self {
-        match self {
-            Self::Closest => Self::Closest,
-            Self::Close => Self::Closest,
-            Self::Small => Self::Close,
-            Self::Default => Self::Small,
-            Self::Large => Self::Default,
-            Self::Huge => Self::Large,
-        }
-    }
-}
-
-/// Apply one mouse-wheel notch's view-distance step, anchored on the
-/// tactical viewport's centre so the battlefield grows or shrinks around it.
-/// A wheel-up notch (`lines > 0`) selects the smaller view distance.
-pub(crate) fn cycle_view_distance(
-    platform: &PlatformState,
-    renderer: &RendererState,
-    screen: &GameScreen,
-    match_state: &mut MatchState,
-    persistence: &PersistenceState,
-    lines: f32,
-) {
+/// Stock YR has no world zoom: in a live match the wheel reaches this only
+/// with `[VERA] MouseWheelZoom=` on and the cursor over the battlefield;
+/// otherwise it is the sidebar strip scroll, as in gamemd.
+pub(crate) fn wheel_zoom(input: &mut MatchInputState, lines: f32) {
     if !lines.is_finite() || lines == 0.0 {
         return;
     }
-    let current = ViewDistanceTier::nearest(match_state.input.zoom_target);
-    let next = if lines > 0.0 {
-        current.smaller()
-    } else {
-        current.larger()
-    };
-    if next == current {
+    let target =
+        (input.zoom_target * (lines / NOTCHES_PER_DOUBLING).exp2()).clamp(MIN_ZOOM, MAX_ZOOM);
+    if (target - input.zoom_target).abs() < 1e-6 {
         return;
     }
-
-    set_view_distance(platform, renderer, screen, match_state, persistence, next);
+    let anchor = [input.cursor_x, input.cursor_y];
+    ease_zoom_around(input, anchor, target);
 }
 
 /// Restore the stock tactical scale when the player turns wheel zoom off.
@@ -1996,20 +1897,13 @@ pub(crate) fn reset_view_distance(
     match_state: &mut MatchState,
     persistence: &PersistenceState,
 ) {
-    set_view_distance(
-        platform,
-        renderer,
-        screen,
-        match_state,
-        persistence,
-        ViewDistanceTier::Default,
-    );
+    ease_zoom_to_centre(platform, renderer, screen, match_state, persistence, 1.0);
 }
 
-/// VERA: a middle-button press over the battlefield puts the wheel's view
-/// distance back to the stock one. gamemd's tactical handler has no
-/// middle-button case and no world zoom, so the press does nothing unless
-/// the player turned wheel zoom on. Returns whether the press was taken.
+/// VERA: a middle-button press over the battlefield puts the wheel zoom back
+/// to the stock 1. gamemd's tactical handler has no middle-button case and no
+/// world zoom, so the press does nothing unless the player turned wheel zoom
+/// on. Returns whether the press was taken.
 pub(crate) fn middle_press_resets_view_distance(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -2045,54 +1939,19 @@ pub(crate) fn middle_press_resets_view_distance(
 fn middle_press_view_reset(
     input: &mut crate::app::input::state::MatchInputState,
     battlefield: (u32, u32, u32, u32),
-    centring: (u32, u32),
+    (width, height): (u32, u32),
     mouse_wheel_zoom: bool,
 ) -> bool {
     if !mouse_wheel_zoom || !viewport_contains(battlefield, (input.cursor_x, input.cursor_y)) {
         return false;
     }
-    set_view_distance_in(input, centring, ViewDistanceTier::Default);
+    ease_zoom_around(input, [width as f32 / 2.0, height as f32 / 2.0], 1.0);
     true
 }
 
-fn set_view_distance(
-    platform: &PlatformState,
-    renderer: &RendererState,
-    screen: &GameScreen,
-    match_state: &mut MatchState,
-    persistence: &PersistenceState,
-    tier: ViewDistanceTier,
-) {
-    let viewport = tactical_centring_size(
-        platform,
-        renderer,
-        screen,
-        &match_state.match_presentation,
-        persistence,
-    );
-    set_view_distance_in(&mut match_state.input, viewport, tier);
-}
-
-/// Ease to `tier` around the centre of a tactical view whose centring size
-/// is `viewport` frame pixels (`animate_zoom` keeps the anchor in place).
-fn set_view_distance_in(
-    input: &mut crate::app::input::state::MatchInputState,
-    (width, height): (u32, u32),
-    tier: ViewDistanceTier,
-) {
-    let anchor = [width as f32 / 2.0, height as f32 / 2.0];
-    let zoom = input.zoom_level;
-    input.zoom_anchor_world = [
-        anchor[0] / zoom + input.camera_x,
-        anchor[1] / zoom + input.camera_y,
-    ];
-    input.zoom_anchor_screen = anchor;
-    input.zoom_target = tier.zoom();
-}
-
 /// Ease the wheel zoom to `zoom` around the battlefield's centre
-/// (`animate_zoom` keeps it in place): HD art's zoomed view
-/// (`render::hd_switch::DEFAULT_ZOOM`).
+/// (`animate_zoom` keeps it in place): the reset to 1, a capture's wheel
+/// zoom, and HD art's zoomed view (`render::hd_switch::DEFAULT_ZOOM`).
 pub(crate) fn ease_zoom_to_centre(
     platform: &PlatformState,
     renderer: &RendererState,
@@ -2101,15 +1960,23 @@ pub(crate) fn ease_zoom_to_centre(
     persistence: &PersistenceState,
     zoom: f32,
 ) {
-    let viewport = tactical_centring_size(
+    let (width, height) = tactical_centring_size(
         platform,
         renderer,
         screen,
         &match_state.match_presentation,
         persistence,
     );
-    let input = &mut match_state.input;
-    let anchor = [viewport.0 as f32 / 2.0, viewport.1 as f32 / 2.0];
+    ease_zoom_around(
+        &mut match_state.input,
+        [width as f32 / 2.0, height as f32 / 2.0],
+        zoom,
+    );
+}
+
+/// Start an ease to `zoom` (clamped to the wheel's range) that keeps the
+/// world point now at frame pixel `anchor` there (`animate_zoom`).
+fn ease_zoom_around(input: &mut MatchInputState, anchor: [f32; 2], zoom: f32) {
     let current = input.zoom_level;
     input.zoom_anchor_world = [
         anchor[0] / current + input.camera_x,
@@ -3159,11 +3026,11 @@ mod tests {
     #[test]
     fn zoom_keeps_the_entire_view_inside_the_abuffer_texture() {
         for (extent, limit, expected) in [
-            ([1280., 720.], 4096, 0.3125),
-            ([3840., 2160.], 8192, 0.46875),
-            ([3840., 2160.], 16384, 0.25),
+            ([1280., 720.], 4096, MIN_ZOOM),
+            ([3840., 2160.], 8192, MIN_ZOOM),
+            ([5120., 2880.], 8192, 0.625),
             ([8192., 8192.], 8192, 1.),
-            ([720., 1280.], 4096, 0.3125),
+            ([1280., 3840.], 4096, 0.9375),
         ] {
             let zoom = minimum_view_zoom(extent, limit);
             assert_eq!(zoom, expected);
@@ -3891,44 +3758,26 @@ mod camera_bounds_tests;
 
 #[cfg(test)]
 #[test]
-fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
-    let expected = [
-        (0.5, 640, 400),
-        (2.0 / 3.0, 853, 533),
-        (0.8, 1024, 640),
-        (1.0, 1280, 800),
-        (1.25, 1600, 1000),
-        (1.5, 1920, 1200),
-    ];
-    for (tier, (scale, width, height)) in ViewDistanceTier::ALL.into_iter().zip(expected) {
-        assert_eq!(tier.scale(), scale, "{tier:?}");
-        assert_eq!((1280.0 * tier.scale()) as u32, width, "{tier:?}");
-        assert_eq!((800.0 * tier.scale()) as u32, height, "{tier:?}");
-        assert!(
-            (tier.zoom() - 1.0 / tier.scale()).abs() < f32::EPSILON,
-            "{tier:?}"
-        );
-    }
-    assert_eq!(
-        ViewDistanceTier::Closest.smaller(),
-        ViewDistanceTier::Closest
-    );
-    assert_eq!(ViewDistanceTier::Close.smaller(), ViewDistanceTier::Closest);
-    assert_eq!(ViewDistanceTier::Close.larger(), ViewDistanceTier::Small);
-    assert_eq!(ViewDistanceTier::Small.smaller(), ViewDistanceTier::Close);
-    assert_eq!(ViewDistanceTier::Small.larger(), ViewDistanceTier::Default);
-    assert_eq!(ViewDistanceTier::Default.larger(), ViewDistanceTier::Large);
-    assert_eq!(ViewDistanceTier::Default.smaller(), ViewDistanceTier::Small);
-    assert_eq!(ViewDistanceTier::Large.larger(), ViewDistanceTier::Huge);
-    assert_eq!(ViewDistanceTier::Large.smaller(), ViewDistanceTier::Default);
-    assert_eq!(ViewDistanceTier::Huge.larger(), ViewDistanceTier::Huge);
-    assert_eq!(ViewDistanceTier::Huge.smaller(), ViewDistanceTier::Large);
-    // The cycle reads the tier nearest a saved or mid-animation zoom.
-    assert_eq!(ViewDistanceTier::nearest(0.79), ViewDistanceTier::Large);
-    assert_eq!(ViewDistanceTier::nearest(1.0), ViewDistanceTier::Default);
-    assert_eq!(ViewDistanceTier::nearest(1.2), ViewDistanceTier::Small);
-    assert_eq!(ViewDistanceTier::nearest(2.0), ViewDistanceTier::Closest);
-    assert_eq!(ViewDistanceTier::Closest.zoom(), 2.0);
+fn wheel_zoom_is_continuous_anchored_on_the_cursor_and_clamped_at_the_ends() {
+    use crate::app::input::state::MatchInputState;
+    let mut input = MatchInputState::new(Default::default());
+    (input.camera_x, input.camera_y) = (300.0, 200.0);
+    (input.cursor_x, input.cursor_y) = (640.0, 100.0);
+    // Four notches double the zoom; half a line (a trackpad) moves it by
+    // 2^(1/8), not to a step.
+    wheel_zoom(&mut input, 4.0);
+    assert!((input.zoom_target - 2.0).abs() < 1e-6);
+    assert_eq!(input.zoom_level, 1.0, "the ease is animate_zoom's");
+    assert_eq!(input.zoom_anchor_screen, [640.0, 100.0]);
+    assert_eq!(input.zoom_anchor_world, [940.0, 300.0]);
+    input.zoom_target = 1.0;
+    wheel_zoom(&mut input, -0.5);
+    assert!((input.zoom_target - 0.125_f32.exp2().recip()).abs() < 1e-6);
+    // The ends hold; no notch is lost to a tier.
+    wheel_zoom(&mut input, -100.0);
+    assert_eq!(input.zoom_target, MIN_ZOOM);
+    wheel_zoom(&mut input, 100.0);
+    assert_eq!(input.zoom_target, MAX_ZOOM);
 }
 
 /// Half a tile on **both** axes from the tile corner — the Y half is the one
@@ -3949,7 +3798,7 @@ fn cell_centre_shifts_half_a_tile_on_both_axes_from_the_tile_corner() {
 fn a_middle_press_resets_the_view_distance_only_with_wheel_zoom_over_the_battlefield() {
     use crate::app::input::state::MatchInputState;
     let viewport = (1000, 700);
-    let huge = ViewDistanceTier::Huge.zoom();
+    let huge = 1.0 / 1.5;
     let zoomed_out = |cursor: (f32, f32)| {
         let mut input = MatchInputState::new(Default::default());
         (input.zoom_level, input.zoom_target) = (huge, huge);

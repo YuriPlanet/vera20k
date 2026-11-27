@@ -741,16 +741,19 @@ pub struct VxlSprite {
     pub offset_x: f32,
     /// Y offset from model center to sprite top-left.
     pub offset_y: f32,
-    /// VERA's HD art voxels ([`set_hd_voxels`]): the same draw at twice
-    /// the resolution, `2 * width` by `2 * height`, aligned with this one.
+    /// VERA's HD voxels ([`set_hd_voxels`]): the same draw at twice the
+    /// resolution, `2 * width` by `2 * height`, aligned with this one.
     pub hd: Option<std::sync::Arc<VxlHd>>,
 }
 
-/// VERA's HD art voxels, VERA-only: no gamemd counterpart. A draw's stores
-/// placed at twice the resolution, each covering two by two pixels at the
-/// half pixel its cursor reached ([`native::PaintWrite::half`]), so a model
-/// with more voxels than its native picture has pixels shows them when the
-/// wheel zoom magnifies it (`render::hd_art`). The native picture is
+/// VERA's HD voxels, VERA-only, experimental (`docs/zoom-one-pass.md`): no
+/// gamemd counterpart. A draw's stores placed at twice the resolution, each
+/// covering two by two pixels at the half pixel its cursor reached
+/// ([`native::PaintWrite::half`]), so a model with more voxels than its
+/// native picture has pixels shows them while the camera zooms in: the unit
+/// atlas and the pose cache bind these pictures beside their pages, and the
+/// voxel blitters read them at a camera zoom above 1
+/// (`sprite_voxel_shader.wgsl` `voxel_byte_at`). The native picture is
 /// unchanged.
 #[derive(Debug, Clone)]
 pub struct VxlHd {
@@ -762,8 +765,9 @@ pub struct VxlHd {
 
 static HD_VOXELS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether voxel draws also make their [`VxlHd`] picture. Set from the
-/// HD art switch; pictures made before it was on stay native.
+/// Whether voxel draws also make their [`VxlHd`] picture. Set once the
+/// camera has zoomed in (it is not part of the HD art switch); pictures made
+/// before it was on stay native.
 pub fn set_hd_voxels(on: bool) {
     HD_VOXELS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
@@ -777,8 +781,7 @@ static HD_POSES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// Whether this frame's posed voxels (tilted, crashing, rocking, tumbling:
 /// `render::unit_pose_cache`) are rasterized on the CPU, which makes their
 /// [`VxlHd`] picture, instead of by the GPU raster, which makes none. Set
-/// each frame while the HD pass draws: HD art on and the wheel zoom at 1.5x
-/// or more.
+/// each frame while the camera zooms in (a zoom above 1).
 pub fn set_hd_poses(on: bool) {
     HD_POSES.store(on, std::sync::atomic::Ordering::Relaxed);
 }

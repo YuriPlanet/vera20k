@@ -421,16 +421,33 @@ pub struct OverlayAtlas {
     /// Union of every entry's rectangle, fixed with `entries` at construction.
     art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
-    /// VERA's HD art ground (`render::hd_terrain`): each sprite's UV origin
-    /// bits → its RGBA hash, atlas pixel origin and size.
-    hd_sprites: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
+    /// VERA's HD art ground (`render::hd_terrain::RgbaTwin`), when this
+    /// start has a pack with tiles.
+    hd: Option<crate::render::hd_terrain::RgbaTwin>,
 }
 
 impl OverlayAtlas {
-    /// The HD art lookup of the sprite at `uv_origin`: its hash, atlas pixel
-    /// origin and size.
-    pub(crate) fn hd_sprite(&self, uv_origin: [f32; 2]) -> Option<(u64, [u32; 2], [u32; 2])> {
-        self.hd_sprites.get(&uv_origin.map(f32::to_bits)).copied()
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): whether the
+    /// overlay, smudge and terrain object draws read the atlas's HD twin this
+    /// frame (`on`: the camera zooms in with HD art on,
+    /// `render::hd_art::bind_hd_twins`). The page's `texture.bind_group` then
+    /// is the twin's RGBA HD binding (`BatchRenderer::create_picture_hd_binding`
+    /// with this page's index plane and the page itself), which
+    /// `sprite_source.wgsl` samples as it samples a picture page's twin.
+    pub(crate) fn bind_hd_twin(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        let Some(twin) = self.hd.as_mut() else {
+            return;
+        };
+        let (page, indices) = (&self.texture.view, &self.texture.source_indices);
+        twin.bind(device, queue, &mut self.texture.bind_group, on, |hd| {
+            batch.create_picture_hd_binding(device, hd, indices, None, page)
+        });
     }
 
     pub(crate) fn apply_zshape(
@@ -1558,7 +1575,7 @@ fn pack_overlay_sprites(
         rgba,
         source_indices,
         entries,
-        hd_sprites,
+        pictures,
         width: atlas_width,
         height: atlas_height,
     } = pack_overlay_pixels(sprites, device.limits().max_texture_dimension_2d);
@@ -1578,12 +1595,24 @@ fn pack_overlay_sprites(
         atlas_height,
         Some(&source_indices),
     );
+    // The HD twin is made from the page itself (`hd_terrain::RgbaTwin`).
+    let hd = crate::render::hd_art::pack_available()
+        .then(|| {
+            crate::render::hd_terrain::RgbaTwin::new(
+                "overlay atlas",
+                rgba,
+                [atlas_width, atlas_height],
+                pictures,
+                [255, 0, 255],
+            )
+        })
+        .flatten();
     OverlayAtlas {
         texture,
         art_extent: crate::render::cell_window::ArtExtent::of(entries.values()),
         entries,
         zshapes: None,
-        hd_sprites,
+        hd,
     }
 }
 
@@ -1591,7 +1620,8 @@ struct PackedOverlaySprites {
     rgba: Vec<u8>,
     source_indices: Vec<u8>,
     entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
-    hd_sprites: HashMap<[u32; 2], (u64, [u32; 2], [u32; 2])>,
+    /// Each sprite's origin and size, for the HD twin.
+    pictures: Vec<([u32; 2], [u32; 2])>,
     width: u32,
     height: u32,
 }
@@ -1632,7 +1662,7 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
-    let mut hd_sprites = HashMap::with_capacity(plan.placements.len());
+    let mut pictures = Vec::with_capacity(plan.placements.len());
 
     for placed in &plan.placements {
         let [px, py] = placed.origin;
@@ -1644,14 +1674,7 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
             continue;
         }
         if spr.rgba.len() == (w * h * 4) as usize {
-            hd_sprites.insert(
-                [px as f32 / aw, py as f32 / ah].map(f32::to_bits),
-                (
-                    crate::render::hd_terrain::tile_hash(w, h, &spr.rgba),
-                    [px, py],
-                    [w, h],
-                ),
-            );
+            pictures.push(([px, py], [w, h]));
         }
 
         for y in 0..h {
@@ -1689,7 +1712,7 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         rgba,
         source_indices,
         entries,
-        hd_sprites,
+        pictures,
         width: atlas_width,
         height: atlas_height,
     }
@@ -1703,7 +1726,7 @@ impl OverlayAtlas {
             entries: LookupMap::default(),
             art_extent: Default::default(),
             zshapes: None,
-            hd_sprites: HashMap::new(),
+            hd: None,
         }
     }
 }

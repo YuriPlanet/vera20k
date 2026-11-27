@@ -736,11 +736,6 @@ pub struct SpriteAtlas {
     /// health/frame and camera. Growth publishes it with the atlas transaction;
     /// map/theater/rules reload drops the atlas and its bounds together.
     building_type_bounds: HashMap<String, [i32; 4]>,
-    /// Upper-case names of every building animation (ActiveAnim, IdleAnim,
-    /// their variants, SHP turrets), bib and infantry type registered so
-    /// far: VERA's HD art (`render::hd_art`) redraws their frames as
-    /// well as building bodies'.
-    hd_images: HashSet<String>,
     /// Keys with nothing to draw: the SHP is missing or fails to decode, or
     /// the frame is empty. Remembered so a refresh never renders them again.
     unrenderable: HashSet<ShpSpriteKey>,
@@ -774,6 +769,10 @@ pub struct SpriteAtlas {
     /// ([`Self::bind_one_pass_hd`]), each with the 1x binding it replaced.
     /// Empty unless this frame draws the battlefield in one pass zoomed in.
     one_pass_hd: HashMap<usize, wgpu::BindGroup>,
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): VERA's HD art
+    /// pages of SHP frames ([`Self::bind_hd_art`]); `Some(None)` once a look
+    /// found no pack. Their pages are among `pages`.
+    hd: Option<Option<crate::render::hd_art::ShpHd>>,
     /// VERA-only, experimental: where each picture frame the pages hold is,
     /// shared by every key drawn from it; None for one that draws nothing or
     /// found no page. A refresh draws only frames missing here.
@@ -846,7 +845,6 @@ impl SpriteAtlas {
             active_anim_frame_counts: HashMap::new(),
             object_shp_frame_counts: HashMap::new(),
             building_type_bounds: HashMap::new(),
-            hd_images: HashSet::new(),
             unrenderable: HashSet::new(),
             covered_objects: HashMap::new(),
             covered_anim_remaps: HashSet::new(),
@@ -860,6 +858,7 @@ impl SpriteAtlas {
             picture_pages: HashSet::new(),
             picture_hd_pages: HashMap::new(),
             one_pass_hd: HashMap::new(),
+            hd: None,
             picture_frames: HashMap::new(),
             model_page: None,
         }
@@ -1054,9 +1053,6 @@ impl SpriteAtlas {
         }
     }
 
-    /// Look up the atlas entry for a given sprite key.
-    /// The returned entry includes a `page` field identifying which atlas page
-    /// holds this sprite's texture data.
     /// The palette indices of `key`'s frame as its page holds them (the
     /// stored frame rectangle, `pixel_size` wide), decoded again from its
     /// file; None for a key this atlas did not render.
@@ -1065,8 +1061,70 @@ impl SpriteAtlas {
         ShpFile::decode_frame(shp, *frame).ok()
     }
 
+    /// Look up the atlas entry for a given sprite key.
+    /// The returned entry includes a `page` field identifying which atlas page
+    /// holds this sprite's texture data.
+    ///
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): while
+    /// [`Self::bind_hd_art`] has VERA's HD art on, a frame the pack has art
+    /// for is drawn from its HD page: the entry names that page and the
+    /// frame's place on it, everything else as the 1x entry.
     pub fn get(&self, key: &ShpSpriteKey) -> Option<&ShpSpriteEntry> {
+        if let Some(Some(hd)) = &self.hd
+            && let Some(entry) = hd.entry(key)
+        {
+            return Some(entry);
+        }
         self.entries.get(key)
+    }
+
+    /// VERA-only, experimental (`docs/zoom-one-pass.md`): whether this
+    /// frame's SHP frames are drawn from VERA's HD art pack
+    /// (`render::hd_art::ShpHd`): `on` while the battlefield draws zoomed in
+    /// with HD art on. On, [`Self::get`] hands out the HD page entry of every
+    /// frame the pack has art for, and the frames asked for since the last
+    /// call that have not been looked at are read from the pack (a few a
+    /// frame) and put on the HD pages. Off, every entry is the 1x one. Called
+    /// once per frame before the world's instances are built and drawn
+    /// (`render::hd_art::bind_hd_twins`).
+    pub(crate) fn bind_hd_art(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        on: bool,
+    ) {
+        if !on {
+            if let Some(Some(hd)) = &mut self.hd {
+                hd.set_active(false);
+            }
+            return;
+        }
+        let Some(hd) = self
+            .hd
+            .get_or_insert_with(|| crate::render::hd_art::ShpHd::open(device))
+        else {
+            return;
+        };
+        let Some(palette_rows) = self.palettes.texture.as_ref().map(|(_, view)| view.clone())
+        else {
+            return;
+        };
+        hd.set_active(true);
+        let (entries, sources) = (&self.entries, &self.frame_sources);
+        hd.load(
+            device,
+            queue,
+            batch,
+            &mut self.pages,
+            &palette_rows,
+            |key| {
+                let entry = *entries.get(key)?;
+                let (shp, frame) = sources.get(key)?;
+                let indices = ShpFile::decode_frame(shp, *frame).ok()?;
+                Some((entry, indices))
+            },
+        );
     }
 
     /// [`INFANTRY_AIR_SHADOW_SHP`]'s frame 1, the shadow an airborne infantry
@@ -1094,37 +1152,6 @@ impl SpriteAtlas {
     /// A known empty image/rectangle remains `Some`, including its origin.
     pub(crate) fn building_type_bounds(&self, type_id: &str) -> Option<[i32; 4]> {
         self.building_type_bounds.get(type_id).copied()
-    }
-
-    /// VERA's HD art (`render::hd_art`): every resident frame with its
-    /// entry. Buildings, their animations and bibs, infantry, and every
-    /// other SHP the atlas holds (explosions, fire, smoke, projectiles); a
-    /// frame the pack has no art for simply stays native.
-    pub(crate) fn building_frames(&self) -> impl Iterator<Item = (&ShpSpriteKey, &ShpSpriteEntry)> {
-        self.entries.iter()
-    }
-
-    /// The RGBA bytes (256 entries) of every palette row, in row order:
-    /// `ShpSpriteEntry::source_palette` minus one indexes it.
-    pub(crate) fn palette_rows(&self) -> &[Vec<u8>] {
-        &self.palettes.colors
-    }
-
-    /// Which atlas this is: a map load makes a new one with its own number,
-    /// so a consumer keyed by atlas positions (`render::hd_art`) knows its
-    /// keys no longer hold.
-    pub(crate) fn instance(&self) -> u64 {
-        self.instance
-    }
-
-    /// A cheap change signal for consumers that derive data from the
-    /// entries: grows whenever a refresh adds pages, entries or rows.
-    pub(crate) fn generation(&self) -> (usize, usize, usize) {
-        (
-            self.pages.len(),
-            self.entries.len(),
-            self.palettes.colors.len(),
-        )
     }
 
     /// Exact frame lookup; an absent frame is not substituted or wrapped.
@@ -1292,10 +1319,14 @@ impl SpriteAtlas {
         {
             // All resident pages keep their index planes/row IDs and bind the
             // replacement palette texture. Nothing needs repacking.
+            let hd = self.hd.as_ref().and_then(Option::as_ref);
             for (index, page) in self.pages.iter_mut().enumerate() {
-                if !self.picture_pages.contains(&index) {
+                if !self.picture_pages.contains(&index) && !hd.is_some_and(|hd| hd.is_page(index)) {
                     batch.rebind_indexed_palette(device, &mut page.texture, &palette_rows);
                 }
+            }
+            if let Some(hd) = hd {
+                hd.rebind(device, batch, &mut self.pages, &palette_rows);
             }
         }
         let (pages, growth_indices) = (&mut self.pages, &mut self.growth_indices);
@@ -3070,9 +3101,6 @@ pub(crate) fn prepare_sprite_atlas(
     // effects, so a building on the map at load gets the same frames as one
     // that appears later, and the effect keeps the presentation count.
     let mut building_anim_counts: HashMap<String, (u16, u16)> = HashMap::new();
-    let mut hd_images = previous_atlas
-        .map(|atlas| atlas.hd_images.clone())
-        .unwrap_or_default();
     if let Some(art_reg) = art {
         for (type_id, house_color) in &new_objects {
             let rules_image: String = rules
@@ -3175,7 +3203,6 @@ pub(crate) fn prepare_sprite_atlas(
                         source.found_name.clone(),
                     );
                     object_shp_frame_counts.insert(name.clone(), count);
-                    hd_images.insert(name.clone());
                     for frame in 0..count {
                         needed.insert(ShpSpriteKey {
                             palette_context: building_art_palette_context(entry),
@@ -3189,18 +3216,7 @@ pub(crate) fn prepare_sprite_atlas(
             }
         }
     }
-    for (type_id, _) in &new_objects {
-        if rules
-            .and_then(|rules| rules.object(type_id))
-            .is_some_and(|object| {
-                object.category == crate::rules::object_type::ObjectCategory::Infantry
-            })
-        {
-            hd_images.insert(type_id.to_ascii_uppercase());
-        }
-    }
     for (anim_type, (count, _)) in building_anim_counts {
-        hd_images.insert(anim_type.clone());
         active_anim_frame_counts.entry(anim_type).or_insert(count);
     }
 
@@ -4059,7 +4075,6 @@ pub(crate) fn prepare_sprite_atlas(
             active_anim_frame_counts,
             object_shp_frame_counts,
             building_type_bounds,
-            hd_images,
             shp_files,
             projectile_files,
             new_objects,
@@ -4302,7 +4317,6 @@ pub(crate) struct ShpAtlasUpload {
     active_anim_frame_counts: HashMap<String, u16>,
     object_shp_frame_counts: HashMap<String, u16>,
     building_type_bounds: HashMap<String, [i32; 4]>,
-    hd_images: HashSet<String>,
     shp_files: HashMap<(ShpImageKind, String), String>,
     projectile_files: HashMap<String, (String, u16)>,
     new_objects: HashSet<(String, HouseColorIndex)>,
@@ -4395,7 +4409,6 @@ impl ShpAtlasUpload {
             active_anim_frame_counts,
             object_shp_frame_counts,
             building_type_bounds,
-            hd_images,
             shp_files,
             projectile_files,
             new_objects,
@@ -4413,7 +4426,6 @@ impl ShpAtlasUpload {
         atlas.active_anim_frame_counts = active_anim_frame_counts;
         atlas.object_shp_frame_counts = object_shp_frame_counts;
         atlas.building_type_bounds = building_type_bounds;
-        atlas.hd_images = hd_images;
         atlas.shp_files = shp_files;
         atlas.projectile_files = projectile_files;
         for (type_id, color) in new_objects {

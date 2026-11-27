@@ -33,7 +33,6 @@ fn wheel_zoom_keeps_infantry_health_pixels_identical() {
 }
 
 fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
-    use crate::render::upscale_pass::WorldZoomPass;
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
         .expect("physical Battle rules");
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
@@ -89,12 +88,10 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
     for zoom in [1.0, 1.25, 0.8, 1.0 / 1.5] {
         cam.zoom = zoom;
         batch.write_camera(&gpu.queue, cam);
-        let resolve =
-            (zoom != 1.0).then(|| WorldZoomPass::new(&gpu.device, &gpu.queue, format, size, zoom));
-        let source_size = resolve.as_ref().map_or(size, WorldZoomPass::source_size);
-        if resolve.is_some() {
-            batch.set_native_world_resolution(&gpu.queue, source_size);
-        }
+        // The world camera draws the target at the zoom
+        // (`docs/zoom-one-pass.md`); the A plane covers the world pixels it
+        // shows.
+        let world = size.map(|v| (v as f32 / zoom).ceil() as u32);
         let status = techno_extras_for_parent(
             &sim,
             &ObjectRecord::of_test_sim(&sim, &retail.rules, 1),
@@ -139,17 +136,17 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         let a = ShroudBuffer::fixture(
             &gpu.device,
             &gpu.queue,
-            source_size,
+            world,
             cam.camera_pos,
             // The mobile border straddles an A boundary at its parent point.
             // It must still sample live A in frame pixels, while fills bypass A.
-            &(0..source_size[0] * source_size[1])
-                .map(|index| if index % source_size[0] < 63 { 0 } else { 127 })
+            &(0..world[0] * world[1])
+                .map(|index| if index % world[0] < 63 { 0 } else { 127 })
                 .collect::<Vec<_>>(),
         );
         batch.bind_shroud(&gpu.device, Some(&a));
-        let color = gpu.target(source_size, format);
-        let depth = gpu.target(source_size, wgpu::TextureFormat::Depth32Float);
+        let color = gpu.target(size, format);
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let cv = color.create_view(&Default::default());
         let dv = depth.create_view(&Default::default());
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -167,42 +164,30 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
             &cv,
             &dv,
             &mut terrain,
-            [0, 0, source_size[0], source_size[1]],
+            [0, 0, size[0], size[1]],
             &batch,
             Some(&overlay),
             pool.get("object_extras").map(|(buffer, _)| buffer),
             None,
             &layer,
         );
-        let output = if let Some(resolve) = &resolve {
-            resolve.composite(
-                &gpu.device,
-                &mut encoder,
-                &color,
-                [0, 0, size[0], size[1]],
-                wgpu::Color::BLACK,
-            );
+        if zoom != 1.0 {
             let cameras = batch.create_frame_world_cameras(&gpu.device, zoom, Some(&a));
-            {
-                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
-                    &mut encoder,
-                    resolve.color_view(),
-                    resolve.frame_depth_view(),
-                );
-                super::object_extras::draw_frame_health(
-                    &mut pass,
-                    &batch,
-                    Some(&overlay),
-                    pool.get("object_extras").map(|(buffer, _)| buffer),
-                    &layer,
-                    [&cameras[0], &cameras[1]],
-                );
-            }
-            resolve.color_texture()
-        } else {
-            &color
-        };
-        let read = gpu.read(&mut encoder, output);
+            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                &mut encoder,
+                &cv,
+                &dv,
+            );
+            super::object_extras::draw_frame_health(
+                &mut pass,
+                &batch,
+                Some(&overlay),
+                pool.get("object_extras").map(|(buffer, _)| buffer),
+                &layer,
+                [&cameras[0], &cameras[1]],
+            );
+        }
+        let read = gpu.read(&mut encoder, &color);
         let pixels = gpu.finish(encoder, &[read], size).remove(0);
         let mut bounds = [size[0], size[1], 0, 0];
         for (index, pixel) in pixels.chunks_exact(4).enumerate() {

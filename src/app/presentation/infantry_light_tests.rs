@@ -209,7 +209,6 @@ fn assert_shp_light_on_frame(
             building_viewport: crate::app::presentation::render::tactical_world_viewport(
                 camera,
                 [0, 0, 800, 600],
-                None,
             ),
             axis: crate::render::batch::DepthAxis {
                 origin_y: 0.0,
