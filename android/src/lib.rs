@@ -326,6 +326,43 @@ fn ime_set_secret(secret: bool) {
     });
 }
 
+static POINTER_WAKE: std::sync::OnceLock<winit::event_loop::EventLoopProxy<()>> = std::sync::OnceLock::new();
+
+/// One hardware mouse or touchpad event the activity consumed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeMouseEvent(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+    device_id: jni::sys::jint,
+    action: jni::sys::jint,
+    action_button: jni::sys::jint,
+    buttons: jni::sys::jint,
+    x: jni::sys::jfloat,
+    y: jni::sys::jfloat,
+    vscroll: jni::sys::jfloat,
+    hscroll: jni::sys::jfloat,
+    scroll: jni::sys::jfloat,
+    event_time: jni::sys::jlong,
+    tool: jni::sys::jint,
+) {
+    let wake = vera20k::app::android_mouse::push(vera20k::app::android_mouse::PointerEvent {
+        device_id,
+        action,
+        action_button,
+        buttons,
+        x,
+        y,
+        vscroll,
+        hscroll,
+        scroll,
+        event_time,
+        tool,
+    });
+    if wake && let Some(proxy) = POINTER_WAKE.get() {
+        let _ = proxy.send_event(());
+    }
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
@@ -643,6 +680,8 @@ fn android_main(app: AndroidApp) {
             return;
         }
     };
+
+    let _ = POINTER_WAKE.set(event_loop.create_proxy());
 
     // Android has no retail command line: the launcher starts an ordinary
     // interactive game. `-SPAWN`, replay and capture launches are desktop
