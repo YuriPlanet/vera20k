@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.1.0, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.2.0, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -928,7 +928,7 @@ Numbers are the identity and are appended only. 1041 is reserved (`ApplyEffect`)
 | 1000 | `FireWeapon` | Object (shooter) | `id` weapon, or −1 to use slot `value` (default 0, primary). Aim at `cell`, then `other`, then the current target in that order. No target gives `Gone` | Fires, or returns `Refused` if unable to fire now | native | v1 |
 | 1001 | `LaunchSuperWeapon` | `House` | `id` superweapon type, `cell` (required, omission is an invalid argument) | Launches this house's superweapon | native | v1 |
 | 1002 | `SpawnAnim` | Cell | `id` animation | Creates an animation | native | v1 |
-| 1003 | `AttachAnim` | Object | `id` animation, `value2` frames (negative means until removed) | Attaches the animation to the object. 0.1.0 implements it without a frame count (as team script action 51) | native | later |
+| 1003 | `AttachAnim` | Object | `id` animation, `value2` frames (0 one pass; positive keeps it looping that many frames; negative until `DetachAnim`) | Attaches the animation to the object (as team script action 51). A kept animation loops as a Phobos AttachEffect's does, follows the object, is taken off while the object is in a transport or fully cloaked and put back after, and goes when the object leaves the game. At 65,536 held animations in the match, further holds return `Refused` | native | preview |
 | 1004 | `Remove` | Object | — | Removes without death, survivors or kill credit | none | v1 |
 | 1005 | `Kill` | Object | `other` optional source | Kills through the damage path with damage equal to current health, ignoring defenses. Runs death animations and survivor logic, crediting the source | native | v1 |
 | 1006 | `Damage` | Object | `id` warhead, `value` damage, `other` optional source | Applies warhead and armor rules with kill and experience credit | native | v1 |
@@ -967,6 +967,7 @@ Numbers are the identity and are appended only. 1041 is reserved (`ApplyEffect`)
 | 1039 | `AddTeamMember` | Object | `other` team | Joins a team subject to admission checks | none | later |
 | 1040 | `RemoveTeamMember` | Object | — | Leaves the current team | none | later |
 | 1042 | `RaiseEvent` | Object (object event) or any (global event) | `id` event ID. `other`, `value`, `value2`, `house` are written to the record | Raises module event `ModuleEvent` ([RFC 6h](0001-wasm-extension-modules.md#6h-ini-registration)). `Gone` if the target of an object event is not an existing object. An unregistered event ID is an invalid argument. INI spelling is `RaiseEvent(target,event name,value,value2)` | none | v1 |
+| 1046 | `DetachAnim` | Object | `id` animation, or −1 for all (code only: INI names one animation) | Removes the animations this module origin's `AttachAnim` keeps on the object | none | preview |
 | 1045 | `SetFacing` | Object | `value` body facing 0..255 | Turns the body through the active locomotor (rotating at its rate where the locomotor does, snapping where it snaps). `Refused` without a locomotor | none | preview |
 
 ### 5.4 Client action kinds
@@ -1194,8 +1195,8 @@ Base values come from the type or a default. Modifiers determine the effective v
 | `Targetable` | bool | 1 | Override | 0 prevents targeting | — | later |
 | `PenetratesForceShield` | bool | 0 | Override | Penetrates force shields | `PenetratesForceShield` | later |
 | `ImmunityFlags` | mask | Type's immunities (`ImmuneToPsionics=`, `ImmuneToRadiation=`, `ImmuneToPoison=`, `ImmuneToPsionicWeapons=`, `Warpable=no`; with Ares the rank abilities, `ImmuneToEMP=` and its default, and `ImmuneToBerserk=`; without Ares berserk follows `ImmuneToPsionics=`) | Override only, bits 0..6; other operations or bits return `Refused` | Immunity bits: 0 mind control, 1 radiation, 2 poison, 3 psychic, 4 chrono, 5 EMP, 6 berserk. The override replaces, bit by bit, the immunity each check computes, so it can also remove one: 0 capture by mind control, the Psychic Dominator, Ares permanent mind control and abduction ownership; 1, 2 and 3 the receive-damage gates of radiation, poison and psychic warheads, and 1 also radiation-field damage; 4 the Chrono Legionnaire's warp and the Chronosphere's `Warpable=` test; 5 Ares EMP; 6 the Psychedelic (berserk) gate and the fire check for gas | — (a zero multiplier with `ArmorMultiplier.AllowWarheads` covers some cases) | preview |
-| `TintColor` | int (RGB) | 0 | Override | Tint, client access `seen` | `Tint.Color` | later |
-| `TintIntensity` | fixed | 0 | Add | Tint, client access `seen` | `Tint.Intensity`, `Tint.Cumulative` | later |
+| `TintColor` | int (`0xRRGGBB`) | 0 | Override only; other operations or bits return `Refused` | Tint, the same for every viewer; client access `seen`. Its RGB565 word is ORed into the Phobos shield and AttachEffect tints | `Tint.Color` | preview |
+| `TintIntensity` | fixed | 0 | Add only; other operations return `Refused` | Tint intensity (1.0 full), added to the Phobos tints' intensity; client access `seen` | `Tint.Intensity`, `Tint.Cumulative` | preview |
 | `LaserTrailType` | id | −1 | Override | Laser trail, client access `seen` | `LaserTrail.Type` | later |
 | `PowerOutage` | bool | 0 | Override | House power outage (house property, 7.5) | — | later |
 

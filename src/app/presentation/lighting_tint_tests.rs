@@ -624,3 +624,15 @@ fn curtain_extra_tint_reads_the_audio_visual_globals() {
     );
     assert_eq!(super::curtain_extra_tint(Some(&rules), None), 0);
 }
+
+/// The module tint ORs its colour's RGB565 word into the Phobos owners'
+/// word and adds its intensity in thousandths; black adds no colour.
+#[test]
+fn the_module_tint_folds_into_the_custom_tint() {
+    assert_eq!(with_module_tint((0x001F, 250), None), (0x001F, 250));
+    assert_eq!(
+        with_module_tint((0x001F, 250), Some(([0xFF, 0x00, 0x00], 0.5))),
+        (0xF81F, 750)
+    );
+    assert_eq!(with_module_tint((0, 0), Some(([0, 0, 0], -0.25))), (0, -250));
+}
