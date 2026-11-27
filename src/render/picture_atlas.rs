@@ -29,7 +29,7 @@
 
 use crate::assets::mix_archive::SharedBytes;
 use crate::assets::pal_file::Color;
-use crate::assets::picture_file::{FrameStream, PictureError};
+use crate::assets::picture_file::{FrameStream, PictureError, check_picture_storage};
 
 /// A house colour ramp's entries, palette indices 16–31
 /// (`HouseColorRamps::ramp`).
@@ -289,6 +289,12 @@ impl GamePictureFrames {
                 frames: frame_count,
             });
         }
+        // Only the game-sized frames are retained. Include their descriptors
+        // before using the APNG's declared count as an allocation size.
+        let game_pixels = u64::from(canvas[0]) * u64::from(canvas[1]);
+        let per_frame =
+            game_pixels * (4 + size_of::<MaskClass>() as u64) + size_of::<GameFrame>() as u64;
+        check_picture_storage(per_frame.saturating_mul(frame_count as u64))?;
         let mut frames = Vec::with_capacity(frame_count);
         while let Some(frame) = stream.next_frame() {
             let (rgba, mask) = frame?;

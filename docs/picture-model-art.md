@@ -349,11 +349,11 @@ then `[size_y / 2 + 0.5, size_x / 2]` as for a VXL
 `TURN.VXL` (`5F865F`, `5F8ACB`). The config hash takes the model's file name,
 `ModelSize=` and a digest of its bytes.
 
-Overlay presence and the AlphaImage were never in the config hash for SHPs.
-The AlphaImage facts enter it only for names whose art declares a picture
-(`AlphaImageCatalog::hash_declared_pictures`), so a hash without one is
-unchanged; overlay presence stays outside it, as for SHPs (residual: a
-missing overlay picture on one machine is refused only by the state hash).
+Declared overlay pictures enter the config hash and match-start file-input
+hash when their presence decides placement. A `CellAnim=` admits the
+overlay independently. A refused start can name the picture or archive that
+supplied it. The AlphaImage facts enter the config hash only for names whose
+art declares a picture (`AlphaImageCatalog::hash_declared_pictures`).
 
 A declared file that is missing on one machine changes these values there, as a
 missing SHP does today; the config hash refuses that machine online and in
@@ -729,8 +729,6 @@ Art that still only comes from SHP, PCX or TMP, and why:
   index 1), and taking a mask would change that shader.
 - Each suffix sibling of a declared template (`clear01a.tem`, ...) needs a
   picture of its own; one without draws its TMP's pixels and is reported.
-- Overlay presence is not in the config hash, as for SHPs: a declared
-  overlay picture missing on one machine is caught only by the state hash.
 - Cameo pictures draw at 1x; the smooth sidebar scales them as it scales an
   SHP cameo, and no language label is baked onto them.
 - Radar colours of declared overlays and trees are the frames' mean colours;
@@ -837,9 +835,7 @@ current: say what was done, what was not, and what comes next.
   `app::presentation::render::picture_zoom` (strip instances and their
   cameras in the HD list); not yet seen in a match, so the strips' HD copy
   (its ownership test against the A-lit world pixels) is unseen.
-- Tooling: `tools/same_as_base.py` (sim-bench hashes and frame times,
-  map_observation pixels at Options and wheel zooms against a base ref);
-  `presentation.wheel_zoom` in map_observation profiles.
+- Map observation profiles support `presentation.wheel_zoom`.
 
 ### Validation
 
@@ -859,7 +855,7 @@ current: say what was done, what was not, and what comes next.
   - Zoomed drawing: GI exported at 2x (`export-picture --scale 2`,
     `PictureSize=78,66`) at wheel view distance 0.8 is drawn sharp at window
     resolution where the SHP run shows magnified pixels; same state hash.
-- Off-state check (`tools.same_as_base`, machine otherwise idle): same
+- Off-state check (machine otherwise idle): same
   sim-bench final hash and rules hash as main after 9,000 ticks at 1v29;
   mean frame 3.74 ms against main's 4.09 ms; captures at Options zoom 100
   and 150 differ only by the ore field's run-to-run shimmer.
@@ -950,7 +946,7 @@ current: say what was done, what was not, and what comes next.
   tool cannot reach the archive holding `CR1`), AlphaImage glows (retail
   has no loaded AlphaImage), high bridges. They are covered by unit tests
   only.
-- Chains 7 and 8, off-state check (`tools.same_as_base`, f8a9ed83d against
+- Chains 7 and 8, off-state check (f8a9ed83d against
   7ebd2af5a): same sim-bench final hash (`3e2256c96903b02d`) and rules hash
   after 9,000 ticks at 1v29; mean tick 0.87 ms against 0.88 ms, main-thread
   CPU 0.63 against 0.64 ms; Options zoom 100 and 150 and wheel 1.5 at steps
@@ -970,9 +966,7 @@ current: say what was done, what was not, and what comes next.
    declares them; capture with map_observation and compare against the SHP
    capture (they should match pixel for pixel at 1x). Then one glb vehicle in
    a match.
-4. Done (see above). Off-state check: `python3 -m tools.same_as_base --ra2-dir <game>
-   --head feature/picture-model-art --work <empty scratch dir>`; identical
-   hashes and pixels are required.
+4. Compare the retail simulation hashes and map observation frames with both builds.
 5. Done. The follow-ups below are fixed or recorded.
 
 ### Follow-ups found during writing
@@ -1013,15 +1007,6 @@ current: say what was done, what was not, and what comes next.
   where stock art would hold the old pitch until the facing changes. Turret
   shading differs slightly from the VXL's. Voxel projectiles and debris
   have not been seen in a match yet.
-
-### Machine notes
-
-- Retail data here: `RA2_DIR=~/Documents/workspace/other/yr-retail/Yuri_s_Revenge_1.001`
-  (the old `config.toml` path no longer exists). That folder has no
-  `Hills.mmx`, so tests through the retail Battle fixture
-  (`retail_ini_fixture.rs:525`) fail there; they are not about this work.
-- Builds of all worktrees share one lock (`tools.cargo_run`) and wait for
-  each other.
 
 ### Earlier per-chain notes
 

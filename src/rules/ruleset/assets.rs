@@ -317,6 +317,23 @@ impl RuleSet {
         self.art_registry.get_mut(name)
     }
 
+    /// The overlay images available for authored map placement. Declared
+    /// pictures use the same bound admission that multiplayer certifies.
+    pub fn resolved_overlay_shp_ids(
+        &self,
+        assets: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        theater_name: &str,
+    ) -> std::collections::BTreeSet<u8> {
+        crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
+            self.overlay_registry(),
+            &self.effect_assets,
+            assets,
+            theater_ext,
+            theater_name,
+        )
+    }
+
     /// Resolve particle image SHP frame counts from the active theater assets
     /// without constructing a renderer atlas.
     pub fn bind_effect_assets(

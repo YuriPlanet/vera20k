@@ -1466,7 +1466,18 @@ fn rgba_texture(
     rgba: &[u8],
     format: wgpu::TextureFormat,
 ) -> wgpu::TextureView {
-    let (chain, levels) = mip_chain(width, height, rgba, format.is_srgb());
+    let (chain, mut levels) = mip_chain(width, height, rgba, format.is_srgb());
+    // Embedded and sidecar pictures can be wider than this device allows.
+    // Starting at the first mip that fits preserves the full texture in UV space.
+    let limit = device.limits().max_texture_dimension_2d;
+    let (mut width, mut height) = (width, height);
+    let mut offset = 0;
+    while width > limit || height > limit {
+        offset += width as usize * height as usize * 4;
+        width = (width / 2).max(1);
+        height = (height / 2).max(1);
+        levels -= 1;
+    }
     device
         .create_texture_with_data(
             queue,
@@ -1485,7 +1496,7 @@ fn rgba_texture(
                 view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
-            &chain,
+            &chain[offset..],
         )
         .create_view(&Default::default())
 }

@@ -2870,20 +2870,28 @@ fn model_shadow_draw(
         return None;
     }
     let z_adjust = super::foot_depth::unit_z_adjust(
-        &match_state.sim_runtime, entity, true, Some(geometry.depth_xyz),
+        &match_state.sim_runtime,
+        entity,
+        true,
+        Some(geometry.depth_xyz),
     ) as f32;
     if has_lifted_unit_shadow(entity) {
         let runtime = match_state.sim_runtime.presentation()?;
         let view = runtime.view();
         let pose = lifted_unit_shadow_pose(
-            entity, view.resolved_terrain()?, geometry, view.session().binary_frame(),
+            entity,
+            view.resolved_terrain()?,
+            geometry,
+            view.session().binary_frame(),
         )?;
         return Some(ModelShadowDraw {
             anchor: pose.anchor,
             facing: pose.facing,
             slope: pose.slope,
             considered_aircraft,
-            depth: ShadowDepth::Own { lift_correction: geometry.lift_correction },
+            depth: ShadowDepth::Own {
+                lift_correction: geometry.lift_correction,
+            },
             z_adjust,
         });
     }

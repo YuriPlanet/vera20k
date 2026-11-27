@@ -10,6 +10,7 @@
 //! and headless matches receive the same immutable inputs.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::shp_file::ShpFile;
@@ -28,13 +29,25 @@ pub struct EffectAssetFrameCounts {
 ///
 /// Keys are trimmed, uppercase asset IDs. A `BTreeMap` is deliberate: binding
 /// and hashing must not inherit `HashMap`'s process-random iteration order.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EffectAssetCatalog {
     entries: BTreeMap<String, EffectAssetFrameCounts>,
     /// Successfully loaded groups admitted by the shared resource resolver:
     /// all names with Ares, only the selected singleton otherwise. Rebuilt
     /// with this catalog so failed requests never borrow another group.
     extra_building_palette_names: BTreeSet<String>,
+    /// Header admission for each declared overlay picture. A CellAnim admits
+    /// the overlay on its own (ReadMapOverlayPacks 0x005FD36D), so only a
+    /// picture without one contributes a filename and a gameplay input.
+    overlay_pictures: BTreeMap<u8, (bool, Option<String>)>,
+}
+
+impl Hash for EffectAssetCatalog {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.entries.hash(state);
+        self.extra_building_palette_names.hash(state);
+        self.hash_overlay_picture_inputs(state);
+    }
 }
 
 impl EffectAssetCatalog {
@@ -118,7 +131,60 @@ impl EffectAssetCatalog {
             catalog.insert(name, raw, available);
         }
 
+        let overlays = rules.overlay_registry();
+        if rules.art().declares_any_picture() {
+            for id in 0..overlays.len().min(256) {
+                let id = id as u8;
+                let Some((section, decl)) = overlays
+                    .name(id)
+                    .and_then(|name| overlays.declared_picture(name, rules.art()))
+                else {
+                    continue;
+                };
+                let facts = rules
+                    .art()
+                    .picture_header(section, decl, asset_manager, theater_name);
+                let source = overlays
+                    .flags(id)
+                    .filter(|flags| flags.cell_anim.is_none())
+                    .map(|_| {
+                        facts
+                            .as_ref()
+                            .and_then(|facts| asset_manager.get_with_source_ref(&facts.file))
+                            .map_or_else(
+                                || decl.file.clone(),
+                                |(_, source)| {
+                                    crate::rules::retail_sources::game_folder_file(source)
+                                },
+                            )
+                    });
+                catalog
+                    .overlay_pictures
+                    .insert(id, (facts.is_some(), source));
+            }
+        }
         catalog
+    }
+
+    pub(crate) fn hash_overlay_picture_inputs<H: Hasher>(&self, state: &mut H) {
+        let mut facts = self
+            .overlay_pictures
+            .iter()
+            .filter(|(_, (_, source))| source.is_some())
+            .peekable();
+        if facts.peek().is_some() {
+            b"overlay-picture-admission-v1".hash(state);
+            for (id, (loaded, _)) in facts {
+                id.hash(state);
+                loaded.hash(state);
+            }
+        }
+    }
+
+    pub(crate) fn overlay_picture_files(&self) -> impl Iterator<Item = &str> {
+        self.overlay_pictures
+            .values()
+            .filter_map(|(_, source)| source.as_deref())
     }
 
     pub(crate) fn loaded_extra_building_palette_name(&self, name: &str) -> Option<&str> {
@@ -594,9 +660,9 @@ pub fn log_unbound_combat_explosion_roots(unbound: usize) {
 /// VERA-only, experimental (`docs/picture-model-art.md`): a type whose art
 /// declares `Picture=` has an image when its picture is found and readable;
 /// its SHP is never opened.
-pub fn resolved_overlay_shp_ids(
+pub(super) fn resolved_overlay_shp_ids(
     registry: &OverlayTypeRegistry,
-    art: &art_data::ArtRegistry,
+    catalog: &EffectAssetCatalog,
     asset_manager: &AssetManager,
     theater_ext: &str,
     theater_name: &str,
@@ -607,11 +673,8 @@ pub fn resolved_overlay_shp_ids(
         let Some(name) = registry.name(overlay_id) else {
             continue;
         };
-        if let Some((section, decl)) = registry.declared_picture(name, art) {
-            if art
-                .picture_header(section, decl, asset_manager, theater_name)
-                .is_some()
-            {
+        if let Some((loaded, _)) = catalog.overlay_pictures.get(&overlay_id) {
+            if *loaded {
                 available.insert(overlay_id);
             }
             continue;
@@ -802,10 +865,28 @@ mod tests {
         assert_eq!(catalog.raw_frame_count("FX"), Some(4), "the SHP holds 6");
         assert_eq!(catalog.effect_frame_count("FX"), Some(2));
 
-        let overlays = OverlayTypeRegistry::from_ini(&ini, None);
-        let available =
-            resolved_overlay_shp_ids(&overlays, rules.art(), &assets, "TEM", "TEMPERATE");
-        assert_eq!(available.into_iter().collect::<Vec<_>>(), vec![0]);
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        let available = rules.resolved_overlay_shp_ids(&assets, "TEM", "TEMPERATE");
+        assert!(available.contains(&rules.overlay_registry().id_for_name("PICWALL").unwrap()));
+        assert!(!available.contains(&rules.overlay_registry().id_for_name("BAREWALL").unwrap()));
+        let loaded = rules.file_inputs_hash();
+        assert!(
+            rules
+                .file_input_folder_files()
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("wall.png"))
+        );
+
+        std::fs::remove_file(root.path().join("wall.png")).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+        assert_ne!(rules.file_inputs_hash(), loaded);
+        assert!(
+            rules
+                .file_input_folder_files()
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("wall.png"))
+        );
     }
 
     /// The NPSE `[General] VehicleParachute=` canopy is bound through the same

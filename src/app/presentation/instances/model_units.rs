@@ -64,7 +64,9 @@ pub(super) fn declared_model_of<'r>(
     let split = type_id.len().checked_sub(NO_SPAWN_ALT_SUFFIX.len())?;
     let (base, suffix) = (type_id.get(..split)?, type_id.get(split..)?);
     if !suffix.eq_ignore_ascii_case(NO_SPAWN_ALT_SUFFIX)
-        || !rules.object(base).is_some_and(|object| object.no_spawn_alt())
+        || !rules
+            .object(base)
+            .is_some_and(|object| object.no_spawn_alt())
     {
         return None;
     }
@@ -302,9 +304,18 @@ pub(super) fn emit_model_unit(
         draw.draw_state,
         bounds,
     );
-    let split = super::foot_depth::unit_bridge_split(&state.match_state.sim_runtime, draw.entity, true, draw.depth_xyz);
-    let z_adjust =
-        super::foot_depth::unit_z_adjust(&state.match_state.sim_runtime, draw.entity, true, Some(draw.depth_xyz));
+    let split = super::foot_depth::unit_bridge_split(
+        &state.match_state.sim_runtime,
+        draw.entity,
+        true,
+        draw.depth_xyz,
+    );
+    let z_adjust = super::foot_depth::unit_z_adjust(
+        &state.match_state.sim_runtime,
+        draw.entity,
+        true,
+        Some(draw.depth_xyz),
+    );
     for region in body_blits(native[1], height, z_adjust, split)
         .into_iter()
         .flatten()
@@ -379,7 +390,9 @@ fn emit_model_shadow(
             entity.position.z(),
             lift_correction,
         ),
-        ShadowDepth::Ground => compute_sprite_depth(&state.match_state.match_presentation, bottom, 0),
+        ShadowDepth::Ground => {
+            compute_sprite_depth(&state.match_state.match_presentation, bottom, 0)
+        }
     };
     pieces.push(ObjectPieceInstance {
         target: ObjectTexture::SpriteAtlasEdit(image.page, TerrainPiece::Shadow),

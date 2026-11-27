@@ -1775,6 +1775,7 @@ impl RuleSet {
         self.buildup_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
         self.rubble_assets.fold_admissions(&mut hasher);
+        self.effect_assets.hash_overlay_picture_inputs(&mut hasher);
         // IsVoxel and the tilt matrix behind a shot's origin
         // (`combat::area_rocker`, `combat::fire_coord`).
         self.voxel_assets.fold_loaded(&mut hasher);
@@ -1843,6 +1844,7 @@ impl RuleSet {
         files.extend(self.buildup_assets.folder_files());
         files.extend(self.terrain_assets.folder_files());
         files.extend(self.rubble_assets.folder_files());
+        files.extend(self.effect_assets.overlay_picture_files());
         files.extend(self.voxel_assets.folder_files());
         if self.ares {
             files.extend(

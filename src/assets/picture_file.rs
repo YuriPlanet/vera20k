@@ -19,10 +19,7 @@ pub enum PictureError {
     Png(#[from] png::DecodingError),
     #[error("an APNG with no frames")]
     NoFrames,
-    #[error(
-        "{0} bytes of frames is more than the {PICTURE_BYTES_MAX} a picture may hold at once; \
-         a picture this big must be streamed frame by frame"
-    )]
+    #[error("{0} decoded bytes exceeds the picture storage limit of {PICTURE_BYTES_MAX}")]
     TooLarge(u64),
     #[error("a canvas too large to decode on this platform")]
     CanvasTooLarge,
@@ -30,10 +27,17 @@ pub enum PictureError {
     FrameOutside,
 }
 
-/// The most decoded RGBA bytes [`PictureFrames::decode`] may hold, all frames
-/// together. A [`FrameStream`] holds one canvas whatever the frame count, so
-/// it is not bound by this.
+/// Maximum bytes for a stream's working canvases or one retained set of
+/// decoded frames. A streamed animation may decode more bytes over its lifetime.
 pub const PICTURE_BYTES_MAX: u64 = 512 << 20;
+
+pub fn check_picture_storage(bytes: u64) -> Result<(), PictureError> {
+    if bytes > PICTURE_BYTES_MAX {
+        Err(PictureError::TooLarge(bytes))
+    } else {
+        Ok(())
+    }
+}
 
 /// A picture's frames composited onto its canvas, as an APNG viewer shows
 /// them: straight RGBA, row by row, `width * height * 4` bytes each.
@@ -93,11 +97,18 @@ impl<'a> FrameStream<'a> {
             return Err(PictureError::NoFrames);
         }
         let default_in_animation = animation.is_none() || info.frame_control.is_some();
-        let canvas_len = usize::try_from(u64::from(width) * u64::from(height) * 4)
-            .map_err(|_| PictureError::CanvasTooLarge)?;
+        let canvas_bytes = (u64::from(width) * u64::from(height)).saturating_mul(4);
         let buffer_len = reader
             .output_buffer_size()
             .ok_or(PictureError::CanvasTooLarge)?;
+        // The decoder's output, composited canvas and a possible Previous
+        // disposal backup can coexist. Check the header before reserving any.
+        check_picture_storage(
+            canvas_bytes
+                .saturating_mul(2)
+                .saturating_add(buffer_len as u64),
+        )?;
+        let canvas_len = usize::try_from(canvas_bytes).map_err(|_| PictureError::CanvasTooLarge)?;
         let mut buffer = vec![0; buffer_len];
         if !default_in_animation {
             reader.next_frame(&mut buffer)?;
@@ -254,10 +265,8 @@ impl PictureFrames {
     pub fn decode(bytes: &[u8]) -> Result<Self, PictureError> {
         let mut stream = FrameStream::new(bytes)?;
         let [width, height] = stream.size();
-        let total = u64::from(width) * u64::from(height) * 4 * stream.frame_count() as u64;
-        if total > PICTURE_BYTES_MAX {
-            return Err(PictureError::TooLarge(total));
-        }
+        let per_frame = u64::from(width) * u64::from(height) * 4 + size_of::<Vec<u8>>() as u64;
+        check_picture_storage(per_frame.saturating_mul(stream.frame_count() as u64))?;
         let mut frames = Vec::with_capacity(stream.frame_count());
         while let Some(frame) = stream.next_frame() {
             frames.push(frame?.to_vec());
