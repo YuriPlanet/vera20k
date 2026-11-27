@@ -1443,7 +1443,7 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | `Anim` | string | `Decoration` | Attached animation played on this screen alone. `later`: stored, not drawn |
 | `HideAnchor` | bool | `Decoration` | Hides the object's body on this screen; it is still listed, selected and clicked, and its status strip still draws. A map module's `HideAnchor` and `Tint` restyle the object only under `MapUI=full` |
 | `Number` | int | `Decoration`, `MapMarker` | Number displayed at the anchor |
-| `Items` | string | `MapMarker` | One `x,y` cell a line: the marker's line runs from its anchor through them, at most 256. A line that is not two numbers returns `Refused` |
+| `Items` | string | `MapMarker` | One `x,y` cell a line: the marker's line runs from its anchor through them, at most 256. Lines and circles together may draw 65,536 samples per frame. A line that is not two numbers returns `Refused` |
 | `Width` | int | `MapMarker` | Radius in leptons of a ground circle round the anchor cell, 0 for none |
 | `Hold` | int | `MapMarker` | 0 battlefield and radar, 1 battlefield, 2 radar |
 

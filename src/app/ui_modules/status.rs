@@ -175,7 +175,7 @@ pub(crate) struct StatusObject<'a> {
     pub(crate) shield: Option<(i32, i32)>,
     pub(crate) ammo: Option<(i32, i32)>,
     pub(crate) passengers: Option<(i32, i32)>,
-    pub(crate) rank: i32,
+    pub(crate) rank: Option<i32>,
     /// Its stored variable values (`StatusFacts::vars`).
     pub(crate) vars: &'a [(i32, i64)],
 }
@@ -199,6 +199,10 @@ pub(crate) struct ModuleStatus {
 impl ModuleStatus {
     pub(crate) fn is_empty(&self) -> bool {
         self.world.is_empty() && self.hides.is_empty()
+    }
+
+    pub(crate) fn has_templates(&self) -> bool {
+        !self.world.is_empty()
     }
 
     /// Moves with every change, for the redraw judge.
@@ -301,22 +305,35 @@ impl ModuleStatus {
         if hidden != 0 && !origin.may_hide(map_ui) {
             return Err(Problem::Refused("HideNative needs [VeraWasm] MapUI=full".into()));
         }
-        // Parsed before anything changes, so a bad template keeps the old.
-        let template = self.parse(origin, name, section, names)?;
-        self.world.remove(origin.gui(), name);
+        // A hide-only definition has no GUI template to count toward its limit.
+        if hidden != 0 && self.hides.len() >= origin.gui().share(vera20k_gui::status::MAX_TEMPLATES)
+            && !self.hides.iter().any(|(of, held, _)| *of == origin && held.as_deref() == Some(name))
+        {
+            return Err(Problem::Refused("too many status hide definitions".into()));
+        }
+        let (arts, new_art, vars) = (self.arts.len(), self.new_art.len(), self.vars.len());
+        let result = self.parse(origin, name, section, names).and_then(|template| {
+            if template.elements.is_empty() {
+                self.world.remove(origin.gui(), name);
+                Ok(())
+            } else {
+                self.world.replace_template(origin.gui(), template)
+                    .map_err(|refused| Problem::Refused(format!("over the template limits ({refused:?})")))
+            }
+        });
+        if let Err(problem) = result {
+            self.arts.truncate(arts);
+            self.new_art.truncate(new_art);
+            self.vars.truncate(vars);
+            return Err(problem);
+        }
         self.hides
             .retain(|(of, held, _)| !(*of == origin && held.as_deref() == Some(name)));
         if hidden != 0 {
             self.hides.push((origin, Some(name.to_owned()), hidden));
         }
         self.revision += 1;
-        if template.elements.is_empty() {
-            return Ok(());
-        }
-        self.world
-            .add_template(origin.gui(), template)
-            .map(drop)
-            .map_err(|refused| Problem::Refused(format!("over the template limits ({refused:?})")))
+        Ok(())
     }
 
     fn parse(
@@ -422,8 +439,8 @@ impl ModuleStatus {
                 step: (int(field(f, 5)?)?, int(field(f, 6)?)?),
                 count: u16::try_from(int(field(f, 7)?)?.max(0)).unwrap_or(u16::MAX),
                 source: self.source(origin, field(f, 8)?, names)?,
-                full: self.art(field(f, 9)?),
-                empty: f.get(10).map(|name| self.art(name)),
+                full: self.art(field(f, 9)?)?,
+                empty: f.get(10).map(|name| self.art(name)).transpose()?,
             },
             // A row as long as its amount may take a whole object's share
             // of drawing commands, which only the engine's own templates
@@ -435,7 +452,7 @@ impl ModuleStatus {
             }
             "icon" => Element::Icon {
                 rect: at(1)?,
-                art: self.art(field(f, 5)?),
+                art: self.art(field(f, 5)?)?,
             },
             "number" => Element::Number {
                 rect: Rect::new(int(field(f, 1)?)?, int(field(f, 2)?)?, 0, 0),
@@ -446,16 +463,23 @@ impl ModuleStatus {
         })
     }
 
-    fn art(&mut self, name: &str) -> ArtId {
+    fn art(&mut self, name: &str) -> Result<ArtId, Problem> {
+        // At most two pictures per element. Replacing a template must not
+        // grow the match's permanent picture cache without bound.
+        const MAX_ART: usize = 2 * vera20k_gui::status::MAX_ELEMENTS_PER_TEMPLATE
+            * vera20k_gui::status::MAX_TEMPLATES;
         let at = match self.arts.iter().position(|art| art.eq_ignore_ascii_case(name)) {
             Some(at) => at,
+            None if self.arts.len() >= MAX_ART => {
+                return Err(Problem::Refused("too many status pictures".into()));
+            }
             None => {
                 self.arts.push(name.to_owned());
                 self.new_art.push(name.to_owned());
                 self.arts.len() - 1
             }
         };
-        ArtId(at as u32)
+        Ok(ArtId(at as u32))
     }
 
     fn source(
@@ -548,7 +572,11 @@ impl ModuleStatus {
         values[usize::from(SHIELD)] = object.shield.and_then(amount);
         values[usize::from(AMMO)] = object.ammo.and_then(amount);
         values[usize::from(PASSENGERS)] = object.passengers.and_then(amount);
-        values[usize::from(RANK)] = amount((object.rank, 2));
+        // A disguise exposes only the worn identity and its health share.
+        let Some(rank) = object.rank else {
+            return values;
+        };
+        values[usize::from(RANK)] = amount((rank, 2));
         let read = |var: i32| -> Option<i32> {
             let (_, visibility, default) = vars.declared(var)?;
             let readable = match visibility {
@@ -703,7 +731,7 @@ mod tests {
             shield: None,
             ammo: Some((2, 5)),
             passengers: None,
-            rank: 0,
+            rank: Some(0),
             vars: &[],
         }
     }
@@ -753,6 +781,16 @@ mod tests {
                 &names,
             )
             .expect("parses");
+        assert!(matches!(
+            status.add_text(
+                StatusOrigin::MapModule,
+                "Name=Hp\nHideNative=HealthBars\nElement1=Segments,0,0,1,1,1,0,65,Ammo,unknown.shp",
+                MapUi::Full, &names,
+            ),
+            Err(Problem::Refused(_))
+        ));
+        assert_eq!(status.hidden(), 0);
+        assert!(status.take_new_art().is_empty());
         assert_eq!(
             paint(&status, &[object((30, 40), false)]),
             [WorldOp::Number {

@@ -1710,6 +1710,20 @@ pub(super) fn build_sidebar_instances(
         crate::app::presentation::sidebar_render::minimap_shown(&match_state.match_presentation);
 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
+        let markers = match_state.ui_modules.as_ref().map(|ui| {
+            let sim = match_state.sim_runtime.presentation().map(|rt| &rt.simulation);
+            let frame = match_state.sim_runtime.frame();
+            let player = crate::app::input::commands::preferred_local_owner_name(match_state);
+            let player = sim.and_then(|sim| player.as_deref().and_then(|name| sim.interner().get(name)));
+            let rules = crate::app::state::active_rules(frontend, match_state);
+            crate::app::ui_modules::field::radar_markers(ui, |id| {
+                let entity = frame?.object(id)?;
+                crate::app::presentation::ui_overlays::module_status_anchor(
+                    sim?, entity, rules, player, match_state.sandbox_full_visibility,
+                )?;
+                Some((entity.position.rx(), entity.position.ry()))
+            })
+        });
         match &mut match_state.match_presentation.minimap {
             Some(mm) => {
                 let quad = mm.build_minimap_instance_in_rect(
@@ -1762,7 +1776,7 @@ pub(super) fn build_sidebar_instances(
                     )
                 });
                 // VERA: the client modules' map markers on the radar.
-                if let Some(ui) = match_state.ui_modules.as_ref() {
+                if let Some(markers) = markers {
                     viewport_rect.extend(mm.build_marker_dots_in_rect(
                         match_state.input.camera_x,
                         match_state.input.camera_y,
@@ -1770,7 +1784,7 @@ pub(super) fn build_sidebar_instances(
                         minimap_rect.y,
                         minimap_rect.w,
                         minimap_rect.h,
-                        crate::app::ui_modules::field::radar_markers(ui),
+                        markers,
                     ));
                 }
                 (minimap, viewport_rect, content_boundary)

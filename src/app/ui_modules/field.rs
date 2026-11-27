@@ -67,7 +67,7 @@ pub(crate) fn build(ui: &UiModules, view: &FieldView<'_>, font: &BitFont) -> Fie
     if !attached.is_empty() {
         attached_instances(ui, view, font, &attached, &mut out);
     }
-    if ui.status.is_empty() {
+    if !ui.status.has_templates() {
         return out;
     }
     let zoom = zoom_of(view);
@@ -187,10 +187,8 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
                 return None;
             }
             let (type_ref, owner) = worn.unwrap_or((entity.type_ref(), entity.owner()));
-            let strength = view
-                .rules
-                .and_then(|rules| sim.interner().object_type(type_ref, rules))
-                .map_or(0, |object| object.strength);
+            let drawn_type = view.rules.and_then(|rules| sim.interner().object_type(type_ref, rules));
+            let strength = drawn_type.map_or(0, |object| object.strength.max(0));
             let health = match worn {
                 None => (entity.health.current(), strength),
                 Some(_) => {
@@ -222,7 +220,7 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
                 id: entity.stable_id(),
                 anchor: (anchor.0.round() as i32, anchor.1.round() as i32),
                 type_id: type_ref.index(),
-                category: entity.category(),
+                category: drawn_type.map_or(entity.category(), |object| object.category.into()),
                 own,
                 allied,
                 selected: entity.selection.is_selected(),
@@ -231,7 +229,7 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
                 shield: shield(entity, view.rules).filter(|_| real),
                 ammo: status.and_then(|status| status.ammo).filter(|_| real),
                 passengers: status.and_then(|status| status.passengers).filter(|_| real),
-                rank: if real { i32::from(entity.veterancy.rank().min(2)) } else { 0 },
+                rank: real.then(|| i32::from(entity.veterancy.rank().min(2))),
                 vars: if real {
                     status.and_then(|status| status.vars.as_deref()).unwrap_or_default()
                 } else {
@@ -270,15 +268,16 @@ fn zoom_of(view: &FieldView<'_>) -> f32 {
 }
 
 /// A seen object's anchor ([`ui_overlays::module_status_anchor`]).
-fn object_anchor(view: &FieldView<'_>, id: u64) -> Option<(f32, f32)> {
+fn object_anchor(view: &FieldView<'_>, id: u64) -> Option<((f32, f32), (u16, u16))> {
     let entity = view.frame.object(id)?;
-    ui_overlays::module_status_anchor(
+    let point = ui_overlays::module_status_anchor(
         view.sim,
         entity,
         view.rules,
         view.player,
         view.viewport.ignore_visibility,
-    )
+    )?;
+    Some((point, (entity.position.rx(), entity.position.ry())))
 }
 
 /// The world-pixel point of a cell's centre on the ground, and of a point
@@ -329,6 +328,9 @@ fn attached_instances(
             ));
         }
     };
+    // Bound total raster work for the layer. Each sample can emit a full
+    // SpriteInstance, and every marker may supply up to 256 segments.
+    let mut samples_left = 65_536;
     for (decoration, item) in attached {
         let tint = item.tint.map_or([1.0; 3], |rgb| {
             [
@@ -342,10 +344,10 @@ fn attached_instances(
             .filter(|&id| id != 0 && item.anchor >> 46 == 0);
         let anchor = match (decoration, object, cell_of(item.anchor)) {
             (_, Some(id), _) => object_anchor(view, id),
-            (false, None, Some(cell)) => Some(ground_point(view, cell, (0, 0))),
+            (false, None, Some(cell)) => Some((ground_point(view, cell, (0, 0)), cell)),
             _ => None,
         };
-        let Some(anchor) = anchor else {
+        let Some((anchor, cell)) = anchor else {
             continue;
         };
         if !decoration {
@@ -356,14 +358,15 @@ fn attached_instances(
             dot(out, anchor, 3.0 / zoom, tint);
             let mut last = anchor;
             for &cell in &item.cells {
+                if samples_left == 0 {
+                    break;
+                }
                 let next = ground_point(view, cell, (0, 0));
-                line(last, next, zoom, |point| dot(out, point, 1.0 / zoom, tint));
+                line(last, next, zoom, &mut samples_left, |point| dot(out, point, 1.0 / zoom, tint));
                 last = next;
             }
-            if item.radius > 0
-                && let Some(cell) = cell_of(item.anchor)
-            {
-                circle(view, cell, item.radius, zoom, |point| {
+            if item.radius > 0 && samples_left != 0 {
+                circle(view, cell, item.radius, zoom, &mut samples_left, |point| {
                     dot(out, point, 1.0 / zoom, tint)
                 });
             }
@@ -401,10 +404,12 @@ fn attached_instances(
 }
 
 /// One point a screen pixel apart along `from..to` (world pixels).
-fn line(from: (f32, f32), to: (f32, f32), zoom: f32, mut point: impl FnMut((f32, f32))) {
+fn line(from: (f32, f32), to: (f32, f32), zoom: f32, samples_left: &mut usize, mut point: impl FnMut((f32, f32))) {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     let steps = ((dx.abs().max(dy.abs()) * zoom).ceil() as usize).clamp(1, 4096);
-    for step in 0..=steps {
+    let count = (steps + 1).min(*samples_left);
+    *samples_left -= count;
+    for step in 0..count {
         let t = step as f32 / steps as f32;
         point((from.0 + dx * t, from.1 + dy * t));
     }
@@ -416,12 +421,15 @@ fn circle(
     cell: (u16, u16),
     radius: i32,
     zoom: f32,
+    samples_left: &mut usize,
     mut point: impl FnMut((f32, f32)),
 ) {
     // Its projected circumference in screen pixels bounds the points.
     let around = (std::f32::consts::TAU * radius as f32 / 256.0 * 30.0 * zoom).ceil();
     let count = (around as usize).clamp(16, 4096);
-    for index in 0..count {
+    let samples = count.min(*samples_left);
+    *samples_left -= samples;
+    for index in 0..samples {
         let angle = std::f32::consts::TAU * index as f32 / count as f32;
         let offset = (
             (angle.cos() * radius as f32) as i32,
@@ -433,13 +441,20 @@ fn circle(
 
 /// The markers' radar dots: each marker held for the radar (`Hold` 0 or 2)
 /// at its cell and at its line's cells, in its tint.
-pub(crate) fn radar_markers(ui: &UiModules) -> Vec<((u16, u16), [f32; 3])> {
+pub(crate) fn radar_markers(
+    ui: &UiModules,
+    object_cell: impl Fn(u64) -> Option<(u16, u16)>,
+) -> Vec<((u16, u16), [f32; 3])> {
     let mut dots = Vec::new();
     for (decoration, item) in ui.tree.attached() {
         if decoration || item.place == 1 {
             continue;
         }
-        let Some(cell) = cell_of(item.anchor) else {
+        let cell = cell_of(item.anchor).or_else(|| {
+            let id = u64::try_from(item.anchor).ok()?;
+            (id != 0 && id >> 46 == 0).then(|| object_cell(id)).flatten()
+        });
+        let Some(cell) = cell else {
             continue;
         };
         let tint = item.tint.map_or([1.0; 3], |rgb| {

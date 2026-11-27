@@ -665,9 +665,18 @@ pub(crate) fn module_status_anchor(
     player: Option<crate::sim::intern::InternedId>,
     ignore_visibility: bool,
 ) -> Option<(f32, f32)> {
-    if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() {
+    if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() || entity.in_tube
+        || entity.place.structure.is_some_and(|art| art.invisible_in_game)
+    {
         return None;
     }
+    let visible_type = if entity.seen.disguised_to_observer {
+        let worn = entity.disguise.as_ref()?;
+        worn.house()?;
+        worn.type_id()?
+    } else {
+        entity.type_ref()
+    };
     admitted_techno_observer(sim, entity, player)?;
     if let Some(viewer) = player.filter(|viewer| !ignore_visibility && *viewer != entity.owner()) {
         if !sim.fog().shows_objects_to(
@@ -682,8 +691,11 @@ pub(crate) fn module_status_anchor(
     }
     let coord = entity.hud.get_coords;
     let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-    let object = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
-    if entity.category() == EntityCategory::Structure {
+    let object = rules.and_then(|rules| sim.interner().object_type(visible_type, rules));
+    if entity.seen.disguised_to_observer && object.is_none() {
+        return None;
+    }
+    if object.is_some_and(|object| EntityCategory::from(object.category) == EntityCategory::Structure) {
         return Some(BuildingBarGeometry::new(rules?, object?).first_pip(sx, sy));
     }
     let delta = object.map_or(0.0, |object| object.pixel_selection_bracket_delta as f32);

@@ -651,6 +651,7 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
         || !ui.status.is_empty()
         || !ui.pending_lines.is_empty()
     {
+        state.match_state.sim_runtime.capture_status_amounts(ui.status.has_templates());
         state.match_state.ui_modules = Some(ui);
         rebind_game_keys(&mut state.match_state);
     }
@@ -787,7 +788,7 @@ fn publish_local_looks(match_state: &mut MatchState) {
     };
     match_state
         .sim_runtime
-        .capture_status_amounts(!ui.status.is_empty());
+        .capture_status_amounts(ui.status.has_templates());
     let revision = ui.tree.attached_revision();
     if ui.published_looks == Some(revision) {
         return;

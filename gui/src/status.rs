@@ -225,6 +225,21 @@ impl World {
         Ok(id)
     }
 
+    /// Replaces a named template at the end of registration order. A rejected
+    /// replacement preserves both the old definition and its priority.
+    pub fn replace_template(&mut self, origin: Origin, template: StatusTemplate) -> Result<(), Refused> {
+        let def = normalized(template, origin)?;
+        let previous = self.templates.iter().position(|row| row.origin == origin && row.def.name == def.name);
+        if previous.is_none() && self.templates.len() >= origin.share(MAX_TEMPLATES) {
+            return Err(Refused::Limit);
+        }
+        if let Some(index) = previous {
+            self.templates.remove(index);
+        }
+        self.templates.push(Entry { origin, def });
+        Ok(())
+    }
+
     /// Removes `origin`'s templates named `name`; whether there was one.
     /// The others keep their order.
     pub fn remove(&mut self, origin: Origin, name: &str) -> bool {

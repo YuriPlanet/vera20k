@@ -1443,7 +1443,7 @@ Ares 和 Phobos 的键尚未分类。
 | `Anim` | string | `Decoration` | 只在本机播放的附加动画。`later`：保存但不画 |
 | `HideAnchor` | bool | `Decoration` | 在本机不画对象的主体；它仍在列表里，可以选中和点击，状态条照画。地图模块的 `HideAnchor` 和 `Tint` 只在 `MapUI=full` 时改变对象的样子 |
 | `Number` | int | `Decoration`、`MapMarker` | 显示在锚点处的数字 |
-| `Items` | string | `MapMarker` | 每行一个 `x,y` 格子：标记的线从锚点出发经过它们，最多 256 个。某行不是两个数时返回 `Refused` |
+| `Items` | string | `MapMarker` | 每行一个 `x,y` 格子：标记的线从锚点出发经过它们，最多 256 个。所有标记的线段和圆圈每帧合计最多绘制 65,536 个采样点。某行不是两个数时返回 `Refused` |
 | `Width` | int | `MapMarker` | 以锚点格子为中心的地面圆的半径（lepton），0 为无 |
 | `Hold` | int | `MapMarker` | 0 战场和雷达，1 只在战场，2 只在雷达 |
 
