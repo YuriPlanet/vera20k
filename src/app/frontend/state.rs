@@ -341,7 +341,10 @@ impl ShellMessageBox {
             target_os = "linux",
             target_os = "android"
         ))]
-        return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
+        return matches!(
+            self.purpose,
+            ShellMessageBoxPurpose::ModImport(_) | ShellMessageBoxPurpose::ModAddChoice(_)
+        );
         #[cfg(not(any(
             windows,
             target_os = "macos",

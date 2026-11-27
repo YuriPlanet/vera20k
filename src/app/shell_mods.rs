@@ -246,8 +246,8 @@ impl App {
                 target_os = "android"
             ))]
             Some(mods_shell::ADD) => {
-                let selected = Self::mods_selected(&state.frontend.shell_controller)
-                    .and_then(|row| {
+                let selected =
+                    Self::mods_selected(&state.frontend.shell_controller).and_then(|row| {
                         state
                             .frontend
                             .mods
@@ -987,6 +987,12 @@ impl App {
 
     /// Add Mod with a mod selected: a new mod, or parts for that folder
     /// through the same picker.
+    #[cfg(any(
+        windows,
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "android"
+    ))]
     fn ask_add_or_append(
         window: &Window,
         renderer: &RendererState,
