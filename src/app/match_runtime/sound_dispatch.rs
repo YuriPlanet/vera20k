@@ -419,6 +419,18 @@ pub(super) fn dispatch_sim_sound_events(
                 let Some(sw) = rules.super_weapon(sim.interner().resolve(sw_type)) else {
                     continue;
                 };
+                // The stock nuclear arm emits this fact even if Ares resumed
+                // the original switch after refusing its own payload.
+                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::MultiMissile {
+                    let cue =
+                        superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
+                    if let Some(event) =
+                        superweapon_activation_eva(cue.eva_event, sim, local_owner_name)
+                    {
+                        output.push(event);
+                    }
+                    continue;
+                }
                 // Launch6CD176 uses PlayAt7509E0 before effect receivers.
                 // No activation EVA belongs to the ForceShield case.
                 if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
@@ -450,33 +462,27 @@ pub(super) fn dispatch_sim_sound_events(
                 let Some(sw) = rules.super_weapon(sim.interner().resolve(sw_type)) else {
                     continue;
                 };
-                // Hook 6CC390 delegates a redirected Ares type's cues and
-                // cleanup to its handler and SWTypeExt::Launch.
-                if ares && sw.ares_eva().is_some() {
-                    continue;
-                }
                 if let SimSoundEvent::SuperWeaponLaunched { world, .. } = sim_event {
+                    // The nuclear case emits its own stock activation and cleanup.
+                    // An accepted Ares handler emits its SWTypeExt facts instead.
+                    if sw.kind == SuperWeaponKind::MultiMissile || (ares && sw.ares_eva().is_some())
+                    {
+                        continue;
+                    }
                     // ForceShield's earlier activation already played StartSound.
                     let cue = if sw.kind == SuperWeaponKind::ForceShield {
                         SuperWeaponLaunchCue::default()
                     } else {
                         superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref())
                     };
-                    // The listening client's defeated flag (A8B538) gates the
-                    // announcement, independent of the house that fired.
-                    if let Some(line) = eva_producers::resolved_superweapon_eva(
+                    let line = eva_producers::resolved_superweapon_eva(
                         sw,
                         eva_producers::SuperWeaponEvaStage::Activated,
                         cue.eva_event,
                         ares,
-                    ) && local_owner_name.is_some()
-                        && !sim.local_player_defeated()
-                    {
-                        output.push(GameSoundEvent::SuperWeaponActivated {
-                            sound_id: crate::rules::ruleset::SoundName::Static(""),
-                            source: None,
-                            eva_event: Some(line.to_owned()),
-                        });
+                    );
+                    if let Some(event) = superweapon_activation_eva(line, sim, local_owner_name) {
+                        output.push(event);
                     }
                     // Cases 7, 9 and 11 retain the target coordinate with
                     // flags 0 (6CCE28, 6CD8D3, 6CD7BF).
@@ -488,10 +494,6 @@ pub(super) fn dispatch_sim_sound_events(
                             flags: 0,
                             source: SoundSource::from_coordinate(coordinate),
                         });
-                    }
-                    if sw.kind == SuperWeaponKind::MultiMissile {
-                        // NuclearLaunchFinished follows the siren on both branches.
-                        continue;
                     }
                 }
                 let Some(ready) = launch_drops_ready_line(sw.kind)
@@ -1354,6 +1356,20 @@ fn base_under_attack_siren(
         .filter(|id| !id.is_empty())?;
     Some(GameSoundEvent::BaseUnderAttackSfx {
         sound_id: rules.sound_name(sound_id),
+    })
+}
+
+/// VoxClass::PlayEVA reads the listening client's defeated flag (A8B538).
+fn superweapon_activation_eva(
+    line: Option<&str>,
+    sim: &Simulation,
+    local_owner_name: Option<&str>,
+) -> Option<GameSoundEvent> {
+    let line = line.filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())?;
+    Some(GameSoundEvent::SuperWeaponActivated {
+        sound_id: crate::rules::ruleset::SoundName::Static(""),
+        source: None,
+        eva_event: Some(line.to_owned()),
     })
 }
 
@@ -2758,27 +2774,76 @@ mod tests {
         );
     }
 
+    #[derive(Clone, Copy)]
+    enum NuclearOrder {
+        Silo,
+        OneTime,
+        MissingSilo,
+    }
+
     #[test]
     fn nuclear_silo_and_one_time_orders_announce_in_native_order() {
-        check_nuclear_order(true, false, &["NukeSiren", "EVA_NuclearMissileLaunched"]);
-        check_nuclear_order(false, true, &["EVA_NuclearMissileLaunched", "NukeSiren"]);
+        check_nuclear_order(
+            NuclearOrder::Silo,
+            false,
+            &["NukeSiren", "EVA_NuclearMissileLaunched"],
+        );
+        for ares_fallback in [false, true] {
+            check_nuclear_order(
+                NuclearOrder::OneTime,
+                ares_fallback,
+                &["EVA_NuclearMissileLaunched", "NukeSiren"],
+            );
+        }
     }
 
     #[test]
     fn nuclear_order_without_a_silo_only_runs_the_local_cleanup() {
-        check_nuclear_order(false, false, &[]);
+        for ares_fallback in [false, true] {
+            check_nuclear_order(NuclearOrder::MissingSilo, ares_fallback, &[]);
+        }
     }
 
-    fn check_nuclear_order(silo: bool, one_time: bool, launch_cues: &[&str]) {
+    fn check_nuclear_order(order: NuclearOrder, ares_fallback: bool, launch_cues: &[&str]) {
         use crate::app::match_runtime::super_selection::follow_selection_writes;
         use crate::app::types::TargetingMode;
         use crate::sim::command::Command;
 
-        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let silo = matches!(order, NuclearOrder::Silo);
+        let one_time = matches!(order, NuclearOrder::OneTime);
+        let _form = crate::rules::ares_switch::read_ares_way(ares_fallback);
         let Some((rules, mut sim, owner)) =
             crate::sim::superweapon::chronosphere_tests::retail_world()
         else {
             return;
+        };
+        let rules = if ares_fallback {
+            let patch = crate::rules::ini_parser::IniFile::from_str(crate::test_fixture::text(
+                "tests/fixtures/ini/ares_nuclear_fallback.ini",
+            ));
+            let Some(retail) =
+                crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+                    "XMP03T4.MAP",
+                    &patch,
+                )
+            else {
+                return;
+            };
+            assert!(retail.rules.ares_form());
+            assert!(
+                retail
+                    .rules
+                    .weapon("NoNuclearProjectile")
+                    .unwrap()
+                    .projectile
+                    .is_none()
+            );
+            sim.intern_rule_type_ids(&retail.rules);
+            sim.resolve_type_handles(&retail.rules);
+            crate::sim::credit_income::add_credits(sim.houses_mut_for_test(), owner, 100);
+            retail.rules
+        } else {
+            rules
         };
         let sw = sim.interner().get("NukeSpecial").unwrap();
         if silo {

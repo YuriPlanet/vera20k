@@ -233,12 +233,8 @@ pub(super) fn launch(
     } else {
         launch_from_silo(sim, rules, owner, sw_type_id, sw, cell)
     };
-    // A refused Ares redirect falls back here for the stock effect. Its
-    // client presentation still belongs to the redirect (hook 6CC390).
-    let stock = !rules.ares_form();
     if let Some(coordinate) = strike {
-        let launched = Some(SimSoundEvent::SuperWeaponLaunched {
-            owner,
+        let activation = Some(SimSoundEvent::SuperWeaponActivation {
             sw_type: sw_type_id,
             world: coordinate.into(),
         });
@@ -246,7 +242,6 @@ pub(super) fn launch(
             .general
             .dig_sound
             .as_deref()
-            .filter(|_| stock)
             .map(|sound_id| SimSoundEvent::VocAtCoord {
                 sound_id: rules.sound_name(sound_id),
                 coordinate,
@@ -254,18 +249,25 @@ pub(super) fn launch(
             });
         // 6CDC98/6CDCAE: one-time EVA then DigSound. 6CDDE9/6CDE01: silo DigSound then EVA.
         let cues = if one_time {
-            [launched, siren]
+            [activation, siren]
         } else {
-            [siren, launched]
+            [siren, activation]
         };
         sim.sound_events.emit_all(cues.into_iter().flatten());
     }
     // 6CDD44 jumps here even when the last silo is already in limbo. The
     // PlayerPtr tails (6CDCB3, 6CDE06) clear targeting and remove Ready.
-    if stock && (strike.is_some() || !one_time) {
+    if strike.is_some() || !one_time {
         sim.sound_events.emit(SimSoundEvent::NuclearLaunchFinished {
             owner,
             sw_type: sw_type_id,
+        });
+    }
+    if let Some(coordinate) = strike {
+        sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
+            owner,
+            sw_type: sw_type_id,
+            world: coordinate.into(),
         });
     }
     sim.houses.request_house_tech_tree_recheck(owner); // 6CDCDC / 6CDE2F
@@ -567,6 +569,7 @@ fn drop_payload(
         .as_deref()
         .and_then(|name| rules.projectile(name))
     else {
+        // Ares.dll 1007315D/1007315F refuses a weapon without a projectile.
         return false;
     };
     let Some(warhead) = warhead else {

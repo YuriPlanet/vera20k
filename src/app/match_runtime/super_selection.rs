@@ -83,6 +83,14 @@ pub(super) fn follow_selection_writes(
             continue;
         }
         let selected = targeting.as_ref().and_then(TargetingMode::as_super_weapon);
+        // 6CDCC3 / 6CDE16 writes -1 for any selected Super. Ares can resume
+        // this stock tail after its nuclear handler refuses (100355FE).
+        if matches!(event, SimSoundEvent::NuclearLaunchFinished { .. }) {
+            if selected.is_some() {
+                *targeting = None;
+            }
+            continue;
+        }
         if let SimSoundEvent::SuperWeaponStatusChanged { .. } = event {
             // An old cancel/hold can precede a new Begin in one slow-frame
             // batch. The saved current ticket wins over that transient event;
@@ -182,13 +190,8 @@ pub(super) fn follow_selection_writes(
                 };
                 *targeting = warp.map(|name| TargetingMode::SuperWeapon(name.to_string()));
             }
-            // Both stock nuclear branches clear at their PlayerPtr tail,
-            // including a charged order that found no silo (6CDE06).
-            Some(SuperWeaponKind::MultiMissile)
-                if matches!(event, SimSoundEvent::SuperWeaponLaunched { .. }) => {}
             Some(
-                SuperWeaponKind::MultiMissile
-                | SuperWeaponKind::IronCurtain
+                SuperWeaponKind::IronCurtain
                 | SuperWeaponKind::LightningStorm
                 | SuperWeaponKind::ChronoWarp
                 | SuperWeaponKind::ParaDrop
