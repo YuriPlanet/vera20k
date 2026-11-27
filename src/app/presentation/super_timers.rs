@@ -593,29 +593,17 @@ pub(crate) fn update_super_timers(
     // Under the team-colours toggle an enemy team takes the colour the map
     // gives it, so the timers agree with the units and the radar.
     let team_colours = match_state.match_presentation.team_colors;
-    let enemy_palette = &rules.enemy_team_palette;
     let alliances = sim.house_alliances();
     let local_name = local.map(|house| sim.interner().resolve(house));
-    // The same rank the units and the radar use: lowest hostile team first,
-    // with a team already on the player's side skipped rather than taking a
-    // colour of its own.
-    let enemy_ranks = crate::rules::team_colors::enemy_team_ranks(
-        team_by_name.iter().filter_map(|(owner, team)| {
-            let friendly = sim.interner().get(owner).is_some_and(|house| {
-                local_name.is_some_and(|local| {
-                    is_allied_with(alliances.as_map(), local, sim.interner().resolve(house))
-                })
-            });
-            (!friendly).then_some(*team).flatten()
-        }),
-        None,
-    );
     let team_rgb = |row: &TeamSuperRow| {
         let same_team = match (row.team, local_team) {
             (TeamKey::Named(team), Some(own)) => team == own,
             (TeamKey::Unteamed, None) => true,
             _ => false,
         };
+        if team_colours && row.team == TeamKey::Unteamed {
+            return house_text_rgb(schemes, RELATION_ENEMY);
+        }
         if same_team {
             return house_text_rgb(schemes, RELATION_SELF);
         }
@@ -628,13 +616,8 @@ pub(crate) fn update_super_timers(
         }) {
             return house_text_rgb(schemes, RELATION_ALLY);
         }
-        if team_colours
-            && let TeamKey::Named(team) = row.team
-            && let Some(entry) = enemy_ranks
-                .get(&team)
-                .and_then(|rank| enemy_palette.team_color(*rank))
-        {
-            return house_text_rgb(schemes, entry);
+        if team_colours && matches!(row.team, TeamKey::Named(_)) {
+            return house_rgb(Some(row.representative));
         }
         house_text_rgb(schemes, RELATION_ENEMY)
     };

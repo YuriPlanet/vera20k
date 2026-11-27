@@ -105,7 +105,7 @@ impl EnemyTeamPalette {
             let Some((entry, rgb, distance)) = next else {
                 break;
             };
-            if distance < MIN_SEPARATION {
+            if distance < MIN_SEPARATION * MIN_SEPARATION {
                 break;
             }
             picked.push((entry, rgb));
@@ -224,7 +224,7 @@ fn red_distance(hue: u8) -> i16 {
     hue.min(255 - hue)
 }
 
-/// How far `rgb` lies from the nearest colour already picked.
+/// Squared RGB distance from the nearest colour already picked.
 fn separation(rgb: [u8; 3], picked: &[(usize, [u8; 3])]) -> i32 {
     picked
         .iter()
@@ -235,16 +235,7 @@ fn separation(rgb: [u8; 3], picked: &[(usize, [u8; 3])]) -> i32 {
             dr * dr + dg * dg + db * db
         })
         .min()
-        .map_or(0, isqrt)
-}
-
-/// Integer square root, so the palette is identical on every machine.
-fn isqrt(value: i32) -> i32 {
-    let mut root = 0;
-    while (root + 1) * (root + 1) <= value {
-        root += 1;
-    }
-    root
+        .unwrap_or(0)
 }
 
 #[cfg(all(test, tests_rules_o_z))]
