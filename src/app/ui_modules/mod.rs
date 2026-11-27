@@ -65,10 +65,12 @@
 //! the modules' hotkeys ([`key_unused`]), which know the game's bound keys
 //! ([`rebind_game_keys`]).
 
+pub(crate) mod field;
 pub(crate) mod host;
 pub(crate) mod local;
 pub(crate) mod paint;
 pub(crate) mod reads;
+pub(crate) mod status;
 pub(crate) mod storage;
 pub(crate) mod tree;
 
@@ -110,6 +112,10 @@ pub(crate) struct UiModuleSources {
     pub map_layout: Option<IniFile>,
     /// `[VeraWasm] StorageId=`, else the map's file name.
     pub map_storage_id: String,
+    /// The `[VeraStatus]` sections of the mod's `veraui.ini` and of the map
+    /// ([`status`]).
+    pub mod_status: Option<IniFile>,
+    pub map_status: Option<IniFile>,
     /// Why a module could not be read; told to the player, the match plays
     /// without it.
     pub problems: Vec<String>,
@@ -145,6 +151,15 @@ impl UiModuleSources {
         if !layout.is_empty() {
             sources.map_layout = Some(IniFile::from_sections(layout));
         }
+        sources.map_status = status_sections(map);
+        sources.mod_status = assets
+            .get_with_source_ref(crate::ui::match_layout::FILE_NAME)
+            .and_then(|(bytes, _)| {
+                let mut complete = bytes.to_vec();
+                complete.push(b'\n');
+                IniFile::from_bytes(&complete).ok()
+            })
+            .and_then(|ini| status_sections(&ini));
         sources.map_storage_id = map
             .section_or_empty(crate::map::ext_module_pack::SECTION)
             .read_name("StorageId", 64)
@@ -182,8 +197,23 @@ impl UiModuleSources {
     }
 
     fn is_empty(&self) -> bool {
-        self.mod_module.is_none() && self.map_module.is_none() && self.map_layout.is_none()
+        self.mod_module.is_none()
+            && self.map_module.is_none()
+            && self.map_layout.is_none()
+            && self.mod_status.is_none()
+            && self.map_status.is_none()
     }
+}
+
+/// `ini`'s `[VeraStatus]` sections ([`status::is_status_section`]), if any.
+fn status_sections(ini: &IniFile) -> Option<IniFile> {
+    let sections: Vec<_> = ini
+        .section_names()
+        .into_iter()
+        .filter(|name| status::is_status_section(name))
+        .filter_map(|name| ini.section(name).cloned())
+        .collect();
+    (!sections.is_empty()).then(|| IniFile::from_sections(sections))
 }
 
 /// `VeraUI` or `VeraUI.<part>`, case as the INI reader keeps it.
@@ -231,6 +261,11 @@ pub(crate) struct UiModules {
     /// The pictures the tree's nodes name, found as they are named
     /// ([`paint`]).
     art: crate::render::sidebar_chrome::NamedPictures,
+    /// The status templates over the battlefield ([`status`]).
+    pub(crate) status: status::ModuleStatus,
+    /// The decorations' revision the frames' local looks were last made
+    /// from ([`publish_local_looks`]).
+    published_looks: Option<u64>,
     local: LocalState,
     /// `client_on_start` given since load or the last catch-up.
     started: bool,
@@ -265,6 +300,11 @@ impl UiModules {
         self.tree.item_tooltip(grid, type_name)
     }
 
+    /// The texture the named pictures are in, once one was found.
+    pub(crate) fn picture_texture(&self) -> Option<&crate::render::batch::BatchTexture> {
+        self.art.texture()
+    }
+
     fn new(map_ui: MapUi) -> Self {
         Self {
             slots: Vec::new(),
@@ -272,6 +312,8 @@ impl UiModules {
             tree: UiTree::new(),
             huds: paint::ModuleHuds::default(),
             art: Default::default(),
+            status: status::ModuleStatus::default(),
+            published_looks: None,
             local: LocalState::new(),
             started: false,
             outbox: ClientOutbox::default(),
@@ -296,6 +338,7 @@ impl UiModules {
             map_ui,
             tree,
             local,
+            status,
             ..
         } = self;
         let mut failed = Vec::new();
@@ -314,6 +357,7 @@ impl UiModules {
                     inputs,
                     gui: &mut *gui,
                     tree: &mut *tree,
+                    status: &mut *status,
                     local: &mut *local,
                     storage: &mut slot.storage,
                     effects: &mut out.effects,
@@ -333,6 +377,8 @@ impl UiModules {
         for (index, fault) in failed.into_iter().rev() {
             let slot = self.slots.remove(index);
             self.tree.remove_source(gui, slot.source);
+            self.status
+                .remove_origin(status::StatusOrigin::of_module(slot.source));
             let reason = format!("{} ui.wasm {fault}", source_label(slot.source));
             log::warn!(target: "ext_module", "client module stopped: {reason}");
             out.lines.push((reason, true));
@@ -569,6 +615,25 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
         // nothing of it reaches the app.
         drop(out.effects);
     }
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+        let sim = &runtime.simulation;
+        let type_id = |name: &str| sim.interner().get(name).map(|id| id.index());
+        let names = status::Names {
+            type_id: &type_id,
+            vars: sim.ext_modules().vars(),
+        };
+        let map_status = sources.map_status.as_ref().filter(|_| map_allowed);
+        for (origin, ini) in [
+            (status::StatusOrigin::ModIni, sources.mod_status.as_ref()),
+            (status::StatusOrigin::MapIni, map_status),
+        ] {
+            let Some(ini) = ini else {
+                continue;
+            };
+            let problems = ui.status.add_ini(origin, ini, map_ui, &names);
+            lines.extend(problems.into_iter().map(|problem| (problem, true)));
+        }
+    }
     ui.pending_lines = lines;
     if !ui.slots.is_empty() {
         // The simulation cannot see client modules: a match whose only
@@ -581,7 +646,12 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
             runtime.simulation.set_client_event_forwarding(true);
         }
     }
-    if !ui.slots.is_empty() || map_layout.is_some() || !ui.pending_lines.is_empty() {
+    if !ui.slots.is_empty()
+        || map_layout.is_some()
+        || !ui.status.is_empty()
+        || !ui.pending_lines.is_empty()
+    {
+        state.match_state.sim_runtime.capture_status_amounts(ui.status.has_templates());
         state.match_state.ui_modules = Some(ui);
         rebind_game_keys(&mut state.match_state);
     }
@@ -595,6 +665,8 @@ pub(crate) fn drop_modules(match_state: &mut MatchState) {
     if match_state.ui_modules.take().is_none() {
         return;
     }
+    match_state.sim_runtime.set_local_looks(Default::default());
+    match_state.sim_runtime.capture_status_amounts(false);
     let gui = match_state.match_presentation.dialog_ui.gui_mut();
     for origin in [tree::MOD_MODULE, tree::MAP_MODULE, tree::MAP_LAYOUT] {
         gui.remove_origin(origin);
@@ -703,6 +775,47 @@ pub(crate) fn render_frame(state: &mut AppState) {
     post_lines(state, out.lines);
     apply_effects(state, out.effects);
     run_map_part_commands(state);
+    publish_local_looks(&mut state.match_state);
+}
+
+/// The decorations' `Tint`, `TintIntensity` and `HideAnchor` on their
+/// objects (the map's only under `MapUI=full`), handed to the frames ([`crate::app::match_runtime::sim_host::SimHost::set_local_looks`]):
+/// a later decoration's tint replaces an earlier one's on the same object.
+/// Only when the decorations changed since the last frame.
+fn publish_local_looks(match_state: &mut MatchState) {
+    let Some(ui) = match_state.ui_modules.as_mut() else {
+        return;
+    };
+    match_state
+        .sim_runtime
+        .capture_status_amounts(ui.status.has_templates());
+    let revision = ui.tree.attached_revision();
+    if ui.published_looks == Some(revision) {
+        return;
+    }
+    ui.published_looks = Some(revision);
+    let mut looks = crate::app::presentation::frame::LocalLooks::new();
+    let map_may_restyle = ui.map_ui == MapUi::Full;
+    for (decoration, attached) in ui.tree.attached() {
+        if attached.by_map && !map_may_restyle {
+            continue;
+        }
+        // An object reference (kind 0, neither house nor superweapon).
+        let Ok(id) = u64::try_from(attached.anchor) else {
+            continue;
+        };
+        if !decoration || id == 0 || attached.anchor >> 46 != 0 {
+            continue;
+        }
+        let look = looks.entry(id).or_default();
+        if let Some(rgb) = attached.tint {
+            let color = [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8];
+            look.tint = Some((color, attached.intensity as f64 / 65536.0));
+        }
+        look.hidden |= attached.hide_anchor;
+    }
+    looks.retain(|_, look| look.tint.is_some() || look.hidden);
+    match_state.sim_runtime.set_local_looks(looks);
 }
 
 /// The map's `[VeraUI]` buttons clicked this frame run their `Command=` as

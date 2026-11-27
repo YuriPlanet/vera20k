@@ -665,3 +665,19 @@ export namespace Storage {
     return check(sys.client_storage_write(k, utf8Len, 0, 0));
   }
 }
+
+/** Status templates over the battlefield (`client_status`): the keys of a
+ *  `veraui.ini` `[VeraStatus.<name>]` section, `Name=` first. */
+export namespace StatusTemplates {
+  /** Registers `template`, replacing this module's one of the same name.
+   *  `Refused` when a key does not parse or is over a limit. */
+  export function set(template: string): Status {
+    const at = utf8(template, 0);
+    return check(sys.client_status(at, utf8Len));
+  }
+
+  /** Removes this module's template `name`. */
+  export function remove(name: string): Status {
+    return set("Name=" + name);
+  }
+}

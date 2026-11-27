@@ -133,6 +133,7 @@ unsafe extern "C" {
         data: *const u8,
         data_len: i32,
     ) -> i32;
+    pub fn client_status(ptr: *const u8, len: i32) -> i32;
 }
 
 /// `ClientEventRecord`, 32 bytes, read in place in `client_on_events`.

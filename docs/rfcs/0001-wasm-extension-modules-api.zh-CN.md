@@ -458,6 +458,7 @@ bytes: u32,               // 投递区的字节数
 | 18 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
 | 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | 读模块来源的存储，长度（`i32`）写进 `len_out`；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
 | 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、键和值合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
+| 21 | `client_status` | `(ptr, len) -> i32` | 注册、替换或移除本来源的一个战场状态模板，内容是它的 INI 段的键，`Name=` 在最前（[状态模板](../wasm-modules/status-templates.md)）。同名模板替换旧的；没有 `ElementN=` 的移除它。键无法解析、名字找不到或超出限制时返回 `Refused` 并记录原因；不是 UTF-8 的文本是无效参数。0.2.0 之前没有 |
 
 `client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_log`。
 
@@ -1413,8 +1414,8 @@ Ares 和 Phobos 的键尚未分类。
 | 5 | `List` | `List`（本 RFC 新增） | v1 |
 | 6 | `Image` | `Image`（本 RFC 新增） | v1 |
 | 7 | `Bar`（进度条） | `Bar`（本 RFC 新增） | v1 |
-| — | `Decoration` | —：挂在一个对象上的显示属性 | later |
-| — | `MapMarker` | —：小地图或地图上的点、线、文字 | later |
+| 8 | `Decoration` | —：挂在一个对象上的显示属性：先画 `Art`，其下一行是 `Number` 和 `Label`，颜色为 `Tint`。本玩家看不见对象时不画 | preview |
+| 9 | `MapMarker` | —：锚点格子（或看得见的对象）上一个 `Tint` 色的点、经过 `Items` 各格的线、半径 `Width` lepton 的地面圆，以及它的 `Art`、`Number`、`Label`；画在战场上，并在雷达上画成点 | preview |
 
 **节点属性**（除注明外可写；`string`、`bytes` 用 `client_set_bytes` 写）：
 
@@ -1436,12 +1437,15 @@ Ares 和 Phobos 的键尚未分类。
 | `ItemTooltips` | string | `CameoGrid` | 每行 `类型名=附加文字`，附加在该类型的提示文字之后；原生网格也可写 |
 | `Fill` | int | `Bar` | 0..100 |
 | `Backdrop` | bool | `Text` | 战场上的文字是否垫黑底，默认 1；压在模块自己的图片上的文字可设为 0 |
-| `Anchor` | ref（对象） | `Decoration` | 所挂的对象；对象看不见时不显示 |
-| `Palette` | string | `Decoration` | |
-| `Tint`、`TintIntensity` | int | `Decoration` | 本机染色（模拟中的染色见 7.2） |
-| `Anim` | string | `Decoration` | 附加动画 |
-| `HideAnchor` | bool | `Decoration` | 在本机隐藏对象本身 |
-| `Number` | int | `Decoration` | 显示在对象上方的数字 |
+| `Anchor` | ref | `Decoration`、`MapMarker` | 装饰所挂的对象；标记的格子或对象。所属方等其他引用返回 `Refused`。对象看不见时不显示 |
+| `Palette` | string | `Decoration` | `later`：返回 `Unsupported` |
+| `Tint`、`TintIntensity` | int | `Decoration`、`MapMarker` | `0xRRGGBB`（−1 为无）和 `fixed`。装饰只在本机给对象染色，叠在模拟染色（7.2）之后；标记用它作颜色 |
+| `Anim` | string | `Decoration` | 只在本机播放的附加动画。`later`：保存但不画 |
+| `HideAnchor` | bool | `Decoration` | 在本机不画对象的主体；它仍在列表里，可以选中和点击，状态条照画。地图模块的 `HideAnchor` 和 `Tint` 只在 `MapUI=full` 时改变对象的样子 |
+| `Number` | int | `Decoration`、`MapMarker` | 显示在锚点处的数字 |
+| `Items` | string | `MapMarker` | 每行一个 `x,y` 格子：标记的线从锚点出发经过它们，最多 256 个。所有标记的线段和圆圈每帧合计最多绘制 65,536 个采样点。某行不是两个数时返回 `Refused` |
+| `Width` | int | `MapMarker` | 以锚点格子为中心的地面圆的半径（lepton），0 为无 |
+| `Hold` | int | `MapMarker` | 0 战场和雷达，1 只在战场，2 只在雷达 |
 
 **INI 布局键。** `Type` 取节点种类表中的 INI 名。`X`、`Y`、`Width`、`Height`、`Gap`、`Art` 与节点属性同义。`Hold` 取 [8.3](#83-枚举) 的九个位置；INI 的 `Label` 用于按钮和文本。
 
