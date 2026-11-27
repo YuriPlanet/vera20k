@@ -416,7 +416,9 @@ fn invisible_and_cloaked_enemies_do_not_exist_unless_detected() {
 
 #[test]
 fn a_disguised_enemy_reads_as_its_disguise() {
-    let scene = scene();
+    let mut scene = scene();
+    let object = scene.spy;
+    scene.sim_mut().ext_modules.held.set_image(object, Some("SPY".into()));
     let view = scene.player();
     let spy = scene.spy as i64;
     assert!(sees_object(&view, spy));
@@ -426,6 +428,7 @@ fn a_disguised_enemy_reads_as_its_disguise() {
         (house_ref(scene.americans), Status::Ok)
     );
     assert_eq!(read(&view, spy, "Category"), (0, Status::Ok));
+    assert_eq!(read(&view, spy, "ImageOverride"), (0, Status::Ok));
     // The GI's Strength, at the spy's full health.
     assert_eq!(read(&view, spy, "Strength"), (125, Status::Ok));
     assert_eq!(read(&view, spy, "Health"), (125, Status::Ok));
@@ -436,6 +439,7 @@ fn a_disguised_enemy_reads_as_its_disguise() {
     }
     // A spectator sees through it.
     let spectator = scene.spectator(true);
+    assert_eq!(read(&spectator, spy, "ImageOverride"), (scene.techno("SPY"), Status::Ok));
     assert_eq!(
         read(&spectator, spy, "Type"),
         (scene.techno("SPY"), Status::Ok)

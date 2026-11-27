@@ -162,14 +162,16 @@ pub(crate) struct ObjectRecord {
 struct ModuleFacts {
     /// `GameEntity::module_tint`.
     tint: Option<([u8; 3], f64)>,
+    image: Option<InternedId>,
 }
 
 impl ModuleFacts {
-    fn capture(entity: &GameEntity) -> Option<Box<Self>> {
+    fn capture(entity: &GameEntity, at: &Capture<'_>) -> Option<Box<Self>> {
         let facts = Self {
             tint: entity.module_tint(),
+            image: at.sim.ext_module_image(entity.stable_id()).and_then(|image| at.sim.interner().get(image)),
         };
-        facts.tint.is_some().then(|| Box::new(facts))
+        (facts.tint.is_some() || facts.image.is_some()).then(|| Box::new(facts))
     }
 }
 
@@ -646,7 +648,7 @@ impl ObjectRecord {
     fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
         let pose = RenderPose::read(entity, at.binary_frame);
         let answers = Answers::of(entity);
-        let module = ModuleFacts::capture(entity);
+        let module = ModuleFacts::capture(entity, at);
         // `object_location` on the live map, which placing, the HUD and the
         // radar all read.
         let location =
@@ -892,6 +894,11 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// The type a module's ImageOverride draws this object as.
+    pub(crate) fn module_image(&self) -> Option<InternedId> {
+        self.module.as_ref().and_then(|module| module.image)
     }
 
     /// The module tint: `[R, G, B]` and the intensity, 1.0 = full.

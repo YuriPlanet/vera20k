@@ -4125,9 +4125,10 @@ pub(crate) fn refresh_entity_atlases(
         return;
     };
     let presentation = &mut match_state.match_presentation;
-    crate::render::unit_atlas::admit_world_models(
+    crate::render::unit_atlas::admit_world_and_image_models(
         &mut presentation.unit_atlas,
         rt.simulation.entities(),
+        rt.simulation.ext_module_images(),
         asset_manager,
         Some(&rt.resources.rules),
         Some(rt.simulation.interner()),

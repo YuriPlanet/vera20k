@@ -735,6 +735,15 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   last opening frame or not at all (`instances::shp::factory_unload_art`), a gate
   its open stage (`building_art::gate_held_body_frame`). The door's own state,
   read and run, is untouched. Test `a_war_factory_reads_its_door`.
+- `ImageOverride` (230, preview): `ext_modules/held.rs` keeps the drawn type by
+  object (saved, hashed with the held state); `write_image_override` admits a
+  TechnoType of the object's category that is not a building. The frame record
+  carries it (`module_image`); `instances::units::drawn_model_id` and the
+  infantry SHP choice in `instances::shp` draw it; the SHP atlas coverage loads it
+  in every colour (`EntityAtlasCoverage`), the unit atlas admits a voxel one
+  (`admit_world_and_image_models`), and a changed object with one asks the full
+  atlas check. An infantry override draws with the object's own `Sequence=`.
+  Test `image_override_takes_a_type_of_the_objects_category`.
 
 ## Residuals
 

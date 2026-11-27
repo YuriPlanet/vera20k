@@ -567,6 +567,40 @@ fn tint_modifiers_compose_into_the_module_tint() {
     assert_eq!(entity.effective_stat(Stat::TintIntensity), 3 << 14);
 }
 
+/// `ImageOverride` draws a GI as another infantry type and reads back; a
+/// vehicle type is another category and refused; 0 draws it as itself.
+#[test]
+fn image_override_takes_a_type_of_the_objects_category() {
+    use vera20k_wasm_ext::{NAME_TECHNO_TYPE, SimHost, Status, property_id};
+    let Some((mut scene, _, gi)) = super::tests::gi_duel() else {
+        return;
+    };
+    let runtime = &mut scene.runtime;
+    let rules = &runtime.resources.rules;
+    let mut rng = crate::sim::rng::SimRng::new(0);
+    let mut effects = FrameEffects::empty();
+    let mut host = super::Host {
+        sim: &mut runtime.simulation,
+        rules,
+        overlay_registry: None,
+        frame_effects: &mut effects,
+        rng: &mut rng,
+        source: super::ModuleSource::Map,
+        orders: &mut Vec::new(),
+        rules_ini: None,
+    };
+    let prop = property_id("ImageOverride").expect("a property");
+    let kind = |name: &str| {
+        super::type_ref(NAME_TECHNO_TYPE, rules.type_handle(name).expect("retail type").0)
+    };
+    assert_eq!(host.set(gi as i64, prop, kind("E2")), Ok(Status::Ok));
+    assert_eq!(host.get(gi as i64, prop), Ok((kind("E2"), Status::Ok)));
+    assert_eq!(host.set(gi as i64, prop, kind("MTNK")), Ok(Status::Refused));
+    assert_eq!(host.sim.ext_module_image(gi), Some("E2"));
+    assert_eq!(host.set(gi as i64, prop, 0), Ok(Status::Ok));
+    assert_eq!(host.get(gi as i64, prop), Ok((0, Status::Ok)));
+}
+
 /// A Wasm module `ImmunityFlags` override of bit 1 makes a GI immune to a
 /// radiation warhead's direct hit, which hurts it without one, and shows in
 /// the property; the mask takes only an override of its seven bits.

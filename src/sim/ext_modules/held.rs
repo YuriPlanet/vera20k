@@ -30,6 +30,12 @@
 //!   Only the picture follows it ([`Simulation::ext_module_door`]): the door
 //!   itself, production, the exit and a gate's passage keep running as they
 //!   would.
+//! - `ImageOverride` draws one object as another TechnoType of its
+//!   category, building excepted, without changing what it is: the draw
+//!   reads the type name ([`Simulation::ext_module_image`]) where it picks
+//!   the model or the infantry image. A write of 0 drops it, and so does the
+//!   object leaving the game; a conversion keeps it, as a conversion stays
+//!   in the category.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -62,6 +68,10 @@ pub(crate) struct ActionHeld {
     /// serial.
     #[serde(default)]
     doors: BTreeMap<u64, bool>,
+    /// `ImageOverride`: the TechnoType each object is drawn as, by
+    /// creation serial.
+    #[serde(default)]
+    images: BTreeMap<u64, String>,
 }
 
 /// An animation a module keeps on an object.
@@ -83,6 +93,7 @@ impl ActionHeld {
         self.conversions.is_empty()
             && self.forbidden.is_empty()
             && self.doors.is_empty()
+            && self.images.is_empty()
             && self.anims.is_empty()
     }
 
@@ -99,6 +110,14 @@ impl ActionHeld {
         match open {
             Some(open) => self.doors.insert(object, open),
             None => self.doors.remove(&object),
+        };
+    }
+
+    /// `ImageOverride`: draws `object` as `image`, or as itself with `None`.
+    pub(super) fn set_image(&mut self, object: u64, image: Option<String>) {
+        match image {
+            Some(image) => self.images.insert(object, image),
+            None => self.images.remove(&object),
         };
     }
 
@@ -176,6 +195,7 @@ impl ActionHeld {
     }
 
     pub(super) fn forget_object(&mut self, object: u64) {
+        self.images.remove(&object);
         self.doors.remove(&object);
         self.conversions.remove(&object);
     }
@@ -206,6 +226,16 @@ impl Simulation {
     /// How a module's `DoorOpen` write has object `id`'s door drawn.
     pub fn ext_module_door(&self, id: u64) -> Option<bool> {
         self.ext_modules.held.doors.get(&id).copied()
+    }
+
+    /// Every TechnoType a module's `ImageOverride` draws some object as.
+    pub fn ext_module_images(&self) -> impl Iterator<Item = &str> {
+        self.ext_modules.held.images.values().map(String::as_str)
+    }
+
+    /// The TechnoType a module's `ImageOverride` draws object `id` as.
+    pub fn ext_module_image(&self, id: u64) -> Option<&str> {
+        self.ext_modules.held.images.get(&id).map(String::as_str)
     }
 
     /// The module phase's kept animations, in attach order: one whose time

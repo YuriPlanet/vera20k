@@ -343,7 +343,11 @@ pub(crate) fn shp_visitor<'a>(
                 active_disguise
                     .and_then(|state| state.type_id())
                     .map(|id| sim.interner().resolve(id))
-                    .unwrap_or_else(|| sim.interner().resolve(entity.type_ref())),
+                    // VERA: a module's `ImageOverride` image.
+                    .unwrap_or_else(|| {
+                        sim.interner()
+                            .resolve(entity.module_image().unwrap_or(entity.type_ref()))
+                    }),
             )
         };
         if super::helpers::drawn_type_uses_voxel(entity, type_name.as_ref(), sim.interner(), rules)

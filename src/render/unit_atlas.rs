@@ -1136,7 +1136,54 @@ pub(crate) fn admit_world_models(
     interner: Option<&crate::sim::intern::StringInterner>,
     max_texture_dim: u32,
 ) {
-    if atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+    admit_world_and_image_models(
+        atlas,
+        entities,
+        std::iter::empty(),
+        asset_manager,
+        rules,
+        interner,
+        max_texture_dim,
+    );
+}
+
+/// [`admit_world_models`] with the types a Wasm module's `ImageOverride`
+/// draws objects as (`Simulation::ext_module_images`): a voxel one no
+/// object of the map has is admitted too.
+pub(crate) fn admit_world_and_image_models<'i>(
+    atlas: &mut Option<UnitAtlas>,
+    entities: &crate::sim::entity_store::EntityStore,
+    images: impl Iterator<Item = &'i str>,
+    asset_manager: &AssetManager,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    max_texture_dim: u32,
+) {
+    let mut images = images.peekable();
+    if images.peek().is_none() && atlas_covers_world(atlas.as_ref(), entities, rules, interner) {
+        return;
+    }
+    let mut demand = UnitAtlasDemand::of_world(entities, rules, interner);
+    if let Some(rules) = rules {
+        for image in images {
+            let Some(object) = rules.object(image) else {
+                continue;
+            };
+            if !crate::sim::game_entity::GameEntity::object_uses_voxel(&object.id, object, rules) {
+                continue;
+            }
+            let set = if object.category == crate::rules::object_type::ObjectCategory::Aircraft {
+                &mut demand.air
+            } else {
+                &mut demand.ground
+            };
+            set.insert(object.id.clone());
+        }
+    }
+    if atlas
+        .as_ref()
+        .map_or(demand.is_empty(), |atlas| demand.without(&atlas.covered).is_empty())
+    {
         return;
     }
     let started = Instant::now();
@@ -1147,7 +1194,7 @@ pub(crate) fn admit_world_models(
     // For turret units, separate Body/Turret/Barrel keys per facing; for the
     // rest a single Composite key per facing. Multi-frame HVA units get keys
     // for each frame.
-    let missing = UnitAtlasDemand::of_world(entities, rules, interner).without(&atlas.covered);
+    let missing = demand.without(&atlas.covered);
     let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules);
     let mut by_model: BTreeMap<smol_str::SmolStr, Vec<UnitSpriteKey>> = BTreeMap::new();
     for key in needed {

@@ -28,6 +28,7 @@
 //! | `TargetInRange`, `CanFireAtTarget` | `Simulation::target_check` against TarCom, for the slot SelectWeapon (vt+0x2E4) picks: CanFireAt's InRange (`0x006F77B0`), and GetFireError with range (vt+0x3C0) answering Ok; 0 without a target |
 //! | `DoorOpen` | the DoorClass (`Techno+0x350`) is not closed (opening, open or closing): a `WeaponsFactory=` or `Gate=` building, a vehicle with `Passengers=` |
 //! | `Animating` | a building whose BState (`Building+0x534`) is Active (2), Begin_Mode's working body mode |
+//! | `ImageOverride` | the TechnoType a module draws the object as (`held::ActionHeld`), 0 for itself |
 //! | `ControlGroup` | `Unsupported`: client only, the local player's groups (reading it in the simulation would desync) |
 //! | `Visible` | `Simulation::object_seen_by` for the viewpoint house: fog (`FogState::shows_objects_to`, current sight under FogOfWar) and the screen GetVisualState (`0x00703860`) for cloaking and sensors |
 //! | `Engage` | `Simulation::engage_check` for the viewpoint object: GetFireError without range (vt+0x3BC) of the weapon SelectWeapon picks, that Warhead's Verses against the target's armor, and CanFireAt's InRange (`0x006F77B0`) |
@@ -355,6 +356,13 @@ impl Reader<'_> {
                 i64::from(entity.in_active_bstate())
             }
             "Animating" => return (0, Status::Unsupported),
+            "ImageOverride" => match self.sim.ext_module_image(id) {
+                None => 0,
+                Some(image) => match self.rules.type_handle(image) {
+                    Some(handle) => type_ref(NAME_TECHNO_TYPE, handle.0),
+                    None => 0,
+                },
+            },
             // The local player's control groups exist only on the client: a
             // simulation read would differ between the machines.
             "ControlGroup" => return (0, Status::Unsupported),
