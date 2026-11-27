@@ -425,6 +425,7 @@ pub(crate) enum ShellMessageBoxPurpose {
     ))]
     ModAddChoice(String),
     /// The Mods page's Export Mod: ZIP, a folder copy, or cancel.
+    #[cfg(target_os = "android")]
     ModExportChoice(String),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),

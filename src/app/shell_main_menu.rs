@@ -1864,8 +1864,6 @@ impl App {
                 ),
                 _ => {}
             },
-            #[cfg(not(target_os = "android"))]
-            Purpose::ModExportChoice(_) => {}
         }
     }
 
