@@ -713,6 +713,63 @@ render frame while a lent tick holds the world (its published frame has no objec
 read; a map whose file changed since a save loses its `[VeraUI]` parts on restore
 (logged only).
 
+## Done (battlefield visuals, RFC 0.2.0)
+
+- `TintColor` and `TintIntensity` modifiers (preview): `ext_modules/modifiers.rs`
+  (`Stat::TintColor`, `Stat::TintIntensity`, `GameEntity::module_tint`); the colour
+  takes only an override of `0xRRGGBB`, the intensity only additions. The frame
+  record captures the tint and `lighting::custom_tint` ORs its RGB565 word into the
+  Phobos shield and AttachEffect tints and adds its intensity, the same for every
+  viewer. Tests `ext_modules_control_tests.rs`
+  (`tint_modifiers_compose_into_the_module_tint`) and `lighting_tint_tests.rs`.
+- `AttachAnim` with `value2` and `DetachAnim` (1046, preview): `ext_modules/held.rs`
+  keeps each looping animation (`hold_loops`) with its object, origin and end frame;
+  the module phase keeps exactly the wanted ones alive (`maintain_ext_module_anims`):
+  destroyed when the time is up or the object left the game, taken off while the
+  object is in a transport or fully cloaked, put back after or when the engine
+  destroyed it. Saved and hashed with the
+  other held state. SDK `attach_anim_for`/`detach_anim`, `attachAnim(.., frames)`/
+  `detachAnim`. Test `attach_anim_holds_for_its_frames_or_until_detached`.
+- `DoorOpen` write (preview): `ext_modules/held.rs` holds the drawn door
+  (`ext_module_door`); a war factory draws its `DeployingAnim=` door open at its
+  last opening frame or not at all (`instances::shp::factory_unload_art`), a gate
+  its open stage (`building_art::gate_held_body_frame`). The door's own state,
+  read and run, is untouched. Test `a_war_factory_reads_its_door`.
+- `ImageOverride` (230, preview): `ext_modules/held.rs` keeps the drawn type by
+  object (saved, hashed with the held state); `write_image_override` admits a
+  TechnoType of the object's category that is not a building. The frame record
+  carries it (`module_image`); `instances::units::drawn_model_id` and the
+  infantry SHP choice in `instances::shp` draw it; the SHP atlas coverage loads it
+  in every colour (`EntityAtlasCoverage`), the unit atlas admits a voxel one
+  (`admit_world_and_image_models`), and a changed object with one asks the full
+  atlas check. An infantry override draws with the object's own `Sequence=`.
+  Test `image_override_takes_a_type_of_the_objects_category`.
+- Status templates (`client_status`, client import 21, and `[VeraStatus]` in
+  `veraui.ini` and the map; docs/wasm-modules/status-templates.md):
+  `app/ui_modules/status.rs` parses them into `vera20k-gui` status templates
+  (`Origin::External`), `app/ui_modules/field.rs` paints them at the objects
+  `ui_overlays::module_status_anchor` admits and draws the battlefield layer
+  after the objects; `HideNative=` clears the original's families from each
+  `TechnoExtras` (`hide_families`). Amounts come from the frame record
+  (`StatusFacts`), variables under their RFC 6e visibility. Tests in
+  `status.rs`.
+- `Decoration` (8) and `MapMarker` (9) nodes (preview): `app/ui_modules/tree.rs`
+  keeps them as hidden GUI nodes with an `Attached` display (handles, owners and
+  removal as every module node); `app/ui_modules/field.rs` draws them in the
+  battlefield layer (pictures, numbers, labels, dots, lines and ground circles)
+  and the markers as radar dots (`MinimapRenderer::build_marker_dots_in_rect`).
+  A decoration's `Tint` and `HideAnchor` reach the frame records as local looks
+  (`SimHost::set_local_looks`, `frame::LocalLook`): `lighting::custom_tint` folds
+  the tint after the Phobos tints, and the body admission skips a hidden body
+  (it stays selectable). `Palette` and `Anim` are not drawn yet. Test
+  `decorations_and_markers_hold_their_display`.
+- Found in the in-game check (BayOPigs, example `kill-stars`):
+  a world copy kept no module state at all, so the battlefield layer drawn from
+  the presentation copy found no variable declarations; `ExtModules`' clone now
+  keeps them (values stay the simulation's). Templates offer no `Pips` (its
+  length-of-amount row takes a whole share, which `vera20k-gui` gives only the
+  host); `Segments` with a count does it. `AtMost` joins the conditions.
+
 ## Residuals
 
 - `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building
@@ -754,8 +811,8 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   a modifier change while carried. `Push` does not launch into the air. `PathFound` answers the
   route's first window only, is not asked for a train's queued extension or a
   route with a tube step, and is asked while the Foot is lifted (Mark0).
-- Actions unsupported: `RemovePassenger`, team and projectile actions,
-  `AttachAnim` with a frame count; house modifiers (`PowerOutage`); stock actions that
+- Actions unsupported: `RemovePassenger`, team and projectile actions;
+  house modifiers (`PowerOutage`); stock actions that
   need a live trigger (3, 6, 9, 13, 36..38, 52, 74, 75, 81, 91, 111, 113, 119..124,
   126, 130, Ares 146, 147), sound IDs (19, 98, 99), 40, 15, 39, 49, 50.
   Crit and `Unkillable` modifiers exist only in Phobos builds, as their owners do.
@@ -769,8 +826,8 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   would desync the simulation), `DisguiseType` of a Mirage disguised as terrain
   (no name kind for terrain types), the house's `IsCivilian` (answers `Unsupported`,
   so a clause on it matches nothing; found by `sdk/examples/veteran-fury`);
-  `DoorOpen` and `Animating` are not writable, and `Animating` reads 1 only for the
-  missile silo's launch (art `AnimActive=` is not bound); `lookup(Armor)`,
+  `Animating` is not writable and reads 1 only for the missile silo's launch (art
+  `AnimActive=` is not bound); a `DoorOpen` write holds only the drawn door; `lookup(Armor)`,
   `lookup(Sound)`; `Passable` ignores objects and overlays; `PropertyPoll` reads
   without a viewpoint.
 - `Health` writes of 0 or less answer `Refused`; an `Ammo` write restarts a running

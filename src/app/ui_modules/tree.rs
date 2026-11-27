@@ -99,6 +99,10 @@ enum Kind {
     Group,
     /// Any other engine node: its common properties alone.
     Other,
+    /// Display properties attached to an object ([`Attached`]).
+    Decoration,
+    /// Points, lines, circles and text at cells ([`Attached`]).
+    MapMarker,
 }
 
 impl Kind {
@@ -112,6 +116,8 @@ impl Kind {
             node_kind::IMAGE => Kind::Image,
             node_kind::BAR => Kind::Bar,
             node_kind::LIST => Kind::List,
+            node_kind::DECORATION => Kind::Decoration,
+            node_kind::MAP_MARKER => Kind::MapMarker,
             // Only INI makes a cameo grid.
             node_kind::CAMEO_GRID => return Ok(Err(Status::Unsupported)),
             other => return Err(Invalid(format!("node kind {other}"))),
@@ -135,7 +141,12 @@ impl Kind {
         match self {
             Kind::Text => NodeKind::Text,
             Kind::Button => NodeKind::Button,
-            Kind::Row | Kind::Column | Kind::Group | Kind::Other => NodeKind::Panel,
+            Kind::Row
+            | Kind::Column
+            | Kind::Group
+            | Kind::Other
+            | Kind::Decoration
+            | Kind::MapMarker => NodeKind::Panel,
             Kind::Image => NodeKind::Image,
             Kind::Bar => NodeKind::Bar,
             Kind::List => NodeKind::List,
@@ -145,6 +156,45 @@ impl Kind {
     fn group(self) -> bool {
         matches!(self, Kind::Row | Kind::Column)
     }
+
+    /// Drawn over the battlefield from its [`Attached`] (`field`), not laid
+    /// out: its GUI node stays hidden and holds its handle and owner.
+    fn attached(self) -> bool {
+        matches!(self, Kind::Decoration | Kind::MapMarker)
+    }
+}
+
+/// What a `Decoration` or `MapMarker` shows (appendix 7.10), read by the
+/// battlefield layer (`field`) and the radar.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Attached {
+    /// `Anchor`: a decoration's object, a marker's cell (or object).
+    pub(crate) anchor: i64,
+    /// `X`, `Y`: pixels from the anchor.
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) visible: bool,
+    /// `Tint` (`0xRRGGBB`): a decoration's local tint of its object, a
+    /// marker's colour.
+    pub(crate) tint: Option<u32>,
+    /// `TintIntensity` (`fixed`, 1.0 full).
+    pub(crate) intensity: i64,
+    pub(crate) hide_anchor: bool,
+    pub(crate) number: Option<i64>,
+    pub(crate) label: String,
+    pub(crate) art: String,
+    /// `Anim`: an animation type played at the anchor on this screen alone.
+    pub(crate) anim: String,
+    /// `Items` of a marker: the cells its line runs through after the
+    /// anchor.
+    pub(crate) cells: Vec<(u16, u16)>,
+    /// `Width` of a marker: a circle's radius in leptons, 0 for none.
+    pub(crate) radius: i32,
+    /// `Hold` of a marker: 0 battlefield and radar, 1 battlefield, 2 radar.
+    pub(crate) place: u8,
+    /// The map's module made it: its `Tint` and `HideAnchor` restyle the
+    /// object only under `MapUI=full`, as hiding the original's status does.
+    pub(crate) by_map: bool,
 }
 
 /// Whose a node is (RFC 10, "Node ownership"), in lookup order after the
@@ -206,8 +256,15 @@ enum NodeProp {
     /// A text's black underlay over the battlefield (1, the default) or
     /// none (0).
     Backdrop,
-    /// `Decoration`'s (`Anchor`, `Palette`, `Tint`, ...): `later`.
-    Decoration,
+    /// `Decoration`'s and `MapMarker`'s.
+    Anchor,
+    Tint,
+    TintIntensity,
+    HideAnchor,
+    Number,
+    Anim,
+    /// `Palette`: not drawn (`later`).
+    Palette,
 }
 
 /// The cursor's properties (appendix 7.10, client global 3).
@@ -249,9 +306,13 @@ fn node_prop(prop: i32) -> Result<Option<NodeProp>, Invalid> {
         "ItemTooltips" => NodeProp::ItemTooltips,
         "Fill" => NodeProp::Fill,
         "Backdrop" => NodeProp::Backdrop,
-        "Anchor" | "Palette" | "Tint" | "TintIntensity" | "Anim" | "HideAnchor" | "Number" => {
-            NodeProp::Decoration
-        }
+        "Anchor" => NodeProp::Anchor,
+        "Tint" => NodeProp::Tint,
+        "TintIntensity" => NodeProp::TintIntensity,
+        "HideAnchor" => NodeProp::HideAnchor,
+        "Number" => NodeProp::Number,
+        "Anim" => NodeProp::Anim,
+        "Palette" => NodeProp::Palette,
         _ => return Ok(None),
     }))
 }
@@ -365,6 +426,8 @@ struct Record {
     item_tooltips: String,
     /// A list's row height at the last layout; 0 before one.
     row_height: i32,
+    /// A decoration's or marker's display.
+    attached: Option<Box<Attached>>,
 }
 
 impl Record {
@@ -385,6 +448,13 @@ impl Record {
             command: None,
             item_tooltips: String::new(),
             row_height: 0,
+            attached: kind.attached().then(|| {
+                Box::new(Attached {
+                    visible: true,
+                    by_map: owner == Owner::Map,
+                    ..Attached::default()
+                })
+            }),
         }
     }
 }
@@ -495,6 +565,9 @@ pub(crate) struct UiTree {
     named_art: Vec<String>,
     /// A pointer move came: `cursor` is where the pointer is.
     pointer_seen: bool,
+    /// Moves with every write to a decoration or marker, for the redraw
+    /// gate and the local looks ([`UiTree::attached_revision`]).
+    attached: u64,
 }
 
 /// How one of the tree's buttons looks now ([`UiTree::button_look`]).
@@ -529,7 +602,29 @@ impl UiTree {
             looks: 0,
             named_art: Vec::new(),
             pointer_seen: false,
+            attached: 0,
         }
+    }
+
+    /// The shown decorations and markers, with their kind: a decoration
+    /// when `true`. In handle order.
+    pub(crate) fn attached(&self) -> Vec<(bool, Attached)> {
+        self.table
+            .borrow()
+            .records
+            .values()
+            .filter_map(|record| {
+                let attached = record.attached.as_deref()?;
+                attached
+                    .visible
+                    .then(|| (record.kind == Kind::Decoration, attached.clone()))
+            })
+            .collect()
+    }
+
+    /// Moves with every change to a decoration or marker.
+    pub(crate) fn attached_revision(&self) -> u64 {
+        self.attached
     }
 
     /// The most nodes one module may hold in `gui`: half of what the GUI
@@ -569,6 +664,9 @@ impl UiTree {
             return Ok((0, Status::Refused));
         }
         let origin = module_origin(source);
+        if kind.attached() && parent != 0 {
+            return Ok((0, Status::Refused));
+        }
         let made = if parent == 0 {
             let layer = match (source, map_ui) {
                 (Source::Map, MapUi::Overlay) => Layer::Overlay,
@@ -600,10 +698,16 @@ impl UiTree {
             Ok(node) => node,
             Err(refused) => return Ok((0, status_of(refused))),
         };
-        let serial = self
-            .table
-            .get_mut()
-            .add(Record::new(node, kind, Owner::source(source), true));
+        if kind.attached() {
+            // Held, not drawn: the battlefield layer draws it (`field`).
+            let _ = gui.set(node, Prop::Visible, Value::Bool(false));
+        }
+        let serial = self.table.get_mut().add(Record::new(
+            node,
+            kind,
+            Owner::source(source),
+            !kind.attached(),
+        ));
         self.made[source as usize] += 1;
         for value in init {
             if let Err(invalid) = self.write(gui, serial, value.prop, value.value) {
@@ -669,6 +773,7 @@ impl UiTree {
             }
         }
         self.drop_looks(|look| gone.contains(&look));
+        self.attached += 1;
         let _ = gui.remove(node);
     }
 
@@ -748,6 +853,9 @@ impl UiTree {
         let Some(record) = table.live(gui, serial) else {
             return Ok((0, Status::Gone));
         };
+        if let Some(attached) = record.attached.as_deref() {
+            return Ok(attached_get(attached, prop));
+        }
         let node = record.node;
         let rect = gui.tree().screen_hit_rect(node).unwrap_or_default();
         let bool_prop = |prop: Prop| match gui.get(node, prop) {
@@ -845,6 +953,14 @@ impl UiTree {
         let Some(record) = table.records.get_mut(&serial) else {
             return Ok(Status::Gone);
         };
+        if let Some(attached) = record.attached.as_deref_mut() {
+            let kind = record.kind;
+            let status = attached_write(attached, kind, prop, value)?;
+            if status == Status::Ok {
+                self.attached += 1;
+            }
+            return Ok(status);
+        }
         let node = record.node;
         let place = |value: i64| value.clamp(-FAR, FAR) as i32;
         let size = |value: i64| (value > 0).then(|| value.min(FAR) as i32);
@@ -961,6 +1077,37 @@ impl UiTree {
         let Some(record) = table.records.get_mut(&serial) else {
             return Ok(Status::Gone);
         };
+        if let Some(attached) = record.attached.as_deref_mut() {
+            let status = match (prop, record.kind) {
+                (Some(NodeProp::Label), _) => {
+                    attached.label = text.to_owned();
+                    Status::Ok
+                }
+                (Some(NodeProp::Art), _) => {
+                    attached.art = text.to_owned();
+                    if !text.is_empty() {
+                        self.named_art.push(text.to_owned());
+                    }
+                    Status::Ok
+                }
+                (Some(NodeProp::Anim), Kind::Decoration) => {
+                    attached.anim = text.to_owned();
+                    Status::Ok
+                }
+                (Some(NodeProp::Items), Kind::MapMarker) => match marker_cells(text) {
+                    Some(cells) => {
+                        attached.cells = cells;
+                        Status::Ok
+                    }
+                    None => Status::Refused,
+                },
+                _ => Status::Unsupported,
+            };
+            if status == Status::Ok {
+                self.attached += 1;
+            }
+            return Ok(status);
+        }
         let (node, placed) = (record.node, record.placed);
         let (gui_prop, value) = match (prop, record.kind) {
             (Some(NodeProp::Label), Kind::Text | Kind::Button) => {
@@ -1007,6 +1154,7 @@ impl UiTree {
     /// Takes away every node a source's module made (module disabled or
     /// unloaded). The map's `[VeraUI]` parts stay: they are its layout's.
     pub(crate) fn remove_source(&mut self, gui: &mut Gui, source: Source) {
+        self.attached += 1;
         gui.remove_origin(module_origin(source));
         self.table.get_mut().prune(gui);
         self.made[source as usize] = 0;
@@ -1561,7 +1709,12 @@ fn natural(gui: &Gui, record: &Record, measure: &dyn Measure, line: i32) -> (i32
             ),
             _ => (0, 0),
         },
-        Kind::Row | Kind::Column | Kind::Group | Kind::Other => (0, 0),
+        Kind::Row
+        | Kind::Column
+        | Kind::Group
+        | Kind::Other
+        | Kind::Decoration
+        | Kind::MapMarker => (0, 0),
     }
 }
 
@@ -1579,6 +1732,83 @@ fn list_row(gui: &Gui, node: NodeId, y: i32, row_height: i32) -> Option<usize> {
     };
     let row = usize::try_from(y.checked_sub(rect.y)?.checked_div(height)?).ok()?;
     (row < rows).then_some(row)
+}
+
+/// `client_get` of a decoration's or marker's number property.
+fn attached_get(attached: &Attached, prop: NodeProp) -> (i64, Status) {
+    let value = match prop {
+        NodeProp::Anchor => attached.anchor,
+        NodeProp::X => i64::from(attached.x),
+        NodeProp::Y => i64::from(attached.y),
+        NodeProp::Visible => i64::from(attached.visible),
+        NodeProp::Tint => attached.tint.map_or(-1, i64::from),
+        NodeProp::TintIntensity => attached.intensity,
+        NodeProp::HideAnchor => i64::from(attached.hide_anchor),
+        NodeProp::Number => match attached.number {
+            Some(number) => number,
+            None => return (0, Status::Refused),
+        },
+        NodeProp::Width => i64::from(attached.radius),
+        NodeProp::Hold => i64::from(attached.place),
+        _ => return (0, Status::Unsupported),
+    };
+    (value, Status::Ok)
+}
+
+/// `client_set` of a decoration's or marker's number property. `Anchor` is
+/// an object reference for a decoration, a cell or object reference for a
+/// marker (0 clears it); `Tint` -1 clears the colour.
+fn attached_write(
+    attached: &mut Attached,
+    kind: Kind,
+    prop: NodeProp,
+    value: i64,
+) -> Result<Status, Invalid> {
+    let decoration = kind == Kind::Decoration;
+    match prop {
+        NodeProp::Anchor => {
+            let reference_kind = value >> 48;
+            let fits = value == 0
+                || (value > 0
+                    && (reference_kind == 0 && value & ((1 << 46) | (1 << 47)) == 0
+                        || !decoration && reference_kind == 2));
+            if !fits {
+                return Ok(Status::Refused);
+            }
+            attached.anchor = value;
+        }
+        NodeProp::X => attached.x = value.clamp(-FAR, FAR) as i32,
+        NodeProp::Y => attached.y = value.clamp(-FAR, FAR) as i32,
+        NodeProp::Visible => attached.visible = value != 0,
+        NodeProp::Tint if value == -1 => attached.tint = None,
+        NodeProp::Tint => match u32::try_from(value) {
+            Ok(rgb) if rgb <= 0xFF_FFFF => attached.tint = Some(rgb),
+            _ => return Ok(Status::Refused),
+        },
+        NodeProp::TintIntensity if decoration => attached.intensity = value.clamp(-(1 << 20), 1 << 20),
+        NodeProp::HideAnchor if decoration => attached.hide_anchor = value != 0,
+        NodeProp::Number => attached.number = Some(value),
+        NodeProp::Width if !decoration => attached.radius = value.clamp(0, 1 << 20) as i32,
+        NodeProp::Hold if !decoration => match u8::try_from(value) {
+            Ok(place @ 0..=2) => attached.place = place,
+            _ => return Err(Invalid(format!("MapMarker Hold {value}"))),
+        },
+        _ => return Ok(Status::Unsupported),
+    }
+    Ok(Status::Ok)
+}
+
+/// A marker's `Items`: one `x,y` cell a line.
+fn marker_cells(text: &str) -> Option<Vec<(u16, u16)>> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(256)
+        .map(|line| {
+            let (x, y) = line.split_once(',')?;
+            Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+        })
+        .collect()
 }
 
 #[cfg(all(test, tests_app))]
@@ -1629,6 +1859,78 @@ mod tests {
         out.into_iter()
             .map(|event| (event.kind, event.reference, event.value))
             .collect()
+    }
+
+    /// A decoration takes an object anchor and its display properties,
+    /// is held off the layout and listed for the battlefield layer; a
+    /// marker takes a cell anchor and its line's cells. A house is no
+    /// anchor, a decoration nests under nothing and a bad line is refused.
+    #[test]
+    fn decorations_and_markers_hold_their_display() {
+        let (mut gui, mut tree) = (Gui::new(256), UiTree::new());
+        let object = 77;
+        let (decoration, status) = tree
+            .create(
+                &mut gui,
+                Source::Map,
+                MapUi::Overlay,
+                node_kind::DECORATION,
+                0,
+                &[init("Anchor", object), init("Tint", 0xFF_0000), init("Number", 3)],
+            )
+            .unwrap();
+        assert_eq!(status, Status::Ok);
+        assert_eq!(
+            gui.get(node_of(&tree, decoration), Prop::Visible),
+            Ok(Some(&Value::Bool(false))),
+            "held, not laid out"
+        );
+        assert_eq!(tree.get(&gui, decoration, prop("Anchor")).unwrap(), (object, Status::Ok));
+        assert_eq!(
+            tree.set(&mut gui, Source::Map, MapUi::Overlay, decoration, prop("HideAnchor"), 1)
+                .unwrap(),
+            Status::Ok
+        );
+        // A house reference is no object.
+        assert_eq!(
+            tree.set(&mut gui, Source::Map, MapUi::Overlay, decoration, prop("Anchor"), 1 << 47)
+                .unwrap(),
+            Status::Refused
+        );
+        let (marker, _) = tree
+            .create(&mut gui, Source::Map, MapUi::Overlay, node_kind::MAP_MARKER, 0, &[])
+            .unwrap();
+        let cell = (2 << 48) | (10 << 16) | 12;
+        assert_eq!(
+            tree.set(&mut gui, Source::Map, MapUi::Overlay, marker, prop("Anchor"), cell)
+                .unwrap(),
+            Status::Ok
+        );
+        assert_eq!(
+            tree.set_bytes(&mut gui, Source::Map, MapUi::Overlay, marker, prop("Items"), b"11,12\n12,13")
+                .unwrap(),
+            Status::Ok
+        );
+        assert_eq!(
+            tree.set_bytes(&mut gui, Source::Map, MapUi::Overlay, marker, prop("Items"), b"11")
+                .unwrap(),
+            Status::Refused
+        );
+        let shown = tree.attached();
+        assert_eq!(shown.len(), 2);
+        let (is_decoration, first) = &shown[0];
+        assert!(*is_decoration);
+        assert_eq!((first.anchor, first.tint, first.number, first.hide_anchor), (object, Some(0xFF_0000), Some(3), true));
+        assert_eq!(shown[1].1.cells, [(11, 12), (12, 13)]);
+        assert_eq!(
+            tree.create(&mut gui, Source::Map, MapUi::Overlay, node_kind::DECORATION, marker, &[])
+                .unwrap(),
+            (0, Status::Refused)
+        );
+        let revision = tree.attached_revision();
+        tree.remove(&mut gui, Source::Map, MapUi::Overlay, decoration).unwrap();
+        assert_eq!(tree.attached().len(), 1);
+        assert!(tree.attached_revision() > revision);
     }
 
     #[test]

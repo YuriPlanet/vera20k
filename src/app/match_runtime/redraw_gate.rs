@@ -408,7 +408,7 @@ pub(crate) enum StillFrame {
         /// layout their drawing gives them, which the picture judged after
         /// the draw already holds, and a button the pointer came over,
         /// left, held down or let go.
-        modules: Option<((usize, u64), u64)>,
+        modules: Option<((usize, u64), u64, u64)>,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
         fonts: usize,
@@ -749,7 +749,7 @@ mod tests {
         // A client module's node changed the match GUI.
         let mut module_nodes = shown;
         if let StillFrame::Battlefield { modules, .. } = &mut module_nodes {
-            *modules = Some(((1, 1), 0));
+            *modules = Some(((1, 1), 0, 0));
         }
         let mut gate = RedrawGate::default();
         gate.record_presented(Some(shown), t, LIMITS);

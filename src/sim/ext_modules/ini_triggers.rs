@@ -729,7 +729,7 @@ fn action_params(kind: i32) -> Option<&'static [Param]> {
         return Some(match name {
             "FireWeapon" => &[Id(Weapon), Value, Cell],
             "LaunchSuperWeapon" => &[Id(SuperWeapon), Cell],
-            "SpawnAnim" => &[Id(Anim)],
+            "SpawnAnim" | "DetachAnim" => &[Id(Anim)],
             "AttachAnim" => &[Id(Anim), Value2],
             "Damage" | "DetonateWarhead" => &[Id(Warhead), Value],
             "Heal" | "AddExperience" | "AddMoney" | "AddAmmo" | "SetScore" | "AddScore" => &[Value],

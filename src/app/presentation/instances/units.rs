@@ -1445,8 +1445,11 @@ pub(crate) fn drawn_model_id<'a>(
     binary_frame: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Cow<'a, str> {
-    let base_type = interner.resolve(entity.type_ref());
-    let object = rules.and_then(|rules| interner.object_type(entity.type_ref(), rules));
+    // VERA: a module's `ImageOverride` draws the object as another type of
+    // its category, which then stands for its own in every arm below.
+    let drawn = entity.module_image().unwrap_or(entity.type_ref());
+    let base_type = interner.resolve(drawn);
+    let object = rules.and_then(|rules| interner.object_type(drawn, rules));
     if entity.category() == EntityCategory::Unit
         && entity.is_fully_deployed()
         && let Some(unloading_type) = object.and_then(|object| object.unloading_class.as_deref())

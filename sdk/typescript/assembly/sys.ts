@@ -99,6 +99,8 @@ export declare function client_send_message(ptr: usize, len: i32): i32;
 export declare function client_storage_read(key: usize, key_len: i32, out: usize, cap: i32, len_out: usize): i32;
 @external("vera:client@1.0", "client_storage_write")
 export declare function client_storage_write(key: usize, key_len: i32, data: usize, data_len: i32): i32;
+@external("vera:client@1.0", "client_status")
+export declare function client_status(ptr: usize, len: i32): i32;
 
 // -------------------------------------------------------- Fixed layouts
 // Byte sizes and field offsets (appendix "Fixed layouts"). The SDK reads

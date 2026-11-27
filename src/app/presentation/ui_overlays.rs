@@ -648,6 +648,60 @@ fn admitted_techno_observer(
     Some(observer)
 }
 
+/// VERA module status templates (`ui_modules::status`): where an object's
+/// templates draw from, for an object the local player sees, else `None`.
+/// The anchor is where the original's health bar starts: a building's first
+/// health pip ([`BuildingBarGeometry::first_pip`]), a mobile's draw point
+/// lowered by its `PixelSelectionBracketDelta=`. An object counts when it
+/// is drawn ([`admitted_techno_observer`]), not sinking or in a transport,
+/// and is the player's own or in its sight (`FogState::shows_objects_to`),
+/// so a template never shows more than the screen does; one disguised to the
+/// player counts as what it wears (`ui_modules::field`). Without a local
+/// player every drawn object counts.
+pub(crate) fn module_status_anchor(
+    sim: &crate::sim::world::Simulation,
+    entity: &ObjectRecord,
+    rules: Option<&RuleSet>,
+    player: Option<crate::sim::intern::InternedId>,
+    ignore_visibility: bool,
+) -> Option<(f32, f32)> {
+    if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() || entity.in_tube
+        || entity.place.structure.is_some_and(|art| art.invisible_in_game)
+    {
+        return None;
+    }
+    let visible_type = if entity.seen.disguised_to_observer {
+        let worn = entity.disguise.as_ref()?;
+        worn.house()?;
+        worn.type_id()?
+    } else {
+        entity.type_ref()
+    };
+    admitted_techno_observer(sim, entity, player)?;
+    if let Some(viewer) = player.filter(|viewer| !ignore_visibility && *viewer != entity.owner()) {
+        if !sim.fog().shows_objects_to(
+                viewer,
+                entity.position.rx(),
+                entity.position.ry(),
+                sim.session().game_options().fog_of_war,
+            )
+        {
+            return None;
+        }
+    }
+    let coord = entity.hud.get_coords;
+    let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    let object = rules.and_then(|rules| sim.interner().object_type(visible_type, rules));
+    if entity.seen.disguised_to_observer && object.is_none() {
+        return None;
+    }
+    if object.is_some_and(|object| EntityCategory::from(object.category) == EntityCategory::Structure) {
+        return Some(BuildingBarGeometry::new(rules?, object?).first_pip(sx, sy));
+    }
+    let delta = object.map_or(0.0, |object| object.pixel_selection_bracket_delta as f32);
+    Some((sx, sy + delta))
+}
+
 /// Native `DrawHealthBar @0x006F64A0` guards its class `vt+0x450` pip/status
 /// tail after the health strip. It admits CurrentPlayer's allies directly; the
 /// other arm tests the object's current-player display bit at Techno+0x210.
@@ -1575,6 +1629,33 @@ pub(crate) struct TechnoExtras {
 }
 
 impl TechnoExtras {
+    /// Leaves out the families the mod's or map's status templates hide
+    /// (`ui_modules::status::hide`): the health strip with its bracket and
+    /// shield bar (the garrison pips share its list), the pip scale, the
+    /// marks, the group number.
+    pub(crate) fn hide_families(&mut self, hidden: u8) {
+        use crate::app::ui_modules::status::hide;
+        if hidden & hide::HEALTH_BARS != 0 {
+            self.background = None;
+            self.shield_background = None;
+            self.fills.clear();
+        }
+        if hidden & hide::PIPS != 0 {
+            self.scale.clear();
+        }
+        if hidden & hide::MARKS != 0 {
+            self.bomb_clock = None;
+            self.wrench = None;
+            self.power_off = None;
+            self.rank = None;
+            self.rank_insignia = None;
+            self.self_heal = None;
+        }
+        if hidden & hide::GROUPS != 0 {
+            self.group = StatusTextOverlayInstances::default();
+        }
+    }
+
     /// Wheel zoom changes health geometry after SHP instance creation. Cull
     /// only the final world rectangles, so fixed-pixel pips can reach in from
     /// an anchor outside the viewport. Native zoom uses the same 48px margin.

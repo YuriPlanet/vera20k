@@ -2070,7 +2070,7 @@ impl GameEntity {
     }
 
     /// One rules-to-model binding for construction and live type changes.
-    pub(crate) fn object_uses_voxel(
+    pub fn object_uses_voxel(
         type_id: &str,
         object: &crate::rules::object_type::ObjectType,
         rules: &crate::rules::ruleset::RuleSet,

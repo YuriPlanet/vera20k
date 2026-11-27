@@ -289,6 +289,14 @@ pub enum NodeKind {
     List = 5,
     Image = 6,
     Bar = 7,
+    /// Display properties attached to an object over the battlefield
+    /// (`Anchor`, `X`, `Y`, `Art`, `Label`, `Number`, `Tint`,
+    /// `TintIntensity`, `HideAnchor`); top level only.
+    Decoration = 8,
+    /// A point, line, circle and text at a cell, over the battlefield and
+    /// on the radar (`Anchor`, `Items`, `Width`, `Hold`, `Tint`, ...); top
+    /// level only.
+    MapMarker = 9,
 }
 
 /// The interface tree: finding, creating and removing nodes (RFC 10).
@@ -738,6 +746,35 @@ impl Storage {
                 data.len() as i32,
             )
         })
+    }
+}
+
+// ------------------------------------------------------------ Status bars
+
+/// Status templates over the battlefield (`client_status`): bars, pip rows,
+/// icons and numbers at every object this player sees, in the keys of a
+/// `veraui.ini` `[VeraStatus.<name>]` section (docs/wasm-modules/status-templates.md).
+pub struct StatusTemplates;
+
+impl StatusTemplates {
+    /// Registers `template` (its keys, `Name=` first), replacing this
+    /// module's one of the same name. `Err(Refused)` when a key does not
+    /// parse or is over a limit; the console says why.
+    pub fn set(template: &str) -> Result<()> {
+        check(unsafe { sys::client_status(template.as_ptr(), template.len() as i32) })
+    }
+
+    /// Removes this module's template `name` (at most 64 bytes;
+    /// `Err(Refused)` for a longer one).
+    pub fn remove(name: &str) -> Result<()> {
+        const PREFIX: &[u8] = b"Name=";
+        let mut text = [0u8; PREFIX.len() + 64];
+        let Some(end) = PREFIX.len().checked_add(name.len()).filter(|&end| end <= text.len()) else {
+            return Err(Status::Refused);
+        };
+        text[..PREFIX.len()].copy_from_slice(PREFIX);
+        text[PREFIX.len()..end].copy_from_slice(name.as_bytes());
+        check(unsafe { sys::client_status(text.as_ptr(), end as i32) })
     }
 }
 

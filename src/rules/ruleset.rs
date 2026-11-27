@@ -885,6 +885,11 @@ pub struct RuleSet {
     /// house-color producer (loading-bar backing, lobby swatch, map `Color=`,
     /// skirmish slot priority).
     pub color_schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry>,
+    /// The warm colours enemies draw in under VERA's team-colour view
+    /// (Alt+T), team A first, taken from the colours a lobby already offers
+    /// ([`crate::rules::team_colors`]). Empty when the rules list no warm
+    /// colour, which leaves every enemy on the relation view's red.
+    pub enemy_team_palette: crate::rules::team_colors::EnemyTeamPalette,
     /// Per-`[Colors]`-entry team-color ramps (palette indices 16..31), built once
     /// from `color_schemes`. Indexed by `HouseColorIndex` (= `[Colors]` entry
     /// index). Consumed by unit/building atlas bake, the voxel GPU ramp texture,

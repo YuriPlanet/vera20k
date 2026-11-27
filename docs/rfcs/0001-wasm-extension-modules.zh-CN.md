@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC 版本 | 0.1.0 |
+| RFC 版本 | 0.2.0 |
 | 状态 | 预览：已实现，未冻结 |
 | 创建日期 | 2026-11-16 |
 | 涉及的 API | `vera:sim@1.0`、`vera:client@1.0`（预览） |
@@ -1134,6 +1134,7 @@ SDK 与模板按对象或所属方错开周期任务。读多个对象或属性�
 
 ## 修订记录
 
+- **0.2.0**（2026-11-27）：战场视觉。可修饰属性 `TintColor`（覆盖 `0xRRGGBB`）和 `TintIntensity`（相加）成为 preview，和 Phobos 染色一起给对象染色，所有观看者一样。`AttachAnim` 支持帧数（负数：直到新动作 `DetachAnim`，1046）。写 `DoorOpen` 可以让战车工厂或大门的门一直画成开或关，门本身照常运行。新增对象属性 `ImageOverride`（230，preview），把单个对象画成同类别的另一个 TechnoType，建筑除外。客户端节点 `Decoration`（8）和 `MapMarker`（9）成为 preview；标记支持 `Items`（线经过的格子）、`Width`（地面圆）和 `Hold`（战场、雷达或两者）；`Palette` 和 `Anim` 仍为 `later`。新增客户端导入 `client_status`（21），以及 `veraui.ini` 和地图里的 `[VeraStatus]` 段，用来注册战场状态模板（[状态模板](../wasm-modules/status-templates.md)）；其 `HideNative=` 可以为 mod 和 `MapUI=full` 的地图隐藏原版的血条、点、标记和编组数字。
 - **0.1.0**（2026-11-26）：第 1 阶段、控制点和第 2 阶段都已合入，本文据此与引擎对齐：两者不一致之处改为以代码为准，尚未实现的设计保留并标为“0.1.0 未实现”。新的事件和动作种类从 1000 起编号（草案的 100000 + n 即 1000 + n，地图动作 `Module` 为 1036）；类型绑定键为 `Wasm.Tags`；附录列出属性 ID、客户端事件、动作和节点种类的编号，以及所属方和超级武器引用的实际编码；第 15.4 节给出引擎实际执行的上限（其中每个模块 256 个触发器、每帧 1,024 条记录、每帧 256 次连锁触发、8,192 个加权栈槽、每个模块 8 MiB）。标为未实现的有：`[VeraVars]`、地图动作 1036、批量内存的限制、`TargetArmor`、若干加载时形状上限、修饰器层数上限、拒绝缺少 `VeraMinVersion` 的模块地图、`ui.wasm` 的 `asset` 命令，以及大厅的 `Api=` 检查和第 6i 节的选项。待定问题 1（浏览器自己的 WebAssembly 引擎）和 5（编号）已定。Rust 示例改用实际的 SDK，并注明 TypeScript SDK 正在实现中。
 - **0.0.22**（2026-11-25）：新增单位控制点事件（附录 4.3、4.5）：只可决定的 `FireAllowed`、`Retaliate`、`DestinationSet`、`CrushAllowed`、`HarvestCell`、`DeployAllowed`（preview），投递的 `Deployed`、`Promoted`、`ExperienceGained`、`Cloaked`、`Decloaked`（v1）和 `MissionChanged`（later），从 100044 起编号。`TargetChanged`、`Detonated`、`Crushed`、`SpiedBy`、`ThievedBy` 升为 v1。`Birth` 覆盖部署、幸存者和乘员，进驻的乘客事件覆盖离开，`FatalDamage` 覆盖没有伤害提交的死亡。`SpeedMultiplier` 也作用于飞行、喷气背包和火箭的移动。
 - **0.0.25**（2026-11-25）：客户端节点的外观（附录 7.10）：模块节点和地图部件的图片按钮把 `Label` 画在图片上，禁用、悬停、按下时图片分别变暗、变亮、变暗；新增文字属性 `Backdrop`（属性 229），为 0 时战场上的文字不垫黑底。

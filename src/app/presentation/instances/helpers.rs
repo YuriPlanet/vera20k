@@ -269,6 +269,9 @@ pub(crate) fn tactical_entity_admission(
         // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
         // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
         || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
+        // VERA: a client module's `Decoration` with `HideAnchor` hides the
+        // body on this screen; it is still listed and selected.
+        || (purpose == TacticalEntityPurpose::Drawing && entity.local_look().hidden)
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         // UnitClass::DrawIt returns before AddSelectable while the unit
