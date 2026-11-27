@@ -853,6 +853,10 @@ impl Simulation {
             if !self.session.execution_topology().is_lockstep() {
                 house.player_control().hash(hasher);
             }
+            if let Some(policy) = house.driver_policy() {
+                b"house-driver-policy-v1".hash(hasher);
+                policy.hash(hasher);
+            }
             (house.difficulty() as i32).hash(hasher);
             house.rof_bias().bits().hash(hasher);
             house.is_defeated().hash(hasher);

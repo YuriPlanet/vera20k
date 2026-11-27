@@ -129,6 +129,8 @@ impl Simulation {
         let iq_production = Some(rules.general.iq_production);
         let represented = self.houses.contains_key(&owner);
         if let Some((house, house_order)) = self.houses.get_mut_with_order(&owner) {
+            // This prefix runs once per house even if the frame suspends for an outcome.
+            house.apply_driver_credit_support(current_frame as u32);
             house.decay_anger_scores(house_order, current_frame);
         }
         if represented {

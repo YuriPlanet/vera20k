@@ -72,14 +72,12 @@ mod starting_objects;
 #[cfg(any(test, feature = "test-support"))]
 pub use launch_houses::apply_explicit_skirmish_launch_session;
 pub(crate) use launch_houses::apply_skirmish_launch_alliances;
-#[cfg(test)]
-pub(crate) use launch_houses::native_ai_opening_grant;
 pub use launch_houses::{
     LaunchController, MatchLaunchDescriptor, MatchNetworkStart, NormalizedSkirmishSlot,
     SkirmishLaunchApplyResult, UnresolvedShellChoice, apply_launch_shroud_option,
     apply_pre_fill_scenario_prefix_launch_session, apply_skirmish_ai_opening_credits,
-    initialize_skirmish_launch_houses, launch_alliance_map, normalized_launch_slots,
-    populate_launch_houses, populate_special_houses,
+    initialize_skirmish_launch_houses, launch_alliance_map, native_ai_opening_grant,
+    normalized_launch_slots, populate_launch_houses, populate_special_houses,
 };
 use prefix_plan::draw_house_constructor_timer;
 use prefix_plan::finish_campaign_roster;

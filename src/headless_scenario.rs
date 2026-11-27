@@ -72,6 +72,7 @@ pub fn battle_session(
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
+                driver_policy: None,
                 raw_slot_index: (slot + 1) as u8,
                 country,
                 country_random: false,
@@ -108,6 +109,7 @@ impl HeadlessScenario {
     /// is at war with every house.
     pub fn add_human_house(&mut self, owner_name: &str, country: LaunchCountry) -> InternedId {
         let slot = crate::sim::scenario_bootstrap::NormalizedSkirmishSlot {
+            driver_policy: None,
             owner_name: owner_name.to_string(),
             country,
             color_index: 0,

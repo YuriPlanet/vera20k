@@ -625,6 +625,7 @@ impl MultiplayerShellRuntime {
             }
             if let Some(difficulty) = difficulty.filter(|_| !observe && !self.lan_observer()) {
                 opponents.push(SkirmishAiSlot {
+                    driver_policy: None,
                     raw_slot_index: row,
                     country: menu_country_from_item_data(persisted.country)
                         .unwrap_or(LaunchCountry::America),
@@ -2769,6 +2770,7 @@ mod tests {
                 )
                 .unwrap();
             let ai = SkirmishAiSlot {
+                driver_policy: None,
                 raw_slot_index: 1,
                 country: LaunchCountry::from_country_index(8),
                 country_random: false,
@@ -3165,6 +3167,7 @@ mod tests {
             }],
             0,
             vec![SkirmishAiSlot {
+                driver_policy: None,
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: true,

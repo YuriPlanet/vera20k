@@ -450,7 +450,7 @@ fn a_command_driven_house_stands_down_from_team_creation() {
     // Expired timer, an ordinary computer house: without the stand-down the
     // selector's first act is its `RandomRanged(1, 100)` roll.
     house.team_creation_mut().timer = CdTimer::from_raw(0, 1);
-    house.make_command_driven();
+    house.make_command_driven(crate::sim::driver::DriverPolicy::neutral());
     sim.houses.register(house);
     let before = rng_digest(&sim.scenario_rng);
     update_team_creation(

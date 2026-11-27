@@ -46,6 +46,7 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
         }],
         0,
         vec![SkirmishAiSlot {
+            driver_policy: None,
             raw_slot_index: 1,
             country: LaunchCountry::Russia,
             country_random: false,

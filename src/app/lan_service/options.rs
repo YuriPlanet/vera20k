@@ -846,6 +846,7 @@ fn host_options(
             .ok_or_else(|| anyhow!("no setup row {row}"))?;
         let choices = super::picks::decoded_pick(&old, ai.country, ai.color, ai.start, ai.team)?;
         opponents.push(SkirmishAiSlot {
+            driver_policy: None,
             raw_slot_index: row,
             country: choices.country,
             country_random: choices.country_random,

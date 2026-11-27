@@ -144,6 +144,7 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
     use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition, LaunchTeam};
     let rules = self::rules();
     let slot = |name: &str, human, team| NormalizedSkirmishSlot {
+        driver_policy: None,
         owner_name: name.to_string(),
         // Indices in this fixture's [Countries]: Americans 0, Russians 1.
         country: LaunchCountry::from_country_index(if human { 0 } else { 1 }),

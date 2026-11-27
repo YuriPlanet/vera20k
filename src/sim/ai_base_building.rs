@@ -406,7 +406,7 @@ pub(crate) fn update_production_choices(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(policy) || house.multiplay_passive() {
+    if house.command_driven() || house.is_controlled_by_human(policy) || house.multiplay_passive() {
         return;
     }
     if (sim.session.binary_frame() as i32) % 8 != 0 {

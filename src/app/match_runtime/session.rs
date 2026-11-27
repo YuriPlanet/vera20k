@@ -1325,6 +1325,13 @@ fn validate_network_option_rows(launch: &SkirmishLaunchSession) -> anyhow::Resul
 
 fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
     anyhow::ensure!(
+        launch
+            .opponents
+            .iter()
+            .all(|slot| slot.driver_policy.is_none()),
+        "External computer controllers require an offline match."
+    );
+    anyhow::ensure!(
         launch.local_player().raw_slot_index.is_some(),
         "local participant must have a visible setup row"
     );
