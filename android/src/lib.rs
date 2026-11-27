@@ -298,17 +298,13 @@ fn ime_state() -> vera20k::util::android_ime::TextState {
 /// the platform: `abc👿` is 4 characters but 5 units.
 fn ime_set_state(text: &str, cursor: usize) {
     use android_activity::input::{TextInputState, TextSpan};
-    // The state crosses as modified UTF-8, which cannot carry a character
-    // outside the BMP (issue #5225).
-    let text = vera20k::util::android_ime::on_bridge(text);
-    let cursor = cursor.min(text.chars().count());
-    let offset: usize = text.chars().take(cursor).map(char::len_utf16).sum();
     if let Some(app) = ACTIVITY.get() {
+        let state = vera20k::util::android_ime::TextState::from_edit(text, cursor);
         app.set_text_input_state(TextInputState {
-            text: text.to_owned(),
+            text: state.text,
             selection: TextSpan {
-                start: offset,
-                end: offset,
+                start: state.cursor,
+                end: state.cursor,
             },
             compose_region: None,
         });

@@ -19,10 +19,22 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TextState {
     pub text: String,
+    /// Selection start in UTF-16 units, as reported by Android.
     pub cursor: usize,
     /// The composing range within `text`, in UTF-16 units. The input method
     /// owns it until it commits.
     pub compose: Option<(usize, usize)>,
+}
+
+impl TextState {
+    /// Seed the keyboard from an edit whose caret counts characters.
+    pub fn from_edit(text: &str, cursor: usize) -> Self {
+        Self {
+            text: text.to_owned(),
+            cursor: text.chars().take(cursor).map(char::len_utf16).sum(),
+            compose: None,
+        }
+    }
 }
 
 /// Split the platform's buffer into the text that is committed and the open
@@ -190,22 +202,9 @@ pub fn resync_to(edit: &str, platform: &str) -> Option<String> {
     (edit != platform).then(|| edit.to_owned())
 }
 
-/// Whether `c` can cross the Android text bridge: it carries text as modified
-/// UTF-8, which cannot represent a character outside the BMP, and a lossy
-/// conversion leaves U+FFFD behind. Such a character would sit in an edit as a
-/// box no key removes (issue #5225).
-pub fn bridge_char(c: char) -> bool {
-    c.len_utf16() == 1 && c != '\u{FFFD}'
-}
-
-/// `text` without the characters the Android text bridge cannot carry.
-pub fn on_bridge(text: &str) -> String {
-    text.chars().filter(|c| bridge_char(*c)).collect()
-}
-
 #[cfg(all(test, tests_util))]
 mod tests {
-    use super::{edit_of, on_bridge, resync_to};
+    use super::{TextState, edit_of, resync_to};
 
     #[test]
     fn typing_at_the_end_commits_the_added_characters() {
@@ -219,10 +218,10 @@ mod tests {
     }
 
     #[test]
-    fn only_characters_the_bridge_carries_reach_an_edit() {
-        assert_eq!(on_bridge("abc\u{1F47F}\u{4E2D}\u{6587}"), "abc\u{4E2D}\u{6587}");
-        assert_eq!(on_bridge("a\u{FFFD}b"), "ab");
-        assert_eq!(on_bridge("\u{4E2D}\u{6587}"), "\u{4E2D}\u{6587}");
+    fn keyboard_keeps_supplementary_text_and_uses_a_utf16_caret() {
+        let state = TextState::from_edit("a𠀀🙂b", 3);
+        assert_eq!(state.text, "a𠀀🙂b");
+        assert_eq!(state.cursor, 5);
     }
 
     #[test]
@@ -231,10 +230,10 @@ mod tests {
         // the edit dropped. Replaying a Backspace from the platform's text
         // would remove the character before it; the edit's text is what the
         // platform must show instead.
-        let (removed, inserted) = edit_of("ab\u{4f60}", "ab");
-        assert_eq!((removed, inserted.as_str()), (1, ""));
-        assert_eq!(resync_to("a", "ab").as_deref(), Some("a"));
-        assert_eq!(resync_to("ab", "ab"), None);
+        let corrected = resync_to("ab", "ab你").unwrap();
+        assert_eq!(corrected, "ab");
+        assert_eq!(edit_of(&corrected, "ab"), (0, String::new()));
+        assert_eq!(resync_to("ab", &corrected), None);
     }
 
     #[test]

@@ -758,23 +758,25 @@ mod android {
             .map(|(text, _)| text.clone())
             .unwrap_or_default();
         state.platform.ime.cursor = preedit.as_ref().map_or(0, |(_, caret)| *caret);
+        if committed == state.platform.ime.android_text && (preedit.is_some() || committed == text)
+        {
+            return;
+        }
         if committed != state.platform.ime.android_text {
             let (removed, inserted) =
                 crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
             state.platform.ime.android_text = committed;
-            // The edit counts UTF-16 units, the platform code points: an emoji
-            // takes two backspaces, and stopping at one leaves half a surrogate
-            // pair, which no screen can store.
-            let want = text.chars().count().saturating_sub(removed);
-            for _ in 0..(removed * 2 + 1) {
-                let have = seed(state, focused).map_or(0, |(text, _, _)| text.chars().count());
-                if have <= want {
-                    break;
+            // The shell edit deletes whole characters. In-game chat pops one
+            // UTF-16 unit at a time and its caret is always at the end.
+            let backspaces = match focused {
+                ImeTarget::Gui => removed,
+                ImeTarget::InGameChat => {
+                    text.chars().rev().take(removed).map(char::len_utf16).sum()
                 }
+            };
+            for _ in 0..backspaces {
                 backspace(state, focused);
             }
-            // The bridge drops what it cannot carry (issue #5225).
-            let inserted = crate::util::android_ime::on_bridge(&inserted);
             if !inserted.is_empty() {
                 commit(state, &inserted);
             }
