@@ -222,6 +222,12 @@ pub fn drain_events() -> Vec<WindowEvent> {
         let mut pressed = mask;
         let cursor_first = |out: &mut Vec<WindowEvent>| out.push(cursor(event.x, event.y));
         match event.action {
+            // The activity is told the pointer's position when it enters the
+            // window even if the pointer does not move; without this the
+            // engine's cursor stays at the top-left until the first move.
+            HOVER_ENTER => {
+                cursor_first(&mut out);
+            }
             HOVER_MOVE | MOVE | POINTER_DOWN if event.buttons == 0 => {
                 cursor_first(&mut out);
             }
