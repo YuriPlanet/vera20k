@@ -1,6 +1,7 @@
 //! What module actions leave held between frames, beside the modifiers:
-//! the timed conversions `Convert` will undo and the house type list
-//! `AllowType` writes (RFC 0001 appendix 5.3). [`ActionHeld`] is the one
+//! the timed conversions `Convert` will undo, the house type list
+//! `AllowType` writes and the animations `AttachAnim` keeps (RFC 0001
+//! appendix 5.3). [`ActionHeld`] is the one
 //! owner; it is saved with the modules and hashed when it holds anything.
 //!
 //! - A timed `Convert` (`value2` frames) remembers the object's type before
@@ -14,12 +15,22 @@
 //!   for the sidebar, the production event and the computer's choosers
 //!   alike. 1 lifts the module's forbid; it does not grant a type the
 //!   house's prerequisites, tech level or build limit refuse.
+//! - `AttachAnim` with `value2` other than 0 keeps its animation looping on
+//!   the object, as a Phobos AttachEffect keeps its own (`hold_loops`, the
+//!   Ares attached-animation byte 255 at Anim+0x195): a positive count
+//!   until the module phase of the frame it runs out, a negative one until
+//!   `DetachAnim` removes it. The module phase destroys an animation whose
+//!   time is up or whose object left the game or let go of it
+//!   ([`Simulation::maintain_ext_module_anims`]); one the engine destroyed
+//!   (its owner's death) is dropped there too. As every owned animation, it
+//!   follows the object's coordinates, so it shows where the object shows.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::TechnoTypeReference;
+use crate::sim::anim_class::AnimId;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -38,11 +49,74 @@ pub(crate) struct ActionHeld {
     conversions: BTreeMap<u64, Reversion>,
     /// (house array index, TechnoType ID) pairs a module forbade.
     forbidden: BTreeSet<(u32, u32)>,
+    /// The animations `AttachAnim` keeps, by animation ID.
+    #[serde(default)]
+    anims: BTreeMap<AnimId, HeldAnim>,
+}
+
+/// An animation a module keeps on an object.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct HeldAnim {
+    /// The object's creation serial.
+    object: u64,
+    /// The AnimType array index `AttachAnim` took, which `DetachAnim` names.
+    anim_type: i32,
+    origin: super::ModuleSource,
+    /// The frame whose module phase destroys it; `None` until `DetachAnim`.
+    until: Option<u32>,
 }
 
 impl ActionHeld {
     pub(super) fn is_empty(&self) -> bool {
-        self.conversions.is_empty() && self.forbidden.is_empty()
+        self.conversions.is_empty() && self.forbidden.is_empty() && self.anims.is_empty()
+    }
+
+    /// After `AttachAnim` attached `anim` to `object`: kept for `frames`
+    /// frames from `frame`, or until `DetachAnim` when `frames` is negative.
+    pub(super) fn hold_anim(
+        &mut self,
+        anim: AnimId,
+        object: u64,
+        anim_type: i32,
+        origin: super::ModuleSource,
+        frames: i64,
+        frame: u32,
+    ) {
+        let until = (frames >= 0)
+            .then(|| frame.saturating_add(u32::try_from(frames).unwrap_or(u32::MAX)));
+        self.anims.insert(
+            anim,
+            HeldAnim {
+                object,
+                anim_type,
+                origin,
+                until,
+            },
+        );
+    }
+
+    /// `DetachAnim`: takes the animations `origin` keeps on `object`, those
+    /// of AnimType `anim_type` only unless it is -1.
+    pub(super) fn take_anims_of(
+        &mut self,
+        object: u64,
+        anim_type: i32,
+        origin: super::ModuleSource,
+    ) -> Vec<AnimId> {
+        let taken: Vec<AnimId> = self
+            .anims
+            .iter()
+            .filter(|(_, held)| {
+                held.object == object
+                    && held.origin == origin
+                    && (anim_type == -1 || held.anim_type == anim_type)
+            })
+            .map(|(anim, _)| *anim)
+            .collect();
+        for anim in &taken {
+            self.anims.remove(anim);
+        }
+        taken
     }
 
     /// After `Convert` turned `object` from `original`: a timed conversion
@@ -97,6 +171,42 @@ impl ActionHeld {
 }
 
 impl Simulation {
+    /// The module phase's kept animations: each whose time is up, whose
+    /// object left the game or no longer owns it is destroyed and dropped,
+    /// in animation order; one the engine already destroyed is dropped.
+    pub(super) fn maintain_ext_module_anims(&mut self, rules: &RuleSet) {
+        if self.ext_modules.held.anims.is_empty() {
+            return;
+        }
+        let frame = self.session.binary_frame();
+        let done: Vec<AnimId> = self
+            .ext_modules
+            .held
+            .anims
+            .iter()
+            .filter(|(anim, held)| {
+                held.until.is_some_and(|until| until <= frame)
+                    || self
+                        .substrate
+                        .anims
+                        .get(**anim)
+                        .is_none_or(|live| live.owner_entity() != Some(held.object))
+            })
+            .map(|(anim, _)| *anim)
+            .collect();
+        for anim in done {
+            self.ext_modules.held.anims.remove(&anim);
+            self.destroy_held_anim(anim, rules);
+        }
+    }
+
+    /// Destroys a module-kept animation the engine has not destroyed yet.
+    pub(super) fn destroy_held_anim(&mut self, anim: AnimId, rules: &RuleSet) {
+        if self.substrate.anims.get(anim).is_some() {
+            self.destroy_anim_with_context(anim, rules);
+        }
+    }
+
     /// Whether a module's `AllowType` forbade `obj` to `owner`.
     pub(crate) fn ext_module_forbids(
         &self,

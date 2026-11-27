@@ -713,6 +713,22 @@ render frame while a lent tick holds the world (its published frame has no objec
 read; a map whose file changed since a save loses its `[VeraUI]` parts on restore
 (logged only).
 
+## Done (battlefield visuals, RFC 0.2.0)
+
+- `TintColor` and `TintIntensity` modifiers (preview): `ext_modules/modifiers.rs`
+  (`Stat::TintColor`, `Stat::TintIntensity`, `GameEntity::module_tint`); the colour
+  takes only an override of `0xRRGGBB`, the intensity only additions. The frame
+  record captures the tint and `lighting::custom_tint` ORs its RGB565 word into the
+  Phobos shield and AttachEffect tints and adds its intensity, the same for every
+  viewer. Tests `ext_modules_control_tests.rs`
+  (`tint_modifiers_compose_into_the_module_tint`) and `lighting_tint_tests.rs`.
+- `AttachAnim` with `value2` and `DetachAnim` (1046, preview): `ext_modules/held.rs`
+  keeps the looping animation (`hold_loops`) by animation ID with its object, origin
+  and end frame; the module phase destroys it when its time is up, its object left
+  the game or let it go (`maintain_ext_module_anims`). Saved and hashed with the
+  other held state. SDK `attach_anim_for`/`detach_anim`, `attachAnim(.., frames)`/
+  `detachAnim`. Test `attach_anim_holds_for_its_frames_or_until_detached`.
+
 ## Residuals
 
 - `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building
@@ -754,8 +770,8 @@ read; a map whose file changed since a save loses its `[VeraUI]` parts on restor
   a modifier change while carried. `Push` does not launch into the air. `PathFound` answers the
   route's first window only, is not asked for a train's queued extension or a
   route with a tube step, and is asked while the Foot is lifted (Mark0).
-- Actions unsupported: `RemovePassenger`, team and projectile actions,
-  `AttachAnim` with a frame count; house modifiers (`PowerOutage`); stock actions that
+- Actions unsupported: `RemovePassenger`, team and projectile actions;
+  house modifiers (`PowerOutage`); stock actions that
   need a live trigger (3, 6, 9, 13, 36..38, 52, 74, 75, 81, 91, 111, 113, 119..124,
   126, 130, Ares 146, 147), sound IDs (19, 98, 99), 40, 15, 39, 49, 50.
   Crit and `Unkillable` modifiers exist only in Phobos builds, as their owners do.

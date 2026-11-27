@@ -444,6 +444,110 @@ fn the_jumpjet_speed_factor_scales_its_speed() {
     );
 }
 
+/// `AttachAnim` with a frame count keeps its animation looping on the GI
+/// until the module phase of the frame the count runs out; with a negative
+/// count until `DetachAnim` of this origin takes it.
+#[test]
+fn attach_anim_holds_for_its_frames_or_until_detached() {
+    use super::actions::{ATTACH_ANIM, ActionContext, DETACH_ANIM, run_action};
+    let Some((mut scene, _, gi)) = super::tests::gi_duel() else {
+        return;
+    };
+    let runtime = &mut scene.runtime;
+    let rules = &runtime.resources.rules;
+    let sim = &mut runtime.simulation;
+    let owned = |sim: &crate::sim::world::Simulation| {
+        sim.substrate
+            .anims
+            .iter()
+            .filter(|(_, anim)| anim.owner_entity() == Some(gi))
+            .count()
+    };
+    let act = |sim: &mut crate::sim::world::Simulation, kind: i32, id: i32, value2: i64| {
+        let params = vera20k_wasm_ext::ActionParams {
+            id,
+            value2,
+            ..Default::default()
+        };
+        let ctx = ActionContext {
+            rules,
+            overlay_registry: Some(rules.overlay_registry()),
+            frame_effects: &mut FrameEffects::default(),
+            text: "",
+            trigger_house: None,
+            source: super::ModuleSource::Map,
+        };
+        run_action(sim, kind, gi as i64, &params, ctx).expect("valid action")
+    };
+    // The first animation that constructs on the GI.
+    let Some(anim) = (0..64).find(|&index| {
+        let before = owned(sim);
+        rules.anim_type_runtime_key_by_index(index).is_some()
+            && act(sim, ATTACH_ANIM, index, 3).1 == vera20k_wasm_ext::Status::Ok
+            && owned(sim) > before
+    }) else {
+        panic!("no animation constructs on the GI");
+    };
+    let frame = sim.session.binary_frame();
+    let held = owned(sim);
+    sim.session.set_binary_frame_for_test(frame + 2);
+    sim.maintain_ext_module_anims(rules);
+    assert_eq!(owned(sim), held, "kept before its time is up");
+    sim.session.set_binary_frame_for_test(frame + 3);
+    sim.maintain_ext_module_anims(rules);
+    assert_eq!(owned(sim), held - 1, "destroyed when its time is up");
+    assert_eq!(act(sim, ATTACH_ANIM, anim, -1).1, vera20k_wasm_ext::Status::Ok);
+    sim.session.set_binary_frame_for_test(frame + 10_000);
+    sim.maintain_ext_module_anims(rules);
+    assert_eq!(owned(sim), held, "kept until detached");
+    assert_eq!(act(sim, DETACH_ANIM, -1, 0).1, vera20k_wasm_ext::Status::Ok);
+    assert_eq!(owned(sim), held - 1, "detached");
+}
+
+/// The module tint (appendix 7.2): `TintColor` takes only an override of
+/// `0xRRGGBB` and `TintIntensity` only additions; the newest colour wins,
+/// intensities sum, and both read back as properties.
+#[test]
+fn tint_modifiers_compose_into_the_module_tint() {
+    use super::modifiers::{Modifier, ModifierOp, Stat};
+    assert!(!Stat::TintColor.admits(ModifierOp::Add, 0xFF));
+    assert!(!Stat::TintColor.admits(ModifierOp::Override, 0x100_0000));
+    assert!(Stat::TintColor.admits(ModifierOp::Override, 0xFF_8000));
+    assert!(!Stat::TintIntensity.admits(ModifierOp::Override, 1 << 16));
+    assert!(Stat::TintIntensity.admits(ModifierOp::Add, -(1 << 15)));
+    let Some((mut scene, _, target)) = super::tests::gi_duel() else {
+        return;
+    };
+    let sim = &mut scene.runtime.simulation;
+    assert_eq!(sim.entities().get(target).expect("GI").module_tint(), None);
+    for (stat, op, value) in [
+        (Stat::TintColor, ModifierOp::Override, 0x00_00FF),
+        (Stat::TintColor, ModifierOp::Override, 0xFF_8000),
+        (Stat::TintIntensity, ModifierOp::Add, 1 << 15),
+        (Stat::TintIntensity, ModifierOp::Add, 1 << 14),
+    ] {
+        let handle = sim.substrate.allocate_stable_id();
+        let modifier = Modifier {
+            target,
+            stat,
+            op,
+            value,
+            expires: None,
+            source: 0,
+            group: 0,
+            origin: super::ModuleSource::Map,
+        };
+        sim.ext_modules
+            .modifiers
+            .insert(&mut sim.substrate.entities, handle, modifier)
+            .expect("the modifier fits");
+    }
+    let entity = sim.entities().get(target).expect("GI");
+    assert_eq!(entity.module_tint(), Some(([0xFF, 0x80, 0x00], 0.75)));
+    assert_eq!(entity.effective_stat(Stat::TintColor), 0xFF_8000);
+    assert_eq!(entity.effective_stat(Stat::TintIntensity), 3 << 14);
+}
+
 /// A Wasm module `ImmunityFlags` override of bit 1 makes a GI immune to a
 /// radiation warhead's direct hit, which hurts it without one, and shows in
 /// the property; the mask takes only an override of its seven bits.

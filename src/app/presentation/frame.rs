@@ -181,6 +181,8 @@ struct Answers {
     shield: Option<crate::sim::shield::ShieldState>,
     #[cfg(feature = "phobos")]
     phobos_attach_effects: crate::sim::attach_effect::AttachEffectList,
+    /// The module tint ([`GameEntity::module_tint`]).
+    module_tint: Option<([u8; 3], f64)>,
 }
 
 impl Answers {
@@ -211,6 +213,7 @@ impl Answers {
             shield: entity.shield().cloned(),
             #[cfg(feature = "phobos")]
             phobos_attach_effects: entity.phobos_attach_effects().clone(),
+            module_tint: entity.module_tint(),
         }
     }
 }
@@ -856,6 +859,11 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// The module tint: `[R, G, B]` and the intensity, 1.0 = full.
+    pub(crate) fn module_tint(&self) -> Option<([u8; 3], f64)> {
+        self.answers.module_tint
     }
 
     #[cfg(feature = "phobos")]

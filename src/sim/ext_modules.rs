@@ -2445,7 +2445,8 @@ impl Simulation {
     }
 
     /// The module phase: modifiers whose time is up expire, timed
-    /// conversions whose time is up revert and `Timer` triggers whose
+    /// conversions whose time is up revert, kept animations whose time is
+    /// up or whose object went are destroyed, and `Timer` triggers whose
     /// period ends fire, then each enabled module in order
     /// gets its `on_scenario_start` once, its client messages
     /// (`on_message`, [`messages`]), its queued event records
@@ -2475,6 +2476,7 @@ impl Simulation {
         // runs (`decide`).
         self.decide_production_allowed(rules);
         self.revert_ext_module_conversions(rules, frame_effects);
+        self.maintain_ext_module_anims(rules);
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);
