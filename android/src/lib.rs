@@ -87,8 +87,8 @@ fn mod_export(folder: &str, done: &str, failed: &str) -> bool {
 }
 
 /// Mods page: pack `folder` into a ZIP through the system picker.
-fn mod_export_zip(folder: &str, done: &str, failed: &str) -> bool {
-    activity_flag("exportModZip", &[folder, done, failed])
+fn mod_export_zip(folder: &str, done: &str, failed: &str, progress: &str) -> bool {
+    activity_flag("exportModZip", &[folder, done, failed, progress])
 }
 
 /// Mods page: pick a mod ZIP in the system file manager; the toast says

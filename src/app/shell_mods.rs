@@ -516,7 +516,8 @@ impl App {
         let done = tr_fill("VERA:ModExported", &[("mod", &folder)]);
         let failed = tr("VERA:ModActionFailed");
         let opened = if zip {
-            crate::util::mod_actions::export_zip(folder, &done, &failed)
+            let progress = tr_fill("VERA:ModExporting", &[("mod", &folder)]);
+            crate::util::mod_actions::export_zip(folder, &done, &failed, &progress)
         } else {
             crate::util::mod_actions::export(folder, &done, &failed)
         };
