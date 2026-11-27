@@ -826,10 +826,8 @@ pub(in crate::app::shell_wol) fn channel_ban(
 /// on (`0x005E2790`); the first transcript `0x53F` (`0x113`, C2/C9 or an
 /// open `0x11E`) takes it and the walk stops; with none, `0x11E` opens.
 /// In a match (`[0xB77DC1]`, `0x007A92F9..0x007A93DC`) the line is a Grey
-/// MessageList row, the ANSI sink adds `TXT_HOW_TO_REPLY` under it, an open
-/// `0xCF` takes the line too, and the ANSI sink arms the reply window
-/// (now, 300) that prefills the next `0xCF`. `[AudioVisual] IncomingMessage`
-/// plays last in both.
+/// MessageList row. VERA keeps the match playable when a page arrives and
+/// omits the retail reply hint. `[AudioVisual] IncomingMessage` plays last.
 /// RESIDUAL: the auto-reply `[0xB77E40]`/`[0xB76230]` has no writer here.
 pub(in crate::app::shell_wol) fn page_received(
     frontend: &mut FrontendState,
@@ -867,7 +865,7 @@ pub(in crate::app::shell_wol) fn page_received(
     };
     if in_game {
         let row = String::from_utf16_lossy(&line.text);
-        crate::app::input::messages::post_wol_page_rows(
+        crate::app::input::messages::post_wol_row(
             platform,
             renderer,
             diag,
@@ -877,18 +875,7 @@ pub(in crate::app::shell_wol) fn page_received(
             sfx_player,
             persistence,
             &row,
-            ansi,
         );
-        super::page::append_page_line(frontend, renderer, line);
-        if ansi {
-            let now = crate::ui::wol_page::reply_window_now(
-                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
-            );
-            frontend
-                .wol_lobby_globals
-                .page_reply_window
-                .arm(now, crate::ui::wol_page::REPLY_WINDOW_TICKS);
-        }
     } else {
         super::page::append_page_line(frontend, renderer, line.clone());
         // The walk down the stack stops at the first `0x53F`: the lobby's

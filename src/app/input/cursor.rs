@@ -197,8 +197,7 @@ fn find_cursor_feedback_kind(
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {
     // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
-    // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
-    // shows it over the battlefield.
+    // normal arrow (`SetCursor(0)`) for the whole modal.
     if match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }

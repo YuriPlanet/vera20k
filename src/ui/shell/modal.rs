@@ -794,7 +794,7 @@ pub fn wol_page_layout(screen_w: i32, screen_h: i32) -> WolPageLayout {
     wol_page_layout_in(menu_area(screen_w, screen_h))
 }
 
-/// The box centred on `area`: the match's frame for the in-match page.
+/// The box centred on the given shell area.
 pub fn wol_page_layout_in(area: RectPx) -> WolPageLayout {
     let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let rects = super::layout_data::in_box("0xCF", dialog);
@@ -808,7 +808,7 @@ pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceived
     wol_page_received_layout_in(menu_area(screen_w, screen_h))
 }
 
-/// The box centred on `area`: the match's frame for the in-match page.
+/// The box centred on the given shell area.
 pub fn wol_page_received_layout_in(area: RectPx) -> WolPageReceivedLayout {
     let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let rects = super::layout_data::in_box("0x11E", dialog);
@@ -1203,7 +1203,7 @@ mod tests {
             for (size, case) in corpus["layouts"][key]["sizes"].as_object().unwrap() {
                 let (w, h) = size.split_once('x').unwrap();
                 let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
-                // The executed tables centre on the screen, as the in-match page does.
+                // The executed tables centre on the screen.
                 let screen = RectPx::new(0, 0, w, h);
                 let page = wol_page_layout_in(screen);
                 let received = wol_page_received_layout_in(screen);
