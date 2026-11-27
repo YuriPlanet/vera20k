@@ -60,6 +60,8 @@ pub(crate) struct IdleSleep {
     /// Steady objects' AI visits counted instead of run (or, when checking,
     /// run and compared; `world::steady_ai`).
     pub(super) steady: u64,
+    /// Quiet ground locomotor visits that took the resting fast path.
+    pub(super) locomotor: u64,
     /// When checking: the frame after the last whose steady visit had the
     /// state hash compared too (`world::steady_ai`).
     pub(super) steady_hashed: u32,
@@ -136,6 +138,11 @@ impl Simulation {
     /// (`world::steady_ai`).
     pub fn steady_ai_visits(&self) -> u64 {
         self.idle_sleep.steady
+    }
+
+    /// How many quiet ground locomotor visits took the resting fast path.
+    pub fn locomotor_rest_visits(&self) -> u64 {
+        self.idle_sleep.locomotor
     }
 
     /// The pass reached `id`'s slot: count its visit if it sleeps on.

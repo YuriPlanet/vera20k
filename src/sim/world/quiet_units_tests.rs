@@ -12,7 +12,8 @@ fn rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[General]\n[InfantryTypes]\n[VehicleTypes]\n0=MTNK\n[AircraftTypes]\n\
          [BuildingTypes]\n\n\
-         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nROT=5\nTurret=yes\nSight=6\n",
+         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nROT=5\nTurret=yes\nSight=6\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
     ))
     .expect("quiet unit test rules parse")
 }
@@ -74,6 +75,10 @@ fn a_quiet_tank_matches_its_twin_frame_by_frame() {
                 tank.barrel_facing.as_mut().unwrap().set(0x8000, now);
             }
             assert!(!quiet.quiet(1), "a mutable hand-out ends the quiet");
+            assert!(
+                !quiet.substrate.entities.is_locomotor_resting(1),
+                "a mutable hand-out ends the locomotor rest mark"
+            );
         }
         tick(&mut quiet, &rules, &grid);
         tick(&mut loud, &rules, &loud_grid);
@@ -92,5 +97,97 @@ fn a_quiet_tank_matches_its_twin_frame_by_frame() {
     assert!(
         quiet_turns[0] > 100 && quiet_turns[1] > 100,
         "frames the tank ended quiet, before and after the write: {quiet_turns:?}"
+    );
+    assert!(
+        quiet.locomotor_rest_visits() > 100,
+        "resting ground Process visits took the fast path"
+    );
+}
+
+#[test]
+fn a_resting_tank_wakes_for_a_destination_and_matches_its_twin() {
+    let rules = rules();
+    let (mut quiet, grid) = tank(&rules, true);
+    let (mut loud, loud_grid) = tank(&rules, false);
+    for _ in 0..40 {
+        tick(&mut quiet, &rules, &grid);
+        tick(&mut loud, &rules, &loud_grid);
+    }
+    assert!(quiet.substrate.entities.is_locomotor_resting(1));
+    let resting_visits = quiet.locomotor_rest_visits();
+    assert!(resting_visits > 0);
+    let start = crate::sim::movement::ground_pose::position_world_coord(
+        &quiet.substrate.entities.get(1).unwrap().position,
+    );
+    let destination = crate::sim::components::NavTargetRef::cell(15, 10);
+    for sim in [&mut quiet, &mut loud] {
+        assert!(sim.set_unit_destination(1, destination, &rules, true, &mut Default::default()));
+    }
+    assert!(!quiet.substrate.entities.is_locomotor_resting(1));
+    for frame in 0..120 {
+        tick(&mut quiet, &rules, &grid);
+        tick(&mut loud, &rules, &loud_grid);
+        if frame == 0 {
+            assert_eq!(quiet.locomotor_rest_visits(), resting_visits);
+        }
+        assert_eq!(
+            quiet.state_hash(),
+            loud.state_hash(),
+            "the moving twins differ after frame {frame}"
+        );
+    }
+    assert_ne!(
+        crate::sim::movement::ground_pose::position_world_coord(
+            &quiet.substrate.entities.get(1).unwrap().position,
+        ),
+        start
+    );
+    assert_eq!(
+        serde_json::to_value(&quiet.substrate.entities).unwrap(),
+        serde_json::to_value(&loud.substrate.entities).unwrap(),
+    );
+}
+
+#[test]
+fn a_resting_tank_still_samples_a_changed_cell_slope() {
+    let rules = rules();
+    let (mut quiet, grid) = tank(&rules, true);
+    let (mut loud, loud_grid) = tank(&rules, false);
+    for _ in 0..30 {
+        tick(&mut quiet, &rules, &grid);
+        tick(&mut loud, &rules, &loud_grid);
+    }
+    assert!(quiet.substrate.entities.is_locomotor_resting(1));
+    let before = quiet.locomotor_rest_visits();
+    for sim in [&mut quiet, &mut loud] {
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(10, 10)
+            .unwrap()
+            .slope_type = 5;
+    }
+    tick(&mut quiet, &rules, &grid);
+    tick(&mut loud, &rules, &loud_grid);
+    assert_eq!(quiet.locomotor_rest_visits(), before + 1);
+    assert_eq!(quiet.state_hash(), loud.state_hash());
+    assert_eq!(
+        quiet
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .active_slope_transition()
+            .unwrap()
+            .hash_fields()
+            .1,
+        5
+    );
+    assert_eq!(
+        serde_json::to_value(&quiet.substrate.entities).unwrap(),
+        serde_json::to_value(&loud.substrate.entities).unwrap(),
     );
 }
