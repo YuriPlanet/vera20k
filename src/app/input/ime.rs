@@ -758,17 +758,31 @@ mod android {
             .map(|(text, _)| text.clone())
             .unwrap_or_default();
         state.platform.ime.cursor = preedit.as_ref().map_or(0, |(_, caret)| *caret);
-        if committed == state.platform.ime.android_text {
-            return;
+        if committed != state.platform.ime.android_text {
+            let (removed, inserted) =
+                crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
+            state.platform.ime.android_text = committed;
+            for _ in 0..removed {
+                backspace(state, focused);
+            }
+            if !inserted.is_empty() {
+                commit(state, &inserted);
+            }
         }
-        let (removed, inserted) =
-            crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
-        state.platform.ime.android_text = committed;
-        for _ in 0..removed {
-            backspace(state, focused);
-        }
-        if !inserted.is_empty() {
-            commit(state, &inserted);
+        // The edit is the authority on what it holds. When it refused a
+        // character the platform sent (the LAN name box's byte-only filter, a
+        // length cap), the baseline advances but the edit does not, and the
+        // next Backspace would remove the character before the one the player
+        // meant. Re-seed the platform from the edit instead. Skip while a
+        // composition is open: re-seeding would fight the input method's own
+        // buffer.
+        if preedit.is_none()
+            && let Some((text, cursor, _)) = seed(state, focused)
+            && let Some(resync) =
+                crate::util::android_ime::resync_to(&text, &state.platform.ime.android_text)
+        {
+            crate::util::android_ime::set_state(&text, cursor);
+            state.platform.ime.android_text = resync;
         }
     }
 
