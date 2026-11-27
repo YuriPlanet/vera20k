@@ -65,10 +65,12 @@
 //! the modules' hotkeys ([`key_unused`]), which know the game's bound keys
 //! ([`rebind_game_keys`]).
 
+pub(crate) mod field;
 pub(crate) mod host;
 pub(crate) mod local;
 pub(crate) mod paint;
 pub(crate) mod reads;
+pub(crate) mod status;
 pub(crate) mod storage;
 pub(crate) mod tree;
 
@@ -110,6 +112,10 @@ pub(crate) struct UiModuleSources {
     pub map_layout: Option<IniFile>,
     /// `[VeraWasm] StorageId=`, else the map's file name.
     pub map_storage_id: String,
+    /// The `[VeraStatus]` sections of the mod's `veraui.ini` and of the map
+    /// ([`status`]).
+    pub mod_status: Option<IniFile>,
+    pub map_status: Option<IniFile>,
     /// Why a module could not be read; told to the player, the match plays
     /// without it.
     pub problems: Vec<String>,
@@ -145,6 +151,15 @@ impl UiModuleSources {
         if !layout.is_empty() {
             sources.map_layout = Some(IniFile::from_sections(layout));
         }
+        sources.map_status = status_sections(map);
+        sources.mod_status = assets
+            .get_with_source_ref(crate::ui::match_layout::FILE_NAME)
+            .and_then(|(bytes, _)| {
+                let mut complete = bytes.to_vec();
+                complete.push(b'\n');
+                IniFile::from_bytes(&complete).ok()
+            })
+            .and_then(|ini| status_sections(&ini));
         sources.map_storage_id = map
             .section_or_empty(crate::map::ext_module_pack::SECTION)
             .read_name("StorageId", 64)
@@ -182,8 +197,23 @@ impl UiModuleSources {
     }
 
     fn is_empty(&self) -> bool {
-        self.mod_module.is_none() && self.map_module.is_none() && self.map_layout.is_none()
+        self.mod_module.is_none()
+            && self.map_module.is_none()
+            && self.map_layout.is_none()
+            && self.mod_status.is_none()
+            && self.map_status.is_none()
     }
+}
+
+/// `ini`'s `[VeraStatus]` sections ([`status::is_status_section`]), if any.
+fn status_sections(ini: &IniFile) -> Option<IniFile> {
+    let sections: Vec<_> = ini
+        .section_names()
+        .into_iter()
+        .filter(|name| status::is_status_section(name))
+        .filter_map(|name| ini.section(name).cloned())
+        .collect();
+    (!sections.is_empty()).then(|| IniFile::from_sections(sections))
 }
 
 /// `VeraUI` or `VeraUI.<part>`, case as the INI reader keeps it.
@@ -231,6 +261,8 @@ pub(crate) struct UiModules {
     /// The pictures the tree's nodes name, found as they are named
     /// ([`paint`]).
     art: crate::render::sidebar_chrome::NamedPictures,
+    /// The status templates over the battlefield ([`status`]).
+    pub(crate) status: status::ModuleStatus,
     local: LocalState,
     /// `client_on_start` given since load or the last catch-up.
     started: bool,
@@ -265,6 +297,11 @@ impl UiModules {
         self.tree.item_tooltip(grid, type_name)
     }
 
+    /// The texture the named pictures are in, once one was found.
+    pub(crate) fn picture_texture(&self) -> Option<&crate::render::batch::BatchTexture> {
+        self.art.texture()
+    }
+
     fn new(map_ui: MapUi) -> Self {
         Self {
             slots: Vec::new(),
@@ -272,6 +309,7 @@ impl UiModules {
             tree: UiTree::new(),
             huds: paint::ModuleHuds::default(),
             art: Default::default(),
+            status: status::ModuleStatus::default(),
             local: LocalState::new(),
             started: false,
             outbox: ClientOutbox::default(),
@@ -296,6 +334,7 @@ impl UiModules {
             map_ui,
             tree,
             local,
+            status,
             ..
         } = self;
         let mut failed = Vec::new();
@@ -314,6 +353,7 @@ impl UiModules {
                     inputs,
                     gui: &mut *gui,
                     tree: &mut *tree,
+                    status: &mut *status,
                     local: &mut *local,
                     storage: &mut slot.storage,
                     effects: &mut out.effects,
@@ -333,6 +373,8 @@ impl UiModules {
         for (index, fault) in failed.into_iter().rev() {
             let slot = self.slots.remove(index);
             self.tree.remove_source(gui, slot.source);
+            self.status
+                .remove_origin(status::StatusOrigin::of_module(slot.source));
             let reason = format!("{} ui.wasm {fault}", source_label(slot.source));
             log::warn!(target: "ext_module", "client module stopped: {reason}");
             out.lines.push((reason, true));
@@ -569,6 +611,25 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
         // nothing of it reaches the app.
         drop(out.effects);
     }
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+        let sim = &runtime.simulation;
+        let type_id = |name: &str| sim.interner().get(name).map(|id| id.index());
+        let names = status::Names {
+            type_id: &type_id,
+            vars: sim.ext_modules().vars(),
+        };
+        let map_status = sources.map_status.as_ref().filter(|_| map_allowed);
+        for (origin, ini) in [
+            (status::StatusOrigin::ModIni, sources.mod_status.as_ref()),
+            (status::StatusOrigin::MapIni, map_status),
+        ] {
+            let Some(ini) = ini else {
+                continue;
+            };
+            let problems = ui.status.add_ini(origin, ini, map_ui, &names);
+            lines.extend(problems.into_iter().map(|problem| (problem, true)));
+        }
+    }
     ui.pending_lines = lines;
     if !ui.slots.is_empty() {
         // The simulation cannot see client modules: a match whose only
@@ -581,7 +642,11 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
             runtime.simulation.set_client_event_forwarding(true);
         }
     }
-    if !ui.slots.is_empty() || map_layout.is_some() || !ui.pending_lines.is_empty() {
+    if !ui.slots.is_empty()
+        || map_layout.is_some()
+        || !ui.status.is_empty()
+        || !ui.pending_lines.is_empty()
+    {
         state.match_state.ui_modules = Some(ui);
         rebind_game_keys(&mut state.match_state);
     }

@@ -458,6 +458,7 @@ Reads expose only what the current player's UI can show (Client column in sectio
 | 18 | `client_send_message` | `(ptr, len) -> i32` | Place a message in the command stream for the same-origin simulation module's `on_message`. Observers receive `Refused`. Size and rate limits apply ([RFC 11](0001-wasm-extension-modules.md#11-multiplayer)). |
 | 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | Read storage for this module's origin. Write the length (`i32`) to `len_out`, or −1 and `NotFound` for no entry ([RFC 10](0001-wasm-extension-modules.md#10-client-modules)). |
 | 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | Write storage. `data_len` of 0 deletes the key. ASCII keys of 1..64 bytes, values ≤ 16 KiB, ≤ 256 keys and ≤ 256 KiB total keys plus values per origin. Exceeding a limit returns `Refused` and preserves storage. |
+| 21 | `client_status` | `(ptr, len) -> i32` | Register, replace or remove one of this source's status templates over the battlefield, given as the keys of its INI section with `Name=` first ([status templates](../wasm-modules/status-templates.md)). A template of a name the source already has replaces it; one without `ElementN=` removes it. A key that does not parse, a name that does not resolve or a limit passed returns `Refused` and logs why; text that is not UTF-8 is an invalid argument. Not implemented before 0.2.0 |
 
 Only `client_lookup`, `client_name_of`, `client_has_kind` and `client_log` are available in `client_init`.
 

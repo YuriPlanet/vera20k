@@ -77,6 +77,7 @@ pub const CLIENT_IMPORTS: &[(&str, &str)] = &[
         "client_storage_write",
         "(key: ptr, key_len: i32, data: ptr, data_len: i32) -> status",
     ),
+    ("client_status", "(ptr, len: i32) -> status"),
 ];
 
 /// Client event kinds (appendix 4.6), the `kind` of a [`ClientEventRecord`].
@@ -256,4 +257,9 @@ pub trait ClientHost {
     /// Writes (or with empty `data` deletes) a storage key; `Refused` over
     /// the quota (RFC 10, "Storage").
     fn storage_write(&mut self, key: &str, data: &[u8]) -> Result<Status, Invalid>;
+    /// A status template as its INI section's text (`client_status`):
+    /// registered, replacing this source's one of the same `Name=`, or
+    /// removed when it has no elements. `Refused` over the limits or for a
+    /// key the source may not use; `Invalid` for text that does not parse.
+    fn status_template(&mut self, text: &str) -> Result<Status, Invalid>;
 }

@@ -741,6 +741,30 @@ impl Storage {
     }
 }
 
+// ------------------------------------------------------------ Status bars
+
+/// Status templates over the battlefield (`client_status`): bars, pip rows,
+/// icons and numbers at every object this player sees, in the keys of a
+/// `veraui.ini` `[VeraStatus.<name>]` section (docs/wasm-modules/status-templates.md).
+pub struct StatusTemplates;
+
+impl StatusTemplates {
+    /// Registers `template` (its keys, `Name=` first), replacing this
+    /// module's one of the same name. `Err(Refused)` when a key does not
+    /// parse or is over a limit; the console says why.
+    pub fn set(template: &str) -> Result<()> {
+        check(unsafe { sys::client_status(template.as_ptr(), template.len() as i32) })
+    }
+
+    /// Removes this module's template `name`.
+    pub fn remove(name: &str) -> Result<()> {
+        let mut text = String::with_capacity(name.len() + 5);
+        text.push_str("Name=");
+        text.push_str(name);
+        Self::set(&text)
+    }
+}
+
 // ------------------------------------------------------------------- Events
 
 /// Client event kinds (appendix 4.6).

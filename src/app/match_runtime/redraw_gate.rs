@@ -408,7 +408,7 @@ pub(crate) enum StillFrame {
         /// layout their drawing gives them, which the picture judged after
         /// the draw already holds, and a button the pointer came over,
         /// left, held down or let go.
-        modules: Option<((usize, u64), u64)>,
+        modules: Option<((usize, u64), u64, u64)>,
         /// Whether the shown performance panel has new figures.
         panel_due: bool,
         fonts: usize,

@@ -148,8 +148,50 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
+    /// What module status templates read of it (`ui_modules::status`).
+    pub(crate) status: StatusFacts,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
+}
+
+/// The amounts a module status template reads of an object
+/// (`ui_modules::status`): read with the frame, so the templates never read
+/// the live world. Visibility is the templates' to apply when they draw.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct StatusFacts {
+    /// Ammo and `Ammo=`.
+    pub(crate) ammo: Option<(i32, i32)>,
+    /// Passengers (and garrison occupants) and the type's `Passengers=`.
+    pub(crate) passengers: Option<(i32, i32)>,
+    /// The object-scope module variables it holds apart from their
+    /// defaults (`VarStore::object_values`), by variable ID.
+    pub(crate) vars: Option<Box<[(i32, i64)]>>,
+}
+
+impl StatusFacts {
+    fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
+        let ammo = entity
+            .ammo()
+            .filter(|ammo| ammo.max() > 0)
+            .map(|ammo| (ammo.current(), ammo.max()));
+        let room = at.object_type(entity).map_or(0, |object| object.passengers);
+        let role = entity.passenger_role();
+        let riders = i32::try_from(role.passenger_count())
+            .unwrap_or(i32::MAX)
+            .saturating_add(role.occupants().count().max(0));
+        let passengers = (room > 0).then_some((riders, room));
+        let vars: Box<[(i32, i64)]> = at
+            .sim
+            .ext_modules()
+            .vars()
+            .object_values(entity.stable_id())
+            .collect();
+        Self {
+            ammo,
+            passengers,
+            vars: (!vars.is_empty()).then_some(vars),
+        }
+    }
 }
 
 /// `GameEntity`'s answers to the queries drawing asks it.
@@ -619,6 +661,7 @@ impl ObjectRecord {
         let place = Place::of(entity, &pose, location.z, at);
         let seen = Seen::of(entity, at);
         let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location);
+        let status = StatusFacts::capture(entity, at);
         let scene =
             crate::app::presentation::frame_scene::SceneFacts::capture(entity, at, location);
         let tether_draw =
@@ -711,6 +754,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
+            status,
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {

@@ -93,6 +93,10 @@ impl ClientHost for Fake {
             None => (None, Status::NotFound),
         })
     }
+    fn status_template(&mut self, _text: &str) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
+
     fn storage_write(&mut self, key: &str, data: &[u8]) -> Result<Status, Invalid> {
         self.storage.retain(|(k, _)| k != key);
         if !data.is_empty() {

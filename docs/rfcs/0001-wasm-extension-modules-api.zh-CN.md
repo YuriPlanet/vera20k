@@ -458,6 +458,7 @@ bytes: u32,               // 投递区的字节数
 | 18 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
 | 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | 读模块来源的存储，长度（`i32`）写进 `len_out`；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
 | 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、键和值合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
+| 21 | `client_status` | `(ptr, len) -> i32` | 注册、替换或移除本来源的一个战场状态模板，内容是它的 INI 段的键，`Name=` 在最前（[状态模板](../wasm-modules/status-templates.md)）。同名模板替换旧的；没有 `ElementN=` 的移除它。键无法解析、名字找不到或超出限制时返回 `Refused` 并记录原因；不是 UTF-8 的文本是无效参数。0.2.0 之前没有 |
 
 `client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_log`。
 

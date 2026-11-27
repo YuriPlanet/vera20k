@@ -101,7 +101,7 @@ mod props;
 mod rules;
 mod supers;
 mod unit_ai;
-pub(crate) mod vars;
+pub mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
@@ -636,7 +636,7 @@ impl ExtModules {
     }
 
     /// The declared variables (RFC 6e), for client reads.
-    pub(crate) fn vars(&self) -> &VarStore {
+    pub fn vars(&self) -> &VarStore {
         &self.vars
     }
 

@@ -203,7 +203,8 @@ impl Entry {
 
 #[derive(Default)]
 pub struct World {
-    /// In registration order; a template's id is its index.
+    /// In registration order. A template's id is its index when it was
+    /// added; a removal moves the later ones.
     templates: Vec<Entry>,
 }
 
@@ -220,6 +221,24 @@ impl World {
         let id = TemplateId(self.templates.len() as u64);
         self.templates.push(Entry { origin, def });
         Ok(id)
+    }
+
+    /// Removes `origin`'s templates named `name`; whether there was one.
+    /// The others keep their order.
+    pub fn remove(&mut self, origin: Origin, name: &str) -> bool {
+        let before = self.templates.len();
+        self.templates
+            .retain(|row| !(row.origin == origin && row.def.name == name));
+        self.templates.len() != before
+    }
+
+    /// Removes every template of `origin` (its module stopped).
+    pub fn remove_origin(&mut self, origin: Origin) {
+        self.templates.retain(|row| row.origin != origin);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.templates.is_empty()
     }
 
     /// Appends the templates' commands for `objects`: object order first,
