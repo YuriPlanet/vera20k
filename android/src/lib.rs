@@ -724,9 +724,9 @@ pub unsafe extern "C" fn __wrap_pthread_create(
             libc::pthread_attr_init(attr_copy.as_mut_ptr());
         }
         attr_ptr = attr_copy.as_ptr() as *const c_void;
-        // Raise the stack only: a thread that asked for more keeps what it
-        // asked for, and a caller that brought its own stack is left alone
-        // (bionic rejects a size on such an attribute with EINVAL).
+        // Keep larger requests and leave caller-provided stacks alone.
+        // Bionic can change the recorded size of a caller's stack even
+        // though the caller's allocation stays the same size.
         let mut caller_stack: *mut c_void = std::ptr::null_mut();
         let mut caller_len: usize = 0;
         let caller_owns = libc::pthread_attr_getstack(
