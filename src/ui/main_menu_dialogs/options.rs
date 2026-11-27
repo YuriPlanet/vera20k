@@ -966,6 +966,9 @@ pub(crate) enum LauncherCheckboxId {
     ShiftQueue,
     /// The player's damaged buildings are sent the Repair order by themselves.
     AutoRepair,
+    /// Android applies the saved edition when the player next starts the app.
+    #[cfg(target_os = "android")]
+    Ra2Mode,
     /// The wheel changes battle view distance.
     MouseWheelZoom,
     /// Alternative controls: left selects, right commands.
@@ -1137,6 +1140,8 @@ pub(crate) const ROWS: &[Row] = {
             "BuildingProductionQueue"
         ),
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
+        #[cfg(target_os = "android")]
+        row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
         row!(Gameplay, List(Kratos), "KratosSetting"),
         row!(

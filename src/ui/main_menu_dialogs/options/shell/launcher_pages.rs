@@ -117,6 +117,8 @@ pub(super) fn controls(
                 Check::SmoothOnlineMenus,
                 Check::ShowStringKeys,
                 Check::PerformanceStats,
+                #[cfg(target_os = "android")]
+                Check::Ra2Mode,
             ]
             .into_iter()
             .enumerate()

@@ -7,6 +7,7 @@ On desktop, use the switch just above **Exit Game** in the main menu. The
 button names the other edition. Confirming saves that edition (`[VERA]
 RA2Mode=` in VERA.INI) and restarts VERA into it; Cancel changes nothing.
 Starting VERA with `-ra2` still overrides the saved edition for that launch.
+On Android, set **RA2 Mode** in Options and restart the app.
 A new profile starts in Yuri's Revenge.
 
 ## What changes
