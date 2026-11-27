@@ -40,7 +40,7 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
 ## Katkıda bulunma
 
-**Şu sıralar özellikle değer verdiğimiz PR’lar**
+**Değer verdiğimiz PR’lar**
 
 - Kodun yeniden düzenlenmesi
 - Performans

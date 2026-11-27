@@ -41,7 +41,7 @@ palabra sobre su rumbo.
 
 ## Contribuir
 
-**PR que valoramos especialmente en este momento**
+**PR que valoramos**
 
 - Refactorización
 - Rendimiento

@@ -40,7 +40,7 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 
 ## Đóng góp
 
-**Những PR mà nhóm đặc biệt trân trọng lúc này**
+**Các PR được đánh giá cao**
 
 - Tái cấu trúc mã
 - Hiệu năng
