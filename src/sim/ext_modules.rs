@@ -1272,6 +1272,7 @@ impl SimHost for Host<'_, '_> {
                 "Mission" => return self.order_mission(id, value, None),
                 "Ammo" => return Ok(self.write_ammo(id, value)),
                 "Online" => return Ok(self.write_online(id, value)),
+                "ImageOverride" => return self.write_image_override(id, value),
                 _ => {}
             }
         }
@@ -1545,6 +1546,7 @@ const READABLE: &[&str] = &[
     "CanFireAtTarget",
     "DoorOpen",
     "Animating",
+    "ImageOverride",
     // Projectiles (projectiles.rs, appendix 7.4).
     "VX",
     "VY",
@@ -2101,6 +2103,47 @@ impl Host<'_, '_> {
 
     /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
     /// AI_Update sample announces a promotion as for a crate.
+    /// `ImageOverride` (appendix 7.1): 0 draws the object as itself; a
+    /// TechnoType of its own category draws it as that type. A building,
+    /// another category or a non-TechnoType answers `Refused`.
+    fn write_image_override(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let image = match decode_ref(value)? {
+            None => None,
+            Some(Ref::Type { kind, id: type_id }) if kind == NAME_TECHNO_TYPE => {
+                let Some(image) = i32::try_from(type_id)
+                    .ok()
+                    .and_then(|type_id| techno_type(self.rules, type_id))
+                else {
+                    return Ok(Status::NotFound);
+                };
+                Some(image)
+            }
+            Some(_) => return Ok(Status::Refused),
+        };
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let own = self.sim.entity_object_type(entity, self.rules);
+        let fits = image.is_none_or(|image| {
+            own.is_some_and(|own| {
+                own.category == image.category
+                    && own.category != crate::rules::object_type::ObjectCategory::Building
+            })
+        });
+        if !fits {
+            return Ok(Status::Refused);
+        }
+        let image = image.map(|image| image.id.clone());
+        // The draw finds the type by its interned name.
+        if let Some(image) = image.as_deref() {
+            self.sim.interner.intern(image);
+        }
+        self.sim.ext_modules.held.set_image(id, image);
+        // The atlas checks the objects whose look changed.
+        self.sim.substrate.entities.note_look(id);
+        Ok(Status::Ok)
+    }
+
     fn write_rank(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
         let Some(entity) = self.sim.substrate.entities.get_mut(id) else {
             return Ok(Status::Gone);

@@ -1,6 +1,7 @@
 //! What module actions leave held between frames, beside the modifiers:
-//! the timed conversions `Convert` will undo and the house type list
-//! `AllowType` writes (RFC 0001 appendix 5.3). [`ActionHeld`] is the one
+//! the timed conversions `Convert` will undo, the house type list
+//! `AllowType` writes (RFC 0001 appendix 5.3) and the types `ImageOverride`
+//! draws objects as (appendix 7.1). [`ActionHeld`] is the one
 //! owner; it is saved with the modules and hashed when it holds anything.
 //!
 //! - A timed `Convert` (`value2` frames) remembers the object's type before
@@ -14,6 +15,12 @@
 //!   for the sidebar, the production event and the computer's choosers
 //!   alike. 1 lifts the module's forbid; it does not grant a type the
 //!   house's prerequisites, tech level or build limit refuse.
+//! - `ImageOverride` draws one object as another TechnoType of its
+//!   category, building excepted, without changing what it is: the draw
+//!   reads the type name ([`Simulation::ext_module_image`]) where it picks
+//!   the model or the infantry image. A write of 0 drops it, and so does the
+//!   object leaving the game; a conversion keeps it, as a conversion stays
+//!   in the category.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,11 +45,23 @@ pub(crate) struct ActionHeld {
     conversions: BTreeMap<u64, Reversion>,
     /// (house array index, TechnoType ID) pairs a module forbade.
     forbidden: BTreeSet<(u32, u32)>,
+    /// `ImageOverride`: the TechnoType each object is drawn as, by
+    /// creation serial.
+    #[serde(default)]
+    images: BTreeMap<u64, String>,
 }
 
 impl ActionHeld {
     pub(super) fn is_empty(&self) -> bool {
-        self.conversions.is_empty() && self.forbidden.is_empty()
+        self.conversions.is_empty() && self.forbidden.is_empty() && self.images.is_empty()
+    }
+
+    /// `ImageOverride`: draws `object` as `image`, or as itself with `None`.
+    pub(super) fn set_image(&mut self, object: u64, image: Option<String>) {
+        match image {
+            Some(image) => self.images.insert(object, image),
+            None => self.images.remove(&object),
+        };
     }
 
     /// After `Convert` turned `object` from `original`: a timed conversion
@@ -77,6 +96,7 @@ impl ActionHeld {
 
     pub(super) fn forget_object(&mut self, object: u64) {
         self.conversions.remove(&object);
+        self.images.remove(&object);
     }
 
     /// The reversions due at `frame`, taken out, in object order.
@@ -97,6 +117,16 @@ impl ActionHeld {
 }
 
 impl Simulation {
+    /// Every TechnoType a module's `ImageOverride` draws some object as.
+    pub fn ext_module_images(&self) -> impl Iterator<Item = &str> {
+        self.ext_modules.held.images.values().map(String::as_str)
+    }
+
+    /// The TechnoType a module's `ImageOverride` draws object `id` as.
+    pub fn ext_module_image(&self, id: u64) -> Option<&str> {
+        self.ext_modules.held.images.get(&id).map(String::as_str)
+    }
+
     /// Whether a module's `AllowType` forbade `obj` to `owner`.
     pub(crate) fn ext_module_forbids(
         &self,

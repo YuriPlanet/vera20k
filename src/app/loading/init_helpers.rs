@@ -514,9 +514,10 @@ pub(crate) fn prepare_presentation_manifest(
     // drawn the first time a frame shows it.
     let mut unit_atlas = None;
     if palette.is_some() {
-        unit_atlas::admit_world_models(
+        unit_atlas::admit_world_and_image_models(
             &mut unit_atlas,
             sim.entities(),
+            sim.ext_module_images(),
             asset_manager,
             rules,
             Some(sim.interner()),

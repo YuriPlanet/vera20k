@@ -148,6 +148,10 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
+    /// The type a Wasm module's `ImageOverride` draws it as
+    /// (`Simulation::ext_module_image`); `None` for most objects, boxed so
+    /// their records stay as small.
+    module_image: Option<Box<InternedId>>,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
 }
@@ -612,6 +616,11 @@ impl ObjectRecord {
     fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
         let pose = RenderPose::read(entity, at.binary_frame);
         let answers = Answers::of(entity);
+        let module_image = at
+            .sim
+            .ext_module_image(entity.stable_id())
+            .and_then(|image| at.sim.interner().get(image))
+            .map(Box::new);
         // `object_location` on the live map, which placing, the HUD and the
         // radar all read.
         let location =
@@ -711,6 +720,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
+            module_image,
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -856,6 +866,11 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// The type a module's `ImageOverride` draws it as.
+    pub(crate) fn module_image(&self) -> Option<InternedId> {
+        self.module_image.as_deref().copied()
     }
 
     #[cfg(feature = "phobos")]

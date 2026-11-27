@@ -302,6 +302,8 @@ pub const PROPERTIES: &[&str] = &[
     "ROTMultiplier",
     // 7.10 client nodes (0.0.25)
     "Backdrop",
+    // 7.1 objects (0.2.0): one object's drawn type
+    "ImageOverride",
 ];
 
 /// `Domain` (appendix 8.3, enum 25): the bits of a house's `ControlDomains`.

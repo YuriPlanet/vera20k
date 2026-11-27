@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.1.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.2.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -1102,6 +1102,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | 227 | 7.8 全局引用（RFC 6i） | 227 `AutomationAllowed` |
 | 228 | 7.2 可修饰属性（0.0.23） | 228 `ROTMultiplier` |
 | 229 | 7.10 客户端节点（0.0.25） | 229 `Backdrop` |
+| 230 | 7.1 对象（0.2.0） | 230 `ImageOverride` |
 
 `TargetArmor`（7.2，preview）没有 ID：0.1.0 未实现。
 
@@ -1161,6 +1162,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `CanFireAtTarget` | bool | R（派生，高） | own | v1 | 现在能向当前目标开火 |
 | `DoorOpen` | bool | W | seen | v1（写入为 later） | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | `Animating` | bool | W | seen | v1（写入为 later） | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `ImageOverride` | ref（类型） | W | seen | preview | 对象画成哪个 TechnoType，0 为它自己：模型或步兵图像、色盘和所属方颜色按那个类型；对象是什么、做什么仍是它自己。只能是同类别的类型，且不能是建筑；否则返回 `Refused`。转换后保留，对象离开游戏时移除。存档并计入哈希。步兵图像按对象自己美术的 `Sequence=` 取帧，序列不同的类型在某些动作下可能帧不对或画不出 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 
 ### 7.2 可修饰属性

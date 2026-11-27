@@ -1272,6 +1272,16 @@ impl<'r> EntityAtlasCoverage<'r> {
     ) -> Self {
         let mut extra_types = deployable_building_types(rules);
         extra_types.extend(ares_shp_water_image_types(rules));
+        // VERA: the types a module's `ImageOverride` draws objects as.
+        if let Some(rules) = rules {
+            for image in sim.ext_module_images() {
+                if let Some(object) = rules.object(image)
+                    && !extra_types.iter().any(|known| known.eq_ignore_ascii_case(&object.id))
+                {
+                    extra_types.push(&object.id);
+                }
+            }
+        }
         Self {
             extra_types,
             anim_remap_keys: collect_anim_remap_base_keys(sim, house_colors),

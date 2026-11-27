@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.1.0, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.2.0, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -1102,6 +1102,7 @@ Properties are grouped by reference kind. A property's ID is its position in the
 | 227 | 7.8 Global references (RFC 6i) | 227 `AutomationAllowed` |
 | 228 | 7.2 Modifiable properties (0.0.23) | 228 `ROTMultiplier` |
 | 229 | 7.10 Client nodes (0.0.25) | 229 `Backdrop` |
+| 230 | 7.1 Objects (0.2.0) | 230 `ImageOverride` |
 
 `TargetArmor` (7.2, preview) has no ID: it is not implemented in 0.1.0.
 
@@ -1161,6 +1162,7 @@ Properties of a `Techno`. Only the final row supports modifiers.
 | `CanFireAtTarget` | bool | R (derived, high) | own | v1 | Can fire at the current target now |
 | `DoorOpen` | bool | W | seen | v1 (writing later) | Whether the factory exit door is open. `Unsupported` for buildings without an exit door and for other objects. Writing changes the displayed state without starting production or dispatching a unit |
 | `Animating` | bool | W | seen | v1 (writing later) | Whether the building's working animation is active. `Unsupported` for other objects. Writing changes the displayed state without starting production or dispatching a unit |
+| `ImageOverride` | ref (type) | W | seen | preview | The TechnoType the object is drawn as, 0 for its own: its model or infantry image, palette and house colour as that type's; what the object is and does stays its own. Only a type of the object's category, and no building; another returns `Refused`. Kept through a conversion, dropped when the object leaves the game. Saved and hashed. An infantry image draws with the object's own art `Sequence=` frames, so one of another sequence may show a wrong frame or none in some poses |
 | Modifiable properties | See 7.2 | | | | Modifiable |
 
 ### 7.2 Modifiable properties
