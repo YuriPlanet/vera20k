@@ -1430,7 +1430,7 @@ impl MultiplayerSetupLayout {
         let icon_y = |row: usize| 36 + row as i32 * 26;
         let mut layout = Self {
             page,
-            touch_send: cfg!(target_os = "android"),
+            touch_send: true,
             roster: false,
             combos,
             header_controls: [Default::default(); MODERN_SETUP_ROWS],
@@ -2828,7 +2828,8 @@ mod tests {
             800,
             600,
             false,
-        );
+        )
+        .with_touch_send(false);
         let touch = native.clone().with_touch_send(true);
         let native_chat = native.chat_text();
         let touch_chat = touch.chat_text();

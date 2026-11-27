@@ -734,7 +734,7 @@ impl LanLobbyLayout {
         Self {
             page,
             rects,
-            touch_send: cfg!(target_os = "android"),
+            touch_send: true,
         }
     }
 
@@ -818,8 +818,8 @@ mod tests {
     /// the key's width out of the edit; the native layout keeps both places.
     #[test]
     fn touch_send_moves_the_lobby_chat_row_and_narrows_its_edit() {
-        let native =
-            LanLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
+        let native = LanLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE)
+            .with_touch_send(false);
         let touch = native.clone().with_touch_send(true);
         let native_chat = native.chat_text().unwrap();
         let touch_chat = touch.chat_text().unwrap();
