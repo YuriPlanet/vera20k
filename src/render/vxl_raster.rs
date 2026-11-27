@@ -33,7 +33,9 @@ mod native;
 #[path = "vxl_shadow.rs"]
 pub(crate) mod shadow;
 
-pub(crate) use native::{NativeRaster, PreparedDraw, RasterParams, section_voxels};
+pub(crate) use native::{
+    BufferedVoxelRaster, NativeRaster, PreparedDraw, RasterParams, crop_fits, section_voxels,
+};
 
 /// Shared ordinary VXL preparation for CPU and GPU visibility writes, on the
 /// shared `depth` map when depth-tested (None draws on a clear one). Preview

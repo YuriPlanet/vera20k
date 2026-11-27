@@ -2414,6 +2414,7 @@ impl App {
                 cost.battlefield_presented(
                     presented_at,
                     &state.match_state.match_presentation.unit_motion,
+                    state.renderer.vxl_pose_frame_cache.borrow().buffered_draws,
                     || {
                         let frame = state.match_state.sim_runtime.frame()?;
                         Some(

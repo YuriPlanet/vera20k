@@ -269,8 +269,18 @@ pub(super) fn cached_part_entry(
         }
         None => {
             let render = images.render_part(drawer.use_buffer, size);
-            let stale = live(render, images.depth_map(), LivePage::Frame);
-            (render.depth_tested, stale.map(|(stale, _)| stale))
+            let stale = depth_tested_images
+                .filter(|_| render.live)
+                .and_then(|live| {
+                    live.pose_cache.borrow_mut().uncached_body(
+                        live.assets,
+                        live.rules,
+                        &drawn,
+                        images.depth_map(),
+                        render.stale,
+                    )
+                });
+            (render.depth_tested, stale)
         }
     };
     if let Some(stale) = stale {
