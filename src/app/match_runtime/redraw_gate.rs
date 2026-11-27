@@ -749,7 +749,7 @@ mod tests {
         // A client module's node changed the match GUI.
         let mut module_nodes = shown;
         if let StillFrame::Battlefield { modules, .. } = &mut module_nodes {
-            *modules = Some(((1, 1), 0));
+            *modules = Some(((1, 1), 0, 0));
         }
         let mut gate = RedrawGate::default();
         gate.record_presented(Some(shown), t, LIMITS);

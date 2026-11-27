@@ -665,6 +665,7 @@ pub(crate) fn drop_modules(match_state: &mut MatchState) {
         return;
     }
     match_state.sim_runtime.set_local_looks(Default::default());
+    match_state.sim_runtime.capture_status_amounts(false);
     let gui = match_state.match_presentation.dialog_ui.gui_mut();
     for origin in [tree::MOD_MODULE, tree::MAP_MODULE, tree::MAP_LAYOUT] {
         gui.remove_origin(origin);
@@ -777,20 +778,27 @@ pub(crate) fn render_frame(state: &mut AppState) {
 }
 
 /// The decorations' `Tint`, `TintIntensity` and `HideAnchor` on their
-/// objects, handed to the frames ([`crate::app::match_runtime::sim_host::SimHost::set_local_looks`]):
+/// objects (the map's only under `MapUI=full`), handed to the frames ([`crate::app::match_runtime::sim_host::SimHost::set_local_looks`]):
 /// a later decoration's tint replaces an earlier one's on the same object.
 /// Only when the decorations changed since the last frame.
 fn publish_local_looks(match_state: &mut MatchState) {
     let Some(ui) = match_state.ui_modules.as_mut() else {
         return;
     };
+    match_state
+        .sim_runtime
+        .capture_status_amounts(!ui.status.is_empty());
     let revision = ui.tree.attached_revision();
     if ui.published_looks == Some(revision) {
         return;
     }
     ui.published_looks = Some(revision);
     let mut looks = crate::app::presentation::frame::LocalLooks::new();
+    let map_may_restyle = ui.map_ui == MapUi::Full;
     for (decoration, attached) in ui.tree.attached() {
+        if attached.by_map && !map_may_restyle {
+            continue;
+        }
         // An object reference (kind 0, neither house nor superweapon).
         let Ok(id) = u64::try_from(attached.anchor) else {
             continue;

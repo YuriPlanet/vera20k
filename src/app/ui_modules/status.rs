@@ -20,18 +20,17 @@
 //! Relation=Own,Ally              ; Own, Ally, Enemy
 //! State=Selected                 ; Selected, Hovered, Damaged
 //! Types=MTNK,HTNK
-//! When1=AtLeast,Var:Energy,1     ; Present, BelowMax, AtLeast
+//! When1=AtLeast,Var:Energy,1     ; Present, BelowMax, AtLeast, AtMost
 //! Element1=Bar,-16,-30,32,3,Var:Energy/100,#000000,50:#00C0FF,0:#0040FF
 //! Element2=Number,18,-34,Var:Energy,#FFFFFF
-//! Element3=Pips,-16,-26,4,4,4,0,Ammo,PIPAMMO,PIPEMPTY
-//! Element4=Segments,-16,-22,4,4,4,0,5,Health,PIPFULL
-//! Element5=Icon,-8,-44,16,16,MYICON
+//! Element3=Segments,-16,-22,4,4,4,0,5,Health,pips.shp
+//! Element4=Icon,-8,-44,0,0,myicon.shp
 //! ```
 //!
 //! Every rect is from the object's anchor: a mobile's projected centre
 //! lowered by its type's `PixelSelectionBracketDelta=`, a building's first
 //! health pip, where the original's health bar starts. Pictures are found by
-//! name as the modules' `Art` is; colours are `#RRGGBB` or `#RRGGBBAA`.
+//! file name (`pips.shp`) as the modules' `Art` is; colours are `#RRGGBB` or `#RRGGBBAA`.
 //!
 //! The amounts (`Source`): `Health` (of `Strength=`), `Shield` (Phobos
 //! shield), `Ammo` (of `Ammo=`), `Passengers` (of `Passengers=`), `Rank`
@@ -378,6 +377,7 @@ impl ModuleStatus {
             "present" => Condition::Present(source),
             "belowmax" => Condition::BelowMax(source),
             "atleast" => Condition::AtLeast(source, int(field(fields, 2)?)?),
+            "atmost" => Condition::AtMost(source, int(field(fields, 2)?)?),
             other => return Err(Problem::Bad(format!("no condition {other}"))),
         })
     }
@@ -425,13 +425,14 @@ impl ModuleStatus {
                 full: self.art(field(f, 9)?),
                 empty: f.get(10).map(|name| self.art(name)),
             },
-            "pips" => Element::Pips {
-                at: at(1)?,
-                step: (int(field(f, 5)?)?, int(field(f, 6)?)?),
-                source: self.source(origin, field(f, 7)?, names)?,
-                full: self.art(field(f, 8)?),
-                empty: f.get(9).map(|name| self.art(name)),
-            },
+            // A row as long as its amount may take a whole object's share
+            // of drawing commands, which only the engine's own templates
+            // hold (`vera20k-gui`): a row of a known length is `Segments`.
+            "pips" => {
+                return Err(Problem::Refused(
+                    "Pips is the engine's own; use Segments with a count".into(),
+                ));
+            }
             "icon" => Element::Icon {
                 rect: at(1)?,
                 art: self.art(field(f, 5)?),

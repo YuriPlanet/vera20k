@@ -654,9 +654,10 @@ fn admitted_techno_observer(
 /// health pip ([`BuildingBarGeometry::first_pip`]), a mobile's draw point
 /// lowered by its `PixelSelectionBracketDelta=`. An object counts when it
 /// is drawn ([`admitted_techno_observer`]), not sinking or in a transport,
-/// and is the player's own or in its sight (`FogState::shows_objects_to`)
-/// without being disguised to it, so a template never shows more than the
-/// screen does. Without a local player every drawn object counts.
+/// and is the player's own or in its sight (`FogState::shows_objects_to`),
+/// so a template never shows more than the screen does; one disguised to the
+/// player counts as what it wears (`ui_modules::field`). Without a local
+/// player every drawn object counts.
 pub(crate) fn module_status_anchor(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
@@ -669,8 +670,7 @@ pub(crate) fn module_status_anchor(
     }
     admitted_techno_observer(sim, entity, player)?;
     if let Some(viewer) = player.filter(|viewer| !ignore_visibility && *viewer != entity.owner()) {
-        if entity.seen.disguised_to_observer
-            || !sim.fog().shows_objects_to(
+        if !sim.fog().shows_objects_to(
                 viewer,
                 entity.position.rx(),
                 entity.position.ry(),

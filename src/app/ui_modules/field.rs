@@ -172,35 +172,71 @@ fn status_objects<'f>(view: &FieldView<'f>) -> Vec<StatusObject<'f>> {
             if !(left..right).contains(&anchor.0) || !(top..bottom).contains(&anchor.1) {
                 return None;
             }
-            let object = view
+            // A spy or Mirage disguised to this player shows as what it
+            // wears, as the screen and client reads show it: the worn type
+            // and house, the real health share of the worn `Strength=`, and
+            // nothing of its own (`client_reads`). One worn as terrain has
+            // no anchor.
+            let worn = entity
+                .seen
+                .disguised_to_observer
+                .then(|| entity.disguise.as_ref())
+                .flatten()
+                .and_then(|disguise| Some((disguise.type_id()?, disguise.house()?)));
+            if entity.seen.disguised_to_observer && worn.is_none() {
+                return None;
+            }
+            let (type_ref, owner) = worn.unwrap_or((entity.type_ref(), entity.owner()));
+            let strength = view
                 .rules
-                .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
-            let strength = object.map_or(0, |object| object.strength);
-            let owner = entity.owner();
+                .and_then(|rules| sim.interner().object_type(type_ref, rules))
+                .map_or(0, |object| object.strength);
+            let health = match worn {
+                None => (entity.health.current(), strength),
+                Some(_) => {
+                    let own = view
+                        .rules
+                        .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
+                        .map_or(0, |object| object.strength);
+                    let share = if own > 0 {
+                        i64::from(entity.health.current()) * i64::from(strength) / i64::from(own)
+                    } else {
+                        0
+                    };
+                    (share.clamp(0, i64::from(strength)) as i32, strength)
+                }
+            };
             let own = view.player == Some(owner);
+            // Both ways, as client reads share `Allies` variables.
             let allied = !own
                 && view.player.is_some_and(|player| {
-                    crate::map::houses::is_allied_with(
-                        sim.house_alliances().as_map(),
-                        sim.interner().resolve(player),
-                        sim.interner().resolve(owner),
-                    )
+                    let (player, owner) =
+                        (sim.interner().resolve(player), sim.interner().resolve(owner));
+                    let alliances = sim.house_alliances().as_map();
+                    crate::map::houses::is_allied_with(alliances, player, owner)
+                        && crate::map::houses::is_allied_with(alliances, owner, player)
                 });
+            let real = worn.is_none();
+            let status = entity.status();
             Some(StatusObject {
                 id: entity.stable_id(),
                 anchor: (anchor.0.round() as i32, anchor.1.round() as i32),
-                type_id: entity.type_ref().index(),
+                type_id: type_ref.index(),
                 category: entity.category(),
                 own,
                 allied,
                 selected: entity.selection.is_selected(),
                 hovered: view.hovered == Some(entity.stable_id()),
-                health: (entity.health.current(), strength),
-                shield: shield(entity, view.rules),
-                ammo: entity.status.ammo,
-                passengers: entity.status.passengers,
-                rank: i32::from(entity.veterancy.rank().min(2)),
-                vars: entity.status.vars.as_deref().unwrap_or_default(),
+                health,
+                shield: shield(entity, view.rules).filter(|_| real),
+                ammo: status.and_then(|status| status.ammo).filter(|_| real),
+                passengers: status.and_then(|status| status.passengers).filter(|_| real),
+                rank: if real { i32::from(entity.veterancy.rank().min(2)) } else { 0 },
+                vars: if real {
+                    status.and_then(|status| status.vars.as_deref()).unwrap_or_default()
+                } else {
+                    &[]
+                },
             })
         })
         .collect()

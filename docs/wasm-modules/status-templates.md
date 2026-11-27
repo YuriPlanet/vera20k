@@ -7,8 +7,11 @@ original's health strip, pips, marks and group numbers can be hidden.
 
 Only this player's screen shows them: nothing goes over the network, and
 saves and replays are not affected. A template never shows more than the
-screen does: an object counts when it is drawn, is the player's own or in
-its sight (current sight under `FogOfWar`) and is not disguised to it.
+screen does: an object counts when it is drawn and is the player's own or in
+its sight (current sight under `FogOfWar`). One disguised to the player shows
+as what it wears: the worn type and house, its health share of the worn
+`Strength=`, and none of its own amounts. A spectator reads only `Public` and
+`InSight` variables.
 
 ## Where they come from
 
@@ -40,7 +43,7 @@ Category=Vehicle,Infantry          ; Vehicle, Infantry, Building, Aircraft; empt
 Relation=Own,Ally                  ; Own, Ally, Enemy; empty: all
 State=Selected                     ; Selected, Hovered, Damaged; empty: always
 Types=MTNK,HTNK                    ; empty: every type
-When1=AtLeast,Var:Energy,1         ; up to When16: Present, BelowMax, AtLeast
+When1=AtLeast,Var:Energy,1         ; up to When16: Present, BelowMax, AtLeast, AtMost
 Element1=Bar,-16,-30,32,3,Var:Energy/100,#000000,50:#00C0FF,0:#0040FF
 Element2=Number,18,-34,Var:Energy,#FFFFFF
 ```
@@ -54,19 +57,24 @@ pip). They keep their pixel size under zoom.
 | --- | --- |
 | `Bar` | x, y, width, height, amount, background (`#RRGGBB`, `#RRGGBBAA` or `none`), then bands `percent:#colour` (from that percent full upward) |
 | `Segments` | x, y, width, height, step x, step y, count, amount, full picture, empty picture (optional) |
-| `Pips` | x, y, width, height, step x, step y, amount, full picture, empty picture (optional): one picture per unit of the amount's maximum |
 | `Icon` | x, y, width, height, picture (0 width or height: its own size) |
 | `Number` | x, y, amount, colour |
 
-Pictures are found by name as module nodes' `Art` is: any SHP or PCX the
-game finds.
+A row as long as its amount (the original's own `Pips`) is not offered: it
+may take a whole object's share of drawing commands. Use `Segments` with a
+count; `count` pictures with the amount's share of them full, so a 10-step
+level row is `Segments,...,10,Var:Level/10,star.shp,nostar.shp`.
+
+Pictures are found by file name, extension included (`pips.shp`,
+`mtnkicon.shp`, `mylogo.pcx`), as module nodes' `Art` is: any SHP or PCX the
+game finds, drawn in the sidebar's palette (frame 0).
 
 Amounts: `Health` (of `Strength=`), `Shield` (a Phobos shield), `Ammo` (of
 `Ammo=`), `Passengers` (of `Passengers=`), `Rank` (0, 1, 2 of 2), and
 `Var:<name>` an object-scope module variable with `/<max>` a number or
 `Var:<name>` for its maximum. A variable shows only where this player may
 read it: `Public` and `InSight` for any seen object, `Allies` for its own
-and allied objects, `Private` for its own. A variable name without `mod.`
+objects and those of houses allied both ways, `Private` for its own. A variable name without `mod.`
 or `map.` is the template source's own. An amount an object does not have
 hides what reads it.
 

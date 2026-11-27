@@ -565,9 +565,16 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
 }
 
 /// The presentation copy excludes module state (RFC 15.1, item 8).
+/// A copy holds no module, only the variable declarations: the world copy
+/// drawing reads while the simulation ticks elsewhere
+/// (`Simulation::presentation_copy`) names variables for the status
+/// templates and client reads. The values stay the simulation's.
 impl Clone for ExtModules {
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            vars: self.vars.declarations_only(),
+            ..Self::default()
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.1.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.2.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -1438,7 +1438,7 @@ Ares 和 Phobos 的键尚未分类。
 | `Palette` | string | `Decoration` | `later`：返回 `Unsupported` |
 | `Tint`、`TintIntensity` | int | `Decoration`、`MapMarker` | `0xRRGGBB`（−1 为无）和 `fixed`。装饰只在本机给对象染色，叠在模拟染色（7.2）之后；标记用它作颜色 |
 | `Anim` | string | `Decoration` | 只在本机播放的附加动画。`later`：保存但不画 |
-| `HideAnchor` | bool | `Decoration` | 在本机不画对象的主体；它仍在列表里，可以选中和点击，状态条照画 |
+| `HideAnchor` | bool | `Decoration` | 在本机不画对象的主体；它仍在列表里，可以选中和点击，状态条照画。地图模块的 `HideAnchor` 和 `Tint` 只在 `MapUI=full` 时改变对象的样子 |
 | `Number` | int | `Decoration`、`MapMarker` | 显示在锚点处的数字 |
 | `Items` | string | `MapMarker` | 每行一个 `x,y` 格子：标记的线从锚点出发经过它们，最多 256 个。某行不是两个数时返回 `Refused` |
 | `Width` | int | `MapMarker` | 以锚点格子为中心的地面圆的半径（lepton），0 为无 |

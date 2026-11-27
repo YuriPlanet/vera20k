@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.1.0, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.2.0, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -1436,9 +1436,9 @@ Client-only references, writable with `client_set` and `client_set_bytes`. They 
 | `Backdrop` | bool | `Text` | Whether a text over the battlefield stands on black, 1 by default; 0 for a text on the module's own picture |
 | `Anchor` | ref | `Decoration`, `MapMarker` | A decoration's object; a marker's cell, or object. A house or other reference returns `Refused`. Hide the decoration when the object is invisible |
 | `Palette` | string | `Decoration` | `later`: answers `Unsupported` |
-| `Tint`, `TintIntensity` | int | `Decoration`, `MapMarker` | `0xRRGGBB` (−1 none) and `fixed`. A decoration tints its object on this screen alone, folded into the custom tint after the simulation's (7.2); a marker draws in it |
+| `Tint`, `TintIntensity` | int | `Decoration`, `MapMarker` | `0xRRGGBB` (−1 none) and `fixed`. A decoration tints its object on this screen alone, folded into the custom tint after the Phobos tints; a marker draws in it |
 | `Anim` | string | `Decoration` | Attached animation played on this screen alone. `later`: stored, not drawn |
-| `HideAnchor` | bool | `Decoration` | Hides the object's body on this screen; it is still listed, selected and clicked, and its status strip still draws |
+| `HideAnchor` | bool | `Decoration` | Hides the object's body on this screen; it is still listed, selected and clicked, and its status strip still draws. A map module's `HideAnchor` and `Tint` restyle the object only under `MapUI=full` |
 | `Number` | int | `Decoration`, `MapMarker` | Number displayed at the anchor |
 | `Items` | string | `MapMarker` | One `x,y` cell a line: the marker's line runs from its anchor through them, at most 256. A line that is not two numbers returns `Refused` |
 | `Width` | int | `MapMarker` | Radius in leptons of a ground circle round the anchor cell, 0 for none |

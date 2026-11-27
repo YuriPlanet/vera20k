@@ -192,6 +192,9 @@ pub(crate) struct Attached {
     pub(crate) radius: i32,
     /// `Hold` of a marker: 0 battlefield and radar, 1 battlefield, 2 radar.
     pub(crate) place: u8,
+    /// The map's module made it: its `Tint` and `HideAnchor` restyle the
+    /// object only under `MapUI=full`, as hiding the original's status does.
+    pub(crate) by_map: bool,
 }
 
 /// Whose a node is (RFC 10, "Node ownership"), in lookup order after the
@@ -448,6 +451,7 @@ impl Record {
             attached: kind.attached().then(|| {
                 Box::new(Attached {
                     visible: true,
+                    by_map: owner == Owner::Map,
                     ..Attached::default()
                 })
             }),

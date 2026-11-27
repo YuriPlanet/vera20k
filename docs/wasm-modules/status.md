@@ -713,6 +713,34 @@ render frame while a lent tick holds the world (its published frame has no objec
 read; a map whose file changed since a save loses its `[VeraUI]` parts on restore
 (logged only).
 
+## Done (battlefield visuals, RFC 0.2.0)
+
+- Status templates (`client_status`, client import 21, and `[VeraStatus]` in
+  `veraui.ini` and the map; docs/wasm-modules/status-templates.md):
+  `app/ui_modules/status.rs` parses them into `vera20k-gui` status templates
+  (`Origin::External`), `app/ui_modules/field.rs` paints them at the objects
+  `ui_overlays::module_status_anchor` admits and draws the battlefield layer
+  after the objects; `HideNative=` clears the original's families from each
+  `TechnoExtras` (`hide_families`). Amounts come from the frame record
+  (`StatusFacts`), variables under their RFC 6e visibility. Tests in
+  `status.rs`.
+- `Decoration` (8) and `MapMarker` (9) nodes (preview): `app/ui_modules/tree.rs`
+  keeps them as hidden GUI nodes with an `Attached` display (handles, owners and
+  removal as every module node); `app/ui_modules/field.rs` draws them in the
+  battlefield layer (pictures, numbers, labels, dots, lines and ground circles)
+  and the markers as radar dots (`MinimapRenderer::build_marker_dots_in_rect`).
+  A decoration's `Tint` and `HideAnchor` reach the frame records as local looks
+  (`SimHost::set_local_looks`, `frame::LocalLook`): `lighting::custom_tint` folds
+  the tint after the Phobos tints, and the body admission skips a hidden body
+  (it stays selectable). `Palette` and `Anim` are not drawn yet. Test
+  `decorations_and_markers_hold_their_display`.
+- Found in the in-game check (BayOPigs, example `kill-stars`):
+  a world copy kept no module state at all, so the battlefield layer drawn from
+  the presentation copy found no variable declarations; `ExtModules`' clone now
+  keeps them (values stay the simulation's). Templates offer no `Pips` (its
+  length-of-amount row takes a whole share, which `vera20k-gui` gives only the
+  host); `Segments` with a count does it. `AtMost` joins the conditions.
+
 ## Residuals
 
 - `Deployed` and `DeployAllowed` on an MCV and `Birth` for its yard and for building

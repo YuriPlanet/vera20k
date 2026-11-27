@@ -444,6 +444,28 @@ fn the_jumpjet_speed_factor_scales_its_speed() {
     );
 }
 
+/// A copy of the world for drawing keeps the variable declarations (the
+/// status templates name variables by them) but no value.
+#[test]
+fn a_world_copy_keeps_the_variable_declarations() {
+    use vera20k_wasm_ext::{VarDecl, VarScope, Visibility};
+    let mut modules = super::ExtModules::default();
+    let decl = VarDecl {
+        name: "Level".into(),
+        scope: VarScope::Object,
+        visibility: Visibility::Public,
+        default: 0,
+    };
+    modules
+        .vars
+        .declare(std::iter::once((super::ModuleSource::Mod, std::slice::from_ref(&decl))));
+    let var = modules.vars.find(super::ModuleSource::Mod, "Level").expect("declared");
+    modules.vars.set(var, super::vars::Holder::Object(7), 3);
+    let copy = modules.clone();
+    assert_eq!(copy.vars.find(super::ModuleSource::Mod, "Level"), Some(var));
+    assert_eq!(copy.vars.object_values(7).count(), 0);
+}
+
 /// A Wasm module `ImmunityFlags` override of bit 1 makes a GI immune to a
 /// radiation warhead's direct hit, which hurts it without one, and shows in
 /// the property; the mask takes only an override of its seven bits.

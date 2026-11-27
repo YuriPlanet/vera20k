@@ -81,6 +81,8 @@ pub enum Condition {
     Present(SourceId),
     BelowMax(SourceId),
     AtLeast(SourceId, i32),
+    /// The amount is present and its value at most this.
+    AtMost(SourceId, i32),
 }
 
 /// A colour from `percent` full upward. Of two with one percent the first
@@ -338,6 +340,7 @@ fn holds(condition: Condition, values: &[Option<Amount>]) -> bool {
         Condition::BelowMax(source) => {
             ratio(values, source).is_some_and(|(value, max)| value < max)
         }
+        Condition::AtMost(source, most) => amount(values, source).is_some_and(|a| a.value <= most),
         Condition::AtLeast(source, least) => {
             amount(values, source).is_some_and(|a| a.value >= least)
         }
@@ -658,7 +661,7 @@ mod tests {
 
     #[test]
     fn conditions() {
-        let cases: [(Condition, &[Option<Amount>], bool); 16] = [
+        let cases: [(Condition, &[Option<Amount>], bool); 19] = [
             (Condition::Present(S0), &some(0, 0), true),
             (Condition::Present(S0), &[None], false),
             (Condition::Present(S0), &[], false),
@@ -675,6 +678,9 @@ mod tests {
             (Condition::AtLeast(S0, i32::MIN), &some(i32::MIN, 0), true),
             (Condition::AtLeast(S0, i32::MAX), &some(i32::MAX, 0), true),
             (Condition::AtLeast(S0, i32::MIN), &[], false),
+            (Condition::AtMost(S0, 3), &some(3, 0), true),
+            (Condition::AtMost(S0, 3), &some(4, 9), false),
+            (Condition::AtMost(S0, i32::MAX), &[], false),
         ];
         for (condition, values, hit) in cases {
             let world = world(StatusTemplate {

@@ -45,6 +45,9 @@ pub(crate) struct Capture<'a> {
     /// The client modules' local looks of objects (`Decoration` `Tint`,
     /// `HideAnchor`), by object.
     pub(crate) local_looks: &'a LocalLooks,
+    /// Whether the match has status templates, which read the amounts
+    /// ([`StatusFacts`]).
+    pub(crate) status_amounts: bool,
     /// The capture's isolated query of the live map: a miss stamps its own
     /// dummy, not the simulation's.
     pub(crate) cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
@@ -164,12 +167,36 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
-    /// What module status templates read of it (`ui_modules::status`).
-    pub(crate) status: StatusFacts,
-    /// A client module's local look of it ([`LocalLook`]).
-    pub(crate) local_look: LocalLook,
+    /// What the client modules change of its look and what their status
+    /// templates read of it; `None` for most objects ([`ModuleFacts`]).
+    module: Option<Box<ModuleFacts>>,
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
+}
+
+/// What the client modules change of an object's look and what their status
+/// templates read of it, kept out of the record of an object they leave
+/// alone: the record is copied for every object each lent tick.
+#[derive(Clone, Debug, Default)]
+struct ModuleFacts {
+    local_look: LocalLook,
+    /// Captured only while the match has status templates.
+    status: Option<StatusFacts>,
+}
+
+impl ModuleFacts {
+    fn capture(entity: &GameEntity, at: &Capture<'_>) -> Option<Box<Self>> {
+        let facts = Self {
+            local_look: at
+                .local_looks
+                .get(&entity.stable_id())
+                .copied()
+                .unwrap_or_default(),
+            status: at.status_amounts.then(|| StatusFacts::capture(entity, at)),
+        };
+        let plain = facts.local_look == LocalLook::default() && facts.status.is_none();
+        (!plain).then(|| Box::new(facts))
+    }
 }
 
 /// The amounts a module status template reads of an object
@@ -679,7 +706,7 @@ impl ObjectRecord {
         let place = Place::of(entity, &pose, location.z, at);
         let seen = Seen::of(entity, at);
         let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location);
-        let status = StatusFacts::capture(entity, at);
+
         let scene =
             crate::app::presentation::frame_scene::SceneFacts::capture(entity, at, location);
         let tether_draw =
@@ -772,8 +799,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
-            status,
-            local_look: at.local_looks.get(&entity.stable_id()).copied().unwrap_or_default(),
+            module: ModuleFacts::capture(entity, at),
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -919,6 +945,17 @@ impl ObjectRecord {
     #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
+    }
+
+    /// A client module's local look of it.
+    pub(crate) fn local_look(&self) -> LocalLook {
+        self.module.as_ref().map_or_else(LocalLook::default, |module| module.local_look)
+    }
+
+    /// What status templates read of it; `None` in a match without
+    /// templates.
+    pub(crate) fn status(&self) -> Option<&StatusFacts> {
+        self.module.as_ref().and_then(|module| module.status.as_ref())
     }
 
     #[cfg(feature = "phobos")]
@@ -1411,7 +1448,7 @@ impl PresentationFrame {
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
     ) -> Self {
-        Self::capture_with_looks(runtime, sidebar_types, status_rows, &LocalLooks::new())
+        Self::capture_with_looks(runtime, sidebar_types, status_rows, &LocalLooks::new(), false)
     }
 
     /// [`Self::capture`] with the client modules' local looks of objects.
@@ -1420,6 +1457,7 @@ impl PresentationFrame {
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
         local_looks: &LocalLooks,
+        status_amounts: bool,
     ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
@@ -1433,6 +1471,7 @@ impl PresentationFrame {
             sidebar_types,
             status_rows,
             local_looks,
+            status_amounts,
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),

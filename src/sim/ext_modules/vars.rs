@@ -152,6 +152,14 @@ impl VarStore {
         }
     }
 
+    /// The declarations without a value.
+    pub(super) fn declarations_only(&self) -> Self {
+        Self {
+            decls: self.decls.clone(),
+            values: VarValues::default(),
+        }
+    }
+
     /// `lookup` for the client side: a declared variable's ID by name for a
     /// reader of origin `own` (the `mod.` and `map.` prefixes address that
     /// origin's).

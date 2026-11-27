@@ -2339,9 +2339,10 @@ mod tests {
         let timer_tail = &PRODUCTION[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
-            3,
-            "PixelFX and the two timer submissions precede the native result draw; \
-             the Phobos build description now draws at the RenderFrame_main tail"
+            4,
+            "PixelFX, the two timer submissions and VERA's module battlefield layer \
+             precede the native result draw; the Phobos build description now draws \
+             at the RenderFrame_main tail"
         );
         // Exhaustiveness: the description draws exactly once in the span from
         // tooltips to cursor, pinning it out of the tactical tail.

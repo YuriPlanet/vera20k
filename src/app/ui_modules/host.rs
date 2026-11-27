@@ -283,7 +283,7 @@ impl ClientHost for FrameHost<'_, '_> {
         Ok(match self.status.add_text(origin, text, self.map_ui, &names) {
             Ok(()) => Status::Ok,
             Err(problem) => {
-                self.log.push(format!("client_status: {problem}"));
+                ClientHost::log(self, &format!("client_status: {problem}"));
                 Status::Refused
             }
         })

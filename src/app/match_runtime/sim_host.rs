@@ -120,6 +120,9 @@ pub(crate) struct SimHost {
     status_rows: bool,
     /// The client modules' local looks of objects ([`Self::set_local_looks`]).
     local_looks: crate::app::presentation::frame::LocalLooks,
+    /// Whether frames capture the status templates' amounts
+    /// ([`Self::capture_status_amounts`]).
+    status_amounts: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -444,6 +447,7 @@ impl SimHost {
                 &self.sidebar_types,
                 self.status_rows,
                 &self.local_looks,
+                self.status_amounts,
             ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
@@ -479,6 +483,18 @@ impl SimHost {
             return;
         }
         self.local_looks = looks;
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture the amounts the client modules' status templates
+    /// read (`ui_modules::status`), or stop.
+    pub(crate) fn capture_status_amounts(&mut self, on: bool) {
+        if self.status_amounts == on {
+            return;
+        }
+        self.status_amounts = on;
         if !self.lent {
             self.forget_frame();
         }
