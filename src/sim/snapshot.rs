@@ -942,7 +942,7 @@ impl GameSnapshot {
             simulation.reconstruct_cellclass_dummy_for_map_resize();
             // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition clock.
             simulation.restart_cloak_progress_after_player_load();
-            simulation.reconstruct_building_repair_progress_after_player_load();
+            simulation.restore_object_timers_after_player_load();
         }
         simulation.validate_ares_state_for_load(rules.ares())?;
         simulation.restore_after_snapshot_load()?;

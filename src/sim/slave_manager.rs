@@ -208,6 +208,12 @@ pub struct SlaveManager {
 }
 
 impl SlaveManager {
+    /// SlaveManagerClass::Load 0x6B11AC..0x6B11C0 restarts the manager's
+    /// AI timer before reading the saved slave records and their timers.
+    pub(crate) fn restart_timer_after_load(&mut self, frame: i32) {
+        self.ai_timer.start(frame, 0);
+    }
+
     /// The constructor (`0x006AF1A0`) at `now`: a node per slave it tried to
     /// create, in state 0 with its timer at `now` for 0, and the AI timer at
     /// `now` for 10. A refused CreateObject still appends its node
