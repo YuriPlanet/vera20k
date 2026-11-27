@@ -1066,13 +1066,20 @@ impl Run<'_, '_, '_, '_> {
             return invalid(format!("no animation {index}"));
         }
         let frames = self.params.value2;
-        let Some(anim) = self.sim.spawn_attached_anim(rules, id, index) else {
+        let target = self.sim.entities().get(id).filter(|entity| entity.lifecycle.object_alive());
+        let Some(target) = target else {
             return status(Status::Refused);
         };
-        if frames != 0 {
-            if let Some(live) = self.sim.substrate.anims.get_mut(anim) {
-                live.hold_loops();
-            }
+        let held = frames != 0;
+        let anim = if held && super::held::held_anim_hidden(target) {
+            None
+        } else {
+            let Some(anim) = self.sim.spawn_attached_anim(rules, id, index, held) else {
+                return status(Status::Refused);
+            };
+            Some(anim)
+        };
+        if held {
             let frame = self.sim.session.binary_frame();
             self.sim
                 .ext_modules

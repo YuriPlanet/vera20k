@@ -510,7 +510,12 @@ fn attach_anim_holds_for_its_frames_or_until_detached() {
     sim.session.set_binary_frame_for_test(frame + 3);
     sim.maintain_ext_module_anims(rules);
     assert_eq!(owned(sim), held - 1, "destroyed when its time is up");
+    let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+    cloak.establish_unlimbo_fully_cloaked();
+    sim.substrate.entities.get_mut(gi).expect("GI").cloak = Some(Box::new(cloak));
     assert_eq!(act(sim, ATTACH_ANIM, anim, -1).1, vera20k_wasm_ext::Status::Ok);
+    assert_eq!(owned(sim), held - 1, "attaching to a cloaked object must not reveal it");
+    sim.substrate.entities.get_mut(gi).expect("GI").cloak = None;
     sim.session.set_binary_frame_for_test(frame + 10_000);
     sim.maintain_ext_module_anims(rules);
     assert_eq!(owned(sim), held, "kept until detached");

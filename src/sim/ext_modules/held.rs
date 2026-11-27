@@ -82,7 +82,7 @@ impl ActionHeld {
     /// frames from `frame`, or until `DetachAnim` when `frames` is negative.
     pub(super) fn hold_anim(
         &mut self,
-        anim: AnimId,
+        anim: Option<AnimId>,
         object: u64,
         anim_type: i32,
         origin: super::ModuleSource,
@@ -96,7 +96,7 @@ impl ActionHeld {
             anim_type,
             origin,
             until,
-            anim: Some(anim),
+            anim,
         });
     }
 
@@ -172,6 +172,11 @@ impl ActionHeld {
     }
 }
 
+pub(super) fn held_anim_hidden(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.lifecycle.in_limbo()
+        || entity.cloak.as_ref().is_some_and(|cloak| cloak.is_fully_cloaked())
+}
+
 impl Simulation {
     /// The module phase's kept animations, in attach order: one whose time
     /// is up or whose object left the game is destroyed and dropped; one
@@ -187,10 +192,7 @@ impl Simulation {
             let entity = self.substrate.entities.get(kept.object);
             let gone = kept.until.is_some_and(|until| until <= frame)
                 || entity.is_none_or(|entity| !entity.lifecycle.object_alive());
-            let hidden = entity.is_some_and(|entity| {
-                entity.lifecycle.in_limbo()
-                    || entity.cloak.as_ref().is_some_and(|cloak| cloak.is_fully_cloaked())
-            });
+            let hidden = entity.is_some_and(held_anim_hidden);
             let live = kept.anim.filter(|&anim| {
                 self.substrate
                     .anims
@@ -205,19 +207,14 @@ impl Simulation {
                 return !gone;
             }
             if live.is_none() {
-                kept.anim = self.spawn_attached_anim(rules, kept.object, kept.anim_type);
-                if let Some(anim) = kept.anim
-                    && let Some(live) = self.substrate.anims.get_mut(anim)
-                {
-                    live.hold_loops();
-                }
+                kept.anim = self.spawn_attached_anim(rules, kept.object, kept.anim_type, true);
             }
             true
         });
         self.ext_modules.held.anims = held;
     }
 
-    /// One pass of AnimType `anim_type` (its array index) attached to
+    /// One pass (or held loops) of AnimType `anim_type` (its array index) attached to
     /// `object` as team script action 51 (`0x006EF610`) attaches one: delay
     /// 0, the type's loops, draw flags `0x600`, at the object's GetCoords.
     /// `None` for an object not on the map or an animation that does not
@@ -227,6 +224,7 @@ impl Simulation {
         rules: &RuleSet,
         object: u64,
         anim_type: i32,
+        hold: bool,
     ) -> Option<AnimId> {
         let type_name = rules.anim_type_runtime_key_by_index(anim_type)?;
         let placed = self.substrate.entities.get(object).is_some_and(|entity| {
@@ -243,7 +241,11 @@ impl Simulation {
                 type_id, rx, ry, sub_x, sub_y, level,
             )
         };
-        self.spawn_anim_at_world(rules, descriptor, world).ok()
+        let anim = self.spawn_anim_at_world(rules, descriptor, world).ok()?;
+        if hold && let Some(live) = self.substrate.anims.get_mut(anim) {
+            live.hold_loops();
+        }
+        Some(anim)
     }
 
     /// Destroys a module-kept animation the engine has not destroyed yet.
