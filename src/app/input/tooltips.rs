@@ -261,18 +261,26 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None, None)
+    let source = crate::app::input::entity_pick::PresentedWorld {
+        sim: view.simulation(),
+        rules: Some(rules),
+        translucent_viewer: None,
+        unit_motion: None,
+    };
+    tactical_world_tip_text_for_viewer(view, source, csf, world, cursor_coordinates, None)
 }
 
 fn tactical_world_tip_text_for_viewer(
     view: crate::sim::runtime::SimView<'_>,
-    rules: &crate::rules::ruleset::RuleSet,
+    source: crate::app::input::entity_pick::PresentedWorld<'_>,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
-    translucent_viewer: Option<crate::sim::intern::InternedId>,
     frame: Option<&crate::app::presentation::frame::PresentationFrame>,
 ) -> String {
+    let Some(rules) = source.rules else {
+        return String::new();
+    };
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
     else {
         return String::new();
@@ -304,11 +312,7 @@ fn tactical_world_tip_text_for_viewer(
         }
     };
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
-        crate::app::input::entity_pick::PresentedWorld {
-            sim,
-            rules: Some(rules),
-            translucent_viewer,
-        },
+        source,
         order.iter().map(|(_, id)| id),
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
@@ -550,26 +554,19 @@ fn tactical_tip_at_cursor(
     view: crate::sim::runtime::SimView<'_>,
 ) -> String {
     let input = &match_state.input;
-    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
-        return String::new();
-    };
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
         &match_state.input,
         input.cursor_x,
         input.cursor_y,
     );
-    let translucent_viewer = crate::app::presentation::instances::translucent_fog_viewer(
-        platform,
-        match_state,
-        view.simulation(),
-    );
+    let source =
+        crate::app::input::entity_pick::presented(platform, frontend, match_state, view.simulation());
     tactical_world_tip_text_for_viewer(
         view,
-        rules,
+        source,
         process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
-        translucent_viewer,
         match_state.sim_runtime.frame(),
     )
 }

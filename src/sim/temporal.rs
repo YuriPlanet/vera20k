@@ -25,9 +25,8 @@
 //! State: the firer holds its link ([`TemporalState`]'s `link`, `+0x274`:
 //! target `+0x28`, the chain's `+0x40` Prev and `+0x44` Next, `+0x48`
 //! WarpRemaining); the target holds only the chain head (`head`, `+0x278`),
-//! and the temporal half of `+0x270` BeingWarpedOut is exactly
-//! `head.is_some()`. Attacker entity ids stand for their TemporalClass. Only
-//! this module writes either.
+//! independently of the shared `+0x270` BeingWarpedOut byte. Attacker entity
+//! ids stand for their TemporalClass. This module owns the chain links.
 //!
 //! Releases (`TemporalClass::LetGo @ 0x0071ABC0`): the attacker retargets
 //! (`0x0071AF61`); a new warp's victim lets its own victim go (`0x0071B162`);
@@ -65,14 +64,6 @@
 //! `ChronoSparkle1=`; `[CombatDamage] OpenToppedWarpDistance=`.
 //!
 //! RESIDUALS:
-//! - `+0x270` is one byte that TemporalClass and the Chronosphere's Teleport
-//!   states share; VERA keeps each writer's half and reads their union
-//!   ([`GameEntity::is_warped_out`]). Natively the Chronosphere's state 2
-//!   clears the byte under a live chain, and LetGo clears it under a
-//!   Chronosphere warp-out. Trigger: a Temporal weapon fired at an object in
-//!   its Chronosphere warp-out (60 frames). Effect: VERA keeps the object
-//!   frozen until the chain lets go; native thaws it once its warp-in ends,
-//!   or when the chain lets go before the warp.
 //! - `Mark(2)` at warp start and release (vtable `+0x124`) is presentation.
 //!   A building's online latch and slot-anim freeze (`0x004521C0`/`0x00452210`)
 //!   are `ObjectSubstrate::set_building_online_for_temporal`.
@@ -179,7 +170,7 @@ pub struct TemporalState {
 }
 
 impl TemporalState {
-    /// The temporal half of `TechnoClass+0x270` BeingWarpedOut.
+    /// Whether an erase chain currently targets this object (`Techno+278`).
     pub fn is_warped(&self) -> bool {
         self.head.is_some()
     }
@@ -237,17 +228,8 @@ impl GameEntity {
     pub fn set_temporal_for_test(&mut self, state: TemporalState) {
         let _ = self.note_names();
         self.temporal = state;
+        self.set_warped_out(self.temporal.is_warped());
         self.set_building_online_for_test(!self.temporal.is_warped());
-    }
-
-    /// `TechnoClass+0x270` BeingWarpedOut (vtable `+0x1D4`, `0x0070C5B0`):
-    /// written by TemporalClass and by the Chronosphere's Teleport states
-    /// (state 0 sets it, state 2 clears it), and when Ares plays by the
-    /// building chronoshift. The ordinary teleport never writes it.
-    pub fn is_warped_out(&self) -> bool {
-        self.temporal.is_warped()
-            || self.chrono_warp().is_some_and(|warp| warp.warped_out())
-            || self.ares_chronoshifting()
     }
 
     /// The frozen branch of every class's AI while the object is warped
@@ -257,11 +239,21 @@ impl GameEntity {
     /// TechnoClass::AI_Update (`0x0043FE56`), so none of its missions,
     /// managers, repair, stance, deploy or animation work runs. VERA runs
     /// parts of that AI in their own frame phases; each consults this. The
-    /// Unit and Aircraft test is `WarpingIn && chain head || BeingWarpedOut`
-    /// and Infantry's `BeingWarpedOut`: a chain head always comes with
-    /// BeingWarpedOut, so all three read it alone.
+    /// Unit (7362FB) and Aircraft (414CCC) also hold while warping in under
+    /// an erase head. Infantry (51BBD1) tests only the shared +270 byte.
     pub fn ai_frozen(&self) -> bool {
         self.is_warped_out()
+            || (matches!(
+                self.category(),
+                EntityCategory::Unit | EntityCategory::Aircraft
+            ) && self.temporal.chain_head().is_some()
+                && self.is_warping_in())
+    }
+
+    /// The native class visits the erase head even after +270 clears. A quiet
+    /// turn may skip this prologue only when it has no warp work at all.
+    pub(crate) fn needs_warp_ai(&self) -> bool {
+        self.temporal.chain_head().is_some() || self.is_warped_out() || self.is_warping_in()
     }
 
     /// `TechnoClass+0x271` (vtable `+0x1D8`, `0x0070C5C0`): the teleport's
@@ -496,7 +488,7 @@ impl Simulation {
                 } else {
                     warp
                 };
-                self.substrate.set_temporal_head(target, Some(attacker));
+                self.substrate.set_temporal_head(target, attacker);
                 if let Some(link) = self.substrate.temporal_link_mut(attacker) {
                     link.warp_remaining = warp;
                 }
@@ -520,7 +512,11 @@ impl Simulation {
                 }
             }
         }
-        // 0x0071B0EA sets `+0x270`, which the head above stands for.
+        // 71B0EA also reasserts +270 when another firer joins an existing
+        // head after Teleport state 2 has cleared the byte.
+        if let Some(entity) = self.substrate.entities.get_mut(target) {
+            entity.set_warped_out(true);
+        }
         // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
         if self
             .substrate
@@ -693,7 +689,7 @@ impl Simulation {
                 .get(target)
                 .is_some_and(|entity| entity.temporal.head == Some(head))
         {
-            self.substrate.set_temporal_head(target, None);
+            self.substrate.clear_temporal_target(target);
             self.temporal_clear_linked_list(head, rules, effects);
             return;
         }
@@ -742,6 +738,16 @@ impl Simulation {
         let remaining = link.warp_remaining.wrapping_sub(damage.wrapping_add(chain));
         if let Some(stored) = self.substrate.temporal_link_mut(head) {
             stored.warp_remaining = remaining;
+        }
+        // Phobos TemporalClass_AI hooks 71A88D after the remaining write;
+        // early releases above never visit this target's shield.
+        #[cfg(feature = "phobos")]
+        if let Some(target) = link.target {
+            crate::sim::shield::enter_temporal(
+                &mut self.substrate,
+                target,
+                self.session.binary_frame() as i32,
+            );
         }
         if remaining > 0 {
             return;
@@ -1187,14 +1193,14 @@ impl Simulation {
             None => {
                 if let Some(next) = link.next {
                     if let Some(target) = link.target {
-                        substrate.set_temporal_head(target, Some(next));
+                        substrate.set_temporal_head(target, next);
                     }
                     if let Some(next_link) = substrate.temporal_link_mut(next) {
                         next_link.prev = None;
                         next_link.warp_remaining = link.warp_remaining;
                     }
                 } else if let Some(target) = link.target {
-                    substrate.set_temporal_head(target, None);
+                    substrate.clear_temporal_target(target);
                     substrate.set_building_online_for_temporal(target, true, ares); //71AC3D
                     if let Some(owner) = substrate.entities.get(target).and_then(|entity| {
                         (entity.category() == EntityCategory::Structure).then_some(entity.owner())
@@ -1234,7 +1240,7 @@ impl Simulation {
         else {
             return;
         };
-        self.substrate.set_temporal_head(target, None);
+        self.substrate.clear_temporal_target(target);
         //71ADE9..71ADF2 clears Warp/Head, without ForceOnline or House
         //dirty writes. This is not ClearWarp71ACD0 and can leave660 false.
         if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
@@ -1282,7 +1288,7 @@ impl Simulation {
         if let Some(target) = target {
             //71AD40 clears only +270/+278 here. Unlike ClearWarp71ACD0,
             //it never calls ForceOnline452210 or dirties the target House.
-            self.substrate.set_temporal_head(target, None);
+            self.substrate.clear_temporal_target(target);
             if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
                 stored.target = None;
             }
@@ -1426,14 +1432,12 @@ impl Simulation {
         bridge_state_changed: &mut bool,
     ) -> bool {
         let registry = ctx.overlay_registry;
-        let Some((category, untouched)) = self.substrate.entities.get(id).map(|entity| {
-            (
-                entity.category(),
-                entity.temporal.head.is_none()
-                    && !entity.is_warped_out()
-                    && !entity.is_warping_in(),
-            )
-        }) else {
+        let Some((category, untouched)) = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| (entity.category(), !entity.needs_warp_ai()))
+        else {
             return true;
         };
         // VERA-only: with no head of its own and neither warped out nor
@@ -1643,9 +1647,19 @@ impl crate::sim::world::ObjectSubstrate {
             entity.temporal.link.as_deref_mut()
         })
     }
-    fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
+    // Reparenting (71ABDF) and IFV link transfers change the head alone.
+    fn set_temporal_head(&mut self, target: u64, head: u64) {
         if let Some(entity) = self.entities.get_mut(target) {
-            entity.temporal.head = head;
+            entity.temporal.head = Some(head);
+        }
+    }
+
+    // Invalid-head Update, lone-head LetGo, ReleaseChainNoIdle and
+    // ClearLinkedList clear both fields (71A78A, 71AC17, 71AD4D, 71ADE9).
+    fn clear_temporal_target(&mut self, target: u64) {
+        if let Some(entity) = self.entities.get_mut(target) {
+            entity.temporal.head = None;
+            entity.set_warped_out(false);
         }
     }
     fn temporal_clear_fields(&mut self, attacker: u64) {
@@ -1680,7 +1694,7 @@ impl crate::sim::world::ObjectSubstrate {
                 .get(target)
                 .is_some_and(|entity| entity.temporal.head == Some(from))
         {
-            self.set_temporal_head(target, Some(to));
+            self.set_temporal_head(target, to);
         }
         if let Some(prev) = link.prev
             && let Some(prev_link) = self.temporal_link_mut(prev)

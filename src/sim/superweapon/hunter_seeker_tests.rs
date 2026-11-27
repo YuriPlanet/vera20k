@@ -222,11 +222,25 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
         .get_mut(hunter)
         .unwrap()
         .set_ares_super_weapon(crate::sim::hunter_seeker::AttachedSuper { owner, sw_type });
-    sim.spawn_object("IGNORED", "Russians", 12, 12, 0, &rules)
+    let beam = sim
+        .spawn_object("IGNORED", "Russians", 12, 12, 0, &rules)
         .unwrap();
+    let departing = sim
+        .spawn_object("TARGET", "Russians", 14, 16, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(departing)
+        .unwrap()
+        .set_warped_out(true);
     let target = sim
         .spawn_object("TARGET", "Russians", 16, 16, 0, &rules)
         .unwrap();
+    let landed = sim.substrate.entities.get_mut(target).unwrap();
+    landed.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+        beam,
+    ));
+    landed.set_warped_out(false); // Teleport state 2 cleared +270 under the head.
     assert!(sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()));
     assert_eq!(
         sim.substrate

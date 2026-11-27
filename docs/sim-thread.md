@@ -148,6 +148,17 @@ storage with the world the simulation thread ticks:
   world copy (the Foot draw depth) are computed when an object is drawn.
   `SimHost::frame` captures it from the home world on its first read after a
   write, and `SimHost::lend` before a tick leaves.
+  The default display option **Smooth unit movement** (`[VERA] RenderInterpolation`)
+  keeps the last two poses of visible walking or flying infantry, Drive, Ship
+  and Hover vehicles, voxel Jumpjet vehicles, and voxel Fly aircraft. The renderer
+  samples movement between consecutive committed ticks when the picture budget
+  allows. SHP bodies use the current sprite facing, action and animation frame.
+  A Chrono Miner uses its active Drive locomotor while travelling to ore and
+  snaps to its destination when its Teleport locomotor returns it to a refinery.
+  Airborne and hovercraft shadows follow the ground under the displayed body.
+  Movement appears about one tick later. Picking uses the last presented
+  position. A newly visible unit, a warp, a display-layer change or a shot
+  starts at the committed pose. A late tick holds its last known position.
 - **The world copy** (`SimRuntime::presentation_copy`): the world without
   its objects. It leaves out the objects (its entity store is
   `EntityStore::detached`, which panics on a read in debug builds, so a

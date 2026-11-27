@@ -496,19 +496,13 @@ pub(super) fn resolve_receive_damage_with_input(
     if target_is_building && target.health.current() == 0 {
         return None;
     }
-    // Residual: a null warhead (the empty name) finds no WarheadType, so the
-    // hit is dropped. Native passes it with IgnoreDefenses: Object 5F5390
-    // skips 489180, Building 442230 reads the warhead only for its Sparky=
-    // test in the NowYellow/NowRed loop, Unit 737C90 and Aircraft 4165C0 never read it, and Foot
-    // 4D7330 and Techno 701BF6 test it, so the target dies; an Infantry death
-    // reads its InfDeath (518369) and crashes. Only custom Rules without
-    // `[CombatDamage] C4Warhead=`/`CrushWarhead=` reach it (retail and all
-    // nine modes set both): the C4 detonation (world_orders), the Fly/Jumpjet
-    // self-destruct (`receive_own_health_c4`), dominated insignificant units
-    // (house_strategy) and the Lift drop crush (locomotor_lift). The tree
-    // death's C4 area damage matches native, which returns on the null
-    // warhead (DamageArea 489280 at 4892D7).
-    let warhead = interner.warhead_type(event.warhead_ref, rules)?;
+    // A native null WarheadType is the empty name. Techno701BF6 skips its
+    // warhead gates and still calls Object at 701DF8. An unresolved named
+    // warhead from outside data keeps the existing refused-call behavior.
+    let warhead = interner.warhead_type(event.warhead_ref, rules);
+    if warhead.is_none() && interner.try_resolve(event.warhead_ref) != Some("") {
+        return None;
+    }
     let source = (event.attacker_id != RAD_NO_ATTACKER)
         .then(|| entities.get(event.attacker_id))
         .flatten();
@@ -548,14 +542,15 @@ pub(super) fn resolve_receive_damage_with_input(
     // replaces the stock ally gate after Poison and before Psychedelic, including
     // ignoreDefenses calls. Reuse the EMP/AttachEffect policy's retained owner.
     let ares_house_damage_allowed = if rules.ares() {
-        warhead.ares_rules().map(|settings| {
+        warhead.and_then(|warhead| {
+            let settings = warhead.ares_rules()?;
             let owner = source.map(|entity| entity.owner()).or(event.source_house);
-            settings.can_affect_house(
+            Some(settings.can_affect_house(
                 owner.is_some(),
                 owner == Some(target.owner()),
                 owner.is_some_and(|owner| allied(owner, target.owner())),
                 warhead.affects_allies,
-            )
+            ))
         })
     } else {
         None
@@ -565,13 +560,15 @@ pub(super) fn resolve_receive_damage_with_input(
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
         relative_damage: if rules.ares() {
-            warhead.ares_combat().and_then(|combat| {
-                combat.relative_damage(
-                    relative_damage_kind(target, target_type),
-                    target.health.current(),
-                    target_type.map(|object| object.strength),
-                )
-            })
+            warhead
+                .and_then(|warhead| warhead.ares_combat())
+                .and_then(|combat| {
+                    combat.relative_damage(
+                        relative_damage_kind(target, target_type),
+                        target.health.current(),
+                        target_type.map(|object| object.strength),
+                    )
+                })
         } else {
             None
         },
@@ -599,13 +596,13 @@ pub(super) fn resolve_receive_damage_with_input(
     // the splash unprotected. Native walks the same order, so VERA keeps it
     // (docking::bunker_link tests pin both outcomes).
     let bunker_blocked = !receiver_flags.ignore_defenses
-        && if target_is_building && target.bunker.occupant().is_some() {
-            // Linked Building branch is intentionally the inverse of the installed
-            // non-Building branch in TechnoClass::ReceiveDamage.
-            warhead.penetrates_bunker
-        } else {
-            target.bunker.link().installed_in().is_some() && !warhead.penetrates_bunker
-        };
+        && warhead.is_some_and(|warhead| {
+            if target_is_building && target.bunker.occupant().is_some() {
+                warhead.penetrates_bunker
+            } else {
+                target.bunker.link().installed_in().is_some() && !warhead.penetrates_bunker
+            }
+        });
     let active_invulnerability = target.invulnerability.as_ref().filter(|_| {
         crate::sim::superweapon::invulnerability::is_invulnerable(
             target.invulnerability.as_ref(),
@@ -626,26 +623,26 @@ pub(super) fn resolve_receive_damage_with_input(
         warping_out: !receiver_flags.ignore_defenses && target.is_warped_out(),
         bunker_blocked,
         // A module's `ImmunityFlags` replaces each gate's native immunity.
-        radiation_immune: warhead.radiation
+        radiation_immune: warhead.is_some_and(|warhead| warhead.radiation)
             && target.module_immune(
                 Immunity::Radiation,
                 rank_rad || target_type.is_some_and(|object| object.immune_to_radiation),
             ),
-        psychic_immune: warhead.psychic_damage
+        psychic_immune: warhead.is_some_and(|warhead| warhead.psychic_damage)
             && target.module_immune(
                 Immunity::Psychic,
                 rank_psychic || target_type.is_some_and(|object| object.immune_to_psionic_weapons),
             ),
-        poison_immune: warhead.poison
+        poison_immune: warhead.is_some_and(|warhead| warhead.poison)
             && target.module_immune(
                 Immunity::Poison,
                 rank_poison || target_type.is_some_and(|object| object.immune_to_poison),
             ),
-        affects_allies: warhead.affects_allies,
+        affects_allies: warhead.is_none_or(|warhead| warhead.affects_allies),
         attacker_is_allied,
         ares_house_damage_allowed,
         source_house_is_allied,
-        psychedelic: warhead.psychedelic,
+        psychedelic: warhead.is_some_and(|warhead| warhead.psychedelic),
         // The Psychedelic gate is berserk (`ImmunityFlags` bit 6).
         psionics_immune: target.module_immune(
             Immunity::Berserk,
@@ -676,15 +673,17 @@ pub(super) fn resolve_receive_damage_with_input(
     // block, which the concrete death reads from the killing event.
     let outcome = damage::receive::receive_damage(
         receiver_input,
-        warhead.cell_spread_f64,
-        warhead.percent_at_max_f64,
-        warhead
-            .interaction(
-                target_type.map_or(crate::rules::armor::ArmorId::NONE, |object| {
-                    object.armor_id()
-                }),
-            )
-            .multiplier(),
+        warhead.map(|warhead| damage::kernel::DamageWarhead {
+            cell_spread: warhead.cell_spread_f64,
+            percent_at_max: warhead.percent_at_max_f64,
+            armor_multiplier: warhead
+                .interaction(
+                    target_type.map_or(crate::rules::armor::ArmorId::NONE, |object| {
+                        object.armor_id()
+                    }),
+                )
+                .multiplier(),
+        }),
         &target_view,
         &divisors,
         &gates,
@@ -697,11 +696,13 @@ pub(super) fn resolve_receive_damage_with_input(
     // IronCurtainFlash=`) off goes to 0x701A98, the zero packet without the
     // flash.
     let invulnerability_flashes = !rules.ares()
-        || warhead.ares_combat().is_none_or(|combat| {
-            combat
-                .iron_curtain_flash()
-                .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
-        });
+        || warhead
+            .and_then(|warhead| warhead.ares_combat())
+            .is_none_or(|combat| {
+                combat
+                    .iron_curtain_flash()
+                    .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
+            });
     let invulnerability_impact = outcome
         .invulnerability_impact_damage
         .filter(|_| invulnerability_flashes)
