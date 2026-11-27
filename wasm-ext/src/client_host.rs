@@ -224,7 +224,7 @@ pub(crate) fn node_create(
     len: i32,
     out: i32,
 ) -> R<i32> {
-    if !(node_kind::TEXT..=node_kind::BAR).contains(&kind) {
+    if !(node_kind::TEXT..=node_kind::MAP_MARKER).contains(&kind) {
         return Err(fail(g, Invalid(format!("unknown node kind {kind}"))));
     }
     let range = input_buffer(g, ptr, len)?;
