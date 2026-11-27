@@ -128,8 +128,14 @@ pub(crate) fn unit_bridge_split(
     sim_runtime: &SimHost,
     entity: &ObjectRecord,
     unloading_body: bool,
+    draw_coord: [i32; 3],
 ) -> bool {
-    unit_bridge_split_in(DepthWorld::of(sim_runtime), entity, unloading_body)
+    unit_bridge_split_in(
+        DepthWorld::of(sim_runtime),
+        entity,
+        unloading_body,
+        Some(draw_coord),
+    )
 }
 
 /// [`unit_bridge_split`] in a given world.
@@ -137,14 +143,19 @@ pub(super) fn unit_bridge_split_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,
+    draw_coord: Option<[i32; 3]>,
 ) -> bool {
-    unit_bridge_condition(world, entity, unloading_body, true)
+    unit_bridge_condition(world, entity, unloading_body, true, draw_coord)
 }
 
 /// Direct SHP Unit no-turret branch 0x73CE0D..0x73CE7F (stock SQD).
 /// It changes the whole body's a7 by -16 and a8 to gradient zero, with
 /// neither the composite's factory alternative nor its height > 16 test.
-pub(super) fn shp_unit_bridge_fudge(world: DepthWorld<'_>, entity: &ObjectRecord) -> bool {
+pub(super) fn shp_unit_bridge_fudge(
+    world: DepthWorld<'_>,
+    entity: &ObjectRecord,
+    draw_coord: Option<[i32; 3]>,
+) -> bool {
     if world
         .runtime
         .and_then(|rt| draw_type(rt, entity, true))
@@ -154,7 +165,7 @@ pub(super) fn shp_unit_bridge_fudge(world: DepthWorld<'_>, entity: &ObjectRecord
         // composition path is not replaced by the direct-body treatment.
         return false;
     }
-    unit_bridge_condition(world, entity, true, false)
+    unit_bridge_condition(world, entity, true, false, draw_coord)
 }
 
 fn unit_bridge_condition(
@@ -162,6 +173,7 @@ fn unit_bridge_condition(
     entity: &ObjectRecord,
     unloading_body: bool,
     allow_factory: bool,
+    draw_coord: Option<[i32; 3]>,
 ) -> bool {
     if entity.category() != EntityCategory::Unit {
         return false;
@@ -193,10 +205,12 @@ fn unit_bridge_condition(
     let Some(terrain) = view.resolved_terrain() else {
         return factory;
     };
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let [x, y] = draw_coord.map_or([entity.hud.location.x, entity.hud.location.y], |p| {
+        [p[0], p[1]]
+    });
     crate::render::foot_depth::unit_composite_split(
         FootDepthContext {
-            cell: [(xy[0] / 256) as i16, (xy[1] / 256) as i16],
+            cell: [(x / 256) as i16, (y / 256) as i16],
             on_bridge: entity.on_bridge(),
             bridge_set_base: terrain.concrete_bridge_set_base(),
             ..Default::default()

@@ -781,28 +781,32 @@ pub(crate) fn cell_visibility_for_local_owner(
     let Some(fog) = fog else {
         return CellVisibilityState::Visible;
     };
+    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    if cell_revealed(fog, local_owner_id, (rx, ry), cells.as_ref()) {
+        CellVisibilityState::Visible
+    } else {
+        CellVisibilityState::Shrouded
+    }
+}
+
+/// Read the viewer's shroud with the caller's cell query. A draw shares
+/// its isolated query (including its private Dummy) across visible objects.
+pub(super) fn cell_revealed(
+    fog: &FogState,
+    viewer: InternedId,
+    cell: (u16, u16),
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> bool {
     // Display::ProcessClickCoords69244C..692480 asks Map578080 for the
     // clicked Cell centre's floor, then IsShrouded586360. The shroud lattice
     // is flat: raw map coordinates reject visible high-ground targets.
     // CellGetCoords486840 has the same floor input and no bridge-deck term.
     // Executed suffix/Pick controls: spatial_oracle/click_shroud.json.
     // Standard YR has FogOfWar=false; current sight is not an extra gate.
-    let shrouded = terrain.map_or_else(
-        || !fog.is_cell_revealed(local_owner_id, rx, ry),
-        |terrain| {
-            crate::sim::vision::cell_is_shrouded(
-                fog,
-                &crate::map::resolved_terrain::NativeCellQuery::isolated(terrain),
-                local_owner_id,
-                (rx, ry),
-            )
-        },
-    );
-    if !shrouded {
-        CellVisibilityState::Visible
-    } else {
-        CellVisibilityState::Shrouded
-    }
+    cells.map_or_else(
+        || fog.is_cell_revealed(viewer, cell.0, cell.1),
+        |cells| !crate::sim::vision::cell_is_shrouded(fog, cells, viewer, cell),
+    )
 }
 
 /// The battlefield every Display member is admitted in, in world pixels: its

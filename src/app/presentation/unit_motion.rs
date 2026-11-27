@@ -17,9 +17,9 @@ use crate::util::lookup_hash::LookupMap;
 /// a half on any world axis as a placement, even without a teleport flag.
 const MAX_STEP_LEPTONS: u32 = 384;
 
-/// The extra body translation and tilt the locomotor's draw resolved at
-/// this tick. Fly reads a draw point beside its physical anchor. Jumpjet
-/// can draw rocking angles without moving that anchor.
+/// The hull offset, tilt and ground projection the locomotor's draw
+/// resolved at this tick. A hovering hull can rock or climb without
+/// changing the ground point beneath it.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct AirPose {
     pub(crate) body_offset_y: f32,
@@ -98,8 +98,11 @@ pub(crate) struct UnitSample {
     /// SHP infantry's current action. A change of action starts a fresh
     /// segment; successive animation stages of its walk use the same pair.
     infantry_doing: Option<i32>,
+    shp: bool,
     band: EntityDrawBand,
     on_bridge: bool,
+    hover_slope: u8,
+    parasite_infested: bool,
     last_fire: i64,
 }
 
@@ -109,8 +112,14 @@ impl UnitSample {
         self.type_id == next.type_id
             && self.locomotor == next.locomotor
             && self.infantry_doing == next.infantry_doing
+            && self.shp == next.shp
             && self.band == next.band
             && self.on_bridge == next.on_bridge
+            // A disabled hover settling onto a ramp takes a different native
+            // draw matrix. A squid attaching/releasing its host changes the
+            // grapple relation at the confirmed point.
+            && self.hover_slope == next.hover_slope
+            && self.parasite_infested == next.parasite_infested
             // The flash and projectile start at the authoritative muzzle on
             // this frame. Its vehicle must be at the same endpoint.
             && self.last_fire == next.last_fire
@@ -124,7 +133,7 @@ impl UnitSample {
             || self.air_previous != self.air_current
             // A climb can move the ground shadow even when the airframe's
             // projected anchor and tilt happen to stay on the same pixel.
-            || (matches!(self.locomotor, LocomotorKind::Jumpjet | LocomotorKind::Fly)
+            || (matches!(self.locomotor, LocomotorKind::Jumpjet | LocomotorKind::Fly | LocomotorKind::Hover)
                 && self.previous_delta != [0; 3])
     }
 
@@ -194,6 +203,9 @@ pub(crate) struct IntermediateKinds {
     pub(crate) jumpjet: bool,
     pub(crate) fly: bool,
     pub(crate) infantry: bool,
+    pub(crate) ship: bool,
+    pub(crate) hover: bool,
+    pub(crate) shp_drive: bool,
 }
 
 impl UnitMotion {
@@ -237,26 +249,42 @@ impl UnitMotion {
         }
     }
 
-    /// For the spawn benchmark. Only count an infantryman's anchor when
-    /// the displayed point differs from both committed endpoints: a 1 px
-    /// step at native zoom often leaves no in-between pixel.
+    /// For the spawn benchmark. Translation witnesses require a displayed
+    /// anchor distinct from both endpoints: a 1 px step at native zoom
+    /// often leaves no in-between pixel.
     pub(crate) fn intermediate_kinds(&self) -> IntermediateKinds {
         let mut kinds = IntermediateKinds::default();
         if self.intermediate_units() != 0 {
             for row in self.presented.units.values() {
-                match (row.infantry_doing, row.locomotor) {
-                    (Some(_), _)
-                        if !kinds.infantry && row.previous.anchor != row.current.anchor =>
-                    {
-                        let shown = self.presented.transform(*row).anchor;
-                        kinds.infantry =
-                            shown != row.previous.anchor && shown != row.current.anchor;
+                let translation = match (row.infantry_doing, row.locomotor) {
+                    (Some(_), _) => Some(&mut kinds.infantry),
+                    (None, LocomotorKind::Ship) => Some(&mut kinds.ship),
+                    (None, LocomotorKind::Hover) => Some(&mut kinds.hover),
+                    (None, LocomotorKind::Drive) if row.shp => Some(&mut kinds.shp_drive),
+                    (None, LocomotorKind::Jumpjet) => {
+                        kinds.jumpjet |= row.moved();
+                        None
                     }
-                    (None, LocomotorKind::Jumpjet) if !kinds.jumpjet => kinds.jumpjet = row.moved(),
-                    (None, LocomotorKind::Fly) if !kinds.fly => kinds.fly = row.moved(),
-                    _ => {}
+                    (None, LocomotorKind::Fly) => {
+                        kinds.fly |= row.moved();
+                        None
+                    }
+                    _ => None,
+                };
+                if let Some(seen) = translation
+                    && !*seen
+                    && row.previous.anchor != row.current.anchor
+                {
+                    let shown = self.presented.transform(*row).anchor;
+                    *seen = shown != row.previous.anchor && shown != row.current.anchor;
                 }
-                if kinds.jumpjet && kinds.fly && kinds.infantry {
+                if kinds.jumpjet
+                    && kinds.fly
+                    && kinds.infantry
+                    && kinds.ship
+                    && kinds.hover
+                    && kinds.shp_drive
+                {
                     break;
                 }
             }
@@ -264,7 +292,7 @@ impl UnitMotion {
         kinds
     }
 
-    /// Drive and Walk belong to Ground. Flyers follow their registered
+    /// Drive, Ship, Hover and Walk belong to Ground. Flyers follow their registered
     /// Display band. A new layer or infantry action starts a fresh pair.
     /// Teleport infantry stay at their confirmed placement, even for a warp
     /// shorter than a cell. Carry, crash, paradrop and weapon lifts have
@@ -281,18 +309,23 @@ impl UnitMotion {
         let infantry_doing = match (entity.category(), entity.is_voxel(), locomotor, band) {
             (EntityCategory::Infantry, false, LocomotorKind::Walk, EntityDrawBand::Ground)
             | (EntityCategory::Infantry, false, LocomotorKind::Jumpjet, _) => {
-                // A corpse can still be displayed as IsAlive at zero health.
-                if entity.health.current() <= 0 || entity.passenger_role.is_inside_transport() {
-                    return None;
-                }
                 Some(entity.infantry_sprite_pose()?.0)
             }
-            (EntityCategory::Unit, true, LocomotorKind::Drive, EntityDrawBand::Ground)
+            (
+                EntityCategory::Unit,
+                _,
+                LocomotorKind::Drive | LocomotorKind::Ship,
+                EntityDrawBand::Ground,
+            )
+            | (EntityCategory::Unit, true, LocomotorKind::Hover, EntityDrawBand::Ground)
             | (EntityCategory::Unit, true, LocomotorKind::Jumpjet, _)
             | (EntityCategory::Aircraft, true, LocomotorKind::Fly, _) => None,
             _ => return None,
         };
         if !entity.is_object_alive()
+            // A corpse can still be displayed as IsAlive at zero health.
+            || entity.health.current() <= 0
+            || entity.passenger_role.is_inside_transport()
             || entity.in_limbo()
             || entity.in_tube
             || entity.on_carryall
@@ -316,8 +349,15 @@ impl UnitMotion {
             type_id: entity.type_ref(),
             locomotor,
             infantry_doing,
+            shp: !entity.is_voxel(),
             band,
             on_bridge: entity.on_bridge(),
+            hover_slope: if locomotor == LocomotorKind::Hover {
+                entity.place.hover_draw_slope
+            } else {
+                0
+            },
+            parasite_infested: entity.parasite_infested,
             last_fire: entity.last_fire_frame.frame(),
         };
         if let Some(old) = self.presented.units.get(&entity.stable_id())
@@ -341,10 +381,10 @@ impl UnitMotion {
                 next.previous_delta = old.previous_delta;
             }
         }
-        if infantry_doing.is_some() {
-            // The 0x00518D80 selector reads the current native 8-way art
-            // facing and Doing/Stage. Only move its draw origin; even a
-            // stationary SHP turn uses the new image straight away.
+        if next.shp {
+            // Infantry's 0x00518D80 and Unit's SHP selectors choose the
+            // current authored facing and animation stage. Only move the
+            // origin; a stationary SHP turn uses the new image at once.
             next.previous = Transform {
                 anchor: next.previous.anchor,
                 ..current

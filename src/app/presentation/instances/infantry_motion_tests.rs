@@ -1,4 +1,4 @@
-//! The emitted retail SHP body, its frame and its shadow on a middle draw.
+//! Native SHP art and shadows for infantry and vehicle draws between ticks.
 use super::*;
 use crate::app::presentation::frame::PresentationFrame;
 use crate::app::presentation::unit_motion::UnitMotion;
@@ -6,14 +6,14 @@ use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas
 use crate::sim::components::DriveCoord;
 use crate::sim::runtime::{SimResources, SimRuntime};
 
-fn draw(
+fn draw_parts(
     runtime: &SimRuntime,
     id: u64,
     kind: &str,
     motion: Option<&UnitMotion>,
-) -> (SpriteInstance, SpriteInstance) {
+) -> Option<(SpriteInstance, Option<SpriteInstance>)> {
     let frame = PresentationFrame::capture(runtime, &Default::default(), false);
-    let record = frame.object(id).unwrap();
+    let record = frame.object(id)?;
     let current = resolve_object_shp_frame_with_facing(
         Some(runtime),
         Some(&runtime.resources.rules),
@@ -21,8 +21,7 @@ fn draw(
         record,
         record.pose.body,
         None,
-    )
-    .unwrap()
+    )?
     .0;
     let entry = ShpSpriteEntry {
         uv_origin: [f32::from(current) / 4096.0, 0.0],
@@ -42,6 +41,13 @@ fn draw(
         frame: current,
         house_color: HouseColorIndex(0),
     };
+    // Retail vehicle SHP headers, also checked by the retail atlas tests.
+    let frame_count = match kind {
+        "DRON" => 176,
+        "DLPH" => 232,
+        "SQD" => 296,
+        _ => 4096,
+    };
     let shadow_key = if kind == "JUMPJET" {
         ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
@@ -51,7 +57,7 @@ fn draw(
         }
     } else {
         ShpSpriteKey {
-            frame: current + 2048,
+            frame: current + frame_count / 2,
             ..key.clone()
         }
     };
@@ -71,7 +77,7 @@ fn draw(
         .into_iter()
         .collect(),
     );
-    atlas.set_object_shp_frame_count_for_test(kind, 4096);
+    atlas.set_object_shp_frame_count_for_test(kind, frame_count);
     let camera = [-100.0, 0.0];
     let input = ShpInputs {
         motion,
@@ -115,22 +121,26 @@ fn draw(
     )]);
     let mut plan = PlannedObjects::default();
     shp_visitor(&input, &order)(ShpDraw::Member(&mut plan), record);
-    let parts = plan
-        .into_owned()
-        .pop()
-        .expect("native infantry body")
-        .pieces;
+    let parts = plan.into_owned().pop()?.pieces;
     let body = parts
         .iter()
-        .find(|piece| matches!(piece.target, ObjectTexture::ShpPage(0)))
-        .unwrap()
+        .find(|piece| matches!(piece.target, ObjectTexture::ShpPage(0)))?
         .instance;
     let shadow = parts
         .iter()
         .find(|piece| matches!(piece.target, ObjectTexture::SpriteAtlasEdit(1, _)))
-        .unwrap()
-        .instance;
-    (body, shadow)
+        .map(|piece| piece.instance);
+    Some((body, shadow))
+}
+
+fn draw(
+    runtime: &SimRuntime,
+    id: u64,
+    kind: &str,
+    motion: Option<&UnitMotion>,
+) -> (SpriteInstance, SpriteInstance) {
+    let (body, shadow) = draw_parts(runtime, id, kind, motion).expect("native infantry body");
+    (body, shadow.expect("native infantry shadow"))
 }
 
 #[test]
@@ -263,4 +273,192 @@ fn rocketeer_shadow_uses_the_bridge_under_the_displayed_position() {
     motion.commit_presented();
     motion.begin_draw(4, Some(0.5), 1.0);
     assert_eq!(shadow(&mut runtime, 32, Some(&motion)), ground);
+}
+
+fn vehicle_scene(kind: &str) -> Option<(SimRuntime, u64)> {
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
+    let mut sim = if rules.object(kind).unwrap().naval {
+        crate::sim::arena_fixture::rival_water_arena(&rules, 31, 32)
+    } else {
+        crate::sim::arena_fixture::rival_arena(&rules, 31)
+    };
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    // InitManagers classifies ownership at spawn. This lets the player see
+    // the Dolphin after it naturally cloaks in the water.
+    let house = sim.interner().get("Americans").unwrap();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(house));
+    let id = sim
+        .spawn_object(kind, "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    Some((
+        SimRuntime {
+            simulation: sim,
+            resources: SimResources::new(rules).into(),
+        },
+        id,
+    ))
+}
+
+fn order(rt: &mut SimRuntime, id: u64, command: crate::sim::command::Command) {
+    let who = rt.simulation.entities().get(id).unwrap().owner();
+    rt.simulation
+        .queue_command(crate::sim::command::CommandEnvelope::new(
+            who,
+            rt.simulation.session().tick() + 1,
+            command,
+        ));
+}
+
+fn step(rt: &mut SimRuntime) {
+    let due = rt.simulation.take_due_commands();
+    rt.advance_frame_for_tooling(&due, 33).unwrap();
+}
+
+#[test]
+fn moving_retail_shp_vehicles_keep_their_native_frame_and_shadow() {
+    for kind in ["DRON", "DLPH", "SQD"] {
+        let Some((mut rt, id)) = vehicle_scene(kind) else {
+            return;
+        };
+        assert_eq!(
+            draw_parts(&rt, id, kind, None).unwrap().1.is_some(),
+            kind != "SQD",
+            "{kind} shadow at spawn"
+        );
+        order(
+            &mut rt,
+            id,
+            crate::sim::command::Command::Move {
+                entity_id: id,
+                target_rx: 18,
+                target_ry: 12,
+            },
+        );
+        let mut motion = UnitMotion::default();
+        let mut seen = false;
+        for _ in 0..100 {
+            motion.begin_draw(rt.simulation.session().binary_frame(), Some(1.0), 1.5);
+            let (first, first_shadow) = draw_parts(&rt, id, kind, Some(&motion)).unwrap();
+            motion.commit_presented();
+            step(&mut rt);
+            let (native, native_shadow) = draw_parts(&rt, id, kind, None).unwrap_or_else(|| {
+                panic!(
+                    "missing {kind} body at tick {}",
+                    rt.simulation.session().tick()
+                )
+            });
+            if first.position == native.position {
+                continue;
+            }
+            motion.begin_draw(rt.simulation.session().binary_frame(), Some(0.5), 1.5);
+            let (drawn, shadow) = draw_parts(&rt, id, kind, Some(&motion)).unwrap();
+            let middle = |a: [f32; 2], b: [f32; 2]| [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
+            assert_eq!(
+                drawn.position,
+                middle(first.position, native.position),
+                "{kind} moving body"
+            );
+            assert_eq!(drawn.uv_origin, native.uv_origin, "{kind} native SHP frame");
+            // The Dolphin has cloaked during its turn toward the destination.
+            // Its owner sees its body, while Techno705E00 suppresses that
+            // shadow. SQD has NoShadow=yes. The Drone still casts its shadow.
+            assert_eq!(
+                native_shadow.is_some(),
+                kind == "DRON",
+                "{kind} moving shadow"
+            );
+            assert_eq!(
+                shadow.is_some(),
+                native_shadow.is_some(),
+                "{kind} native shadow admission"
+            );
+            if let Some(shadow) = shadow {
+                assert_eq!(
+                    shadow.position,
+                    middle(
+                        first_shadow.unwrap().position,
+                        native_shadow.unwrap().position
+                    ),
+                    "{kind} attached shadow"
+                );
+            }
+            motion.commit_presented();
+            assert_eq!(
+                motion.painted_anchor(id),
+                Some([drawn.position[0] + 5.0, drawn.position[1] + 12.0])
+            );
+            seen = true;
+            break;
+        }
+        assert!(seen, "{kind} must translate under the move order");
+    }
+}
+
+#[test]
+fn a_terror_drone_in_its_host_leaves_no_shape_and_starts_fresh_on_release() {
+    let Some((mut rt, id)) = vehicle_scene("DRON") else {
+        return;
+    };
+    let victim = rt
+        .simulation
+        .spawn_object("AMCV", "Russians", 11, 10, 0, &rt.resources.rules)
+        .unwrap();
+    let house = rt.simulation.entities().get(id).unwrap().owner();
+    rt.simulation
+        .fog_mut_for_test()
+        .mark_visible_for_owner(house, 11, 10);
+    let mut motion = UnitMotion::default();
+    motion.begin_draw(rt.simulation.session().binary_frame(), Some(1.0), 1.0);
+    assert!(draw_parts(&rt, id, "DRON", Some(&motion)).is_some());
+    motion.commit_presented();
+    assert!(motion.painted_anchor(id).is_some());
+    order(
+        &mut rt,
+        id,
+        crate::sim::command::Command::Attack {
+            attacker_id: id,
+            target_id: victim,
+        },
+    );
+    let mut attached = false;
+    for _ in 0..240 {
+        step(&mut rt);
+        if !attached
+            && rt
+                .simulation
+                .entities()
+                .get(victim)
+                .is_some_and(|v| v.parasite.is_infested())
+        {
+            motion.begin_draw(rt.simulation.session().binary_frame(), Some(0.5), 1.0);
+            assert!(
+                draw_parts(&rt, id, "DRON", Some(&motion)).is_none(),
+                "the attached drone is in limbo"
+            );
+            motion.commit_presented();
+            assert_eq!(motion.painted_anchor(id), None);
+            // The next ordinary parasite bite kills this host and releases the drone.
+            rt.simulation
+                .entity_mut_for_test(victim)
+                .unwrap()
+                .health
+                .set_for_test(1);
+            attached = true;
+        } else if attached
+            && rt
+                .simulation
+                .entities()
+                .get(id)
+                .is_some_and(|d| !d.in_limbo())
+        {
+            motion.begin_draw(rt.simulation.session().binary_frame(), Some(0.5), 1.0);
+            let fresh = draw_parts(&rt, id, "DRON", Some(&motion)).unwrap().0;
+            let native = draw_parts(&rt, id, "DRON", None).unwrap().0;
+            assert_eq!(fresh.position, native.position);
+            return;
+        }
+    }
+    panic!("the stock drone must attach, bite, and emerge after its host dies");
 }

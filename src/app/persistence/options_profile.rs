@@ -197,7 +197,7 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
-    /// `[VERA] RenderInterpolation=`: draw infantry, tanks and aircraft between logic frames.
+    /// `[VERA] RenderInterpolation=`: draw moving units between logic frames.
     pub(crate) render_interpolation: bool,
     /// `[VERA] HighRefreshRateInBattle=`: allow battlefield draws at the monitor's refresh rate.
     pub(crate) high_refresh_rate_in_battle: bool,

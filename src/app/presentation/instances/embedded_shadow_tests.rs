@@ -278,6 +278,7 @@ fn a_visceroid_refuses_the_embedded_shadow_but_the_turreted_one_has_no_gate() {
             frame: None,
         },
         &ObjectRecord::of_test_in(&entity, None, &rules),
+        None,
         &key,
         [10.0, 20.0],
         SpriteInstance::default(),

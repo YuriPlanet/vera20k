@@ -2411,6 +2411,20 @@ mod tests {
                 400,
             ),
             (
+                "DLPH",
+                EntityCategory::Unit,
+                LocomotorKind::Ship,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
+                "LCRF",
+                EntityCategory::Unit,
+                LocomotorKind::Hover,
+                EntityDrawBand::Ground,
+                0,
+            ),
+            (
                 "MTNK",
                 EntityCategory::Unit,
                 LocomotorKind::Drive,
@@ -2436,7 +2450,7 @@ mod tests {
             let owner = sim.intern("viewer");
             let typ = sim.intern(type_name);
             let mut unit = item83_entity(1, 10, 10, owner, typ, category, false);
-            unit.set_is_voxel_for_test(category != EntityCategory::Infantry);
+            unit.set_is_voxel_for_test(category != EntityCategory::Infantry && type_name != "DLPH");
             unit.locomotor = Some(LocomotorState::for_test_kind(locomotor));
             unit.position.put_location(DriveCoord::cell(10, 10, height));
             sim.entities_mut_for_test().insert(unit);

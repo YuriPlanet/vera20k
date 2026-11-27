@@ -37,6 +37,9 @@ pub(crate) struct FrameCost {
     infantry_pictures: usize,
     jumpjet_pictures: usize,
     fly_pictures: usize,
+    shp_drive_pictures: usize,
+    hover_pictures: usize,
+    ship_pictures: usize,
     last_population_bucket: Option<u32>,
     fewest_mobile: Option<usize>,
     /// The service passes' main-thread time, inline ticks included.
@@ -116,6 +119,9 @@ impl FrameCost {
             self.jumpjet_pictures += usize::from(kinds.jumpjet);
             self.fly_pictures += usize::from(kinds.fly);
             self.infantry_pictures += usize::from(kinds.infantry);
+            self.shp_drive_pictures += usize::from(kinds.shp_drive);
+            self.hover_pictures += usize::from(kinds.hover);
+            self.ship_pictures += usize::from(kinds.ship);
         }
         let bucket = frame / 100;
         if self.last_population_bucket != Some(bucket)
@@ -167,6 +173,9 @@ impl FrameCost {
             infantry_pictures: self.infantry_pictures,
             jumpjet_pictures: self.jumpjet_pictures,
             fly_pictures: self.fly_pictures,
+            shp_drive_pictures: self.shp_drive_pictures,
+            hover_pictures: self.hover_pictures,
+            ship_pictures: self.ship_pictures,
             fewest_mobile: self.fewest_mobile,
             tick_ms: mean(&ticks),
             tick_p99_ms: at(&ticks, 0.99),
@@ -201,6 +210,10 @@ pub(crate) struct FrameCostReport {
     /// Intermediate pictures containing motion from each flight locomotor.
     pub(crate) jumpjet_pictures: usize,
     pub(crate) fly_pictures: usize,
+    /// Intermediate translations of vessels, hover units and non-voxel Drive units.
+    pub(crate) ship_pictures: usize,
+    pub(crate) hover_pictures: usize,
+    pub(crate) shp_drive_pictures: usize,
     /// Lowest live, on-map mobile population among the sampled pictures.
     pub(crate) fewest_mobile: Option<usize>,
     /// The mean simulation frame's own wall time and its 99th percentile.

@@ -149,11 +149,14 @@ storage with the world the simulation thread ticks:
   `SimHost::frame` captures it from the home world on its first read after a
   write, and `SimHost::lend` before a tick leaves.
   The default display option **Smooth unit movement** (`[VERA] RenderInterpolation`)
-  keeps the last two poses for visible SHP infantry, voxel vehicles with Drive
-  or Jumpjet locomotors, and voxel aircraft with Fly locomotors. The renderer
+  keeps the last two poses of visible walking or flying infantry, Drive, Ship
+  and Hover vehicles, voxel Jumpjet vehicles, and voxel Fly aircraft. The renderer
   samples movement between consecutive committed ticks when the picture budget
-  allows. Infantry retain the current sprite facing, action and animation frame.
-  Airborne shadows follow the ground under the sampled flight path. Movement appears about one tick later. Picking uses the last presented
+  allows. SHP bodies use the current sprite facing, action and animation frame.
+  A Chrono Miner uses its active Drive locomotor while travelling to ore and
+  snaps to its destination when its Teleport locomotor returns it to a refinery.
+  Airborne and hovercraft shadows follow the ground under the displayed body.
+  Movement appears about one tick later. Picking uses the last presented
   position. A newly visible unit, a warp, a display-layer change or a shot
   starts at the committed pose. A late tick holds its last known position.
 - **The world copy** (`SimRuntime::presentation_copy`): the world without
