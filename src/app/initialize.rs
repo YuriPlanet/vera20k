@@ -420,10 +420,11 @@ impl App {
         );
         let options_profile = options_load.retained_profile;
         // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
-        // switch or the saved Options choice, before any archive or CSF opens.
+        // switch or the saved edition, before any archive or CSF opens.
         if let Some(config) = game_config.as_mut() {
             config.use_ra2_mode(
-                options_profile.ra2_mode && crate::ui::main_menu_dialogs::options::HAS_RA2_MODE,
+                options_profile.ra2_mode
+                    && !cfg!(all(target_arch = "wasm32", target_os = "unknown")),
             );
         }
         if crate::util::ra2_launch::enabled() {

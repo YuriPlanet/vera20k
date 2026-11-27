@@ -63,6 +63,13 @@ impl MenuPageButtonSpec {
         }
     }
 
+    pub(crate) fn node(&self) -> NodeSpec {
+        NodeSpec::new(NodeKind::Button)
+            .id(i32::from(self.id))
+            .label(self.csf_key)
+            .tooltip(self.tooltip_key)
+    }
+
     /// The same button at template top `dlu_top`.
     pub const fn at(self, dlu_top: i32) -> Self {
         Self { dlu_top, ..self }
@@ -101,12 +108,7 @@ impl MenuPageSpec {
 
     /// The page's buttons as nodes: resource id, caption and status help.
     pub fn nodes(&self) -> NodeSpec {
-        NodeSpec::new(NodeKind::Dialog).children(self.buttons().map(|b| {
-            NodeSpec::new(NodeKind::Button)
-                .id(i32::from(b.id))
-                .label(b.csf_key)
-                .tooltip(b.tooltip_key)
-        }))
+        NodeSpec::new(NodeKind::Dialog).children(self.buttons().map(MenuPageButtonSpec::node))
     }
 }
 
