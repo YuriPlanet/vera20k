@@ -378,8 +378,11 @@ replacement characters the player cannot delete, so `android::sync` and
 edit never holds a box no key removes.
 
 The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
-links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
-`android-activity` stays the crates.io 0.6.0 release.
+links `-Wl,--wrap=pthread_create` and the wrapper raises a smaller requested
+stack to 8 MiB (`util::thread_stack::android_stack`). It never lowers one: a
+thread that asked for more keeps it, and a caller that brought its own stack
+(`pthread_attr_setstack`) is left alone. `android-activity` stays the crates.io
+0.6.0 release.
 
 ### Send keys on the LAN screens
 

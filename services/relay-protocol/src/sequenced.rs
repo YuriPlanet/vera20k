@@ -127,22 +127,22 @@ const DRAIN_MS: u64 = 10_000;
 // ...but by no more than this share of its capacity, so a long stall's
 // backlog takes longer instead of halting everyone else.
 const DRAIN_PERCENT: u32 = 40;
-// A capacity measured while lagging speaks alone for its player's probe
-// wait, then grows by `PROBE_PERCENT` every `PROBE_EVERY_MS` until the player
-// lags again: a fight's end shows only by trying. The wait starts at
-// `PROBE_AFTER_MS` and doubles, up to `PROBE_AFTER_MAX_MS`, each time the
-// player lags again while being tried (the try failed); a try that held
-// `PROBE_HELD_MS` starts it over. A PC that is steadily slow, or slow in a
-// fight every minute, is tried less and less often; one that recovers
-// climbs.
-const PROBE_AFTER_MS: u64 = 15_000;
-const PROBE_AFTER_MAX_MS: u64 = 120_000;
-const PROBE_EVERY_MS: u64 = 5_000;
-const PROBE_PERCENT: u32 = 5;
-const PROBE_HELD_MS: u64 = 60_000;
-// Continuous pacing moves the clock a step at most this often: a pace report
-// a second shows a step's effect within it...
-const CONTINUOUS_STEP_MS: u64 = 2_000;
+// A capacity measured while lagging speaks alone for its player until it has
+// kept up for its raise wait; then it grows once by `RAISE_PERCENT`, and once
+// more after each further wait it keeps up, never a little at a time: the
+// speed changes seldom, and only after the player held the last one. The
+// wait starts at `RAISE_AFTER_MS` and doubles, up to `RAISE_AFTER_MAX_MS`,
+// each time the player lags again after a raise (it could not hold it); a
+// raise that held `RAISE_HELD_MS` starts it over. A PC that is steadily
+// slow, or slow in a fight every minute, is raised less and less often; one
+// that recovers climbs.
+const RAISE_AFTER_MS: u64 = 30_000;
+const RAISE_AFTER_MAX_MS: u64 = 120_000;
+const RAISE_PERCENT: u32 = 20;
+const RAISE_HELD_MS: u64 = 60_000;
+// Continuous pacing moves the clock a step at most this often: every change
+// reaches every player, so few...
+const CONTINUOUS_STEP_MS: u64 = 5_000;
 // ...down by at most this share of its rate, so a hitch of a few seconds
 // (loading pictures) slows the others for its seconds, as native lockstep
 // stops them for it, while a PC that drops for good is reached in two
@@ -150,8 +150,11 @@ const CONTINUOUS_STEP_MS: u64 = 2_000;
 const CONTINUOUS_STEP_DOWN_PERCENT: u32 = 50;
 // ...and up by at most this share...
 const CONTINUOUS_STEP_PERCENT: u32 = 25;
-// ...and up only half the way, and only for at least this share of its rate,
-// so a noisy estimate does not wobble the game's speed.
+// ...and either way only for at least this share of its rate, so a noisy
+// estimate does not wobble the game's speed.
+const CONTINUOUS_CHANGE_MIN_PERCENT: u32 = 5;
+// A report this share under what the clock runs for its player is a new low
+// point (`PaceReport::hold`).
 const CONTINUOUS_RAISE_MIN_PERCENT: u32 = 3;
 const PUSH_WINDOW: u64 = 64;
 const PUSH_LEASE_MS: u64 = 3_000;
@@ -1189,8 +1192,8 @@ struct PaceReport {
     low: Option<(u32, u64)>,
     // ...the most frames it ran in a report since...
     ran_since: u16,
-    // ...and how long the low point speaks alone before more is tried.
-    probe_after_ms: u64,
+    // ...and how long the low point speaks alone before a raise.
+    raise_after_ms: u64,
 }
 
 impl PaceReport {
@@ -1230,7 +1233,7 @@ impl PaceReport {
             lagging_since,
             low: previous.and_then(|p| p.low),
             ran_since: previous.map_or(0, |p| p.ran_since),
-            probe_after_ms: previous.map_or(PROBE_AFTER_MS, |p| p.probe_after_ms),
+            raise_after_ms: previous.map_or(RAISE_AFTER_MS, |p| p.raise_after_ms),
         };
         if report.measured_rate(rate).is_some() {
             report.capacity = Some((sample.frames_per_second, at_ms, sample.tick_micros));
@@ -1304,9 +1307,9 @@ impl PaceReport {
     /// (a PC whose speed swings drains at its high ones); evidence
     /// `CONTINUOUS_RAISE_MIN_PERCENT` under what the clock runs for it
     /// (`Self::clock_estimate`), as a tick cost that jumps, is a new low
-    /// point too. A new low point during a try failed that try and doubles
-    /// the next wait, up to `PROBE_AFTER_MAX_MS`; one after a try that held
-    /// `PROBE_HELD_MS` starts the wait over.
+    /// point too. A new low point after a raise failed it and doubles the
+    /// next wait, up to `RAISE_AFTER_MAX_MS`; one after a raise that held
+    /// `RAISE_HELD_MS` starts the wait over.
     fn hold(&mut self, previous: Option<Self>, at_ms: u64, tick_hz: u16) {
         let evidence = self.evidence();
         let fresh = previous.filter(|p| at_ms.saturating_sub(p.at_ms) <= PACE_REPORT_MS);
@@ -1320,15 +1323,15 @@ impl PaceReport {
             || u64::from(evidence) * 100
                 < u64::from(running) * u64::from(100 - CONTINUOUS_RAISE_MIN_PERCENT);
         // Only a low point under the match's own rate held the clock back,
-        // so only after one is there a try to judge.
+        // so only after one is there a raise to judge.
         if new_low {
             if low < u32::from(tick_hz)
-                && let Some(held) = at_ms.saturating_sub(then).checked_sub(self.probe_after_ms)
+                && let Some(held) = at_ms.saturating_sub(then).checked_sub(self.raise_after_ms)
             {
-                self.probe_after_ms = if held >= PROBE_HELD_MS {
-                    PROBE_AFTER_MS
+                self.raise_after_ms = if held >= RAISE_HELD_MS {
+                    RAISE_AFTER_MS
                 } else {
-                    (self.probe_after_ms * 2).min(PROBE_AFTER_MAX_MS)
+                    (self.raise_after_ms * 2).min(RAISE_AFTER_MAX_MS)
                 };
             }
             self.low = Some((evidence, at_ms));
@@ -1342,21 +1345,21 @@ impl PaceReport {
     }
 
     /// The rate continuous pacing may run the clock at for this player: its
-    /// low point (`Self::hold`) for its probe wait after it was last
-    /// confirmed, then a try at more: what it has run since (a hitch drained
-    /// at once shows it runs far more), or the low point grown by
-    /// `PROBE_PERCENT` every `PROBE_EVERY_MS`. A report whose evidence is
-    /// under it ends the try (`Self::hold`).
+    /// low point (`Self::hold`) until it has kept up for its raise wait
+    /// since it was last confirmed, then more: what it has run since (a
+    /// hitch drained at once shows it runs far more), or the low point grown
+    /// by `RAISE_PERCENT` once for each whole wait it has kept up. A report
+    /// whose evidence is under it ends the raise (`Self::hold`).
     fn clock_estimate(&self, now_ms: u64) -> u32 {
         let Some((low, at)) = self.low else {
             return self.sustainable_rate();
         };
-        let Some(trying) = now_ms.saturating_sub(at).checked_sub(self.probe_after_ms) else {
+        let raises = now_ms.saturating_sub(at) / self.raise_after_ms.max(1);
+        if raises == 0 {
             return low;
-        };
-        let probes = trying / PROBE_EVERY_MS;
-        let grown = (0..probes.min(64)).fold(u64::from(low), |held, _| {
-            held + (held * u64::from(PROBE_PERCENT)).div_ceil(100)
+        }
+        let grown = (0..raises.min(64)).fold(u64::from(low), |held, _| {
+            held + (held * u64::from(RAISE_PERCENT)).div_ceil(100)
         });
         let ran = u64::from(self.ran_since) * u64::from(CONTINUOUS_HOLD_PERCENT) / 100;
         grown.max(ran).min(u64::from(u32::MAX)) as u32
@@ -1937,16 +1940,18 @@ impl OrderingRoom {
     ///
     /// Each fresh reporter wants the clock at its estimate
     /// (`PaceReport::clock_estimate`: the low point of what its reports say
-    /// it runs, tried higher after a wait that grows each time a try fails)
+    /// it runs, raised a step after each wait it keeps up, a wait that grows
+    /// each time a raise fails)
     /// less its backlog (`Backlog`) over `DRAIN_MS`, at most `DRAIN_PERCENT`
     /// of the estimate. The clock moves towards the
-    /// least of these a step at a time (`CONTINUOUS_STEP_MS`): down at most
-    /// `CONTINUOUS_STEP_DOWN_PERCENT`, up half the way once that is
-    /// `CONTINUOUS_RAISE_MIN_PERCENT` and at most `CONTINUOUS_STEP_PERCENT`,
-    /// between `CONTINUOUS_FLOOR` and the certificate's rate. A player whose backlog
-    /// stands is measured again while it lags and pulls the target under
-    /// what it runs, so no margin leaves anyone behind for good; one that no
-    /// longer lags is probed upwards until it does.
+    /// least of these a step at a time (`CONTINUOUS_STEP_MS`), and only when
+    /// it is `CONTINUOUS_CHANGE_MIN_PERCENT` away: down at most
+    /// `CONTINUOUS_STEP_DOWN_PERCENT`, up all the way and at most
+    /// `CONTINUOUS_STEP_PERCENT`, between `CONTINUOUS_FLOOR` and the
+    /// certificate's rate. A player whose backlog stands is measured again
+    /// while it lags and pulls the target under what it runs, so no margin
+    /// leaves anyone behind for good; one that keeps up is raised a step at a
+    /// time, each after it held the last.
     fn continuous_change(&mut self, now_ms: u64, start_ms: u64) -> Option<(u16, u8)> {
         let (ceiling, rate) = (
             u32::from(self.certificate.tick_hz),
@@ -1979,15 +1984,14 @@ impl OrderingRoom {
             .step_due(lagging, now_ms, start_ms, CONTINUOUS_STEP_MS)?;
         let (wanted, source) = (target.0.clamp(floor, ceiling), target.1);
         let most = (rate * CONTINUOUS_STEP_PERCENT / 100).max(1);
-        if wanted < rate {
+        let least = (rate * CONTINUOUS_CHANGE_MIN_PERCENT).div_ceil(100).max(1);
+        if wanted + least <= rate || (wanted < rate && wanted == floor) {
             let down = (rate * CONTINUOUS_STEP_DOWN_PERCENT / 100).max(1);
             Some(((rate - down).max(wanted) as u16, source))
-        } else if wanted >= rate + (rate * CONTINUOUS_RAISE_MIN_PERCENT / 100).max(1) {
-            // Half the way, as Spring's speed control smooths: Age of
-            // Empires' clock "would slowly settle back" (Bettner and
-            // Terrano, 2001).
-            let step = (wanted - rate).div_ceil(2).min(most);
-            Some(((rate + step) as u16, u8::MAX))
+        } else if wanted >= rate + least {
+            // All the way, at most a quarter: Age of Empires' clock "would
+            // slowly settle back" (Bettner and Terrano, 2001).
+            Some(((rate + (wanted - rate).min(most)) as u16, u8::MAX))
         } else {
             None
         }

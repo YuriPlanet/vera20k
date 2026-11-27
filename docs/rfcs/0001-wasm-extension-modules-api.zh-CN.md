@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.1.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.2.0，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -458,6 +458,7 @@ bytes: u32,               // 投递区的字节数
 | 18 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
 | 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | 读模块来源的存储，长度（`i32`）写进 `len_out`；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
 | 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、键和值合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
+| 21 | `client_status` | `(ptr, len) -> i32` | 注册、替换或移除本来源的一个战场状态模板，内容是它的 INI 段的键，`Name=` 在最前（[状态模板](../wasm-modules/status-templates.md)）。同名模板替换旧的；没有 `ElementN=` 的移除它。键无法解析、名字找不到或超出限制时返回 `Refused` 并记录原因；不是 UTF-8 的文本是无效参数。0.2.0 之前没有 |
 
 `client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_log`。
 
@@ -928,7 +929,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | 1000 | `FireWeapon` | 对象（射手） | `id` 武器，为 −1 时用 `value` 武器槽位（默认 0 主武器）；瞄准 `cell`，否则 `other`，否则当前目标，都没有为 `Gone` | 开火；当前无法开火为 `Refused` | native | v1 |
 | 1001 | `LaunchSuperWeapon` | `House` | `id` 超级武器类型，`cell`（必需，缺少为非法参数） | 发射该所属方的超级武器 | native | v1 |
 | 1002 | `SpawnAnim` | 格子 | `id` 动画 | 创建动画 | native | v1 |
-| 1003 | `AttachAnim` | 对象 | `id` 动画，`value2` 帧数（负数直到移除） | 把动画附着在对象上；0.1.0 已实现不带帧数的形式（同小队脚本动作 51） | native | later |
+| 1003 | `AttachAnim` | 对象 | `id` 动画，`value2` 帧数（0 播一遍；正数循环这么多帧；负数直到 `DetachAnim`） | 把动画附着在对象上（同小队脚本动作 51）。保持的动画像 Phobos AttachEffect 的动画一样循环，跟着对象走；对象在运输工具里或完全隐身时拿掉，出来后再挂上；对象离开游戏时一起消失。一场对局最多可保持 65,536 个动画，达到上限后新的保持请求返回 `Refused` | native | preview |
 | 1004 | `Remove` | 对象 | — | 移除：不死亡、无幸存者、不计击杀 | none | v1 |
 | 1005 | `Kill` | 对象 | `other` 来源（可选） | 经伤害流程击杀，伤害为当前生命、无视防御（有死亡动画和幸存者，击杀记给来源） | native | v1 |
 | 1006 | `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 来源（可选） | 经弹头和护甲造成伤害，计击杀和经验 | native | v1 |
@@ -967,6 +968,7 @@ Ares 动作（未启用 Ares 时为 `Unsupported`）：
 | 1039 | `AddTeamMember` | 对象 | `other` 小队 | 加入小队，执行准入检查 | none | later |
 | 1040 | `RemoveTeamMember` | 对象 | — | 离开所在小队 | none | later |
 | 1042 | `RaiseEvent` | 对象（对象事件）或不限（全局事件） | `id` 事件 ID；`other`、`value`、`value2`、`house` 写入记录 | 引发模块事件 `ModuleEvent`（[RFC 6h](0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）；对象事件的目标不是存在的对象为 `Gone`；事件 ID 未注册为非法参数；INI 写作 `RaiseEvent(目标,事件名,value,value2)` | none | v1 |
+| 1046 | `DetachAnim` | 对象 | `id` 动画，−1 表示全部（只限代码；INI 写一个动画名） | 移除本模块来源的 `AttachAnim` 在该对象上保持的动画 | none | preview |
 | 1045 | `SetFacing` | 对象 | `value` 车体朝向 0..255 | 通过当前移动方式转动车体（移动方式按转速转动的就转动，直接设定的就设定）；没有移动方式时为 `Refused` | none | preview |
 
 ### 5.4 客户端动作种类
@@ -1102,6 +1104,7 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | 227 | 7.8 全局引用（RFC 6i） | 227 `AutomationAllowed` |
 | 228 | 7.2 可修饰属性（0.0.23） | 228 `ROTMultiplier` |
 | 229 | 7.10 客户端节点（0.0.25） | 229 `Backdrop` |
+| 230 | 7.1 对象（0.2.0） | 230 `ImageOverride` |
 
 `TargetArmor`（7.2，preview）没有 ID：0.1.0 未实现。
 
@@ -1159,8 +1162,9 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `NearbyEnemyCount` | int | R（派生，高） | own | v1 | 视野（`Sight`）内的敌方对象数 |
 | `TargetInRange` | bool | R（派生，高） | own | v1 | 当前目标在对象对它选用的武器射程内（一般为主武器，目标需要时为副武器） |
 | `CanFireAtTarget` | bool | R（派生，高） | own | v1 | 现在能向当前目标开火 |
-| `DoorOpen` | bool | W | seen | v1（写入为 later） | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `DoorOpen` | bool | W | seen | v1（写入 preview） | 工厂出口门是否打开。没有出口门的建筑和其他对象为 `Unsupported`。写 1 或 0 让战车工厂或大门的门一直画成开着或关着，写 −1 恢复显示门自己的状态；门本身、生产、出厂和大门的通行照常进行，读取仍返回门自己的状态。车辆的门没有画面：`Unsupported` |
 | `Animating` | bool | W | seen | v1（写入为 later） | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
+| `ImageOverride` | ref（类型） | W | seen | preview | 对象画成哪个 TechnoType，0 为它自己：模型或步兵图像、色盘和所属方颜色按那个类型；对象是什么、做什么仍是它自己。只能是同类别的类型，且不能是建筑；否则返回 `Refused`。转换后保留，对象离开游戏时移除。存档并计入哈希。步兵图像按对象自己美术的 `Sequence=` 取帧，序列不同的类型在某些动作下可能帧不对或画不出 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 
 ### 7.2 可修饰属性
@@ -1194,8 +1198,8 @@ AI 文档的读写层次见 [RFC 6d](0001-wasm-extension-modules.zh-CN.md#6d-ai)
 | `Targetable` | bool | 1 | 覆盖 | 为 0 时不可被选为目标 | — | later |
 | `PenetratesForceShield` | bool | 0 | 覆盖 | 穿透力场护盾 | `PenetratesForceShield` | later |
 | `ImmunityFlags` | mask | 类型的免疫（`ImmuneToPsionics=`、`ImmuneToRadiation=`、`ImmuneToPoison=`、`ImmuneToPsionicWeapons=`、`Warpable=no`；有 Ares 时加上等级能力、`ImmuneToEMP=` 及其默认值和 `ImmuneToBerserk=`；无 Ares 时狂暴随 `ImmuneToPsionics=`） | 仅覆盖，位 0..6；其他操作或其他位返回 `Refused` | 免疫位：0 心灵控制、1 辐射、2 毒素、3 心灵、4 超时空、5 EMP、6 狂暴。覆盖逐位取代各处判定算出的免疫，因此也能去掉免疫：0 心灵控制的夺取、心灵控制器（超武）、Ares 永久心控和绑架后的所属方；1、2、3 辐射、毒素、心灵弹头的受伤判定，1 也包括辐射场伤害；4 超时空军团兵的抹除和超时空传送的 `Warpable=` 判定；5 Ares EMP；6 Psychedelic（狂暴）判定和毒气的开火判定 | —（`ArmorMultiplier.AllowWarheads` 倍率为 0 可覆盖一部分） | preview |
-| `TintColor` | int（RGB） | 0 | 覆盖 | 染色；客户端为 `seen` | `Tint.Color` | later |
-| `TintIntensity` | fixed | 0 | 加 | 染色；客户端为 `seen` | `Tint.Intensity`、`Tint.Cumulative` | later |
+| `TintColor` | int（`0xRRGGBB`） | 0 | 只能覆盖，其他操作或多余的位返回 `Refused` | 染色，所有观看者一样；客户端为 `seen`。它的 RGB565 字和 Phobos 护盾、AttachEffect 的染色按位或 | `Tint.Color` | preview |
+| `TintIntensity` | fixed | 0 | 只能加，其他操作返回 `Refused` | 染色强度（1.0 为满），加到 Phobos 染色的强度上；客户端为 `seen` | `Tint.Intensity`、`Tint.Cumulative` | preview |
 | `LaserTrailType` | id | −1 | 覆盖 | 激光拖尾；客户端为 `seen` | `LaserTrail.Type` | later |
 | `PowerOutage` | bool | 0 | 覆盖 | 所属方断电（所属方属性，7.5） | — | later |
 
@@ -1410,8 +1414,8 @@ Ares 和 Phobos 的键尚未分类。
 | 5 | `List` | `List`（本 RFC 新增） | v1 |
 | 6 | `Image` | `Image`（本 RFC 新增） | v1 |
 | 7 | `Bar`（进度条） | `Bar`（本 RFC 新增） | v1 |
-| — | `Decoration` | —：挂在一个对象上的显示属性 | later |
-| — | `MapMarker` | —：小地图或地图上的点、线、文字 | later |
+| 8 | `Decoration` | —：挂在一个对象上的显示属性：先画 `Art`，其下一行是 `Number` 和 `Label`，颜色为 `Tint`。本玩家看不见对象时不画 | preview |
+| 9 | `MapMarker` | —：锚点格子（或看得见的对象）上一个 `Tint` 色的点、经过 `Items` 各格的线、半径 `Width` lepton 的地面圆，以及它的 `Art`、`Number`、`Label`；画在战场上，并在雷达上画成点 | preview |
 
 **节点属性**（除注明外可写；`string`、`bytes` 用 `client_set_bytes` 写）：
 
@@ -1433,12 +1437,15 @@ Ares 和 Phobos 的键尚未分类。
 | `ItemTooltips` | string | `CameoGrid` | 每行 `类型名=附加文字`，附加在该类型的提示文字之后；原生网格也可写 |
 | `Fill` | int | `Bar` | 0..100 |
 | `Backdrop` | bool | `Text` | 战场上的文字是否垫黑底，默认 1；压在模块自己的图片上的文字可设为 0 |
-| `Anchor` | ref（对象） | `Decoration` | 所挂的对象；对象看不见时不显示 |
-| `Palette` | string | `Decoration` | |
-| `Tint`、`TintIntensity` | int | `Decoration` | 本机染色（模拟中的染色见 7.2） |
-| `Anim` | string | `Decoration` | 附加动画 |
-| `HideAnchor` | bool | `Decoration` | 在本机隐藏对象本身 |
-| `Number` | int | `Decoration` | 显示在对象上方的数字 |
+| `Anchor` | ref | `Decoration`、`MapMarker` | 装饰所挂的对象；标记的格子或对象。所属方等其他引用返回 `Refused`。对象看不见时不显示 |
+| `Palette` | string | `Decoration` | `later`：返回 `Unsupported` |
+| `Tint`、`TintIntensity` | int | `Decoration`、`MapMarker` | `0xRRGGBB`（−1 为无）和 `fixed`。装饰只在本机给对象染色，叠在模拟染色（7.2）之后；标记用它作颜色 |
+| `Anim` | string | `Decoration` | 只在本机播放的附加动画。`later`：保存但不画 |
+| `HideAnchor` | bool | `Decoration` | 在本机不画对象的主体；它仍在列表里，可以选中和点击，状态条照画。地图模块的 `HideAnchor` 和 `Tint` 只在 `MapUI=full` 时改变对象的样子 |
+| `Number` | int | `Decoration`、`MapMarker` | 显示在锚点处的数字 |
+| `Items` | string | `MapMarker` | 每行一个 `x,y` 格子：标记的线从锚点出发经过它们，最多 256 个。所有标记的线段和圆圈每帧合计最多绘制 65,536 个采样点。某行不是两个数时返回 `Refused` |
+| `Width` | int | `MapMarker` | 以锚点格子为中心的地面圆的半径（lepton），0 为无 |
+| `Hold` | int | `MapMarker` | 0 战场和雷达，1 只在战场，2 只在雷达 |
 
 **INI 布局键。** `Type` 取节点种类表中的 INI 名。`X`、`Y`、`Width`、`Height`、`Gap`、`Art` 与节点属性同义。`Hold` 取 [8.3](#83-枚举) 的九个位置；INI 的 `Label` 用于按钮和文本。
 

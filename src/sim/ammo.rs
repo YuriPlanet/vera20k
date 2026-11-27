@@ -65,6 +65,11 @@ impl TechnoAmmo {
         self.current
     }
 
+    /// The type's `Ammo=`, copied at construction.
+    pub const fn max(&self) -> i32 {
+        self.max
+    }
+
     /// Whether the count is exactly zero, which
     /// [`Self::refill_empty_from_type`] refills.
     pub(crate) const fn is_empty(&self) -> bool {
@@ -77,12 +82,6 @@ impl TechnoAmmo {
     pub(crate) fn change_type_capacity(&mut self, maximum: i32) {
         self.current = self.current.min(maximum);
         self.max = maximum;
-    }
-
-    /// The type's `Ammo=`; only the rearm reads it in production.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) const fn max(&self) -> i32 {
-        self.max
     }
 
     /// `AircraftClass::Drop_Payload @ 0x00415C60`'s Ammo writes: one round

@@ -514,9 +514,10 @@ pub(crate) fn prepare_presentation_manifest(
     // drawn the first time a frame shows it.
     let mut unit_atlas = None;
     if palette.is_some() {
-        unit_atlas::admit_world_models(
+        unit_atlas::admit_world_and_image_models(
             &mut unit_atlas,
             sim.entities(),
+            sim.ext_module_images(),
             asset_manager,
             rules,
             Some(sim.interner()),
@@ -792,6 +793,10 @@ fn voxel_palette_demand(
     use crate::rules::house_colors::HouseColorIndex;
     let mut colors: Vec<_> = house_colors.values().copied().collect();
     if let Some(rules) = rules {
+        // The team-colour view (Alt+T) paints enemy houses in colours no
+        // active house carries, so their ramp rows must be uploaded up front
+        // like the relation bands' are.
+        colors.extend(rules.enemy_team_palette.entries().iter().copied());
         colors.extend(
             rules
                 .projectiles_iter()

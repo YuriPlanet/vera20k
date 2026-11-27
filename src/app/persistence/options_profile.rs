@@ -303,7 +303,7 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
-    /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
+    /// `[VERA] RA2Mode=`: the player's saved edition (docs/ra2-mode.md).
     /// On, the game plays original Red Alert 2 from the installation's
     /// non-md files (`util::ra2_launch`). Read at start, like the Ares
     /// setting: a change applies from the next start. Off by default.

@@ -805,6 +805,7 @@ impl Action {
     pub const PUSH: i32 = 1035;
     pub const RAISE_EVENT: i32 = 1042;
     pub const SET_FACING: i32 = 1045;
+    pub const DETACH_ANIM: i32 = 1046;
     /// Trigger-only kinds ([`ActionDef::set_var`], [`ActionDef::module`]).
     pub const SET_VAR: i32 = 1024;
     pub const MODULE: i32 = 1036;
@@ -1064,6 +1065,19 @@ impl Action {
     /// [`Action::spawn_anim`] takes) once, attached to `target`.
     pub fn attach_anim(target: Techno, anim: i32) -> Result<()> {
         Self::run(Self::ATTACH_ANIM, target.0, &params!(id: anim)).map(drop)
+    }
+
+    /// As [`Action::attach_anim`], but the animation keeps looping on
+    /// `target` for `frames` frames, or until [`Action::detach_anim`] when
+    /// `frames` is negative. It goes with the object.
+    pub fn attach_anim_for(target: Techno, anim: i32, frames: i64) -> Result<()> {
+        Self::run(Self::ATTACH_ANIM, target.0, &params!(id: anim, value2: frames)).map(drop)
+    }
+
+    /// Removes the animations [`Action::attach_anim_for`] of this module
+    /// keeps on `target`: those of animation `anim`, or all with -1.
+    pub fn detach_anim(target: Techno, anim: i32) -> Result<()> {
+        Self::run(Self::DETACH_ANIM, target.0, &params!(id: anim)).map(drop)
     }
 
     /// Forbids (`false`) TechnoType `kind` to `house`, or lifts this

@@ -1,6 +1,6 @@
 //! Dialog 0xE2 shell layout recovered from gamemd.exe.
 
-use super::state::{MAIN_MENU_DIALOG, MainMenuControlId};
+use super::state::{HAS_EDITION_SWITCH, MAIN_MENU_DIALOG, MainMenuControlId, SWITCH_EDITION};
 use crate::ui::shell::descriptor::{AnchorRule, HEADING_ANCHOR, MONITOR_ANCHOR};
 use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
 pub use crate::ui::shell::geom::{RIGHT_PANEL_TILE_H, RIGHT_PANEL_WIDTH};
@@ -139,6 +139,35 @@ pub const MAIN_MENU_PAGE: MenuPageSpec = MenuPageSpec {
         .returning(6),
 };
 
+fn edition_button(ra2: bool) -> MenuPageButtonSpec {
+    let key = if ra2 {
+        "VERA:SwitchToYR"
+    } else {
+        "VERA:SwitchToRA2"
+    };
+    MenuPageButtonSpec::new(SWITCH_EDITION, 0, key, "VERA:SwitchEditionHelp")
+}
+
+pub(crate) fn nodes(ra2: bool) -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec};
+    NodeSpec::new(NodeKind::Dialog).children(
+        MAIN_MENU_PAGE
+            .stacked
+            .iter()
+            .copied()
+            .chain(HAS_EDITION_SWITCH.then(|| edition_button(ra2)))
+            .chain([MAIN_MENU_PAGE.back])
+            .map(|button| button.node()),
+    )
+}
+
+/// A short retail surface cannot hold all seven desktop controls.
+pub(crate) fn retail_column_fits(screen_w: i32, screen_h: i32) -> bool {
+    !HAS_EDITION_SWITCH
+        || right_panel_rects(screen_w, screen_h).tile_count
+            >= MAIN_MENU_PAGE.stacked.len() as i32 + 2
+}
+
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
@@ -169,12 +198,21 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     let bottom_row = AnchorRule::OwnerDrawButtonBottomRow {
         cell_w: BUTTON_CELL_W,
     };
-    let buttons = MAIN_MENU_PAGE
+    let exit = button(&MAIN_MENU_PAGE.back, bottom_row);
+    let mut buttons: Vec<_> = MAIN_MENU_PAGE
         .stacked
         .iter()
         .map(|b| button(b, snap))
-        .chain([button(&MAIN_MENU_PAGE.back, bottom_row)])
         .collect();
+    if HAS_EDITION_SWITCH && retail_column_fits(screen_w, screen_h) {
+        let mut rect = exit.rect;
+        rect.y -= crate::ui::shell::geom::RIGHT_PANEL_TILE_H;
+        buttons.push(MainMenuButtonRect {
+            id: MainMenuControlId::SwitchEdition,
+            rect,
+        });
+    }
+    buttons.push(exit);
 
     MainMenuShellLayout {
         scale: crate::ui::shell::geom::RETAIL_SCALE,
@@ -260,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_holds_retails_six_buttons_at_every_size() {
+    fn the_edition_switch_precedes_exit_without_overlapping_at_every_size() {
         use MainMenuControlId::*;
         let ids = |layout: MainMenuShellLayout| {
             layout
@@ -269,7 +307,7 @@ mod tests {
                 .map(|button| button.id)
                 .collect::<Vec<_>>()
         };
-        let retail = [
+        let mut expected = vec![
             SinglePlayer0x683,
             WwOnline0x684,
             Network0x578,
@@ -277,9 +315,29 @@ mod tests {
             Options0x55c,
             ExitGame0x3ee,
         ];
-        assert_eq!(ids(compute_layout(640, 480)), retail);
-        assert_eq!(ids(compute_layout(800, 600)), retail);
-        assert_eq!(ids(fit_window(1920, 1080, compute_layout)), retail);
+        if HAS_EDITION_SWITCH {
+            expected.insert(expected.len() - 1, SwitchEdition);
+        }
+        let compact = if retail_column_fits(640, 480) {
+            compute_layout(640, 480)
+        } else {
+            fit_window(640, 480, compute_layout)
+        };
+        for layout in [
+            compact,
+            compute_layout(800, 600),
+            fit_window(1920, 1080, compute_layout),
+        ] {
+            assert!(
+                layout
+                    .buttons
+                    .windows(2)
+                    .all(|pair| pair[0].rect.y + pair[0].rect.h <= pair[1].rect.y)
+            );
+            assert_eq!(ids(layout), expected);
+        }
+        assert_eq!(edition_button(false).csf_key, "VERA:SwitchToRA2");
+        assert_eq!(edition_button(true).csf_key, "VERA:SwitchToYR");
     }
 
     #[test]

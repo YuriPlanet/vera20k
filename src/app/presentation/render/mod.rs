@@ -1552,6 +1552,9 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
+    pool.upload("module_field_fill", &world.module_field.fills);
+    pool.upload("module_field_art", &world.module_field.pictures);
+    pool.upload("module_field_text", &world.module_field.text);
     // The parts' pictures come from the sidebar's atlas and zoom with the frame.
     pool.upload(
         "layout_field_art",
