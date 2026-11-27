@@ -74,6 +74,7 @@ fn shadow(z: i32, bridges: &[((u16, u16), u32)]) -> Option<ObjectPieceInstance> 
             crate::rules::ruleset::RuleSet::empty_for_test(),
         ),
         Some(&cells),
+        None,
         [100.0, 50.0],
         0.25,
     )

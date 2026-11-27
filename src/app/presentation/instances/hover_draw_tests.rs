@@ -69,7 +69,6 @@ fn body_slope(
 ) -> UnitRenderSlopeState {
     unit_render_slope_state(
         Some(terrain),
-        Some(&NativeCellQuery::isolated(terrain)),
         &on(terrain, entity),
         0,
         EntityDrawBand::Ground,
@@ -97,7 +96,12 @@ fn a_teleporter_draws_level_on_a_ramp_and_its_shadow_lies_on_it() {
     assert_eq!(
         unit_shadow_slope(
             Some(&NativeCellQuery::isolated(&terrain)),
-            &ObjectRecord::of_test(&miner)
+            miner.on_bridge(),
+            [
+                i32::from(CELL.0) * 256 + 128,
+                i32::from(CELL.1) * 256 + 128,
+                0
+            ],
         ),
         RAMP
     );
@@ -166,6 +170,66 @@ fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     assert!(drop > 0);
     assert_eq!(pose.anchor, [x, y + drop as f32]);
     assert_eq!(pose.slope, 0);
+}
+
+#[test]
+fn a_robot_crossing_the_shore_draws_its_height_lean_and_shadow_at_one_phase() {
+    let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    terrain.cell_mut_for_test(10, 10).unwrap().land_type =
+        crate::rules::terrain_rules::LandType::Water.as_index();
+    terrain.cell_mut_for_test(11, 10).unwrap().slope_type = RAMP;
+    let mut robot = hover_on_ramp(&terrain, "ROBO", 80);
+    robot.lifecycle.set_object_alive_for_test(true);
+    robot.lifecycle.set_in_limbo_for_test(false);
+    let from = DriveCoord {
+        x: 10 * 256 + 232,
+        y: 10 * 256 + 128,
+        z: 80,
+    };
+    robot.position.put_location(from);
+    let mut motion = UnitMotion::default();
+    let band = EntityDrawBand::Ground;
+    motion.begin_draw(7, Some(1.), 2.);
+    let previous = on(&terrain, &robot);
+    let start = VehicleGeometry::read(&previous, band, 7, None, None, Some(&motion), || true);
+    motion.drawn(robot.stable_id(), start.sample.unwrap());
+    motion.commit_presented();
+
+    robot.position.put_location(DriveCoord {
+        x: from.x + 64,
+        z: 144,
+        ..from
+    });
+    robot.rocking = Some(crate::sim::rocking::RockingState::default());
+    robot
+        .rocking
+        .as_mut()
+        .unwrap()
+        .set_angle_sideways(crate::util::fixed_math::SimFixed::from_num(0.5));
+    let current = on(&terrain, &robot);
+    motion.begin_draw(8, Some(0.25), 2.);
+    let mid = VehicleGeometry::read(&current, band, 8, None, None, Some(&motion), || true);
+    assert_eq!(mid.xyz, [from.x + 16, from.y, 96]);
+    assert_eq!(mid.depth_xyz, mid.xyz);
+    let hull = ground_pose_with_angles(
+        &current,
+        UnitRenderSlopeState::Stable(0),
+        8,
+        mid.pose.angles,
+    )
+    .unwrap();
+    assert_eq!(hull.angles, [0.125, 0.]);
+    let shadow = lifted_unit_shadow_pose(&current, &terrain, &mid, 8).unwrap();
+    assert_eq!(shadow.slope, 0, "the shadow has not reached the ramp yet");
+    assert_eq!(shadow.anchor[0], mid.pose.screen[0]);
+    assert!(shadow.anchor[1] > mid.pose.screen[1]);
+    motion.drawn(robot.stable_id(), mid.sample.unwrap());
+    motion.commit_presented();
+    assert_eq!(
+        motion.painted_anchor(robot.stable_id()),
+        Some(mid.pose.screen)
+    );
+    assert!(motion.intermediate_kinds().hover);
 }
 
 /// A falling Drive Unit (a paradropped vehicle) keeps the same inherited

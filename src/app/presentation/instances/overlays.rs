@@ -240,7 +240,7 @@ fn overlay_display_identity(
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
-    pub vehicle_motion: Option<&'a crate::app::presentation::vehicle_motion::VehicleMotion>,
+    pub unit_motion: Option<&'a crate::app::presentation::unit_motion::UnitMotion>,
     pub sim: &'a crate::sim::world::Simulation,
     /// The objects drawing reads (`presentation::frame`).
     pub frame: &'a crate::app::presentation::frame::PresentationFrame,
@@ -323,7 +323,7 @@ pub(crate) fn anim_screen_point(
 impl AnimDrawPoint {
     fn for_draw(
         mut self,
-        motion: Option<&crate::app::presentation::vehicle_motion::VehicleMotion>,
+        motion: Option<&crate::app::presentation::unit_motion::UnitMotion>,
     ) -> Self {
         if let (Some(owner), Some(motion)) = (self.owner, motion) {
             let [dx, dy] = motion.offset(owner);
@@ -421,7 +421,7 @@ fn passed_by_effect_plans_nothing(
         return input.sim.anim(id).is_none_or(|anim| {
             anim_screen_point(input.frame, anim, id).is_none_or(|point| {
                 !projection_admitted(
-                    point.for_draw(input.vehicle_motion).center,
+                    point.for_draw(input.unit_motion).center,
                     input.tactical_admission(),
                 )
             })
@@ -485,7 +485,7 @@ pub(crate) fn build_display_effect_instances(
         // store is asked.
         let mut member = *member;
         if let EffectKind::Anim(Some(point)) = &mut member.kind {
-            *point = point.for_draw(input.vehicle_motion);
+            *point = point.for_draw(input.unit_motion);
         }
         let member = &member;
         let admitted = member

@@ -25,6 +25,7 @@ MAINTAINER = 'hrusten'
 ACCEPTED_AGENTS_COMMITS: set[str] = {
     '072dfa410b92ef4052f01af85fe4fcfc16961d1c',  # libi: the browser switch names the wasm check
     'bf86308ded6b33a80e7dd1282477432f3036a104',  # libi: Multiplayer rules and rules parts
+    '5907d599329cd99124bc464ba1b881ecfef597d7',  # libi: name digest-changing VERA.INI keys
 }
 
 # Steer agents (AGENTS.md/CLAUDE.md at any depth, skills, hooks, settings) or

@@ -632,8 +632,9 @@ playback with camera controls and Escape to close.
 accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must
 match. Playback checks the recorded state hashes.
-On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs a visible voxel
-body's drawn and committed screen positions at each frame hand-off. For aircraft
+On desktop, `VERA20K_REPLAY_ACTOR=<stable object ID>` logs the drawn and committed
+screen positions of a visible unit body at each frame hand-off, including the
+selected sprite frame for SHP infantry and SHP vehicles. For aircraft
 these positions include the body offset from the flight locomotor. Playback uses
 its ordinary cadence, including pictures between logic ticks. Keep a Multiplayer
 Campaign map at its recorded logical path under `campaigns/<series>/`. When names
@@ -992,7 +993,9 @@ are (`MatchSession::network_personal_rules`). A launcher's network game
 without the Building Production Queue, which its probe leaves out too, so a player's
 Options page cannot keep a launch from starting. The probe also reports the digest in
 [parts](spawn.md#rules-parts), which only explain a difference; a launch the digest
-refuses names this game's parts in its result. So the room's
+refuses names this game's parts in its result. The parts include the effective VERA.INI
+settings, including `WasmBudget`, so a launcher can identify and sync differences. Older
+launchers can ignore this field. The room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
 digest compares the ones each game plays.
