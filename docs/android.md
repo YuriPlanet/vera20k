@@ -114,7 +114,7 @@ other rows are Android's own:
 | Row | Action |
 |---|---|
 | Add Mod | Choose ZIPs and Choose Folder open the system file manager (`VeraActivity.pickModZip`, `pickModFolder`). The activity copies the pick into `files/tmp/mod-import-*/`, keeping its name, and Add Mod's usual preview and install take it from there (`app::shell_mod_import`). The copies are deleted once the import ends or Add Mod closes, and at the next start. |
-| Export Mod | Copies the selected folder into a folder the system picker chooses (`VeraActivity.exportMod`). |
+| Export Mod | Asks for a ZIP or a folder copy. A ZIP is packed into its own cache folder so an earlier share stays readable. Cancel or Back stops packing. The result opens in the system share panel (`VeraActivity.exportModZip`, FileProvider); a folder copy goes to `ACTION_OPEN_DOCUMENT_TREE` (`exportMod`). |
 | Rename Mod | Asks for a new name; renames the folder, keeps a shown `mod.ini` `Name=` and the next start's choice in step. |
 | Delete Mod | Asks first, then removes the folder and its home-screen shortcuts. |
 | Add Desktop Entry | Pins a home-screen shortcut for the selected mod (`VeraActivity.pinMod`). |
