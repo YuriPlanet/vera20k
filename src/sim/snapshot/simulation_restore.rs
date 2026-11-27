@@ -12,15 +12,24 @@ use super::{SnapshotMapRestoreOutput, SnapshotRestoreError, SnapshotTerrainAsset
 use crate::sim::world::Simulation;
 
 impl Simulation {
-    /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
-    /// has loaded. Reconstruct its independent repair Stage at the player-file
-    /// boundary, preserving mission state, radio links and internal continuations.
-    pub(super) fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+    /// An ordinary player-file load re-anchors object-owned clocks after the
+    /// global Frame has been read. Internal checkpoints keep their epochs.
+    pub(super) fn restore_object_timers_after_player_load(&mut self) {
         let frame = self.session.binary_frame() as i32;
         for entity in self.substrate.entities.values_mut() {
+            // BuildingLoad453ECF calls NoInit43B680 for the independent repair Stage.
             entity
                 .mission_leaf
                 .reconstruct_building_repair_progress_after_player_load(frame);
+            if let Some(manager) = entity.capture_manager.as_mut() {
+                manager.restart_timers_after_load(frame);
+            }
+            if let Some(manager) = entity.spawn_manager.as_mut() {
+                manager.restart_timers_after_load(frame);
+            }
+            if let Some(manager) = entity.slave_manager.as_mut() {
+                manager.restart_timer_after_load(frame);
+            }
         }
     }
 
