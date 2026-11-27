@@ -310,8 +310,11 @@ pub(crate) fn install_world_presentation(
     match_state.match_presentation.overlay_names = assets.overlay_names;
     match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
     match_state.match_presentation.house_color_map = assets.house_color_map;
-    // VERA relation colours start each scenario off, in the player colours.
+    // VERA relation and team colours start each scenario off, in the player
+    // colours; the launch team cache belongs to the match that just ended.
     match_state.match_presentation.relation_colors = false;
+    match_state.match_presentation.team_colors = false;
+    match_state.match_presentation.team_by_owner = None;
     match_state.match_presentation.relation_color_map = None;
     // VERA's Super Weapon Building Timers start from the saved switch; a
     // match's own hotkey flips it from there.

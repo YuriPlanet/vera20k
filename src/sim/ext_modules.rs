@@ -1272,6 +1272,7 @@ impl SimHost for Host<'_, '_> {
                 "Mission" => return self.order_mission(id, value, None),
                 "Ammo" => return Ok(self.write_ammo(id, value)),
                 "Online" => return Ok(self.write_online(id, value)),
+                "DoorOpen" => return self.write_door(id, value),
                 "ImageOverride" => return self.write_image_override(id, value),
                 _ => {}
             }
@@ -2101,8 +2102,32 @@ impl Host<'_, '_> {
         Ok(Status::Ok)
     }
 
-    /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
-    /// AI_Update sample announces a promotion as for a crate.
+    /// `DoorOpen` (appendix 7.1): 1 draws a war factory's or gate's door
+    /// open and 0 shut until -1 lets it show its own state; the door and
+    /// what it lets through run on (`held::ActionHeld`). Other objects
+    /// answer `Unsupported`.
+    fn write_door(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
+        let Some(entity) = self.sim.entities().get(id) else {
+            return Ok(Status::Gone);
+        };
+        let drawn = entity.category() == crate::map::entities::EntityCategory::Structure
+            && self
+                .sim
+                .entity_object_type(entity, self.rules)
+                .is_some_and(|object| object.weapons_factory || object.gate);
+        if !drawn {
+            return Ok(Status::Unsupported);
+        }
+        let open = match value {
+            -1 => None,
+            0 => Some(false),
+            1 => Some(true),
+            _ => return Err(Invalid(format!("DoorOpen {value}"))),
+        };
+        self.sim.ext_modules.held.hold_door(id, open);
+        Ok(Status::Ok)
+    }
+
     /// `ImageOverride` (appendix 7.1): 0 draws the object as itself; a
     /// TechnoType of its own category draws it as that type. A building,
     /// another category or a non-TechnoType answers `Refused`.
@@ -2144,6 +2169,8 @@ impl Host<'_, '_> {
         Ok(Status::Ok)
     }
 
+    /// `Rank`: VeterancyStruct's SetRookie/SetVeteran/SetElite; the next
+    /// AI_Update sample announces a promotion as for a crate.
     fn write_rank(&mut self, id: u64, value: i64) -> Result<Status, Invalid> {
         let Some(entity) = self.sim.substrate.entities.get_mut(id) else {
             return Ok(Status::Gone);
@@ -2488,7 +2515,8 @@ impl Simulation {
     }
 
     /// The module phase: modifiers whose time is up expire, timed
-    /// conversions whose time is up revert and `Timer` triggers whose
+    /// conversions whose time is up revert, kept animations whose time is
+    /// up or whose object went are destroyed, and `Timer` triggers whose
     /// period ends fire, then each enabled module in order
     /// gets its `on_scenario_start` once, its client messages
     /// (`on_message`, [`messages`]), its queued event records
@@ -2518,6 +2546,7 @@ impl Simulation {
         // runs (`decide`).
         self.decide_production_allowed(rules);
         self.revert_ext_module_conversions(rules, frame_effects);
+        self.maintain_ext_module_anims(rules);
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);
