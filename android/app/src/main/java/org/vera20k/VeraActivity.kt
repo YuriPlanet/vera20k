@@ -21,6 +21,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.text.InputType
 import android.view.RoundedCorner
+import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -95,7 +96,16 @@ class VeraActivity : GameActivity() {
         window.decorView.requestApplyInsets()
         pruneModShortcuts()
         clearPickedModParts()
+        TouchHudOverlay(this).attach()
     }
+
+    /** Forward a HUD edge through GameActivity's regular native input callback. */
+    internal fun forwardHudKeyDown(keyCode: Int, event: KeyEvent): Boolean =
+        super.onKeyDown(keyCode, event)
+
+    /** Keep HUD presses paired so the engine's ordinary key-release handling runs. */
+    internal fun forwardHudKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+        super.onKeyUp(keyCode, event)
 
     private fun updateDisplayInsets(insets: WindowInsets) {
         if (Build.VERSION.SDK_INT < 28) {

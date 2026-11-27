@@ -371,6 +371,22 @@ the native edit's own filter does with units from `0x100` up — and
 so a Chinese name cannot reach the single-byte roster row whichever path the text
 arrived by.
 
+## Touch HUD
+
+Tap **HUD** to show the optional touch controls. **T** sends the same-type
+selection key; **C1–C10** tap to recall a control group and long-press to assign
+the current selection. Tap **Edit**, drag controls, and tap **Done**; positions
+are saved as normalized window coordinates, so they survive a restart and adapt
+to a changed window size. Touches outside the buttons remain on the existing
+winit touch-to-mouse path. HUD key presses go through GameActivity's native key
+callbacks and VERA's existing key-binding/input routing; the overlay does not
+send simulation commands directly or create another event loop. It uses Android
+views above GameActivity's existing SurfaceView, as supported by the
+[GameActivity integration model](https://developer.android.com/games/agdk/game-activity/get-started).
+
+Run the position persistence regression tests with
+`./android/gradlew -p android :app:testDebugUnitTest`.
+
 The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
 links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
 `android-activity` stays the crates.io 0.6.0 release.
